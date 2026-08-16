@@ -206,17 +206,29 @@ describe('profile propagation', () => {
         expect(gen.read('Makefile')).toContain(`PROFILE := ${profile}`)
       })
 
-      it('writes the profile into every Terraform tfvars file', () => {
-        for (const env of ['dev', 'test', 'stg', 'prod']) {
-          const tfvars = gen.read(`infrastructure/terraform/environments/${env}.tfvars`)
-          expect(tfvars).toContain(`profile      = "${profile}"`)
-          expect(tfvars).toContain(`environment = "${env}"`)
-          expect(tfvars).toContain(`project_slug = "${slug}"`)
+      it('writes the profile into terraform.tfvars', () => {
+        const tfvars = gen.read('infrastructure/terraform/terraform.tfvars')
+        expect(tfvars).toContain(`profile      = "${profile}"`)
+        expect(tfvars).toContain(`project_slug = "${slug}"`)
+      })
+
+      it('keeps secrets out of the committed tfvars', () => {
+        // Comments document which TF_VAR_* carries each secret, so assert on
+        // the assignments only.
+        const assignments = gen
+          .read('infrastructure/terraform/terraform.tfvars')
+          .split('\n')
+          .filter((line) => !line.trimStart().startsWith('#'))
+          .join('\n')
+        for (const secret of ['db_password', 'jwt_profile_json', 'token']) {
+          expect(assignments).not.toContain(secret)
         }
+        // ...and the generated .gitignore must not exclude the file itself
+        expect(gen.read('.gitignore')).toContain('!infrastructure/terraform/terraform.tfvars')
       })
 
       it('renders Terraform enabled_apps and enabled_services from selections', () => {
-        const tfvars = gen.read('infrastructure/terraform/environments/dev.tfvars')
+        const tfvars = gen.read('infrastructure/terraform/terraform.tfvars')
         const apps = JSON.parse(/enabled_apps\s+= (\[.*\])/.exec(tfvars)![1]) as string[]
         const services = JSON.parse(/enabled_services = (\[.*\])/.exec(tfvars)![1]) as string[]
         expect(apps.length).toBeGreaterThan(0)
@@ -230,7 +242,7 @@ describe('profile propagation', () => {
 
   it('excludes deselected services from Terraform inputs', () => {
     const gen = generate('product', 'prop-tf-min', { without: ['worker'] })
-    const tfvars = gen.read('infrastructure/terraform/environments/prod.tfvars')
+    const tfvars = gen.read('infrastructure/terraform/terraform.tfvars')
     const services = JSON.parse(/enabled_services = (\[.*\])/.exec(tfvars)![1]) as string[]
     expect(services).toContain('api')
     expect(services).not.toContain('worker')

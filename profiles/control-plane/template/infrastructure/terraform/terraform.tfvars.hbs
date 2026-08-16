@@ -1,0 +1,25 @@
+# {{projectName}} — non-secret Terraform inputs.
+#
+# One apply provisions all four environments (dev, test, stg, prod); the
+# modules fan out over the environment set. This file is committed, so it must
+# never hold secrets. Tokens and passwords arrive through the environment:
+#
+#   doppler run --project koras-infra --config default -- terraform plan
+#
+# Secret inputs supplied as TF_VAR_*:
+#   TF_VAR_supabase_environments   per-env db_password and region
+#   TF_VAR_zitadel_instances       per-instance domain, port, insecure, jwt_profile_json
+
+profile      = "{{profile}}"
+project_name = "{{projectName}}"
+project_slug = "{{projectSlug}}"
+
+enabled_apps     = {{{json vercelProjects}}}
+enabled_services = {{{json flyServices}}}
+
+supabase_region = "{{supabaseRegion}}"
+
+fly_regions = {
+{{#each environments}}  {{this}} = "{{../flyRegion}}"
+{{/each}}
+}

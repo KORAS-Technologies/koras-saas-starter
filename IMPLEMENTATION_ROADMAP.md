@@ -345,6 +345,28 @@ Also resolved: `project-bootstrap/main.tf` hardcoded `["admin", "portal"]` for
 the control-plane profile, overriding the `enabled_apps` the generator computes
 from the manifest. The passed-in value now flows through.
 
+**Follow-up decisions taken before Phase 9 (2026-08-16):**
+
+- **State layout: one workspace per project.** `backend.tf` already pins
+  `workspaces { name = "<slug>" }` and every module fans out over the
+  environment set, so a single apply provisions all four environments. The
+  per-environment `<env>.tfvars` files (starter and templates alike) implied
+  four applies and were removed in favour of one committed, secret-free
+  `terraform.tfvars` per generated project.
+- **ZITADEL credentials are per instance.** The provider has no
+  environment-variable fallback and there are four aliased configurations, so
+  `zitadel_instances` now carries a `jwt_profile_json` field and the whole map
+  is marked sensitive. It is supplied via `TF_VAR_zitadel_instances` from a
+  Doppler-injected shell — never from a file.
+- **Credential source: Doppler.** All other provider tokens reach Terraform as
+  environment variables (`GITHUB_TOKEN`, `DOPPLER_TOKEN`,
+  `SUPABASE_ACCESS_TOKEN`, `VERCEL_API_TOKEN`, `FLY_API_TOKEN`,
+  `CLOUDFLARE_API_TOKEN`) injected by `doppler run`.
+- **Generated projects had no root `.gitignore`** — a generated repository
+  would have committed `node_modules/`, `.terraform/`, and `.env`. Both
+  templates now emit one, with an explicit negation so the secret-free
+  `terraform.tfvars` stays tracked.
+
 **Not executed:** `terraform plan` — it needs live GitHub, Doppler, Supabase,
 ZITADEL, Vercel, Fly, and Cloudflare credentials. That belongs to Phase 9.
 
@@ -468,7 +490,7 @@ writing; generator tests pass for both profiles.
 - Optional components prompted in interactive mode, and selectable
   non-interactively via `--with` / `--without`
 - Profile passed into generated `CLAUDE.md`, `README.md`, `Makefile`, and
-  `infrastructure/terraform/environments/<env>.tfvars`
+  `infrastructure/terraform/terraform.tfvars`
 - All Phase 23 structural generator tests passing
 
 **Done when:** `generate product` and `generate control-plane` tests in

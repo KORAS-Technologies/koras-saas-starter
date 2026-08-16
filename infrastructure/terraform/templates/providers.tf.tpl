@@ -37,7 +37,7 @@ terraform {
 # GitHub:     GITHUB_TOKEN
 # Doppler:    DOPPLER_TOKEN
 # Supabase:   SUPABASE_ACCESS_TOKEN
-# ZITADEL:    Configured per-instance in zitadel_instances variable
+# ZITADEL:    Per-instance credentials in TF_VAR_zitadel_instances
 # Vercel:     VERCEL_API_TOKEN
 # Fly:        FLY_API_TOKEN
 # Cloudflare: CLOUDFLARE_API_TOKEN
@@ -53,32 +53,37 @@ provider "vercel" {
 # KORAS runs four isolated ZITADEL instances. Terraform cannot select a
 # provider dynamically, so each instance gets an explicit aliased
 # configuration, wired into project-bootstrap by alias.
-# Credentials come from the environment (ZITADEL_TOKEN / jwt profile file).
+# The ZITADEL provider has no environment-variable fallback, so each alias
+# carries its own service-user credential from var.zitadel_instances.
 
 provider "zitadel" {
-  alias    = "dev"
-  domain   = var.zitadel_instances["dev"].domain
-  port     = var.zitadel_instances["dev"].port
-  insecure = var.zitadel_instances["dev"].insecure
+  alias            = "dev"
+  domain           = var.zitadel_instances["dev"].domain
+  port             = var.zitadel_instances["dev"].port
+  insecure         = var.zitadel_instances["dev"].insecure
+  jwt_profile_json = var.zitadel_instances["dev"].jwt_profile_json
 }
 
 provider "zitadel" {
-  alias    = "test"
-  domain   = var.zitadel_instances["test"].domain
-  port     = var.zitadel_instances["test"].port
-  insecure = var.zitadel_instances["test"].insecure
+  alias            = "test"
+  domain           = var.zitadel_instances["test"].domain
+  port             = var.zitadel_instances["test"].port
+  insecure         = var.zitadel_instances["test"].insecure
+  jwt_profile_json = var.zitadel_instances["test"].jwt_profile_json
 }
 
 provider "zitadel" {
-  alias    = "stg"
-  domain   = var.zitadel_instances["stg"].domain
-  port     = var.zitadel_instances["stg"].port
-  insecure = var.zitadel_instances["stg"].insecure
+  alias            = "stg"
+  domain           = var.zitadel_instances["stg"].domain
+  port             = var.zitadel_instances["stg"].port
+  insecure         = var.zitadel_instances["stg"].insecure
+  jwt_profile_json = var.zitadel_instances["stg"].jwt_profile_json
 }
 
 provider "zitadel" {
-  alias    = "prod"
-  domain   = var.zitadel_instances["prod"].domain
-  port     = var.zitadel_instances["prod"].port
-  insecure = var.zitadel_instances["prod"].insecure
+  alias            = "prod"
+  domain           = var.zitadel_instances["prod"].domain
+  port             = var.zitadel_instances["prod"].port
+  insecure         = var.zitadel_instances["prod"].insecure
+  jwt_profile_json = var.zitadel_instances["prod"].jwt_profile_json
 }

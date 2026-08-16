@@ -16,14 +16,6 @@ variable "project_slug" {
   type = string
 }
 
-variable "environment" {
-  type = string
-  validation {
-    condition     = contains(["dev", "test", "stg", "prod"], var.environment)
-    error_message = "environment must be one of: dev, test, stg, prod."
-  }
-}
-
 variable "github_org" {
   type = string
 }
@@ -72,10 +64,18 @@ variable "cloudflare_zone_id" {
   type = string
 }
 
-# Connection details for the four isolated ZITADEL instances. Credentials are
-# supplied through the environment, never here.
+# Connection details and credentials for the four isolated ZITADEL instances.
+# The provider has no environment-variable fallback and each instance has its
+# own service user, so credentials are per-instance. Supply this whole map via
+# TF_VAR_zitadel_instances (Doppler-injected) — never in a .tfvars file.
 variable "zitadel_instances" {
-  type = map(object({ domain = string, port = number, insecure = bool }))
+  type = map(object({
+    domain           = string
+    port             = number
+    insecure         = bool
+    jwt_profile_json = string
+  }))
+  sensitive = true
 }
 
 variable "zitadel_redirect_uris" {
