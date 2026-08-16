@@ -1,0 +1,62 @@
+export interface ParsedArgs {
+  project?: string
+  profile?: string
+  provision: boolean
+  dryRun: boolean
+  outputDir: string
+  noInteractive: boolean
+  help: boolean
+  listProfiles: boolean
+}
+
+export function parseArgs(argv: string[]): ParsedArgs {
+  const args = argv.slice(2)
+  const result: ParsedArgs = {
+    provision: false,
+    dryRun: false,
+    outputDir: process.cwd(),
+    noInteractive: false,
+    help: false,
+    listProfiles: false,
+  }
+
+  let i = 0
+  while (i < args.length) {
+    const arg = args[i]
+    switch (arg) {
+      case '--help':
+      case '-h':
+        result.help = true
+        break
+      case '--list-profiles':
+        result.listProfiles = true
+        break
+      case '--provision':
+        result.provision = true
+        break
+      case '--dry-run':
+        result.dryRun = true
+        break
+      case '--no-interactive':
+        result.noInteractive = true
+        break
+      case '--profile':
+        result.profile = args[++i]
+        break
+      case '--output-dir':
+        result.outputDir = args[++i]
+        break
+      default:
+        if (arg.startsWith('--profile=')) {
+          result.profile = arg.split('=')[1]
+        } else if (arg.startsWith('--output-dir=')) {
+          result.outputDir = arg.split('=')[1]
+        } else if (!arg.startsWith('-')) {
+          result.project = arg
+        }
+    }
+    i++
+  }
+
+  return result
+}
