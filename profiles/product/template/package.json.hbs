@@ -1,0 +1,26 @@
+{
+  "name": "{{projectSlug}}",
+  "version": "0.1.0",
+  "private": true,
+  "description": "{{projectName}} — KORAS SaaS product",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "dev": "turbo run dev",
+    "clean": "turbo run clean && rimraf node_modules",
+    "format": "prettier --write \"**/*.{ts,tsx,md,yaml,json}\" --ignore-path .gitignore"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.0",
+    "rimraf": "^6.0.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.5.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

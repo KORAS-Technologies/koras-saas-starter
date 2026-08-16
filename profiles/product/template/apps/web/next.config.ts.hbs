@@ -1,0 +1,15 @@
+import type { NextConfig } from 'next'
+
+const nextConfig: NextConfig = {
+  transpilePackages: [
+    '@{{projectSlug}}/auth',
+    '@{{projectSlug}}/branding',
+    '@{{projectSlug}}/config',
+    '@{{projectSlug}}/feature-flags',
+    '@{{projectSlug}}/tenant',
+    '@{{projectSlug}}/types',
+    '@{{projectSlug}}/ui',
+  ],
+}
+
+export default nextConfig

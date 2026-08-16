@@ -1,0 +1,114 @@
+name: {{projectSlug}}
+
+services:
+  # ── Database (Supabase local) ───────────────────────────────────────────────
+  supabase-db:
+    image: supabase/postgres:15.6.1.143
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "54322:5432"
+    volumes:
+      - supabase-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── ZITADEL (identity provider) ────────────────────────────────────────────
+  zitadel:
+    image: ghcr.io/zitadel/zitadel:latest
+    restart: unless-stopped
+    command: start-from-init --masterkeyFromEnv --tlsMode disabled
+    environment:
+      ZITADEL_MASTERKEY: MasterkeyNeedsToHave32Characters
+      ZITADEL_DATABASE_POSTGRES_HOST: supabase-db
+      ZITADEL_DATABASE_POSTGRES_PORT: 5432
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: postgres
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: postgres
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: postgres
+      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: postgres
+      ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+      ZITADEL_EXTERNALSECURE: "false"
+      ZITADEL_EXTERNALPORT: 8080
+      ZITADEL_EXTERNALDOMAIN: localhost
+    ports:
+      - "8080:8080"
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/zitadel", "ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # ── Redis (queue + cache) ───────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Mail (Mailpit) ──────────────────────────────────────────────────────────
+  mail:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8025/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Storage (MinIO) ─────────────────────────────────────────────────────────
+  storage:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniominio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Proxy (Caddy) ───────────────────────────────────────────────────────────
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./local/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - zitadel
+
+volumes:
+  supabase-db:
+  redis-data:
+  minio-data:
+  caddy-data:

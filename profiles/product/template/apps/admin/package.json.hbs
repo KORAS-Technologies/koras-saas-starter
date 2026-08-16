@@ -1,0 +1,32 @@
+{
+  "name": "@{{projectSlug}}/admin",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@{{projectSlug}}/auth": "workspace:*",
+    "@{{projectSlug}}/audit": "workspace:*",
+    "@{{projectSlug}}/config": "workspace:*",
+    "@{{projectSlug}}/permissions": "workspace:*",
+    "@{{projectSlug}}/tenant": "workspace:*",
+    "@{{projectSlug}}/types": "workspace:*",
+    "@{{projectSlug}}/ui": "workspace:*",
+    "next": "15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.5.0"
+  }
+}

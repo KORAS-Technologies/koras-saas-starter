@@ -1,0 +1,48 @@
+# {{projectName}} — AI Agent Context
+
+## What this repository is
+
+`{{projectSlug}}` is a KORAS SaaS product generated from `koras-saas-starter`
+using `--profile product`.
+
+## Key commands
+
+```bash
+make bootstrap   # first-time setup
+make dev         # start local stack
+make down        # stop containers
+make test        # run all tests
+make health      # verify all services
+```
+
+## Technology stack
+
+- **Frontend:** Next.js 15, TypeScript 5, Tailwind CSS, shadcn/ui
+- **Backend:** FastAPI, Python 3.12+, SQLAlchemy 2, ARQ
+- **Database:** Supabase (PostgreSQL) with RLS
+- **Auth:** ZITADEL (customers never see ZITADEL UI)
+- **Secrets:** Doppler
+- **IaC:** Terraform
+
+## Environment model
+
+| Environment | Branch    |
+|-------------|-----------|
+| `dev`       | `develop` |
+| `test`      | `test`    |
+| `stg`       | `staging` |
+| `prod`      | `main`    |
+
+## Architecture notes
+
+- Tenant isolation is enforced at the database layer via RLS
+- All secrets are sourced from Doppler — nothing is committed
+- The Control Plane client in `packages/api-client` communicates with KORAS
+  Control Plane for provisioning and entitlement checks
+- ZITADEL JWT is validated on every API request in `services/api`
+
+## Generated from
+
+`koras-saas-starter` Phase 3 — product profile template  
+Profile: `product`  
+Generator: `create-koras-app`
