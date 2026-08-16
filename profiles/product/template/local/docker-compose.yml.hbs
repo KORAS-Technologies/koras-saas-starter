@@ -20,7 +20,7 @@ services:
 
   # ── ZITADEL (identity provider) ────────────────────────────────────────────
   zitadel:
-    image: ghcr.io/zitadel/zitadel:latest
+    image: ghcr.io/zitadel/zitadel:v4.17.1
     restart: unless-stopped
     command: start-from-init --masterkeyFromEnv --tlsMode disabled
     environment:
@@ -42,11 +42,9 @@ services:
     depends_on:
       supabase-db:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "/app/zitadel", "ready"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
+    # No container healthcheck: the image is distroless (no curl/wget) and
+    # `zitadel ready` reports not-ready against a server that is serving
+    # traffic. `make health` probes http://localhost:8080/debug/ready instead.
 
   # ── Redis (queue + cache) ───────────────────────────────────────────────────
   redis:
@@ -102,7 +100,8 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./local/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
       - caddy-data:/data
     depends_on:
       - zitadel

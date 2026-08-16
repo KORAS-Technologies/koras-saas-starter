@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Polls every service in the local stack until healthy or times out.
+# Checks match the services the generator actually emitted for this project.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-PROFILE="${KORAS_PROFILE:-product}"
-COMPOSE="docker compose -f ${ROOT}/local/docker/shared.compose.yml -f ${ROOT}/local/docker/${PROFILE}.compose.yml"
+COMPOSE="docker compose -f ${ROOT}/local/docker-compose.yml"
 TIMEOUT="${HEALTH_TIMEOUT:-120}"
 INTERVAL=3
 
-echo "==> Health check (profile: ${PROFILE}, timeout: ${TIMEOUT}s)"
+echo "==> Health check for {{projectSlug}} ({{profile}}) — timeout ${TIMEOUT}s"
 
 # wait_for <name> <shell command>
 wait_for() {
@@ -34,18 +34,13 @@ wait_for "Supabase DB" "${COMPOSE} exec -T supabase-db pg_isready -U postgres"
 wait_for "Redis"       "${COMPOSE} exec -T redis redis-cli ping | grep -q PONG"
 wait_for "ZITADEL"     "curl -sf --max-time 2 http://localhost:8080/debug/ready"
 wait_for "Mailpit"     "curl -sf --max-time 2 http://localhost:8025/"
-wait_for "Grafana"     "curl -sf --max-time 2 http://localhost:3333/api/health"
-
-if [ "$PROFILE" = "product" ]; then
-  wait_for "MinIO" "curl -sf --max-time 2 http://localhost:9000/minio/health/live"
-fi
+wait_for "Proxy"       "${COMPOSE} ps --status running --services | grep -q '^proxy$'"
 
 echo ""
 echo "All services healthy."
 echo ""
-echo "  App:           https://app.localhost"
-echo "  Admin:         https://admin.localhost"
-echo "  API:           https://api.localhost"
-echo "  ZITADEL:       http://localhost:8080/ui/console"
-echo "  Grafana:       http://localhost:3333"
-echo "  Mailpit:       http://localhost:8025"
+{{#if apps.platform_admin}}echo "  Admin:      https://admin.localhost"
+{{/if}}{{#if apps.portal}}echo "  Portal:     https://portal.localhost"
+{{/if}}{{#if service.api}}echo "  API:        https://api.localhost"
+{{/if}}echo "  ZITADEL:    http://localhost:8080/ui/console"
+echo "  Mailpit:    http://localhost:8025"

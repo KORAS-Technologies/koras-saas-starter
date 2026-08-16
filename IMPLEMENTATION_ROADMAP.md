@@ -126,11 +126,10 @@ against schema.
 
 **Prerequisite:** Phase 2 complete
 **Status:** Complete ✓ (verified 2026-08-16 — `--profile product` emits 152
-files; generated `local/docker-compose.yml` passes `docker compose config`.
-`README.md` was missing from the template until Phase 8 and is now delivered.)
-
-**Not yet executed:** `make dev` against a generated project — the exit
-criterion is asserted structurally, not by starting the stack.
+files; the generated stack starts with `make dev` and every service reports
+healthy. `README.md` was missing from the template until Phase 8 and is now
+delivered; the local-stack defects found while starting it are listed under
+Phase 5.)
 
 **Scope:** Full template for `--profile product`.
 
@@ -181,10 +180,8 @@ profiles/product/template/
 **Parallelizable with:** Phase 3
 **Status:** Complete ✓ (verified 2026-08-16 — `--profile control-plane` emits
 139 files, no `apps/web`, no `apps/marketing`, no `services/ai-gateway`;
-generated compose passes `docker compose config`. `README.md` delivered in
-Phase 8.)
-
-**Not yet executed:** `make dev` against a generated project.
+the generated stack starts with `make dev` and every service reports healthy.
+`README.md` delivered in Phase 8.)
 
 **Scope:** Full template for `--profile control-plane`.
 
@@ -222,16 +219,45 @@ profiles/control-plane/template/
 ## Phase 5 — Local Development Stack
 
 **Prerequisite:** Phases 3 and 4 complete
-**Status:** Complete with deviations ✓ (verified 2026-08-16 — all three
-`local/docker/*.compose.yml` files pass `docker compose config`; all seven Make
-targets exist at the repo root and in both templates)
+**Status:** Complete ✓ (fixed and verified 2026-08-16 — both generated
+profiles start from a clean state and pass `make health` on every service)
+
+Bringing the stack up for real exposed six defects that structural checks had
+missed. All are fixed:
+
+1. **Bind mounts resolved one directory too deep.** The compose files mounted
+   `./local/proxy/Caddyfile`, but Compose resolves relative paths against the
+   compose file's own directory — giving `local/local/...` in generated
+   projects and `local/docker/local/...` in the starter. Every container with a
+   config mount failed to start. Paths are now `./proxy/...` (templates) and
+   `../proxy/...` (starter).
+2. **Caddy had no access to the certificates it requires.** The generated
+   compose never mounted `./certs`, so Caddy crash-looped on
+   `open /certs/app.localhost.pem: no such file or directory` even after
+   `make bootstrap` generated them.
+3. **The Caddyfile was not profile-aware.** Both profiles shipped an identical
+   file listing product-only (`www`) *and* control-plane-only (`portal`) hosts.
+   Caddy refuses to start when a referenced certificate is missing, so any
+   project that did not enable every optional app failed. `Caddyfile.hbs` and
+   `certs/generate.sh.hbs` are now rendered from the component selections.
+4. **Proxy upstreams pointed at the container's own loopback.** Apps run on the
+   host via `pnpm turbo run dev`, so `localhost:3000` inside the Caddy
+   container reached nothing; now `host.docker.internal`. ZITADEL runs in the
+   network and is reached by service name.
+5. **The ZITADEL healthcheck always failed.** `/app/zitadel ready` reports
+   not-ready against a server that is serving traffic, and the image is
+   distroless so curl/wget are unavailable. The container healthcheck is
+   removed; `make health` probes `/debug/ready` over HTTP. The image is also
+   pinned (`v4.17.1`) — `:latest` broke deterministic generation.
+6. **`health.sh` checked the wrong things.** It curled HTTP against the
+   Postgres port (which can never answer) and polled a Grafana that the
+   generated stack does not run. Checks now use `pg_isready` and `redis-cli`
+   in-container and match the services each profile actually emits.
 
 **Deviations:** `local/mail/mailpit.yml` and `local/storage/minio.yml` were not
 created — Mailpit and MinIO are configured inline in the compose files, which
 is simpler and equivalent. `local/certs/README.md` is absent; `generate.sh` is
 self-documenting.
-
-**Not yet executed:** `make health` from a clean state on a generated project.
 
 **Scope:** Fully functional local development environment for both profiles.
 

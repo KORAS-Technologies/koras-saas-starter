@@ -19,7 +19,7 @@ services:
       retries: 10
 
   zitadel:
-    image: ghcr.io/zitadel/zitadel:latest
+    image: ghcr.io/zitadel/zitadel:v4.17.1
     restart: unless-stopped
     command: start-from-init --masterkeyFromEnv --tlsMode disabled
     environment:
@@ -41,11 +41,9 @@ services:
     depends_on:
       supabase-db:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "/app/zitadel", "ready"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
+    # No container healthcheck: the image is distroless (no curl/wget) and
+    # `zitadel ready` reports not-ready against a server that is serving
+    # traffic. `make health` probes http://localhost:8080/debug/ready instead.
 
   redis:
     image: redis:7-alpine
@@ -55,7 +53,7 @@ services:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
-      - ./local/queue/redis.conf:/etc/redis/redis.conf:ro
+      - ../queue/redis.conf:/etc/redis/redis.conf:ro
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -79,7 +77,7 @@ services:
     restart: unless-stopped
     command: ["--config=/etc/otelcol/config.yml"]
     volumes:
-      - ./local/observability/otel-collector.yml:/etc/otelcol/config.yml:ro
+      - ../observability/otel-collector.yml:/etc/otelcol/config.yml:ro
     ports:
       - "4317:4317"   # OTLP gRPC
       - "4318:4318"   # OTLP HTTP
@@ -92,7 +90,7 @@ services:
     restart: unless-stopped
     command: -config.file=/etc/loki/config.yml
     volumes:
-      - ./local/observability/loki.yml:/etc/loki/config.yml:ro
+      - ../observability/loki.yml:/etc/loki/config.yml:ro
       - loki-data:/tmp/loki
     ports:
       - "3100:3100"
@@ -102,7 +100,7 @@ services:
     restart: unless-stopped
     command: -config.file=/etc/tempo/config.yml
     volumes:
-      - ./local/observability/tempo.yml:/etc/tempo/config.yml:ro
+      - ../observability/tempo.yml:/etc/tempo/config.yml:ro
       - tempo-data:/tmp/tempo
     ports:
       - "3200:3200"
@@ -115,8 +113,8 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
     volumes:
-      - ./local/observability/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./local/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
       - "${GRAFANA_PORT:-3333}:3000"
@@ -131,8 +129,8 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./local/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./local/certs:/certs:ro
+      - ../proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../certs:/certs:ro
       - caddy-data:/data
 
 volumes:

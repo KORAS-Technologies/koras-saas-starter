@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Generates locally-trusted TLS certificates using mkcert.
+# Domains match the applications selected at generation time — the Caddyfile
+# refuses to start if a certificate it references is missing.
 # Run once after `mkcert -install`.
 set -euo pipefail
 
@@ -17,12 +19,12 @@ fi
 mkcert -install
 
 domains=(
-  "app.localhost"
-  "admin.localhost"
-  "www.localhost"
-  "portal.localhost"
-  "api.localhost"
-  "auth.localhost"
+{{#if apps.web}}  "app.localhost"
+{{/if}}{{#if apps.admin}}  "admin.localhost"
+{{/if}}{{#if apps.marketing}}  "www.localhost"
+{{/if}}{{#if service.api}}  "api.localhost"
+{{/if}}{{#if service.ai_gateway}}  "ai.localhost"
+{{/if}}  "auth.localhost"
 )
 
 for domain in "${domains[@]}"; do

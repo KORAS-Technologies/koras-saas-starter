@@ -1,0 +1,39 @@
+# Local development reverse proxy for {{projectName}} ({{profile}} profile).
+#
+# Only the applications selected at generation time get a host block — Caddy
+# fails to start if it is told to load a certificate that was never generated.
+# TLS certificates come from local/certs/generate.sh (run by `make bootstrap`)
+# and are mounted read-only at /certs.
+#
+# Upstreams use host.docker.internal because the apps and API run on the host
+# via `pnpm turbo run dev`, not inside this network.
+
+{
+	local_certs
+	auto_https off
+}
+
+{{#if apps.platform_admin}}
+admin.localhost {
+	tls /certs/admin.localhost.pem /certs/admin.localhost-key.pem
+	reverse_proxy host.docker.internal:3000
+}
+{{/if}}
+{{#if apps.portal}}
+portal.localhost {
+	tls /certs/portal.localhost.pem /certs/portal.localhost-key.pem
+	reverse_proxy host.docker.internal:3001
+}
+{{/if}}
+{{#if service.api}}
+api.localhost {
+	tls /certs/api.localhost.pem /certs/api.localhost-key.pem
+	reverse_proxy host.docker.internal:8000
+}
+{{/if}}
+
+# ZITADEL runs inside this network, so it is reached by service name.
+auth.localhost {
+	tls /certs/auth.localhost.pem /certs/auth.localhost-key.pem
+	reverse_proxy zitadel:8080
+}
