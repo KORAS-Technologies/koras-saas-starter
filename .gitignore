@@ -26,6 +26,9 @@ htmlcov/
 *.tfstate.backup
 *.tfvars
 *.tfvars.json
+# Checked-in, secret-free environment inputs. Real values (tokens, passwords)
+# come from Doppler and are passed via -var / TF_VAR_*, never from these files.
+!infrastructure/terraform/environments/*.tfvars
 override.tf
 override.tf.json
 *_override.tf

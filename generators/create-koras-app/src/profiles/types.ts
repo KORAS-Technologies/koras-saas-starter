@@ -49,6 +49,16 @@ const TemplateMapSchema = z.object({
 
 export type TemplateMap = z.infer<typeof TemplateMapSchema>
 
+// Directories copied verbatim from the starter repository into the generated
+// project. Used for assets that must stay single-sourced rather than being
+// duplicated into each profile template (Terraform modules, for example).
+const SharedAssetSchema = z.object({
+  source: z.string(),
+  target: z.string(),
+})
+
+export type SharedAsset = z.infer<typeof SharedAssetSchema>
+
 // ── Profile manifest ───────────────────────────────────────────────────────
 
 export const ProfileManifestSchema = z.object({
@@ -65,6 +75,7 @@ export const ProfileManifestSchema = z.object({
     services: {},
     capabilities: {},
   }),
+  shared_assets: z.array(SharedAssetSchema).default([]),
 })
 
 export type ProfileManifest = z.infer<typeof ProfileManifestSchema>

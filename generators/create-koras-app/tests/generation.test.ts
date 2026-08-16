@@ -237,6 +237,36 @@ describe('profile propagation', () => {
   })
 })
 
+// ── shared assets ────────────────────────────────────────────────────────────
+
+describe('shared assets', () => {
+  it('bundles the Terraform modules into both profiles', () => {
+    for (const [profile, slug] of [
+      ['product', 'assets-product'],
+      ['control-plane', 'assets-cp'],
+    ] as Array<[ProfileName, string]>) {
+      const gen = generate(profile, slug)
+      for (const mod of ['project-bootstrap', 'github', 'doppler', 'supabase', 'zitadel']) {
+        expect(gen.has(`infrastructure/terraform/modules/${mod}`)).toBe(true)
+      }
+      // the root module resolves the bundled copy, not a path outside the project
+      expect(gen.read('infrastructure/terraform/main.tf')).toContain(
+        'source = "./modules/project-bootstrap"',
+      )
+    }
+  })
+
+  it('copies shared assets verbatim, without Handlebars rendering', () => {
+    const gen = generate('product', 'assets-verbatim')
+    const generated = gen.read('infrastructure/terraform/modules/zitadel/main.tf')
+    const source = readFileSync(
+      join(process.cwd(), '../../infrastructure/terraform/modules/zitadel/main.tf'),
+      'utf8',
+    )
+    expect(generated).toBe(source)
+  })
+})
+
 // ── infrastructure naming ────────────────────────────────────────────────────
 
 describe('infrastructure naming', () => {

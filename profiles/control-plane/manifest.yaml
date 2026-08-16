@@ -73,3 +73,10 @@ template_map:
     worker: services/worker
     scheduler: services/scheduler
   capabilities: {}
+
+# Directories copied verbatim from the starter into the generated project.
+# Terraform modules stay single-sourced here rather than being duplicated
+# into each profile template.
+shared_assets:
+  - source: infrastructure/terraform/modules
+    target: infrastructure/terraform/modules

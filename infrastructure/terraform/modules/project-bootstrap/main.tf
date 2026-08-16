@@ -1,9 +1,9 @@
 locals {
-  # Profile-specific Vercel applications
-  vercel_apps = var.profile == "control-plane" ? ["admin", "portal"] : var.enabled_apps
-
-  # Profile-specific Fly services
-  fly_services = var.profile == "control-plane" ? ["api", "worker", "scheduler"] : var.enabled_services
+  # enabled_apps and enabled_services come from the generator, which resolves
+  # them from the profile manifest and the user's component selections. Do not
+  # re-derive them from the profile here — that would duplicate the manifest.
+  vercel_apps  = var.enabled_apps
+  fly_services = var.enabled_services
 }
 
 module "github" {
@@ -29,12 +29,49 @@ module "supabase" {
   environments    = var.supabase_environments
 }
 
-module "zitadel" {
-  source = "../zitadel"
+# One module instance per ZITADEL instance. Terraform cannot index providers,
+# so each environment is wired explicitly to its aliased provider.
+
+module "zitadel_dev" {
+  source    = "../zitadel"
+  providers = { zitadel = zitadel.dev }
 
   project_slug              = var.project_slug
   profile                   = var.profile
-  zitadel_instances         = var.zitadel_instances
+  environment               = "dev"
+  redirect_uris             = var.zitadel_redirect_uris
+  post_logout_redirect_uris = var.zitadel_post_logout_redirect_uris
+}
+
+module "zitadel_test" {
+  source    = "../zitadel"
+  providers = { zitadel = zitadel.test }
+
+  project_slug              = var.project_slug
+  profile                   = var.profile
+  environment               = "test"
+  redirect_uris             = var.zitadel_redirect_uris
+  post_logout_redirect_uris = var.zitadel_post_logout_redirect_uris
+}
+
+module "zitadel_stg" {
+  source    = "../zitadel"
+  providers = { zitadel = zitadel.stg }
+
+  project_slug              = var.project_slug
+  profile                   = var.profile
+  environment               = "stg"
+  redirect_uris             = var.zitadel_redirect_uris
+  post_logout_redirect_uris = var.zitadel_post_logout_redirect_uris
+}
+
+module "zitadel_prod" {
+  source    = "../zitadel"
+  providers = { zitadel = zitadel.prod }
+
+  project_slug              = var.project_slug
+  profile                   = var.profile
+  environment               = "prod"
   redirect_uris             = var.zitadel_redirect_uris
   post_logout_redirect_uris = var.zitadel_post_logout_redirect_uris
 }

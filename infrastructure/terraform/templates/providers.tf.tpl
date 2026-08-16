@@ -24,7 +24,7 @@ terraform {
     }
     fly = {
       source  = "fly-apps/fly"
-      version = "~> 0.1"
+      version = "~> 0.0.9"
     }
     cloudflare = {
       source  = "cloudflare/cloudflare"
@@ -48,4 +48,37 @@ provider "github" {
 
 provider "vercel" {
   team = var.vercel_team_id
+}
+
+# KORAS runs four isolated ZITADEL instances. Terraform cannot select a
+# provider dynamically, so each instance gets an explicit aliased
+# configuration, wired into project-bootstrap by alias.
+# Credentials come from the environment (ZITADEL_TOKEN / jwt profile file).
+
+provider "zitadel" {
+  alias    = "dev"
+  domain   = var.zitadel_instances["dev"].domain
+  port     = var.zitadel_instances["dev"].port
+  insecure = var.zitadel_instances["dev"].insecure
+}
+
+provider "zitadel" {
+  alias    = "test"
+  domain   = var.zitadel_instances["test"].domain
+  port     = var.zitadel_instances["test"].port
+  insecure = var.zitadel_instances["test"].insecure
+}
+
+provider "zitadel" {
+  alias    = "stg"
+  domain   = var.zitadel_instances["stg"].domain
+  port     = var.zitadel_instances["stg"].port
+  insecure = var.zitadel_instances["stg"].insecure
+}
+
+provider "zitadel" {
+  alias    = "prod"
+  domain   = var.zitadel_instances["prod"].domain
+  port     = var.zitadel_instances["prod"].port
+  insecure = var.zitadel_instances["prod"].insecure
 }

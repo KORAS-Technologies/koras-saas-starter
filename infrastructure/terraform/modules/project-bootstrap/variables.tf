@@ -65,15 +65,10 @@ variable "cloudflare_zone_id" {
 }
 
 # ── ZITADEL instances ─────────────────────────────────────────────────────────
-
-variable "zitadel_instances" {
-  type = map(object({
-    domain   = string
-    port     = number
-    insecure = bool
-  }))
-  description = "Map of env key → ZITADEL instance. Must include dev, test, stg, prod."
-}
+#
+# Instance connection details are NOT passed in as a variable — each instance is
+# a separate aliased provider configured in the root module and wired here via
+# the `providers` argument.
 
 variable "zitadel_redirect_uris" {
   type    = list(string)

@@ -20,12 +20,23 @@ output "supabase_project_api_urls" {
 }
 
 output "zitadel_project_ids" {
-  value = module.zitadel.project_ids
+  description = "Map of env → ZITADEL project ID"
+  value = {
+    dev  = module.zitadel_dev.project_id
+    test = module.zitadel_test.project_id
+    stg  = module.zitadel_stg.project_id
+    prod = module.zitadel_prod.project_id
+  }
 }
 
 output "zitadel_client_ids" {
-  description = "OIDC client IDs (non-secret)"
-  value       = module.zitadel.client_ids
+  description = "Map of env → OIDC client ID (non-secret)"
+  value = {
+    dev  = module.zitadel_dev.client_id
+    test = module.zitadel_test.client_id
+    stg  = module.zitadel_stg.client_id
+    prod = module.zitadel_prod.client_id
+  }
 }
 
 output "vercel_project_ids" {

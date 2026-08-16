@@ -86,3 +86,10 @@ template_map:
     control_plane_client: packages/control-plane-client
     custom_domains: packages/domains
     feature_flags: packages/feature-flags
+
+# Directories copied verbatim from the starter into the generated project.
+# Terraform modules stay single-sourced here rather than being duplicated
+# into each profile template.
+shared_assets:
+  - source: infrastructure/terraform/modules
+    target: infrastructure/terraform/modules

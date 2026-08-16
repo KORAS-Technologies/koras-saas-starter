@@ -288,31 +288,39 @@ local/
 ## Phase 6 — Terraform Modules
 
 **Prerequisite:** Phase 5 complete
-**Status:** INCOMPLETE ✗ (audited 2026-08-16 — exit criterion not met)
+**Status:** Complete ✓ (fixed and verified 2026-08-16 — `terraform validate`
+passes for generated product and control-plane configurations)
 
-All module files exist and six of eight modules validate cleanly
-(`github`, `doppler`, `supabase`, `vercel`, `cloudflare`, `project-bootstrap`
-structure). Three defects block the exit criterion:
+The initial implementation did not meet the exit criterion. An audit on
+2026-08-16 found five defects, all since fixed:
 
-1. **`modules/zitadel/main.tf` is invalid HCL.** Lines 11 and 24 use
-   `provider = zitadel[each.key]`. Terraform does not support dynamic provider
-   selection by key — `terraform init` fails with "Invalid provider
-   configuration reference". Fix: make the module single-instance and
-   instantiate it once per ZITADEL instance from `project-bootstrap` with an
-   explicit `providers = { zitadel = zitadel.dev }` mapping.
-2. **`modules/fly/providers.tf` pins an unreleasable version.**
-   `fly-apps/fly ~> 0.1` matches nothing; the latest published release is
-   `0.0.9`. `terraform init` cannot resolve the provider.
-3. **`infrastructure/terraform/environments/*.tfvars` are untracked** — the
-   root `.gitignore` rule `*.tfvars` (line 27) silently excludes them. They
-   hold no secrets. Either add a negation for this directory or rename to
-   `.tfvars.example`.
+1. **`modules/zitadel` used `provider = zitadel[each.key]`** — Terraform has no
+   dynamic provider selection, so `init` failed outright. The module is now
+   single-instance and `project-bootstrap` instantiates it four times, each
+   wired to an aliased provider (`providers = { zitadel = zitadel.dev }`).
+   The root module declares the four aliased `provider "zitadel"` blocks and
+   `project-bootstrap` declares matching `configuration_aliases`.
+2. **`modules/fly` pinned `fly-apps/fly ~> 0.1`**, which matches no published
+   release. Corrected to `~> 0.0.9` in all five places it appears.
+3. **Generated projects could not resolve the modules.** The root module
+   pointed at `../../infrastructure/terraform/modules/...`, a path outside a
+   generated repository. Manifests now declare a `shared_assets` block and the
+   generator copies `infrastructure/terraform/modules` verbatim into each
+   generated project, which sources `./modules/project-bootstrap`. Modules stay
+   single-sourced in the starter rather than duplicated per profile template.
+4. **Generated `variables.tf` was invalid HCL** — single-line blocks with
+   `;` separators (`variable "enabled_apps" { type = list(string); default = [] }`)
+   are rejected by the parser. Rewritten as multi-line blocks.
+5. **`infrastructure/terraform/environments/*.tfvars` were untracked** — the
+   root `*.tfvars` ignore rule swallowed them. A negation now keeps this
+   secret-free directory in version control.
 
-**Also worth resolving:** `project-bootstrap/main.tf` hardcodes
-`["admin", "portal"]` for the control-plane profile, overriding the
-`enabled_apps` the generator now computes correctly (`platform_admin`,
-`portal`). Let the passed-in value flow through instead of duplicating the
-manifest in HCL.
+Also resolved: `project-bootstrap/main.tf` hardcoded `["admin", "portal"]` for
+the control-plane profile, overriding the `enabled_apps` the generator computes
+from the manifest. The passed-in value now flows through.
+
+**Not executed:** `terraform plan` — it needs live GitHub, Doppler, Supabase,
+ZITADEL, Vercel, Fly, and Cloudflare credentials. That belongs to Phase 9.
 
 **Scope:** Reusable, profile-aware Terraform modules.
 

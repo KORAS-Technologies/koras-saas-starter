@@ -1,11 +1,12 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs'
 import { join, relative, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Handlebars from 'handlebars'
 import type { GenerationContext } from './context.js'
 import { contextToTemplateVars } from './context.js'
 
-const PROFILES_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../../../profiles')
+const STARTER_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../../..')
+const PROFILES_ROOT = join(STARTER_ROOT, 'profiles')
 
 // `json` renders arrays/objects as JSON — valid HCL list syntax as well.
 Handlebars.registerHelper('json', (value: unknown) => JSON.stringify(value))
@@ -49,13 +50,43 @@ export function renderTemplate(ctx: GenerationContext): RenderedFile[] {
   const vars = contextToTemplateVars(ctx)
   const excluded = excludedSubtrees(ctx)
   const all = walkDirectory(templateDir, templateDir, vars)
-  return all.filter((f) => shouldInclude(f.outputPath, excluded))
+  return [
+    ...all.filter((f) => shouldInclude(f.outputPath, excluded)),
+    ...collectSharedAssets(ctx),
+  ]
+}
+
+/**
+ * Copies manifest-declared shared asset directories verbatim. Contents are
+ * never passed through Handlebars — Terraform's `${...}` interpolation and
+ * Handlebars' `{{...}}` do not collide, but these files are shared source of
+ * truth and must land byte-identical.
+ */
+function collectSharedAssets(ctx: GenerationContext): RenderedFile[] {
+  const results: RenderedFile[] = []
+
+  for (const asset of ctx.manifest.shared_assets) {
+    const sourceDir = join(STARTER_ROOT, asset.source)
+    if (!existsSync(sourceDir)) {
+      throw new Error(
+        `Shared asset directory "${asset.source}" declared by profile ` +
+          `"${ctx.profile}" does not exist at ${sourceDir}.`,
+      )
+    }
+
+    for (const file of walkDirectory(sourceDir, sourceDir, {}, false)) {
+      results.push({ ...file, outputPath: `${asset.target}/${file.outputPath}` })
+    }
+  }
+
+  return results
 }
 
 function walkDirectory(
   rootDir: string,
   currentDir: string,
   vars: Record<string, unknown>,
+  renderTemplates = true,
 ): RenderedFile[] {
   const results: RenderedFile[] = []
   const entries = readdirSync(currentDir)
@@ -65,11 +96,11 @@ function walkDirectory(
     const stat = statSync(sourcePath)
 
     if (stat.isDirectory()) {
-      results.push(...walkDirectory(rootDir, sourcePath, vars))
+      results.push(...walkDirectory(rootDir, sourcePath, vars, renderTemplates))
     } else {
       // normalize to forward slashes so paths are platform-independent
       const relPath = relative(rootDir, sourcePath).replace(/\\/g, '/')
-      const isTemplate = entry.endsWith('.hbs')
+      const isTemplate = renderTemplates && entry.endsWith('.hbs')
       const outputRelPath = isTemplate ? relPath.slice(0, -4) : relPath
 
       if (isTemplate) {

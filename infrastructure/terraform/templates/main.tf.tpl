@@ -1,9 +1,17 @@
 module "bootstrap" {
-  source = "../../infrastructure/terraform/modules/project-bootstrap"
+  source = "./modules/project-bootstrap"
 
-  project_name = "{{projectName}}"
-  project_slug = "{{projectSlug}}"
-  profile      = "{{profile}}"
+  # Each ZITADEL instance is a distinct aliased provider.
+  providers = {
+    zitadel.dev  = zitadel.dev
+    zitadel.test = zitadel.test
+    zitadel.stg  = zitadel.stg
+    zitadel.prod = zitadel.prod
+  }
+
+  project_name = var.project_name
+  project_slug = var.project_slug
+  profile      = var.profile
 
   github_org     = var.github_org
   primary_domain = var.primary_domain
@@ -20,7 +28,11 @@ module "bootstrap" {
 
   cloudflare_zone_id = var.cloudflare_zone_id
 
-  zitadel_instances                 = var.zitadel_instances
   zitadel_redirect_uris             = var.zitadel_redirect_uris
   zitadel_post_logout_redirect_uris = var.zitadel_post_logout_redirect_uris
+}
+
+output "profile" {
+  description = "Generator profile this project was created with."
+  value       = var.profile
 }
