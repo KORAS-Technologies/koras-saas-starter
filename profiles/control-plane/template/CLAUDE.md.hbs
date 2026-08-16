@@ -1,0 +1,57 @@
+# {{projectName}} — AI Agent Context
+
+## What this repository is
+
+`{{projectSlug}}` is the **KORAS Control Plane** — the platform provisioning and
+entitlement authority for all KORAS SaaS products. Generated from
+`koras-saas-starter` using `--profile control-plane`.
+
+## Critical rules
+
+- This is NOT a normal SaaS product. Do not add tenant tables or billing flows.
+- Product registration endpoints live here; the Control Plane never registers itself.
+- The Control Plane must bootstrap without requiring a pre-existing Control Plane.
+
+## Key commands
+
+```bash
+make bootstrap   # first-time setup
+make dev         # start local stack
+make down        # stop containers
+make test        # run all tests
+make health      # verify all services
+```
+
+## Technology stack
+
+- **Frontend:** Next.js 15, TypeScript 5, Tailwind CSS, shadcn/ui
+- **Backend:** FastAPI, Python 3.12+, SQLAlchemy 2, ARQ
+- **Database:** Supabase (PostgreSQL) with RLS
+- **Auth:** ZITADEL (KORAS staff identity — MFA enforced)
+- **Secrets:** Doppler
+
+## Environment model
+
+| Environment | Branch    |
+|-------------|-----------|
+| `dev`       | `develop` |
+| `test`      | `test`    |
+| `stg`       | `staging` |
+| `prod`      | `main`    |
+
+## Platform capabilities
+
+- Product registry — register and manage KORAS products
+- Organization registry — manage customer organizations
+- Tenant registry — manage tenants across products
+- Provisioning authority — orchestrate product infrastructure
+- Reconciliation engine — drift detection and correction
+- Subscription management — plan and billing lifecycle
+- Entitlement authority — feature gate decisions
+- Infrastructure registry — track all provisioned resources
+
+## Generated from
+
+`koras-saas-starter` Phase 4 — control-plane profile template  
+Profile: `control-plane`  
+Generator: `create-koras-app`

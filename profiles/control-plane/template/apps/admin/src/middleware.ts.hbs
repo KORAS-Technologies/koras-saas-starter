@@ -1,0 +1,25 @@
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { verifySession } from '@{{projectSlug}}/auth'
+
+// Platform admin — all routes require authentication
+const PUBLIC_PATHS = ['/login']
+
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
+  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return NextResponse.next()
+
+  const session = await verifySession(request)
+  if (!session) {
+    return NextResponse.redirect(new URL('/login', request.url))
+  }
+
+  // Enforce platform staff role
+  if (!session.claims.roles.includes('platform:admin')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  return NextResponse.next()
+}
+
+export const config = { matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'] }
