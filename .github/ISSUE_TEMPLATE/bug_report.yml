@@ -1,0 +1,64 @@
+name: Bug Report
+description: Report a defect in the generator, a profile template, or a shared package
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, search existing issues to avoid duplicates.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Generator CLI
+        - Profile — product
+        - Profile — control-plane
+        - TypeScript packages
+        - Python packages
+        - Terraform modules
+        - Local development stack
+        - CI/CD
+        - Documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What went wrong?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `pnpm create-koras-app ...`
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS
+    validations:
+      required: false
+
+  - type: input
+    id: node
+    attributes:
+      label: Node version (`node --version`)
+    validations:
+      required: false

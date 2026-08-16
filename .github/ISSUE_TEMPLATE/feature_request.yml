@@ -1,0 +1,42 @@
+name: Feature Request
+description: Propose a new capability for the generator, a profile, or shared packages
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Generator CLI
+        - New profile
+        - Profile — product
+        - Profile — control-plane
+        - TypeScript packages
+        - Python packages
+        - Terraform modules
+        - Local development stack
+        - CI/CD
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What gap does this fill?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false

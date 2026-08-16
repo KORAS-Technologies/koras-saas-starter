@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "generators/create-koras-app/**"
+      - "profiles/**"
+
+jobs:
+  release:
+    name: Publish generator
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build generator
+        run: pnpm turbo run build --filter=create-koras-app
+
+      # Placeholder — publishing logic implemented in Phase 11
+      - name: Publish (stub)
+        run: echo "Release publishing implemented in Phase 11"

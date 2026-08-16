@@ -1,0 +1,60 @@
+name: Generator Integration
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "generators/**"
+      - "profiles/**"
+  workflow_dispatch:
+
+jobs:
+  generate-product:
+    name: Generate product project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build generator
+        run: pnpm turbo run build --filter=create-koras-app
+
+      # Stub — full integration test implemented in Phase 11
+      - name: Generate (dry-run)
+        run: echo "pnpm create-koras-app sampleapp --profile product --dry-run"
+
+  generate-control-plane:
+    name: Generate control-plane project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build generator
+        run: pnpm turbo run build --filter=create-koras-app
+
+      # Stub — full integration test implemented in Phase 11
+      - name: Generate (dry-run)
+        run: echo "pnpm create-koras-app koras-control-plane --profile control-plane --dry-run"

@@ -1,0 +1,4 @@
+contact_links:
+  - name: KORAS Architecture Discussions
+    url: https://github.com/koras-org/koras-saas-starter/discussions
+    about: Design questions and ADR proposals

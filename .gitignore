@@ -1,0 +1,56 @@
+# Node
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+.next/
+.turbo/
+out/
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Environment / secrets — NEVER commit these
+.env
+.env.*
+!.env.*.example
+!.env.local.example
+doppler.yaml
+
+# Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Local dev
+local/certs/*.pem
+local/certs/*.key
+local/certs/*.crt
+
+# Test artifacts
+coverage/
+junit.xml
