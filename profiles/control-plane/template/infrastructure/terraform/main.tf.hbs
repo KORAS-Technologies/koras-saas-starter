@@ -1,0 +1,26 @@
+module "bootstrap" {
+  source = "../../infrastructure/terraform/modules/project-bootstrap"
+
+  project_name = "{{projectName}}"
+  project_slug = "{{projectSlug}}"
+  profile      = "{{profile}}"
+
+  github_org     = var.github_org
+  primary_domain = var.primary_domain
+
+  enabled_apps     = var.enabled_apps
+  enabled_services = var.enabled_services
+
+  supabase_org_id       = var.supabase_org_id
+  supabase_environments = var.supabase_environments
+
+  vercel_team_id = var.vercel_team_id
+  fly_org_slug   = var.fly_org_slug
+  fly_regions    = var.fly_regions
+
+  cloudflare_zone_id = var.cloudflare_zone_id
+
+  zitadel_instances                 = var.zitadel_instances
+  zitadel_redirect_uris             = var.zitadel_redirect_uris
+  zitadel_post_logout_redirect_uris = var.zitadel_post_logout_redirect_uris
+}
