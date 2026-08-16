@@ -16,24 +16,31 @@ install: ## Install all dependencies (Node + Python)
 	uv sync
 
 bootstrap: install ## Full local environment setup (certs, images, ZITADEL init)
-	@echo "bootstrap: stub — implemented in Phase 5"
+	KORAS_PROFILE=$(PROFILE) bash local/scripts/bootstrap.sh
 
 # ── Local development ─────────────────────────────────────────────────────────
 
+PROFILE ?= product
+COMPOSE_BASE = -f local/docker/shared.compose.yml
+COMPOSE_PRODUCT = $(COMPOSE_BASE) -f local/docker/product.compose.yml
+COMPOSE_CP = $(COMPOSE_BASE) -f local/docker/control-plane.compose.yml
+COMPOSE_FILES = $(if $(filter control-plane,$(PROFILE)),$(COMPOSE_CP),$(COMPOSE_PRODUCT))
+
 dev: ## Start the full local development stack
-	@echo "dev: stub — implemented in Phase 5"
+	docker compose $(COMPOSE_FILES) up -d
+	pnpm turbo run dev
 
 down: ## Stop and clean local containers
-	@echo "down: stub — implemented in Phase 5"
+	docker compose $(COMPOSE_FILES) down
 
-reset: down bootstrap ## Wipe volumes and re-bootstrap
-	@echo "reset: stub — implemented in Phase 5"
+reset: ## Wipe volumes and re-bootstrap
+	KORAS_PROFILE=$(PROFILE) bash local/scripts/reset.sh
 
 seed: ## Populate development fixtures
-	@echo "seed: stub — implemented in Phase 5"
+	bash local/scripts/seed.sh
 
 health: ## Poll all local services until healthy
-	@echo "health: stub — implemented in Phase 5"
+	bash local/scripts/health.sh
 
 # ── Quality ───────────────────────────────────────────────────────────────────
 

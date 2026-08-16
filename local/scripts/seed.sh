@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Seeds the local database with development fixtures.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+DB_URL="${DATABASE_URL:-postgresql://postgres:postgres@localhost:54322/postgres}"
+
+echo "==> Seeding local database..."
+
+# Run SQL seed files in order
+for seed_file in "$ROOT"/supabase/seed/*.sql; do
+  [ -f "$seed_file" ] || continue
+  echo "  Applying: $(basename "$seed_file")"
+  psql "$DB_URL" -f "$seed_file" --quiet
+done
+
+echo ""
+echo "Seed complete."

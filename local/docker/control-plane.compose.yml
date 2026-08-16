@@ -1,0 +1,9 @@
+# Control Plane local development stack.
+# No MinIO, no AI gateway — leaner stack for platform services.
+# Usage: docker compose -f local/docker/shared.compose.yml -f local/docker/control-plane.compose.yml up -d
+
+include:
+  - path: ./local/docker/shared.compose.yml
+
+# No additional services for control-plane beyond the shared set.
+# Worker and scheduler connect to the same Redis instance defined in shared.compose.yml.

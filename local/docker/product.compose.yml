@@ -1,0 +1,42 @@
+# Product profile local development stack.
+# Usage: docker compose -f local/docker/shared.compose.yml -f local/docker/product.compose.yml up -d
+
+include:
+  - path: ./local/docker/shared.compose.yml
+
+services:
+  storage:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniominio}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ai-gateway:
+    image: ghcr.io/berriai/litellm:main-latest
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-local-dev}
+    volumes:
+      - ./local/ai/litellm.yml:/app/config.yaml:ro
+    ports:
+      - "${AI_GATEWAY_PORT:-4000}:4000"
+    profiles:
+      - ai  # opt-in with: docker compose --profile ai up
+
+volumes:
+  minio-data:

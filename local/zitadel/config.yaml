@@ -1,0 +1,15 @@
+Log:
+  Level: info
+
+FirstInstance:
+  Org:
+    Name: KORAS Local
+    Human:
+      UserName: admin@koras.local
+      FirstName: KORAS
+      LastName: Admin
+      Email:
+        Address: admin@koras.local
+        Verified: true
+      Password: Password1!
+      PasswordChangeRequired: false
