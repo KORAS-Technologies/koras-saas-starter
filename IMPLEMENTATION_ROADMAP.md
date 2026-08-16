@@ -40,6 +40,12 @@ before explicit approval.
 ## Phase 1 — Shared Repository Foundation
 
 **Prerequisite:** Phase 0 approved
+**Status:** Complete ✓ (verified 2026-08-16 — `pnpm install` and
+`turbo run build` both exit 0)
+
+**Deviation:** `.devcontainer/Dockerfile` was not needed — `devcontainer.json`
+uses the prebuilt `typescript-node:1-20` image plus Dev Container features
+(python, docker-in-docker, terraform, gh). Accepted.
 
 **Scope:** Monorepo skeleton shared by both profiles.
 
@@ -84,6 +90,8 @@ tests/.gitkeep
 ## Phase 2 — Profile Architecture
 
 **Prerequisite:** Phase 1 complete
+**Status:** Complete ✓ (verified 2026-08-16 — 48 profile-loader tests pass;
+both manifests validate against the Zod schema)
 
 **Scope:** Declarative profile system — manifests and loader.
 
@@ -117,6 +125,12 @@ against schema.
 ## Phase 3 — Product Profile Template
 
 **Prerequisite:** Phase 2 complete
+**Status:** Complete ✓ (verified 2026-08-16 — `--profile product` emits 152
+files; generated `local/docker-compose.yml` passes `docker compose config`.
+`README.md` was missing from the template until Phase 8 and is now delivered.)
+
+**Not yet executed:** `make dev` against a generated project — the exit
+criterion is asserted structurally, not by starting the stack.
 
 **Scope:** Full template for `--profile product`.
 
@@ -165,6 +179,12 @@ profiles/product/template/
 
 **Prerequisite:** Phase 2 complete
 **Parallelizable with:** Phase 3
+**Status:** Complete ✓ (verified 2026-08-16 — `--profile control-plane` emits
+139 files, no `apps/web`, no `apps/marketing`, no `services/ai-gateway`;
+generated compose passes `docker compose config`. `README.md` delivered in
+Phase 8.)
+
+**Not yet executed:** `make dev` against a generated project.
 
 **Scope:** Full template for `--profile control-plane`.
 
@@ -202,6 +222,16 @@ profiles/control-plane/template/
 ## Phase 5 — Local Development Stack
 
 **Prerequisite:** Phases 3 and 4 complete
+**Status:** Complete with deviations ✓ (verified 2026-08-16 — all three
+`local/docker/*.compose.yml` files pass `docker compose config`; all seven Make
+targets exist at the repo root and in both templates)
+
+**Deviations:** `local/mail/mailpit.yml` and `local/storage/minio.yml` were not
+created — Mailpit and MinIO are configured inline in the compose files, which
+is simpler and equivalent. `local/certs/README.md` is absent; `generate.sh` is
+self-documenting.
+
+**Not yet executed:** `make health` from a clean state on a generated project.
 
 **Scope:** Fully functional local development environment for both profiles.
 
@@ -258,6 +288,31 @@ local/
 ## Phase 6 — Terraform Modules
 
 **Prerequisite:** Phase 5 complete
+**Status:** INCOMPLETE ✗ (audited 2026-08-16 — exit criterion not met)
+
+All module files exist and six of eight modules validate cleanly
+(`github`, `doppler`, `supabase`, `vercel`, `cloudflare`, `project-bootstrap`
+structure). Three defects block the exit criterion:
+
+1. **`modules/zitadel/main.tf` is invalid HCL.** Lines 11 and 24 use
+   `provider = zitadel[each.key]`. Terraform does not support dynamic provider
+   selection by key — `terraform init` fails with "Invalid provider
+   configuration reference". Fix: make the module single-instance and
+   instantiate it once per ZITADEL instance from `project-bootstrap` with an
+   explicit `providers = { zitadel = zitadel.dev }` mapping.
+2. **`modules/fly/providers.tf` pins an unreleasable version.**
+   `fly-apps/fly ~> 0.1` matches nothing; the latest published release is
+   `0.0.9`. `terraform init` cannot resolve the provider.
+3. **`infrastructure/terraform/environments/*.tfvars` are untracked** — the
+   root `.gitignore` rule `*.tfvars` (line 27) silently excludes them. They
+   hold no secrets. Either add a negation for this directory or rename to
+   `.tfvars.example`.
+
+**Also worth resolving:** `project-bootstrap/main.tf` hardcodes
+`["admin", "portal"]` for the control-plane profile, overriding the
+`enabled_apps` the generator now computes correctly (`platform_admin`,
+`portal`). Let the passed-in value flow through instead of duplicating the
+manifest in HCL.
 
 **Scope:** Reusable, profile-aware Terraform modules.
 
@@ -314,6 +369,12 @@ infrastructure/terraform/
 ## Phase 7 — Generator CLI
 
 **Prerequisite:** Phase 2 complete
+**Status:** Complete ✓ (verified 2026-08-16 — all five commands work;
+`--dry-run` prints the manifest without writing; 119 generator tests pass)
+
+**Defect found during the Phase 8 audit and fixed there:**
+`bin/create-koras-app.js` imported `../src/cli/index.js`, a path that never
+exists — the shim now loads `dist/` and reports how to build.
 
 **Scope:** `create-koras-app` binary — argument parsing, interactive mode,
 file rendering, safety checks.
