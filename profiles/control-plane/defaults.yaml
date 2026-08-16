@@ -1,0 +1,22 @@
+schema_version: "1"
+
+# Default answers for the control-plane profile.
+# All required components are fixed — no optional prompts for this profile.
+
+applications:
+  platform_admin: true
+  portal: true
+
+services:
+  api: true
+  worker: true
+  scheduler: true
+
+infrastructure:
+  supabase_region: "eu-central-1"
+  fly_region: "ams"
+  vercel_framework: "nextjs"
+
+output:
+  include_example_env: true
+  include_docker_compose: true

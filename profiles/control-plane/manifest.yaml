@@ -1,0 +1,63 @@
+schema_version: "1"
+profile: control-plane
+
+applications:
+  platform_admin:
+    required: true
+    framework: nextjs
+    description: "Platform administration UI"
+  portal:
+    required: true
+    framework: nextjs
+    description: "Customer account portal"
+
+services:
+  api:
+    required: true
+    framework: fastapi
+    description: "Platform REST API"
+  worker:
+    required: true
+    framework: arq
+    description: "Background job worker"
+  scheduler:
+    required: true
+    framework: apscheduler
+    description: "Cron / task scheduler"
+
+capabilities:
+  tenancy: true
+  rls: true
+  branding: true
+  product_registry: true
+  organization_registry: true
+  tenant_registry: true
+  provisioning: true
+  reconciliation: true
+  subscriptions: true
+  entitlements: true
+  infrastructure_registry: true
+  storage: true
+  email: true
+  notifications: true
+  audit: true
+  observability: true
+
+registration:
+  registers_as_product: false
+
+infrastructure:
+  supabase: true
+  zitadel: true
+  doppler: true
+  vercel:
+    applications: ["platform_admin", "portal"]
+  fly:
+    services: ["api", "worker", "scheduler"]
+  cloudflare: true
+
+environments:
+  - dev
+  - test
+  - stg
+  - prod

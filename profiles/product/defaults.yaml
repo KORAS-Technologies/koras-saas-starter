@@ -1,0 +1,29 @@
+schema_version: "1"
+
+# Default answers for interactive prompts when using the product profile.
+# All values can be overridden by CLI flags or interactive input.
+
+applications:
+  web: true
+  admin: true
+  marketing: false
+
+services:
+  api: true
+  worker: true
+  scheduler: false
+  ai_gateway: false
+
+capabilities:
+  billing: true
+  custom_domains: true
+  white_label: false
+
+infrastructure:
+  supabase_region: "eu-central-1"
+  fly_region: "ams"
+  vercel_framework: "nextjs"
+
+output:
+  include_example_env: true
+  include_docker_compose: true
