@@ -35,12 +35,22 @@ export function writeFiles(ctx: GenerationContext, files: RenderedFile[]): Write
   return { filesWritten: ctx.dryRun ? 0 : files.length, fileList }
 }
 
+function enabled(selected: Record<string, boolean>): string {
+  const names = Object.entries(selected)
+    .filter(([, on]) => on)
+    .map(([name]) => name)
+  return names.length > 0 ? names.join(', ') : '(none)'
+}
+
 export function printDryRunManifest(ctx: GenerationContext, files: RenderedFile[]): void {
   console.log('\nKORAS Generator — Dry Run')
   console.log(`Profile:  ${ctx.profile}`)
   console.log(`Project:  ${ctx.projectName}`)
   console.log(`Slug:     ${ctx.projectSlug}`)
-  console.log(`Output:   ${join(ctx.outputDir, ctx.projectSlug)}\n`)
+  console.log(`Output:   ${join(ctx.outputDir, ctx.projectSlug)}`)
+  console.log(`Apps:     ${enabled(ctx.selections.applications)}`)
+  console.log(`Services: ${enabled(ctx.selections.services)}`)
+  console.log(`Register: ${ctx.manifest.registration.registers_as_product ? 'yes' : 'no'}\n`)
   console.log(`FILES TO CREATE (${files.length} files):`)
   for (const f of files) {
     console.log(`  ${ctx.projectSlug}/${f.outputPath}`)

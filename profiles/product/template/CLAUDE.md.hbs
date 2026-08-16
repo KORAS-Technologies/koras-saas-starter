@@ -3,7 +3,19 @@
 ## What this repository is
 
 `{{projectSlug}}` is a KORAS SaaS product generated from `koras-saas-starter`
-using `--profile product`.
+using `--profile {{profile}}`.
+
+## Generated components
+
+| Kind | Enabled |
+|------|---------|
+| Applications | {{#each enabledApplications}}`{{this}}` {{/each}} |
+| Services | {{#each enabledServices}}`{{this}}` {{/each}} |
+| Capabilities | {{#each enabledCapabilities}}`{{this}}` {{/each}} |
+
+Components absent from this list were not selected at generation time. Do not
+add an application or service directory by hand — regenerate or extend the
+profile manifest in `koras-saas-starter` instead.
 
 ## Key commands
 
@@ -43,6 +55,7 @@ make health      # verify all services
 
 ## Generated from
 
-`koras-saas-starter` Phase 3 — product profile template  
-Profile: `product`  
+`koras-saas-starter` — {{profile}} profile template
+Profile: `{{profile}}`
 Generator: `create-koras-app`
+Control Plane registration: {{#if registersAsProduct}}`{{registrationEndpoint}}`{{else}}disabled{{/if}}

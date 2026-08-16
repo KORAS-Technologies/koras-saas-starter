@@ -4,7 +4,15 @@
 
 `{{projectSlug}}` is the **KORAS Control Plane** — the platform provisioning and
 entitlement authority for all KORAS SaaS products. Generated from
-`koras-saas-starter` using `--profile control-plane`.
+`koras-saas-starter` using `--profile {{profile}}`.
+
+## Generated components
+
+| Kind | Enabled |
+|------|---------|
+| Applications | {{#each enabledApplications}}`{{this}}` {{/each}} |
+| Services | {{#each enabledServices}}`{{this}}` {{/each}} |
+| Capabilities | {{#each enabledCapabilities}}`{{this}}` {{/each}} |
 
 ## Critical rules
 
@@ -52,6 +60,7 @@ make health      # verify all services
 
 ## Generated from
 
-`koras-saas-starter` Phase 4 — control-plane profile template  
-Profile: `control-plane`  
+`koras-saas-starter` — {{profile}} profile template
+Profile: `{{profile}}`
 Generator: `create-koras-app`
+Control Plane registration: {{#if registersAsProduct}}`{{registrationEndpoint}}`{{else}}disabled — the Control Plane never registers itself{{/if}}

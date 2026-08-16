@@ -7,6 +7,10 @@ import { contextToTemplateVars } from './context.js'
 
 const PROFILES_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../../../profiles')
 
+// `json` renders arrays/objects as JSON — valid HCL list syntax as well.
+Handlebars.registerHelper('json', (value: unknown) => JSON.stringify(value))
+Handlebars.registerHelper('eq', (a: unknown, b: unknown) => a === b)
+
 export interface RenderedFile {
   sourcePath: string
   outputPath: string  // relative to project root
@@ -14,10 +18,38 @@ export interface RenderedFile {
   isTemplate: boolean
 }
 
+/**
+ * Builds the set of template subtrees that must be skipped for this generation.
+ * Everything comes from the profile manifest's `template_map` — the generator
+ * itself carries no profile-specific knowledge.
+ */
+export function excludedSubtrees(ctx: GenerationContext): string[] {
+  const { template_map: map } = ctx.manifest
+  const excluded: string[] = []
+
+  const collect = (mapping: Record<string, string>, selected: Record<string, boolean>) => {
+    for (const [key, path] of Object.entries(mapping)) {
+      if (selected[key] !== true) excluded.push(path)
+    }
+  }
+
+  collect(map.applications, ctx.selections.applications)
+  collect(map.services, ctx.selections.services)
+  collect(map.capabilities, ctx.selections.capabilities)
+
+  return excluded
+}
+
+function shouldInclude(relPath: string, excluded: string[]): boolean {
+  return !excluded.some((prefix) => relPath === prefix || relPath.startsWith(`${prefix}/`))
+}
+
 export function renderTemplate(ctx: GenerationContext): RenderedFile[] {
   const templateDir = join(PROFILES_ROOT, ctx.profile, 'template')
   const vars = contextToTemplateVars(ctx)
-  return walkDirectory(templateDir, templateDir, vars)
+  const excluded = excludedSubtrees(ctx)
+  const all = walkDirectory(templateDir, templateDir, vars)
+  return all.filter((f) => shouldInclude(f.outputPath, excluded))
 }
 
 function walkDirectory(

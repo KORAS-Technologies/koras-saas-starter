@@ -79,6 +79,8 @@ Profile is NEVER inferred from project name. The operator must choose explicitly
 |---------------------|-------------|-----------------------------------------------------|
 | `project`           | Positional  | Project name (becomes directory name + slug base)   |
 | `--profile`         | Required    | `product` or `control-plane`                        |
+| `--with`            | Optional    | Enable optional components (comma-separated manifest keys) |
+| `--without`         | Optional    | Disable optional components (comma-separated manifest keys) |
 | `--provision`       | Optional    | Run Terraform bootstrap after generation            |
 | `--dry-run`         | Optional    | Print generation plan without writing files         |
 | `--output-dir`      | Optional    | Parent directory for generated project (default: cwd) |
@@ -293,6 +295,8 @@ ARGUMENTS:
 
 OPTIONS:
   --profile <profile>        Generator profile (required in non-interactive mode)
+  --with <components>        Enable optional components (comma-separated)
+  --without <components>     Disable optional components (comma-separated)
   --provision                Provision infrastructure via Terraform
   --dry-run                  Preview generation without writing files
   --output-dir <path>        Output parent directory (default: current directory)
@@ -305,6 +309,7 @@ EXAMPLES:
   pnpm create-koras-app docoris --profile product
   pnpm create-koras-app docoris --profile product --provision
   pnpm create-koras-app docoris --profile product --dry-run
+  pnpm create-koras-app docoris --profile product --with marketing,ai_gateway
   pnpm create-koras-app koras-control-plane --profile control-plane
   pnpm create-koras-app koras-control-plane --profile control-plane --provision
 ```

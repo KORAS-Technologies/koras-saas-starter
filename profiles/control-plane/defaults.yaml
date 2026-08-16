@@ -16,6 +16,7 @@ infrastructure:
   supabase_region: "eu-central-1"
   fly_region: "ams"
   vercel_framework: "nextjs"
+  terraform_organization: "koras"
 
 output:
   include_example_env: true

@@ -171,6 +171,36 @@ infrastructure:
   cloudflare: true
 ```
 
+### `template_map` — how the capability matrix reaches template selection
+
+Each manifest ends with a `template_map` block that binds component keys to
+template subtrees. The generator includes a subtree only when its component is
+enabled, so profile behaviour stays declarative and the generator itself
+contains no profile-specific branching:
+
+```yaml
+template_map:
+  applications:
+    platform_admin: apps/admin     # key and directory need not match
+    portal: apps/portal
+  services:
+    api: services/api
+    ai_gateway: services/ai-gateway
+  capabilities:
+    billing: packages/billing
+    control_plane_client: packages/control-plane-client
+```
+
+Rules:
+
+- A component key absent from `template_map` is generated unconditionally.
+- A capability the manifest sets to `false` can never be enabled — `defaults.yaml`
+  may switch a supported capability off, never on.
+- Required applications and services cannot be disabled; the generator rejects
+  `--without <required>` with an actionable error.
+- `--with` / `--without` accept application, service, or capability keys and are
+  the non-interactive equivalent of the optional-component prompts.
+
 ---
 
 ## 3. Generated Directory Structure

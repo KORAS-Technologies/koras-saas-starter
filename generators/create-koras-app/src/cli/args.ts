@@ -7,6 +7,18 @@ export interface ParsedArgs {
   noInteractive: boolean
   help: boolean
   listProfiles: boolean
+  /** Optional components to enable, e.g. --with marketing,ai_gateway */
+  with: string[]
+  /** Optional components to disable, e.g. --without worker */
+  without: string[]
+}
+
+function splitList(value: string | undefined): string[] {
+  if (!value) return []
+  return value
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
 }
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -18,6 +30,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
     noInteractive: false,
     help: false,
     listProfiles: false,
+    with: [],
+    without: [],
   }
 
   let i = 0
@@ -46,11 +60,21 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case '--output-dir':
         result.outputDir = args[++i]
         break
+      case '--with':
+        result.with.push(...splitList(args[++i]))
+        break
+      case '--without':
+        result.without.push(...splitList(args[++i]))
+        break
       default:
         if (arg.startsWith('--profile=')) {
           result.profile = arg.split('=')[1]
         } else if (arg.startsWith('--output-dir=')) {
           result.outputDir = arg.split('=')[1]
+        } else if (arg.startsWith('--with=')) {
+          result.with.push(...splitList(arg.slice('--with='.length)))
+        } else if (arg.startsWith('--without=')) {
+          result.without.push(...splitList(arg.slice('--without='.length)))
         } else if (!arg.startsWith('-')) {
           result.project = arg
         }

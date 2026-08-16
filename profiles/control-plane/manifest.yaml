@@ -61,3 +61,15 @@ environments:
   - test
   - stg
   - prod
+
+# Maps manifest component keys to template directories. The generator uses this
+# to include or exclude template subtrees — profile behaviour stays declarative.
+template_map:
+  applications:
+    platform_admin: apps/admin
+    portal: apps/portal
+  services:
+    api: services/api
+    worker: services/worker
+    scheduler: services/scheduler
+  capabilities: {}

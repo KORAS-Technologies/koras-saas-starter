@@ -5,7 +5,11 @@ import { validateProfile } from '../validation/profile.js'
 import { checkDirectoryConflict } from '../validation/conflicts.js'
 import { loadProfile, listProfiles } from '../profiles/index.js'
 import type { ProfileName } from '../profiles/loader.js'
-import { resolveSelections, validateSelections } from '../profiles/validator.js'
+import {
+  resolveSelections,
+  validateSelections,
+  applyComponentOverrides,
+} from '../profiles/validator.js'
 import { buildContext } from '../generation/context.js'
 import { renderTemplate } from '../generation/engine.js'
 import { writeFiles, printDryRunManifest } from '../generation/writer.js'
@@ -21,6 +25,8 @@ ARGUMENTS:
 
 OPTIONS:
   --profile <profile>        Generator profile (required in non-interactive mode)
+  --with <components>        Enable optional components (comma-separated)
+  --without <components>     Disable optional components (comma-separated)
   --provision                Provision infrastructure via Terraform
   --dry-run                  Preview generation without writing files
   --output-dir <path>        Output parent directory (default: current directory)
@@ -33,6 +39,7 @@ EXAMPLES:
   pnpm create-koras-app docoris --profile product
   pnpm create-koras-app docoris --profile product --provision
   pnpm create-koras-app docoris --profile product --dry-run
+  pnpm create-koras-app docoris --profile product --with marketing,ai_gateway
   pnpm create-koras-app koras-control-plane --profile control-plane
   pnpm create-koras-app koras-control-plane --profile control-plane --provision
 `.trim()
@@ -72,6 +79,7 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   let projectName: string
   let projectSlug: string
   let profileName: string
+  let interactiveSelectionOverrides: import('../profiles/types.js').ComponentSelections | undefined
 
   const needsInteractive = !args.project || !args.profile
 
@@ -90,6 +98,7 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     projectName = answers.projectName
     projectSlug = answers.projectSlug
     profileName = answers.profile
+    interactiveSelectionOverrides = answers.selections as import('../profiles/types.js').ComponentSelections | undefined
   } else {
     projectName = args.project!
     projectSlug = deriveSlug(projectName)
@@ -118,7 +127,20 @@ export async function run(argv: string[] = process.argv): Promise<void> {
 
   const { manifest, defaults } = loadProfile(profileName as ProfileName)
   const selections = resolveSelections(manifest, defaults)
-  validateSelections(manifest, selections)
+
+  // Interactive answers first, then explicit --with/--without flags (flags win).
+  if (interactiveSelectionOverrides) {
+    Object.assign(selections.applications, interactiveSelectionOverrides.applications ?? {})
+    Object.assign(selections.services, interactiveSelectionOverrides.services ?? {})
+    Object.assign(selections.capabilities, interactiveSelectionOverrides.capabilities ?? {})
+  }
+
+  try {
+    applyComponentOverrides(manifest, selections, { with: args.with, without: args.without })
+    validateSelections(manifest, selections)
+  } catch (err) {
+    fail(err instanceof Error ? err.message : String(err))
+  }
 
   // ── Build context ──────────────────────────────────────────────────────────
 

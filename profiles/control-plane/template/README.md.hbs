@@ -1,0 +1,62 @@
+# {{projectName}}
+
+`{{projectSlug}}` is the **KORAS Control Plane** — the provisioning and
+entitlement authority for all KORAS products. Generated from
+`koras-saas-starter`.
+
+| | |
+|---|---|
+| **Profile** | `{{profile}}` |
+| **Slug** | `{{projectSlug}}` |
+| **Generator** | `create-koras-app` |
+| **Registers as a product** | {{#if registersAsProduct}}yes{{else}}no — the Control Plane never registers itself{{/if}} |
+
+## Generated components
+
+**Applications**
+{{#each applicationTargets}}
+- `{{path}}` ({{key}})
+{{/each}}
+
+**Services**
+{{#each serviceTargets}}
+- `{{path}}` ({{key}})
+{{/each}}
+
+## Quick start
+
+```bash
+make bootstrap   # first-time setup
+make dev         # start the local stack
+make health      # verify all services
+make down        # stop containers
+```
+
+Run `make profile` to print the profile and enabled components at any time.
+
+## Environments
+
+| Environment | Branch | Doppler | Supabase |
+|---|---|---|---|
+{{#each environmentNaming}}
+| `{{env}}` | `{{branch}}` | `{{doppler}}` | `{{supabase}}` |
+{{/each}}
+
+ZITADEL project name is `{{zitadelProject}}` in every instance — the instance
+itself represents the environment, so no suffix is applied.
+
+## Infrastructure
+
+- **Vercel projects:** {{#each vercelProjects}}`{{this}}` {{/each}}
+- **Fly apps:** {{#each flyApps}}`{{this}}` {{/each}}
+- **Supabase region:** `{{supabaseRegion}}`
+- **Fly region:** `{{flyRegion}}`
+
+Terraform lives in `infrastructure/terraform`. It never auto-applies — every
+apply requires explicit human approval.
+
+## Bootstrap exception
+
+The Control Plane is foundational infrastructure: it can be generated and
+provisioned without a pre-existing Control Plane, and it emits no registration
+calls.

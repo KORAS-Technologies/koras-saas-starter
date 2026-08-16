@@ -46,6 +46,30 @@ describe('parseArgs', () => {
     expect(args.outputDir).toBe('/tmp')
   })
 
+  it('parses --with as a comma-separated list', () => {
+    const args = parseArgs(['node', 'cli', '--with', 'marketing,ai_gateway'])
+    expect(args.with).toEqual(['marketing', 'ai_gateway'])
+  })
+
+  it('parses --without and --without=value', () => {
+    expect(parseArgs(['node', 'cli', '--without', 'worker']).without).toEqual(['worker'])
+    expect(parseArgs(['node', 'cli', '--without=worker,admin']).without).toEqual([
+      'worker',
+      'admin',
+    ])
+  })
+
+  it('accumulates repeated --with flags', () => {
+    const args = parseArgs(['node', 'cli', '--with', 'marketing', '--with', 'ai_gateway'])
+    expect(args.with).toEqual(['marketing', 'ai_gateway'])
+  })
+
+  it('defaults component overrides to empty lists', () => {
+    const args = parseArgs(['node', 'cli'])
+    expect(args.with).toEqual([])
+    expect(args.without).toEqual([])
+  })
+
   it('defaults provision to false', () => {
     expect(parseArgs(['node', 'cli']).provision).toBe(false)
   })

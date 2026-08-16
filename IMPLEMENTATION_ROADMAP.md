@@ -362,14 +362,18 @@ writing; generator tests pass for both profiles.
 ## Phase 8 — `--profile` Implementation
 
 **Prerequisite:** Phases 3, 4, and 7 complete
+**Status:** Implemented ✓ (2026-08-16)
 
 **Scope:** Generator correctly applies profile manifests during rendering.
 
 **Deliverables:**
-- Profile capability matrix applied to template selection
-- Optional components prompted in interactive mode
-- Profile passed into generated `CLAUDE.md`, `README.md`, Makefile, and
-  Terraform vars
+- Profile capability matrix applied to template selection, driven by the
+  `template_map` block in each profile manifest — the generator holds no
+  profile-specific branching
+- Optional components prompted in interactive mode, and selectable
+  non-interactively via `--with` / `--without`
+- Profile passed into generated `CLAUDE.md`, `README.md`, `Makefile`, and
+  `infrastructure/terraform/environments/<env>.tfvars`
 - All Phase 23 structural generator tests passing
 
 **Done when:** `generate product` and `generate control-plane` tests in

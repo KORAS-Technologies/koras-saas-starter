@@ -38,6 +38,17 @@ const RegistrationSchema = z.object({
   endpoint: z.string().optional(),
 })
 
+// Maps component keys to template subtree paths. A subtree is generated only
+// when its component is enabled — this is how the capability matrix reaches
+// template selection without profile-specific branching in the generator.
+const TemplateMapSchema = z.object({
+  applications: z.record(z.string(), z.string()).default({}),
+  services: z.record(z.string(), z.string()).default({}),
+  capabilities: z.record(z.string(), z.string()).default({}),
+})
+
+export type TemplateMap = z.infer<typeof TemplateMapSchema>
+
 // ── Profile manifest ───────────────────────────────────────────────────────
 
 export const ProfileManifestSchema = z.object({
@@ -49,6 +60,11 @@ export const ProfileManifestSchema = z.object({
   registration: RegistrationSchema,
   infrastructure: InfrastructureSchema,
   environments: z.array(z.string()),
+  template_map: TemplateMapSchema.default({
+    applications: {},
+    services: {},
+    capabilities: {},
+  }),
 })
 
 export type ProfileManifest = z.infer<typeof ProfileManifestSchema>
@@ -65,6 +81,7 @@ export const ProfileDefaultsSchema = z.object({
       supabase_region: z.string().optional(),
       fly_region: z.string().optional(),
       vercel_framework: z.string().optional(),
+      terraform_organization: z.string().optional(),
     })
     .optional(),
   output: z

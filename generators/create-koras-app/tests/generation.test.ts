@@ -4,20 +4,32 @@ import { join } from 'node:path'
 import { rmSync, existsSync, readFileSync } from 'node:fs'
 import { loadProfile } from '../src/profiles/index.js'
 import type { ProfileName } from '../src/profiles/loader.js'
-import { resolveSelections } from '../src/profiles/validator.js'
+import {
+  resolveSelections,
+  applyComponentOverrides,
+  validateSelections,
+} from '../src/profiles/validator.js'
 import { buildContext } from '../src/generation/context.js'
 import { renderTemplate } from '../src/generation/engine.js'
 import { writeFiles } from '../src/generation/writer.js'
+import { validateProfile } from '../src/validation/profile.js'
 
-const TEST_OUTPUT = join(tmpdir(), `koras-gen-test-${Date.now()}`)
+const OUT = join(tmpdir(), `koras-gen-${process.pid}-${Date.now()}`)
 
 afterAll(() => {
-  if (existsSync(TEST_OUTPUT)) rmSync(TEST_OUTPUT, { recursive: true })
+  if (existsSync(OUT)) rmSync(OUT, { recursive: true, force: true })
 })
 
-function makeCtx(profile: ProfileName, slug: string, dryRun = false) {
+interface Overrides {
+  with?: string[]
+  without?: string[]
+}
+
+function makeCtx(profile: ProfileName, slug: string, overrides: Overrides = {}, dryRun = false) {
   const { manifest, defaults } = loadProfile(profile)
   const selections = resolveSelections(manifest, defaults)
+  applyComponentOverrides(manifest, selections, overrides)
+  validateSelections(manifest, selections)
   return buildContext({
     projectName: slug,
     projectSlug: slug,
@@ -25,122 +37,273 @@ function makeCtx(profile: ProfileName, slug: string, dryRun = false) {
     manifest,
     defaults,
     selections,
-    outputDir: TEST_OUTPUT,
+    outputDir: OUT,
     dryRun,
     provision: false,
   })
 }
 
-// ── dry-run writes nothing ───────────────────────────────────────────────────
+function generate(profile: ProfileName, slug: string, overrides: Overrides = {}) {
+  const ctx = makeCtx(profile, slug, overrides)
+  const { fileList } = writeFiles(ctx, renderTemplate(ctx))
+  return {
+    fileList,
+    has: (prefix: string) => fileList.some((f) => f === prefix || f.startsWith(`${prefix}/`)),
+    read: (relPath: string) => readFileSync(join(OUT, slug, relPath), 'utf8'),
+  }
+}
 
-describe('dry-run', () => {
-  it('returns file list without writing', () => {
-    const ctx = makeCtx('product', 'drytest', true)
-    const files = renderTemplate(ctx)
-    const result = writeFiles(ctx, files)
+// ── dry run ──────────────────────────────────────────────────────────────────
+
+describe('dry run', () => {
+  it('lists files without writing any', () => {
+    const ctx = makeCtx('product', 'dry-run-app', {}, true)
+    const result = writeFiles(ctx, renderTemplate(ctx))
     expect(result.filesWritten).toBe(0)
-    expect(result.fileList.length).toBeGreaterThan(0)
-    expect(existsSync(join(TEST_OUTPUT, 'drytest'))).toBe(false)
+    expect(result.fileList.length).toBeGreaterThan(10)
+    expect(existsSync(join(OUT, 'dry-run-app'))).toBe(false)
   })
 })
 
-// ── product profile generation ───────────────────────────────────────────────
+// ── product profile ──────────────────────────────────────────────────────────
 
 describe('generate product', () => {
-  let fileList: string[]
+  let gen: ReturnType<typeof generate>
 
   beforeAll(() => {
-    const ctx = makeCtx('product', 'testproduct')
-    const files = renderTemplate(ctx)
-    const result = writeFiles(ctx, files)
-    fileList = result.fileList
+    gen = generate('product', 'sampleapp')
   })
 
-  it('generates files', () => {
-    expect(fileList.length).toBeGreaterThan(10)
+  it('generates required apps and services', () => {
+    expect(gen.has('apps/web')).toBe(true)
+    expect(gen.has('services/api')).toBe(true)
   })
 
-  it('generates Makefile', () => {
-    expect(fileList.some((f) => f === 'Makefile')).toBe(true)
+  it('honours profile defaults for optional components', () => {
+    expect(gen.has('apps/admin')).toBe(true) // default: true
+    expect(gen.has('services/worker')).toBe(true) // default: true
+    expect(gen.has('apps/marketing')).toBe(false) // default: false
+    expect(gen.has('services/scheduler')).toBe(false) // default: false
+    expect(gen.has('services/ai-gateway')).toBe(false) // default: false
   })
 
-  it('generates apps/web', () => {
-    expect(fileList.some((f) => f.startsWith('apps/web/'))).toBe(true)
+  it('does not generate control-plane applications', () => {
+    expect(gen.has('apps/portal')).toBe(false)
   })
 
-  it('generates services/api', () => {
-    expect(fileList.some((f) => f.startsWith('services/api/'))).toBe(true)
+  it('includes the Control Plane client package', () => {
+    expect(gen.has('packages/control-plane-client')).toBe(true)
   })
 
-  it('generates supabase migration', () => {
-    expect(fileList.some((f) => f.includes('migrations/00001_initial.sql'))).toBe(true)
+  it('generates the product registration contract', () => {
+    const contract = gen.read('packages/control-plane-client/src/index.ts')
+    expect(contract).toContain("REGISTRATION_ENDPOINT = '/api/platform/v1/products'")
+    expect(contract).toContain('sampleapp-dev')
+    expect(contract).toContain('sampleapp-prod')
   })
 
-  it('does NOT generate apps/admin (platform-admin variant)', () => {
-    // product admin is apps/admin not apps/platform-admin
-    expect(fileList.some((f) => f.startsWith('apps/portal/'))).toBe(false)
-  })
-
-  it('renders project slug into package.json', () => {
-    const outputPath = join(TEST_OUTPUT, 'testproduct', 'package.json')
-    expect(existsSync(outputPath)).toBe(true)
-    const content = readFileSync(outputPath, 'utf8')
-    expect(content).toContain('testproduct')
+  it('renders the slug into package.json', () => {
+    expect(gen.read('package.json')).toContain('sampleapp')
   })
 })
 
-// ── control-plane profile generation ────────────────────────────────────────
+describe('product optional components', () => {
+  it('can enable marketing and the AI Gateway', () => {
+    const gen = generate('product', 'sampleapp-full', { with: ['marketing', 'ai_gateway'] })
+    expect(gen.has('apps/marketing')).toBe(true)
+    expect(gen.has('services/ai-gateway')).toBe(true)
+  })
+
+  it('can disable optional components without losing required ones', () => {
+    const gen = generate('product', 'sampleapp-min', { without: ['admin', 'worker'] })
+    expect(gen.has('apps/admin')).toBe(false)
+    expect(gen.has('services/worker')).toBe(false)
+    expect(gen.has('apps/web')).toBe(true)
+    expect(gen.has('services/api')).toBe(true)
+  })
+
+  it('applies the capability matrix to template selection', () => {
+    const gen = generate('product', 'sampleapp-nobilling', { without: ['billing'] })
+    expect(gen.has('packages/billing')).toBe(false)
+    expect(gen.has('packages/domains')).toBe(true) // custom_domains still enabled
+  })
+
+  it('rejects an unknown component with an actionable error', () => {
+    expect(() => generate('product', 'sampleapp-bad', { with: ['nope'] })).toThrow(
+      /Unknown component "nope".*Known components/s,
+    )
+  })
+
+  it('rejects disabling a required component', () => {
+    expect(() => generate('product', 'sampleapp-noapi', { without: ['api'] })).toThrow(
+      /Service "api" is required/,
+    )
+  })
+})
+
+// ── control-plane profile ────────────────────────────────────────────────────
 
 describe('generate control-plane', () => {
-  let fileList: string[]
+  let gen: ReturnType<typeof generate>
 
   beforeAll(() => {
-    const ctx = makeCtx('control-plane', 'testcp')
-    const files = renderTemplate(ctx)
-    const result = writeFiles(ctx, files)
-    fileList = result.fileList
+    gen = generate('control-plane', 'koras-control-plane')
   })
 
-  it('generates apps/admin (platform-admin)', () => {
-    expect(fileList.some((f) => f.startsWith('apps/admin/'))).toBe(true)
+  it('generates platform admin and customer portal', () => {
+    expect(gen.has('apps/admin')).toBe(true)
+    expect(gen.has('apps/portal')).toBe(true)
   })
 
-  it('generates apps/portal', () => {
-    expect(fileList.some((f) => f.startsWith('apps/portal/'))).toBe(true)
+  it('generates api, worker, and scheduler', () => {
+    expect(gen.has('services/api')).toBe(true)
+    expect(gen.has('services/worker')).toBe(true)
+    expect(gen.has('services/scheduler')).toBe(true)
   })
 
-  it('generates services/api', () => {
-    expect(fileList.some((f) => f.startsWith('services/api/'))).toBe(true)
+  it('does not generate product-only applications', () => {
+    expect(gen.has('apps/web')).toBe(false)
+    expect(gen.has('apps/marketing')).toBe(false)
   })
 
-  it('generates services/worker', () => {
-    expect(fileList.some((f) => f.startsWith('services/worker/'))).toBe(true)
+  it('excludes the AI Gateway by default', () => {
+    expect(gen.has('services/ai-gateway')).toBe(false)
   })
 
-  it('generates services/scheduler', () => {
-    expect(fileList.some((f) => f.startsWith('services/scheduler/'))).toBe(true)
+  it('does not include a Control Plane client', () => {
+    expect(gen.has('packages/control-plane-client')).toBe(false)
   })
 
-  it('does NOT generate apps/web', () => {
-    expect(fileList.some((f) => f.startsWith('apps/web/'))).toBe(false)
+  it('generates the product registry router', () => {
+    expect(gen.has('services/api/src/routers/products.py')).toBe(true)
+  })
+})
+
+// ── profile propagation into generated files ─────────────────────────────────
+
+describe('profile propagation', () => {
+  const cases: Array<[ProfileName, string]> = [
+    ['product', 'prop-product'],
+    ['control-plane', 'prop-cp'],
+  ]
+
+  for (const [profile, slug] of cases) {
+    describe(profile, () => {
+      let gen: ReturnType<typeof generate>
+      beforeAll(() => {
+        gen = generate(profile, slug)
+      })
+
+      it('writes the profile into CLAUDE.md', () => {
+        expect(gen.read('CLAUDE.md')).toContain(`Profile: \`${profile}\``)
+      })
+
+      it('writes the profile into README.md', () => {
+        expect(gen.read('README.md')).toContain(`| **Profile** | \`${profile}\` |`)
+      })
+
+      it('writes the profile into the Makefile', () => {
+        expect(gen.read('Makefile')).toContain(`PROFILE := ${profile}`)
+      })
+
+      it('writes the profile into every Terraform tfvars file', () => {
+        for (const env of ['dev', 'test', 'stg', 'prod']) {
+          const tfvars = gen.read(`infrastructure/terraform/environments/${env}.tfvars`)
+          expect(tfvars).toContain(`profile      = "${profile}"`)
+          expect(tfvars).toContain(`environment = "${env}"`)
+          expect(tfvars).toContain(`project_slug = "${slug}"`)
+        }
+      })
+
+      it('renders Terraform enabled_apps and enabled_services from selections', () => {
+        const tfvars = gen.read('infrastructure/terraform/environments/dev.tfvars')
+        const apps = JSON.parse(/enabled_apps\s+= (\[.*\])/.exec(tfvars)![1]) as string[]
+        const services = JSON.parse(/enabled_services = (\[.*\])/.exec(tfvars)![1]) as string[]
+        expect(apps.length).toBeGreaterThan(0)
+        expect(services).toContain('api')
+        if (profile === 'control-plane') {
+          expect(services).not.toContain('ai_gateway')
+        }
+      })
+    })
+  }
+
+  it('excludes deselected services from Terraform inputs', () => {
+    const gen = generate('product', 'prop-tf-min', { without: ['worker'] })
+    const tfvars = gen.read('infrastructure/terraform/environments/prod.tfvars')
+    const services = JSON.parse(/enabled_services = (\[.*\])/.exec(tfvars)![1]) as string[]
+    expect(services).toContain('api')
+    expect(services).not.toContain('worker')
+  })
+})
+
+// ── infrastructure naming ────────────────────────────────────────────────────
+
+describe('infrastructure naming', () => {
+  it('uses <slug>-<env> for Doppler and Supabase projects', () => {
+    const readme = generate('product', 'naming-app').read('README.md')
+    for (const env of ['dev', 'test', 'stg', 'prod']) {
+      expect(readme).toContain(`\`naming-app-${env}\``)
+    }
   })
 
-  it('does NOT generate apps/marketing', () => {
-    expect(fileList.some((f) => f.startsWith('apps/marketing/'))).toBe(false)
+  it('uses <slug>-<service>-<env> for Fly apps', () => {
+    const readme = generate('control-plane', 'naming-cp').read('README.md')
+    expect(readme).toContain('`naming-cp-api-dev`')
+    expect(readme).toContain('`naming-cp-scheduler-prod`')
   })
 
-  it('does NOT generate services/ai-gateway', () => {
-    expect(fileList.some((f) => f.startsWith('services/ai-gateway/'))).toBe(false)
+  it('does not suffix the ZITADEL project with the environment', () => {
+    const readme = generate('product', 'naming-zitadel').read('README.md')
+    expect(readme).toContain('ZITADEL project name is `naming-zitadel`')
+    expect(readme).not.toMatch(/ZITADEL project name is `naming-zitadel-(dev|test|stg|prod)`/)
   })
 
-  it('generates platform schema migration', () => {
-    expect(fileList.some((f) => f.includes('migrations/00001_initial.sql'))).toBe(true)
+  it('declares the four immutable environments for both profiles', () => {
+    for (const profile of ['product', 'control-plane'] as ProfileName[]) {
+      expect(loadProfile(profile).manifest.environments).toEqual(['dev', 'test', 'stg', 'prod'])
+    }
+  })
+})
+
+// ── registration behaviour ───────────────────────────────────────────────────
+
+describe('registration behaviour', () => {
+  it('product registers itself as a product', () => {
+    const { manifest } = loadProfile('product')
+    expect(manifest.registration.registers_as_product).toBe(true)
+    expect(manifest.registration.endpoint).toBe('/api/platform/v1/products')
   })
 
-  it('renders project slug into package.json', () => {
-    const outputPath = join(TEST_OUTPUT, 'testcp', 'package.json')
-    expect(existsSync(outputPath)).toBe(true)
-    const content = readFileSync(outputPath, 'utf8')
-    expect(content).toContain('testcp')
+  it('control-plane never registers itself', () => {
+    const { manifest } = loadProfile('control-plane')
+    expect(manifest.registration.registers_as_product).toBe(false)
+    expect(manifest.registration.endpoint).toBeUndefined()
+  })
+
+  it('control-plane output contains no registration client or endpoint call', () => {
+    const gen = generate('control-plane', 'reg-cp')
+    expect(gen.has('packages/control-plane-client')).toBe(false)
+    expect(gen.read('README.md')).toContain('the Control Plane never registers itself')
+  })
+})
+
+// ── profile validation ───────────────────────────────────────────────────────
+
+describe('profile validation', () => {
+  it('accepts the supported profiles', () => {
+    expect(validateProfile('product').valid).toBe(true)
+    expect(validateProfile('control-plane').valid).toBe(true)
+  })
+
+  it('rejects an unknown profile with an actionable error', () => {
+    const result = validateProfile('saas')
+    expect(result.valid).toBe(false)
+    expect(result.error).toMatch(/Unknown profile "saas"/)
+    expect(result.error).toMatch(/product, control-plane/)
+  })
+
+  it('requires a profile when none is given', () => {
+    expect(validateProfile('').valid).toBe(false)
   })
 })
