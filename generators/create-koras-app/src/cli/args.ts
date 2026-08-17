@@ -13,6 +13,8 @@ export interface ParsedArgs {
   without: string[]
   /** Provision an already-generated project; skips generation entirely. */
   provisionOnly: boolean
+  /** True when --output-dir was passed, as opposed to defaulting to cwd. */
+  outputDirExplicit: boolean
 }
 
 function splitList(value: string | undefined): string[] {
@@ -35,6 +37,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     with: [],
     without: [],
     provisionOnly: false,
+    outputDirExplicit: false,
   }
 
   let i = 0
@@ -67,6 +70,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break
       case '--output-dir':
         result.outputDir = args[++i]
+        result.outputDirExplicit = true
         break
       case '--with':
         result.with.push(...splitList(args[++i]))
@@ -79,6 +83,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
           result.profile = arg.split('=')[1]
         } else if (arg.startsWith('--output-dir=')) {
           result.outputDir = arg.split('=')[1]
+          result.outputDirExplicit = true
         } else if (arg.startsWith('--with=')) {
           result.with.push(...splitList(arg.slice('--with='.length)))
         } else if (arg.startsWith('--without=')) {

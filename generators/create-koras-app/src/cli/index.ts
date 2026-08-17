@@ -5,6 +5,7 @@ import { promptInteractive } from './interactive.js'
 import { validateSlug, deriveSlug } from '../validation/slug.js'
 import { validateProfile } from '../validation/profile.js'
 import { checkDirectoryConflict } from '../validation/conflicts.js'
+import { checkOutputDirectory } from '../validation/output-dir.js'
 import { loadProfile, listProfiles } from '../profiles/index.js'
 import type { ProfileName } from '../profiles/loader.js'
 import {
@@ -123,6 +124,13 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     fail(profileCheck.error!)
   }
 
+  // Generating into the starter repo itself is almost always a slip — the
+  // default output directory is wherever you happen to be standing.
+  const outputCheck = checkOutputDirectory(args.outputDir, args.outputDirExplicit)
+  if (outputCheck.refused && !args.provisionOnly) {
+    fail(outputCheck.message!)
+  }
+
   const projectRoot = join(args.outputDir, projectSlug)
 
   if (args.provisionOnly) {
@@ -203,8 +211,11 @@ Provisioning the existing project in ${projectSlug}/ — nothing regenerated.`)
   // the run stops after `terraform plan`.
 
   if (ctx.dryRun && ctx.provision) {
+    console.log(
+      `\nNote: --provision --dry-run writes ${projectSlug}/ to disk — Terraform can only` +
+        '\nplan a configuration that exists. No infrastructure is created.',
+    )
     printDryRunManifest(ctx, files)
-    console.log('\n--provision --dry-run: writing the project so Terraform can plan it.')
   }
 
   const writeCtx = ctx.dryRun ? { ...ctx, dryRun: false } : ctx

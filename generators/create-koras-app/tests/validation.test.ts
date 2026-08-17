@@ -1,10 +1,11 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { validateSlug, deriveSlug } from '../src/validation/slug.js'
 import { validateProfile } from '../src/validation/profile.js'
 import { checkDirectoryConflict } from '../src/validation/conflicts.js'
+import { checkOutputDirectory, isStarterRepository } from '../src/validation/output-dir.js'
 import { tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 
 // ── slug ────────────────────────────────────────────────────────────────────
 
@@ -100,5 +101,53 @@ describe('checkDirectoryConflict', () => {
     } finally {
       rmSync(testDir, { recursive: true })
     }
+  })
+})
+
+// ── output directory guard ───────────────────────────────────────────────────
+
+describe('checkOutputDirectory', () => {
+  const STARTER = join(tmpdir(), `koras-starter-${process.pid}-${Date.now()}`)
+  const PLAIN = join(tmpdir(), `koras-plain-${process.pid}-${Date.now()}`)
+
+  beforeAll(() => {
+    // a convincing replica of the starter repository
+    mkdirSync(join(STARTER, 'profiles'), { recursive: true })
+    mkdirSync(join(STARTER, 'generators', 'create-koras-app'), { recursive: true })
+    writeFileSync(join(STARTER, 'package.json'), JSON.stringify({ name: 'koras-saas-starter' }))
+
+    mkdirSync(PLAIN, { recursive: true })
+    writeFileSync(join(PLAIN, 'package.json'), JSON.stringify({ name: 'something-else' }))
+  })
+
+  afterAll(() => {
+    for (const dir of [STARTER, PLAIN]) if (existsSync(dir)) rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('refuses to generate into the starter repository by default', () => {
+    const result = checkOutputDirectory(STARTER, false)
+    expect(result.refused).toBe(true)
+    expect(result.message).toMatch(/Refusing to generate inside/)
+    expect(result.message).toMatch(/--output-dir/)
+  })
+
+  it('allows it when --output-dir says so explicitly', () => {
+    expect(checkOutputDirectory(STARTER, false).refused).toBe(true)
+    expect(checkOutputDirectory(STARTER, true).refused).toBe(false)
+  })
+
+  it('allows any other directory', () => {
+    expect(checkOutputDirectory(PLAIN, false).refused).toBe(false)
+    expect(checkOutputDirectory(tmpdir(), false).refused).toBe(false)
+  })
+
+  it('identifies the starter by name and layout together', () => {
+    expect(isStarterRepository(STARTER)).toBe(true)
+    expect(isStarterRepository(PLAIN)).toBe(false)
+    // a directory with the right name but no profiles/ is not the starter
+    const impostor = join(PLAIN, 'impostor')
+    mkdirSync(impostor, { recursive: true })
+    writeFileSync(join(impostor, 'package.json'), JSON.stringify({ name: 'koras-saas-starter' }))
+    expect(isStarterRepository(impostor)).toBe(false)
   })
 })
