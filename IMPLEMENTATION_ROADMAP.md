@@ -501,9 +501,9 @@ writing; generator tests pass for both profiles.
 ## Phase 9 — `--provision`
 
 **Prerequisite:** Phase 6 and Phase 7 complete
-**Status:** Implemented ✓ (2026-08-16 — 35 provisioning tests pass against an
-injected executor; `--provision --dry-run` verified end to end against the real
-Terraform binary)
+**Status:** Complete ✓ (2026-08-17 — exit criterion met: `--provision
+--dry-run` produced a real plan of 41 resources against live providers and
+stopped without applying)
 
 **Scope:** `--provision` flag triggers Terraform bootstrap with explicit approval.
 
@@ -573,9 +573,30 @@ extract outputs
   refuses outright if the requested profile differs from the one on disk. The
   directory-conflict error points at it.
 
-**Not executed:** a real `apply`. `init` reaches the remote backend and fails
-without an HCP Terraform token, which is correct behaviour — the acceptance
-test in Phase 13 needs live credentials.
+**Verified plan** (product profile, `docoris`): 14 GitHub resources (repo, four
+branches, default branch, four protections, four environments), 5 Doppler
+(project + four configs), 4 Supabase projects, 8 ZITADEL (four projects, four
+OIDC apps — no environment suffix), 2 Vercel projects (`web` and `admin`;
+`marketing` correctly excluded), 8 Fly apps (api and worker × four
+environments; `scheduler` and `ai-gateway` correctly excluded), and 0
+Cloudflare resources with the WAF off and DNS deferred.
+
+Five defects were found only by running it against live providers:
+
+1. `terraform_organization` pointed at an organization that did not exist.
+2. HCP workspaces default to **Remote** execution, which forbids `plan -out`
+   and cannot see Doppler-injected credentials. The runner now checks the
+   workspace's execution mode after init and refuses with the fix; the
+   organization default should also be set to Local.
+3. Windows environment variable names are case-insensitive, so passing both
+   `TF_VAR_GITHUB_ORG` and `TF_VAR_github_org` let the alias shadow the name
+   Terraform reads. Aliases are now removed once mapped.
+4. `for_each` rejects a sensitive value, so the Supabase module could not
+   iterate the password map. It now derives keys via `nonsensitive(keys(...))`.
+5. Generating with no `--output-dir` wrote a full project into the starter
+   repository, which is now refused.
+
+**Not executed:** a real `apply`. That belongs to the Phase 13 acceptance test.
 
 **Done when:** `--provision --dry-run` prints plan and exits. `--provision`
 with confirmation creates all infrastructure resources for both profiles.
