@@ -23,7 +23,7 @@ infrastructure:
   supabase_region: "us-east-1"
   fly_region: "iad"
   vercel_framework: "nextjs"
-  terraform_organization: "kkora-org"
+  terraform_organization: "koras"
 
 output:
   include_example_env: true
