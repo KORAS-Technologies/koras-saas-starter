@@ -9,6 +9,7 @@ import {
   terraformDirectory,
   generatorProvidedInputs,
   readProjectTfvars,
+  resolveTerraformEnv,
 } from './inputs.js'
 import { formatOutputs, parseTerraformOutputs, type ProvisionOutputs } from './outputs.js'
 
@@ -21,7 +22,7 @@ export interface CommandResult {
 export type CommandExecutor = (
   command: string,
   args: string[],
-  options: { cwd: string; capture: boolean },
+  options: { cwd: string; capture: boolean; env: NodeJS.ProcessEnv },
 ) => Promise<CommandResult>
 
 export interface ProvisionOptions {
@@ -128,9 +129,13 @@ export async function provision(
       : '\nRunning Terraform with credentials from the current environment.',
   )
 
+  // Terraform reads TF_VAR_/TF_TOKEN_ names case-sensitively, but Doppler can
+  // only store uppercase. resolveTerraformEnv maps the aliases across.
+  const terraformEnv = resolveTerraformEnv(env)
+
   const run = async (args: string[], capture = false) => {
     const { command, args: full } = wrap(useDoppler, args)
-    return exec(command, full, { cwd, capture })
+    return exec(command, full, { cwd, capture, env: terraformEnv })
   }
 
   // ── init ───────────────────────────────────────────────────────────────────
@@ -193,10 +198,11 @@ export function summarisePlan(stdout: string): string | undefined {
   return match?.[0]
 }
 
-const defaultExecutor: CommandExecutor = (command, args, { cwd, capture }) =>
+const defaultExecutor: CommandExecutor = (command, args, { cwd, capture, env }) =>
   new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
+      env,
       // Terraform output goes straight to the operator unless we need to parse
       // it. No shell: arguments reach the binary verbatim, so nothing in a
       // project name or path can be interpreted as a shell metacharacter.

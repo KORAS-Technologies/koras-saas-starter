@@ -1,9 +1,16 @@
 import type { GenerationContext } from '../generation/context.js'
 
 /**
- * Provider tokens Terraform needs. Every one is read from the environment —
- * Doppler is the authority and nothing is written to disk or into state.
+ * Doppler secret names may only contain [A-Z0-9_], but Terraform matches
+ * `TF_VAR_<name>` case-sensitively against the HCL variable, and `TF_TOKEN_`
+ * encodes a hostname in lowercase. The two conventions cannot both be
+ * satisfied by a single name.
+ *
+ * So every case-sensitive input has an uppercase ALIAS that Doppler can store.
+ * The alias is accepted by preflight and mapped back to the canonical name
+ * before Terraform is spawned — see `resolveTerraformEnv`.
  */
+
 export const PROVIDER_CREDENTIALS = [
   { name: 'GITHUB_TOKEN', provider: 'GitHub', purpose: 'repository, branches, environments' },
   { name: 'DOPPLER_TOKEN', provider: 'Doppler', purpose: 'project and per-environment configs' },
@@ -17,6 +24,7 @@ export const PROVIDER_CREDENTIALS = [
   // supply it here.
   {
     name: 'TF_TOKEN_app_terraform_io',
+    alias: 'TF_TOKEN_APP_TERRAFORM_IO',
     provider: 'HCP Terraform',
     purpose: 'remote state backend (or run `terraform login`)',
   },
@@ -29,10 +37,12 @@ export const PROVIDER_CREDENTIALS = [
 export const SECRET_VARIABLES = [
   {
     name: 'TF_VAR_supabase_environments',
+    alias: 'TF_VAR_SUPABASE_ENVIRONMENTS',
     purpose: 'per-environment Supabase db_password and region',
   },
   {
     name: 'TF_VAR_zitadel_instances',
+    alias: 'TF_VAR_ZITADEL_INSTANCES',
     purpose: 'per-instance ZITADEL domain, port, insecure, jwt_profile_json',
   },
 ] as const
@@ -42,12 +52,12 @@ export const SECRET_VARIABLES = [
  * target accounts and are specific to the KORAS estate, not to the project.
  */
 export const ACCOUNT_VARIABLES = [
-  { name: 'TF_VAR_github_org', purpose: 'GitHub organisation that owns the repository' },
-  { name: 'TF_VAR_primary_domain', purpose: 'apex domain for this project' },
-  { name: 'TF_VAR_supabase_org_id', purpose: 'Supabase organisation ID' },
-  { name: 'TF_VAR_vercel_team_id', purpose: 'Vercel team ID' },
-  { name: 'TF_VAR_fly_org_slug', purpose: 'Fly.io organisation slug' },
-  { name: 'TF_VAR_cloudflare_zone_id', purpose: 'Cloudflare zone for the primary domain' },
+  { name: 'TF_VAR_github_org', alias: 'TF_VAR_GITHUB_ORG', purpose: 'GitHub organisation that owns the repository' },
+  { name: 'TF_VAR_primary_domain', alias: 'TF_VAR_PRIMARY_DOMAIN', purpose: 'apex domain for this project' },
+  { name: 'TF_VAR_supabase_org_id', alias: 'TF_VAR_SUPABASE_ORG_ID', purpose: 'Supabase organisation ID' },
+  { name: 'TF_VAR_vercel_team_id', alias: 'TF_VAR_VERCEL_TEAM_ID', purpose: 'Vercel team ID' },
+  { name: 'TF_VAR_fly_org_slug', alias: 'TF_VAR_FLY_ORG_SLUG', purpose: 'Fly.io organisation slug' },
+  { name: 'TF_VAR_cloudflare_zone_id', alias: 'TF_VAR_CLOUDFLARE_ZONE_ID', purpose: 'Cloudflare zone for the primary domain' },
 ] as const
 
 export interface MissingInput {
@@ -65,19 +75,67 @@ export interface PreflightResult {
  * Terraform surfaces missing variables one at a time and only after `init` has
  * downloaded providers; this reports the whole list up front.
  */
+interface InputDefinition {
+  name: string
+  alias?: string
+  purpose: string
+  provider?: string
+}
+
+/** Every input, with the uppercase alias Doppler is able to store. */
+export function allInputs(): InputDefinition[] {
+  return [
+    ...PROVIDER_CREDENTIALS.map((c) => ({
+      name: c.name,
+      alias: 'alias' in c ? (c.alias as string) : undefined,
+      purpose: `${c.provider} — ${c.purpose}`,
+    })),
+    ...SECRET_VARIABLES.map((v) => ({ name: v.name, alias: v.alias, purpose: v.purpose })),
+    ...ACCOUNT_VARIABLES.map((v) => ({ name: v.name, alias: v.alias, purpose: v.purpose })),
+  ]
+}
+
+function readInput(env: NodeJS.ProcessEnv, input: InputDefinition): string | undefined {
+  for (const key of [input.name, input.alias]) {
+    if (key === undefined) continue
+    const value = env[key]
+    if (value !== undefined && value.trim() !== '') return value
+  }
+  return undefined
+}
+
 export function preflightInputs(env: NodeJS.ProcessEnv = process.env): PreflightResult {
   const missing: MissingInput[] = []
 
-  const requireVar = (name: string, detail: string) => {
-    const value = env[name]
-    if (value === undefined || value.trim() === '') missing.push({ name, detail })
+  for (const input of allInputs()) {
+    if (readInput(env, input) === undefined) {
+      missing.push({ name: input.alias ?? input.name, detail: input.purpose })
+    }
   }
 
-  for (const c of PROVIDER_CREDENTIALS) requireVar(c.name, `${c.provider} — ${c.purpose}`)
-  for (const v of SECRET_VARIABLES) requireVar(v.name, v.purpose)
-  for (const v of ACCOUNT_VARIABLES) requireVar(v.name, v.purpose)
-
   return { ok: missing.length === 0, missing }
+}
+
+/**
+ * Builds the environment Terraform is spawned with.
+ *
+ * Values stored under an uppercase alias are copied to the canonical,
+ * case-sensitive name Terraform actually reads. An explicitly-set canonical
+ * name always wins, so an operator who exported `TF_VAR_github_org` directly
+ * is never overridden by an alias.
+ */
+export function resolveTerraformEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const resolved: NodeJS.ProcessEnv = { ...env }
+
+  for (const input of allInputs()) {
+    if (!input.alias) continue
+    const canonical = resolved[input.name]
+    if (canonical !== undefined && canonical.trim() !== '') continue
+    const aliased = resolved[input.alias]
+    if (aliased !== undefined && aliased.trim() !== '') resolved[input.name] = aliased
+  }
+
+  return resolved
 }
 
 export function formatMissingInputs(missing: MissingInput[]): string {
@@ -90,8 +148,11 @@ export function formatMissingInputs(missing: MissingInput[]): string {
     '  doppler run --project koras-platform-bootstrap --config <config> -- \\',
     '    pnpm create-koras-app <project> --profile <profile> --provision',
     '',
-    'Or export them in the current shell. Secret values are never written to',
-    'disk, logged, or included in the registration payload.',
+    'Doppler secret names allow only [A-Z0-9_], so the uppercase names above are',
+    'what to store; the generator maps them to the case Terraform requires.',
+    '',
+    'Secret values are never written to disk, logged, or included in the',
+    'registration payload.',
   ].join('\n')
 }
 

@@ -13,6 +13,8 @@ import {
   formatMissingInputs,
   generatorProvidedInputs,
   readProjectTfvars,
+  resolveTerraformEnv,
+  allInputs,
   PROVIDER_CREDENTIALS,
   SECRET_VARIABLES,
   ACCOUNT_VARIABLES,
@@ -47,12 +49,19 @@ function ctxFor(profile: ProfileName = 'product') {
   })
 }
 
-/** Every credential and variable preflight requires, all present. */
+/** Every credential and variable preflight requires, under canonical names. */
 function completeEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {}
   for (const c of PROVIDER_CREDENTIALS) env[c.name] = 'token-value'
   for (const v of SECRET_VARIABLES) env[v.name] = '{}'
   for (const v of ACCOUNT_VARIABLES) env[v.name] = 'value'
+  return env
+}
+
+/** The same set, stored the only way Doppler permits: uppercase. */
+function dopplerEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {}
+  for (const input of allInputs()) env[input.alias ?? input.name] = 'value'
   return env
 }
 
@@ -98,7 +107,8 @@ describe('credential preflight', () => {
   it('names the provider each credential belongs to', () => {
     const message = formatMissingInputs(preflightInputs({}).missing)
     expect(message).toContain('GITHUB_TOKEN')
-    expect(message).toContain('TF_VAR_zitadel_instances')
+    // reported under the uppercase name, because that is what Doppler can store
+    expect(message).toContain('TF_VAR_ZITADEL_INSTANCES')
     expect(message).toContain('doppler run')
   })
 
@@ -121,6 +131,54 @@ describe('credential preflight', () => {
     })
     expect(result.status).toBe('missing-inputs')
     expect(calls).toHaveLength(0)
+  })
+})
+
+// ── Doppler name aliases ─────────────────────────────────────────────────────
+
+describe('uppercase aliases', () => {
+  it('accepts inputs stored under the uppercase name Doppler allows', () => {
+    expect(preflightInputs(dopplerEnv()).ok).toBe(true)
+  })
+
+  it('maps aliases to the case-sensitive names Terraform reads', () => {
+    const resolved = resolveTerraformEnv({
+      TF_VAR_GITHUB_ORG: 'koras-technologies',
+      TF_TOKEN_APP_TERRAFORM_IO: 'atlas-token',
+      TF_VAR_ZITADEL_INSTANCES: '{"dev":{}}',
+    })
+    expect(resolved.TF_VAR_github_org).toBe('koras-technologies')
+    expect(resolved.TF_TOKEN_app_terraform_io).toBe('atlas-token')
+    expect(resolved.TF_VAR_zitadel_instances).toBe('{"dev":{}}')
+  })
+
+  it('never overrides a canonical name that is already set', () => {
+    const resolved = resolveTerraformEnv({
+      TF_VAR_github_org: 'explicit',
+      TF_VAR_GITHUB_ORG: 'from-doppler',
+    })
+    expect(resolved.TF_VAR_github_org).toBe('explicit')
+  })
+
+  it('reports the uppercase name when an input is missing', () => {
+    const message = formatMissingInputs(preflightInputs({}).missing)
+    expect(message).toContain('TF_VAR_GITHUB_ORG')
+    expect(message).toContain('TF_TOKEN_APP_TERRAFORM_IO')
+  })
+
+  it('spawns Terraform with the canonical names resolved', async () => {
+    const seen: NodeJS.ProcessEnv[] = []
+    await provision(ctxFor(), {
+      dryRun: true,
+      projectRoot: PROJECT_ROOT,
+      env: dopplerEnv(),
+      exec: async (_c, _a, { env }) => {
+        seen.push(env)
+        return { exitCode: 0, stdout: '' }
+      },
+    })
+    expect(seen[0].TF_VAR_github_org).toBe('value')
+    expect(seen[0].TF_TOKEN_app_terraform_io).toBe('value')
   })
 })
 
