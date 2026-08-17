@@ -12,6 +12,7 @@ import {
   resolveTerraformEnv,
 } from './inputs.js'
 import { formatOutputs, parseTerraformOutputs, type ProvisionOutputs } from './outputs.js'
+import { checkExecutionMode, readBackendConfig, type FetchLike } from './backend.js'
 
 export interface CommandResult {
   exitCode: number
@@ -34,11 +35,14 @@ export interface ProvisionOptions {
   approval?: ApprovalOptions
   /** Force the Doppler wrapper on or off; auto-detected when omitted. */
   useDoppler?: boolean
+  /** Injected for tests; defaults to global fetch. */
+  fetchImpl?: FetchLike
 }
 
 export type ProvisionStatus =
   | 'missing-inputs'
   | 'profile-mismatch'
+  | 'remote-execution'
   | 'init-failed'
   | 'plan-failed'
   | 'planned' // dry run — stopped before apply, as intended
@@ -160,6 +164,30 @@ export async function provision(
   console.log('\n==> terraform init')
   const init = await run(['init', '-input=false'])
   if (init.exitCode !== 0) return { status: 'init-failed' }
+
+  // ── execution mode ─────────────────────────────────────────────────────────
+  // Checked after init, because init is what creates the workspace.
+
+  const backendPath = join(cwd, 'backend.tf')
+  const backend = existsSync(backendPath)
+    ? readBackendConfig(readFileSync(backendPath, 'utf8'))
+    : undefined
+
+  if (backend) {
+    const mode = await checkExecutionMode(
+      backend,
+      terraformEnv.TF_TOKEN_app_terraform_io,
+      options.fetchImpl,
+    )
+    if (mode.status === 'remote') {
+      console.error('')
+      console.error(mode.message)
+      return { status: 'remote-execution' }
+    }
+    if (mode.status === 'unknown') {
+      console.log(`\nCould not confirm execution mode (${mode.reason}); continuing.`)
+    }
+  }
 
   // ── plan ───────────────────────────────────────────────────────────────────
 

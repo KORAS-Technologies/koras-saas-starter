@@ -262,6 +262,7 @@ async function runProvision(
       break
     case 'missing-inputs':
     case 'profile-mismatch':
+    case 'remote-execution':
       // both already printed an actionable message
       process.exitCode = 1
       break

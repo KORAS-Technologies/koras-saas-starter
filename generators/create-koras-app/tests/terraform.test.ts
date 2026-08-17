@@ -23,6 +23,7 @@ import {
   ACCOUNT_VARIABLES,
 } from '../src/terraform/inputs.js'
 import { confirmApply } from '../src/terraform/approval.js'
+import { readBackendConfig, checkExecutionMode } from '../src/terraform/backend.js'
 import { parseTerraformOutputs, groupByEnvironment } from '../src/terraform/outputs.js'
 
 const ROOT = join(tmpdir(), `koras-tf-${process.pid}-${Date.now()}`)
@@ -576,6 +577,90 @@ enabled_services = ["api","scheduler"]
     const parsed = readProjectTfvars('# nothing here')
     expect(parsed.profile).toBeUndefined()
     expect(parsed.enabledApps).toEqual([])
+  })
+})
+
+// ── HCP execution mode ───────────────────────────────────────────────────────
+
+describe('HCP execution mode', () => {
+  const BACKEND = `terraform {
+  backend "remote" {
+    organization = "koras"
+
+    workspaces {
+      name = "docoris"
+    }
+  }
+}`
+
+  const respond = (status: number, body: unknown) => async () => ({
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+  })
+
+  it('reads organization and workspace from backend.tf', () => {
+    expect(readBackendConfig(BACKEND)).toEqual({ organization: 'koras', workspace: 'docoris' })
+  })
+
+  it('ignores a configuration with no remote backend', () => {
+    expect(readBackendConfig('terraform {}')).toBeUndefined()
+  })
+
+  it('passes when the workspace runs locally', async () => {
+    const result = await checkExecutionMode(
+      { organization: 'koras', workspace: 'docoris' },
+      'token',
+      respond(200, { data: { attributes: { 'execution-mode': 'local' } } }),
+    )
+    expect(result.status).toBe('local')
+  })
+
+  it('explains how to fix remote execution', async () => {
+    const result = await checkExecutionMode(
+      { organization: 'koras', workspace: 'docoris' },
+      'token',
+      respond(200, { data: { attributes: { 'execution-mode': 'remote' } } }),
+    )
+    expect(result.status).toBe('remote')
+    if (result.status !== 'remote') return
+    expect(result.message).toMatch(/Execution Mode → Local/)
+    expect(result.message).toMatch(/app.terraform.io\/app\/koras\/workspaces\/docoris/)
+  })
+
+  it('does not block when the workspace does not exist yet', async () => {
+    const result = await checkExecutionMode(
+      { organization: 'koras', workspace: 'docoris' },
+      'token',
+      respond(404, {}),
+    )
+    expect(result.status).toBe('unknown')
+  })
+
+  it('does not block when HCP is unreachable', async () => {
+    const result = await checkExecutionMode(
+      { organization: 'koras', workspace: 'docoris' },
+      'token',
+      async () => {
+        throw new Error('offline')
+      },
+    )
+    expect(result.status).toBe('unknown')
+  })
+
+  it('stops before plan when the workspace is remote', async () => {
+    writeFileSync(join(PROJECT_ROOT, 'infrastructure', 'terraform', 'backend.tf'), BACKEND)
+    const calls: Call[] = []
+    const result = await provision(ctxFor(), {
+      dryRun: true,
+      projectRoot: PROJECT_ROOT,
+      env: completeEnv(),
+      exec: recordingExec(calls),
+      fetchImpl: respond(200, { data: { attributes: { 'execution-mode': 'remote' } } }),
+    })
+    expect(result.status).toBe('remote-execution')
+    expect(calls.map((c) => c.args[0])).toEqual(['init'])
+    rmSync(join(PROJECT_ROOT, 'infrastructure', 'terraform', 'backend.tf'))
   })
 })
 
