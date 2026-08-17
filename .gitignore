@@ -54,3 +54,5 @@ local/certs/*.crt
 # Test artifacts
 coverage/
 junit.xml
+
+private-keys/
