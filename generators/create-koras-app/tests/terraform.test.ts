@@ -156,6 +156,29 @@ describe('uppercase aliases', () => {
     expect(resolved.TF_VAR_zitadel_instances).toBe('{"dev":{}}')
   })
 
+  it('removes the alias so it cannot shadow the canonical name', () => {
+    // Windows env names are case-insensitive: leaving both in the child env
+    // makes the alias win, and Terraform then looks for a variable literally
+    // named GITHUB_ORG.
+    const resolved = resolveTerraformEnv({ TF_VAR_GITHUB_ORG: 'koras-technologies' })
+    expect(resolved.TF_VAR_github_org).toBe('koras-technologies')
+    expect('TF_VAR_GITHUB_ORG' in resolved).toBe(false)
+  })
+
+  it('drops the alias even when the canonical name was set explicitly', () => {
+    const resolved = resolveTerraformEnv({
+      TF_VAR_github_org: 'explicit',
+      TF_VAR_GITHUB_ORG: 'from-doppler',
+    })
+    expect(resolved.TF_VAR_github_org).toBe('explicit')
+    expect('TF_VAR_GITHUB_ORG' in resolved).toBe(false)
+  })
+
+  it('leaves provider tokens, which have no alias, untouched', () => {
+    const resolved = resolveTerraformEnv({ GITHUB_TOKEN: 'ghp' })
+    expect(resolved.GITHUB_TOKEN).toBe('ghp')
+  })
+
   it('never overrides a canonical name that is already set', () => {
     const resolved = resolveTerraformEnv({
       TF_VAR_github_org: 'explicit',

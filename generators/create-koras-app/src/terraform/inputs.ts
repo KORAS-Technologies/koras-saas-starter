@@ -211,9 +211,17 @@ export function resolveTerraformEnv(env: NodeJS.ProcessEnv = process.env): NodeJ
 
   for (const input of allInputs()) {
     const canonical = resolved[input.name]
-    if (canonical !== undefined && canonical.trim() !== '') continue
-    const value = readInput(resolved, input)
-    if (value !== undefined) resolved[input.name] = value
+    if (canonical === undefined || canonical.trim() === '') {
+      const value = readInput(resolved, input)
+      if (value !== undefined) resolved[input.name] = value
+    }
+
+    // Windows environment variable names are case-insensitive, so
+    // TF_VAR_GITHUB_ORG and TF_VAR_github_org collide in the child process and
+    // the alias wins — leaving Terraform to read a variable named GITHUB_ORG,
+    // which matches nothing. Drop the alias once its value has been carried
+    // over to the name Terraform actually looks for.
+    if (input.alias && input.alias !== input.name) delete resolved[input.alias]
   }
 
   return resolved
