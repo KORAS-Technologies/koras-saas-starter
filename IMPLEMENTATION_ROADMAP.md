@@ -501,6 +501,9 @@ writing; generator tests pass for both profiles.
 ## Phase 9 — `--provision`
 
 **Prerequisite:** Phase 6 and Phase 7 complete
+**Status:** Implemented ✓ (2026-08-16 — 35 provisioning tests pass against an
+injected executor; `--provision --dry-run` verified end to end against the real
+Terraform binary)
 
 **Scope:** `--provision` flag triggers Terraform bootstrap with explicit approval.
 
@@ -527,6 +530,31 @@ terraform apply
   ↓
 extract outputs
 ```
+
+**Design notes:**
+
+- **No `--auto-approve`, by construction.** `apply` is reachable only through
+  `confirmApply`, which requires the operator to type `yes` in full — `y`, `Y`,
+  and `YES` are refusals — and treats a non-interactive session as a refusal
+  rather than reading EOF as consent. The saved plan file is what gets applied,
+  so the approved plan is exactly what runs.
+- **Preflight before `init`.** Terraform reports missing variables one at a
+  time and only after providers are downloaded. `preflightInputs` checks all 15
+  credentials and variables first and prints the complete list with the
+  provider each belongs to.
+- **Doppler preferred, environment supported.** `doppler run --` wraps
+  Terraform when `DOPPLER_PROJECT` and `DOPPLER_CONFIG` are set; otherwise the
+  ambient environment is used.
+- **Secrets never surface.** Outputs marked sensitive by Terraform are dropped
+  during parsing and reported by name only, so nothing secret reaches logs or
+  the Phase 10 registration payload.
+- **`--provision --dry-run` still writes the project** — Terraform can only
+  plan a configuration that exists on disk. The dry run applies to
+  infrastructure: the run stops after `plan`.
+
+**Not executed:** a real `apply`. `init` reaches the remote backend and fails
+without an HCP Terraform token, which is correct behaviour — the acceptance
+test in Phase 13 needs live credentials.
 
 **Done when:** `--provision --dry-run` prints plan and exits. `--provision`
 with confirmation creates all infrastructure resources for both profiles.

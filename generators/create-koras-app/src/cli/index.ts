@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { parseArgs } from './args.js'
 import { promptInteractive } from './interactive.js'
 import { validateSlug, deriveSlug } from '../validation/slug.js'
@@ -13,6 +14,7 @@ import {
 import { buildContext } from '../generation/context.js'
 import { renderTemplate } from '../generation/engine.js'
 import { writeFiles, printDryRunManifest } from '../generation/writer.js'
+import { provision } from '../terraform/runner.js'
 
 const HELP_TEXT = `
 create-koras-app — KORAS Application Factory
@@ -160,23 +162,63 @@ export async function run(argv: string[] = process.argv): Promise<void> {
 
   const files = renderTemplate(ctx)
 
-  if (ctx.dryRun) {
+  if (ctx.dryRun && !ctx.provision) {
     printDryRunManifest(ctx, files)
     return
   }
 
   // ── Write files ────────────────────────────────────────────────────────────
+  //
+  // `--provision --dry-run` still writes the project: Terraform can only plan a
+  // configuration that exists on disk. The dry run applies to infrastructure —
+  // the run stops after `terraform plan`.
 
-  const result = writeFiles(ctx, files)
+  if (ctx.dryRun && ctx.provision) {
+    printDryRunManifest(ctx, files)
+    console.log('\n--provision --dry-run: writing the project so Terraform can plan it.')
+  }
+
+  const writeCtx = ctx.dryRun ? { ...ctx, dryRun: false } : ctx
+  const result = writeFiles(writeCtx, files)
 
   console.log(`\n✓ Generated ${result.filesWritten} files in ${projectSlug}/`)
 
-  if (ctx.provision) {
-    console.log('\n--provision: Terraform provisioning implemented in Phase 9.')
-  } else {
+  if (!ctx.provision) {
     console.log(`\nNext steps:`)
     console.log(`  cd ${projectSlug}`)
     console.log(`  make bootstrap`)
     console.log(`  make dev`)
+    return
+  }
+
+  // ── Provision infrastructure ───────────────────────────────────────────────
+
+  const outcome = await provision(ctx, {
+    dryRun: ctx.dryRun,
+    projectRoot: join(args.outputDir, projectSlug),
+  })
+
+  switch (outcome.status) {
+    case 'applied':
+      console.log('\n✓ Infrastructure provisioned.')
+      console.log(`\nNext steps:`)
+      console.log(`  cd ${projectSlug}`)
+      console.log(`  make bootstrap`)
+      break
+    case 'planned':
+      console.log(`\nThe project is generated in ${projectSlug}/. No infrastructure was created.`)
+      break
+    case 'declined':
+      console.log(`\nThe project is generated in ${projectSlug}/. No infrastructure was created.`)
+      console.log('Review the plan and re-run with --provision when ready.')
+      break
+    case 'missing-inputs':
+      // preflight already printed the full list of what is missing
+      process.exitCode = 1
+      break
+    default:
+      console.error(`\nProvisioning failed at: ${outcome.status}`)
+      console.error(`The project is generated in ${projectSlug}/ — Terraform can be re-run there.`)
+      process.exitCode = 1
   }
 }
