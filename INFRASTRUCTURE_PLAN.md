@@ -131,10 +131,10 @@ variable "db_password_secret" { type = string; sensitive = true }
 variable "regions"            {
   type = map(string)
   default = {
-    dev  = "eu-central-1"
-    test = "eu-central-1"
-    stg  = "eu-central-1"
-    prod = "eu-central-1"
+    dev  = "us-east-1"
+    test = "us-east-1"
+    stg  = "us-east-1"
+    prod = "us-east-1"
   }
 }
 ```
@@ -224,10 +224,10 @@ variable "environments"   { type = list(string); default = ["dev", "test", "stg"
 variable "regions"        {
   type = map(string)
   default = {
-    dev  = "ams"
-    test = "ams"
-    stg  = "ams"
-    prod = "ams"
+    dev  = "iad"
+    test = "iad"
+    stg  = "iad"
+    prod = "iad"
   }
 }
 ```
@@ -403,17 +403,17 @@ to Terraform as a generated `terraform.tfvars.json` file (never committed):
   "project_name": "Docoris",
   "project_slug": "docoris",
   "profile": "product",
-  "github_org": "koras-org",
+  "github_org": "koras-technologies",
   "primary_domain": "docoris.app",
   "enabled_apps": ["web", "admin"],
   "enabled_services": ["api", "worker", "ai_gateway"],
   "storage_provider": "supabase",
   "ai_providers": ["openai", "anthropic"],
   "environment_configuration": {
-    "dev":  { "region": "eu-central-1", "fly_region": "ams" },
-    "test": { "region": "eu-central-1", "fly_region": "ams" },
-    "stg":  { "region": "eu-central-1", "fly_region": "ams" },
-    "prod": { "region": "eu-central-1", "fly_region": "ams" }
+    "dev":  { "region": "us-east-1", "fly_region": "iad" },
+    "test": { "region": "us-east-1", "fly_region": "iad" },
+    "stg":  { "region": "us-east-1", "fly_region": "iad" },
+    "prod": { "region": "us-east-1", "fly_region": "iad" }
   }
 }
 ```

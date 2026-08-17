@@ -74,8 +74,8 @@ function recordingExec(
 }
 
 const APPLY_OUTPUTS = JSON.stringify({
-  github_repository_full_name: { value: 'koras/sampleapp' },
-  github_repository_url: { value: 'https://github.com/koras/sampleapp' },
+  github_repository_full_name: { value: 'koras-technologies/sampleapp' },
+  github_repository_url: { value: 'https://github.com/koras-technologies/sampleapp' },
   doppler_project_name: { value: 'sampleapp' },
   supabase_project_refs: { value: { dev: 'abc-dev', prod: 'abc-prod' } },
   zitadel_project_ids: { value: { dev: '123', prod: '456' } },
@@ -312,7 +312,7 @@ describe('outputs', () => {
   const outputs = parseTerraformOutputs(APPLY_OUTPUTS)
 
   it('extracts non-secret infrastructure references', () => {
-    expect(outputs.githubRepository).toBe('koras/sampleapp')
+    expect(outputs.githubRepository).toBe('koras-technologies/sampleapp')
     expect(outputs.supabaseProjectRefs.dev).toBe('abc-dev')
     expect(outputs.flyApps).toEqual(['sampleapp-api-dev', 'sampleapp-api-prod'])
   })

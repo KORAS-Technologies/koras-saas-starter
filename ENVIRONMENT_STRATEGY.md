@@ -222,8 +222,8 @@ Development observability is local Docker Compose only.
 ```hcl
 environment    = "dev"
 git_branch     = "develop"
-fly_region     = "ams"
-supabase_region = "eu-central-1"
+fly_region     = "iad"
+supabase_region = "us-east-1"
 vercel_target  = "preview"
 ```
 
@@ -232,8 +232,8 @@ vercel_target  = "preview"
 ```hcl
 environment    = "prod"
 git_branch     = "main"
-fly_region     = "ams"
-supabase_region = "eu-central-1"
+fly_region     = "iad"
+supabase_region = "us-east-1"
 vercel_target  = "production"
 prevent_destroy = true
 ```
