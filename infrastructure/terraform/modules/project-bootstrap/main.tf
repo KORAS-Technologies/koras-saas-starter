@@ -27,6 +27,7 @@ module "supabase" {
   project_slug    = var.project_slug
   organization_id = var.supabase_org_id
   environments    = var.supabase_environments
+  default_region  = var.supabase_region
 }
 
 # One module instance per ZITADEL instance. Terraform cannot index providers,

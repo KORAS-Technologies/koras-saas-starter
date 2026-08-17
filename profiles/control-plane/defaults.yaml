@@ -13,10 +13,10 @@ services:
   scheduler: true
 
 infrastructure:
-  supabase_region: "eu-central-1"
-  fly_region: "ams"
+  supabase_region: "us-east-1"
+  fly_region: "iad"
   vercel_framework: "nextjs"
-  terraform_organization: "koras"
+  terraform_organization: "kkora-org"
 
 output:
   include_example_env: true

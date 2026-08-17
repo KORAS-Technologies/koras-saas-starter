@@ -40,11 +40,11 @@ variable "supabase_org_id" {
 
 variable "supabase_region" {
   type    = string
-  default = "eu-central-1"
+  default = "us-east-1"
 }
 
 variable "supabase_environments" {
-  type      = map(object({ db_password = string, region = string }))
+  type      = map(object({ db_password = string, region = optional(string) }))
   sensitive = true
 }
 

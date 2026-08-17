@@ -22,9 +22,9 @@ variable "regions" {
   type        = map(string)
   description = "Map of env → Fly region"
   default = {
-    dev  = "ams"
-    test = "ams"
-    stg  = "ams"
-    prod = "ams"
+    dev  = "iad"
+    test = "iad"
+    stg  = "iad"
+    prod = "iad"
   }
 }

@@ -4,7 +4,7 @@ resource "supabase_project" "envs" {
   organization_id   = var.organization_id
   name              = "${var.project_slug}-${each.key}"
   database_password = each.value.db_password
-  region            = each.value.region
+  region            = coalesce(each.value.region, var.default_region)
 
   lifecycle {
     # Prevent accidental destruction of production data

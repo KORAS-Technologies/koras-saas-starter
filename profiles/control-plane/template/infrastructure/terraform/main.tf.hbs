@@ -21,6 +21,7 @@ module "bootstrap" {
 
   supabase_org_id       = var.supabase_org_id
   supabase_environments = var.supabase_environments
+  supabase_region       = var.supabase_region
 
   vercel_team_id = var.vercel_team_id
   fly_org_slug   = var.fly_org_slug

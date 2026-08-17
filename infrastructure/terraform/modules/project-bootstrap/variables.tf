@@ -85,19 +85,24 @@ variable "zitadel_post_logout_redirect_uris" {
 variable "supabase_environments" {
   type = map(object({
     db_password = string
-    region      = string
+    region      = optional(string)
   }))
   sensitive = true
 }
 
 # ── Region configuration ──────────────────────────────────────────────────────
 
+variable "supabase_region" {
+  type        = string
+  description = "Default Supabase region; supabase_environments may override per environment."
+}
+
 variable "fly_regions" {
   type = map(string)
   default = {
-    dev  = "ams"
-    test = "ams"
-    stg  = "ams"
-    prod = "ams"
+    dev  = "iad"
+    test = "iad"
+    stg  = "iad"
+    prod = "iad"
   }
 }
