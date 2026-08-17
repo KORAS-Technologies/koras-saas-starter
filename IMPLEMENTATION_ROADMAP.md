@@ -551,6 +551,13 @@ extract outputs
 - **`--provision --dry-run` still writes the project** — Terraform can only
   plan a configuration that exists on disk. The dry run applies to
   infrastructure: the run stops after `plan`.
+- **`--provision-only` provisions an existing project.** Provisioning fails
+  partway for ordinary reasons (a taken name, a rate limit), so retry has to be
+  routine. This path skips generation, requires the directory the normal path
+  refuses to overwrite, reads component selections from the project's committed
+  `terraform.tfvars` rather than re-deriving them from today's defaults, and
+  refuses outright if the requested profile differs from the one on disk. The
+  directory-conflict error points at it.
 
 **Not executed:** a real `apply`. `init` reaches the remote backend and fails
 without an HCP Terraform token, which is correct behaviour — the acceptance

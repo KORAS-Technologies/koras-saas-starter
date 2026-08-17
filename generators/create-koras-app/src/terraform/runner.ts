@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { GenerationContext } from '../generation/context.js'
 import { confirmApply, type ApprovalOptions } from './approval.js'
@@ -8,6 +8,7 @@ import {
   preflightInputs,
   terraformDirectory,
   generatorProvidedInputs,
+  readProjectTfvars,
 } from './inputs.js'
 import { formatOutputs, parseTerraformOutputs, type ProvisionOutputs } from './outputs.js'
 
@@ -36,6 +37,7 @@ export interface ProvisionOptions {
 
 export type ProvisionStatus =
   | 'missing-inputs'
+  | 'profile-mismatch'
   | 'init-failed'
   | 'plan-failed'
   | 'planned' // dry run — stopped before apply, as intended
@@ -94,13 +96,32 @@ export async function provision(
     return { status: 'missing-inputs' }
   }
 
+  // Terraform reads terraform.tfvars itself. Prefer reporting what that file
+  // actually says over what today's defaults would produce — with
+  // --provision-only the project on disk may predate the current manifest.
   const inputs = generatorProvidedInputs(ctx)
+  const tfvarsPath = join(cwd, 'terraform.tfvars')
+  const onDisk = existsSync(tfvarsPath)
+    ? readProjectTfvars(readFileSync(tfvarsPath, 'utf8'))
+    : undefined
+
   console.log('')
-  console.log('Terraform inputs from the generator:')
-  console.log(`  profile          ${inputs.profile}`)
-  console.log(`  project_slug     ${inputs.project_slug}`)
-  console.log(`  enabled_apps     ${JSON.stringify(inputs.enabled_apps)}`)
-  console.log(`  enabled_services ${JSON.stringify(inputs.enabled_services)}`)
+  console.log('Terraform inputs:')
+  console.log(`  profile          ${onDisk?.profile ?? inputs.profile}`)
+  console.log(`  project_slug     ${onDisk?.projectSlug ?? inputs.project_slug}`)
+  console.log(`  enabled_apps     ${JSON.stringify(onDisk?.enabledApps ?? inputs.enabled_apps)}`)
+  console.log(
+    `  enabled_services ${JSON.stringify(onDisk?.enabledServices ?? inputs.enabled_services)}`,
+  )
+
+  if (onDisk?.profile && onDisk.profile !== ctx.profile) {
+    console.error('')
+    console.error(
+      `Refusing to provision: the project on disk was generated with profile ` +
+        `"${onDisk.profile}", but "${ctx.profile}" was requested.`,
+    )
+    return { status: 'profile-mismatch' }
+  }
   console.log(
     useDoppler
       ? `\nRunning Terraform under doppler run (${env.DOPPLER_PROJECT}/${env.DOPPLER_CONFIG}).`

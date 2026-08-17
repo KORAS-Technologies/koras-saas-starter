@@ -11,6 +11,8 @@ export interface ParsedArgs {
   with: string[]
   /** Optional components to disable, e.g. --without worker */
   without: string[]
+  /** Provision an already-generated project; skips generation entirely. */
+  provisionOnly: boolean
 }
 
 function splitList(value: string | undefined): string[] {
@@ -32,6 +34,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     listProfiles: false,
     with: [],
     without: [],
+    provisionOnly: false,
   }
 
   let i = 0
@@ -46,6 +49,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
         result.listProfiles = true
         break
       case '--provision':
+        result.provision = true
+        break
+      case '--provision-only':
+        // Implies --provision: there is nothing else this flag could mean.
+        result.provisionOnly = true
         result.provision = true
         break
       case '--dry-run':

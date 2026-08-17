@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { mkdirSync, rmSync, existsSync } from 'node:fs'
+import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs'
 import { loadProfile } from '../src/profiles/index.js'
 import type { ProfileName } from '../src/profiles/loader.js'
 import { resolveSelections } from '../src/profiles/validator.js'
@@ -12,6 +12,7 @@ import {
   preflightInputs,
   formatMissingInputs,
   generatorProvidedInputs,
+  readProjectTfvars,
   PROVIDER_CREDENTIALS,
   SECRET_VARIABLES,
   ACCOUNT_VARIABLES,
@@ -255,8 +256,8 @@ describe('failure handling', () => {
 
 describe('Doppler', () => {
   it('is used when a project and config are configured', () => {
-    expect(shouldUseDoppler({ DOPPLER_PROJECT: 'koras-infra', DOPPLER_CONFIG: 'dev' })).toBe(true)
-    expect(shouldUseDoppler({ DOPPLER_PROJECT: 'koras-infra' })).toBe(false)
+    expect(shouldUseDoppler({ DOPPLER_PROJECT: 'koras-platform-bootstrap', DOPPLER_CONFIG: 'dev' })).toBe(true)
+    expect(shouldUseDoppler({ DOPPLER_PROJECT: 'koras-platform-bootstrap' })).toBe(false)
     expect(shouldUseDoppler({})).toBe(false)
   })
 
@@ -265,7 +266,7 @@ describe('Doppler', () => {
     await provision(ctxFor(), {
       dryRun: true,
       projectRoot: PROJECT_ROOT,
-      env: { ...completeEnv(), DOPPLER_PROJECT: 'koras-infra', DOPPLER_CONFIG: 'dev' },
+      env: { ...completeEnv(), DOPPLER_PROJECT: 'koras-platform-bootstrap', DOPPLER_CONFIG: 'dev' },
       exec: recordingExec(calls),
     })
     expect(calls[0].command).toBe('doppler')
@@ -333,6 +334,63 @@ describe('outputs', () => {
 
   it('reports a parse failure rather than returning empty references', () => {
     expect(() => parseTerraformOutputs('not json')).toThrow(/Could not parse/)
+  })
+})
+
+// ── provisioning an existing project ─────────────────────────────────────────
+
+describe('--provision-only', () => {
+  const EXISTING = join(ROOT, 'existing')
+  const TFVARS = `profile      = "product"
+project_name = "existing"
+project_slug = "existing"
+
+enabled_apps     = ["web","marketing"]
+enabled_services = ["api","scheduler"]
+`
+
+  beforeAll(() => {
+    mkdirSync(join(EXISTING, 'infrastructure', 'terraform'), { recursive: true })
+    writeFileSync(join(EXISTING, 'infrastructure', 'terraform', 'terraform.tfvars'), TFVARS)
+  })
+
+  it('reads component selections from the project on disk', () => {
+    const parsed = readProjectTfvars(TFVARS)
+    expect(parsed.profile).toBe('product')
+    expect(parsed.projectSlug).toBe('existing')
+    // deliberately different from what today's profile defaults produce
+    expect(parsed.enabledApps).toEqual(['web', 'marketing'])
+    expect(parsed.enabledServices).toEqual(['api', 'scheduler'])
+  })
+
+  it('provisions without regenerating', async () => {
+    const calls: Call[] = []
+    const result = await provision(ctxFor(), {
+      dryRun: true,
+      projectRoot: EXISTING,
+      env: completeEnv(),
+      exec: recordingExec(calls),
+    })
+    expect(result.status).toBe('planned')
+    expect(calls.map((c) => c.args[0])).toEqual(['init', 'plan'])
+  })
+
+  it('refuses when the requested profile differs from the one on disk', async () => {
+    const calls: Call[] = []
+    const result = await provision(ctxFor('control-plane'), {
+      dryRun: true,
+      projectRoot: EXISTING,
+      env: completeEnv(),
+      exec: recordingExec(calls),
+    })
+    expect(result.status).toBe('profile-mismatch')
+    expect(calls).toHaveLength(0)
+  })
+
+  it('tolerates a project with no tfvars yet', () => {
+    const parsed = readProjectTfvars('# nothing here')
+    expect(parsed.profile).toBeUndefined()
+    expect(parsed.enabledApps).toEqual([])
   })
 })
 

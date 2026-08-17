@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { existsSync } from 'node:fs'
 import { parseArgs } from './args.js'
 import { promptInteractive } from './interactive.js'
 import { validateSlug, deriveSlug } from '../validation/slug.js'
@@ -30,6 +31,7 @@ OPTIONS:
   --with <components>        Enable optional components (comma-separated)
   --without <components>     Disable optional components (comma-separated)
   --provision                Provision infrastructure via Terraform
+  --provision-only           Provision an existing project; skips generation
   --dry-run                  Preview generation without writing files
   --output-dir <path>        Output parent directory (default: current directory)
   --no-interactive           Disable interactive prompts
@@ -44,6 +46,7 @@ EXAMPLES:
   pnpm create-koras-app docoris --profile product --with marketing,ai_gateway
   pnpm create-koras-app koras-control-plane --profile control-plane
   pnpm create-koras-app koras-control-plane --profile control-plane --provision
+  pnpm create-koras-app docoris --profile product --provision-only
 `.trim()
 
 function printListProfiles(): void {
@@ -120,9 +123,26 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     fail(profileCheck.error!)
   }
 
-  const dirCheck = checkDirectoryConflict(args.outputDir, projectSlug)
-  if (dirCheck.conflict) {
-    fail(dirCheck.message!)
+  const projectRoot = join(args.outputDir, projectSlug)
+
+  if (args.provisionOnly) {
+    // Retrying after a failed apply is routine, so this path deliberately
+    // requires the directory the normal path refuses to overwrite.
+    if (!existsSync(projectRoot)) {
+      fail(
+        `No generated project at ${projectRoot}\n` +
+          '  --provision-only provisions an existing project.\n' +
+          `  Generate it first: pnpm create-koras-app ${projectSlug} --profile ${profileName}`,
+      )
+    }
+  } else {
+    const dirCheck = checkDirectoryConflict(args.outputDir, projectSlug)
+    if (dirCheck.conflict) {
+      fail(
+        `${dirCheck.message!}\n` +
+          '  To provision this existing project instead, use --provision-only.',
+      )
+    }
   }
 
   // ── Load profile and resolve selections ────────────────────────────────────
@@ -157,6 +177,15 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     dryRun: args.dryRun,
     provision: args.provision,
   })
+
+  // ── Provision an existing project ──────────────────────────────────────────
+
+  if (args.provisionOnly) {
+    console.log(`
+Provisioning the existing project in ${projectSlug}/ — nothing regenerated.`)
+    await runProvision(ctx, projectRoot, projectSlug)
+    return
+  }
 
   // ── Render template ────────────────────────────────────────────────────────
 
@@ -193,10 +222,15 @@ export async function run(argv: string[] = process.argv): Promise<void> {
 
   // ── Provision infrastructure ───────────────────────────────────────────────
 
-  const outcome = await provision(ctx, {
-    dryRun: ctx.dryRun,
-    projectRoot: join(args.outputDir, projectSlug),
-  })
+  await runProvision(ctx, projectRoot, projectSlug)
+}
+
+async function runProvision(
+  ctx: import('../generation/context.js').GenerationContext,
+  projectRoot: string,
+  projectSlug: string,
+): Promise<void> {
+  const outcome = await provision(ctx, { dryRun: ctx.dryRun, projectRoot })
 
   switch (outcome.status) {
     case 'applied':
@@ -210,15 +244,22 @@ export async function run(argv: string[] = process.argv): Promise<void> {
       break
     case 'declined':
       console.log(`\nThe project is generated in ${projectSlug}/. No infrastructure was created.`)
-      console.log('Review the plan and re-run with --provision when ready.')
+      console.log(
+        `Review the plan, then: pnpm create-koras-app ${projectSlug} ` +
+          `--profile ${ctx.profile} --provision-only`,
+      )
       break
     case 'missing-inputs':
-      // preflight already printed the full list of what is missing
+    case 'profile-mismatch':
+      // both already printed an actionable message
       process.exitCode = 1
       break
     default:
       console.error(`\nProvisioning failed at: ${outcome.status}`)
-      console.error(`The project is generated in ${projectSlug}/ — Terraform can be re-run there.`)
+      console.error(
+        `The project is generated in ${projectSlug}/. Retry with:\n` +
+          `  pnpm create-koras-app ${projectSlug} --profile ${ctx.profile} --provision-only`,
+      )
       process.exitCode = 1
   }
 }

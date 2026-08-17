@@ -87,7 +87,7 @@ export function formatMissingInputs(missing: MissingInput[]): string {
     ...missing.map((m) => `  ${m.name.padEnd(30)} ${m.detail}`),
     '',
     'Supply them from Doppler:',
-    '  doppler run --project koras-infra --config <config> -- \\',
+    '  doppler run --project koras-platform-bootstrap --config <config> -- \\',
     '    pnpm create-koras-app <project> --profile <profile> --provision',
     '',
     'Or export them in the current shell. Secret values are never written to',
@@ -98,6 +98,43 @@ export function formatMissingInputs(missing: MissingInput[]): string {
 /** Terraform working directory inside a generated project. */
 export function terraformDirectory(projectRoot: string): string {
   return `${projectRoot}/infrastructure/terraform`.replace(/\\/g, '/')
+}
+
+export interface ProjectTfvars {
+  profile?: string
+  projectSlug?: string
+  enabledApps: string[]
+  enabledServices: string[]
+}
+
+/**
+ * Reads the committed terraform.tfvars of an already-generated project.
+ *
+ * With `--provision-only` the project on disk is the source of truth — its
+ * component selections may differ from what the profile defaults would produce
+ * today. Terraform reads this file itself; parsing it here is only so the
+ * runner can report accurately and warn on a profile mismatch.
+ */
+export function readProjectTfvars(contents: string): ProjectTfvars {
+  const scalar = (key: string): string | undefined =>
+    new RegExp(`^\\s*${key}\\s*=\\s*"([^"]*)"`, 'm').exec(contents)?.[1]
+
+  const list = (key: string): string[] => {
+    const raw = new RegExp(`^\\s*${key}\\s*=\\s*(\\[[^\\]]*\\])`, 'm').exec(contents)?.[1]
+    if (!raw) return []
+    try {
+      return JSON.parse(raw) as string[]
+    } catch {
+      return []
+    }
+  }
+
+  return {
+    profile: scalar('profile'),
+    projectSlug: scalar('project_slug'),
+    enabledApps: list('enabled_apps'),
+    enabledServices: list('enabled_services'),
+  }
 }
 
 /**
