@@ -19,6 +19,10 @@ enabled_services = {{{json flyServices}}}
 
 supabase_region = "{{supabaseRegion}}"
 
+# Cloudflare's OWASP Core Ruleset needs a Pro plan or above; a Free zone
+# rejects it. Set true once the zone is upgraded.
+enable_waf = false
+
 fly_regions = {
 {{#each environments}}  {{this}} = "{{../flyRegion}}"
 {{/each}}

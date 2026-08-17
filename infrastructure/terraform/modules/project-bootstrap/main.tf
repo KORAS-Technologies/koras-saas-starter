@@ -102,6 +102,7 @@ module "cloudflare" {
 
   zone_id      = var.cloudflare_zone_id
   project_slug = var.project_slug
+  enable_waf   = var.enable_waf
 
   # DNS records are assembled from Vercel and Fly outputs post-apply
   dns_records = []

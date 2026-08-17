@@ -28,6 +28,7 @@ module "bootstrap" {
   fly_regions    = var.fly_regions
 
   cloudflare_zone_id = var.cloudflare_zone_id
+  enable_waf         = var.enable_waf
 
   zitadel_redirect_uris             = var.zitadel_redirect_uris
   zitadel_post_logout_redirect_uris = var.zitadel_post_logout_redirect_uris

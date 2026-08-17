@@ -543,8 +543,22 @@ extract outputs
   credentials and variables first and prints the complete list with the
   provider each belongs to.
 - **Doppler preferred, environment supported.** `doppler run --` wraps
-  Terraform when `DOPPLER_PROJECT` and `DOPPLER_CONFIG` are set; otherwise the
-  ambient environment is used.
+  Terraform only when Doppler is configured *and* the inputs are absent from
+  this process. `doppler run` injects `DOPPLER_PROJECT`/`DOPPLER_CONFIG` into
+  its child, so the usual case — the generator itself invoked under Doppler —
+  must not nest a second injection.
+- **Case-sensitive names have uppercase aliases.** Doppler secret names allow
+  only `[A-Z0-9_]`, but Terraform matches `TF_VAR_<name>` case-sensitively and
+  `TF_TOKEN_` encodes a lowercase hostname. Inputs are accepted under either
+  form and resolved to the canonical name before Terraform is spawned.
+- **Map variables can be supplied flat.** `TF_VAR_zitadel_instances` and
+  `TF_VAR_supabase_environments` are maps covering all four environments, which
+  makes rotating a single credential awkward. They can instead be given as
+  `ZITADEL_<ENV>_DOMAIN` / `ZITADEL_<ENV>_SERVICE_ACCOUNT_KEY_JSON` and
+  `SUPABASE_DB_PASSWORD_<ENV>`, assembled in memory. The blob form still works.
+- **`enable_waf` defaults to false.** Cloudflare's OWASP Core Ruleset requires
+  a Pro plan; on a Free zone the apply fails. It is plumbed through
+  `project-bootstrap` and recorded in the generated `terraform.tfvars`.
 - **Secrets never surface.** Outputs marked sensitive by Terraform are dropped
   during parsing and reported by name only, so nothing secret reaches logs or
   the Phase 10 registration payload.

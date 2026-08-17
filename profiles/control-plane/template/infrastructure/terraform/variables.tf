@@ -87,3 +87,10 @@ variable "zitadel_post_logout_redirect_uris" {
   type    = list(string)
   default = []
 }
+
+# Cloudflare's OWASP Core Ruleset requires a Pro plan or above. Leave false on
+# a Free zone or the apply fails.
+variable "enable_waf" {
+  type    = bool
+  default = false
+}

@@ -54,11 +54,11 @@ export interface ProvisionResult {
 const PLAN_FILE = 'tfplan'
 
 /**
- * Detects whether Terraform should run under `doppler run`.
+ * Whether a Doppler project and config are configured for this shell.
  *
- * Doppler is the intended credential source, but the generator must also work
- * from a shell where the variables were exported by other means — so this is a
- * preference, not a requirement.
+ * Note that `doppler run` injects DOPPLER_PROJECT and DOPPLER_CONFIG into the
+ * child environment, so this is also true when the generator is *already*
+ * running under Doppler — see `provision` for why that matters.
  */
 export function shouldUseDoppler(env: NodeJS.ProcessEnv = process.env): boolean {
   return Boolean(env.DOPPLER_PROJECT && env.DOPPLER_CONFIG)
@@ -77,7 +77,6 @@ export async function provision(
   const env = options.env ?? process.env
   const exec = options.exec ?? defaultExecutor
   const cwd = terraformDirectory(options.projectRoot)
-  const useDoppler = options.useDoppler ?? shouldUseDoppler(env)
 
   if (!existsSync(cwd)) {
     throw new Error(
@@ -90,11 +89,29 @@ export async function provision(
   // Fail before `init` downloads providers, and report every missing input at
   // once rather than one per Terraform run.
 
+  // Wrapping Terraform in `doppler run` only helps when the inputs are NOT
+  // already in this environment. If they are — the usual case, because the
+  // generator itself was invoked under `doppler run` — wrapping would nest a
+  // second injection for no benefit.
   const preflight = preflightInputs(env)
-  if (!preflight.ok) {
+  const dopplerConfigured = options.useDoppler ?? shouldUseDoppler(env)
+  const useDoppler = options.useDoppler ?? (dopplerConfigured && !preflight.ok)
+
+  if (!preflight.ok && !useDoppler) {
     console.error('')
     console.error(formatMissingInputs(preflight.missing))
     return { status: 'missing-inputs' }
+  }
+
+  if (!preflight.ok && useDoppler) {
+    // Doppler can still supply them to the child process even though this
+    // process cannot see them.
+    console.log('')
+    console.log(
+      `${preflight.missing.length} input(s) not in this environment; ` +
+        'relying on doppler run to supply them:',
+    )
+    for (const m of preflight.missing) console.log(`  ${m.name}`)
   }
 
   // Terraform reads terraform.tfvars itself. Prefer reporting what that file

@@ -30,22 +30,87 @@ export const PROVIDER_CREDENTIALS = [
   },
 ] as const
 
+export const ENVIRONMENTS = ['dev', 'test', 'stg', 'prod'] as const
+
 /**
- * Sensitive Terraform variables. These carry per-environment secrets and are
- * passed as TF_VAR_* JSON rather than through the committed tfvars file.
+ * Sensitive Terraform variables.
+ *
+ * Each is a map covering all four environments, so Terraform needs it as a
+ * single JSON value. That is awkward to operate — rotating one instance's key
+ * would mean regenerating the whole blob — so each can instead be supplied as
+ * flat per-environment secrets and assembled here, in memory. The blob form
+ * still works for anyone who prefers it.
  */
 export const SECRET_VARIABLES = [
   {
     name: 'TF_VAR_supabase_environments',
     alias: 'TF_VAR_SUPABASE_ENVIRONMENTS',
     purpose: 'per-environment Supabase db_password and region',
+    flat: ENVIRONMENTS.map((e) => `SUPABASE_DB_PASSWORD_${e.toUpperCase()}`),
+    assemble: assembleSupabaseEnvironments,
   },
   {
     name: 'TF_VAR_zitadel_instances',
     alias: 'TF_VAR_ZITADEL_INSTANCES',
     purpose: 'per-instance ZITADEL domain, port, insecure, jwt_profile_json',
+    flat: ENVIRONMENTS.flatMap((e) => [
+      `ZITADEL_${e.toUpperCase()}_DOMAIN`,
+      `ZITADEL_${e.toUpperCase()}_SERVICE_ACCOUNT_KEY_JSON`,
+    ]),
+    assemble: assembleZitadelInstances,
   },
 ] as const
+
+function value(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const raw = env[name]
+  return raw !== undefined && raw.trim() !== '' ? raw : undefined
+}
+
+/**
+ * Builds TF_VAR_supabase_environments from SUPABASE_DB_PASSWORD_<ENV>.
+ * SUPABASE_REGION_<ENV> is optional — the module falls back to supabase_region.
+ */
+export function assembleSupabaseEnvironments(env: NodeJS.ProcessEnv): string | undefined {
+  const out: Record<string, { db_password: string; region?: string }> = {}
+
+  for (const e of ENVIRONMENTS) {
+    const password = value(env, `SUPABASE_DB_PASSWORD_${e.toUpperCase()}`)
+    if (password === undefined) return undefined
+    const region = value(env, `SUPABASE_REGION_${e.toUpperCase()}`)
+    out[e] = region ? { db_password: password, region } : { db_password: password }
+  }
+
+  return JSON.stringify(out)
+}
+
+/**
+ * Builds TF_VAR_zitadel_instances from the per-instance secrets. Port and
+ * insecure default to 443/false and are only worth overriding for a
+ * self-hosted instance.
+ */
+export function assembleZitadelInstances(env: NodeJS.ProcessEnv): string | undefined {
+  const out: Record<
+    string,
+    { domain: string; port: number; insecure: boolean; jwt_profile_json: string }
+  > = {}
+
+  for (const e of ENVIRONMENTS) {
+    const key = e.toUpperCase()
+    const domain = value(env, `ZITADEL_${key}_DOMAIN`)
+    const profile = value(env, `ZITADEL_${key}_SERVICE_ACCOUNT_KEY_JSON`)
+    if (domain === undefined || profile === undefined) return undefined
+
+    out[e] = {
+      // tolerate a pasted https:// prefix or trailing slash
+      domain: domain.replace(/^https?:\/\//, '').replace(/\/+$/, ''),
+      port: Number(value(env, `ZITADEL_${key}_PORT`) ?? 443),
+      insecure: value(env, `ZITADEL_${key}_INSECURE`) === 'true',
+      jwt_profile_json: profile,
+    }
+  }
+
+  return JSON.stringify(out)
+}
 
 /**
  * Non-secret variables the operator must still supply — they describe the
@@ -79,7 +144,9 @@ interface InputDefinition {
   name: string
   alias?: string
   purpose: string
-  provider?: string
+  /** Flat per-environment secrets this value can be assembled from instead. */
+  flat?: readonly string[]
+  assemble?: (env: NodeJS.ProcessEnv) => string | undefined
 }
 
 /** Every input, with the uppercase alias Doppler is able to store. */
@@ -90,27 +157,43 @@ export function allInputs(): InputDefinition[] {
       alias: 'alias' in c ? (c.alias as string) : undefined,
       purpose: `${c.provider} — ${c.purpose}`,
     })),
-    ...SECRET_VARIABLES.map((v) => ({ name: v.name, alias: v.alias, purpose: v.purpose })),
+    ...SECRET_VARIABLES.map((v) => ({
+      name: v.name,
+      alias: v.alias,
+      purpose: v.purpose,
+      flat: v.flat,
+      assemble: v.assemble,
+    })),
     ...ACCOUNT_VARIABLES.map((v) => ({ name: v.name, alias: v.alias, purpose: v.purpose })),
   ]
 }
 
+/**
+ * Resolves one input: the canonical name wins, then the uppercase alias, then
+ * assembly from flat per-environment secrets.
+ */
 function readInput(env: NodeJS.ProcessEnv, input: InputDefinition): string | undefined {
   for (const key of [input.name, input.alias]) {
     if (key === undefined) continue
-    const value = env[key]
-    if (value !== undefined && value.trim() !== '') return value
+    const raw = env[key]
+    if (raw !== undefined && raw.trim() !== '') return raw
   }
-  return undefined
+  return input.assemble?.(env)
 }
 
 export function preflightInputs(env: NodeJS.ProcessEnv = process.env): PreflightResult {
   const missing: MissingInput[] = []
 
   for (const input of allInputs()) {
-    if (readInput(env, input) === undefined) {
-      missing.push({ name: input.alias ?? input.name, detail: input.purpose })
-    }
+    if (readInput(env, input) !== undefined) continue
+
+    // Name the flat alternative too — it is the easier one to supply.
+    const detail = input.flat
+      ? `${input.purpose}
+${' '.repeat(32)}or set ${input.flat[0]} … (${input.flat.length} values)`
+      : input.purpose
+
+    missing.push({ name: input.alias ?? input.name, detail })
   }
 
   return { ok: missing.length === 0, missing }
@@ -119,20 +202,18 @@ export function preflightInputs(env: NodeJS.ProcessEnv = process.env): Preflight
 /**
  * Builds the environment Terraform is spawned with.
  *
- * Values stored under an uppercase alias are copied to the canonical,
- * case-sensitive name Terraform actually reads. An explicitly-set canonical
- * name always wins, so an operator who exported `TF_VAR_github_org` directly
- * is never overridden by an alias.
+ * Values stored under an uppercase alias, or as flat per-environment secrets,
+ * are resolved to the canonical case-sensitive name Terraform reads. An
+ * explicitly-set canonical name always wins.
  */
 export function resolveTerraformEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const resolved: NodeJS.ProcessEnv = { ...env }
 
   for (const input of allInputs()) {
-    if (!input.alias) continue
     const canonical = resolved[input.name]
     if (canonical !== undefined && canonical.trim() !== '') continue
-    const aliased = resolved[input.alias]
-    if (aliased !== undefined && aliased.trim() !== '') resolved[input.name] = aliased
+    const value = readInput(resolved, input)
+    if (value !== undefined) resolved[input.name] = value
   }
 
   return resolved

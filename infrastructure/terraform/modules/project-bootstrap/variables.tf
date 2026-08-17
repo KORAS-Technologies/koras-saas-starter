@@ -106,3 +106,10 @@ variable "fly_regions" {
     prod = "iad"
   }
 }
+
+# Cloudflare's OWASP Core Ruleset requires a Pro plan or above; a Free zone
+# rejects it, so this defaults off and must be opted into.
+variable "enable_waf" {
+  type    = bool
+  default = false
+}

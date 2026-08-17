@@ -15,6 +15,9 @@ import {
   readProjectTfvars,
   resolveTerraformEnv,
   allInputs,
+  assembleZitadelInstances,
+  assembleSupabaseEnvironments,
+  ENVIRONMENTS,
   PROVIDER_CREDENTIALS,
   SECRET_VARIABLES,
   ACCOUNT_VARIABLES,
@@ -182,6 +185,115 @@ describe('uppercase aliases', () => {
   })
 })
 
+// ── flat per-environment secrets ─────────────────────────────────────────────
+
+describe('flat per-environment secrets', () => {
+  /** Everything except the two map variables, which are supplied flat below. */
+  function baseEnv(): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = {}
+    for (const input of allInputs()) {
+      if (input.flat) continue
+      env[input.alias ?? input.name] = 'value'
+    }
+    return env
+  }
+
+  function flatZitadel(): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = {}
+    for (const e of ENVIRONMENTS) {
+      env[`ZITADEL_${e.toUpperCase()}_DOMAIN`] = `auth-${e}.korastechnologies.com`
+      env[`ZITADEL_${e.toUpperCase()}_SERVICE_ACCOUNT_KEY_JSON`] = `{"type":"serviceaccount","env":"${e}"}`
+    }
+    return env
+  }
+
+  function flatSupabase(): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = {}
+    for (const e of ENVIRONMENTS) env[`SUPABASE_DB_PASSWORD_${e.toUpperCase()}`] = `pw-${e}`
+    return env
+  }
+
+  it('assembles the ZITADEL map from per-instance secrets', () => {
+    const json = assembleZitadelInstances(flatZitadel())!
+    const parsed = JSON.parse(json)
+    expect(Object.keys(parsed)).toEqual(['dev', 'test', 'stg', 'prod'])
+    expect(parsed.dev).toEqual({
+      domain: 'auth-dev.korastechnologies.com',
+      port: 443,
+      insecure: false,
+      jwt_profile_json: '{"type":"serviceaccount","env":"dev"}',
+    })
+  })
+
+  it('strips a pasted scheme or trailing slash from the domain', () => {
+    const env = flatZitadel()
+    env.ZITADEL_DEV_DOMAIN = 'https://auth-dev.korastechnologies.com/'
+    expect(JSON.parse(assembleZitadelInstances(env)!).dev.domain).toBe(
+      'auth-dev.korastechnologies.com',
+    )
+  })
+
+  it('honours port and insecure overrides for self-hosted instances', () => {
+    const env = { ...flatZitadel(), ZITADEL_DEV_PORT: '8080', ZITADEL_DEV_INSECURE: 'true' }
+    const dev = JSON.parse(assembleZitadelInstances(env)!).dev
+    expect(dev.port).toBe(8080)
+    expect(dev.insecure).toBe(true)
+  })
+
+  it('assembles Supabase environments, region optional', () => {
+    const parsed = JSON.parse(assembleSupabaseEnvironments(flatSupabase())!)
+    expect(parsed.dev).toEqual({ db_password: 'pw-dev' })
+    const withRegion = { ...flatSupabase(), SUPABASE_REGION_DEV: 'us-west-1' }
+    expect(JSON.parse(assembleSupabaseEnvironments(withRegion)!).dev).toEqual({
+      db_password: 'pw-dev',
+      region: 'us-west-1',
+    })
+  })
+
+  it('assembles nothing when an environment is incomplete', () => {
+    const partial = flatZitadel()
+    delete partial.ZITADEL_STG_SERVICE_ACCOUNT_KEY_JSON
+    expect(assembleZitadelInstances(partial)).toBeUndefined()
+  })
+
+  it('satisfies preflight without the blob form', () => {
+    const env = { ...baseEnv(), ...flatZitadel(), ...flatSupabase() }
+    expect(preflightInputs(env).ok).toBe(true)
+  })
+
+  it('still accepts the blob form', () => {
+    expect(preflightInputs(dopplerEnv()).ok).toBe(true)
+  })
+
+  it('prefers an explicit blob over assembly', () => {
+    const env = { ...baseEnv(), ...flatZitadel(), ...flatSupabase() }
+    env.TF_VAR_ZITADEL_INSTANCES = '{"dev":{"domain":"explicit"}}'
+    const resolved = resolveTerraformEnv(env)
+    expect(JSON.parse(resolved.TF_VAR_zitadel_instances!).dev.domain).toBe('explicit')
+  })
+
+  it('hands Terraform an assembled map', async () => {
+    const seen: NodeJS.ProcessEnv[] = []
+    await provision(ctxFor(), {
+      dryRun: true,
+      projectRoot: PROJECT_ROOT,
+      env: { ...baseEnv(), ...flatZitadel(), ...flatSupabase() },
+      exec: async (_c, _a, { env }) => {
+        seen.push(env)
+        return { exitCode: 0, stdout: '' }
+      },
+    })
+    const instances = JSON.parse(seen[0].TF_VAR_zitadel_instances!)
+    expect(instances.prod.domain).toBe('auth-prod.korastechnologies.com')
+  })
+
+  it('names the flat alternative when the value is missing entirely', () => {
+    const message = formatMissingInputs(preflightInputs({}).missing)
+    expect(message).toContain('SUPABASE_DB_PASSWORD_DEV')
+    expect(message).toContain('ZITADEL_DEV_DOMAIN')
+  })
+})
+
 // ── dry run ──────────────────────────────────────────────────────────────────
 
 describe('--provision --dry-run', () => {
@@ -319,16 +431,31 @@ describe('Doppler', () => {
     expect(shouldUseDoppler({})).toBe(false)
   })
 
-  it('wraps Terraform in `doppler run --`', async () => {
+  it('wraps Terraform in `doppler run --` when the inputs are not in this environment', async () => {
+    const calls: Call[] = []
+    const result = await provision(ctxFor(), {
+      dryRun: true,
+      projectRoot: PROJECT_ROOT,
+      // Doppler configured, but nothing injected into this process
+      env: { DOPPLER_PROJECT: 'koras-platform-bootstrap', DOPPLER_CONFIG: 'prod' },
+      exec: recordingExec(calls),
+    })
+    expect(result.status).toBe('planned')
+    expect(calls[0].command).toBe('doppler')
+    expect(calls[0].args.slice(0, 3)).toEqual(['run', '--', 'terraform'])
+  })
+
+  it('does not nest a second doppler run when the inputs are already present', async () => {
+    // `doppler run` injects DOPPLER_PROJECT/DOPPLER_CONFIG into the child, so
+    // this is the normal case: the generator itself was invoked under Doppler.
     const calls: Call[] = []
     await provision(ctxFor(), {
       dryRun: true,
       projectRoot: PROJECT_ROOT,
-      env: { ...completeEnv(), DOPPLER_PROJECT: 'koras-platform-bootstrap', DOPPLER_CONFIG: 'dev' },
+      env: { ...completeEnv(), DOPPLER_PROJECT: 'koras-platform-bootstrap', DOPPLER_CONFIG: 'prod' },
       exec: recordingExec(calls),
     })
-    expect(calls[0].command).toBe('doppler')
-    expect(calls[0].args.slice(0, 3)).toEqual(['run', '--', 'terraform'])
+    expect(calls[0].command).toBe('terraform')
   })
 
   it('falls back to plain terraform when Doppler is not configured', async () => {
