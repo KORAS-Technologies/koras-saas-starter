@@ -34,6 +34,17 @@ make down        # stop containers
 
 Run `make profile` to print the profile and enabled components at any time.
 
+**Without `make`** (Windows without Git Bash's make, or a minimal container),
+the same steps are pnpm scripts:
+
+```bash
+pnpm bootstrap      # = make bootstrap
+pnpm stack:up       # = make dev   (containers only; `pnpm dev` runs the apps)
+pnpm stack:health   # = make health
+pnpm stack:down     # = make down
+pnpm stack:reset    # wipe volumes
+```
+
 ## Environments
 
 | Environment | Branch | Doppler | Supabase |

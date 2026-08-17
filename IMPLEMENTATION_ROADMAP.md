@@ -259,6 +259,18 @@ created — Mailpit and MinIO are configured inline in the compose files, which
 is simpler and equivalent. `local/certs/README.md` is absent; `generate.sh` is
 self-documenting.
 
+**Re-verified 2026-08-17** after the Phase 6–9 changes. Both profiles generate,
+issue certificates, start, and report every service healthy; Caddy terminates
+TLS on each generated host and routes correctly (`auth.localhost` reaches
+ZITADEL in-network; app hosts return 502 only because the apps themselves are
+not running). All three starter compose files still resolve.
+
+**Gap found:** `make` is not present on a stock Windows development machine, so
+the documented `make bootstrap` / `make dev` / `make health` interface does not
+work there at all. Both templates now also expose the same steps as pnpm
+scripts (`pnpm bootstrap`, `pnpm stack:up`, `pnpm stack:health`,
+`pnpm stack:down`, `pnpm stack:reset`), documented in the generated README.
+
 **Scope:** Fully functional local development environment for both profiles.
 
 **Deliverables:**

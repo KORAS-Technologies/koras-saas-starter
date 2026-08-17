@@ -13,6 +13,12 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "dev": "turbo run dev",
+    "bootstrap": "bash local/scripts/bootstrap.sh",
+    "stack:up": "docker compose -f local/docker-compose.yml up -d",
+    "stack:down": "docker compose -f local/docker-compose.yml down",
+    "stack:reset": "docker compose -f local/docker-compose.yml down -v",
+    "stack:seed": "bash local/scripts/seed.sh",
+    "stack:health": "bash local/scripts/health.sh",
     "clean": "turbo run clean && rimraf node_modules",
     "format": "prettier --write \"**/*.{ts,tsx,md,yaml,json}\" --ignore-path .gitignore"
   },
