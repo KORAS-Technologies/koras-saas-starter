@@ -6,6 +6,7 @@ import { validateSlug, deriveSlug } from '../validation/slug.js'
 import { validateProfile } from '../validation/profile.js'
 import { checkDirectoryConflict } from '../validation/conflicts.js'
 import { checkOutputDirectory } from '../validation/output-dir.js'
+import { validateGeneratedProject } from '../validation/generated-project.js'
 import { loadProfile, listProfiles } from '../profiles/index.js'
 import type { ProfileName } from '../profiles/loader.js'
 import {
@@ -40,14 +41,23 @@ OPTIONS:
   --help                     Show this help message
 
 EXAMPLES:
-  pnpm create-koras-app
-  pnpm create-koras-app docoris --profile product
-  pnpm create-koras-app docoris --profile product --provision
-  pnpm create-koras-app docoris --profile product --dry-run
-  pnpm create-koras-app docoris --profile product --with marketing,ai_gateway
-  pnpm create-koras-app koras-control-plane --profile control-plane
-  pnpm create-koras-app koras-control-plane --profile control-plane --provision
-  pnpm create-koras-app docoris --profile product --provision-only
+  Generate only — no infrastructure is touched:
+    pnpm create-koras-app docoris --profile product --output-dir ../output
+    pnpm create-koras-app docoris --profile product --output-dir ../output --dry-run
+    pnpm create-koras-app docoris --profile product --output-dir ../output \\
+      --with marketing,ai_gateway
+    pnpm create-koras-app koras-control-plane --profile control-plane --output-dir ../output
+
+  Provision — credentials come from Doppler, never from a file:
+    doppler run --project koras-platform-bootstrap --config prod -- \\
+      pnpm create-koras-app docoris --profile product --provision --output-dir ../output
+
+  Retry a run that failed partway — skips generation, keeps existing state:
+    doppler run --project koras-platform-bootstrap --config prod -- \\
+      pnpm create-koras-app docoris --profile product --provision-only --output-dir ../output
+
+Check the estate before provisioning: pnpm koras bootstrap:doctor
+See PROVISIONING_RUNBOOK.md for prerequisites and failure recovery.
 `.trim()
 
 function printListProfiles(): void {
@@ -220,6 +230,23 @@ Provisioning the existing project in ${projectSlug}/ — nothing regenerated.`)
 
   const writeCtx = ctx.dryRun ? { ...ctx, dryRun: false } : ctx
   const result = writeFiles(writeCtx, files)
+
+  // ── Validate the generated repository ──────────────────────────────────────
+  //
+  // Read back from disk before anything downstream trusts it — and before
+  // provisioning, which acts on the profile this manifest records.
+
+  const projectCheck = validateGeneratedProject({
+    projectRoot,
+    expectedSlug: projectSlug,
+    expectedProfile: profileName,
+  })
+  if (!projectCheck.valid) {
+    fail(
+      `Generated project failed validation.\n  ${projectCheck.error!}\n` +
+        `  Nothing was provisioned. Inspect or delete ${projectSlug}/ and regenerate.`,
+    )
+  }
 
   console.log(`\n✓ Generated ${result.filesWritten} files in ${projectSlug}/`)
 

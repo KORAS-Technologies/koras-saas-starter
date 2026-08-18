@@ -21,3 +21,11 @@ infrastructure:
 output:
   include_example_env: true
   include_docker_compose: true
+
+local:
+  ports:
+    supabase_db: 54332
+    zitadel: 8082
+    redis: 6380
+    mail_smtp: 1026
+    mail_ui: 8026

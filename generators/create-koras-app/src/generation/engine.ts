@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import Handlebars from 'handlebars'
 import type { GenerationContext } from './context.js'
 import { contextToTemplateVars } from './context.js'
+import { PROJECT_MANIFEST_PATH, renderProjectManifest } from './project-manifest.js'
 
 const STARTER_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../../..')
 const PROFILES_ROOT = join(STARTER_ROOT, 'profiles')
@@ -53,7 +54,27 @@ export function renderTemplate(ctx: GenerationContext): RenderedFile[] {
   return [
     ...all.filter((f) => shouldInclude(f.outputPath, excluded)),
     ...collectSharedAssets(ctx),
+    projectManifestFile(ctx),
   ]
+}
+
+/**
+ * The project manifest is generator-authored, not template-authored: every
+ * profile gets exactly the same shape, so duplicating it into each template
+ * would only create two things to keep in sync — and its values come from
+ * starter/profile metadata rather than from the template context.
+ *
+ * It is emitted last, after the repository structure, and as an ordinary
+ * RenderedFile so that it participates in `--dry-run` listing and in the atomic
+ * writer without either needing to know about it.
+ */
+function projectManifestFile(ctx: GenerationContext): RenderedFile {
+  return {
+    sourcePath: '(generated)',
+    outputPath: PROJECT_MANIFEST_PATH,
+    content: renderProjectManifest(ctx),
+    isTemplate: false,
+  }
 }
 
 /**

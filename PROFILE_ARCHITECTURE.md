@@ -66,10 +66,43 @@ Two profiles exist initially:
 
 ## 2. Profile Manifests
 
+Every profile is defined by four things:
+
+| Element | Where it lives |
+|---------|----------------|
+| Profile identifier | `profile:` in `profiles/<p>/manifest.yaml` |
+| Profile version | `version:` in `profiles/<p>/manifest.yaml` (semver) |
+| Profile manifest | `profiles/<p>/manifest.yaml` — capabilities, template map, infrastructure |
+| Generated-project representation | `.koras/project.yaml` in every project the profile generates |
+
+### Profile version vs starter version
+
+Two versions travel with every generated project, and they are independent:
+
+```
+starter_version = version of KORAS SaaS Starter   (root package.json)
+profile_version = version of the selected profile (profiles/<p>/manifest.yaml)
+```
+
+A starter bug fix — a generator defect, a corrected error message — raises
+`starter_version` while profile behaviour is unchanged. A breaking change to
+what a profile generates raises that profile's `profile_version`. Neither is
+hard-coded in generator logic; both are read from metadata at generation time.
+
+```
+starter_version = 2.1.0
+profile_version = 1.0.0
+```
+
+Both are recorded in the generated project's `.koras/project.yaml`, so a
+repository can always be traced back to the exact starter *and* profile revision
+that produced it. See PRODUCT_GENERATOR_PLAN.md §15 for the manifest contract.
+
 ### `profiles/product/manifest.yaml`
 
 ```yaml
 profile: product
+version: "1.0.0"
 
 applications:
   web:
@@ -124,6 +157,7 @@ infrastructure:
 
 ```yaml
 profile: control-plane
+version: "1.0.0"
 
 applications:
   platform_admin:
@@ -209,6 +243,9 @@ Rules:
 
 ```
 <project>/
+├── .koras/
+│   └── project.yaml        KORAS project manifest — identity + versions
+│
 ├── apps/
 │   ├── web/                Next.js 15, product customer UI
 │   ├── admin/              Next.js 15, internal operations UI   [optional]
@@ -286,6 +323,9 @@ Rules:
 
 ```
 <project>/
+├── .koras/
+│   └── project.yaml        KORAS project manifest — identity + versions
+│
 ├── apps/
 │   ├── admin/              Next.js 15, platform administration UI
 │   └── portal/             Next.js 15, customer account portal

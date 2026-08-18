@@ -27,12 +27,9 @@ fi
 
 # 4. Pull Docker images
 echo "--> Pulling Docker images..."
-COMPOSE_FILES="-f $ROOT/local/docker/shared.compose.yml"
-if [ "$PROFILE" = "product" ]; then
-  COMPOSE_FILES="$COMPOSE_FILES -f $ROOT/local/docker/product.compose.yml"
-else
-  COMPOSE_FILES="$COMPOSE_FILES -f $ROOT/local/docker/control-plane.compose.yml"
-fi
+# One rendered compose file per project — the profile decided what went into it
+# at generation time, so there is nothing to layer here.
+COMPOSE_FILES="-f $ROOT/local/docker-compose.yml"
 docker compose $COMPOSE_FILES pull --quiet
 
 # 5. Start infrastructure services (not app services)
@@ -48,14 +45,14 @@ echo "    Supabase DB ready."
 
 # 7. Wait for ZITADEL
 echo "--> Waiting for ZITADEL..."
-until curl -sf "http://localhost:8080/debug/ready" >/dev/null 2>&1; do
+until curl -sf "http://localhost:{{ports.zitadel}}/debug/ready" >/dev/null 2>&1; do
   sleep 3
 done
 echo "    ZITADEL ready."
 
 # 8. Initialize ZITADEL
 echo "--> Initializing ZITADEL..."
-ZITADEL_URL=http://localhost:8080 bash "$ROOT/local/zitadel/init.sh"
+ZITADEL_URL=http://localhost:{{ports.zitadel}} bash "$ROOT/local/zitadel/init.sh"
 
 # 9. Copy .env.local.example if .env.local is missing
 if [ ! -f "$ROOT/.env.local" ]; then

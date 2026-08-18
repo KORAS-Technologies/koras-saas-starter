@@ -227,14 +227,35 @@ export function resolveTerraformEnv(env: NodeJS.ProcessEnv = process.env): NodeJ
   return resolved
 }
 
-export function formatMissingInputs(missing: MissingInput[]): string {
+export function formatMissingInputs(
+  missing: MissingInput[],
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  // `doppler run` injects these into the child environment. Their absence is
+  // near-conclusive evidence that the command was run from a plain shell —
+  // which is the actual cause almost every time, and far more useful to say
+  // than listing fifteen names and leaving the operator to infer it.
+  const insideDopplerRun = Boolean(env.DOPPLER_PROJECT ?? env.DOPPLER_CONFIG)
+
+  const cause = insideDopplerRun
+    ? [
+        `The Doppler config in use (${env.DOPPLER_PROJECT ?? '?'}/${env.DOPPLER_CONFIG ?? '?'})`,
+        'does not define every required secret. Add the names above to it.',
+      ]
+    : [
+        'This command is not running under `doppler run` — DOPPLER_PROJECT is',
+        'not set in this environment, so no secrets were injected.',
+      ]
+
   return [
     `Terraform cannot run — ${missing.length} required input${missing.length === 1 ? '' : 's'} missing:`,
     '',
     ...missing.map((m) => `  ${m.name.padEnd(30)} ${m.detail}`),
     '',
+    ...cause,
+    '',
     'Supply them from Doppler:',
-    '  doppler run --project koras-platform-bootstrap --config <config> -- \\',
+    '  doppler run --project koras-platform-bootstrap --config prod -- \\',
     '    pnpm create-koras-app <project> --profile <profile> --provision',
     '',
     'Doppler secret names allow only [A-Z0-9_], so the uppercase names above are',

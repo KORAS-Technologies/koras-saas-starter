@@ -220,11 +220,17 @@ Profile:  product
 Project:  docoris
 Slug:     docoris
 Output:   /repos/docoris
+Apps:     web, admin
+Services: api, worker
+Register: yes
+Manifest: docoris/.koras/project.yaml
 
 FILES TO CREATE (47 files):
-  docoris/apps/web/package.json
-  docoris/apps/web/next.config.ts
-  docoris/apps/web/src/app/layout.tsx
+  docoris/.github/workflows/ci.yml
+  docoris/.gitignore
+  docoris/.koras/project.yaml
+  docoris/CLAUDE.md
+  docoris/Makefile
   ...
 
 TERRAFORM PLAN (--provision requested):
@@ -334,11 +340,13 @@ generators/create-koras-app/
 │   ├── generation/
 │   │   ├── engine.ts         template renderer (Handlebars)
 │   │   ├── context.ts        GenerationContext builder
+│   │   ├── project-manifest.ts  builds/validates/serializes .koras/project.yaml
 │   │   └── writer.ts         safe atomic file writer
 │   │
 │   ├── validation/
 │   │   ├── slug.ts           slug format validation
 │   │   ├── profile.ts        profile name validation
+│   │   ├── generated-project.ts  post-write check of .koras/project.yaml
 │   │   └── conflicts.ts      directory, GitHub, Terraform conflict checks
 │   │
 │   ├── terraform/
@@ -412,3 +420,152 @@ mocked GitHub API, mocked Control Plane).
 - `--help` outputs help text and exits 0
 - `--list-profiles` lists both profiles and exits 0
 - Missing `--profile` in `--no-interactive` mode produces actionable error
+
+---
+
+## 15. Generated Project Manifest — `.koras/project.yaml`
+
+Every generated repository, whatever its profile, contains a machine-readable
+KORAS project manifest at exactly:
+
+```
+.koras/project.yaml
+```
+
+The generator creates the `.koras/` directory itself. The path is canonical:
+the manifest is never written under `config/`, `docs/`, or `infrastructure/`.
+
+### Purpose
+
+The manifest is the authoritative answer to *what is this repository, and what
+produced it*. Before it existed, the only machine-readable identity in a
+generated project was `infrastructure/terraform/terraform.tfvars` — a
+provisioning input, not an identity record.
+
+It is a stable KORAS platform contract, consumed by:
+
+```
+pnpm koras doctor
+pnpm koras bootstrap:doctor   implemented — see BOOTSTRAP_DOCTOR.md
+pnpm koras upgrade
+pnpm koras diff-starter
+pnpm koras project:info
+```
+
+and by Control Plane registration tooling, which gates on `project.profile`
+before running platform-only work.
+
+`bootstrap:doctor` is the one that exists today. It checks the estate rather
+than a generated project, so it does not read this manifest yet; the remaining
+commands will.
+
+It holds **references only** — never secrets, credentials, or endpoints. It is
+safe to commit, and the generated `.gitignore` deliberately does not exclude it.
+
+### Fields
+
+| Field | Source |
+|-------|--------|
+| `schema_version` | Fixed at `1`. Only changes with a manifest migration design. |
+| `project.name` | Project name as supplied to the CLI |
+| `project.slug` | Normalized, machine-safe slug (see §6) |
+| `project.profile` | `product` or `control-plane` |
+| `generator.name` | Always `create-koras-app` |
+| `generator.starter_version` | Root `package.json` `version` of the starter |
+| `generator.profile_version` | `version` in the selected `profiles/<profile>/manifest.yaml` |
+
+Field order is fixed — `schema_version`, `project`, `generator` — and
+serialization is deterministic: the same generation context always produces a
+byte-identical file.
+
+### Versioning
+
+`starter_version` and `profile_version` are independent and both semver:
+
+```
+starter_version = version of KORAS SaaS Starter   (root package.json)
+profile_version = version of the selected profile (profiles/<p>/manifest.yaml)
+```
+
+A starter bug fix raises `starter_version` without touching profile behaviour.
+A breaking change to a profile's generated structure raises that profile's
+`profile_version`. Neither is hard-coded in generator logic; both are resolved
+from metadata at generation time, and generation **fails** rather than emitting
+a placeholder such as `unknown`, `latest`, or `TBD`.
+
+### Example — product
+
+```bash
+pnpm create-koras-app docoris --profile product
+```
+
+```yaml
+schema_version: 1
+project:
+  name: docoris
+  slug: docoris
+  profile: product
+generator:
+  name: create-koras-app
+  starter_version: 0.1.0
+  profile_version: 1.0.0
+```
+
+Non-interactive generation takes the project name verbatim and derives the slug
+from it, so `docoris` yields `name: docoris`. Interactive mode is where a
+display name and slug diverge (`Docoris` / `docoris`); the slug is always
+normalized.
+
+### Example — control-plane
+
+```bash
+pnpm create-koras-app koras-control-plane --profile control-plane
+```
+
+```yaml
+schema_version: 1
+project:
+  name: koras-control-plane
+  slug: koras-control-plane
+  profile: control-plane
+generator:
+  name: create-koras-app
+  starter_version: 0.1.0
+  profile_version: 1.0.0
+```
+
+### Generation order and validation
+
+The manifest is built after the repository structure and written as part of the
+same generation transaction:
+
+```
+parse args → resolve name/slug → resolve profile → load profile manifest
+  → resolve starter version → resolve profile version → validate configuration
+  → generate repository structure → generate .koras/project.yaml
+  → validate generated repository → complete
+```
+
+Two validation layers apply:
+
+1. **On write** — `KorasProjectManifestSchema` (Zod) rejects an unsupported
+   `schema_version`, an empty name or slug, an unknown profile, a wrong
+   generator name, or a non-semver version. An unsupported profile reaching the
+   generation layer is an error, never a written manifest.
+2. **After write** — the generated project is re-validated by reading the file
+   back from disk: it must exist, parse as YAML, carry a supported schema
+   version and both versions, and record the profile and slug that were
+   actually requested. Generation fails, and nothing is provisioned, if it does
+   not. Reading back from disk rather than trusting memory is the point: it
+   proves that what downstream tooling will read is correct.
+
+The profile check matters most for the Control Plane. A `--profile
+control-plane` run that produced `profile: product` would let later tooling run
+product provisioning against the platform authority, so it is covered by a
+regression test.
+
+### Future compatibility
+
+`schema_version: 1` is not to be changed without an explicit migration design.
+Fields such as `environments`, `features`, and `infrastructure` may be added in
+future schema versions; they are deliberately absent now.

@@ -15,6 +15,7 @@
     "dev": "turbo run dev",
     "clean": "turbo run clean && rimraf node_modules",
     "create-koras-app": "node generators/create-koras-app/bin/create-koras-app.js",
+    "koras": "node tooling/koras-cli/bin/koras.js",
     "format": "prettier --write \"**/*.{ts,tsx,md,yaml,json}\" --ignore-path .gitignore"
   },
   "devDependencies": {

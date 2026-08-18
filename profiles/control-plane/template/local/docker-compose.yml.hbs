@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: postgres
     ports:
-      - "54322:5432"
+      - "{{ports.supabaseDb}}:5432"
     volumes:
       - supabase-db:/var/lib/postgresql/data
     healthcheck:
@@ -35,10 +35,10 @@ services:
       ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: postgres
       ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
       ZITADEL_EXTERNALSECURE: "false"
-      ZITADEL_EXTERNALPORT: 8080
+      ZITADEL_EXTERNALPORT: {{ports.zitadel}}
       ZITADEL_EXTERNALDOMAIN: localhost
     ports:
-      - "8080:8080"
+      - "{{ports.zitadel}}:8080"
     depends_on:
       supabase-db:
         condition: service_healthy
@@ -51,7 +51,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "{{ports.redis}}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -65,10 +65,10 @@ services:
     image: axllent/mailpit:latest
     restart: unless-stopped
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "{{ports.mailSmtp}}:1025"
+      - "{{ports.mailUi}}:8025"
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8025/"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:{{ports.mailUi}}/"]
       interval: 10s
       timeout: 5s
       retries: 5

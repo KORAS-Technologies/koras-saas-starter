@@ -13,7 +13,9 @@ locals {
 resource "fly_app" "apps" {
   for_each = local.app_matrix
 
-  name    = "${var.project_slug}-${each.value.service}-${each.value.environment}"
+  # Same constraint as Vercel: `ai_gateway` is a valid component key but not a
+  # valid Fly app name. Latent until that optional service is enabled.
+  name    = "${var.project_slug}-${replace(each.value.service, "_", "-")}-${each.value.environment}"
   org     = var.org_slug
 
   lifecycle {

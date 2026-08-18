@@ -64,6 +64,12 @@ export type SharedAsset = z.infer<typeof SharedAssetSchema>
 export const ProfileManifestSchema = z.object({
   schema_version: z.literal('1'),
   profile: z.enum(['product', 'control-plane']),
+  // Version of the profile itself, independent of both the manifest schema
+  // version and the starter version. Recorded in every generated project's
+  // .koras/project.yaml, so a project can be traced back to the profile
+  // revision that produced it. Semver: bump the major on a breaking change to
+  // the generated structure.
+  version: z.string().regex(/^\d+\.\d+\.\d+(?:[-+].*)?$/, 'must be a semantic version'),
   applications: z.record(z.string(), ApplicationSchema),
   services: z.record(z.string(), ServiceSchema),
   capabilities: z.record(z.string(), z.boolean()),
@@ -99,6 +105,21 @@ export const ProfileDefaultsSchema = z.object({
     .object({
       include_example_env: z.boolean().optional(),
       include_docker_compose: z.boolean().optional(),
+    })
+    .optional(),
+  local: z
+    .object({
+      ports: z
+        .object({
+          supabase_db: z.number().int().optional(),
+          zitadel: z.number().int().optional(),
+          redis: z.number().int().optional(),
+          mail_smtp: z.number().int().optional(),
+          mail_ui: z.number().int().optional(),
+          minio_api: z.number().int().optional(),
+          minio_console: z.number().int().optional(),
+        })
+        .optional(),
     })
     .optional(),
 })
