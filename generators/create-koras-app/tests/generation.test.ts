@@ -440,6 +440,38 @@ describe('generated project manifest', () => {
   })
 })
 
+// ── dry-run messaging ────────────────────────────────────────────────────────
+
+describe('dry-run closing message', () => {
+  function capture(ctx: ReturnType<typeof makeCtx>): string {
+    const lines: string[] = []
+    const log = console.log
+    console.log = (msg?: unknown) => void lines.push(String(msg))
+    try {
+      printDryRunManifest(ctx, renderTemplate(ctx))
+    } finally {
+      console.log = log
+    }
+    return lines.join('\n')
+  }
+
+  it('says nothing was written for a plain dry run', () => {
+    const output = capture(makeCtx('product', 'msg-plain', {}, true))
+    expect(output).toContain('No files were written')
+  })
+
+  it('does not claim nothing was written when --provision wrote the project', () => {
+    // `--provision --dry-run` writes the source: Terraform can only plan a
+    // configuration that exists. The old closing line contradicted the
+    // "Generated N files" line printed straight after it.
+    const ctx = { ...makeCtx('product', 'msg-provision', {}, true), provision: true }
+    const output = capture(ctx)
+    expect(output).not.toContain('No files were written')
+    expect(output).toContain('IS written to disk')
+    expect(output).toContain('No infrastructure is created')
+  })
+})
+
 // ── generated project validation ─────────────────────────────────────────────
 
 describe('generated project validation', () => {

@@ -96,5 +96,15 @@ export function printDryRunManifest(ctx: GenerationContext, files: RenderedFile[
   for (const path of files.map((f) => f.outputPath).sort()) {
     console.log(`  ${ctx.projectSlug}/${path}`)
   }
-  console.log('\nNo files were written. Remove --dry-run to proceed.')
+  // With --provision the source IS written: Terraform can only plan a
+  // configuration that exists on disk, so the dry run applies to the
+  // infrastructure, not the files. Saying otherwise here would contradict the
+  // "Generated N files" line printed moments later, and leave an operator
+  // unsure whether a directory now exists on their machine.
+  console.log(
+    ctx.provision
+      ? '\nThe project above IS written to disk — Terraform can only plan a' +
+          '\nconfiguration that exists. No infrastructure is created.'
+      : '\nNo files were written. Remove --dry-run to proceed.',
+  )
 }
