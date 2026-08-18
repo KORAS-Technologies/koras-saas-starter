@@ -141,5 +141,15 @@ export function contextToTemplateVars(ctx: GenerationContext): Record<string, un
     flyRegion: ctx.defaults.infrastructure?.fly_region ?? '',
     vercelFramework: ctx.defaults.infrastructure?.vercel_framework ?? 'nextjs',
     tfOrganization: ctx.defaults.infrastructure?.terraform_organization ?? 'koras',
+
+    ports: {
+      supabaseDb: ctx.defaults.local?.ports?.supabase_db ?? 54322,
+      zitadel: ctx.defaults.local?.ports?.zitadel ?? 8080,
+      redis: ctx.defaults.local?.ports?.redis ?? 6379,
+      mailSmtp: ctx.defaults.local?.ports?.mail_smtp ?? 1025,
+      mailUi: ctx.defaults.local?.ports?.mail_ui ?? 8025,
+      minioApi: ctx.defaults.local?.ports?.minio_api ?? 9000,
+      minioConsole: ctx.defaults.local?.ports?.minio_console ?? 9001,
+    },
   }
 }

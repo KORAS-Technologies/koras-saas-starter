@@ -8,6 +8,13 @@ PROJECT_SLUG := {{projectSlug}}
 APPS := {{#each enabledApplications}}{{this}} {{/each}}
 SERVICES := {{#each enabledServices}}{{this}} {{/each}}
 
+ifeq ($(OS),Windows_NT)
+  SHELL := C:/Program Files/Git/bin/bash.exe
+else
+  SHELL := bash
+endif
+.SHELLFLAGS := -euo pipefail -c
+
 .DEFAULT_GOAL := help
 
 .PHONY: help profile install bootstrap dev down reset seed test health lint typecheck build clean
@@ -27,7 +34,7 @@ install: ## Install all dependencies
 	uv sync
 
 bootstrap: install ## Full local environment setup
-	./local/scripts/bootstrap.sh
+	bash ./local/scripts/bootstrap.sh
 
 dev: ## Start local development stack
 	docker compose -f local/docker-compose.yml up -d
@@ -41,14 +48,14 @@ reset: down ## Wipe volumes and re-bootstrap
 	$(MAKE) bootstrap
 
 seed: ## Populate development fixtures
-	./local/scripts/seed.sh
+	bash ./local/scripts/seed.sh
 
 test: ## Run all test suites
 	pnpm turbo run test
 	uv run pytest
 
 health: ## Poll all services until healthy
-	./local/scripts/health.sh
+	bash ./local/scripts/health.sh
 
 lint: ## Lint all sources
 	pnpm turbo run lint

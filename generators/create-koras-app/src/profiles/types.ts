@@ -107,6 +107,21 @@ export const ProfileDefaultsSchema = z.object({
       include_docker_compose: z.boolean().optional(),
     })
     .optional(),
+  local: z
+    .object({
+      ports: z
+        .object({
+          supabase_db: z.number().int().optional(),
+          zitadel: z.number().int().optional(),
+          redis: z.number().int().optional(),
+          mail_smtp: z.number().int().optional(),
+          mail_ui: z.number().int().optional(),
+          minio_api: z.number().int().optional(),
+          minio_console: z.number().int().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
 })
 
 export type ProfileDefaults = z.infer<typeof ProfileDefaultsSchema>

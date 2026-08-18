@@ -28,3 +28,13 @@ infrastructure:
 output:
   include_example_env: true
   include_docker_compose: true
+
+local:
+  ports:
+    supabase_db: 54322
+    zitadel: 8080
+    redis: 6379
+    mail_smtp: 1025
+    mail_ui: 8025
+    minio_api: 9000
+    minio_console: 9001
