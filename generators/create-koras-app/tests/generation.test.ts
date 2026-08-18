@@ -11,7 +11,7 @@ import {
 } from '../src/profiles/validator.js'
 import { buildContext } from '../src/generation/context.js'
 import { renderTemplate } from '../src/generation/engine.js'
-import { writeFiles, printDryRunManifest } from '../src/generation/writer.js'
+import { writeFiles, printDryRunManifest, toUnixLineEndings } from '../src/generation/writer.js'
 import {
   PROJECT_MANIFEST_PATH,
   parseProjectManifest,
@@ -258,6 +258,45 @@ describe('profile propagation', () => {
     const services = JSON.parse(/enabled_services = (\[.*\])/.exec(tfvars)![1]) as string[]
     expect(services).toContain('api')
     expect(services).not.toContain('worker')
+  })
+})
+
+// ── line endings ─────────────────────────────────────────────────────────────
+
+describe('line endings', () => {
+  it('writes shell scripts, Makefiles, and Dockerfiles with LF', () => {
+    // On Windows with core.autocrlf=true the templates themselves carry CRLF,
+    // and copying those bytes verbatim gives a project whose `make bootstrap`
+    // dies on `set -euo pipefail\r: invalid option name`.
+    for (const [profile, slug] of [
+      ['product', 'eol-product'],
+      ['control-plane', 'eol-cp'],
+    ] as Array<[ProfileName, string]>) {
+      const gen = generate(profile, slug)
+      const shellFiles = gen.fileList.filter(
+        (f) => /\.(sh|bash|mk)$/.test(f) || /(^|\/)(Makefile|Dockerfile)$/.test(f),
+      )
+      expect(shellFiles.length).toBeGreaterThan(0)
+      for (const file of shellFiles) {
+        expect(readFileSync(join(OUT, slug, file), 'utf8')).not.toContain('\r\n')
+      }
+    }
+  })
+
+  it('normalizes CRLF regardless of the source encoding', () => {
+    expect(toUnixLineEndings('a\r\nb\r\n')).toBe('a\nb\n')
+    expect(toUnixLineEndings(Buffer.from('a\r\nb')).toString()).toBe('a\nb')
+    // A lone CR is data, not a line ending.
+    expect(toUnixLineEndings('a\rb')).toBe('a\rb')
+  })
+
+  it('generates a .gitattributes that pins them for later checkouts', () => {
+    const gen = generate('product', 'eol-attributes')
+    expect(gen.has('.gitattributes')).toBe(true)
+    const attributes = gen.read('.gitattributes')
+    expect(attributes).toContain('*.sh        text eol=lf')
+    // Windows-native scripts must keep CRLF — cmd.exe requires it.
+    expect(attributes).toContain('*.bat       text eol=crlf')
   })
 })
 

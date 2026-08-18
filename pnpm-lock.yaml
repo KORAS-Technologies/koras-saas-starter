@@ -49,6 +49,25 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@20.19.43)
 
+  tooling/koras-cli:
+    dependencies:
+      create-koras-app:
+        specifier: workspace:*
+        version: link:../../generators/create-koras-app
+      js-yaml:
+        specifier: ^4.1.0
+        version: 4.3.1
+    devDependencies:
+      '@types/js-yaml':
+        specifier: ^4.0.9
+        version: 4.0.9
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+      vitest:
+        specifier: ^2.0.0
+        version: 2.1.9(@types/node@20.19.43)
+
 packages:
 
   '@clack/core@0.4.1':
