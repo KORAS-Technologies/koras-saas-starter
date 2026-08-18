@@ -109,6 +109,33 @@ Each ZITADEL environment is a separate instance with its own domain and service
 account, so each is checked independently — a working DEV credential says
 nothing about PROD.
 
+### What the GitHub check can and cannot prove
+
+`GET /orgs/{org}` serves a *public* profile, so a 200 proves almost nothing —
+a token with no access to the organization still gets one. The check therefore
+requires the response to carry `members_can_create_repositories`, a field
+GitHub returns only to a token with real organization visibility.
+
+That is the limit of what a read-only check can establish. **No GitHub API
+exposes a fine-grained token's repository permissions**, so the doctor cannot
+prove the token may create branches or environments — only that it can see the
+organization. Those permissions fail later, during `terraform apply`, one
+resource at a time.
+
+Configure them once, from what the module actually creates:
+
+| Terraform resource | Fine-grained permission |
+|---|---|
+| `github_repository` | **Organization → Administration:** Read and write |
+| `github_branch` (reads and writes git refs) | **Repository → Contents:** Read and write |
+| `github_branch_default`, `github_branch_protection` | **Repository → Administration:** Read and write |
+| `github_repository_environment` | **Repository → Environments:** Read and write |
+| everything | **Repository → Metadata:** Read (mandatory, automatic) |
+
+The token's resource owner must be the organization itself, and an org owner
+must approve it. A classic PAT with `repo` scope covers all of the above, if
+organization policy permits one.
+
 ### Why Cloudflare does not gate on `/user/tokens/verify`
 
 A token scoped to a single zone is a perfectly good credential yet cannot call

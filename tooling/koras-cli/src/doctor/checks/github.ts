@@ -60,7 +60,9 @@ export async function checkGitHub(ctx: DoctorContext): Promise<DoctorResult> {
         `GITHUB_TOKEN can read the public profile of "${org}" but has no access\n` +
         'to the organization itself, so it cannot create repositories.\n' +
         'A fine-grained token needs the organization as its resource owner,\n' +
-        'Administration: Read and write, and approval by an org owner.',
+        'Organization Administration: Read and write, and approval by an owner.\n' +
+        'Provisioning also needs repository Contents and Environments: Read and\n' +
+        'write. No API exposes those, so they fail later, during apply.',
     }
   }
 
