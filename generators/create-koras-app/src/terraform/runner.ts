@@ -103,7 +103,7 @@ export async function provision(
 
   if (!preflight.ok && !useDoppler) {
     console.error('')
-    console.error(formatMissingInputs(preflight.missing))
+    console.error(formatMissingInputs(preflight.missing, env))
     return { status: 'missing-inputs' }
   }
 

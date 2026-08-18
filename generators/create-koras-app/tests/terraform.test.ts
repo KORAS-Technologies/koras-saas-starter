@@ -7,6 +7,7 @@ import type { ProfileName } from '../src/profiles/loader.js'
 import { resolveSelections } from '../src/profiles/validator.js'
 import { buildContext } from '../src/generation/context.js'
 import { provision, shouldUseDoppler, summarisePlan } from '../src/terraform/runner.js'
+import { formatMissingInputs } from '../src/terraform/inputs.js'
 import type { CommandExecutor } from '../src/terraform/runner.js'
 import {
   preflightInputs,
@@ -696,5 +697,29 @@ describe('plan summary', () => {
 
   it('is undefined when Terraform reported no plan line', () => {
     expect(summarisePlan('No changes. Infrastructure is up-to-date.')).toBeUndefined()
+  })
+})
+
+// ── missing-input diagnosis ──────────────────────────────────────────────────
+
+describe('missing inputs name the cause', () => {
+  const missing = [{ name: 'GITHUB_TOKEN', detail: 'GitHub — repository' }]
+
+  it('says the command is not running under doppler run', () => {
+    const message = formatMissingInputs(missing, {})
+    expect(message).toContain('not running under `doppler run`')
+    expect(message).toContain('DOPPLER_PROJECT')
+  })
+
+  it('blames the config, not the wrapper, when already inside doppler run', () => {
+    // DOPPLER_PROJECT is injected by `doppler run`, so its presence means the
+    // wrapper was used and the config itself is short of secrets.
+    const message = formatMissingInputs(missing, {
+      DOPPLER_PROJECT: 'koras-platform-bootstrap',
+      DOPPLER_CONFIG: 'prod',
+    })
+    expect(message).toContain('koras-platform-bootstrap/prod')
+    expect(message).toContain('does not define every required secret')
+    expect(message).not.toContain('not running under')
   })
 })
