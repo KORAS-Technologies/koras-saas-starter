@@ -446,7 +446,7 @@ It is a stable KORAS platform contract, consumed by:
 
 ```
 pnpm koras doctor
-pnpm koras bootstrap:doctor
+pnpm koras bootstrap:doctor   implemented — see BOOTSTRAP_DOCTOR.md
 pnpm koras upgrade
 pnpm koras diff-starter
 pnpm koras project:info
@@ -454,6 +454,10 @@ pnpm koras project:info
 
 and by Control Plane registration tooling, which gates on `project.profile`
 before running platform-only work.
+
+`bootstrap:doctor` is the one that exists today. It checks the estate rather
+than a generated project, so it does not read this manifest yet; the remaining
+commands will.
 
 It holds **references only** — never secrets, credentials, or endpoints. It is
 safe to commit, and the generated `.gitignore` deliberately does not exclude it.

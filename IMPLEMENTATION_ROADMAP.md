@@ -617,6 +617,28 @@ Five defects were found only by running it against live providers:
 
 **Not executed:** a real `apply`. That belongs to the Phase 13 acceptance test.
 
+### Bootstrap preflight — `pnpm koras bootstrap:doctor`
+
+Provisioning contacts seven providers in one Terraform run, so a credential
+that expired last week surfaces halfway through — after some resources already
+exist. `pnpm koras bootstrap:doctor` moves that discovery to a read-only check
+before the first `--provision`:
+
+```bash
+doppler run --project koras-platform-bootstrap --config prod -- \
+  pnpm koras bootstrap:doctor
+```
+
+Twelve rows, `✓` or `✗`, `READY FOR BOOTSTRAP` or `NOT READY FOR BOOTSTRAP`,
+exit 0 or 1. It creates, updates, and deletes nothing, and never runs
+`terraform apply`, `destroy`, or `import`.
+
+The command lives in `tooling/koras-cli` and reads the required-secret list
+from the generator's own Terraform input registry, so it cannot drift from what
+`--provision` actually needs. Every failure string is redacted before printing.
+
+Full contract, per-row semantics, and secret handling: **BOOTSTRAP_DOCTOR.md**.
+
 ### Generated Project Manifest
 
 Every generated repository — both profiles — now contains:

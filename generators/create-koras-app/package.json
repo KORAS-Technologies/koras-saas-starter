@@ -7,6 +7,16 @@
   "bin": {
     "create-koras-app": "./bin/create-koras-app.js"
   },
+  "exports": {
+    "./terraform": {
+      "types": "./dist/terraform/inputs.d.ts",
+      "default": "./dist/terraform/inputs.js"
+    },
+    "./project-manifest": {
+      "types": "./dist/generation/project-manifest.d.ts",
+      "default": "./dist/generation/project-manifest.js"
+    }
+  },
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "dev": "tsc --project tsconfig.json --watch",
