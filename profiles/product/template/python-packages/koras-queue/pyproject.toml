@@ -4,6 +4,9 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = ["arq>=0.25.0","koras-logging"]
 
+[tool.uv.sources]
+koras-logging = { workspace = true }
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
