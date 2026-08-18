@@ -70,6 +70,20 @@ export function flyAppNames(ctx: GenerationContext): string[] {
   )
 }
 
+/**
+ * Vercel project names: <slug>-<app>, app key hyphenated.
+ *
+ * Component keys are identifiers and may contain underscores
+ * (`platform_admin`); Vercel accepts lowercase alphanumerics and hyphens only
+ * and rejects the rest at plan time. The keys themselves still go to Terraform
+ * as `enabled_apps` — the module needs them to look components up — so this is
+ * a separate value, used wherever a real project name is meant.
+ */
+export function vercelProjectNames(ctx: GenerationContext): string[] {
+  return enabledInfra(ctx.manifest.infrastructure.vercel.applications, ctx.selections.applications)
+    .map((app) => `${ctx.projectSlug}-${app.replace(/_/g, '-')}`)
+}
+
 /** ZITADEL project name carries no environment suffix — the instance is the environment. */
 export function zitadelProjectName(ctx: GenerationContext): string {
   return ctx.projectSlug
@@ -115,6 +129,7 @@ export function contextToTemplateVars(ctx: GenerationContext): Record<string, un
       ctx.manifest.infrastructure.vercel.applications,
       ctx.selections.applications,
     ),
+    vercelProjectNames: vercelProjectNames(ctx),
     flyServices: enabledInfra(ctx.manifest.infrastructure.fly.services, ctx.selections.services),
     flyApps: flyAppNames(ctx),
     zitadelProject: zitadelProjectName(ctx),
