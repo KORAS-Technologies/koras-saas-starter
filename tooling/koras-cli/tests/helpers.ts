@@ -73,7 +73,12 @@ export function stubFetch(routes: RouteMap): FetchLike & { calls: string[] } {
 export function healthyRoutes(): RouteMap {
   return {
     'api.doppler.com': response(200, { config: { name: 'prod' } }),
-    'api.github.com/orgs': response(200, { login: 'koras-org' }),
+    // members_can_create_repositories is returned only to a token with real
+    // organization access, so a healthy stub must include it.
+    'api.github.com/orgs': response(200, {
+      login: 'koras-org',
+      members_can_create_repositories: true,
+    }),
     'api.supabase.com/v1/organizations': response(200, [{ id: 'org_supabase_1', name: 'KORAS' }]),
     '.well-known/openid-configuration': (url) =>
       response(200, { issuer: `https://${new URL(url).host}` }),
