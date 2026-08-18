@@ -166,17 +166,24 @@ export async function checkZitadel(
   }
 
   // One read, to prove the token is usable and not merely issued.
+  // GetMyUser on the Auth API — the least-privileged read a service account
+  // can make, so this tests the credential rather than any granted role.
   try {
-    await request(ctx.fetchImpl, `${base}/auth/v1/me`, {
+    await request(ctx.fetchImpl, `${base}/auth/v1/users/me`, {
       headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
     })
   } catch (err) {
     if (err instanceof HttpError) {
+      // 401/403 is the credential; 404 is the endpoint. Reporting a missing
+      // endpoint as a permissions problem sends the operator to the wrong
+      // place entirely — which is what an earlier version of this check did.
+      const cause =
+        err.status === 401 || err.status === 403
+          ? "Check the service account's permissions."
+          : `${safeHost(base)} does not expose the Auth API at /auth/v1/users/me.`
       return {
         passed: false,
-        error:
-          `Authenticated, but ${safeHost(base)} rejected a read request ` +
-          `(HTTP ${err.status}).\nCheck the service account's permissions.`,
+        error: `Authenticated, but the read request returned HTTP ${err.status}.\n${cause}`,
       }
     }
     throw err

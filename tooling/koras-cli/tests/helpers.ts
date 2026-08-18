@@ -78,13 +78,12 @@ export function healthyRoutes(): RouteMap {
     '.well-known/openid-configuration': (url) =>
       response(200, { issuer: `https://${new URL(url).host}` }),
     '/oauth/v2/token': response(200, { access_token: 'zitadel-access-token-value' }),
-    '/auth/v1/me': response(200, { userId: 'user' }),
+    '/auth/v1/users/me': response(200, { user: { id: 'user' } }),
     'api.vercel.com/v2/user': response(200, { user: { id: 'u' } }),
     'api.vercel.com/v2/teams': response(200, { id: 'team_vercel_1' }),
     'api.fly.io/graphql': response(200, {
       data: { organizations: { nodes: [{ slug: 'koras-fly' }] } },
     }),
-    'user/tokens/verify': response(200, { success: true, result: { status: 'active' } }),
     'client/v4/zones': response(200, { success: true, result: { name: 'koras.app' } }),
     'app.terraform.io/api/v2/organizations': response(200, { data: { id: 'koras' } }),
   }

@@ -134,6 +134,18 @@ describe('individual check failures', () => {
       }),
     ],
     [
+      'Cloudflare',
+      'zone not readable',
+      () => ({
+        routes: {
+          'client/v4/zones': response(403, {
+            success: false,
+            errors: [{ code: 10000, message: 'Authentication error' }],
+          }),
+        },
+      }),
+    ],
+    [
       'Terraform state',
       'organization not found',
       () => ({ routes: { 'app.terraform.io/api/v2/organizations': response(404, {}) } }),
@@ -236,6 +248,23 @@ describe('ZITADEL', () => {
     const { output } = await run({ env })
     expect(failed(output)).toEqual([])
   })
+
+  it('reads GetMyUser on the Auth API', async () => {
+    const fetchImpl = stubFetch(healthyRoutes())
+    await doctor({ env: healthyEnv(), fetchImpl, exec: healthyExec(), repoRoot: REPO_ROOT })
+    // The endpoint is /auth/v1/users/me. /auth/v1/me does not exist, and a
+    // real instance answers it with a 404 that reads like a permissions fault.
+    expect(fetchImpl.calls.filter((u) => u.endsWith('/auth/v1/users/me'))).toHaveLength(4)
+  })
+
+  it('blames permissions on 403 and the endpoint on 404', async () => {
+    const forbidden = await run({ routes: { '/auth/v1/users/me': response(403, {}) } })
+    expect(forbidden.output).toContain("service account's permissions")
+
+    const notFound = await run({ routes: { '/auth/v1/users/me': response(404, {}) } })
+    expect(notFound.output).toContain('does not expose the Auth API')
+    expect(notFound.output).not.toContain("service account's permissions")
+  })
 })
 
 // ── failed dependencies ──────────────────────────────────────────────────────
@@ -278,6 +307,50 @@ describe('failed dependencies', () => {
     })
     expect(rows[0].result.passed).toBe(false)
     expect(rows[0].result.error).toContain('boom')
+  })
+})
+
+// ── Cloudflare ───────────────────────────────────────────────────────────────
+
+describe('Cloudflare', () => {
+  it("surfaces Cloudflare's own error text, not just a rejection", async () => {
+    const { output } = await run({
+      routes: {
+        'client/v4/zones': response(403, {
+          success: false,
+          errors: [{ code: 10000, message: 'Invalid API Token' }],
+        }),
+      },
+    })
+    expect(output).toContain('Invalid API Token (10000)')
+    expect(output).toContain('Zone:Read')
+  })
+
+  it('passes on a zone-scoped token that cannot call /user/tokens/verify', async () => {
+    // A token scoped to one zone is a perfectly good credential. Gating on
+    // verify would fail it, so the zone read is what decides.
+    const fetchImpl = stubFetch({
+      ...healthyRoutes(),
+      'user/tokens/verify': response(403, { success: false }),
+    })
+    const { output } = await doctor({
+      env: healthyEnv(),
+      fetchImpl,
+      exec: healthyExec(),
+      repoRoot: REPO_ROOT,
+    })
+    expect(failed(output)).toEqual([])
+    expect(fetchImpl.calls.some((u) => u.includes('tokens/verify'))).toBe(false)
+  })
+
+  it('fails when the envelope reports failure without an HTTP error', async () => {
+    const { output } = await run({
+      routes: {
+        'client/v4/zones': response(200, { success: false, errors: [{ message: 'Zone not found' }] }),
+      },
+    })
+    expect(failed(output)).toEqual(['Cloudflare'])
+    expect(output).toContain('Zone not found')
   })
 })
 

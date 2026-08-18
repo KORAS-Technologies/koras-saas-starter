@@ -98,16 +98,24 @@ Successful checks say nothing beyond `✓` — a passing run should be boring.
 | Doppler | `DOPPLER_TOKEN` reaches `koras-platform-bootstrap/prod`, and every required bootstrap key is present in the environment |
 | GitHub | `GITHUB_TOKEN` authenticates and `TF_VAR_GITHUB_ORG` is readable |
 | Supabase | `SUPABASE_ACCESS_TOKEN` authenticates, `TF_VAR_SUPABASE_ORG_ID` is visible, and all four `SUPABASE_DB_PASSWORD_*` exist |
-| ZITADEL DEV/TEST/STG/PROD | Domain resolves, service-account JSON parses, an assertion signs, the JWT-bearer grant succeeds, and one read call is accepted |
+| ZITADEL DEV/TEST/STG/PROD | Domain resolves, service-account JSON parses, an assertion signs, the JWT-bearer grant succeeds, and `GET /auth/v1/users/me` is accepted |
 | Vercel | `VERCEL_API_TOKEN` authenticates and `TF_VAR_VERCEL_TEAM_ID` is readable |
 | Fly.io | `FLY_API_TOKEN` authenticates and `TF_VAR_FLY_ORG_SLUG` is among its organizations |
-| Cloudflare | Token verifies as active, `TF_VAR_CLOUDFLARE_ZONE_ID` is readable, and the zone matches `TF_VAR_PRIMARY_DOMAIN` |
+| Cloudflare | `TF_VAR_CLOUDFLARE_ZONE_ID` is readable with `CLOUDFLARE_API_TOKEN`, and the zone matches `TF_VAR_PRIMARY_DOMAIN` |
 | Terraform | Binary present, version satisfies the modules' `required_version`, HCP token present, and the module tree passes `init -backend=false` + `validate` |
 | Terraform state | HCP token authenticates, the organization from `profiles/*/defaults.yaml` exists, and its workspaces are readable |
 
 Each ZITADEL environment is a separate instance with its own domain and service
 account, so each is checked independently — a working DEV credential says
 nothing about PROD.
+
+### Why Cloudflare does not gate on `/user/tokens/verify`
+
+A token scoped to a single zone is a perfectly good credential yet cannot call
+the account-level verify endpoint, so gating on it would fail a working setup.
+The zone read is what Terraform actually does, so it is what decides — and when
+it fails, Cloudflare's own error text is surfaced (`Invalid API Token (10000)`)
+rather than a bare "rejected".
 
 ### Why the Terraform check uses a temporary directory
 
