@@ -26,6 +26,7 @@ pnpm create-koras-app <project> --profile <profile>
 | `DEPENDENCY_MAP.md`       | Package and service dependency graph           |
 | `IMPLEMENTATION_ROADMAP.md` | Phase-by-phase build plan                    |
 | `BOOTSTRAP_DOCTOR.md`     | `pnpm koras bootstrap:doctor` — preflight checks |
+| `PROVISIONING_RUNBOOK.md` | Commands, estate prerequisites, failure recovery |
 | `RISK_REGISTER.md`        | Identified risks and mitigations               |
 
 ## Repository layout (target state)

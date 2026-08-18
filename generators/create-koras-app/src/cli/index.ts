@@ -41,14 +41,23 @@ OPTIONS:
   --help                     Show this help message
 
 EXAMPLES:
-  pnpm create-koras-app
-  pnpm create-koras-app docoris --profile product
-  pnpm create-koras-app docoris --profile product --provision
-  pnpm create-koras-app docoris --profile product --dry-run
-  pnpm create-koras-app docoris --profile product --with marketing,ai_gateway
-  pnpm create-koras-app koras-control-plane --profile control-plane
-  pnpm create-koras-app koras-control-plane --profile control-plane --provision
-  pnpm create-koras-app docoris --profile product --provision-only
+  Generate only — no infrastructure is touched:
+    pnpm create-koras-app docoris --profile product --output-dir ../output
+    pnpm create-koras-app docoris --profile product --output-dir ../output --dry-run
+    pnpm create-koras-app docoris --profile product --output-dir ../output \\
+      --with marketing,ai_gateway
+    pnpm create-koras-app koras-control-plane --profile control-plane --output-dir ../output
+
+  Provision — credentials come from Doppler, never from a file:
+    doppler run --project koras-platform-bootstrap --config prod -- \\
+      pnpm create-koras-app docoris --profile product --provision --output-dir ../output
+
+  Retry a run that failed partway — skips generation, keeps existing state:
+    doppler run --project koras-platform-bootstrap --config prod -- \\
+      pnpm create-koras-app docoris --profile product --provision-only --output-dir ../output
+
+Check the estate before provisioning: pnpm koras bootstrap:doctor
+See PROVISIONING_RUNBOOK.md for prerequisites and failure recovery.
 `.trim()
 
 function printListProfiles(): void {

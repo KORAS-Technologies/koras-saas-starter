@@ -615,7 +615,39 @@ Five defects were found only by running it against live providers:
 5. Generating with no `--output-dir` wrote a full project into the starter
    repository, which is now refused.
 
-**Not executed:** a real `apply`. That belongs to the Phase 13 acceptance test.
+**A real `apply` has since run** against the KORAS estate, for both profiles.
+GitHub, Doppler, Supabase, and ZITADEL resources were created; the run stopped
+at Vercel. Everything it hit was estate configuration rather than generator
+logic, and each failure surfaced *during* apply, after other providers had
+already created real resources:
+
+6. **The GitHub token could not create repositories.** A fine-grained token
+   whose resource owner was the user, not the organization. The doctor had
+   passed it, because `GET /orgs/{org}` serves a public profile and returns 200
+   to any valid token — a check that asserted little more than "this token
+   exists". It now requires a field GitHub returns only to a token with real
+   organization visibility.
+7. **Administration does not imply Contents.** With repository creation fixed,
+   branch creation failed: reading a git ref needs repository Contents, and
+   creating the four environments needs Environments. No API exposes a
+   fine-grained token's repository permissions, so the doctor cannot check
+   these; they are documented instead.
+8. **Component keys are not valid resource names.** `platform_admin` is an
+   ordinary component key and an illegal Vercel project name. The product
+   profile never hit it — `web`, `admin`, `api`, `worker` carry no underscores —
+   so control-plane was the first profile to expose it. Fly had the same latent
+   bug for `ai_gateway`. Both modules now hyphenate, and the generator's
+   Vercel names were made to agree with what Terraform creates.
+9. **Vercel could not see the repository.** `repo_not_found` for a repository
+   Terraform had created minutes earlier: the Vercel GitHub App was installed
+   only on a personal account. Unlike GitHub's permissions this is visible
+   read-only, so the doctor now checks it.
+
+**Not executed:** a full apply through to Cloudflare and Fly. That belongs to
+the Phase 13 acceptance test.
+
+The command sequence, estate prerequisites, and failure-to-fix table are in
+**PROVISIONING_RUNBOOK.md**.
 
 ### Bootstrap preflight — `pnpm koras bootstrap:doctor`
 

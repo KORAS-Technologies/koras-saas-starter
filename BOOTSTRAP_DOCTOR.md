@@ -259,6 +259,14 @@ reaches no real system and needs no credentials.
 
 ---
 
+## Related
+
+The command sequence this precedes, the estate prerequisites behind each
+check, and what to do when an apply fails partway are in
+**PROVISIONING_RUNBOOK.md**.
+
+---
+
 ## Tests
 
 ```bash
