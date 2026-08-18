@@ -64,6 +64,12 @@ export type SharedAsset = z.infer<typeof SharedAssetSchema>
 export const ProfileManifestSchema = z.object({
   schema_version: z.literal('1'),
   profile: z.enum(['product', 'control-plane']),
+  // Version of the profile itself, independent of both the manifest schema
+  // version and the starter version. Recorded in every generated project's
+  // .koras/project.yaml, so a project can be traced back to the profile
+  // revision that produced it. Semver: bump the major on a breaking change to
+  // the generated structure.
+  version: z.string().regex(/^\d+\.\d+\.\d+(?:[-+].*)?$/, 'must be a semantic version'),
   applications: z.record(z.string(), ApplicationSchema),
   services: z.record(z.string(), ServiceSchema),
   capabilities: z.record(z.string(), z.boolean()),

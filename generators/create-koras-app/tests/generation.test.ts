@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { rmSync, existsSync, readFileSync } from 'node:fs'
+import { rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { loadProfile } from '../src/profiles/index.js'
 import type { ProfileName } from '../src/profiles/loader.js'
 import {
@@ -11,8 +11,14 @@ import {
 } from '../src/profiles/validator.js'
 import { buildContext } from '../src/generation/context.js'
 import { renderTemplate } from '../src/generation/engine.js'
-import { writeFiles } from '../src/generation/writer.js'
+import { writeFiles, printDryRunManifest } from '../src/generation/writer.js'
+import {
+  PROJECT_MANIFEST_PATH,
+  parseProjectManifest,
+  renderProjectManifest,
+} from '../src/generation/project-manifest.js'
 import { validateProfile } from '../src/validation/profile.js'
+import { validateGeneratedProject } from '../src/validation/generated-project.js'
 
 const OUT = join(tmpdir(), `koras-gen-${process.pid}-${Date.now()}`)
 
@@ -206,6 +212,12 @@ describe('profile propagation', () => {
         expect(gen.read('Makefile')).toContain(`PROFILE := ${profile}`)
       })
 
+      it('writes the profile into .koras/project.yaml', () => {
+        const manifest = parseProjectManifest(gen.read(PROJECT_MANIFEST_PATH), 'test')
+        expect(manifest.project.profile).toBe(profile)
+        expect(manifest.project.slug).toBe(slug)
+      })
+
       it('writes the profile into terraform.tfvars', () => {
         const tfvars = gen.read('infrastructure/terraform/terraform.tfvars')
         expect(tfvars).toContain(`profile      = "${profile}"`)
@@ -246,6 +258,234 @@ describe('profile propagation', () => {
     const services = JSON.parse(/enabled_services = (\[.*\])/.exec(tfvars)![1]) as string[]
     expect(services).toContain('api')
     expect(services).not.toContain('worker')
+  })
+})
+
+// ── generated project manifest (.koras/project.yaml) ─────────────────────────
+
+describe('generated project manifest', () => {
+  const starterVersion = JSON.parse(
+    readFileSync(join(process.cwd(), '../../package.json'), 'utf8'),
+  ).version as string
+
+  describe('product profile', () => {
+    let gen: ReturnType<typeof generate>
+    beforeAll(() => {
+      gen = generate('product', 'docoris')
+    })
+
+    it('generates the manifest at the canonical path', () => {
+      expect(gen.has(PROJECT_MANIFEST_PATH)).toBe(true)
+      expect(existsSync(join(OUT, 'docoris', '.koras', 'project.yaml'))).toBe(true)
+    })
+
+    it('records the project identity and profile', () => {
+      const manifest = parseProjectManifest(gen.read(PROJECT_MANIFEST_PATH), 'test')
+      expect(manifest.schema_version).toBe(1)
+      expect(manifest.project.slug).toBe('docoris')
+      expect(manifest.project.profile).toBe('product')
+      expect(manifest.generator.name).toBe('create-koras-app')
+    })
+
+    it('resolves versions from starter and profile metadata', () => {
+      const manifest = parseProjectManifest(gen.read(PROJECT_MANIFEST_PATH), 'test')
+      expect(manifest.generator.starter_version).toBe(starterVersion)
+      expect(manifest.generator.profile_version).toBe(loadProfile('product').manifest.version)
+    })
+
+    it('never emits a placeholder version', () => {
+      const raw = gen.read(PROJECT_MANIFEST_PATH)
+      for (const placeholder of ['TBD', 'latest', 'unknown', '...']) {
+        expect(raw).not.toContain(placeholder)
+      }
+    })
+  })
+
+  describe('control-plane profile', () => {
+    let gen: ReturnType<typeof generate>
+    beforeAll(() => {
+      gen = generate('control-plane', 'koras-control-plane')
+    })
+
+    it('records the control-plane identity', () => {
+      const manifest = parseProjectManifest(gen.read(PROJECT_MANIFEST_PATH), 'test')
+      expect(manifest).toEqual({
+        schema_version: 1,
+        project: {
+          name: 'koras-control-plane',
+          slug: 'koras-control-plane',
+          profile: 'control-plane',
+        },
+        generator: {
+          name: 'create-koras-app',
+          starter_version: starterVersion,
+          profile_version: loadProfile('control-plane').manifest.version,
+        },
+      })
+    })
+
+    // Control Plane tooling gates on this field before running platform-only
+    // provisioning; `product` here would be a silent, dangerous misroute.
+    it('never records the product profile', () => {
+      const raw = gen.read(PROJECT_MANIFEST_PATH)
+      expect(raw).not.toMatch(/profile:\s*product/)
+      expect(raw).toMatch(/profile:\s*control-plane/)
+    })
+  })
+
+  it('serializes deterministically, in the declared field order', () => {
+    const ctx = makeCtx('product', 'determinism-app')
+    const first = renderProjectManifest(ctx)
+    const second = renderProjectManifest(ctx)
+    expect(first).toBe(second)
+    const keyOrder = [...first.matchAll(/^(\w+):/gm)].map((m) => m[1])
+    expect(keyOrder).toEqual(['schema_version', 'project', 'generator'])
+    const projectKeys = [...first.matchAll(/^ {2}(\w+):/gm)].map((m) => m[1])
+    expect(projectKeys).toEqual(['name', 'slug', 'profile', 'name', 'starter_version', 'profile_version'])
+  })
+
+  it('carries no secrets', () => {
+    // The header comment says the file holds no secrets; assert on the data.
+    const data = generate('product', 'manifest-clean')
+      .read(PROJECT_MANIFEST_PATH)
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'))
+      .join('\n')
+      .toLowerCase()
+    for (const secret of ['token', 'password', 'jwt_profile', 'secret', 'key', 'credential']) {
+      expect(data).not.toContain(secret)
+    }
+  })
+
+  it('refuses to build a manifest for an unsupported profile', () => {
+    const ctx = { ...makeCtx('product', 'bad-profile-app'), profile: 'invalid-profile' as ProfileName }
+    expect(() => renderProjectManifest(ctx)).toThrow(
+      /unsupported profile "invalid-profile".*Supported profiles/s,
+    )
+  })
+
+  it('refuses a profile version that is not semver', () => {
+    const ctx = makeCtx('product', 'bad-version-app')
+    const broken = { ...ctx, manifest: { ...ctx.manifest, version: 'latest' } }
+    expect(() => renderProjectManifest(broken)).toThrow(/not a semantic version/)
+  })
+
+  it('is reported by --dry-run without being written', () => {
+    const ctx = makeCtx('product', 'dry-run-manifest', {}, true)
+    const files = renderTemplate(ctx)
+    const result = writeFiles(ctx, files)
+    expect(result.fileList).toContain(PROJECT_MANIFEST_PATH)
+    expect(result.filesWritten).toBe(0)
+    expect(existsSync(join(OUT, 'dry-run-manifest'))).toBe(false)
+
+    // Named in the dry-run header, and listed in sorted order rather than
+    // buried at the end of ~180 template-walk-ordered paths.
+    const lines: string[] = []
+    const log = console.log
+    console.log = (msg?: unknown) => void lines.push(String(msg))
+    try {
+      printDryRunManifest(ctx, files)
+    } finally {
+      console.log = log
+    }
+    const output = lines.join('\n')
+    expect(output).toContain(`Manifest: dry-run-manifest/${PROJECT_MANIFEST_PATH}`)
+    expect(output).toContain(`  dry-run-manifest/${PROJECT_MANIFEST_PATH}`)
+
+    const listed = lines
+      .filter((l) => l.startsWith('  dry-run-manifest/'))
+      .map((l) => l.trim().replace('dry-run-manifest/', ''))
+    expect(listed).toEqual([...listed].sort())
+    // ...which puts it among the other dotfiles, not after infrastructure/
+    expect(listed.indexOf(PROJECT_MANIFEST_PATH)).toBeLessThan(listed.indexOf('package.json'))
+  })
+})
+
+// ── generated project validation ─────────────────────────────────────────────
+
+describe('generated project validation', () => {
+  it('accepts a freshly generated project of either profile', () => {
+    for (const [profile, slug] of [
+      ['product', 'valid-product'],
+      ['control-plane', 'valid-cp'],
+    ] as Array<[ProfileName, string]>) {
+      generate(profile, slug)
+      const check = validateGeneratedProject({
+        projectRoot: join(OUT, slug),
+        expectedSlug: slug,
+        expectedProfile: profile,
+      })
+      expect(check.valid).toBe(true)
+      expect(check.manifest!.project.profile).toBe(profile)
+    }
+  })
+
+  it('fails when the manifest is missing', () => {
+    const slug = 'missing-manifest'
+    generate('product', slug)
+    rmSync(join(OUT, slug, '.koras', 'project.yaml'))
+    const check = validateGeneratedProject({
+      projectRoot: join(OUT, slug),
+      expectedSlug: slug,
+      expectedProfile: 'product',
+    })
+    expect(check.valid).toBe(false)
+    expect(check.error).toMatch(/has no \.koras\/project\.yaml/)
+  })
+
+  it('fails when the manifest is not valid YAML', () => {
+    const slug = 'broken-manifest'
+    generate('product', slug)
+    writeFileSync(join(OUT, slug, '.koras', 'project.yaml'), 'project: [unclosed\n')
+    const check = validateGeneratedProject({
+      projectRoot: join(OUT, slug),
+      expectedSlug: slug,
+      expectedProfile: 'product',
+    })
+    expect(check.valid).toBe(false)
+    expect(check.error).toMatch(/not valid YAML/)
+  })
+
+  it('fails when the manifest schema version is unsupported', () => {
+    const slug = 'future-manifest'
+    generate('product', slug)
+    const path = join(OUT, slug, '.koras', 'project.yaml')
+    writeFileSync(path, readFileSync(path, 'utf8').replace('schema_version: 1', 'schema_version: 2'))
+    const check = validateGeneratedProject({
+      projectRoot: join(OUT, slug),
+      expectedSlug: slug,
+      expectedProfile: 'product',
+    })
+    expect(check.valid).toBe(false)
+    expect(check.error).toMatch(/schema_version/)
+  })
+
+  it('fails when the recorded profile is not the requested one', () => {
+    const slug = 'profile-drift'
+    generate('control-plane', slug)
+    const path = join(OUT, slug, '.koras', 'project.yaml')
+    writeFileSync(path, readFileSync(path, 'utf8').replace('control-plane', 'product'))
+    const check = validateGeneratedProject({
+      projectRoot: join(OUT, slug),
+      expectedSlug: slug,
+      expectedProfile: 'control-plane',
+    })
+    expect(check.valid).toBe(false)
+    expect(check.error).toMatch(/records profile "product"/)
+  })
+
+  it('fails when the recorded slug is not the requested one', () => {
+    const slug = 'slug-drift'
+    generate('product', slug)
+    const path = join(OUT, slug, '.koras', 'project.yaml')
+    writeFileSync(path, readFileSync(path, 'utf8').replace(/slug: .*/, 'slug: somethingelse'))
+    const check = validateGeneratedProject({
+      projectRoot: join(OUT, slug),
+      expectedSlug: slug,
+      expectedProfile: 'product',
+    })
+    expect(check.valid).toBe(false)
+    expect(check.error).toMatch(/records slug "somethingelse"/)
   })
 })
 

@@ -517,7 +517,8 @@ writing; generator tests pass for both profiles.
 --dry-run` produced a real plan of 41 resources against live providers and
 stopped without applying)
 
-**Scope:** `--provision` flag triggers Terraform bootstrap with explicit approval.
+**Scope:** `--provision` flag triggers Terraform bootstrap with explicit approval,
+and every generated project carries a machine-readable KORAS project manifest.
 
 **Deliverables:**
 ```
@@ -526,6 +527,12 @@ generators/create-koras-app/src/terraform/
   inputs.ts        variable assembly from generator context
   outputs.ts       post-apply reference extraction
   approval.ts      explicit human confirmation before apply
+
+generators/create-koras-app/src/generation/
+  project-manifest.ts   builds, validates, and serializes .koras/project.yaml
+
+generators/create-koras-app/src/validation/
+  generated-project.ts  reads the manifest back from disk after generation
 ```
 
 **Flow:**
@@ -610,8 +617,111 @@ Five defects were found only by running it against live providers:
 
 **Not executed:** a real `apply`. That belongs to the Phase 13 acceptance test.
 
+### Generated Project Manifest
+
+Every generated repository — both profiles — now contains:
+
+```
+.koras/
+└── project.yaml
+```
+
+**Purpose.** It is the authoritative record of what a repository is and what
+produced it. Until now the only machine-readable identity in a generated project
+was `infrastructure/terraform/terraform.tfvars`, which is a provisioning input
+rather than an identity record. The manifest is a stable platform contract,
+consumed by future `koras doctor`, `koras bootstrap:doctor`, `koras upgrade`,
+`koras diff-starter`, and `koras project:info`, and by Control Plane
+registration tooling. It carries references only — never secrets — and is safe
+to commit.
+
+**Fields.**
+
+| Field | Resolved from |
+|-------|---------------|
+| `schema_version` | Fixed at `1` |
+| `project.name` | Project name as supplied to the CLI |
+| `project.slug` | Normalized, machine-safe slug |
+| `project.profile` | `product` or `control-plane` |
+| `generator.name` | Always `create-koras-app` |
+| `generator.starter_version` | Root `package.json` `version` |
+| `generator.profile_version` | `version` in `profiles/<profile>/manifest.yaml` |
+
+**Versioning.** `starter_version` and `profile_version` are independent semver
+values, neither hard-coded in generator logic. A starter fix raises the starter
+version without touching profile behaviour; a breaking change to a profile's
+generated structure raises that profile's version. Generation *fails* rather
+than emitting a placeholder such as `unknown`, `latest`, or `TBD` — a manifest
+that lies about its provenance is worse than a failed generation, because
+downstream tooling trusts it.
+
+**Profile behaviour.** Both profiles emit the same shape; only the values
+differ. The manifest is generator-authored rather than template-authored, so
+there is one implementation rather than one per profile, and adding a profile
+requires no manifest work beyond a `version` field.
+
+```yaml
+# product
+schema_version: 1
+project:
+  name: docoris
+  slug: docoris
+  profile: product
+generator:
+  name: create-koras-app
+  starter_version: 0.1.0
+  profile_version: 1.0.0
+```
+
+```yaml
+# control-plane
+schema_version: 1
+project:
+  name: koras-control-plane
+  slug: koras-control-plane
+  profile: control-plane
+generator:
+  name: create-koras-app
+  starter_version: 0.1.0
+  profile_version: 1.0.0
+```
+
+**Validation.** A Zod schema (`KorasProjectManifestSchema`) validates the
+manifest before it is written and is reusable by any future command that reads
+one. After generation, the project is re-validated by reading the file back from
+disk: it must exist, parse, carry a supported schema version and two semver
+versions, and record the profile and slug actually requested. If it does not,
+generation fails and nothing is provisioned. Reading back from disk rather than
+trusting memory is the point — it proves what downstream tooling will read.
+
+This matters most for the Control Plane: a `--profile control-plane` run that
+recorded `profile: product` would let later tooling run product provisioning
+against the platform authority. A regression test covers it.
+
+`schema_version: 1` is not to change without an explicit migration design.
+Candidate future fields (`environments`, `features`, `infrastructure`) are
+deliberately absent.
+
+Full contract: PRODUCT_GENERATOR_PLAN.md §15. Version semantics:
+PROFILE_ARCHITECTURE.md §2.
+
 **Done when:** `--provision --dry-run` prints plan and exits. `--provision`
 with confirmation creates all infrastructure resources for both profiles.
+
+**Definition of done — generated project manifest:**
+
+- [x] Every generated project contains `.koras/project.yaml`
+- [x] Product profile manifest is correct
+- [x] Control-plane profile manifest is correct
+- [x] Starter version is resolved automatically (root `package.json`)
+- [x] Profile version is resolved automatically (profile manifest)
+- [x] Manifest schema is validated (Zod, on write and on read-back)
+- [x] Manifest is deterministic — fixed field order, byte-identical per context
+- [x] `--dry-run` reports manifest generation and writes nothing
+- [x] Generated-project validation verifies the manifest
+- [x] Tests cover both profiles, including a control-plane profile regression
+- [x] Documentation updated (this document, PRODUCT_GENERATOR_PLAN.md,
+      PROFILE_ARCHITECTURE.md)
 
 ---
 

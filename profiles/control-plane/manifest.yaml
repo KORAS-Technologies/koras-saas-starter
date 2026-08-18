@@ -1,5 +1,6 @@
 schema_version: "1"
 profile: control-plane
+version: "1.0.0"
 
 applications:
   platform_admin:

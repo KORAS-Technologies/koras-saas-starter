@@ -6,6 +6,7 @@ import { validateSlug, deriveSlug } from '../validation/slug.js'
 import { validateProfile } from '../validation/profile.js'
 import { checkDirectoryConflict } from '../validation/conflicts.js'
 import { checkOutputDirectory } from '../validation/output-dir.js'
+import { validateGeneratedProject } from '../validation/generated-project.js'
 import { loadProfile, listProfiles } from '../profiles/index.js'
 import type { ProfileName } from '../profiles/loader.js'
 import {
@@ -220,6 +221,23 @@ Provisioning the existing project in ${projectSlug}/ — nothing regenerated.`)
 
   const writeCtx = ctx.dryRun ? { ...ctx, dryRun: false } : ctx
   const result = writeFiles(writeCtx, files)
+
+  // ── Validate the generated repository ──────────────────────────────────────
+  //
+  // Read back from disk before anything downstream trusts it — and before
+  // provisioning, which acts on the profile this manifest records.
+
+  const projectCheck = validateGeneratedProject({
+    projectRoot,
+    expectedSlug: projectSlug,
+    expectedProfile: profileName,
+  })
+  if (!projectCheck.valid) {
+    fail(
+      `Generated project failed validation.\n  ${projectCheck.error!}\n` +
+        `  Nothing was provisioned. Inspect or delete ${projectSlug}/ and regenerate.`,
+    )
+  }
 
   console.log(`\n✓ Generated ${result.filesWritten} files in ${projectSlug}/`)
 
