@@ -38,3 +38,44 @@ output "profile" {
   description = "Generator profile this project was created with."
   value       = var.profile
 }
+
+output "github_repository_full_name" {
+  value = module.bootstrap.github_repository_full_name
+}
+
+output "github_repository_url" {
+  value = module.bootstrap.github_repository_url
+}
+
+output "doppler_project_name" {
+  value = module.bootstrap.doppler_project_name
+}
+
+output "supabase_project_refs" {
+  value = module.bootstrap.supabase_project_refs
+}
+
+output "supabase_project_api_urls" {
+  value = module.bootstrap.supabase_project_api_urls
+}
+
+output "zitadel_project_ids" {
+  value = module.bootstrap.zitadel_project_ids
+}
+
+output "zitadel_client_ids" {
+  sensitive = true
+  value     = module.bootstrap.zitadel_client_ids
+}
+
+output "vercel_project_ids" {
+  value = module.bootstrap.vercel_project_ids
+}
+
+output "fly_app_names" {
+  value = module.bootstrap.fly_app_names
+}
+
+output "fly_app_hostnames" {
+  value = module.bootstrap.fly_app_hostnames
+}

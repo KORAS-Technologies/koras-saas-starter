@@ -6,4 +6,5 @@ output "project_id" {
 output "client_id" {
   description = "OIDC client ID (non-secret)"
   value       = zitadel_application_oidc.web.client_id
+  sensitive   = true
 }

@@ -31,6 +31,7 @@ output "zitadel_project_ids" {
 
 output "zitadel_client_ids" {
   description = "Map of env → OIDC client ID (non-secret)"
+  sensitive   = true
   value = {
     dev  = module.zitadel_dev.client_id
     test = module.zitadel_test.client_id

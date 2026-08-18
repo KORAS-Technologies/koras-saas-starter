@@ -18,6 +18,7 @@ import { buildContext } from '../generation/context.js'
 import { renderTemplate } from '../generation/engine.js'
 import { writeFiles, printDryRunManifest } from '../generation/writer.js'
 import { provision } from '../terraform/runner.js'
+import { initAndPushToDevelop } from '../git.js'
 
 const HELP_TEXT = `
 create-koras-app — KORAS Application Factory
@@ -271,12 +272,28 @@ async function runProvision(
   const outcome = await provision(ctx, { dryRun: ctx.dryRun, projectRoot })
 
   switch (outcome.status) {
-    case 'applied':
+    case 'applied': {
       console.log('\n✓ Infrastructure provisioned.')
+      const repoFullName = outcome.outputs?.githubRepository
+      if (repoFullName) {
+        try {
+          await initAndPushToDevelop({ projectRoot, repositoryFullName: repoFullName })
+          console.log(`\n✓ Repository initialised and pushed to develop.`)
+          console.log(`  Populate main/test/staging via PRs from develop.`)
+        } catch (err) {
+          console.warn(`\n⚠ Git initialisation failed: ${err instanceof Error ? err.message : String(err)}`)
+          console.warn(`  Run these steps manually in ${projectSlug}/:`)
+          console.warn(`    git init -b develop`)
+          console.warn(`    git remote add origin https://github.com/${repoFullName}.git`)
+          console.warn(`    git add . && git commit -m "chore: initial project generation"`)
+          console.warn(`    git push --force origin HEAD:develop`)
+        }
+      }
       console.log(`\nNext steps:`)
       console.log(`  cd ${projectSlug}`)
       console.log(`  make bootstrap`)
       break
+    }
     case 'planned':
       console.log(`\nThe project is generated in ${projectSlug}/. No infrastructure was created.`)
       break
