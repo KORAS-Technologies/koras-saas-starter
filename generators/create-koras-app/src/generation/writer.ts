@@ -10,6 +10,35 @@ export interface WriteResult {
   fileList: string[]
 }
 
+/**
+ * Files an interpreter reads by shebang, or a Linux container executes.
+ *
+ * These must be LF whatever the generating machine does. A template checked
+ * out on Windows with `core.autocrlf=true` carries CRLF, and copying those
+ * bytes verbatim produces a project whose `make bootstrap` dies on
+ * `set -euo pipefail\r: invalid option name` — with the stray carriage return
+ * scrambling the error message that would have explained it.
+ *
+ * The generated `.gitattributes` pins these too, but that only takes effect
+ * once the project is committed and checked out again. This covers the first
+ * run, before there is any git history at all.
+ */
+function requiresUnixLineEndings(outputPath: string): boolean {
+  const name = outputPath.split('/').pop() ?? ''
+  return (
+    /\.(sh|bash|mk)$/.test(name) ||
+    name === 'Makefile' ||
+    name === 'Dockerfile' ||
+    name.endsWith('.Dockerfile')
+  )
+}
+
+/** Collapses CRLF to LF. Leaves a lone CR alone — that is data, not a line ending. */
+export function toUnixLineEndings(content: Buffer | string): Buffer | string {
+  if (typeof content === 'string') return content.replace(/\r\n/g, '\n')
+  return content.includes('\r\n') ? Buffer.from(content.toString('utf8').replace(/\r\n/g, '\n')) : content
+}
+
 export function writeFiles(ctx: GenerationContext, files: RenderedFile[]): WriteResult {
   const projectRoot = join(ctx.outputDir, ctx.projectSlug)
   const fileList: string[] = []
@@ -24,11 +53,15 @@ export function writeFiles(ctx: GenerationContext, files: RenderedFile[]): Write
     const dir = dirname(outputAbsPath)
     mkdirSync(dir, { recursive: true })
 
+    const content = requiresUnixLineEndings(file.outputPath)
+      ? toUnixLineEndings(file.content)
+      : file.content
+
     const tmpPath = `${outputAbsPath}.${randomBytes(4).toString('hex')}.tmp`
-    if (typeof file.content === 'string') {
-      writeFileSync(tmpPath, file.content, 'utf8')
+    if (typeof content === 'string') {
+      writeFileSync(tmpPath, content, 'utf8')
     } else {
-      writeFileSync(tmpPath, file.content)
+      writeFileSync(tmpPath, content)
     }
     renameSync(tmpPath, outputAbsPath)
   }
