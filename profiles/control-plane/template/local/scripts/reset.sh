@@ -6,12 +6,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PROFILE="${KORAS_PROFILE:-product}"
 
-COMPOSE_FILES="-f $ROOT/local/docker/shared.compose.yml"
-if [ "$PROFILE" = "product" ]; then
-  COMPOSE_FILES="$COMPOSE_FILES -f $ROOT/local/docker/product.compose.yml"
-else
-  COMPOSE_FILES="$COMPOSE_FILES -f $ROOT/local/docker/control-plane.compose.yml"
-fi
+# One rendered compose file per project — the profile decided what went into it
+# at generation time, so there is nothing to layer here.
+COMPOSE_FILES="-f $ROOT/local/docker-compose.yml"
 
 echo "==> Resetting local environment (all data will be lost)..."
 docker compose $COMPOSE_FILES down --volumes --remove-orphans

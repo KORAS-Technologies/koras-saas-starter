@@ -560,6 +560,58 @@ describe('generated project validation', () => {
   })
 })
 
+// ── generated project actually installs ──────────────────────────────────────
+
+describe('the generated project can install its dependencies', () => {
+  // `services/*` is a uv workspace glob, so a service without a pyproject.toml
+  // fails `uv sync` for the whole project — which is step one of
+  // `make bootstrap`, before anything else can be tried.
+  it('gives every Python service a pyproject.toml', () => {
+    // Enable every service the profile actually has — the AI Gateway exists
+    // only for product, and an unknown component is rejected outright.
+    const cases: Array<[ProfileName, string, string[]]> = [
+      ['product', 'install-product', ['worker', 'scheduler', 'ai_gateway']],
+      ['control-plane', 'install-cp', ['worker', 'scheduler']],
+    ]
+    for (const [profile, slug, enabled] of cases) {
+      const gen = generate(profile, slug, { with: enabled })
+      const services = new Set(
+        gen.fileList
+          .filter((f) => f.startsWith('services/'))
+          .map((f) => f.split('/')[1]),
+      )
+      expect(services.size).toBeGreaterThan(1)
+      for (const service of services) {
+        expect(gen.fileList).toContain(`services/${service}/pyproject.toml`)
+      }
+    }
+  })
+
+  it('names each service package after the project', () => {
+    const gen = generate('control-plane', 'install-names')
+    expect(gen.read('services/worker/pyproject.toml')).toContain('name = "install-names-worker"')
+    expect(gen.read('services/api/pyproject.toml')).toContain('name = "install-names-api"')
+  })
+
+  // The template scripts were copied from the starter, which splits its compose
+  // file into shared/product/control-plane and layers them. A generated project
+  // has one rendered file, so those paths never resolved.
+  it('points its scripts at the compose file it actually has', () => {
+    for (const [profile, slug] of [
+      ['product', 'compose-product'],
+      ['control-plane', 'compose-cp'],
+    ] as Array<[ProfileName, string]>) {
+      const gen = generate(profile, slug)
+      for (const script of ['bootstrap.sh', 'reset.sh']) {
+        const contents = gen.read(`local/scripts/${script}`)
+        expect(contents).toContain('local/docker-compose.yml')
+        expect(contents).not.toContain('local/docker/')
+      }
+      expect(gen.has('local/docker-compose.yml')).toBe(true)
+    }
+  })
+})
+
 // ── shared assets ────────────────────────────────────────────────────────────
 
 describe('shared assets', () => {

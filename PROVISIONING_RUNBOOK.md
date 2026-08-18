@@ -121,6 +121,9 @@ than restarting. Fix the cause, then run step 4.
 | `pipefail: invalid option name` from `make` | Fixed — shell scripts are pinned to LF | Regenerate, or convert CRLF to LF in place |
 | Workspace runs in `remote` execution mode | HCP default | Workspace → Settings → General → Execution Mode → Local |
 | `Terraform cannot run — N required inputs missing` | Not running under `doppler run` | Wrap the command; the message now says which case applies |
+| `uv sync`: workspace member is missing a `pyproject.toml` | Fixed — every service now ships one | Regenerate |
+| `unmet peer react@…` from `next` | Fixed — Next is a range compatible with React 19 | Regenerate |
+| `Bind for 0.0.0.0:54322 failed: port is already allocated` | Another stack holds the port — a second KORAS project, or a Supabase CLI stack | Stop the other stack; generated projects use fixed host ports, so only one runs at a time |
 
 ### The generated project owns its own modules
 

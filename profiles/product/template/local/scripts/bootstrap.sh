@@ -27,12 +27,9 @@ fi
 
 # 4. Pull Docker images
 echo "--> Pulling Docker images..."
-COMPOSE_FILES="-f $ROOT/local/docker/shared.compose.yml"
-if [ "$PROFILE" = "product" ]; then
-  COMPOSE_FILES="$COMPOSE_FILES -f $ROOT/local/docker/product.compose.yml"
-else
-  COMPOSE_FILES="$COMPOSE_FILES -f $ROOT/local/docker/control-plane.compose.yml"
-fi
+# One rendered compose file per project — the profile decided what went into it
+# at generation time, so there is nothing to layer here.
+COMPOSE_FILES="-f $ROOT/local/docker-compose.yml"
 docker compose $COMPOSE_FILES pull --quiet
 
 # 5. Start infrastructure services (not app services)
