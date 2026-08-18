@@ -99,7 +99,7 @@ Successful checks say nothing beyond `✓` — a passing run should be boring.
 | GitHub | `GITHUB_TOKEN` authenticates and `TF_VAR_GITHUB_ORG` is readable |
 | Supabase | `SUPABASE_ACCESS_TOKEN` authenticates, `TF_VAR_SUPABASE_ORG_ID` is visible, and all four `SUPABASE_DB_PASSWORD_*` exist |
 | ZITADEL DEV/TEST/STG/PROD | Domain resolves, service-account JSON parses, an assertion signs, the JWT-bearer grant succeeds, and `GET /auth/v1/users/me` is accepted |
-| Vercel | `VERCEL_API_TOKEN` authenticates and `TF_VAR_VERCEL_TEAM_ID` is readable |
+| Vercel | `VERCEL_API_TOKEN` authenticates, `TF_VAR_VERCEL_TEAM_ID` is readable, and Vercel's GitHub App is installed on `TF_VAR_GITHUB_ORG` |
 | Fly.io | `FLY_API_TOKEN` authenticates and `TF_VAR_FLY_ORG_SLUG` is among its organizations |
 | Cloudflare | `TF_VAR_CLOUDFLARE_ZONE_ID` is readable with `CLOUDFLARE_API_TOKEN`, and the zone matches `TF_VAR_PRIMARY_DOMAIN` |
 | Terraform | Binary present, version satisfies the modules' `required_version`, HCP token present, and the module tree passes `init -backend=false` + `validate` |
@@ -108,6 +108,17 @@ Successful checks say nothing beyond `✓` — a passing run should be boring.
 Each ZITADEL environment is a separate instance with its own domain and service
 account, so each is checked independently — a working DEV credential says
 nothing about PROD.
+
+### Why Vercel checks the GitHub App
+
+Every Vercel project is created from a GitHub repository, so a valid token and
+a valid team are not enough: Vercel's GitHub App has to be installed on the
+organization that owns the repos. It defaults to the personal account of
+whoever connected it, which produces `repo_not_found` at apply time — after the
+repository, its branches, protections, and environments already exist.
+
+`GET /v1/integrations/git-namespaces` lists what the account can import from,
+so this is checkable before anything is created.
 
 ### What the GitHub check can and cannot prove
 

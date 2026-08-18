@@ -86,6 +86,11 @@ export function healthyRoutes(): RouteMap {
     '/auth/v1/users/me': response(200, { user: { id: 'user' } }),
     'api.vercel.com/v2/user': response(200, { user: { id: 'u' } }),
     'api.vercel.com/v2/teams': response(200, { id: 'team_vercel_1' }),
+    // Vercel imports projects from GitHub, so its GitHub App must be installed
+    // on the org that owns the repositories — TF_VAR_GITHUB_ORG.
+    'integrations/git-namespaces': response(200, [
+      { provider: 'github', slug: 'koras-org', ownerType: 'organization' },
+    ]),
     'api.fly.io/graphql': response(200, {
       data: { organizations: { nodes: [{ slug: 'koras-fly' }] } },
     }),
