@@ -282,11 +282,19 @@ async function runProvision(
           console.log(`  Populate main/test/staging via PRs from develop.`)
         } catch (err) {
           console.warn(`\n⚠ Git initialisation failed: ${err instanceof Error ? err.message : String(err)}`)
+          // These must mirror initAndPushToDevelop exactly. In particular the
+          // update-ref graft onto origin/develop: without it the local branch
+          // has no common ancestor with the repository Terraform created, the
+          // push is rejected as non-fast-forward, and the only way through is a
+          // force push that branch protection declines (GH006).
           console.warn(`  Run these steps manually in ${projectSlug}/:`)
+          console.warn(`    pnpm install`)
           console.warn(`    git init -b develop`)
           console.warn(`    git remote add origin https://github.com/${repoFullName}.git`)
+          console.warn(`    git fetch origin`)
+          console.warn(`    git update-ref refs/heads/develop refs/remotes/origin/develop`)
           console.warn(`    git add . && git commit -m "chore: initial project generation"`)
-          console.warn(`    git push --force origin HEAD:develop`)
+          console.warn(`    git push origin develop`)
         }
       }
       console.log(`\nNext steps:`)

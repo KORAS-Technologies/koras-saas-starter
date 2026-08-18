@@ -15,10 +15,72 @@ export interface GitInitOptions {
   exec?: CommandExecutor
 }
 
+/**
+ * Commands that npm/corepack install as `.cmd` shims on Windows rather than as
+ * real executables. Two Windows-only facts collide for these:
+ *
+ *   1. `spawn('pnpm', ...)` looks for a file named exactly `pnpm`. PATHEXT
+ *      expansion only happens inside a shell, so the `pnpm.cmd` shim is never
+ *      found and the call fails with `spawn pnpm ENOENT`.
+ *   2. Naming the shim directly does not help either: Node refuses to spawn
+ *      `.bat`/`.cmd` files unless `shell` is true (the CVE-2024-27980
+ *      mitigation).
+ *
+ * `shell: true` is therefore the only combination that runs. It is safe for
+ * these commands specifically because their argument lists are compile-time
+ * literals and `cwd` is passed to spawn as an option, never interpolated into
+ * a command line.
+ *
+ * `git` deliberately stays on `shell: false`: it is a real `git.exe` on every
+ * platform, and its arguments carry a Terraform-supplied clone URL and a commit
+ * message that must never reach a shell parser.
+ */
+const WINDOWS_SHELL_SHIMS = new Set(['pnpm', 'npm', 'npx', 'yarn', 'corepack'])
+
+/** Exported for testing — the shim rule is platform-dependent and easy to regress. */
+export function needsWindowsShell(
+  cmd: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return platform === 'win32' && WINDOWS_SHELL_SHIMS.has(cmd)
+}
+
+/** Anything cmd.exe would treat as syntax rather than as literal text. */
+const SHELL_METACHARACTERS = /[&|<>^"'`$();\r\n]/
+
 function spawnCmd(cmd: string, args: string[], cwd: string): Promise<number> {
+  const shell = needsWindowsShell(cmd)
+
+  // Node concatenates rather than escapes when `shell` is true, and warns about
+  // it (DEP0190) if an args array is passed alongside. Build the command line
+  // ourselves instead — but only after confirming every argument really is the
+  // inert literal this path assumes, so a future caller cannot smuggle shell
+  // syntax in through a command that happens to be on the shim list.
+  if (shell) {
+    const unsafe = args.find((arg) => SHELL_METACHARACTERS.test(arg))
+    if (unsafe !== undefined) {
+      return Promise.reject(
+        new Error(
+          `Refusing to run \`${cmd}\` through a shell with argument "${unsafe}": ` +
+            `it contains shell metacharacters.`,
+        ),
+      )
+    }
+  }
+
+  const command = shell ? [cmd, ...args].join(' ') : cmd
+  const spawnArgs = shell ? [] : args
+
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd, stdio: 'inherit', shell: false })
-    child.on('error', reject)
+    const child = spawn(command, spawnArgs, { cwd, stdio: 'inherit', shell })
+    child.on('error', (err: Error) =>
+      reject(
+        new Error(
+          `Could not run \`${cmd}\`: ${err.message}\n` +
+            `  Ensure ${cmd} is installed and on PATH.`,
+        ),
+      ),
+    )
     child.on('close', (code) => resolve(code ?? 1))
   })
 }

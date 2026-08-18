@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs'
-import { initAndPushToDevelop, type CommandExecutor } from '../src/git.js'
+import { initAndPushToDevelop, needsWindowsShell, type CommandExecutor } from '../src/git.js'
 
 const ROOT = join(tmpdir(), `koras-git-${process.pid}-${Date.now()}`)
 
@@ -100,5 +100,27 @@ describe('initAndPushToDevelop', () => {
     await expect(
       initAndPushToDevelop({ projectRoot, repositoryFullName: 'org/repo', exec }),
     ).rejects.toThrow('pnpm install failed')
+  })
+})
+
+describe('needsWindowsShell', () => {
+  it('shells out to npm-family commands on Windows', () => {
+    // `pnpm` is a .cmd shim there: spawning it without a shell fails ENOENT.
+    expect(needsWindowsShell('pnpm', 'win32')).toBe(true)
+    expect(needsWindowsShell('npm', 'win32')).toBe(true)
+    expect(needsWindowsShell('npx', 'win32')).toBe(true)
+    expect(needsWindowsShell('corepack', 'win32')).toBe(true)
+  })
+
+  it('never shells out for git, on any platform', () => {
+    // git args carry a Terraform-supplied URL and a commit message.
+    expect(needsWindowsShell('git', 'win32')).toBe(false)
+    expect(needsWindowsShell('git', 'linux')).toBe(false)
+    expect(needsWindowsShell('git', 'darwin')).toBe(false)
+  })
+
+  it('never shells out on POSIX platforms', () => {
+    expect(needsWindowsShell('pnpm', 'linux')).toBe(false)
+    expect(needsWindowsShell('pnpm', 'darwin')).toBe(false)
   })
 })
