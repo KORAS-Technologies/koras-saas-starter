@@ -17,13 +17,26 @@ import { checkExecutionMode, readBackendConfig, type FetchLike } from './backend
 export interface CommandResult {
   exitCode: number
   stdout: string
+  /** Only populated when the call was made with `stream: true`. */
+  stderr?: string
 }
 
 /** Injected so tests never shell out to a real Terraform binary. */
 export type CommandExecutor = (
   command: string,
   args: string[],
-  options: { cwd: string; capture: boolean; env: NodeJS.ProcessEnv },
+  options: {
+    cwd: string
+    capture: boolean
+    env: NodeJS.ProcessEnv
+    /**
+     * Echo output to the operator *while* it is captured, rather than holding
+     * it until the command exits. Long steps must set this: a silent terminal
+     * reads as a hung process, and killing a `terraform plan` mid-flight
+     * strands the state lock on the remote backend.
+     */
+    stream?: boolean
+  },
 ) => Promise<CommandResult>
 
 export interface ProvisionOptions {
@@ -154,9 +167,9 @@ export async function provision(
   // only store uppercase. resolveTerraformEnv maps the aliases across.
   const terraformEnv = resolveTerraformEnv(env)
 
-  const run = async (args: string[], capture = false) => {
+  const run = async (args: string[], capture = false, stream = false) => {
     const { command, args: full } = wrap(useDoppler, args)
-    return exec(command, full, { cwd, capture, env: terraformEnv })
+    return exec(command, full, { cwd, capture, env: terraformEnv, stream })
   }
 
   // ── init ───────────────────────────────────────────────────────────────────
@@ -192,9 +205,15 @@ export async function provision(
   // ── plan ───────────────────────────────────────────────────────────────────
 
   console.log('\n==> terraform plan')
-  const plan = await run(['plan', '-input=false', `-out=${PLAN_FILE}`], true)
-  if (plan.exitCode !== 0) return { status: 'plan-failed' }
-  if (plan.stdout) console.log(plan.stdout)
+  // Streamed, not buffered. A plan across this estate contacts eight providers
+  // and can run for minutes; withholding its output until exit makes it look
+  // hung, and a plan killed mid-flight leaves the remote backend locked.
+  const plan = await run(['plan', '-input=false', `-out=${PLAN_FILE}`], true, true)
+  if (plan.exitCode !== 0) {
+    const recovery = stateLockRecovery(plan.stderr, useDoppler)
+    if (recovery) console.error(recovery)
+    return { status: 'plan-failed' }
+  }
 
   if (options.dryRun) {
     console.log('')
@@ -237,27 +256,69 @@ export async function provision(
   return { status: 'applied', outputs }
 }
 
+/**
+ * Turns a state-lock failure into the exact command that clears it.
+ *
+ * The lock ID that `force-unlock` wants is the one Terraform names as the
+ * *lock ID* — for the `remote` backend that is `<org>/<workspace>`, not the
+ * UUID printed under `Lock Info:`. Passing the UUID is rejected with
+ * "does not match existing lock ID", which is a confusing place to land while
+ * provisioning, so the ID is read straight out of the error rather than
+ * reconstructed.
+ *
+ * Returns undefined when the failure was not a lock failure.
+ */
+export function stateLockRecovery(stderr = '', useDoppler = false): string | undefined {
+  if (!/Error acquiring the state lock/.test(stderr)) return undefined
+
+  const lockId = /lock ID: "([^"]+)"/.exec(stderr)?.[1]
+  if (!lockId) return undefined
+
+  const prefix = useDoppler ? 'doppler run -- ' : ''
+  return [
+    '',
+    'The workspace is locked. If no other plan or apply is running — check for a',
+    'live terraform process, and for a queued run in the workspace — release it:',
+    '',
+    `  ${prefix}terraform force-unlock ${lockId}`,
+    '',
+    'Run it from the project’s infrastructure/terraform directory, then retry.',
+  ].join('\n')
+}
+
 /** Pulls Terraform's "Plan: N to add, ..." line out of the plan output. */
 export function summarisePlan(stdout: string): string | undefined {
   const match = /^Plan: .*$/m.exec(stdout)
   return match?.[0]
 }
 
-const defaultExecutor: CommandExecutor = (command, args, { cwd, capture, env }) =>
+const defaultExecutor: CommandExecutor = (command, args, { cwd, capture, env, stream }) =>
   new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
       env,
       // Terraform output goes straight to the operator unless we need to parse
-      // it. No shell: arguments reach the binary verbatim, so nothing in a
-      // project name or path can be interpreted as a shell metacharacter.
-      stdio: capture ? ['inherit', 'pipe', 'inherit'] : 'inherit',
+      // it. `stream` needs both pipes: stdout so progress can be echoed as it
+      // arrives, stderr so a lock failure can be turned into a recovery hint.
+      // No shell: arguments reach the binary verbatim, so nothing in a project
+      // name or path can be interpreted as a shell metacharacter.
+      stdio: stream
+        ? ['inherit', 'pipe', 'pipe']
+        : capture
+          ? ['inherit', 'pipe', 'inherit']
+          : 'inherit',
       shell: false,
     })
 
     let stdout = ''
+    let stderr = ''
     child.stdout?.on('data', (chunk: Buffer) => {
       stdout += chunk.toString()
+      if (stream) process.stdout.write(chunk)
+    })
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString()
+      if (stream) process.stderr.write(chunk)
     })
 
     child.on('error', (err) => {
@@ -269,5 +330,5 @@ const defaultExecutor: CommandExecutor = (command, args, { cwd, capture, env }) 
       )
     })
 
-    child.on('close', (code) => resolve({ exitCode: code ?? 1, stdout }))
+    child.on('close', (code) => resolve({ exitCode: code ?? 1, stdout, stderr }))
   })

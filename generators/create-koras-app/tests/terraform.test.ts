@@ -6,7 +6,12 @@ import { loadProfile } from '../src/profiles/index.js'
 import type { ProfileName } from '../src/profiles/loader.js'
 import { resolveSelections } from '../src/profiles/validator.js'
 import { buildContext } from '../src/generation/context.js'
-import { provision, shouldUseDoppler, summarisePlan } from '../src/terraform/runner.js'
+import {
+  provision,
+  shouldUseDoppler,
+  stateLockRecovery,
+  summarisePlan,
+} from '../src/terraform/runner.js'
 import { formatMissingInputs } from '../src/terraform/inputs.js'
 import type { CommandExecutor } from '../src/terraform/runner.js'
 import {
@@ -721,5 +726,36 @@ describe('missing inputs name the cause', () => {
     expect(message).toContain('koras-platform-bootstrap/prod')
     expect(message).toContain('does not define every required secret')
     expect(message).not.toContain('not running under')
+  })
+})
+
+describe('stateLockRecovery', () => {
+  // Verbatim from a real failure against backend "remote". The ID that
+  // force-unlock accepts is the one on the `lock ID:` line, not the UUID.
+  const LOCK_ERROR = [
+    'Error: Error acquiring the state lock',
+    '',
+    'Error message: workspace already locked (lock ID: "koras/koras-control-plane")',
+    'Lock Info:',
+    '  ID:        d2962922-f092-3cf6-98e4-3ac2df00b3cd',
+    '  Operation: OperationTypePlan',
+  ].join('\n')
+
+  it('recovers the backend lock ID, not the Lock Info UUID', () => {
+    const msg = stateLockRecovery(LOCK_ERROR)
+    expect(msg).toContain('terraform force-unlock koras/koras-control-plane')
+    expect(msg).not.toContain('d2962922')
+  })
+
+  it('prefixes the command with doppler run when Terraform was wrapped', () => {
+    expect(stateLockRecovery(LOCK_ERROR, true)).toContain(
+      'doppler run -- terraform force-unlock koras/koras-control-plane',
+    )
+  })
+
+  it('stays quiet for failures that are not lock failures', () => {
+    expect(stateLockRecovery('Error: Invalid provider configuration')).toBeUndefined()
+    expect(stateLockRecovery('')).toBeUndefined()
+    expect(stateLockRecovery(undefined)).toBeUndefined()
   })
 })
