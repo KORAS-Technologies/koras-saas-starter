@@ -31,20 +31,29 @@ pnpm create-koras-app [project] [options]
 
 ```bash
 # Generate source only, no provisioning
-pnpm create-koras-app docoris --profile product
+pnpm create-koras-app docoris --profile product --output-dir ../output
 
 # Generate + provision infrastructure (requires explicit approval)
-pnpm create-koras-app docoris --profile product --provision
+pnpm create-koras-app docoris --profile product --provision --output-dir ../output
 
 # Dry run — print what would be generated without writing files
-pnpm create-koras-app docoris --profile product --dry-run
+pnpm create-koras-app docoris --profile product --dry-run --output-dir ../output
 
 # Control Plane generation
-pnpm create-koras-app koras-control-plane --profile control-plane
+pnpm create-koras-app koras-control-plane --profile control-plane --output-dir ../output
 
 # Control Plane with provisioning
-pnpm create-koras-app koras-control-plane --profile control-plane --provision
+pnpm create-koras-app koras-control-plane --profile control-plane --provision --output-dir ../output
 ```
+
+`--output-dir` is effectively required: generating with no output directory
+would write a full project into the starter repository, which is refused.
+
+No `doppler run` wrapper is needed. `--provision` and `--provision-only` need
+the bootstrap secrets, so the CLI re-runs itself under `doppler run` at the
+location the profile declares (`infrastructure.doppler_project` /
+`doppler_config`), and says so before it does. Plain generation needs no
+credentials and is never wrapped.
 
 ### Utility
 

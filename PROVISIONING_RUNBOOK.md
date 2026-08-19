@@ -3,8 +3,10 @@
 How to take a project from nothing to provisioned infrastructure, and what to
 do when a step fails.
 
-Every command here is run from the starter repository root, under `doppler run`
-so that credentials reach the process without ever touching disk.
+Every command here is run from the starter repository root. Credentials come
+from Doppler and never touch disk: the CLIs re-run themselves under
+`doppler run` when a step needs secrets and the environment does not already
+carry them, so no wrapper has to be typed.
 
 ---
 
@@ -12,23 +14,19 @@ so that credentials reach the process without ever touching disk.
 
 ```bash
 # 0. Confirm the estate is ready. Read-only; creates nothing.
-doppler run --project koras-platform-bootstrap --config prod -- \
-  pnpm koras bootstrap:doctor
+pnpm koras bootstrap:doctor
 
 # 1. Generate the project. No infrastructure is touched.
 pnpm create-koras-app <name> --profile <product|control-plane> --output-dir ../output
 
 # 2. Plan. Writes the project, stops after `terraform plan`.
-doppler run --project koras-platform-bootstrap --config prod -- \
-  pnpm create-koras-app <name> --profile <profile> --provision --dry-run --output-dir ../output
+pnpm create-koras-app <name> --profile <profile> --provision --dry-run --output-dir ../output
 
 # 3. Apply. Requires typing `yes` in full — `y` and `Y` are refusals.
-doppler run --project koras-platform-bootstrap --config prod -- \
-  pnpm create-koras-app <name> --profile <profile> --provision --output-dir ../output
+pnpm create-koras-app <name> --profile <profile> --provision --output-dir ../output
 
 # 4. Retry after a partial failure. Skips generation, keeps existing state.
-doppler run --project koras-platform-bootstrap --config prod -- \
-  pnpm create-koras-app <name> --profile <profile> --provision-only --output-dir ../output
+pnpm create-koras-app <name> --profile <profile> --provision-only --output-dir ../output
 ```
 
 Notes that matter:
@@ -44,6 +42,12 @@ Notes that matter:
   path, not an exception.
 - **Never skip step 0.** Every failure in the table below was found *during*
   an apply, after other providers had already created real resources.
+- **Doppler is invoked for you.** Steps 0, 2, 3, and 4 need the bootstrap
+  secrets, so each re-runs itself as `doppler run --project
+  koras-platform-bootstrap --config prod -- <the same command>` and says so on
+  stdout. Step 1 needs no credentials and is never wrapped. Wrapping by hand
+  still works and is not applied twice; `DOPPLER_PROJECT` and `DOPPLER_CONFIG`
+  override the location for a one-off run.
 
 ---
 
@@ -58,8 +62,11 @@ Project `koras-platform-bootstrap`, config `prod`, holding every key listed in
 BOOTSTRAP_DOCTOR.md. Doppler is the sole secret authority: nothing is committed,
 and no `.env` participates in provisioning.
 
-No Doppler scope is configured for this repository, so `--project` and
-`--config` must be passed explicitly. `doppler setup` would remove the need.
+No Doppler scope is configured for this repository, which is why every
+invocation — the CLIs' own and any you type — passes `--project` and `--config`
+explicitly. A bare `doppler run` here fails with "You must specify a project".
+`doppler setup --project koras-platform-bootstrap --config prod` binds the
+scope per directory if you would rather not repeat the flags in ad-hoc commands.
 
 ### GitHub
 
@@ -120,10 +127,15 @@ than restarting. Fix the cause, then run step 4.
 | `Invalid Attribute Value Match` on a Vercel or Fly name | Fixed — component keys are hyphenated in the modules | Update the generated project's `modules/` copy, or regenerate |
 | `pipefail: invalid option name` from `make` | Fixed — shell scripts are pinned to LF | Regenerate, or convert CRLF to LF in place |
 | Workspace runs in `remote` execution mode | HCP default | Workspace → Settings → General → Execution Mode → Local |
-| `Terraform cannot run — N required inputs missing` | Not running under `doppler run` | Wrap the command; the message now says which case applies |
+| `Terraform cannot run — N required inputs missing` | Doppler ran but returned nothing — wrong config, expired token, or no access | The message names every missing input. Confirm with `doppler secrets --project koras-platform-bootstrap --config prod` |
+| `Doppler Error: You must specify a project` | A bare `doppler run` in a directory with no Doppler scope | The documented commands always pass `--project` and `--config`; pass them for ad-hoc commands too, or run `doppler setup` once |
 | `uv sync`: workspace member is missing a `pyproject.toml` | Fixed — every service now ships one | Regenerate |
 | `unmet peer react@…` from `next` | Fixed — Next is a range compatible with React 19 | Regenerate |
-| `Bind for 0.0.0.0:54322 failed: port is already allocated` | Another stack holds the port — a second KORAS project, or a Supabase CLI stack | Stop the other stack; generated projects use fixed host ports, so only one runs at a time |
+| `Bind for 0.0.0.0:<port> failed: port is already allocated` | A container elsewhere holds the port — a second KORAS project, or a Supabase CLI stack | Fixed — host ports are resolved per machine. On an existing project run `make ports`, then `make dev` |
+| `bind: An attempt was made to access a socket in a way forbidden by its access permissions` | A Windows kernel reservation, not a listener: `http.sys` (IIS on 80, SSRS on 8082) or a WinNAT exclusion range | Same fix. `netsh http show urlacl` names the owner; `netsh interface ipv4 show excludedportrange protocol=tcp` lists the reserved ranges |
+| `EADDRINUSE :::3000` from `next dev` | Another project's dev server holds the port | Fixed — app ports resolve through `local/.env` too. `make ports` re-resolves |
+| `Error acquiring the state lock` | A plan or apply was killed before it could release the workspace | The command now prints the exact `terraform force-unlock` line. For `backend "remote"` the lock ID is `<org>/<workspace>` — **not** the UUID under `Lock Info:` |
+| `spawn pnpm ENOENT` during git initialisation | Fixed — `pnpm` is a `.cmd` shim on Windows, which needs a shell | Update the starter and rebuild: `pnpm --filter create-koras-app build` |
 
 ### The generated project owns its own modules
 

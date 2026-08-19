@@ -73,10 +73,15 @@ This mapping is immutable (ADR required to change).
 
 - `--profile` is always required in non-interactive mode
 - Profile is never inferred from project name
+- `--output-dir` is effectively required — generating into the starter is refused
 - Terraform never auto-applies — explicit human approval required
 - Generator never silently overwrites or destroys existing resources
 - Secret values are never exposed in logs, output, or registration payloads
 - `--profile control-plane` never requires a pre-existing Control Plane
+- Credentials are pulled from Doppler by the CLI itself; no `doppler run`
+  wrapper is typed, and an outer one is never nested
+- Generated projects claim no fixed host port — `local/scripts/ports.sh`
+  resolves them per machine into `local/.env`
 
 ## Current phase
 

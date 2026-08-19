@@ -284,31 +284,46 @@ independently.
 
 ## 8. Local Development Service Dependencies
 
+Host ports are **not fixed**. A port is a machine-global resource, so a literal
+one collides with whatever else is running — a second KORAS stack, a Supabase
+CLI stack, or a Windows kernel reservation. `local/scripts/ports.sh` resolves an
+available port per machine at `make bootstrap` and writes `local/.env`, which
+Docker Compose, the Caddyfile, and the app dev servers all read. `make ports`
+re-resolves.
+
+The values below are the **preferences** each profile starts from; the two
+profiles use disjoint blocks so a product and the Control Plane can run at once.
+
 ```
-Caddy (proxy)
-    ├── apps/web           → localhost:3000
-    ├── apps/admin         → localhost:3001
-    ├── apps/marketing     → localhost:3002
-    ├── services/api       → localhost:8000
-    └── ZITADEL            → localhost:8080
+Caddy (proxy)                        product   control-plane
+    ├── apps/web           →         3000      —
+    ├── apps/admin         →         3001      3010
+    ├── apps/marketing     →         3002      —
+    ├── apps/portal        →         —         3011
+    ├── services/api       →         8000      8010
+    ├── services/ai-gateway →        4000      —
+    └── ZITADEL            →         8080      8083
+    proxy HTTP / HTTPS     →         8090/8443 8091/8444
 
 services/api
-    ├── Supabase (local)   → localhost:54322
-    ├── ZITADEL            → localhost:8080
-    └── Redis              → localhost:6379
+    ├── Supabase (local)   →         54322     54332
+    ├── ZITADEL            →         8080      8083
+    └── Redis              →         6379      6380
 
-services/worker
-    └── Redis              → localhost:6379
-
-services/scheduler
-    └── Redis              → localhost:6379
+services/worker, services/scheduler
+    └── Redis              →         6379      6380
 
 services/ai-gateway (product only)
     └── services/api       → auth check
 
 Supabase (local)
-    └── PostgreSQL         → localhost:54322
+    └── PostgreSQL         →         54322     54332
 ```
+
+The proxy never binds 80/443: those need root on Linux, and on Windows 80 is
+reserved by `http.sys` whenever IIS is installed. Application URLs therefore
+carry the proxy's HTTPS port — `https://app.localhost:8443` — and `make health`
+prints the resolved ones.
 
 ---
 

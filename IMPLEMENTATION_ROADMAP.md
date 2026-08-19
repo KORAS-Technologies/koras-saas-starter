@@ -243,7 +243,9 @@ missed. All are fixed:
 4. **Proxy upstreams pointed at the container's own loopback.** Apps run on the
    host via `pnpm turbo run dev`, so `localhost:3000` inside the Caddy
    container reached nothing; now `host.docker.internal`. ZITADEL runs in the
-   network and is reached by service name.
+   network and is reached by service name. The upstream port is
+   `{env.KORAS_PORT_APP_*}`, resolved per machine and passed into the container,
+   so the proxy cannot end up forwarding to whatever else took the port.
 5. **The ZITADEL healthcheck always failed.** `/app/zitadel ready` reports
    not-ready against a server that is serving traffic, and the image is
    distroless so curl/wget are unavailable. The container healthcheck is
@@ -561,11 +563,18 @@ extract outputs
   time and only after providers are downloaded. `preflightInputs` checks all 15
   credentials and variables first and prints the complete list with the
   provider each belongs to.
-- **Doppler preferred, environment supported.** `doppler run --` wraps
-  Terraform only when Doppler is configured *and* the inputs are absent from
-  this process. `doppler run` injects `DOPPLER_PROJECT`/`DOPPLER_CONFIG` into
-  its child, so the usual case — the generator itself invoked under Doppler —
-  must not nest a second injection.
+- **Doppler is invoked by the CLI, not by the operator.** When a command needs
+  the bootstrap secrets and the environment does not already carry them, the
+  process re-runs itself as `doppler run --project … --config … -- <the same
+  argv>`; the profile declares where those credentials live. Wrapping the whole
+  process rather than each Terraform call means every later step — the
+  execution-mode probe, `terraform`, `git`, `pnpm` — inherits the injected
+  environment without knowing Doppler exists. An outer `doppler run` satisfies
+  the inputs, so it is never nested, and a `KORAS_DOPPLER_REEXEC` sentinel on
+  the child stops a failed injection from looping.
+- **`--project` and `--config` are always explicit.** No Doppler scope is
+  configured for these repositories, so a bare `doppler run` fails with "You
+  must specify a project".
 - **Case-sensitive names have uppercase aliases.** Doppler secret names allow
   only `[A-Z0-9_]`, but Terraform matches `TF_VAR_<name>` case-sensitively and
   `TF_TOKEN_` encodes a lowercase hostname. Inputs are accepted under either
@@ -657,8 +666,7 @@ exist. `pnpm koras bootstrap:doctor` moves that discovery to a read-only check
 before the first `--provision`:
 
 ```bash
-doppler run --project koras-platform-bootstrap --config prod -- \
-  pnpm koras bootstrap:doctor
+pnpm koras bootstrap:doctor
 ```
 
 Twelve rows, `✓` or `✗`, `READY FOR BOOTSTRAP` or `NOT READY FOR BOOTSTRAP`,

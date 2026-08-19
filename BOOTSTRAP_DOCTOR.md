@@ -20,15 +20,20 @@ repositories, projects, apps, DNS records, secrets, or state. It never runs
 ## Usage
 
 ```bash
-doppler run --project koras-platform-bootstrap --config prod -- \
-  pnpm koras bootstrap:doctor
+pnpm koras bootstrap:doctor
 ```
 
 Doppler is the sole secret authority, so credentials are injected into the
 process rather than read from a file. Nothing is written to disk, and no `.env`
-is created. If the required variables are already in the environment — a CI job,
-an outer `doppler run` — the command uses them as they are; it never re-invokes
-Doppler on top of an environment that already has what it needs.
+is created.
+
+Every check needs those credentials, so the command re-runs itself as
+`doppler run --project koras-platform-bootstrap --config prod -- pnpm koras
+bootstrap:doctor` and reports that it did. If the required variables are already
+in the environment — a CI job, an outer `doppler run` — it uses them as they
+are; it never re-invokes Doppler on top of an environment that already has what
+it needs, and never wraps itself twice. `DOPPLER_PROJECT` and `DOPPLER_CONFIG`
+override where it looks.
 
 ---
 
