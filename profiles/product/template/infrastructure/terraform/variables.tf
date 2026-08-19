@@ -29,6 +29,12 @@ variable "enabled_apps" {
   default = []
 }
 
+variable "application_source_dirs" {
+  type        = map(string)
+  description = "Component key to source directory, written by the generator."
+  default     = {}
+}
+
 variable "enabled_services" {
   type    = list(string)
   default = []

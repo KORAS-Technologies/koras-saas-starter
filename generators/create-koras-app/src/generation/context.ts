@@ -130,6 +130,15 @@ export function contextToTemplateVars(ctx: GenerationContext): Record<string, un
       ctx.selections.applications,
     ),
     vercelProjectNames: vercelProjectNames(ctx),
+
+    // Component key to source directory, for the Vercel module. Written into
+    // terraform.tfvars so the module never has to guess the path.
+    applicationSourceDirs: Object.fromEntries(
+      enabledInfra(
+        ctx.manifest.infrastructure.vercel.applications,
+        ctx.selections.applications,
+      ).map((key) => [key, ctx.manifest.template_map.applications[key] ?? `apps/${key}`]),
+    ),
     flyServices: enabledInfra(ctx.manifest.infrastructure.fly.services, ctx.selections.services),
     flyApps: flyAppNames(ctx),
     zitadelProject: zitadelProjectName(ctx),
@@ -152,6 +161,8 @@ export function contextToTemplateVars(ctx: GenerationContext): Record<string, un
       minioConsole: ctx.defaults.local?.ports?.minio_console ?? 9001,
       proxyHttp: ctx.defaults.local?.ports?.proxy_http ?? 8090,
       proxyHttps: ctx.defaults.local?.ports?.proxy_https ?? 8443,
+      otlpGrpc: ctx.defaults.local?.ports?.otlp_grpc ?? 4317,
+      otlpHttp: ctx.defaults.local?.ports?.otlp_http ?? 4318,
       appWeb: ctx.defaults.local?.ports?.app_web ?? 3000,
       appAdmin: ctx.defaults.local?.ports?.app_admin ?? 3001,
       appMarketing: ctx.defaults.local?.ports?.app_marketing ?? 3002,

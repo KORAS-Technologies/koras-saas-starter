@@ -33,6 +33,12 @@ variable "primary_domain" {
   description = "Primary domain for the project"
 }
 
+variable "application_source_dirs" {
+  type        = map(string)
+  description = "Component key to source directory for Vercel projects."
+  default     = {}
+}
+
 variable "enabled_apps" {
   type        = list(string)
   description = "Applications to provision (used by product profile)"

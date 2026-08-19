@@ -42,8 +42,17 @@ wait_for "Mailpit"     "curl -sf --max-time 2 http://localhost:${KORAS_PORT_MAIL
 wait_for "MinIO"       "curl -sf --max-time 2 http://localhost:${KORAS_PORT_MINIO_API}/minio/health/live"
 wait_for "Proxy"       "${COMPOSE} ps --status running --services | grep -q '^proxy$'"
 
+# Loki and Tempo publish no host port and their images carry no HTTP client, so
+# there is nothing to probe from here. A crash-looping container is not reported
+# as running, which is what this needs to catch.
+wait_for "Loki"        "${COMPOSE} ps --status running --services | grep -q '^loki$'"
+wait_for "Tempo"       "${COMPOSE} ps --status running --services | grep -q '^tempo$'"
+# The collector is probed for real: an empty OTLP payload exercises the receiver
+# rather than merely confirming the process is alive.
+wait_for "OTel"        "curl -sf --max-time 2 -o /dev/null -X POST -H 'content-type: application/json' -d '{\"resourceSpans\":[]}' http://localhost:${KORAS_PORT_OTLP_HTTP}/v1/traces"
+
 echo ""
-echo "All services healthy."
+echo "All infrastructure services healthy."
 echo ""
 {{#if apps.web}}echo "  Web:        https://app.localhost:${KORAS_PORT_PROXY_HTTPS}"
 {{/if}}{{#if apps.admin}}echo "  Admin:      https://admin.localhost:${KORAS_PORT_PROXY_HTTPS}"

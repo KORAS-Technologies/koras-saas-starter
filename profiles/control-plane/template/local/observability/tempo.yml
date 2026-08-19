@@ -1,3 +1,4 @@
+# Tempo runs as uid 10001; /var/tempo is the writable path the image provides.
 server:
   http_listen_port: 3200
 
@@ -16,9 +17,9 @@ storage:
   trace:
     backend: local
     local:
-      path: /tmp/tempo/blocks
+      path: /var/tempo/blocks
     wal:
-      path: /tmp/tempo/wal
+      path: /var/tempo/wal
 
 compactor:
   compaction:

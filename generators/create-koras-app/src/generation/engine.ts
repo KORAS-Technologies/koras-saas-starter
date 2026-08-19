@@ -9,9 +9,38 @@ import { PROJECT_MANIFEST_PATH, renderProjectManifest } from './project-manifest
 const STARTER_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../../..')
 const PROFILES_ROOT = join(STARTER_ROOT, 'profiles')
 
-// `json` renders arrays/objects as JSON — valid HCL list syntax as well.
-Handlebars.registerHelper('json', (value: unknown) => JSON.stringify(value))
+/**
+ * `json` renders arrays and objects as HCL literals.
+ *
+ * JSON is already valid HCL, but `terraform fmt` wants a space after each
+ * separator and inside map braces. Emitting canonical spacing here means the
+ * generated Terraform is fmt-clean on the first commit, instead of showing a
+ * diff the first time anyone runs `terraform fmt -check`.
+ */
+Handlebars.registerHelper('json', (value: unknown) => {
+  if (Array.isArray(value)) {
+    return '[' + value.map((item) => JSON.stringify(item)).join(', ') + ']'
+  }
+  if (value !== null && typeof value === 'object') {
+    const pairs = Object.entries(value as Record<string, unknown>).map(
+      ([key, val]) => JSON.stringify(key) + ' : ' + JSON.stringify(val),
+    )
+    return pairs.length === 0 ? '{}' : '{ ' + pairs.join(', ') + ' }'
+  }
+  return JSON.stringify(value)
+})
 Handlebars.registerHelper('eq', (a: unknown, b: unknown) => a === b)
+
+/**
+ * `pad` right-pads a value to a fixed width.
+ *
+ * HCL blocks are aligned on the equals sign, and `terraform fmt` enforces it.
+ * Emitting a ragged block means generated Terraform is not fmt-clean, which
+ * shows up as a spurious diff the first time anyone checks.
+ */
+Handlebars.registerHelper('pad', (value: unknown, width: unknown) =>
+  String(value).padEnd(typeof width === 'number' ? width : 0),
+)
 
 export interface RenderedFile {
   sourcePath: string

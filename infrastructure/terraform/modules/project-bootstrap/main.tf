@@ -80,10 +80,11 @@ module "zitadel_prod" {
 module "vercel" {
   source = "../vercel"
 
-  project_slug   = var.project_slug
-  team_id        = var.vercel_team_id
-  applications   = local.vercel_apps
-  git_repository = module.github.repository_full_name
+  project_slug            = var.project_slug
+  team_id                 = var.vercel_team_id
+  applications            = local.vercel_apps
+  application_source_dirs = var.application_source_dirs
+  git_repository          = module.github.repository_full_name
 
   depends_on = [module.github]
 }

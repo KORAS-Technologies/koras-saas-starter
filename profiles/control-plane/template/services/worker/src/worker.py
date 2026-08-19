@@ -1,9 +1,10 @@
 from arq.connections import RedisSettings
-from .tasks import provision_product, reconcile_infrastructure
+
+from .tasks import example_task
 
 
 class WorkerSettings:
-    functions = [provision_product, reconcile_infrastructure]
+    functions = [example_task]
     redis_settings = RedisSettings(host="localhost", port=6379)
-    max_jobs = 5
-    job_timeout = 600
+    max_jobs = 10
+    job_timeout = 300

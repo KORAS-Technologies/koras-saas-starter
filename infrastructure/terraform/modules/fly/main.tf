@@ -15,8 +15,8 @@ resource "fly_app" "apps" {
 
   # Same constraint as Vercel: `ai_gateway` is a valid component key but not a
   # valid Fly app name. Latent until that optional service is enabled.
-  name    = "${var.project_slug}-${replace(each.value.service, "_", "-")}-${each.value.environment}"
-  org     = var.org_slug
+  name = "${var.project_slug}-${replace(each.value.service, "_", "-")}-${each.value.environment}"
+  org  = var.org_slug
 
   lifecycle {
     prevent_destroy = true

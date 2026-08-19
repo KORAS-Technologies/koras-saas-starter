@@ -29,6 +29,8 @@ KORAS_PORT_MINIO_API {{ports.minioApi}}
 KORAS_PORT_MINIO_CONSOLE {{ports.minioConsole}}
 KORAS_PORT_PROXY_HTTP {{ports.proxyHttp}}
 KORAS_PORT_PROXY_HTTPS {{ports.proxyHttps}}
+KORAS_PORT_OTLP_GRPC {{ports.otlpGrpc}}
+KORAS_PORT_OTLP_HTTP {{ports.otlpHttp}}
 {{#if apps.web}}KORAS_PORT_APP_WEB {{ports.appWeb}}
 {{/if}}{{#if apps.admin}}KORAS_PORT_APP_ADMIN {{ports.appAdmin}}
 {{/if}}{{#if apps.marketing}}KORAS_PORT_APP_MARKETING {{ports.appMarketing}}

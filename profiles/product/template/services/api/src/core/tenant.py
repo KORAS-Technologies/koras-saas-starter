@@ -1,6 +1,8 @@
 from typing import Annotated
+
 from fastapi import Depends, HTTPException, status
 from koras_tenant import TenantContext, resolve_tenant
+
 from .auth import AuthDep
 
 

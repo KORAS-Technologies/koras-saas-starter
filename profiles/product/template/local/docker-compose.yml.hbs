@@ -97,6 +97,40 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Observability ────────────────────────────────────────────────────────────
+  # Services export OTLP to the collector, which fans traces out to Tempo and
+  # logs to Loki. Only the collector publishes host ports: Loki and Tempo are
+  # reached by service name inside this network, and leaving them unpublished
+  # keeps two host ports free on a machine running several stacks.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.1
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector.yml"]
+    ports:
+      - "${KORAS_PORT_OTLP_GRPC:-{{ports.otlpGrpc}}{{!}}}:4317"
+      - "${KORAS_PORT_OTLP_HTTP:-{{ports.otlpHttp}}{{!}}}:4318"
+    volumes:
+      - ./observability/otel-collector.yml:/etc/otel-collector.yml:ro
+    depends_on:
+      - loki
+      - tempo
+
+  loki:
+    image: grafana/loki:3.3.2
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./observability/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    volumes:
+      - ./observability/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo-data:/var/tempo
+
   # ── Proxy (Caddy) ───────────────────────────────────────────────────────────
   proxy:
     image: caddy:2-alpine
@@ -122,3 +156,5 @@ volumes:
   redis-data:
   minio-data:
   caddy-data:
+  loki-data:
+  tempo-data:

@@ -1,4 +1,5 @@
 from arq.connections import RedisSettings
+
 from .tasks import example_task
 
 

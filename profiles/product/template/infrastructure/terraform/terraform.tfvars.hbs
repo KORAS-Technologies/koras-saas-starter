@@ -17,6 +17,11 @@ project_slug = "{{projectSlug}}"
 enabled_apps     = {{{json vercelProjects}}}
 enabled_services = {{{json flyServices}}}
 
+# Component keys need not match their template directory, so the Vercel module
+# is told the source path rather than inferring it from the key. Inferring it
+# produced projects rooted at a path that had never existed.
+application_source_dirs = {{{json applicationSourceDirs}}}
+
 supabase_region = "{{supabaseRegion}}"
 
 # Cloudflare's OWASP Core Ruleset needs a Pro plan or above; a Free zone
@@ -24,6 +29,6 @@ supabase_region = "{{supabaseRegion}}"
 enable_waf = false
 
 fly_regions = {
-{{#each environments}}  {{this}} = "{{../flyRegion}}"
+{{#each environments}}  {{pad this 4}} = "{{../flyRegion}}"
 {{/each}}
 }

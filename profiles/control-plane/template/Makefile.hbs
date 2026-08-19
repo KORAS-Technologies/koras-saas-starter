@@ -29,9 +29,13 @@ profile: ## Show the generator profile and enabled components
 	@echo "applications: $(APPS)"
 	@echo "services:     $(SERVICES)"
 
+# uv sync --all-packages installs every workspace member. A bare `uv sync`
+# installs only the root dev tools, which leaves mypy unable to resolve fastapi,
+# pydantic and sqlalchemy -- and, with ignore_missing_imports, silently treating
+# them as Any rather than reporting them missing.
 install: ## Install all dependencies
 	pnpm install
-	uv sync
+	uv sync --all-packages
 
 bootstrap: install ## Full local environment setup
 	bash ./local/scripts/bootstrap.sh
@@ -64,9 +68,12 @@ lint: ## Lint all sources
 	pnpm turbo run lint
 	uv run ruff check .
 
+# Every service names its source package `src`, so a repo-wide `mypy .` sees
+# duplicate modules and refuses to continue. Check one service root at a time.
 typecheck: ## Type-check all sources
 	pnpm turbo run typecheck
-	uv run mypy .
+	uv run mypy python-packages
+	@for svc in $(SERVICES); do echo "mypy services/$$svc"; uv run mypy "services/$$svc"; done
 
 build: ## Build all packages
 	pnpm turbo run build

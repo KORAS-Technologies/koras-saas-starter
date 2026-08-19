@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
+
 from koras_auth import JWTClaims
 
 
@@ -11,11 +13,11 @@ class TenantContext:
 
 
 async def resolve_tenant(claims: JWTClaims) -> TenantContext | None:
-    if not claims.tenant_id:
+    if not claims.organization_id:
         return None
     # In production, look up tenant by ZITADEL org ID from database
     return TenantContext(
-        id=claims.tenant_id,
-        slug=claims.tenant_id,
-        name=claims.tenant_id,
+        id=claims.organization_id,
+        slug=claims.organization_id,
+        name=claims.organization_id,
     )

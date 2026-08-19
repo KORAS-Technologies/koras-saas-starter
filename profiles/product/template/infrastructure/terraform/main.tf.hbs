@@ -16,8 +16,9 @@ module "bootstrap" {
   github_org     = var.github_org
   primary_domain = var.primary_domain
 
-  enabled_apps     = var.enabled_apps
-  enabled_services = var.enabled_services
+  enabled_apps            = var.enabled_apps
+  application_source_dirs = var.application_source_dirs
+  enabled_services        = var.enabled_services
 
   supabase_org_id       = var.supabase_org_id
   supabase_environments = var.supabase_environments

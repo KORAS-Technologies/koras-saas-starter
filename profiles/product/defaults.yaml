@@ -47,6 +47,10 @@ local:
     # from the control-plane values so both stacks can run side by side.
     proxy_http: 8090
     proxy_https: 8443
+    # OTLP collector. Distinct per profile so a product stack and the
+    # Control Plane can export telemetry at the same time.
+    otlp_grpc: 4317
+    otlp_http: 4318
     # Host dev servers. The control-plane profile uses the 3010/8010 block
     # so a product and the Control Plane can run at the same time.
     app_web: 3000

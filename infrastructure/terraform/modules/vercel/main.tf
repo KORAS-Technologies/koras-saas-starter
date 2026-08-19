@@ -21,7 +21,7 @@ resource "vercel_project" "apps" {
   build_command    = var.build_command
   output_directory = ".next"
   install_command  = "pnpm install --frozen-lockfile"
-  root_directory   = "apps/${each.key}"
+  root_directory   = lookup(var.application_source_dirs, each.key, "apps/${each.key}")
 
   lifecycle {
     prevent_destroy = true

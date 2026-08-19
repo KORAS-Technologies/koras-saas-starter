@@ -125,6 +125,8 @@ export const ProfileDefaultsSchema = z.object({
           minio_console: z.number().int().optional(),
           proxy_http: z.number().int().optional(),
           proxy_https: z.number().int().optional(),
+          otlp_grpc: z.number().int().optional(),
+          otlp_http: z.number().int().optional(),
           // Dev-server ports for host-run apps and services. Preferences
           // only: local/scripts/ports.sh resolves the actual values.
           app_web: z.number().int().optional(),

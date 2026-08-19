@@ -327,6 +327,15 @@ export function generatorProvidedInputs(ctx: GenerationContext): Record<string, 
       ctx.manifest.infrastructure.vercel.applications,
     ),
     enabled_services: enabled(ctx.selections.services, ctx.manifest.infrastructure.fly.services),
+    // Component keys need not match their template directory, so Terraform is
+    // told the directory rather than deriving it from the key. Deriving it gave
+    // the control-plane profile a Vercel project rooted at apps/platform_admin,
+    // a path that has never existed.
+    application_source_dirs: Object.fromEntries(
+      enabled(ctx.selections.applications, ctx.manifest.infrastructure.vercel.applications).map(
+        (key) => [key, ctx.manifest.template_map.applications[key] ?? `apps/${key}`],
+      ),
+    ),
     supabase_region: ctx.defaults.infrastructure?.supabase_region ?? '',
   }
 }

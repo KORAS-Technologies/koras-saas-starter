@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-PROFILE="${KORAS_PROFILE:-product}"
+PROFILE="${KORAS_PROFILE:-{{profile}}{{!}}}"
 
 echo "==> Bootstrapping KORAS local environment (profile: ${PROFILE})"
 echo ""
@@ -15,10 +15,14 @@ cd "$ROOT" && pnpm install
 
 # 2. Python dependencies
 echo "--> Installing Python dependencies..."
-cd "$ROOT" && uv sync
+cd "$ROOT" && uv sync --all-packages
 
 # 3. TLS certificates
-if [ ! -f "$ROOT/local/certs/app.localhost.pem" ]; then
+# Guard on whether any certificate exists rather than one named host: which
+# hosts are generated depends on the profile, so a hardcoded name can be one
+# this profile never produces -- in which case the check never passes and certs
+# are regenerated on every run.
+if ! compgen -G "$ROOT/local/certs/*.pem" > /dev/null; then
   echo "--> Generating TLS certificates..."
   bash "$ROOT/local/certs/generate.sh"
 else
@@ -39,9 +43,12 @@ echo "--> Pulling Docker images..."
 COMPOSE_FILES="-f $ROOT/local/docker-compose.yml"
 docker compose $COMPOSE_FILES pull --quiet
 
-# 5. Start infrastructure services (not app services)
+# 5. Start every container. All of them are infrastructure: the applications and
+# services run on the host under `make dev`, not in Compose. Naming a subset
+# here leaves the proxy and the observability pipeline down after `make reset`,
+# which `make health` then correctly reports as a failure.
 echo "--> Starting infrastructure services..."
-docker compose $COMPOSE_FILES up -d supabase-db zitadel redis mail
+docker compose $COMPOSE_FILES up -d
 
 # 6. Wait for Supabase DB
 echo "--> Waiting for Supabase DB..."
@@ -61,13 +68,43 @@ echo "    ZITADEL ready."
 echo "--> Initializing ZITADEL..."
 ZITADEL_URL=http://localhost:${KORAS_PORT_ZITADEL} bash "$ROOT/local/zitadel/init.sh"
 
-# 9. Copy .env.local.example if .env.local is missing
+# 9. Create .env.local from the template if it is missing.
 if [ ! -f "$ROOT/.env.local" ]; then
   echo "--> Creating .env.local from example..."
   cp "$ROOT/local/config/.env.local.example" "$ROOT/.env.local"
-  sed -i.bak -E "s#(ZITADEL_DOMAIN=http://localhost:)[0-9]+#\1${KORAS_PORT_ZITADEL}#" "$ROOT/.env.local" && rm -f "$ROOT/.env.local.bak"
-  echo "    Edit .env.local and populate secrets from Doppler before running services."
+  echo "    Populate the secret values from Doppler before running the services."
 fi
+
+# 10. Reconcile .env.local with the ports actually resolved, and add any key the
+# template has gained since the file was created. Both matter. `make ports` can
+# reassign a port when another stack takes it, and a stale .env.local then aims a
+# service at whatever now holds the old number -- possibly another KORAS
+# project database or queue. Replace-or-append, so re-running is idempotent
+# and an older .env.local picks up newly required settings rather than failing at
+# startup with no explanation.
+echo "--> Reconciling .env.local with resolved host ports..."
+
+set_env_var() {
+  local key="$1" value="$2" file="$ROOT/.env.local"
+  if grep -q "^${key}=" "$file"; then
+    sed -i "s#^${key}=.*#${key}=${value}#" "$file"
+  else
+    echo "    + ${key} (added)"
+    echo "${key}=${value}" >> "$file"
+  fi
+}
+
+set_env_var ENVIRONMENT "dev"
+set_env_var DATABASE_URL "postgresql://postgres:postgres@localhost:${KORAS_PORT_SUPABASE_DB}/postgres"
+set_env_var ZITADEL_DOMAIN "http://localhost:${KORAS_PORT_ZITADEL}"
+set_env_var REDIS_URL "redis://localhost:${KORAS_PORT_REDIS}"
+set_env_var SMTP_PORT "${KORAS_PORT_MAIL_SMTP}"
+set_env_var OTEL_EXPORTER_OTLP_ENDPOINT "http://localhost:${KORAS_PORT_OTLP_GRPC}"
+
+# 11. Apply the schema. Without this the local database has no tables at all, so
+# nothing that touches persistence can be developed or tested.
+echo "--> Applying database schema..."
+bash "$ROOT/local/scripts/migrate.sh"
 
 echo ""
 echo "==> Bootstrap complete."

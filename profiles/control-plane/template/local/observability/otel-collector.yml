@@ -20,7 +20,9 @@ exporters:
     endpoint: http://loki:3100/loki/api/v1/push
 
   otlp/tempo:
-    endpoint: http://tempo:3200
+    # Tempo OTLP gRPC receiver, not its HTTP server on 3200. The gRPC exporter
+    # takes a host:port authority, so no scheme.
+    endpoint: tempo:4317
     tls:
       insecure: true
 

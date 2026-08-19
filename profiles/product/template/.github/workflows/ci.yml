@@ -40,8 +40,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
-      - run: uv sync
+      # --all-packages installs every workspace member. A bare `uv sync` brings
+      # in only the root dev tools, leaving mypy unable to resolve fastapi,
+      # pydantic and sqlalchemy -- and silently treating them as Any.
+      - run: uv sync --all-packages
       - run: uv run ruff check .
+      # Every service names its package `src`, so a repo-wide run aborts on
+      # duplicate modules. Check one root at a time, as `make typecheck` does.
+      - run: uv run mypy python-packages
+      - run: |
+          for svc in services/*/; do
+            [ -f "$svc/pyproject.toml" ] || continue
+            echo "mypy $svc"
+            uv run mypy "$svc"
+          done
       - run: uv run pytest
 
   build:

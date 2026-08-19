@@ -39,6 +39,10 @@ local:
     mail_ui: 8026
     proxy_http: 8091
     proxy_https: 8444
+    # OTLP collector. Distinct per profile so a product stack and the
+    # Control Plane can export telemetry at the same time.
+    otlp_grpc: 4327
+    otlp_http: 4328
     app_admin: 3010
     app_portal: 3011
     service_api: 8010
