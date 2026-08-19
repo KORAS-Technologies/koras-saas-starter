@@ -15,6 +15,10 @@
     "./project-manifest": {
       "types": "./dist/generation/project-manifest.d.ts",
       "default": "./dist/generation/project-manifest.js"
+    },
+    "./doppler": {
+      "types": "./dist/terraform/doppler.d.ts",
+      "default": "./dist/terraform/doppler.js"
     }
   },
   "scripts": {

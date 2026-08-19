@@ -18,6 +18,13 @@ import { buildContext } from '../generation/context.js'
 import { renderTemplate } from '../generation/engine.js'
 import { writeFiles, printDryRunManifest } from '../generation/writer.js'
 import { provision } from '../terraform/runner.js'
+import { preflightInputs } from '../terraform/inputs.js'
+import {
+  dopplerUnavailableMessage,
+  reexecUnderDoppler,
+  resolveDopplerLocation,
+  shouldReexecUnderDoppler,
+} from '../terraform/doppler.js'
 import { initAndPushToDevelop } from '../git.js'
 
 const HELP_TEXT = `
@@ -49,13 +56,14 @@ EXAMPLES:
       --with marketing,ai_gateway
     pnpm create-koras-app koras-control-plane --profile control-plane --output-dir ../output
 
-  Provision — credentials come from Doppler, never from a file:
-    doppler run --project koras-platform-bootstrap --config prod -- \\
-      pnpm create-koras-app docoris --profile product --provision --output-dir ../output
+  Provision — credentials are pulled from Doppler automatically:
+    pnpm create-koras-app docoris --profile product --provision --output-dir ../output
 
   Retry a run that failed partway — skips generation, keeps existing state:
-    doppler run --project koras-platform-bootstrap --config prod -- \\
-      pnpm create-koras-app docoris --profile product --provision-only --output-dir ../output
+    pnpm create-koras-app docoris --profile product --provision-only --output-dir ../output
+
+  An outer \`doppler run\` is still honoured, and DOPPLER_PROJECT / DOPPLER_CONFIG
+  override the profile's location for a one-off run.
 
 Check the estate before provisioning: pnpm koras bootstrap:doctor
 See PROVISIONING_RUNBOOK.md for prerequisites and failure recovery.
@@ -168,6 +176,30 @@ export async function run(argv: string[] = process.argv): Promise<void> {
 
   const { manifest, defaults } = loadProfile(profileName as ProfileName)
   const selections = resolveSelections(manifest, defaults)
+
+  // ── Credentials ────────────────────────────────────────────────────────────
+  // Provisioning needs secrets that live in Doppler. Rather than making the
+  // operator remember the wrapper, re-run this same command under `doppler run`
+  // once the profile has told us where the credentials are. Done here, before
+  // any work, so the child does the generating and provisioning exactly as if
+  // it had been wrapped by hand.
+
+  if (
+    shouldReexecUnderDoppler({
+      required: args.provision || args.provisionOnly,
+      satisfied: preflightInputs().ok,
+    })
+  ) {
+    const location = resolveDopplerLocation(defaults)
+    if (location) {
+      try {
+        process.exit(await reexecUnderDoppler(location, process.argv))
+      } catch {
+        console.error(dopplerUnavailableMessage(location))
+        process.exit(1)
+      }
+    }
+  }
 
   // Interactive answers first, then explicit --with/--without flags (flags win).
   if (interactiveSelectionOverrides) {

@@ -1,5 +1,11 @@
 import { doctor } from '../doctor/run.js'
 import { BOOTSTRAP_DOPPLER_CONFIG, BOOTSTRAP_DOPPLER_PROJECT } from '../doctor/env.js'
+import { preflightInputs } from 'create-koras-app/terraform'
+import {
+  dopplerUnavailableMessage,
+  reexecUnderDoppler,
+  shouldReexecUnderDoppler,
+} from 'create-koras-app/doppler'
 
 const HELP_TEXT = `
 koras — KORAS platform CLI
@@ -32,6 +38,22 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     console.error(`\nERROR: Unknown command "${command}".\n`)
     console.error(HELP_TEXT)
     process.exit(1)
+  }
+
+  // Every check needs the bootstrap secrets, so re-run under `doppler run`
+  // rather than making the operator remember the wrapper. Mirrors what
+  // create-koras-app does for --provision.
+  if (shouldReexecUnderDoppler({ required: true, satisfied: preflightInputs().ok })) {
+    const location = {
+      project: process.env.DOPPLER_PROJECT ?? BOOTSTRAP_DOPPLER_PROJECT,
+      config: process.env.DOPPLER_CONFIG ?? BOOTSTRAP_DOPPLER_CONFIG,
+    }
+    try {
+      process.exit(await reexecUnderDoppler(location, process.argv))
+    } catch {
+      console.error(dopplerUnavailableMessage(location))
+      process.exit(1)
+    }
   }
 
   const outcome = await doctor()
