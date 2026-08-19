@@ -17,6 +17,10 @@ infrastructure:
   fly_region: "iad"
   vercel_framework: "nextjs"
   terraform_organization: "koras"
+  # Where the provisioning credentials live. No Doppler scope is set for
+  # generated repositories, so project and config are always explicit.
+  doppler_project: "koras-platform-bootstrap"
+  doppler_config: "prod"
 
 output:
   include_example_env: true
@@ -25,7 +29,16 @@ output:
 local:
   ports:
     supabase_db: 54332
-    zitadel: 8082
+    # Not 8082: that port is a common http.sys claim on Windows (SQL Server
+    # Reporting Services reserves it by default), and a kernel reservation
+    # makes it unbindable by Docker rather than merely busy — the failure
+    # reads as "forbidden by its access permissions", not "address in use".
+    zitadel: 8083
     redis: 6380
     mail_smtp: 1026
     mail_ui: 8026
+    proxy_http: 8091
+    proxy_https: 8444
+    app_admin: 3010
+    app_portal: 3011
+    service_api: 8010

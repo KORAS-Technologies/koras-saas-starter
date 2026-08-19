@@ -26,9 +26,23 @@
 ```bash
 make bootstrap   # first-time setup
 make dev         # start the local stack
-make health      # verify all services
+make health      # verify all services, and print their URLs
 make down        # stop containers
+make ports       # re-resolve host ports
 ```
+
+### Host ports are resolved, not fixed
+
+A host port is a machine-global resource, so this project does not claim fixed
+ones. `make bootstrap` runs `local/scripts/ports.sh`, which keeps each preferred
+port when it is free and takes the next free one when it is not, recording the
+result in `local/.env` — read by Docker Compose, the Caddyfile, and the app dev
+servers alike. The file is machine-specific and is not committed.
+
+Assignments are reused once made, so URLs stay stable across restarts. Run
+`make ports` to re-resolve after freeing a port you would rather have. Because
+the proxy does not bind 443, application URLs carry its HTTPS port; `make health`
+prints the current ones.
 
 Run `make profile` to print the profile and enabled components at any time.
 
@@ -40,6 +54,7 @@ pnpm bootstrap      # = make bootstrap
 pnpm stack:up       # = make dev   (containers only; `pnpm dev` runs the apps)
 pnpm stack:health   # = make health
 pnpm stack:down     # = make down
+pnpm stack:ports    # = make ports
 pnpm stack:reset    # wipe volumes
 ```
 

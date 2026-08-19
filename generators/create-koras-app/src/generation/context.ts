@@ -150,6 +150,14 @@ export function contextToTemplateVars(ctx: GenerationContext): Record<string, un
       mailUi: ctx.defaults.local?.ports?.mail_ui ?? 8025,
       minioApi: ctx.defaults.local?.ports?.minio_api ?? 9000,
       minioConsole: ctx.defaults.local?.ports?.minio_console ?? 9001,
+      proxyHttp: ctx.defaults.local?.ports?.proxy_http ?? 8090,
+      proxyHttps: ctx.defaults.local?.ports?.proxy_https ?? 8443,
+      appWeb: ctx.defaults.local?.ports?.app_web ?? 3000,
+      appAdmin: ctx.defaults.local?.ports?.app_admin ?? 3001,
+      appMarketing: ctx.defaults.local?.ports?.app_marketing ?? 3002,
+      appPortal: ctx.defaults.local?.ports?.app_portal ?? 3011,
+      serviceApi: ctx.defaults.local?.ports?.service_api ?? 8000,
+      serviceAiGateway: ctx.defaults.local?.ports?.service_ai_gateway ?? 4000,
     },
   }
 }

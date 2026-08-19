@@ -4,6 +4,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+# Host ports are resolved per machine by local/scripts/ports.sh.
+set -a
+. "$ROOT/local/.env"
+set +a
 COMPOSE="docker compose -f ${ROOT}/local/docker-compose.yml"
 TIMEOUT="${HEALTH_TIMEOUT:-120}"
 INTERVAL=3
@@ -32,19 +37,19 @@ wait_for() {
 # Postgres speaks its own protocol — pg_isready inside the container, not HTTP.
 wait_for "Supabase DB" "${COMPOSE} exec -T supabase-db pg_isready -U postgres"
 wait_for "Redis"       "${COMPOSE} exec -T redis redis-cli ping | grep -q PONG"
-wait_for "ZITADEL"     "curl -sf --max-time 2 http://localhost:{{ports.zitadel}}/debug/ready"
-wait_for "Mailpit"     "curl -sf --max-time 2 http://localhost:{{ports.mailUi}}/"
-wait_for "MinIO"       "curl -sf --max-time 2 http://localhost:{{ports.minioApi}}/minio/health/live"
+wait_for "ZITADEL"     "curl -sf --max-time 2 http://localhost:${KORAS_PORT_ZITADEL}/debug/ready"
+wait_for "Mailpit"     "curl -sf --max-time 2 http://localhost:${KORAS_PORT_MAIL_UI}/"
+wait_for "MinIO"       "curl -sf --max-time 2 http://localhost:${KORAS_PORT_MINIO_API}/minio/health/live"
 wait_for "Proxy"       "${COMPOSE} ps --status running --services | grep -q '^proxy$'"
 
 echo ""
 echo "All services healthy."
 echo ""
-{{#if apps.web}}echo "  Web:        https://app.localhost"
-{{/if}}{{#if apps.admin}}echo "  Admin:      https://admin.localhost"
-{{/if}}{{#if apps.marketing}}echo "  Marketing:  https://www.localhost"
-{{/if}}{{#if service.api}}echo "  API:        https://api.localhost"
-{{/if}}{{#if service.ai_gateway}}echo "  AI Gateway: https://ai.localhost"
-{{/if}}echo "  ZITADEL:    http://localhost:{{ports.zitadel}}/ui/console"
-echo "  Mailpit:    http://localhost:{{ports.mailUi}}"
+{{#if apps.web}}echo "  Web:        https://app.localhost:${KORAS_PORT_PROXY_HTTPS}"
+{{/if}}{{#if apps.admin}}echo "  Admin:      https://admin.localhost:${KORAS_PORT_PROXY_HTTPS}"
+{{/if}}{{#if apps.marketing}}echo "  Marketing:  https://www.localhost:${KORAS_PORT_PROXY_HTTPS}"
+{{/if}}{{#if service.api}}echo "  API:        https://api.localhost:${KORAS_PORT_PROXY_HTTPS}"
+{{/if}}{{#if service.ai_gateway}}echo "  AI Gateway: https://ai.localhost:${KORAS_PORT_PROXY_HTTPS}"
+{{/if}}echo "  ZITADEL:    http://localhost:${KORAS_PORT_ZITADEL}/ui/console"
+echo "  Mailpit:    http://localhost:${KORAS_PORT_MAIL_UI}"
 echo "  MinIO:      http://localhost:{{ports.minioConsole}}"

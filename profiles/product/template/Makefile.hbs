@@ -17,7 +17,7 @@ endif
 
 .DEFAULT_GOAL := help
 
-.PHONY: help profile install bootstrap dev down reset seed test health lint typecheck build clean
+.PHONY: help profile install bootstrap ports dev down reset seed test health lint typecheck build clean
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -35,6 +35,9 @@ install: ## Install all dependencies
 
 bootstrap: install ## Full local environment setup
 	bash ./local/scripts/bootstrap.sh
+
+ports: ## Re-resolve host ports (use after freeing a preferred port)
+	bash ./local/scripts/ports.sh --reset
 
 dev: ## Start local development stack
 	docker compose -f local/docker-compose.yml up -d

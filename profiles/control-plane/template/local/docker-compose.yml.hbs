@@ -1,3 +1,8 @@
+# Host ports come from local/.env, written by local/scripts/ports.sh so that a
+# busy port on one machine does not wedge the whole stack. The `\{{!}}` after each
+# preference is an empty Handlebars comment: without it the template's `}}` and
+# the shell's closing `}` would collide into `}}}`, which Handlebars misreads as
+# a triple-stash. It renders nothing.
 name: {{projectSlug}}
 
 services:
@@ -9,7 +14,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: postgres
     ports:
-      - "{{ports.supabaseDb}}:5432"
+      - "${KORAS_PORT_SUPABASE_DB:-{{ports.supabaseDb}}{{!}}}:5432"
     volumes:
       - supabase-db:/var/lib/postgresql/data
     healthcheck:
@@ -35,10 +40,10 @@ services:
       ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: postgres
       ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
       ZITADEL_EXTERNALSECURE: "false"
-      ZITADEL_EXTERNALPORT: {{ports.zitadel}}
+      ZITADEL_EXTERNALPORT: ${KORAS_PORT_ZITADEL:-{{ports.zitadel}}{{!}}}
       ZITADEL_EXTERNALDOMAIN: localhost
     ports:
-      - "{{ports.zitadel}}:8080"
+      - "${KORAS_PORT_ZITADEL:-{{ports.zitadel}}{{!}}}:8080"
     depends_on:
       supabase-db:
         condition: service_healthy
@@ -51,7 +56,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "{{ports.redis}}:6379"
+      - "${KORAS_PORT_REDIS:-{{ports.redis}}{{!}}}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -65,10 +70,10 @@ services:
     image: axllent/mailpit:latest
     restart: unless-stopped
     ports:
-      - "{{ports.mailSmtp}}:1025"
-      - "{{ports.mailUi}}:8025"
+      - "${KORAS_PORT_MAIL_SMTP:-{{ports.mailSmtp}}{{!}}}:1025"
+      - "${KORAS_PORT_MAIL_UI:-{{ports.mailUi}}{{!}}}:8025"
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:{{ports.mailUi}}/"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8025/"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -78,9 +83,13 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
+      - "${KORAS_PORT_PROXY_HTTP:-{{ports.proxyHttp}}{{!}}}:80"
+      - "${KORAS_PORT_PROXY_HTTPS:-{{ports.proxyHttps}}{{!}}}:443"
+    environment:
+{{#if apps.platform_admin}}      KORAS_PORT_APP_ADMIN: ${KORAS_PORT_APP_ADMIN:-{{ports.appAdmin}}{{!}}}
+{{/if}}{{#if apps.portal}}      KORAS_PORT_APP_PORTAL: ${KORAS_PORT_APP_PORTAL:-{{ports.appPortal}}{{!}}}
+{{/if}}{{#if service.api}}      KORAS_PORT_SERVICE_API: ${KORAS_PORT_SERVICE_API:-{{ports.serviceApi}}{{!}}}
+{{/if}}    volumes:
       - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./certs:/certs:ro
       - caddy-data:/data

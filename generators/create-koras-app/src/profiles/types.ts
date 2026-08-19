@@ -99,6 +99,11 @@ export const ProfileDefaultsSchema = z.object({
       fly_region: z.string().optional(),
       vercel_framework: z.string().optional(),
       terraform_organization: z.string().optional(),
+      // Estate-level Doppler location of the provisioning credentials.
+      // The CLI re-invokes itself under `doppler run` with these when the
+      // inputs are not already in the environment.
+      doppler_project: z.string().optional(),
+      doppler_config: z.string().optional(),
     })
     .optional(),
   output: z
@@ -118,6 +123,16 @@ export const ProfileDefaultsSchema = z.object({
           mail_ui: z.number().int().optional(),
           minio_api: z.number().int().optional(),
           minio_console: z.number().int().optional(),
+          proxy_http: z.number().int().optional(),
+          proxy_https: z.number().int().optional(),
+          // Dev-server ports for host-run apps and services. Preferences
+          // only: local/scripts/ports.sh resolves the actual values.
+          app_web: z.number().int().optional(),
+          app_admin: z.number().int().optional(),
+          app_marketing: z.number().int().optional(),
+          app_portal: z.number().int().optional(),
+          service_api: z.number().int().optional(),
+          service_ai_gateway: z.number().int().optional(),
         })
         .optional(),
     })

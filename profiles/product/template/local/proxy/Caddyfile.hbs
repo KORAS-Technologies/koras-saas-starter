@@ -16,31 +16,31 @@
 {{#if apps.web}}
 app.localhost {
 	tls /certs/app.localhost.pem /certs/app.localhost-key.pem
-	reverse_proxy host.docker.internal:3000
+	reverse_proxy host.docker.internal:{env.KORAS_PORT_APP_WEB}
 }
 {{/if}}
 {{#if apps.admin}}
 admin.localhost {
 	tls /certs/admin.localhost.pem /certs/admin.localhost-key.pem
-	reverse_proxy host.docker.internal:3001
+	reverse_proxy host.docker.internal:{env.KORAS_PORT_APP_ADMIN}
 }
 {{/if}}
 {{#if apps.marketing}}
 www.localhost {
 	tls /certs/www.localhost.pem /certs/www.localhost-key.pem
-	reverse_proxy host.docker.internal:3002
+	reverse_proxy host.docker.internal:{env.KORAS_PORT_APP_MARKETING}
 }
 {{/if}}
 {{#if service.api}}
 api.localhost {
 	tls /certs/api.localhost.pem /certs/api.localhost-key.pem
-	reverse_proxy host.docker.internal:8000
+	reverse_proxy host.docker.internal:{env.KORAS_PORT_SERVICE_API}
 }
 {{/if}}
 {{#if service.ai_gateway}}
 ai.localhost {
 	tls /certs/ai.localhost.pem /certs/ai.localhost-key.pem
-	reverse_proxy host.docker.internal:4000
+	reverse_proxy host.docker.internal:{env.KORAS_PORT_SERVICE_AI_GATEWAY}
 }
 {{/if}}
 

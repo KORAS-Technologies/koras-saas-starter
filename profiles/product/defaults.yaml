@@ -24,6 +24,10 @@ infrastructure:
   fly_region: "iad"
   vercel_framework: "nextjs"
   terraform_organization: "koras"
+  # Where the provisioning credentials live. No Doppler scope is set for
+  # generated repositories, so project and config are always explicit.
+  doppler_project: "koras-platform-bootstrap"
+  doppler_config: "prod"
 
 output:
   include_example_env: true
@@ -38,3 +42,15 @@ local:
     mail_ui: 8025
     minio_api: 9000
     minio_console: 9001
+    # Never 80/443: Windows reserves 80 for http.sys (IIS registers it by
+    # default) and binding privileged ports needs root on Linux. Distinct
+    # from the control-plane values so both stacks can run side by side.
+    proxy_http: 8090
+    proxy_https: 8443
+    # Host dev servers. The control-plane profile uses the 3010/8010 block
+    # so a product and the Control Plane can run at the same time.
+    app_web: 3000
+    app_admin: 3001
+    app_marketing: 3002
+    service_api: 8000
+    service_ai_gateway: 4000

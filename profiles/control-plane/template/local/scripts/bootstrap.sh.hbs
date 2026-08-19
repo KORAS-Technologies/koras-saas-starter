@@ -25,6 +25,13 @@ else
   echo "--> TLS certificates already present, skipping."
 fi
 
+# Resolve host ports before anything binds them, then load the assignments so
+# the URLs below match what Compose actually publishes.
+bash "$ROOT/local/scripts/ports.sh"
+set -a
+. "$ROOT/local/.env"
+set +a
+
 # 4. Pull Docker images
 echo "--> Pulling Docker images..."
 # One rendered compose file per project — the profile decided what went into it
@@ -45,19 +52,20 @@ echo "    Supabase DB ready."
 
 # 7. Wait for ZITADEL
 echo "--> Waiting for ZITADEL..."
-until curl -sf "http://localhost:{{ports.zitadel}}/debug/ready" >/dev/null 2>&1; do
+until curl -sf "http://localhost:${KORAS_PORT_ZITADEL}/debug/ready" >/dev/null 2>&1; do
   sleep 3
 done
 echo "    ZITADEL ready."
 
 # 8. Initialize ZITADEL
 echo "--> Initializing ZITADEL..."
-ZITADEL_URL=http://localhost:{{ports.zitadel}} bash "$ROOT/local/zitadel/init.sh"
+ZITADEL_URL=http://localhost:${KORAS_PORT_ZITADEL} bash "$ROOT/local/zitadel/init.sh"
 
 # 9. Copy .env.local.example if .env.local is missing
 if [ ! -f "$ROOT/.env.local" ]; then
   echo "--> Creating .env.local from example..."
   cp "$ROOT/local/config/.env.local.example" "$ROOT/.env.local"
+  sed -i.bak -E "s#(ZITADEL_DOMAIN=http://localhost:)[0-9]+#\1${KORAS_PORT_ZITADEL}#" "$ROOT/.env.local" && rm -f "$ROOT/.env.local.bak"
   echo "    Edit .env.local and populate secrets from Doppler before running services."
 fi
 

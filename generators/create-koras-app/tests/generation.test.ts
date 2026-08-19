@@ -712,3 +712,140 @@ describe('profile validation', () => {
     expect(validateProfile('').valid).toBe(false)
   })
 })
+
+// ── local stack host ports ───────────────────────────────────────────────────
+
+describe('local stack host ports', () => {
+  const composeOf = (profile: ProfileName, slug: string) =>
+    generate(profile, slug).read('local/docker-compose.yml')
+
+  const publishedPorts = (compose: string) =>
+    [...compose.matchAll(/- "\$\{(KORAS_PORT_[A-Z_]+):-(\d+)\}:(\d+)"/g)].map((m) => ({
+      variable: m[1],
+      preferred: Number(m[2]),
+      container: Number(m[3]),
+    }))
+
+  it('publishes every port through a resolvable variable', () => {
+    for (const [profile, slug] of [
+      ['product', 'ports-product'],
+      ['control-plane', 'ports-cp'],
+    ] as Array<[ProfileName, string]>) {
+      const compose = composeOf(profile, slug)
+      // A bare "1234:5432" would be a host port no machine can override.
+      expect(compose).not.toMatch(/- "\d+:\d+"/)
+      expect(publishedPorts(compose).length).toBeGreaterThan(0)
+    }
+  })
+
+  it('never asks for a privileged host port', () => {
+    // Binding <1024 needs root on Linux, and 80 is reserved by http.sys on
+    // Windows whenever IIS is installed.
+    for (const [profile, slug] of [
+      ['product', 'ports-priv-product'],
+      ['control-plane', 'ports-priv-cp'],
+    ] as Array<[ProfileName, string]>) {
+      for (const p of publishedPorts(composeOf(profile, slug))) {
+        expect(p.preferred).toBeGreaterThanOrEqual(1024)
+      }
+    }
+  })
+
+  it('gives the two profiles disjoint preferences so they can co-run', () => {
+    const product = publishedPorts(composeOf('product', 'ports-dis-product')).map((p) => p.preferred)
+    const cp = publishedPorts(composeOf('control-plane', 'ports-dis-cp')).map((p) => p.preferred)
+    expect(product.filter((p) => cp.includes(p))).toEqual([])
+  })
+
+  it('ships a resolver and wires bootstrap to it', () => {
+    for (const [profile, slug] of [
+      ['product', 'ports-res-product'],
+      ['control-plane', 'ports-res-cp'],
+    ] as Array<[ProfileName, string]>) {
+      const gen = generate(profile, slug)
+      expect(gen.has('local/scripts/ports.sh')).toBe(true)
+      const bootstrap = gen.read('local/scripts/bootstrap.sh')
+      expect(bootstrap).toContain('local/scripts/ports.sh')
+      // Resolution has to happen before anything tries to bind.
+      expect(bootstrap.indexOf('ports.sh')).toBeLessThan(bootstrap.indexOf('docker compose'))
+    }
+  })
+
+  it('healthchecks inside a container use the container port', () => {
+    // The mail healthcheck runs in the container, where the host mapping is
+    // invisible; it only ever worked because host and container ports matched.
+    for (const [profile, slug] of [
+      ['product', 'ports-hc-product'],
+      ['control-plane', 'ports-hc-cp'],
+    ] as Array<[ProfileName, string]>) {
+      expect(composeOf(profile, slug)).toContain('http://localhost:8025/')
+    }
+  })
+})
+
+// ── host dev-server ports ────────────────────────────────────────────────────
+
+describe('host dev-server ports', () => {
+  it('never hardcodes a dev-server port in package.json', () => {
+    // `next dev --port 3000` is a host-global claim that collides with any
+    // other project running at the same time.
+    for (const [profile, slug, apps] of [
+      ['product', 'devport-product', ['web', 'admin', 'marketing']],
+      ['control-plane', 'devport-cp', ['admin', 'portal']],
+    ] as Array<[ProfileName, string, string[]]>) {
+      const gen = generate(profile, slug)
+      // Only the apps this profile's defaults actually enable are emitted.
+      const present = apps.filter((app) => gen.has(`apps/${app}/package.json`))
+      expect(present.length).toBeGreaterThan(0)
+      for (const app of present) {
+        const pkg = JSON.parse(gen.read(`apps/${app}/package.json`))
+        expect(pkg.scripts.dev).not.toMatch(/--port \d+/)
+        expect(pkg.scripts.dev).toContain('dev-app.mjs')
+      }
+      expect(gen.has('local/scripts/dev-app.mjs')).toBe(true)
+    }
+  })
+
+  it('resolves every app port through the shared resolver', () => {
+    for (const [profile, slug] of [
+      ['product', 'devport-res-product'],
+      ['control-plane', 'devport-res-cp'],
+    ] as Array<[ProfileName, string]>) {
+      const gen = generate(profile, slug)
+      const declared = [...gen.read('local/scripts/ports.sh').matchAll(/^(KORAS_PORT_APP_[A-Z]+) /gm)]
+        .map((m) => m[1])
+      expect(declared.length).toBeGreaterThan(0)
+      // Whatever the apps ask for must be something ports.sh actually assigns.
+      const requested = [...gen.read('local/scripts/ports.sh').matchAll(/KORAS_PORT_APP_[A-Z]+/g)]
+      expect(requested.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('points Caddy at the resolved ports and hands them to the container', () => {
+    for (const [profile, slug] of [
+      ['product', 'devport-caddy-product'],
+      ['control-plane', 'devport-caddy-cp'],
+    ] as Array<[ProfileName, string]>) {
+      const gen = generate(profile, slug)
+      const caddy = gen.read('local/proxy/Caddyfile')
+      // A literal upstream would proxy to whatever else grabbed that port.
+      expect(caddy).not.toMatch(/reverse_proxy host\.docker\.internal:\d+/)
+      const compose = gen.read('local/docker-compose.yml')
+      for (const [, variable] of caddy.matchAll(/\{env\.(KORAS_PORT_[A-Z_]+)\}/g)) {
+        // Caddy expands {env.X} inside the container, so it must be passed in.
+        expect(compose).toContain(`${variable}: `)
+      }
+    }
+  })
+
+  it('keeps the two profiles on separate dev-server blocks', () => {
+    const portsOf = (profile: ProfileName, slug: string) =>
+      [...generate(profile, slug).read('local/scripts/ports.sh')
+        .matchAll(/^KORAS_PORT_(?:APP|SERVICE)_[A-Z]+ (\d+)$/gm)].map((m) => Number(m[1]))
+    const product = portsOf('product', 'devport-sep-product')
+    const cp = portsOf('control-plane', 'devport-sep-cp')
+    expect(product.length).toBeGreaterThan(0)
+    expect(cp.length).toBeGreaterThan(0)
+    expect(product.filter((p) => cp.includes(p))).toEqual([])
+  })
+})

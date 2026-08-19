@@ -14,6 +14,7 @@
     "test": "turbo run test",
     "dev": "turbo run dev",
     "bootstrap": "bash local/scripts/bootstrap.sh",
+    "stack:ports": "bash local/scripts/ports.sh --reset",
     "stack:up": "docker compose -f local/docker-compose.yml up -d",
     "stack:down": "docker compose -f local/docker-compose.yml down",
     "stack:reset": "docker compose -f local/docker-compose.yml down -v",

@@ -16,19 +16,19 @@
 {{#if apps.platform_admin}}
 admin.localhost {
 	tls /certs/admin.localhost.pem /certs/admin.localhost-key.pem
-	reverse_proxy host.docker.internal:3000
+	reverse_proxy host.docker.internal:{env.KORAS_PORT_APP_ADMIN}
 }
 {{/if}}
 {{#if apps.portal}}
 portal.localhost {
 	tls /certs/portal.localhost.pem /certs/portal.localhost-key.pem
-	reverse_proxy host.docker.internal:3001
+	reverse_proxy host.docker.internal:{env.KORAS_PORT_APP_PORTAL}
 }
 {{/if}}
 {{#if service.api}}
 api.localhost {
 	tls /certs/api.localhost.pem /certs/api.localhost-key.pem
-	reverse_proxy host.docker.internal:8000
+	reverse_proxy host.docker.internal:{env.KORAS_PORT_SERVICE_API}
 }
 {{/if}}
 
