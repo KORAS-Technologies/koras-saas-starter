@@ -1,0 +1,4 @@
+# The ZITADEL personal access token for the local instance. A real credential,
+# even if only for a throwaway container. Never committed.
+*
+!.gitignore

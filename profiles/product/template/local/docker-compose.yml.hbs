@@ -42,8 +42,27 @@ services:
       ZITADEL_EXTERNALSECURE: "false"
       ZITADEL_EXTERNALPORT: ${KORAS_PORT_ZITADEL:-{{ports.zitadel}}{{!}}}
       ZITADEL_EXTERNALDOMAIN: localhost
+      # First-instance bootstrap, applied only when the instance is created.
+      # Changing any of it requires dropping the zitadel database; see
+      # local/zitadel/init.sh.
+      #
+      # The machine user is how the application talks to ZITADEL. Its personal
+      # access token is written where the host can read it, which is the only
+      # way to get a usable credential without clicking through the console.
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: koras
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: Password1!
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: {{projectSlug}}
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: {{projectName}}
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2100-01-01T00:00:00Z"
+      ZITADEL_FIRSTINSTANCE_PATPATH: /machinekey/pat
     ports:
       - "${KORAS_PORT_ZITADEL:-{{ports.zitadel}}{{!}}}:8080"
+    volumes:
+      # The PAT lands here so the host can read it. Local development only, and
+      # gitignored: it is a real credential for the local instance.
+      - ./zitadel/machinekey:/machinekey
     depends_on:
       supabase-db:
         condition: service_healthy
