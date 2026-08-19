@@ -81,6 +81,7 @@ koras-saas-starter/
 │
 ├── python-packages/            # Shared Python packages
 │   ├── koras-auth/
+│   ├── koras-platform/
 │   ├── koras-tenant/
 │   ├── koras-database/
 │   ├── koras-storage/

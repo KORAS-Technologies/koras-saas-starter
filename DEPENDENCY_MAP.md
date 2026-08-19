@@ -85,7 +85,9 @@ koras-logging ◄──────────────── everything (lo
        │
 koras-database ◄── koras-logging
        │
-koras-auth ◄── koras-logging, koras-database
+koras-platform ◄── (none — vocabulary layer)
+       │
+koras-auth ◄── koras-logging, koras-database, koras-platform
        │
 koras-tenant ◄── koras-auth, koras-database
        │
@@ -106,7 +108,8 @@ koras-observability ◄── koras-logging
 |----------------------|---------------------------------------------------|
 | `koras-logging`      | (none — foundation layer)                         |
 | `koras-database`     | `koras-logging`                                   |
-| `koras-auth`         | `koras-logging`, `koras-database`                 |
+| `koras-platform`     | (none — vocabulary layer)                         |
+| `koras-auth`         | `koras-logging`, `koras-database`, `koras-platform` |
 | `koras-tenant`       | `koras-auth`, `koras-database`                    |
 | `koras-storage`      | `koras-auth`, `koras-tenant`, `koras-database`    |
 | `koras-queue`        | `koras-logging`, `koras-database`                 |
@@ -342,3 +345,26 @@ prints the resolved ones.
 
 These are platform-level accounts owned by KORAS, not created per project.
 Per-project resources are created within these accounts by Terraform.
+
+## koras-platform
+
+Deliberately depends on nothing. It defines the vocabulary the rest of the
+platform is written in -- the four environments, the organization roles, and the
+contract every external adapter satisfies -- so anything may depend on it and it
+may depend on nothing.
+
+Two consequences worth stating:
+
+- **Services that never touch a JWT still get the environment model.** The worker
+  and scheduler need `Environment` and `ExternalAdapter` without taking on
+  `koras-auth` and its `python-jose` dependency. Folding these into `koras-auth`
+  would have coupled every background process to a token library it never uses.
+- **`koras-auth` depends on it, not the reverse.** This package says what a role
+  *is*; auth decides who is presenting one.
+
+### What is not here
+
+KORAS staff roles. Those are Control Plane authority and are shipped only by the
+Control Plane, as `koras_platform.platform_roles`. Keeping the names out of
+product repositories means a product cannot reference platform authority even by
+accident. A generator test asserts their absence from product output.

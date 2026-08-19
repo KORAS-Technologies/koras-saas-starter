@@ -280,6 +280,7 @@ Rules:
 │
 ├── python-packages/        Python shared packages
 │   ├── koras-auth/
+│   ├── koras-platform/
 │   ├── koras-tenant/
 │   ├── koras-database/
 │   ├── koras-storage/

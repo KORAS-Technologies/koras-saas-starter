@@ -838,6 +838,69 @@ describe('host dev-server ports', () => {
     }
   })
 
+  describe('shared platform primitives', () => {
+    const SHARED = [
+      'python-packages/koras-platform/pyproject.toml',
+      'python-packages/koras-platform/src/koras_platform/__init__.py',
+      'python-packages/koras-platform/src/koras_platform/environment.py',
+      'python-packages/koras-platform/src/koras_platform/adapters.py',
+      'python-packages/koras-platform/src/koras_platform/roles.py',
+    ]
+
+    it('ships koras-platform to both profiles', () => {
+      for (const profile of ['product', 'control-plane'] as ProfileName[]) {
+        const gen = generate(profile, `platform-pkg-${profile}`)
+        for (const file of SHARED) {
+          expect(gen.has(file), `${profile} is missing ${file}`).toBe(true)
+        }
+      }
+    })
+
+    it('ships byte-identical copies to both profiles', () => {
+      // The starter has no common template layer, so shared packages are
+      // duplicated per profile. Nothing else stops the two drifting apart.
+      const product = generate('product', 'platform-same-product')
+      const cp = generate('control-plane', 'platform-same-cp')
+      for (const file of SHARED) {
+        expect(cp.read(file), `${file} differs between profiles`).toBe(product.read(file))
+      }
+    })
+
+    it('defines all four environments and no default', () => {
+      const source = generate('product', 'platform-env').read(
+        'python-packages/koras-platform/src/koras_platform/environment.py',
+      )
+      for (const env of ['dev', 'test', 'stg', 'prod']) {
+        expect(source).toContain(`"${env}"`)
+      }
+      // A default would make a missing ENVIRONMENT resolve silently, and the
+      // isolation guarantee rests entirely on this value being correct.
+      expect(source).toMatch(/def resolve_environment\(value: str \| Environment \| None\)/)
+      expect(source).toContain('raise ValueError')
+    })
+
+    it('keeps platform roles out of product repositories', () => {
+      // KORAS staff roles are Control Plane authority. A product that could
+      // reference them is a product that could accidentally honour them.
+      const roles = generate('product', 'platform-roles').read(
+        'python-packages/koras-platform/src/koras_platform/roles.py',
+      )
+      expect(roles).toContain('organization_owner')
+      expect(roles).not.toContain('platform_super_admin')
+      expect(roles).not.toContain('platform_billing')
+    })
+
+    it('makes the adapter environment explicit and self-checking', () => {
+      const source = generate('control-plane', 'platform-adapter').read(
+        'python-packages/koras-platform/src/koras_platform/adapters.py',
+      )
+      // Required argument, not an optional one with a default to inherit.
+      expect(source).toContain('process_environment: Environment')
+      expect(source).toContain('EnvironmentIsolationError')
+      expect(source).not.toMatch(/environment.*=\s*Environment\.(DEV|PROD)/)
+    })
+  })
+
   it('keeps the two profiles on separate dev-server blocks', () => {
     const portsOf = (profile: ProfileName, slug: string) =>
       [...generate(profile, slug).read('local/scripts/ports.sh')

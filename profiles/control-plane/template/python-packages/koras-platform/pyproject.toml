@@ -1,0 +1,9 @@
+[project]
+name = "koras-platform"
+version = "0.1.0"
+description = "Environment model, roles, and the external adapter contract"
+requires-python = ">=3.12"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
