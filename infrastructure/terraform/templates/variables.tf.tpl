@@ -64,6 +64,17 @@ variable "cloudflare_zone_id" {
   type = string
 }
 
+# Upstash account credentials. Both are required provider arguments, so the
+# plan cannot even be produced without them.
+variable "upstash_email" {
+  type = string
+}
+
+variable "upstash_api_key" {
+  type      = string
+  sensitive = true
+}
+
 # Connection details and credentials for the four isolated ZITADEL instances.
 # The provider has no environment-variable fallback and each instance has its
 # own service user, so credentials are per-instance. Supply this whole map via

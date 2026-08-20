@@ -6,30 +6,16 @@ import {
   shouldReexecUnderDoppler,
   type Spawner,
 } from '../src/terraform/doppler.js'
-import { preflightInputs } from '../src/terraform/inputs.js'
+import { allInputs, preflightInputs } from '../src/terraform/inputs.js'
 import { loadProfile } from '../src/profiles/index.js'
 import type { ProfileName } from '../src/profiles/loader.js'
 
-// Every input preflightInputs asks for, so "already supplied by hand" is
-// exercised on its own merits rather than via the re-exec guard.
+// Every input preflightInputs asks for, built from the registry rather than
+// listed here: a hardcoded copy silently rots the moment a provider is added.
 function envWithInputs(): NodeJS.ProcessEnv {
-  return {
-    GITHUB_TOKEN: 'x',
-    DOPPLER_TOKEN: 'x',
-    SUPABASE_ACCESS_TOKEN: 'x',
-    VERCEL_API_TOKEN: 'x',
-    FLY_API_TOKEN: 'x',
-    CLOUDFLARE_API_TOKEN: 'x',
-    TF_TOKEN_app_terraform_io: 'x',
-    TF_VAR_supabase_environments: '{}',
-    TF_VAR_zitadel_instances: '{}',
-    TF_VAR_github_org: 'koras',
-    TF_VAR_primary_domain: 'example.com',
-    TF_VAR_supabase_org_id: 'x',
-    TF_VAR_vercel_team_id: 'x',
-    TF_VAR_fly_org_slug: 'x',
-    TF_VAR_cloudflare_zone_id: 'x',
-  }
+  const env: NodeJS.ProcessEnv = {}
+  for (const input of allInputs()) env[input.name] = 'value'
+  return env
 }
 
 describe('resolveDopplerLocation', () => {

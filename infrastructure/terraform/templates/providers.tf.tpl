@@ -30,6 +30,10 @@ terraform {
       source  = "cloudflare/cloudflare"
       version = "~> 4.0"
     }
+    upstash = {
+      source  = "upstash/upstash"
+      version = "~> 1.5"
+    }
   }
 }
 
@@ -41,6 +45,14 @@ terraform {
 # Vercel:     VERCEL_API_TOKEN
 # Fly:        FLY_API_TOKEN
 # Cloudflare: CLOUDFLARE_API_TOKEN
+
+# Upstash has no environment-variable fallback: `email` and `api_key` are
+# required provider arguments, so omitting this block fails the plan with
+# "requires explicit configuration" before any resource is evaluated.
+provider "upstash" {
+  email   = var.upstash_email
+  api_key = var.upstash_api_key
+}
 
 provider "github" {
   owner = var.github_org

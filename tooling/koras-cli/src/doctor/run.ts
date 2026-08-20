@@ -11,6 +11,7 @@ import { supabaseCheck } from './checks/supabase.js'
 import { zitadelChecks } from './checks/zitadel.js'
 import { vercelCheck } from './checks/vercel.js'
 import { flyCheck } from './checks/fly.js'
+import { upstashCheck } from './checks/upstash.js'
 import { cloudflareCheck } from './checks/cloudflare.js'
 import { terraformCheck } from './checks/terraform.js'
 import { terraformStateCheck } from './checks/terraform-state.js'
@@ -21,7 +22,7 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../../..')
  * Display order is declaration order, and it is fixed.
  *
  * Every row is always reported, even when an earlier check failed. A run where
- * Doppler is broken still shows twelve rows, because "we could not tell" and
+ * Doppler is broken still shows every row, because "we could not tell" and
  * "it is fine" must not look the same — and because Terraform can genuinely
  * pass while every credential is absent.
  */
@@ -32,6 +33,7 @@ export const CHECKS: DoctorCheck[] = [
   ...zitadelChecks,
   vercelCheck,
   flyCheck,
+  upstashCheck,
   cloudflareCheck,
   terraformCheck,
   terraformStateCheck,

@@ -21,6 +21,7 @@ const EXPECTED_ROWS = [
   'ZITADEL PROD',
   'Vercel',
   'Fly.io',
+  'Upstash',
   'Cloudflare',
   'Terraform',
   'Terraform state',
@@ -46,7 +47,7 @@ function failed(output: string): string[] {
 // ── check order and shape ────────────────────────────────────────────────────
 
 describe('report shape', () => {
-  it('declares the twelve checks in the required order', () => {
+  it('declares every check in the required order', () => {
     expect(CHECKS.map((c) => c.label)).toEqual(EXPECTED_ROWS)
   })
 
@@ -95,6 +96,7 @@ describe('all checks pass', () => {
         'ZITADEL PROD     ✓',
         'Vercel           ✓',
         'Fly.io           ✓',
+        'Upstash          ✓',
         'Cloudflare       ✓',
         'Terraform        ✓',
         'Terraform state  ✓',
@@ -273,7 +275,9 @@ describe('failed dependencies', () => {
   it('still reports every row when nothing is configured', async () => {
     const { output, code } = await run({ env: {} })
     const rows = output.split('\n').filter((l) => l.endsWith(PASS) || l.endsWith(FAIL))
-    expect(rows).toHaveLength(12)
+    // Every declared check reports, even with nothing configured — "could not
+    // tell" and "it is fine" must never look the same.
+    expect(rows).toHaveLength(EXPECTED_ROWS.length)
     // Terraform needs no credentials except the HCP token, which is absent here.
     expect(failed(output)).toEqual(EXPECTED_ROWS)
     expect(output).toContain(NOT_READY)

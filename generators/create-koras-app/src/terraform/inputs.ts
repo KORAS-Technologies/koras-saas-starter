@@ -123,6 +123,12 @@ export const ACCOUNT_VARIABLES = [
   { name: 'TF_VAR_vercel_team_id', alias: 'TF_VAR_VERCEL_TEAM_ID', purpose: 'Vercel team ID' },
   { name: 'TF_VAR_fly_org_slug', alias: 'TF_VAR_FLY_ORG_SLUG', purpose: 'Fly.io organisation slug' },
   { name: 'TF_VAR_cloudflare_zone_id', alias: 'TF_VAR_CLOUDFLARE_ZONE_ID', purpose: 'Cloudflare zone for the primary domain' },
+  // Upstash is configured through variables rather than a bare token because
+  // `email` and `api_key` are required provider arguments with no environment
+  // fallback. Unregistered, they slip past preflight and surface as three
+  // "Missing required argument" errors after `init` has downloaded providers.
+  { name: 'TF_VAR_upstash_email', alias: 'TF_VAR_UPSTASH_EMAIL', purpose: 'Upstash account email (Redis queue per environment)' },
+  { name: 'TF_VAR_upstash_api_key', alias: 'TF_VAR_UPSTASH_API_KEY', purpose: 'Upstash management API key' },
 ] as const
 
 export interface MissingInput {

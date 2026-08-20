@@ -20,6 +20,8 @@ export function healthyEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv
     TF_VAR_VERCEL_TEAM_ID: 'team_vercel_1',
     TF_VAR_FLY_ORG_SLUG: 'koras-fly',
     TF_VAR_CLOUDFLARE_ZONE_ID: 'zone_1',
+    TF_VAR_UPSTASH_EMAIL: 'platform@koras.app',
+    TF_VAR_UPSTASH_API_KEY: 'upstash-hhhhhhhhhhhhhhhhhhhh',
   }
 
   for (const e of ['DEV', 'TEST', 'STG', 'PROD']) {
@@ -91,6 +93,7 @@ export function healthyRoutes(): RouteMap {
     'integrations/git-namespaces': response(200, [
       { provider: 'github', slug: 'koras-org', ownerType: 'organization' },
     ]),
+    'api.upstash.com/v2/redis/databases': response(200, []),
     'api.fly.io/graphql': response(200, {
       data: { organizations: { nodes: [{ slug: 'koras-fly' }] } },
     }),
