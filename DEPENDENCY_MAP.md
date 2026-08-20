@@ -340,6 +340,7 @@ prints the resolved ones.
 | ZITADEL Cloud  | All projects    | ZITADEL Cloud Org   |
 | Vercel         | All projects    | Vercel Team         |
 | Fly.io         | All projects    | Fly.io Org          |
+| Upstash        | All projects    | Upstash Account     |
 | Cloudflare     | All projects    | Cloudflare Account  |
 | Terraform Cloud| All projects    | HCP Terraform Org   |
 

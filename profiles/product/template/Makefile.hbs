@@ -17,7 +17,7 @@ endif
 
 .DEFAULT_GOAL := help
 
-.PHONY: help profile install bootstrap ports dev down reset seed test health lint typecheck build clean doppler-check doppler-bootstrap
+.PHONY: help profile install bootstrap ports dev down reset seed test health lint typecheck build clean doppler-check doppler-bootstrap doppler-bootstrap-prod
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -67,8 +67,16 @@ health: ## Poll all services until healthy
 doppler-check: ## Verify every Doppler environment holds every setting (names only, never values)
 	bash ./local/scripts/doppler-check.sh
 
-doppler-bootstrap: ## Populate Doppler from Terraform outputs and prompts (never writes prod unless asked)
+doppler-bootstrap: ## Populate Doppler for dev, test and stg from Terraform outputs and prompts
 	bash ./local/scripts/doppler-bootstrap.sh
+
+# prod is a separate target rather than a flag. `make doppler-bootstrap
+# --environment prod` does not reach the script: make consumes the option and
+# reads `prod` as a target name, so the default set runs and production is
+# silently skipped. Anything else the script accepts -- --dry-run, --outputs,
+# --overwrite -- has to be run against the script directly.
+doppler-bootstrap-prod: ## Populate prod, which doppler-bootstrap deliberately skips
+	bash ./local/scripts/doppler-bootstrap.sh --environment prod
 
 lint: ## Lint all sources
 	pnpm turbo run lint

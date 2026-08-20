@@ -53,6 +53,7 @@ tests/             Integration and e2e tests
 - **Frontend:** Next.js 15, TypeScript 5, Tailwind CSS, shadcn/ui, Turborepo, pnpm
 - **Backend:** FastAPI, Python 3.12+, SQLAlchemy 2, ARQ, APScheduler
 - **Database:** Supabase (PostgreSQL) with RLS
+- **Queue:** Upstash Redis — one database per environment, never shared
 - **Auth:** ZITADEL (OIDC — customers never see ZITADEL UI)
 - **Secrets:** Doppler (sole secret authority — nothing committed)
 - **IaC:** Terraform

@@ -135,6 +135,7 @@ than restarting. Fix the cause, then run step 4.
 | `bind: An attempt was made to access a socket in a way forbidden by its access permissions` | A Windows kernel reservation, not a listener: `http.sys` (IIS on 80, SSRS on 8082) or a WinNAT exclusion range | Same fix. `netsh http show urlacl` names the owner; `netsh interface ipv4 show excludedportrange protocol=tcp` lists the reserved ranges |
 | `EADDRINUSE :::3000` from `next dev` | Another project's dev server holds the port | Fixed — app ports resolve through `local/.env` too. `make ports` re-resolves |
 | `Error acquiring the state lock` | A plan or apply was killed before it could release the workspace | The command now prints the exact `terraform force-unlock` line. For `backend "remote"` the lock ID is `<org>/<workspace>` — **not** the UUID under `Lock Info:` |
+| A `local/scripts/*.sh` reports a tool "is not installed" that plainly is | On Windows, `bash` from PowerShell resolves to `C:\WINDOWS\system32ash.exe` — the **WSL** launcher, a separate Linux filesystem that cannot see a winget or Scoop install on the Windows side | Run it under Git Bash: `& "C:/Program Files/Git/bin/bash.exe" <script>`. `make` targets are unaffected — make resolves `bash` itself and finds Git Bash |
 | `spawn pnpm ENOENT` during git initialisation | Fixed — `pnpm` is a `.cmd` shim on Windows, which needs a shell | Update the starter and rebuild: `pnpm --filter create-koras-app build` |
 
 ### The generated project owns its own modules
@@ -183,6 +184,7 @@ Per project, for the product profile with default components:
 GitHub     1 repository, 4 branches, 1 default branch, 4 protections, 4 environments
 Doppler    1 project, 4 configs
 Supabase   4 projects (one per environment)
+Upstash    4 Redis databases (one per environment; prevent_destroy is set)
 ZITADEL    4 projects, 4 OIDC applications (no environment suffix — the instance is the environment)
 Vercel     1 project per enabled application
 Fly.io     1 app per enabled service per environment
