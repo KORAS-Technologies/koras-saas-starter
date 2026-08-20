@@ -23,6 +23,18 @@ variable "region" {
     continuously.
   EOT
   default     = "us-east-1"
+
+  # The primary_region list is narrower than the old region list and spells
+  # eu-central-1 with the dash that the deprecated region form omitted. A typo
+  # here would otherwise surface as a 400 from Upstash partway through apply.
+  validation {
+    condition = contains([
+      "us-east-1", "us-west-1", "us-west-2",
+      "eu-central-1", "eu-west-1", "sa-east-1",
+      "ap-southeast-1", "ap-southeast-2",
+    ], var.region)
+    error_message = "Must be an Upstash primary region: us-east-1, us-west-1, us-west-2, eu-central-1, eu-west-1, sa-east-1, ap-southeast-1, ap-southeast-2."
+  }
 }
 
 variable "eviction" {

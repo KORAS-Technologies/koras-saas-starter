@@ -13,10 +13,19 @@
 resource "upstash_redis_database" "queues" {
   for_each = var.environments
 
-  database_name  = "${var.project_slug}-${each.key}"
-  region         = var.region
+  database_name = "${var.project_slug}-${each.key}"
+
+  # `region = "global"` is the only shape Upstash still accepts: creating a
+  # single-region database now fails with
+  # `400 "regional db creation is deprecated"`. A global database with one
+  # primary and no read replicas is the regional equivalent -- the provider
+  # documents `primary_region` as working only when region is "global", so the
+  # two must change together.
+  region         = "global"
   primary_region = var.region
-  tls            = true
+  read_regions   = []
+
+  tls = true
 
   # See variables.tf: an evicted key is a lost job.
   eviction = var.eviction
