@@ -20,8 +20,14 @@ module "doppler" {
   project_slug = var.project_slug
   description  = var.project_name
 
-  # Terraform creates the queue; Doppler is where a deployed worker reads it.
-  queue_urls = module.upstash.redis_urls
+  # No secret values are passed in, deliberately. `doppler_secret` resources
+  # would put every credential into Terraform state permanently, making state
+  # the authority and Doppler a replica -- backwards, and the shape that let a
+  # generated project publish its estate in a committed plan file.
+  #
+  # Terraform creates the project and its environments and stops there. Values
+  # arrive through local/scripts/doppler-bootstrap.sh, which reads the outputs
+  # below (redis_urls among them) and prompts for what cannot be derived.
 }
 
 module "supabase" {
