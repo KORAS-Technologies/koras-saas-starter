@@ -222,6 +222,8 @@ likelihood rating, impact rating, overall severity, and current mitigation.
 | R-014 | Control Plane not available at registration  | 4        | Accepted                 |
 | R-015 | Terraform plan committed by the generator    | 25       | Resolved                 |
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
+| R-017 | Control-plane env contract was the product one | 10     | Resolved                 |
+| R-018 | Queue polling billed per command             | 8        | Resolved                 |
 
 ---
 
@@ -325,3 +327,72 @@ only** and never requests a value, so it is safe to run in CI.
 Populating the values remains an operator step, deliberately. A script that
 writes secrets is a script that must receive them, which puts them in shell
 history and process arguments.
+
+## R-017 — the control-plane profile shipped the product environment contract
+
+*Severity: medium. Resolved.*
+
+`profiles/control-plane/template/local/config/.env.local.example.hbs` differed
+from the product one by two lines. It shipped `MINIO_ROOT_PASSWORD`,
+`LITELLM_MASTER_KEY`, `AI_GATEWAY_URL`, `CONTROL_PLANE_URL` and
+`CONTROL_PLANE_API_KEY` — a storage stack the profile does not include, an AI
+gateway it does not run, and a client credential for *itself*, which invariant 2
+forbids outright.
+
+The corrected contract existed, but only in one generated project where someone
+had fixed it by hand. That is R-008 made concrete: a fix applied downstream and
+never pushed back, so every regeneration would undo it.
+
+*Resolution* — the corrected contract is now the template, with ports
+re-templatised. The two tools that read it (`doppler-check.sh`,
+`doppler-bootstrap.sh`) would otherwise have demanded a control plane register
+itself as a client of itself.
+
+## R-018 — the queue polled 170,000 times a day with nothing to do
+
+*Severity: low, but it is money. Resolved.*
+
+arq's `poll_delay` defaults to 0.5 seconds and no profile overrode it. That is
+two Redis commands per second per worker, continuously, whether or not there is
+work: roughly 170,000 a day per worker, ~21 million a month across four
+environments, on an entirely idle platform.
+
+Against a managed queue billed per command that is a real line item for doing
+nothing, and it exhausts a serverless free tier within minutes of the worker
+starting — a failure that looks like a broken queue rather than a spent quota.
+
+*Resolution* — `poll_delay = 5.0` in both worker templates, pinned by a test in
+the generated project. Nothing here needs sub-second pickup: provisioning is a
+multi-minute operation a person triggers, and reconciliation runs on a
+fifteen-minute timer.
+
+## On the Upstash module
+
+`modules/upstash` creates one Redis database per environment. One each, never
+one shared with a key prefix: a prefix is a convention, and the rule that a dev
+process may not touch a prod resource cannot rest on a convention. Separate
+databases mean separate credentials, so a dev worker holding a prod queue URL is
+a mistake someone made rather than an accident waiting in a shared namespace.
+
+`eviction = false`, and it must stay false. This is a job queue: an evicted key
+is a provisioning job that vanishes silently, leaving a customer half-onboarded
+with nothing recording that anything was lost.
+
+The connection URL embeds the password, so `redis_urls` is sensitive and reaches
+Doppler through the bootstrap. Terraform state holds a copy because the provider
+returns one and there is no way to ask it not to — the same shape as the ZITADEL
+client secret, and the reason the plan file mattered so much.
+
+## On finding the derivation bug by running it
+
+The secrets manifest first had two columns, name and class, and the bootstrap
+looked each `derived` setting up in the Terraform outputs *by its own name*.
+Those names are not the same: `ZITADEL_PROJECT_ID` comes from an output called
+`zitadel_project_ids`. Every lookup missed, every derived value silently fell
+back to a prompt, and the whole feature did nothing while appearing to work.
+
+A dry run could not show it — everything said "would ask", which is what an
+unpopulated Doppler looks like anyway. It appeared only when the lookup was
+tried against real outputs pulled from a real state file. The manifest now
+carries an explicit SOURCE column, and a generated-project test fails if a
+derived setting lacks one.

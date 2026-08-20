@@ -89,6 +89,14 @@ module "vercel" {
   depends_on = [module.github]
 }
 
+module "upstash" {
+  source = "../upstash"
+
+  project_slug = var.project_slug
+  environments = toset(nonsensitive(keys(var.supabase_environments)))
+  region       = var.upstash_region
+}
+
 module "fly" {
   source = "../fly"
 

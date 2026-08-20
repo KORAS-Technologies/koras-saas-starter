@@ -956,6 +956,83 @@ describe.each(['product', 'control-plane'] as const)('%s secret scaffold', (prof
     expect(script).not.toContain('{{')
   })
 
+  it('classifies every setting in the manifest', () => {
+    // The manifest decides what a deployed environment needs. A setting present
+    // in the local contract and absent here is one nobody classified, and the
+    // failure is silent: it simply never gets checked.
+    const contract = gen
+      .read('local/config/.env.local.example')
+      .split('\n')
+      .filter((line) => line.trim() && !line.trim().startsWith('#'))
+      .map((line) => line.split('=')[0].trim())
+    const manifest = gen
+      .read('local/config/secrets.manifest')
+      .split('\n')
+      .filter((line) => line.trim() && !line.trim().startsWith('#'))
+      .map((line) => line.split(/\s+/)[0])
+
+    const unclassified = contract.filter((key) => !manifest.includes(key))
+    expect(unclassified).toEqual([])
+  })
+
+  it('keeps the local Docker stack out of Doppler', () => {
+    // MinIO, Grafana and LiteLLM run locally and nowhere else. An earlier
+    // version classified from a hardcoded list and would have demanded a MinIO
+    // root password in production Doppler for a product project.
+    const manifest = gen.read('local/config/secrets.manifest')
+    const classOf = (key: string) =>
+      manifest
+        .split('\n')
+        .find((line) => line.startsWith(`${key} `))
+        ?.split(/\s+/)[1]
+
+    for (const key of ['SMTP_HOST', 'NODE_ENV']) {
+      expect(classOf(key)).toBe('local')
+    }
+    if (profile === 'product') {
+      for (const key of ['MINIO_ROOT_PASSWORD', 'GRAFANA_PASSWORD', 'ZITADEL_MASTERKEY']) {
+        expect(classOf(key)).toBe('local')
+      }
+    }
+  })
+
+  it('gives every derived setting a source', () => {
+    // Without one the lookup falls back to a prompt and the derivation quietly
+    // does nothing -- which is exactly what happened when the source column did
+    // not exist.
+    const rows = gen
+      .read('local/config/secrets.manifest')
+      .split('\n')
+      .filter((line) => line.trim() && !line.trim().startsWith('#'))
+      .map((line) => line.split(/\s+/))
+
+    for (const [name, klass, source] of rows) {
+      if (klass !== 'derived') continue
+      expect(source, `${name} is derived with no source`).toMatch(/^(out:|const:)/)
+    }
+  })
+
+  it('carries the bootstrap and its helper', () => {
+    expect(gen.has('local/scripts/doppler-bootstrap.sh')).toBe(true)
+    expect(gen.has('local/scripts/doppler_bootstrap_support.py')).toBe(true)
+    expect(gen.read('Makefile')).toContain('doppler-bootstrap:')
+  })
+
+  it('never puts a secret on a command line', () => {
+    // `doppler secrets set NAME value` would place the value in ps output for
+    // every user on the machine and in shell history forever. stdin is the
+    // documented path and the only acceptable one here.
+    const script = gen.read('local/scripts/doppler-bootstrap.sh')
+    expect(script).toContain('read -rs')
+    expect(script).toMatch(/doppler secrets set "\$name"[\s\S]{0,120}--no-interactive/)
+    expect(script).not.toMatch(/doppler secrets set \S+ "\$value"/)
+  })
+
+  it('leaves production alone unless asked for by name', () => {
+    const script = gen.read('local/scripts/doppler-bootstrap.sh')
+    expect(script).toMatch(/ENVIRONMENTS=\(dev test stg\)/)
+  })
+
   it('never asks Doppler for a value', () => {
     // The check runs in CI. It lists names so that it cannot leak what it does
     // not fetch.

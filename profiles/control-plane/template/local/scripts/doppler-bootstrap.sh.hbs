@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+# Populate Doppler for every environment, once, from Terraform plus prompts.
+# Terraform creates the Doppler project and its environments and writes no
+# values, deliberately: doppler_secret resources would put every credential into
+# Terraform state permanently, making state the authority and Doppler a replica.
+# That is backwards, and it is how one generated project published its whole
+# estate in a committed plan file .
+#
+# So the values arrive here instead. Two rules shape this script:
+#
+#   Nothing secret reaches argv or shell history. Every prompted value is read
+#   with `read -rs` and piped to `doppler secrets set` on stdin, which is the
+#   documented path. `doppler secrets set NAME value` would put the value in
+#   `ps` output for every user on the machine, and in the shell history forever.
+#
+#   A value that has already been published is refused. Terraform state holds
+#   credentials and state has been committed before; if a pasted value matches
+#   one found in git history, storing it would record a burned credential as
+#   though it were live. Rotate first.
+#
+# Usage:
+#   bash local/scripts/doppler-bootstrap.sh                   # dev, test, stg
+#   bash local/scripts/doppler-bootstrap.sh --environment prod
+#   bash local/scripts/doppler-bootstrap.sh --outputs tf.json
+#   bash local/scripts/doppler-bootstrap.sh --dry-run
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+DEFAULT_PROJECT="{{projectSlug}}"
+PROJECT="${DOPPLER_PROJECT:-$DEFAULT_PROJECT}"
+MANIFEST="${ROOT}/local/config/secrets.manifest"
+TERRAFORM_DIR="${ROOT}/infrastructure/terraform"
+HELPERS="${ROOT}/local/scripts/doppler_bootstrap_support.py"
+
+OUTPUTS_FILE=""
+DRY_RUN=0
+OVERWRITE=0
+# prod is excluded unless named. An interactive tool that can write production
+# secrets by default is one mistyped answer from a bad afternoon.
+ENVIRONMENTS=(dev test stg)
+EXPLICIT=()
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --environment) EXPLICIT+=("$2"); shift 2 ;;
+    --outputs) OUTPUTS_FILE="$2"; shift 2 ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    --overwrite) OVERWRITE=1; shift ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+[ ${#EXPLICIT[@]} -gt 0 ] && ENVIRONMENTS=("${EXPLICIT[@]}")
+
+PYTHON=python3
+command -v python3 >/dev/null 2>&1 || PYTHON=python
+command -v doppler >/dev/null 2>&1 || { echo "The doppler CLI is not installed." >&2; exit 1; }
+[ -f "$MANIFEST" ] || { echo "No manifest at ${MANIFEST}." >&2; exit 1; }
+[ -f "$HELPERS" ] || { echo "No helper at ${HELPERS}." >&2; exit 1; }
+
+# ── Terraform outputs ────────────────────────────────────────────────────────
+
+OUTPUTS_JSON=""
+if [ -n "$OUTPUTS_FILE" ]; then
+  OUTPUTS_JSON=$(cat "$OUTPUTS_FILE")
+elif command -v terraform >/dev/null 2>&1 && [ -d "$TERRAFORM_DIR" ]; then
+  echo "==> Reading Terraform outputs"
+  OUTPUTS_JSON=$(cd "$TERRAFORM_DIR" && terraform output -json 2>/dev/null || true)
+fi
+if [ -z "$OUTPUTS_JSON" ]; then
+  # Not fatal. Everything derivable becomes a prompt instead, which is worse but
+  # still correct -- better than refusing to run for someone who has the values
+  # and not the backend token.
+  echo "    no outputs available; derived settings will be asked for instead"
+  OUTPUTS_JSON='{}'
+fi
+export OUTPUTS_JSON
+
+# ── Values already published ─────────────────────────────────────────────────
+
+BURNED_FILE="$(mktemp)"
+trap 'rm -f "$BURNED_FILE"' EXIT
+"$PYTHON" "$HELPERS" burned "$ROOT" > "$BURNED_FILE"
+
+BURNED_COUNT=$(wc -l < "$BURNED_FILE" | tr -d ' ')
+if [ "$BURNED_COUNT" -gt 0 ]; then
+  echo "==> ${BURNED_COUNT} credential(s) found in committed Terraform artifacts."
+  echo "    Any value matching one of them is refused: it has been published."
+fi
+
+is_burned() {
+  local digest
+  digest=$("$PYTHON" "$HELPERS" digest)
+  grep -qx "$digest" "$BURNED_FILE"
+}
+
+derived_value() {
+  "$PYTHON" "$HELPERS" derived "$1" "$2" 2>/dev/null
+}
+
+write_secret() {
+  # stdin, never argv. This is the whole reason the script has this shape.
+  local name="$1" environment="$2"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    cat >/dev/null
+    return 0
+  fi
+  doppler secrets set "$name" --project "$PROJECT" --config "$environment" \
+    --no-interactive >/dev/null
+}
+
+# ── Per environment ──────────────────────────────────────────────────────────
+
+echo ""
+echo "==> Doppler project '${PROJECT}'"
+[ "$DRY_RUN" -eq 1 ] && echo "    --dry-run: nothing will be written"
+
+failed=0
+for environment in "${ENVIRONMENTS[@]}"; do
+  echo ""
+  echo "--- ${environment} ---"
+  present=$(doppler secrets --project "$PROJECT" --config "$environment" \
+              --only-names --json 2>/dev/null || echo '{}')
+
+  while read -r name class source; do
+    case "$class" in local|"") continue ;; esac
+
+    if grep -q "\"${name}\"" <<<"$present" && [ "$OVERWRITE" -eq 0 ]; then
+      echo "      ${name}: already set"
+      continue
+    fi
+
+    if [ "$class" = "derived" ] && value=$(derived_value "$source" "$environment"); then
+      printf '%s' "$value" | write_secret "$name" "$environment"
+      echo "      ${name}: from Terraform"
+      unset value
+      continue
+    fi
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+      echo "      ${name}: would ask"
+      continue
+    fi
+
+    if [ ! -e /dev/tty ]; then
+      echo "      ${name}: needs a value and there is no terminal to ask on"
+      failed=1
+      continue
+    fi
+
+    while true; do
+      printf '      %s: ' "$name"
+      read -rs value < /dev/tty
+      echo ""
+      if [ -z "$value" ]; then
+        echo "        skipped, still missing"
+        failed=1
+        break
+      fi
+      if printf '%s' "$value" | is_burned; then
+        echo "        REFUSED: this value appears in a committed Terraform artifact."
+        echo "        It has been published. Rotate it and paste the new one."
+        continue
+      fi
+      printf '%s' "$value" | write_secret "$name" "$environment"
+      unset value
+      echo "        set"
+      break
+    done
+  done < <(grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$MANIFEST")
+done
+
+# ── Refuse to finish with anything missing ───────────────────────────────────
+
+echo ""
+if [ "$DRY_RUN" -eq 1 ]; then
+  echo "--dry-run complete. Nothing was written."
+  exit 0
+fi
+
+echo "==> Verifying"
+# Handing off to the checker rather than repeating its logic: one definition of
+# "complete", so the two cannot disagree during an incident.
+exec bash "${ROOT}/local/scripts/doppler-check.sh" "${ENVIRONMENTS[@]}"

@@ -28,7 +28,8 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # the template engine reads that run of braces as its own syntax.
 DEFAULT_PROJECT="{{projectSlug}}"
 PROJECT="${DOPPLER_PROJECT:-$DEFAULT_PROJECT}"
-TEMPLATE="${ROOT}/local/config/.env.local.example"
+MANIFEST="${ROOT}/local/config/secrets.manifest"
+CONTRACT="${ROOT}/local/config/.env.local.example"
 
 ENVIRONMENTS=("$@")
 if [ ${#ENVIRONMENTS[@]} -eq 0 ]; then
@@ -40,32 +41,43 @@ if ! command -v doppler >/dev/null 2>&1; then
   exit 1
 fi
 
-# The template is the contract: whatever a local stack needs, a deployed one
-# needs too. Deriving the list from it means a new setting cannot be added to
-# the code and forgotten in Doppler -- the check starts failing on its own.
+# What a deployed environment needs is decided by the manifest, not by the
+# local .env example. The two differ on purpose: MinIO, LiteLLM and Grafana run
+# in the local Docker stack and nowhere else, so demanding a MinIO root password
+# in production Doppler would be asking for something that must never exist.
+#
+# An earlier version of this script classified from a hardcoded list and did
+# exactly that for product projects.
+if [ ! -f "$MANIFEST" ]; then
+  echo "No manifest at ${MANIFEST}; cannot tell which settings a deployed environment needs." >&2
+  exit 1
+fi
+
 mapfile -t REQUIRED < <(
-  grep -vE '^\s*#|^\s*$' "$TEMPLATE" | sed 's/=.*//' | sort -u
+  grep -vE '^\s*#|^\s*$' "$MANIFEST" | awk '$2 != "local" { print $1 }' | sort -u
 )
 
-# Local-only settings. Mailpit and NODE_ENV describe a developer machine, and
-# ENVIRONMENT is set per Doppler config rather than stored as a secret in it.
-LOCAL_ONLY=(NODE_ENV SMTP_HOST SMTP_PORT SMTP_SECURE SMTP_FROM ENVIRONMENT)
-
-is_local_only() {
-  # `local` on both, including the loop variable. Without it the loop clobbers
-  # the caller's $name -- bash has no function scope by default -- and every
-  # missing setting gets reported under the last name in LOCAL_ONLY. The first
-  # run of this script reported fourteen copies of ENVIRONMENT.
-  local needle="$1"
-  local candidate
-  for candidate in "${LOCAL_ONLY[@]}"; do
-    [ "$candidate" = "$needle" ] && return 0
-  done
-  return 1
-}
+# The contract and the manifest must describe the same set. A setting added to
+# one and not the other is a setting nobody classified, and the failure mode is
+# silent: it simply never gets checked.
+mapfile -t CONTRACT_KEYS < <(
+  grep -vE '^\s*#|^\s*$' "$CONTRACT" | sed 's/=.*//' | sort -u
+)
+mapfile -t MANIFEST_KEYS < <(
+  grep -vE '^\s*#|^\s*$' "$MANIFEST" | awk '{ print $1 }' | sort -u
+)
+UNCLASSIFIED=$(comm -23 <(printf '%s
+' "${CONTRACT_KEYS[@]}") <(printf '%s
+' "${MANIFEST_KEYS[@]}"))
+if [ -n "$UNCLASSIFIED" ]; then
+  echo "These are in .env.local.example but not classified in secrets.manifest:" >&2
+  echo "$UNCLASSIFIED" | sed 's/^/  /' >&2
+  echo "Add each as local, derived or supplied." >&2
+  exit 1
+fi
 
 echo "==> Checking Doppler project '${PROJECT}'"
-echo "    contract: ${TEMPLATE#"$ROOT/"}"
+echo "    contract: ${MANIFEST#"$ROOT/"}"
 echo ""
 
 failed=0
@@ -81,7 +93,6 @@ for environment in "${ENVIRONMENTS[@]}"; do
 
   missing=()
   for name in "${REQUIRED[@]}"; do
-    is_local_only "$name" && continue
     if ! grep -q "\"${name}\"" <<<"$present"; then
       missing+=("$name")
     fi

@@ -119,3 +119,9 @@ variable "enable_waf" {
   type    = bool
   default = false
 }
+
+variable "upstash_region" {
+  type        = string
+  description = "Upstash region for the queue databases. Co-locate with fly_regions."
+  default     = "us-east-1"
+}

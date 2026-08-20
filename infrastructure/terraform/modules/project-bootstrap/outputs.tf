@@ -51,3 +51,14 @@ output "fly_app_names" {
 output "fly_app_hostnames" {
   value = module.fly.app_hostnames
 }
+
+output "redis_urls" {
+  description = "Map of env -> rediss:// queue URL. Embeds the password."
+  sensitive   = true
+  value       = module.upstash.redis_urls
+}
+
+output "redis_endpoints" {
+  description = "Map of env -> queue host, without the credential."
+  value       = module.upstash.redis_endpoints
+}

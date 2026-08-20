@@ -6,5 +6,13 @@ from .tasks import example_task
 class WorkerSettings:
     functions = [example_task]
     redis_settings = RedisSettings(host="localhost", port=6379)
+    # arq polls every 0.5s by default: two Redis commands a second per worker,
+    # forever, whether or not there is work. On a per-command managed queue that
+    # is ~170,000 commands a day on an idle platform, and enough to exhaust a
+    # free tier within minutes of starting.
+    #
+    # Nothing here needs sub-second pickup, so five seconds costs nothing
+    # perceptible and removes ninety per cent of the idle traffic.
+    poll_delay = 5.0
     max_jobs = 10
     job_timeout = 300

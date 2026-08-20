@@ -17,7 +17,7 @@ endif
 
 .DEFAULT_GOAL := help
 
-.PHONY: help profile install bootstrap ports dev down reset seed test health lint typecheck build clean doppler-check
+.PHONY: help profile install bootstrap ports dev down reset seed test health lint typecheck build clean doppler-check doppler-bootstrap
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -66,6 +66,9 @@ health: ## Poll all services until healthy
 
 doppler-check: ## Verify every Doppler environment holds every setting (names only, never values)
 	bash ./local/scripts/doppler-check.sh
+
+doppler-bootstrap: ## Populate Doppler from Terraform outputs and prompts (never writes prod unless asked)
+	bash ./local/scripts/doppler-bootstrap.sh
 
 lint: ## Lint all sources
 	pnpm turbo run lint
