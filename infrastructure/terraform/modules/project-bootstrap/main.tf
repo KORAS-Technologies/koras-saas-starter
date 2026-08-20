@@ -19,6 +19,9 @@ module "doppler" {
 
   project_slug = var.project_slug
   description  = var.project_name
+
+  # Terraform creates the queue; Doppler is where a deployed worker reads it.
+  queue_urls = module.upstash.redis_urls
 }
 
 module "supabase" {
