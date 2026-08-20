@@ -15,6 +15,7 @@ export interface ParsedArgs {
   provisionOnly: boolean
   refreshModules: boolean
   checkDrift: boolean
+  all: boolean
   /** True when --output-dir was passed, as opposed to defaulting to cwd. */
   outputDirExplicit: boolean
 }
@@ -41,6 +42,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     provisionOnly: false,
     refreshModules: false,
     checkDrift: false,
+    all: false,
     outputDirExplicit: false,
   }
 
@@ -62,6 +64,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
         // Implies --provision: there is nothing else this flag could mean.
         result.provisionOnly = true
         result.provision = true
+        break
+      case '--all':
+        // Widens --check-drift to every generator-owned file. Informational
+        // only: those files are edited by healthy projects, so they cannot
+        // gate anything.
+        result.all = true
         break
       case '--check-drift':
         // Read-only. Reports where a project no longer matches the

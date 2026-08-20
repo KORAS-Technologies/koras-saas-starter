@@ -153,6 +153,11 @@ differences, so CI can gate on it:
 pnpm create-koras-app <name> --profile <profile> --check-drift --output-dir ../output
 ```
 
+Add `--all` to also list workflows, `local/`, the Makefile and the other
+generator-owned files that differ. Those are reported separately and never
+change the exit code — a healthy project edits them, and a replaced stub looks
+the same as a missing fix.
+
 It compares the components recorded in `.koras/project.yaml` against
 `terraform.tfvars`, and the generator-owned root Terraform config against a
 fresh render. A component key is a Terraform `for_each` key, so a rename applied

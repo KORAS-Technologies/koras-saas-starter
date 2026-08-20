@@ -60,6 +60,15 @@ against `terraform.tfvars`, and the generator-owned root Terraform config
 against a fresh render, naming the lines that differ. It exits 1 when it finds
 anything, so CI can gate on it.
 
+Its default scope is the root Terraform config, where a difference reliably
+means the project has not picked something up. `--all` widens it to every
+generator-owned file — workflows, `local/`, the Makefile — and reports those
+separately without affecting the exit code. That separation is deliberate: a
+healthy project edits most of those files, and a replaced stub is
+indistinguishable from a missing fix when only the content is compared.
+Measured against a working project, the wide scope reports twenty-one files.
+Gating on it would train people to ignore the findings that matter.
+
 Both depend on `.koras/project.yaml` recording a `components:` block. The field
 is optional so that manifests written before it existed still validate, but
 without it the selections a project was generated with cannot be verified, and
@@ -109,6 +118,7 @@ Profile is NEVER inferred from project name. The operator must choose explicitly
 | `--provision`       | Optional    | Run Terraform bootstrap after generation            |
 | `--provision-only`  | Optional    | Provision a project already on disk; skips generation |
 | `--check-drift`     | Optional    | Report where an existing project no longer matches the generator; read-only |
+| `--all`             | Optional    | With `--check-drift`, also list every other generator-owned file that differs; informational |
 | `--refresh-modules` | Optional    | Re-copy the shared Terraform modules into an existing project |
 | `--dry-run`         | Optional    | Print generation plan without writing files         |
 | `--output-dir`      | Optional    | Parent directory for generated project (default: cwd) |

@@ -18,13 +18,50 @@ import { readProjectTfvars } from '../terraform/inputs.js'
  * expected to diverge — that is what a generated project is for.
  */
 
-/** Generator-owned files worth comparing. Everything else belongs to the project. */
+/**
+ * Files where "differs from the generator" reliably means something is wrong.
+ *
+ * The root Terraform config is rendered wholly from the profile and has no
+ * reason to diverge: a difference here is a provider, variable or output the
+ * project has not picked up, which fails at plan time rather than review time.
+ */
 const OWNED_PATHS = [
   'infrastructure/terraform/providers.tf',
   'infrastructure/terraform/variables.tf',
   'infrastructure/terraform/main.tf',
   'infrastructure/terraform/backend.tf',
 ]
+
+/**
+ * The wider set, compared only when asked for (`--all`) and never counted as a
+ * failure.
+ *
+ * These files are generator-owned in the sense that the template ships them,
+ * but a healthy project edits them: workflows grow real deploy steps where the
+ * template has a stub, terraform.tfvars holds values where the template holds
+ * placeholders, the Makefile gains project targets. Measured against a working
+ * project, comparing them flags eighteen files, and most of those are the
+ * project being ahead rather than behind -- which no content comparison can
+ * distinguish, since a replaced stub and a missing fix look identical.
+ *
+ * So this is a "show me what has moved" tool for when drift is already
+ * suspected, not a gate. Treating it as one would train people to ignore the
+ * findings that do matter.
+ */
+const REVIEWABLE_PREFIXES = ['infrastructure/', 'local/', '.github/']
+const REVIEWABLE_FILES = [
+  'Makefile',
+  'turbo.json',
+  'pnpm-workspace.yaml',
+  'tsconfig.base.json',
+  'eslint.config.mjs',
+  '.gitignore',
+  '.gitattributes',
+]
+
+function isReviewable(path: string): boolean {
+  return REVIEWABLE_PREFIXES.some((p) => path.startsWith(p)) || REVIEWABLE_FILES.includes(path)
+}
 
 export interface DriftFinding {
   /** What disagrees, as a path or a short identifier. */
@@ -36,6 +73,8 @@ export interface DriftReport {
   findings: DriftFinding[]
   /** True when the manifest predates the components field, so selections are unverifiable. */
   selectionsUnknown: boolean
+  /** Populated only with `--all`. Informational: never affects the exit code. */
+  reviewable: DriftFinding[]
 }
 
 /**
@@ -74,8 +113,13 @@ function describeDifference(actual: string, expected: string): string | undefine
   return [`${parts.join(', ')}.`, ...sample].join('\n')
 }
 
-export function checkDrift(ctx: GenerationContext, projectRoot: string): DriftReport {
+export function checkDrift(
+  ctx: GenerationContext,
+  projectRoot: string,
+  options: { all?: boolean } = {},
+): DriftReport {
   const findings: DriftFinding[] = []
+  const reviewable: DriftFinding[] = []
 
   // ── The manifest, which is what makes the rest trustworthy ────────────────
 
@@ -131,7 +175,20 @@ export function checkDrift(ctx: GenerationContext, projectRoot: string): DriftRe
     }
   }
 
-  return { findings, selectionsUnknown }
+  if (options.all) {
+    for (const [path, expected] of rendered) {
+      if (OWNED_PATHS.includes(path) || !isReviewable(path)) continue
+      const actualPath = join(projectRoot, path)
+      if (!existsSync(actualPath)) {
+        reviewable.push({ subject: path, detail: 'Missing from the project.' })
+        continue
+      }
+      const difference = describeDifference(readFileSync(actualPath, 'utf8'), expected.toString())
+      if (difference) reviewable.push({ subject: path, detail: difference })
+    }
+  }
+
+  return { findings, selectionsUnknown, reviewable }
 }
 
 /**
@@ -171,24 +228,51 @@ function compareSelections(
   return findings
 }
 
-export function formatDriftReport(report: DriftReport, projectSlug: string): string {
-  if (report.findings.length === 0) {
-    return `\n✓ ${projectSlug} matches what the generator would produce for it.`
-  }
+/**
+ * The `--all` section, kept visually separate and never counted as a failure.
+ *
+ * A replaced stub and a missing fix look identical to a content comparison, so
+ * these are for a human to read when drift is already suspected.
+ */
+function formatReviewable(report: DriftReport): string[] {
+  if (report.reviewable.length === 0) return []
 
   const lines = [
     '',
-    `${report.findings.length} difference(s) between ${projectSlug}/ and the starter:`,
+    `${report.reviewable.length} generator-owned file(s) differ — for review, not failure:`,
     '',
   ]
-  for (const finding of report.findings) {
+  for (const finding of report.reviewable) {
     lines.push(`  ${finding.subject}`)
     lines.push(`    ${finding.detail}`)
   }
   lines.push('')
-  lines.push('Shared Terraform modules can be updated with --refresh-modules.')
-  lines.push('The root config is rendered from the profile template and is not a shared')
-  lines.push('asset, so differences there are reconciled by hand — deliberately, since a')
-  lines.push('project may have edited them for a reason.')
+  lines.push('A healthy project edits most of these: a workflow replaces a stub with a real')
+  lines.push('pipeline, terraform.tfvars holds values where the template holds placeholders.')
+  lines.push('Read them; do not gate on them.')
+  return lines
+}
+
+export function formatDriftReport(report: DriftReport, projectSlug: string): string {
+  const lines: string[] = []
+
+  if (report.findings.length === 0) {
+    lines.push(`\n✓ ${projectSlug} matches what the generator would produce for it.`)
+  } else {
+    lines.push('')
+    lines.push(`${report.findings.length} difference(s) between ${projectSlug}/ and the starter:`)
+    lines.push('')
+    for (const finding of report.findings) {
+      lines.push(`  ${finding.subject}`)
+      lines.push(`    ${finding.detail}`)
+    }
+    lines.push('')
+    lines.push('Shared Terraform modules can be updated with --refresh-modules.')
+    lines.push('The root config is rendered from the profile template and is not a shared')
+    lines.push('asset, so differences there are reconciled by hand — deliberately, since a')
+    lines.push('project may have edited them for a reason.')
+  }
+
+  lines.push(...formatReviewable(report))
   return lines.join('\n')
 }

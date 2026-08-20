@@ -46,6 +46,9 @@ OPTIONS:
   --provision-only           Provision an existing project; skips generation
   --check-drift              Report where an existing project no longer matches
                              the generator. Read-only; exits 1 on differences.
+  --all                      With --check-drift, also list every other
+                             generator-owned file that differs. Informational.
+                             the generator. Read-only; exits 1 on differences.
   --refresh-modules          Re-copy the shared Terraform modules into an
                              existing project. Combine with --provision-only to
                              plan against the refreshed copy.
@@ -257,7 +260,7 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   // operator actually has rather than one this run has just corrected.
 
   if (args.checkDrift) {
-    const report = checkDrift(ctx, projectRoot)
+    const report = checkDrift(ctx, projectRoot, { all: args.all })
     console.log(formatDriftReport(report, projectSlug))
     if (!args.refreshModules && !args.provisionOnly) {
       process.exit(report.findings.length > 0 ? 1 : 0)

@@ -131,3 +131,34 @@ describe('checkDrift', () => {
     expect(checkDrift(ctx, projectRoot).findings).toEqual([])
   })
 })
+
+describe('the wider --all scope', () => {
+  it('is empty unless asked for', () => {
+    const { ctx, projectRoot } = generate('control-plane', 'all-off')
+    expect(checkDrift(ctx, projectRoot).reviewable).toEqual([])
+  })
+
+  it('never turns a reviewable difference into a failure', () => {
+    // A workflow that replaced the template's stub with a real pipeline looks
+    // exactly like a workflow missing a fix. Gating on that would train people
+    // to ignore the findings that do matter.
+    const { ctx, projectRoot } = generate('control-plane', 'all-informational')
+    writeFileSync(join(projectRoot, '.github/workflows/ci.yml'), 'name: replaced\n')
+
+    const report = checkDrift(ctx, projectRoot, { all: true })
+
+    expect(report.reviewable.some((f) => f.subject.endsWith('ci.yml'))).toBe(true)
+    expect(report.findings).toEqual([])
+    expect(formatDriftReport(report, 'all-informational')).toContain('for review, not failure')
+  })
+
+  it('does not repeat what the gating scope already reported', () => {
+    const { ctx, projectRoot } = generate('product', 'all-nodupes')
+    writeFileSync(join(projectRoot, 'infrastructure/terraform/main.tf'), '# emptied\n')
+
+    const report = checkDrift(ctx, projectRoot, { all: true })
+
+    expect(report.findings.some((f) => f.subject.endsWith('main.tf'))).toBe(true)
+    expect(report.reviewable.some((f) => f.subject.endsWith('main.tf'))).toBe(false)
+  })
+})
