@@ -4,7 +4,7 @@
 # values, deliberately: doppler_secret resources would put every credential into
 # Terraform state permanently, making state the authority and Doppler a replica.
 # That is backwards, and it is how one generated project published its whole
-# estate in a committed plan file .
+# estate in a committed plan file.
 #
 # So the values arrive here instead. Two rules shape this script:
 #
@@ -53,7 +53,27 @@ done
 
 PYTHON=python3
 command -v python3 >/dev/null 2>&1 || PYTHON=python
-command -v doppler >/dev/null 2>&1 || { echo "The doppler CLI is not installed." >&2; exit 1; }
+require_doppler() {
+  command -v doppler >/dev/null 2>&1 && return 0
+
+  # Not "the doppler CLI is not installed". On Windows that sentence is usually
+  # false and always unhelpful: `bash` from PowerShell resolves to WSL
+  # (C:\Windows\System32ash.exe), which is a separate Linux filesystem with
+  # its own PATH and cannot see a winget or Scoop install on the Windows side.
+  # The tool is there; this shell simply is not the one that can reach it.
+  echo "The doppler CLI is not on this shell's PATH." >&2
+  if grep -qi microsoft /proc/version 2>/dev/null; then
+    echo "" >&2
+    echo "This is WSL, and doppler looks like a Windows install. Run it from Git" >&2
+    echo "Bash instead:" >&2
+    echo "" >&2
+    echo "    \"C:/Program Files/Git/bin/bash.exe\" ${0}" >&2
+  else
+    echo "Install it: https://docs.doppler.com/docs/cli" >&2
+  fi
+  exit 1
+}
+require_doppler
 [ -f "$MANIFEST" ] || { echo "No manifest at ${MANIFEST}." >&2; exit 1; }
 [ -f "$HELPERS" ] || { echo "No helper at ${HELPERS}." >&2; exit 1; }
 

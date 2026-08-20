@@ -36,10 +36,27 @@ if [ ${#ENVIRONMENTS[@]} -eq 0 ]; then
   ENVIRONMENTS=(dev test stg prod)
 fi
 
-if ! command -v doppler >/dev/null 2>&1; then
-  echo "The doppler CLI is not installed. See https://docs.doppler.com/docs/cli" >&2
+require_doppler() {
+  command -v doppler >/dev/null 2>&1 && return 0
+
+  # Not "the doppler CLI is not installed". On Windows that sentence is usually
+  # false and always unhelpful: `bash` from PowerShell resolves to WSL
+  # (C:\Windows\System32ash.exe), which is a separate Linux filesystem with
+  # its own PATH and cannot see a winget or Scoop install on the Windows side.
+  # The tool is there; this shell simply is not the one that can reach it.
+  echo "The doppler CLI is not on this shell's PATH." >&2
+  if grep -qi microsoft /proc/version 2>/dev/null; then
+    echo "" >&2
+    echo "This is WSL, and doppler looks like a Windows install. Run it from Git" >&2
+    echo "Bash instead:" >&2
+    echo "" >&2
+    echo "    \"C:/Program Files/Git/bin/bash.exe\" ${0}" >&2
+  else
+    echo "Install it: https://docs.doppler.com/docs/cli" >&2
+  fi
   exit 1
-fi
+}
+require_doppler
 
 # What a deployed environment needs is decided by the manifest, not by the
 # local .env example. The two differ on purpose: MinIO, LiteLLM and Grafana run
