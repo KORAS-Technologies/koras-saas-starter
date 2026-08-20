@@ -14,6 +14,7 @@ export interface ParsedArgs {
   /** Provision an already-generated project; skips generation entirely. */
   provisionOnly: boolean
   refreshModules: boolean
+  checkDrift: boolean
   /** True when --output-dir was passed, as opposed to defaulting to cwd. */
   outputDirExplicit: boolean
 }
@@ -39,6 +40,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     without: [],
     provisionOnly: false,
     refreshModules: false,
+    checkDrift: false,
     outputDirExplicit: false,
   }
 
@@ -60,6 +62,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
         // Implies --provision: there is nothing else this flag could mean.
         result.provisionOnly = true
         result.provision = true
+        break
+      case '--check-drift':
+        // Read-only. Reports where a project no longer matches the
+        // generator; never writes and never provisions.
+        result.checkDrift = true
         break
       case '--refresh-modules':
         // Re-copies the shared Terraform modules into a project already on

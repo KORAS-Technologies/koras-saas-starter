@@ -360,6 +360,21 @@ describe('generated project manifest', () => {
           starter_version: starterVersion,
           profile_version: loadProfile('control-plane').manifest.version,
         },
+        components: {
+          applications: ['platform_admin', 'portal'],
+          services: ['api', 'scheduler', 'worker'],
+          // Derived the same way the generator does, so the assertion tracks
+          // the profile rather than a copy of it made today.
+          capabilities: Object.entries(
+            resolveSelections(
+              loadProfile('control-plane').manifest,
+              loadProfile('control-plane').defaults,
+            ).capabilities,
+          )
+            .filter(([, on]) => on)
+            .map(([name]) => name)
+            .sort(),
+        },
       })
     })
 
@@ -378,9 +393,19 @@ describe('generated project manifest', () => {
     const second = renderProjectManifest(ctx)
     expect(first).toBe(second)
     const keyOrder = [...first.matchAll(/^(\w+):/gm)].map((m) => m[1])
-    expect(keyOrder).toEqual(['schema_version', 'project', 'generator'])
+    expect(keyOrder).toEqual(['schema_version', 'project', 'generator', 'components'])
     const projectKeys = [...first.matchAll(/^ {2}(\w+):/gm)].map((m) => m[1])
-    expect(projectKeys).toEqual(['name', 'slug', 'profile', 'name', 'starter_version', 'profile_version'])
+    expect(projectKeys).toEqual([
+      'name',
+      'slug',
+      'profile',
+      'name',
+      'starter_version',
+      'profile_version',
+      'applications',
+      'services',
+      'capabilities',
+    ])
   })
 
   it('carries no secrets', () => {
@@ -1041,3 +1066,35 @@ describe.each(['product', 'control-plane'] as const)('%s secret scaffold', (prof
   })
 })
 
+// ── recorded selections ──────────────────────────────────────────────────────
+
+describe('the project manifest records its components', () => {
+  it('lists the enabled applications, services and capabilities', () => {
+    const gen = generate('control-plane', 'manifest-cp')
+    const manifest = parseProjectManifest(gen.read('.koras/project.yaml'), 'test')
+
+    expect(manifest.components).toBeDefined()
+    expect(manifest.components!.applications).toEqual(['platform_admin', 'portal'])
+    expect(manifest.components!.services).toEqual(['api', 'scheduler', 'worker'])
+  })
+
+  it('records only what is enabled', () => {
+    // marketing is off by default for the product profile.
+    const gen = generate('product', 'manifest-product')
+    const manifest = parseProjectManifest(gen.read('.koras/project.yaml'), 'test')
+
+    expect(manifest.components!.applications).not.toContain('marketing')
+    expect(manifest.components!.applications).toEqual(['admin', 'web'])
+  })
+
+  it('still parses a manifest written before the field existed', () => {
+    // Backward compatible on purpose: schema_version does not move for an
+    // added optional field, so existing projects keep validating.
+    const gen = generate('product', 'manifest-old')
+    const withoutComponents = gen.read('.koras/project.yaml').replace(/components:[\s\S]*$/, '')
+
+    const manifest = parseProjectManifest(withoutComponents, 'test')
+    expect(manifest.components).toBeUndefined()
+    expect(manifest.project.profile).toBe('product')
+  })
+})

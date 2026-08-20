@@ -18,6 +18,7 @@ import { buildContext } from '../generation/context.js'
 import { renderTemplate } from '../generation/engine.js'
 import { writeFiles, printDryRunManifest } from '../generation/writer.js'
 import { formatRefreshResult, refreshSharedAssets } from '../generation/refresh.js'
+import { checkDrift, formatDriftReport } from '../generation/drift.js'
 import { provision } from '../terraform/runner.js'
 import { preflightInputs } from '../terraform/inputs.js'
 import {
@@ -43,6 +44,8 @@ OPTIONS:
   --without <components>     Disable optional components (comma-separated)
   --provision                Provision infrastructure via Terraform
   --provision-only           Provision an existing project; skips generation
+  --check-drift              Report where an existing project no longer matches
+                             the generator. Read-only; exits 1 on differences.
   --refresh-modules          Re-copy the shared Terraform modules into an
                              existing project. Combine with --provision-only to
                              plan against the refreshed copy.
@@ -65,6 +68,9 @@ EXAMPLES:
 
   Retry a run that failed partway — skips generation, keeps existing state:
     pnpm create-koras-app docoris --profile product --provision-only --output-dir ../output
+
+  See whether a project has drifted from the starter:
+    pnpm create-koras-app docoris --profile product --check-drift --output-dir ../output
 
   Pick up a module fixed in the starter since the project was generated:
     pnpm create-koras-app docoris --profile product --refresh-modules --output-dir ../output
@@ -155,7 +161,7 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   // Generating into the starter repo itself is almost always a slip — the
   // default output directory is wherever you happen to be standing.
   const outputCheck = checkOutputDirectory(args.outputDir, args.outputDirExplicit)
-  const existingProject = args.provisionOnly || args.refreshModules
+  const existingProject = args.provisionOnly || args.refreshModules || args.checkDrift
   if (outputCheck.refused && !existingProject) {
     fail(outputCheck.message!)
   }
@@ -166,7 +172,11 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     // Retrying after a failed apply is routine, so this path deliberately
     // requires the directory the normal path refuses to overwrite.
     if (!existsSync(projectRoot)) {
-      const flag = args.provisionOnly ? '--provision-only' : '--refresh-modules'
+      const flag = args.provisionOnly
+        ? '--provision-only'
+        : args.checkDrift
+          ? '--check-drift'
+          : '--refresh-modules'
       fail(
         `No generated project at ${projectRoot}\n` +
           `  ${flag} operates on an existing project.\n` +
@@ -241,6 +251,18 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   })
 
   // ── Provision an existing project ──────────────────────────────────────────
+
+  // ── Drift check ────────────────────────────────────────────────────────────
+  // Read-only, and before any refresh, so what it reports is the state the
+  // operator actually has rather than one this run has just corrected.
+
+  if (args.checkDrift) {
+    const report = checkDrift(ctx, projectRoot)
+    console.log(formatDriftReport(report, projectSlug))
+    if (!args.refreshModules && !args.provisionOnly) {
+      process.exit(report.findings.length > 0 ? 1 : 0)
+    }
+  }
 
   // ── Refresh shared modules ─────────────────────────────────────────────────
   // Before provisioning, so the plan that follows reflects the refreshed code

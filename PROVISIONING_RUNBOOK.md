@@ -145,6 +145,19 @@ That is deliberate — it is what makes `--provision-only` reproducible, since t
 plan reflects the code in the project rather than whatever the starter contains
 today. The cost is that a stale copy plans perfectly happily and fails at apply.
 
+To see what has diverged before changing anything — read-only, exits 1 on
+differences, so CI can gate on it:
+
+```bash
+pnpm create-koras-app <name> --profile <profile> --check-drift --output-dir ../output
+```
+
+It compares the components recorded in `.koras/project.yaml` against
+`terraform.tfvars`, and the generator-owned root Terraform config against a
+fresh render. A component key is a Terraform `for_each` key, so a rename applied
+to one record and not the other plans a destroy rather than a rename — which is
+the failure this exists to catch before a plan runs.
+
 `--refresh-modules` re-copies exactly those directories and nothing else:
 
 ```bash

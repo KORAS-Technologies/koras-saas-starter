@@ -54,6 +54,17 @@ already exists, for the case where a module was fixed in the starter after the
 project was generated. It reports every file it replaces, is a no-op when they
 already match, and does not imply `--provision`.
 
+`--check-drift` reports where a project has diverged from what the generator
+would produce for it, and writes nothing. It compares the recorded components
+against `terraform.tfvars`, and the generator-owned root Terraform config
+against a fresh render, naming the lines that differ. It exits 1 when it finds
+anything, so CI can gate on it.
+
+Both depend on `.koras/project.yaml` recording a `components:` block. The field
+is optional so that manifests written before it existed still validate, but
+without it the selections a project was generated with cannot be verified, and
+`--check-drift` says so rather than guessing.
+
 No `doppler run` wrapper is needed. `--provision` and `--provision-only` need
 the bootstrap secrets, so the CLI re-runs itself under `doppler run` at the
 location the profile declares (`infrastructure.doppler_project` /
@@ -97,6 +108,7 @@ Profile is NEVER inferred from project name. The operator must choose explicitly
 | `--without`         | Optional    | Disable optional components (comma-separated manifest keys) |
 | `--provision`       | Optional    | Run Terraform bootstrap after generation            |
 | `--provision-only`  | Optional    | Provision a project already on disk; skips generation |
+| `--check-drift`     | Optional    | Report where an existing project no longer matches the generator; read-only |
 | `--refresh-modules` | Optional    | Re-copy the shared Terraform modules into an existing project |
 | `--dry-run`         | Optional    | Print generation plan without writing files         |
 | `--output-dir`      | Optional    | Parent directory for generated project (default: cwd) |
