@@ -9,6 +9,7 @@ import { buildContext } from '../src/generation/context.js'
 import { renderTemplate } from '../src/generation/engine.js'
 import { writeFiles } from '../src/generation/writer.js'
 import { refreshSharedAssets, formatRefreshResult } from '../src/generation/refresh.js'
+import { collectSharedAssets } from '../src/generation/engine.js'
 
 const ROOT = join(tmpdir(), `koras-refresh-${process.pid}-${Date.now()}`)
 
@@ -118,5 +119,21 @@ describe('refreshSharedAssets', () => {
       const { ctx, projectRoot } = generate(profile, slug)
       expect(refreshSharedAssets(ctx, projectRoot).unchanged).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('what is never copied out of the starter', () => {
+  it('leaves provider caches and state artifacts behind', () => {
+    // Running any Terraform command inside the shared modules leaves a
+    // .terraform provider cache there. It is gitignored, so it never appears
+    // in review -- but a filesystem walk would ship the binary into every
+    // generated project.
+    const { ctx } = generate('product', 'clean')
+    const paths = collectSharedAssets(ctx).map((f) => f.outputPath)
+
+    expect(paths.length).toBeGreaterThan(0)
+    expect(paths.some((p) => p.includes('/.terraform/'))).toBe(false)
+    expect(paths.some((p) => p.endsWith('.exe'))).toBe(false)
+    expect(paths.some((p) => p.endsWith('.tfstate') || p.endsWith('tfplan'))).toBe(false)
   })
 })

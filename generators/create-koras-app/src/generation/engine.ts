@@ -5,6 +5,7 @@ import Handlebars from 'handlebars'
 import type { GenerationContext } from './context.js'
 import { contextToTemplateVars } from './context.js'
 import { PROJECT_MANIFEST_PATH, renderProjectManifest } from './project-manifest.js'
+import { isForbiddenArtifact } from '../git.js'
 
 const STARTER_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../../..')
 const PROFILES_ROOT = join(STARTER_ROOT, 'profiles')
@@ -41,6 +42,15 @@ Handlebars.registerHelper('eq', (a: unknown, b: unknown) => a === b)
 Handlebars.registerHelper('pad', (value: unknown, width: unknown) =>
   String(value).padEnd(typeof width === 'number' ? width : 0),
 )
+
+/**
+ * Directories that appear inside a source tree but must never be copied out of
+ * it. `.terraform` is the one that bites: running any Terraform command inside
+ * the shared modules leaves a provider cache there, and a walk of the
+ * filesystem then ships a ~50MB `terraform-provider-*.exe` into every
+ * generated project. It is gitignored, so it never shows up in review.
+ */
+const SKIP_ENTRIES = new Set(['.terraform', '.git', 'node_modules', '.turbo', '.next', 'dist'])
 
 export interface RenderedFile {
   sourcePath: string
@@ -151,7 +161,12 @@ function walkDirectory(
     const stat = statSync(sourcePath)
 
     if (stat.isDirectory()) {
+      if (SKIP_ENTRIES.has(entry)) continue
       results.push(...walkDirectory(rootDir, sourcePath, vars, renderTemplates))
+    } else if (isForbiddenArtifact(entry)) {
+      // A plan or state file left in a source tree would otherwise be copied
+      // into a fresh project, carrying every credential Terraform touched.
+      continue
     } else {
       // normalize to forward slashes so paths are platform-independent
       const relPath = relative(rootDir, sourcePath).replace(/\\/g, '/')
