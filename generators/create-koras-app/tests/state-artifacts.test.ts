@@ -99,7 +99,9 @@ describe('initAndPushToDevelop', () => {
     const calls: Array<{ cmd: string; args: string[] }> = []
     const exec: CommandExecutor = (cmd, args) => {
       calls.push({ cmd, args })
-      return Promise.resolve(0)
+      // `check-ignore` exits 1 when a path is NOT ignored — the case the guard
+      // exists for, since an ignored artifact could never reach a commit.
+      return Promise.resolve(args[0] === 'check-ignore' ? 1 : 0)
     }
 
     await expect(
@@ -126,7 +128,8 @@ describe('initAndPushToDevelop', () => {
       initAndPushToDevelop({
         projectRoot,
         repositoryFullName: 'KORAS-Technologies/advice',
-        exec: () => Promise.resolve(0),
+        // check-ignore exits 1: git would stage this file.
+        exec: (_cmd, args) => Promise.resolve(args[0] === 'check-ignore' ? 1 : 0),
       }),
     ).rejects.toThrow(/rotate/)
   })

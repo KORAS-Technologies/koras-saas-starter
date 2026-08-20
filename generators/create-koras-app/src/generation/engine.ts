@@ -111,8 +111,13 @@ function projectManifestFile(ctx: GenerationContext): RenderedFile {
  * never passed through Handlebars — Terraform's `${...}` interpolation and
  * Handlebars' `{{...}}` do not collide, but these files are shared source of
  * truth and must land byte-identical.
+ *
+ * Exported because a generated project keeps a private copy of these, so a fix
+ * made in the starter does not reach a project already on disk. `--provision-only`
+ * plans against that stale copy without saying so; `--refresh-modules` re-copies
+ * exactly this set and nothing else.
  */
-function collectSharedAssets(ctx: GenerationContext): RenderedFile[] {
+export function collectSharedAssets(ctx: GenerationContext): RenderedFile[] {
   const results: RenderedFile[] = []
 
   for (const asset of ctx.manifest.shared_assets) {

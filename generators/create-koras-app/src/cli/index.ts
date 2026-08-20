@@ -17,6 +17,7 @@ import {
 import { buildContext } from '../generation/context.js'
 import { renderTemplate } from '../generation/engine.js'
 import { writeFiles, printDryRunManifest } from '../generation/writer.js'
+import { formatRefreshResult, refreshSharedAssets } from '../generation/refresh.js'
 import { provision } from '../terraform/runner.js'
 import { preflightInputs } from '../terraform/inputs.js'
 import {
@@ -42,6 +43,9 @@ OPTIONS:
   --without <components>     Disable optional components (comma-separated)
   --provision                Provision infrastructure via Terraform
   --provision-only           Provision an existing project; skips generation
+  --refresh-modules          Re-copy the shared Terraform modules into an
+                             existing project. Combine with --provision-only to
+                             plan against the refreshed copy.
   --dry-run                  Preview generation without writing files
   --output-dir <path>        Output parent directory (default: current directory)
   --no-interactive           Disable interactive prompts
@@ -61,6 +65,11 @@ EXAMPLES:
 
   Retry a run that failed partway — skips generation, keeps existing state:
     pnpm create-koras-app docoris --profile product --provision-only --output-dir ../output
+
+  Pick up a module fixed in the starter since the project was generated:
+    pnpm create-koras-app docoris --profile product --refresh-modules --output-dir ../output
+    pnpm create-koras-app docoris --profile product --refresh-modules --provision-only \
+      --output-dir ../output
 
   An outer \`doppler run\` is still honoured, and DOPPLER_PROJECT / DOPPLER_CONFIG
   override the profile's location for a one-off run.
@@ -146,19 +155,21 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   // Generating into the starter repo itself is almost always a slip — the
   // default output directory is wherever you happen to be standing.
   const outputCheck = checkOutputDirectory(args.outputDir, args.outputDirExplicit)
-  if (outputCheck.refused && !args.provisionOnly) {
+  const existingProject = args.provisionOnly || args.refreshModules
+  if (outputCheck.refused && !existingProject) {
     fail(outputCheck.message!)
   }
 
   const projectRoot = join(args.outputDir, projectSlug)
 
-  if (args.provisionOnly) {
+  if (existingProject) {
     // Retrying after a failed apply is routine, so this path deliberately
     // requires the directory the normal path refuses to overwrite.
     if (!existsSync(projectRoot)) {
+      const flag = args.provisionOnly ? '--provision-only' : '--refresh-modules'
       fail(
         `No generated project at ${projectRoot}\n` +
-          '  --provision-only provisions an existing project.\n' +
+          `  ${flag} operates on an existing project.\n` +
           `  Generate it first: pnpm create-koras-app ${projectSlug} --profile ${profileName}`,
       )
     }
@@ -231,10 +242,19 @@ export async function run(argv: string[] = process.argv): Promise<void> {
 
   // ── Provision an existing project ──────────────────────────────────────────
 
+  // ── Refresh shared modules ─────────────────────────────────────────────────
+  // Before provisioning, so the plan that follows reflects the refreshed code
+  // rather than the copy the project was generated with.
+
+  if (args.refreshModules) {
+    console.log(formatRefreshResult(refreshSharedAssets(ctx, projectRoot)))
+    if (!args.provisionOnly) return
+  }
+
   if (args.provisionOnly) {
     console.log(`
 Provisioning the existing project in ${projectSlug}/ — nothing regenerated.`)
-    await runProvision(ctx, projectRoot, projectSlug)
+    await runProvision(ctx, projectRoot, projectSlug, false)
     return
   }
 
@@ -293,13 +313,23 @@ Provisioning the existing project in ${projectSlug}/ — nothing regenerated.`)
 
   // ── Provision infrastructure ───────────────────────────────────────────────
 
-  await runProvision(ctx, projectRoot, projectSlug)
+  await runProvision(ctx, projectRoot, projectSlug, true)
 }
 
 async function runProvision(
   ctx: import('../generation/context.js').GenerationContext,
   projectRoot: string,
   projectSlug: string,
+  /**
+   * Whether this run also generated the project.
+   *
+   * `--provision-only` operates on a project that already exists, and whose
+   * repository was pushed the first time round. Running the git bootstrap
+   * again would `pnpm install` into it and try to commit -- writing files into
+   * a tree the operator owns, during what was asked to be an infrastructure
+   * operation.
+   */
+  generated: boolean,
 ): Promise<void> {
   const outcome = await provision(ctx, { dryRun: ctx.dryRun, projectRoot })
 
@@ -307,7 +337,12 @@ async function runProvision(
     case 'applied': {
       console.log('\n✓ Infrastructure provisioned.')
       const repoFullName = outcome.outputs?.githubRepository
-      if (repoFullName) {
+      if (repoFullName && !generated) {
+        console.log(`
+  Repository: https://github.com/${repoFullName}`)
+        console.log('  --provision-only touches infrastructure only; nothing was committed.')
+      }
+      if (repoFullName && generated) {
         try {
           await initAndPushToDevelop({ projectRoot, repositoryFullName: repoFullName })
           console.log(`\n✓ Repository initialised and pushed to develop.`)

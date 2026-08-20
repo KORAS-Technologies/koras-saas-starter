@@ -78,3 +78,26 @@ describe('parseArgs', () => {
     expect(parseArgs(['node', 'cli']).dryRun).toBe(false)
   })
 })
+
+describe('--refresh-modules', () => {
+  it('operates on an existing project without implying provisioning', () => {
+    const args = parseArgs(['node', 'cli', 'app', '--profile', 'product', '--refresh-modules'])
+    expect(args.refreshModules).toBe(true)
+    // Refreshing source files must never quietly become an infrastructure run.
+    expect(args.provision).toBe(false)
+    expect(args.provisionOnly).toBe(false)
+  })
+
+  it('combines with --provision-only', () => {
+    const args = parseArgs([
+      'node', 'cli', 'app', '--profile', 'product', '--refresh-modules', '--provision-only',
+    ])
+    expect(args.refreshModules).toBe(true)
+    expect(args.provisionOnly).toBe(true)
+    expect(args.provision).toBe(true)
+  })
+
+  it('is off unless asked for', () => {
+    expect(parseArgs(['node', 'cli', 'app', '--profile', 'product']).refreshModules).toBe(false)
+  })
+})

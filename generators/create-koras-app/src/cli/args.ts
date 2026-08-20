@@ -13,6 +13,7 @@ export interface ParsedArgs {
   without: string[]
   /** Provision an already-generated project; skips generation entirely. */
   provisionOnly: boolean
+  refreshModules: boolean
   /** True when --output-dir was passed, as opposed to defaulting to cwd. */
   outputDirExplicit: boolean
 }
@@ -37,6 +38,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     with: [],
     without: [],
     provisionOnly: false,
+    refreshModules: false,
     outputDirExplicit: false,
   }
 
@@ -58,6 +60,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
         // Implies --provision: there is nothing else this flag could mean.
         result.provisionOnly = true
         result.provision = true
+        break
+      case '--refresh-modules':
+        // Re-copies the shared Terraform modules into a project already on
+        // disk. Deliberately does NOT imply --provision: refreshing is a
+        // read-then-write of source files, and quietly turning that into an
+        // infrastructure run would be the opposite of what this CLI promises.
+        result.refreshModules = true
         break
       case '--dry-run':
         result.dryRun = true

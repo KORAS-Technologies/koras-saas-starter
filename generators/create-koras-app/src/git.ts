@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process'
+import { createInterface } from 'node:readline/promises'
+import { stdin, stdout } from 'node:process'
 import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 
@@ -31,8 +33,23 @@ const FORBIDDEN_NAMES = new Set([
 
 const FORBIDDEN_SUFFIXES = ['.tfplan', '.tfstate', '.tfstate.backup']
 
-/** Directories with nothing worth walking, and a great deal of it. */
-const SKIP_DIRECTORIES = new Set(['.git', 'node_modules', '.next', '.turbo', '.venv', 'dist'])
+/**
+ * Directories with nothing worth walking, and a great deal of it.
+ *
+ * `.terraform` is Terraform's own provider and backend cache. Its
+ * `terraform.tfstate` records which backend is configured, not resource state,
+ * and the directory is gitignored in every generated project -- so matching it
+ * only ever produced a refusal over a file git was never going to commit.
+ */
+const SKIP_DIRECTORIES = new Set([
+  '.git',
+  '.terraform',
+  'node_modules',
+  '.next',
+  '.turbo',
+  '.venv',
+  'dist',
+])
 
 export function isForbiddenArtifact(name: string): boolean {
   return FORBIDDEN_NAMES.has(name) || FORBIDDEN_SUFFIXES.some((s) => name.endsWith(s))
@@ -80,6 +97,11 @@ export interface GitInitOptions {
   /** org/repo full name, e.g. "KORAS-Technologies/sample-product" */
   repositoryFullName: string
   exec?: CommandExecutor
+  /**
+   * Asked before anything is committed or pushed. Returning false leaves the
+   * project on disk untouched. Injected for tests; defaults to a TTY prompt.
+   */
+  confirm?: () => Promise<boolean>
 }
 
 /**
@@ -162,6 +184,27 @@ async function run(
 }
 
 /**
+ * Asks before the project is committed and pushed.
+ *
+ * Enter accepts: this is the normal end of a successful generation, and the
+ * unusual choice is skipping it. With no TTY the answer is yes, so an
+ * unattended run behaves exactly as it did before the prompt existed.
+ */
+export async function confirmGitPush(repositoryFullName: string): Promise<boolean> {
+  if (stdout.isTTY !== true) return true
+
+  const rl = createInterface({ input: stdin, output: stdout })
+  try {
+    const answer = (
+      await rl.question(`\n  Initialise git and push this project to ${repositoryFullName}? [Y/n]: `)
+    ).trim()
+    return answer === '' || /^y(es)?$/i.test(answer)
+  } finally {
+    rl.close()
+  }
+}
+
+/**
  * Initialises a git repository in the generated project directory, makes an
  * initial commit on top of GitHub's auto-init commit, and does a regular
  * fast-forward push to `develop`.
@@ -184,8 +227,17 @@ export async function initAndPushToDevelop(options: GitInitOptions): Promise<voi
   const gitDir = join(projectRoot, '.git')
   const g = (args: string[]) => run('git', args, projectRoot, exec)
 
+  // Already a repository: the project has its own history and, most likely,
+  // its own remote. Re-initialising over that would graft a second root onto
+  // someone's work, so this is the one case that needs no question.
   if (existsSync(gitDir)) {
-    console.log('\n  Git repository already initialised — skipping.')
+    console.log('\n  Git repository already initialised — nothing pushed.')
+    return
+  }
+
+  const confirm = options.confirm ?? (() => confirmGitPush(repositoryFullName))
+  if (!(await confirm())) {
+    console.log('\n  Skipped. The project is on disk; nothing was committed or pushed.')
     return
   }
 
@@ -215,7 +267,18 @@ export async function initAndPushToDevelop(options: GitInitOptions): Promise<voi
     // Checked before `git add .`, not after. The commit is pushed moments
     // later, and a credential that reaches a remote is published whether or
     // not a later commit removes it.
-    const forbidden = findForbiddenArtifacts(projectRoot)
+    // The walk finds artifacts anywhere on disk, including ones .gitignore
+    // already covers -- `.terraform/` is ignored, so its backend cache is
+    // never a candidate for commit. Asking git which of them it would actually
+    // stage keeps the guard about what gets published rather than what exists.
+    const candidates = findForbiddenArtifacts(projectRoot)
+    const forbidden: string[] = []
+    for (const path of candidates) {
+      // `check-ignore -q` exits 0 when the path is ignored, 1 when it is not.
+      const ignored = (await g(['check-ignore', '-q', path])) === 0
+      if (!ignored) forbidden.push(path)
+    }
+
     if (forbidden.length > 0) {
       throw new Error(
         [

@@ -2,7 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs'
-import { initAndPushToDevelop, needsWindowsShell, type CommandExecutor } from '../src/git.js'
+import {
+  findForbiddenArtifacts,
+  initAndPushToDevelop,
+  needsWindowsShell,
+  type CommandExecutor,
+} from '../src/git.js'
 
 const ROOT = join(tmpdir(), `koras-git-${process.pid}-${Date.now()}`)
 
@@ -122,5 +127,122 @@ describe('needsWindowsShell', () => {
   it('never shells out on POSIX platforms', () => {
     expect(needsWindowsShell('pnpm', 'linux')).toBe(false)
     expect(needsWindowsShell('pnpm', 'darwin')).toBe(false)
+  })
+})
+
+describe('confirmation before committing', () => {
+  it('does nothing at all when the operator declines', async () => {
+    const projectRoot = makeProjectDir('declined')
+    const { calls, exec } = captureExec()
+
+    await initAndPushToDevelop({
+      projectRoot,
+      repositoryFullName: 'org/declined',
+      exec,
+      confirm: () => Promise.resolve(false),
+    })
+
+    // Not even pnpm install: declining must leave the tree exactly as it is.
+    expect(calls).toHaveLength(0)
+    expect(existsSync(join(projectRoot, '.git'))).toBe(false)
+  })
+
+  it('proceeds when the operator accepts', async () => {
+    const projectRoot = makeProjectDir('accepted')
+    const { calls, exec } = captureExec()
+
+    await initAndPushToDevelop({
+      projectRoot,
+      repositoryFullName: 'org/accepted',
+      exec,
+      confirm: () => Promise.resolve(true),
+    })
+
+    expect(calls.map((c) => `${c.cmd} ${c.args.join(' ')}`)).toContain('git push origin develop')
+  })
+
+  it('never asks when the project is already a repository', async () => {
+    const projectRoot = makeProjectDir('already')
+    mkdirSync(join(projectRoot, '.git'))
+    let asked = false
+    const { calls, exec } = captureExec()
+
+    await initAndPushToDevelop({
+      projectRoot,
+      repositoryFullName: 'org/already',
+      exec,
+      confirm: () => {
+        asked = true
+        return Promise.resolve(true)
+      },
+    })
+
+    // An existing repository has its own history and remote; re-initialising
+    // over it is not a question worth asking.
+    expect(asked).toBe(false)
+    expect(calls).toHaveLength(0)
+  })
+})
+
+describe('the forbidden-artifact guard', () => {
+  it('still finds state files on disk', () => {
+    const projectRoot = makeProjectDir('artifacts')
+    mkdirSync(join(projectRoot, 'infrastructure'), { recursive: true })
+    writeFileSync(join(projectRoot, 'infrastructure', 'terraform.tfstate'), '{}')
+
+    expect(findForbiddenArtifacts(projectRoot)).toEqual(['infrastructure/terraform.tfstate'])
+  })
+
+  it('does not walk into .terraform at all', () => {
+    // Terraform's own cache. Its terraform.tfstate records the backend, not
+    // resource state, and the directory is gitignored in every project.
+    const projectRoot = makeProjectDir('cache')
+    mkdirSync(join(projectRoot, '.terraform'), { recursive: true })
+    writeFileSync(join(projectRoot, '.terraform', 'terraform.tfstate'), '{}')
+
+    expect(findForbiddenArtifacts(projectRoot)).toEqual([])
+  })
+
+  it('asks git whether each candidate would actually be committed', async () => {
+    // A plan file the generated .gitignore already covers cannot reach a
+    // commit, so refusing the push over it blocks work for no gain.
+    const projectRoot = makeProjectDir('ignored')
+    mkdirSync(join(projectRoot, 'infrastructure', 'terraform'), { recursive: true })
+    writeFileSync(join(projectRoot, 'infrastructure', 'terraform', 'tfplan'), 'PK')
+
+    const calls: Array<{ cmd: string; args: string[] }> = []
+    const exec: CommandExecutor = (cmd, args) => {
+      calls.push({ cmd, args })
+      // exit 0 from check-ignore: the path IS ignored.
+      return Promise.resolve(0)
+    }
+
+    await initAndPushToDevelop({
+      projectRoot,
+      repositoryFullName: 'org/ignored',
+      exec,
+      confirm: () => Promise.resolve(true),
+    })
+
+    expect(calls.some((c) => c.args[0] === 'check-ignore')).toBe(true)
+    expect(calls.map((c) => `${c.cmd} ${c.args.join(' ')}`)).toContain('git push origin develop')
+  })
+
+  it('still refuses when git would commit the state file', async () => {
+    const projectRoot = makeProjectDir('unignored')
+    writeFileSync(join(projectRoot, 'terraform.tfstate'), '{}')
+
+    const exec: CommandExecutor = (_cmd, args) =>
+      // exit 1 from check-ignore: the path is NOT ignored, so it would be added.
+      Promise.resolve(args[0] === 'check-ignore' ? 1 : 0)
+
+    await expect(
+      initAndPushToDevelop({
+        projectRoot,
+        repositoryFullName: 'org/unignored',
+        exec,
+        confirm: () => Promise.resolve(true),
+      }),
+    ).rejects.toThrow('Refusing to commit')
   })
 })
