@@ -912,3 +912,55 @@ describe('host dev-server ports', () => {
     expect(product.filter((p) => cp.includes(p))).toEqual([])
   })
 })
+
+// -- secret-handling scaffold -------------------------------------------------
+// A generated project publishes its estate's credentials if a Terraform plan
+// ends up committed, and looks correctly configured while Doppler is empty.
+// Both are shipped closed rather than left to each project to remember.
+
+describe.each(['product', 'control-plane'] as const)('%s secret scaffold', (profile) => {
+  let gen: ReturnType<typeof generate>
+
+  beforeAll(() => {
+    gen = generate(profile, `${profile}-secretscaffold`)
+  })
+
+  it('ignores Terraform plan files', () => {
+    // A plan embeds a full state snapshot. No content scanner sees inside one:
+    // gitleaks decides what is an archive from the file extension, and a plan
+    // file has none.
+    const ignore = gen.read('.gitignore')
+    expect(ignore).toMatch(/^tfplan$/m)
+    expect(ignore).toMatch(/^\*\.tfplan$/m)
+  })
+
+  it('still permits the Terraform files that belong in the repository', () => {
+    const ignore = gen.read('.gitignore')
+    expect(ignore).toContain('!infrastructure/terraform/terraform.tfvars')
+  })
+
+  it('carries the check that forbids committed state', () => {
+    expect(gen.has('tests/security/test_no_state_artifacts.py')).toBe(true)
+  })
+
+  it('carries the Doppler completeness check, wired to make', () => {
+    expect(gen.has('local/scripts/doppler-check.sh')).toBe(true)
+    expect(gen.read('Makefile')).toContain('doppler-check:')
+  })
+
+  it('points the Doppler check at this project', () => {
+    // Rendered, not left as a template placeholder -- a check that reads the
+    // wrong project reports every setting missing and gets ignored.
+    const script = gen.read('local/scripts/doppler-check.sh')
+    expect(script).toContain(`${profile}-secretscaffold`)
+    expect(script).not.toContain('{{')
+  })
+
+  it('never asks Doppler for a value', () => {
+    // The check runs in CI. It lists names so that it cannot leak what it does
+    // not fetch.
+    const script = gen.read('local/scripts/doppler-check.sh')
+    expect(script).toContain('--only-names')
+  })
+})
+

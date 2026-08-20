@@ -383,7 +383,19 @@ describe('approval gate', () => {
       approval: { ask: async () => 'yes', isTTY: true },
     })
     const apply = calls.find((c) => c.args[0] === 'apply')!
-    expect(apply.args).toContain('tfplan')
+    const plan = calls.find((c) => c.args[0] === 'plan')!
+
+    // The same file that was planned is the file that is applied, so what the
+    // operator approved is exactly what runs.
+    const planned = plan.args.find((a) => a.startsWith('-out='))!.slice('-out='.length)
+    expect(apply.args).toContain(planned)
+
+    // And it lives outside the generated project. A plan embeds a full state
+    // snapshot -- every credential Terraform touched -- and the very next thing
+    // this CLI does is `git add .` and push, so a plan inside the project is a
+    // plan published to GitHub.
+    expect(planned.startsWith(PROJECT_ROOT)).toBe(false)
+    expect(planned).not.toContain('infrastructure')
   })
 
   for (const answer of ['y', 'Y', 'YES', 'no', '', ' ']) {

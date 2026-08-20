@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { GenerationContext } from '../generation/context.js'
 import { confirmApply, type ApprovalOptions } from './approval.js'
@@ -68,7 +69,31 @@ export interface ProvisionResult {
   outputs?: ProvisionOutputs
 }
 
-const PLAN_FILE = 'tfplan'
+/**
+ * Where the saved plan is written.
+ *
+ * Outside the generated project, deliberately. A Terraform plan embeds a full
+ * state snapshot -- every credential Terraform touched, including database
+ * passwords and OIDC client secrets it generated -- and the very next thing
+ * this CLI does after provisioning is `git add .` and push (see git.ts).
+ *
+ * Writing it into the project therefore published the estate's credentials to
+ * GitHub on every `--provision` run, and did so silently: gitleaks decides
+ * whether to look inside an archive from the file extension, and a plan file
+ * has none. Measured on a real one: `tfplan` scans as zero bytes and reports
+ * nothing, while the byte-identical file named `tfplan.zip` yields 28 findings.
+ *
+ * A temporary directory removes the artifact rather than hiding it. The
+ * .gitignore rule and the git guard are second and third lines, for the plan
+ * file nobody has thought of yet.
+ */
+function createPlanPath(): { path: string; cleanup: () => void } {
+  const directory = mkdtempSync(join(tmpdir(), 'koras-plan-'))
+  return {
+    path: join(directory, 'tfplan'),
+    cleanup: () => rmSync(directory, { recursive: true, force: true }),
+  }
+}
 
 /**
  * Whether a Doppler project and config are configured for this shell.
@@ -205,11 +230,13 @@ export async function provision(
   // ── plan ───────────────────────────────────────────────────────────────────
 
   console.log('\n==> terraform plan')
+  const planFile = createPlanPath()
   // Streamed, not buffered. A plan across this estate contacts eight providers
   // and can run for minutes; withholding its output until exit makes it look
   // hung, and a plan killed mid-flight leaves the remote backend locked.
-  const plan = await run(['plan', '-input=false', `-out=${PLAN_FILE}`], true, true)
+  const plan = await run(['plan', '-input=false', `-out=${planFile.path}`], true, true)
   if (plan.exitCode !== 0) {
+    planFile.cleanup()
     const recovery = stateLockRecovery(plan.stderr, useDoppler)
     if (recovery) console.error(recovery)
     return { status: 'plan-failed' }
@@ -218,7 +245,9 @@ export async function provision(
   if (options.dryRun) {
     console.log('')
     console.log('--dry-run: stopping after plan. No infrastructure was created.')
-    console.log(`Plan saved to ${join(cwd, PLAN_FILE)}.`)
+    // The path is reported rather than the plan kept somewhere convenient: it
+    // holds credentials, and a convenient location is one someone commits.
+    console.log(`Plan saved to ${planFile.path} (outside the project; delete when done).`)
     return { status: 'planned' }
   }
 
@@ -233,13 +262,19 @@ export async function provision(
     },
     options.approval ?? {},
   )
-  if (!approved) return { status: 'declined' }
+  if (!approved) {
+    planFile.cleanup()
+    return { status: 'declined' }
+  }
 
   // ── apply ──────────────────────────────────────────────────────────────────
   // The saved plan is applied, so what was approved is exactly what runs.
 
   console.log('\n==> terraform apply')
-  const apply = await run(['apply', '-input=false', PLAN_FILE])
+  const apply = await run(['apply', '-input=false', planFile.path])
+  // Removed whether or not the apply succeeded. A failed apply leaves a plan
+  // that is just as full of credentials as a successful one.
+  planFile.cleanup()
   if (apply.exitCode !== 0) return { status: 'apply-failed' }
 
   // ── outputs ────────────────────────────────────────────────────────────────

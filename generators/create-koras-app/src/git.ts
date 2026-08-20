@@ -1,6 +1,73 @@
 import { spawn } from 'node:child_process'
-import { existsSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { join, relative, sep } from 'node:path'
+
+/**
+ * Artifacts that must never be committed, matched by name rather than content.
+ *
+ * A Terraform plan or state file embeds every credential Terraform touched --
+ * database passwords, generated OIDC client secrets, provider tokens. Content
+ * scanners cannot see them: a plan is a zip, gitleaks decides what is an
+ * archive from the file extension, and Terraform names plan files without one.
+ * Measured on a real plan: `tfplan` scans as zero bytes and reports nothing,
+ * while the byte-identical file named `tfplan.zip` yields 28 findings.
+ *
+ * So this is a path rule. It cannot be defeated by an entropy threshold, and
+ * these files have no legitimate reason to be in a repository: a plan is a
+ * disposable intermediate and state belongs in the remote backend.
+ *
+ * The plan is now written to a temporary directory (see terraform/runner.ts),
+ * so nothing should ever match. That is exactly why the check is worth having:
+ * it catches the artifact nobody has thought of yet, and it costs a directory
+ * walk.
+ */
+const FORBIDDEN_NAMES = new Set([
+  'tfplan',
+  'terraform.tfplan',
+  'plan.out',
+  'terraform.tfstate',
+  'terraform.tfstate.backup',
+])
+
+const FORBIDDEN_SUFFIXES = ['.tfplan', '.tfstate', '.tfstate.backup']
+
+/** Directories with nothing worth walking, and a great deal of it. */
+const SKIP_DIRECTORIES = new Set(['.git', 'node_modules', '.next', '.turbo', '.venv', 'dist'])
+
+export function isForbiddenArtifact(name: string): boolean {
+  return FORBIDDEN_NAMES.has(name) || FORBIDDEN_SUFFIXES.some((s) => name.endsWith(s))
+}
+
+/** Every forbidden artifact under `root`, as paths relative to it. */
+export function findForbiddenArtifacts(root: string): string[] {
+  const found: string[] = []
+
+  const walk = (directory: string): void => {
+    let entries: string[]
+    try {
+      entries = readdirSync(directory)
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      const full = join(directory, entry)
+      let isDirectory: boolean
+      try {
+        isDirectory = statSync(full).isDirectory()
+      } catch {
+        continue
+      }
+      if (isDirectory) {
+        if (!SKIP_DIRECTORIES.has(entry)) walk(full)
+      } else if (isForbiddenArtifact(entry)) {
+        found.push(relative(root, full).split(sep).join('/'))
+      }
+    }
+  }
+
+  walk(root)
+  return found.sort()
+}
 
 /** Injectable executor — accepts any command so tests can stub both git and pnpm. */
 export type CommandExecutor = (cmd: string, args: string[], cwd: string) => Promise<number>
@@ -144,6 +211,26 @@ export async function initAndPushToDevelop(options: GitInitOptions): Promise<voi
     if (code !== 0) throw new Error('git update-ref failed')
 
     console.log('\n==> git commit')
+
+    // Checked before `git add .`, not after. The commit is pushed moments
+    // later, and a credential that reaches a remote is published whether or
+    // not a later commit removes it.
+    const forbidden = findForbiddenArtifacts(projectRoot)
+    if (forbidden.length > 0) {
+      throw new Error(
+        [
+          'Refusing to commit. These hold Terraform state, and state holds every',
+          'credential Terraform touched:',
+          '',
+          ...forbidden.map((path) => '  ' + path),
+          '',
+          'Delete them and re-run. If any has already been pushed anywhere,',
+          'rotate every secret it contained -- deleting a file does not',
+          'unpublish it.',
+        ].join('\n'),
+      )
+    }
+
     code = await g(['add', '.'])
     if (code !== 0) throw new Error('git add failed')
 

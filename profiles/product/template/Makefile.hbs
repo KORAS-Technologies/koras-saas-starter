@@ -17,7 +17,7 @@ endif
 
 .DEFAULT_GOAL := help
 
-.PHONY: help profile install bootstrap ports dev down reset seed test health lint typecheck build clean
+.PHONY: help profile install bootstrap ports dev down reset seed test health lint typecheck build clean doppler-check
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -63,6 +63,9 @@ test: ## Run all test suites
 
 health: ## Poll all services until healthy
 	bash ./local/scripts/health.sh
+
+doppler-check: ## Verify every Doppler environment holds every setting (names only, never values)
+	bash ./local/scripts/doppler-check.sh
 
 lint: ## Lint all sources
 	pnpm turbo run lint
