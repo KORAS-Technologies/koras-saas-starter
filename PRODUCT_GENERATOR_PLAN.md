@@ -49,6 +49,11 @@ pnpm create-koras-app koras-control-plane --profile control-plane --provision --
 `--output-dir` is effectively required: generating with no output directory
 would write a full project into the starter repository, which is refused.
 
+`--refresh-modules` re-copies the shared Terraform modules into a project that
+already exists, for the case where a module was fixed in the starter after the
+project was generated. It reports every file it replaces, is a no-op when they
+already match, and does not imply `--provision`.
+
 No `doppler run` wrapper is needed. `--provision` and `--provision-only` need
 the bootstrap secrets, so the CLI re-runs itself under `doppler run` at the
 location the profile declares (`infrastructure.doppler_project` /
@@ -91,6 +96,8 @@ Profile is NEVER inferred from project name. The operator must choose explicitly
 | `--with`            | Optional    | Enable optional components (comma-separated manifest keys) |
 | `--without`         | Optional    | Disable optional components (comma-separated manifest keys) |
 | `--provision`       | Optional    | Run Terraform bootstrap after generation            |
+| `--provision-only`  | Optional    | Provision a project already on disk; skips generation |
+| `--refresh-modules` | Optional    | Re-copy the shared Terraform modules into an existing project |
 | `--dry-run`         | Optional    | Print generation plan without writing files         |
 | `--output-dir`      | Optional    | Parent directory for generated project (default: cwd) |
 | `--no-interactive`  | Optional    | Disable interactive prompts; error if required args missing |

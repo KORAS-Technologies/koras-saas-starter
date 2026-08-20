@@ -669,7 +669,7 @@ before the first `--provision`:
 pnpm koras bootstrap:doctor
 ```
 
-Twelve rows, `✓` or `✗`, `READY FOR BOOTSTRAP` or `NOT READY FOR BOOTSTRAP`,
+Thirteen rows, `✓` or `✗`, `READY FOR BOOTSTRAP` or `NOT READY FOR BOOTSTRAP`,
 exit 0 or 1. It creates, updates, and deletes nothing, and never runs
 `terraform apply`, `destroy`, or `import`.
 

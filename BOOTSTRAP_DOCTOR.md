@@ -53,6 +53,7 @@ ZITADEL STG      ✓
 ZITADEL PROD     ✓
 Vercel           ✓
 Fly.io           ✓
+Upstash          ✓
 Cloudflare       ✓
 Terraform        ✓
 Terraform state  ✓
@@ -74,6 +75,7 @@ ZITADEL STG      ✓
 ZITADEL PROD     ✓
 Vercel           ✓
 Fly.io           ✓
+Upstash          ✓
 Cloudflare       ✓
 Terraform        ✓
 Terraform state  ✓
@@ -106,6 +108,7 @@ Successful checks say nothing beyond `✓` — a passing run should be boring.
 | ZITADEL DEV/TEST/STG/PROD | Domain resolves, service-account JSON parses, an assertion signs, the JWT-bearer grant succeeds, and `GET /auth/v1/users/me` is accepted |
 | Vercel | `VERCEL_API_TOKEN` authenticates, `TF_VAR_VERCEL_TEAM_ID` is readable, and Vercel's GitHub App is installed on `TF_VAR_GITHUB_ORG` |
 | Fly.io | `FLY_API_TOKEN` authenticates and `TF_VAR_FLY_ORG_SLUG` is among its organizations |
+| Upstash | `TF_VAR_UPSTASH_EMAIL` and `TF_VAR_UPSTASH_API_KEY` authenticate against the management API |
 | Cloudflare | `TF_VAR_CLOUDFLARE_ZONE_ID` is readable with `CLOUDFLARE_API_TOKEN`, and the zone matches `TF_VAR_PRIMARY_DOMAIN` |
 | Terraform | Binary present, version satisfies the modules' `required_version`, HCP token present, and the module tree passes `init -backend=false` + `validate` |
 | Terraform state | HCP token authenticates, the organization from `profiles/*/defaults.yaml` exists, and its workspaces are readable |

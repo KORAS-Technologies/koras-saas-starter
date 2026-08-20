@@ -141,8 +141,24 @@ than restarting. Fix the cause, then run step 4.
 
 `infrastructure/terraform/modules/` is copied into every generated project, so
 fixing a module in the starter does **not** fix a project already on disk.
-Either regenerate, or copy the changed module across — `--provision-only` reads
-the project on disk.
+That is deliberate — it is what makes `--provision-only` reproducible, since the
+plan reflects the code in the project rather than whatever the starter contains
+today. The cost is that a stale copy plans perfectly happily and fails at apply.
+
+`--refresh-modules` re-copies exactly those directories and nothing else:
+
+```bash
+# See what would change; writes nothing.
+pnpm create-koras-app <name> --profile <profile> --refresh-modules --dry-run --output-dir ../output
+
+# Refresh, then plan and apply against the refreshed copy.
+pnpm create-koras-app <name> --profile <profile> --refresh-modules --provision-only --output-dir ../output
+```
+
+It names every file it replaces, is a no-op when the copies already match, and
+does not imply `--provision` on its own — refreshing source files should not
+quietly become an infrastructure run. Only paths the profile declares as shared
+assets are touched, so nothing you edited inside your own project is at risk.
 
 ---
 
