@@ -164,7 +164,14 @@ jobs:
           curl -sSfL https://cli.doppler.com/install.sh | sudo sh >/dev/null
           # --no-file keeps the values on the pipe. Writing them to disk on a
           # shared runner leaves them for anything that reads the workspace.
-          doppler secrets download --no-file --format env \n            --project "${{ github.event.repository.name }}" \n            --config "${{ inputs.environment }}" \n            | flyctl secrets import --stage \n                --app "${{ github.event.repository.name }}-${{ matrix.service }}-${{ inputs.environment }}"
+          # DOPPLER_* are the CLI's own context, meaningless to the service and
+          # permanent once set. Dropped rather than shipped.
+          doppler secrets download --no-file --format env \
+            --project "${{ github.event.repository.name }}" \
+            --config "${{ inputs.environment }}" \
+            | grep -v "^DOPPLER_" \
+            | flyctl secrets import --stage \
+                --app "${{ github.event.repository.name }}-${{ matrix.service }}-${{ inputs.environment }}"
 
       - name: Deploy to Fly
         env:
