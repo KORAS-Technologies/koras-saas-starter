@@ -552,3 +552,31 @@ prove `Edit`, and the message and the runbook both say so: proving that means
 writing a record, and a doctor that creates DNS in a production zone is a doctor
 nobody runs before a production apply.
 
+## R-023 — every Vercel project carried a build command naming a package that cannot exist
+
+*Severity: high. Resolved.*
+
+`build_command` defaulted to a string containing unsubstituted upper-case
+placeholders for the project slug and the application name. Nothing ever
+replaced them, and nothing overrode the variable, so the default reached the
+real Vercel project unchanged.
+
+It fails only at the first deployment, long after provisioning reports success:
+
+    No package found with name '<placeholder>' in workspace
+
+*Resolution* — the command is derived per application from the workspace package
+name, and `build_command` now defaults to null meaning "derive it". A single
+shared string could never be right for more than one application, which is the
+deeper reason the placeholder survived: there was no correct value to put there.
+
+The package name comes from the **source directory**, not the component key.
+`platform_admin` lives in `apps/admin` and is published as `@slug/admin`;
+deriving from the key would name a package nothing publishes.
+
+### On a comment that defeated its own check
+The first version of this fix explained itself by quoting the old placeholder
+verbatim, and the test that forbids that literal failed on the comment. Reworded
+rather than weakened: a check that forbids a string is defeated by any text
+repeating it, which is worth knowing before writing the next such check.
+

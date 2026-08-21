@@ -3,6 +3,26 @@ locals {
   # (`platform_admin`). Vercel project names may not: they accept lowercase
   # alphanumerics and hyphens only, and reject the name outright at plan time.
   app_names = { for app in var.applications : app => replace(app, "_", "-") }
+
+  # The workspace package each project builds.
+  #
+  # Derived from the source directory, not from the component key. The key is a
+  # Terraform identifier (`platform_admin`); the package is named after the
+  # directory (`apps/admin` -> `@slug/admin`), and the two differ for exactly
+  # the components most likely to be enabled.
+  #
+  # This used to be a single `build_command` variable whose default carried
+  # unsubstituted upper-case placeholders for the slug and the app name. Nothing
+  # ever replaced them, so every Vercel project in every generated estate held a
+  # build command naming a package that cannot exist -- and it failed only when
+  # a deployment was finally attempted, with "No package found".
+  #
+  # The placeholder text is deliberately not repeated here: a check that forbids
+  # a literal string is defeated by a comment quoting it.
+  package_names = {
+    for app in var.applications :
+    app => "@${var.project_slug}/${basename(lookup(var.application_source_dirs, app, "apps/${app}"))}"
+  }
 }
 
 resource "vercel_project" "apps" {
@@ -18,7 +38,7 @@ resource "vercel_project" "apps" {
     production_branch = "main"
   }
 
-  build_command    = var.build_command
+  build_command    = coalesce(var.build_command, "pnpm turbo run build --filter=${local.package_names[each.key]}")
   output_directory = ".next"
   install_command  = "pnpm install --frozen-lockfile"
   root_directory   = lookup(var.application_source_dirs, each.key, "apps/${each.key}")

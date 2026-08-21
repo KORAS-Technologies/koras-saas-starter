@@ -1270,6 +1270,30 @@ describe('application hostnames', () => {
     expect(block).toMatch(/default\s*=\s*false/)
   })
 
+  it('builds the package that actually exists', () => {
+    // The default was the literal string
+    // "pnpm turbo run build --filter=@PROJECT_SLUG/APP_NAME". Nothing
+    // substituted it, so every project carried a build command naming a
+    // package that cannot exist -- and it failed only at the first real
+    // deployment, with "No package found".
+    const vercel = moduleFile('vercel')
+    expect(vercel).not.toContain('@PROJECT_SLUG/APP_NAME')
+    expect(vercel).toContain('local.package_names[each.key]')
+
+    const variables = readFileSync(
+      join(__dirname, '..', '..', '..', 'infrastructure', 'terraform', 'modules', 'vercel', 'variables.tf'),
+      'utf8',
+    )
+    const block = variables.slice(variables.indexOf('variable "build_command"'))
+    expect(block.slice(0, block.indexOf('variable', 10))).toMatch(/default\s*=\s*null/)
+  })
+
+  it('names the package after the directory, not the component key', () => {
+    // platform_admin lives in apps/admin and is published as @slug/admin.
+    // Deriving from the key would name a package nothing publishes.
+    expect(moduleFile('vercel')).toContain('basename(lookup(var.application_source_dirs')
+  })
+
   it('creates DNS for whichever domains were attached', () => {
     // A hostname with no record is unreachable; a record with no hostname points
     // at Vercel for a domain it will not serve.

@@ -36,9 +36,18 @@ variable "framework" {
 }
 
 variable "build_command" {
-  type    = string
-  default = "pnpm turbo run build --filter=@PROJECT_SLUG/APP_NAME"
+  type        = string
+  description = <<-EOT
+    Override the build command for every project.
+
+    Null means "derive it per application from the workspace package name",
+    which is almost always what is wanted. A single shared string cannot be
+    right for more than one application, and the previous default was a literal
+    placeholder that no deployment could ever satisfy.
+  EOT
+  default     = null
 }
+
 
 variable "primary_domain" {
   type        = string
