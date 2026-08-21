@@ -1,0 +1,242 @@
+# Reusable deployment for one environment.
+#
+# The four per-environment workflows call this. They used to run
+# `pnpm turbo run build` and stop, so every deployment reported success having
+# shipped nothing . A green check that means "the code compiles" while
+# claiming to mean "the code is live" is worse than a red one.
+#
+# Ordering is deliberate. Migrations run before anything is deployed, because
+# a service started against a schema it predates fails on its first request and
+# a service started against a schema newer than itself usually does not -- so
+# forward-compatible migrations plus schema-first is the ordering that degrades
+# gracefully. Services deploy before the applications, because an application
+# calling an endpoint that does not exist yet is a visible outage while a
+# service with no caller is nothing at all.
+
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      apply_migrations:
+        description: Whether to run schema migrations before deploying.
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      DATABASE_URL:
+        required: true
+      FLY_API_TOKEN:
+        required: true
+      VERCEL_TOKEN:
+        required: true
+      VERCEL_ORG_ID:
+        required: true
+      VERCEL_ADMIN_PROJECT_ID:
+        required: true
+      VERCEL_PORTAL_PROJECT_ID:
+        required: true
+      DOPPLER_TOKEN:
+        # Read-only service token, scoped to this environment's config. Used
+        # only to list secret *names*; no value is ever fetched.
+        required: true
+
+concurrency:
+  # One deployment per environment at a time, and later commits win. Two
+  # concurrent runs can apply migrations in overlapping transactions and leave
+  # the schema in a state neither of them describes.
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Preflight (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      # Named explicitly rather than discovered at the point of use. A missing
+      # token otherwise surfaces halfway through, with the schema migrated and
+      # the services not deployed -- the one state this pipeline should never
+      # be able to reach.
+      - name: Require every credential before touching anything
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_ADMIN_PROJECT_ID: ${{ secrets.VERCEL_ADMIN_PROJECT_ID }}
+          VERCEL_PORTAL_PROJECT_ID: ${{ secrets.VERCEL_PORTAL_PROJECT_ID }}
+        run: |
+          missing=""
+          for name in DATABASE_URL FLY_API_TOKEN VERCEL_TOKEN VERCEL_ORG_ID \
+                      VERCEL_ADMIN_PROJECT_ID VERCEL_PORTAL_PROJECT_ID; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "Missing secrets for ${{ inputs.environment }}:$missing"
+            echo "Doppler is the authority for these; set them on the GitHub environment."
+            exit 1
+          fi
+
+  settings:
+    name: Settings present (${{ inputs.environment }})
+    needs: preflight
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the Doppler CLI
+        run: |
+          curl -sSfL https://cli.doppler.com/install.sh | sudo sh
+      - name: Every setting this release needs exists in Doppler
+        # Names only -- the check never requests a value, so this job cannot
+        # leak one. An empty Doppler config is indistinguishable from a correct
+        # one until a service boots and cannot read its settings, which is a
+        # failure that surfaces after the deployment reports success.
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: |
+          if [ -z "$DOPPLER_TOKEN" ]; then
+            echo "No DOPPLER_TOKEN for ${{ inputs.environment }}; cannot verify settings."
+            echo "Set a read-only service token on this GitHub environment."
+            exit 1
+          fi
+          bash local/scripts/doppler-check.sh "${{ inputs.environment }}"
+
+  migrate:
+    name: Migrate (${{ inputs.environment }})
+    needs: settings
+    if: inputs.apply_migrations
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install a Postgres client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Apply migrations and policies
+        env:
+          MIGRATE_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: bash local/scripts/migrate.sh
+
+  services:
+    name: Deploy ${{ matrix.service }} (${{ inputs.environment }})
+    needs: migrate
+    # `always()` plus an explicit failure check, so skipping migrations does not
+    # skip the deployment behind them.
+    # `settings` is checked for success, not merely for not-failure. A skipped
+    # job reports 'skipped', which `!= 'failure'` accepts -- so without this the
+    # deployment would proceed past a settings check that never passed.
+    if: >-
+      always()
+      && needs.preflight.result == 'success'
+      && needs.settings.result == 'success'
+      && needs.migrate.result != 'failure'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    strategy:
+      # Sequential. Three concurrent Fly deployments against one environment
+      # make a partial rollout harder to read than it needs to be.
+      max-parallel: 1
+      matrix:
+        service: [api, worker, scheduler]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Load this environment's settings into the app
+        # The link nothing else provides. Doppler holds the values, the app
+        # reads them from its environment, and until this step existed nothing
+        # connected the two -- the container would start, fail settings
+        # validation on a missing ENVIRONMENT, and crash-loop while the
+        # deployment reported success.
+        #
+        # Imported before the deploy so the new release starts with the settings
+        # it expects. `flyctl secrets import` stages them and the following
+        # deploy picks them up in one restart rather than two.
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          curl -sSfL https://cli.doppler.com/install.sh | sudo sh >/dev/null
+          # --no-file keeps the values on the pipe. Writing them to disk on a
+          # shared runner leaves them for anything that reads the workspace.
+          doppler secrets download --no-file --format env \n            --project "${{ github.event.repository.name }}" \n            --config "${{ inputs.environment }}" \n            | flyctl secrets import --stage \n                --app "${{ github.event.repository.name }}-${{ matrix.service }}-${{ inputs.environment }}"
+
+      - name: Deploy to Fly
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl deploy \
+            --app "${{ github.event.repository.name }}-${{ matrix.service }}-${{ inputs.environment }}" \
+            --config "services/${{ matrix.service }}/fly.toml" \
+            --dockerfile "services/${{ matrix.service }}/Dockerfile" \
+            --remote-only \
+            --wait-timeout 600
+
+  applications:
+    name: Deploy ${{ matrix.app }} (${{ inputs.environment }})
+    needs: services
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    strategy:
+      matrix:
+        include:
+          - app: admin
+            project_id_secret: VERCEL_ADMIN_PROJECT_ID
+          - app: portal
+            project_id_secret: VERCEL_PORTAL_PROJECT_ID
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Deploy to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets[matrix.project_id_secret] }}
+        run: |
+          # `--prod` only on prod. Every other environment gets a preview
+          # deployment aliased to its own domain, so a staging push cannot
+          # become the production alias by being the most recent build.
+          target=""
+          if [ "${{ inputs.environment }}" = "prod" ]; then target="--prod"; fi
+          npx vercel@latest pull --yes --token "$VERCEL_TOKEN" \
+            --environment=production --cwd "apps/${{ matrix.app }}"
+          npx vercel@latest build $target --token "$VERCEL_TOKEN" --cwd "apps/${{ matrix.app }}"
+          npx vercel@latest deploy --prebuilt $target --token "$VERCEL_TOKEN" \
+            --cwd "apps/${{ matrix.app }}"
+
+  verify:
+    name: Verify (${{ inputs.environment }})
+    needs: applications
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: The API is serving and says which environment it is
+        # A deployment that finishes without anyone checking the result is a
+        # deployment that can succeed while the service crash-loops. The
+        # environment is asserted because the worst deployment failure is the
+        # one that put the right code in the wrong estate.
+        run: |
+          base="https://${{ github.event.repository.name }}-api-${{ inputs.environment }}.fly.dev"
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if body=$(curl -sSf --max-time 10 "$base/api/v1/health"); then
+              echo "$body"
+              echo "$body" | grep -q '"environment":"${{ inputs.environment }}"' || {
+                echo "The API reports an environment other than ${{ inputs.environment }}."
+                exit 1
+              }
+              exit 0
+            fi
+            echo "Not serving yet (attempt $attempt); waiting."
+            sleep 10
+          done
+          echo "The API never became healthy."
+          exit 1

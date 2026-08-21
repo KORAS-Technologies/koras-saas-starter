@@ -1,18 +1,18 @@
-name: Deploy — Prod
+name: Deploy — PROD
+
+# Production deploys on a push to main, and the `prod` GitHub environment
+# carries the required reviewers. The gate lives there rather than in this
+# file so that changing who may approve a production release is not a code
+# change reviewable by the person seeking the approval.
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy:
-    name: Deploy to prod
-    runs-on: ubuntu-latest
-    environment: prod
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo run build
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: prod
+    secrets: inherit

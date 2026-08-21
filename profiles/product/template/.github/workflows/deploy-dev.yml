@@ -1,19 +1,13 @@
-name: Deploy — Dev
+name: Deploy — DEV
 
 on:
   push:
     branches: [develop]
+  workflow_dispatch:
 
 jobs:
   deploy:
-    name: Deploy to dev
-    runs-on: ubuntu-latest
-    environment: dev
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo run build
-      # Vercel and Fly deployments wired up in Phase 11
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: dev
+    secrets: inherit

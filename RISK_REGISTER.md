@@ -224,6 +224,8 @@ likelihood rating, impact rating, overall severity, and current mitigation.
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
 | R-017 | Control-plane env contract was the product one | 10     | Resolved                 |
 | R-018 | Queue polling billed per command             | 8        | Resolved                 |
+| R-019 | ZITADEL projects defined no roles            | 20       | Resolved                 |
+| R-020 | Nothing carried settings into the runtime    | 20       | Resolved                 |
 
 ---
 
@@ -396,3 +398,59 @@ unpopulated Doppler looks like anyway. It appeared only when the lookup was
 tried against real outputs pulled from a real state file. The manifest now
 carries an explicit SOURCE column, and a generated-project test fails if a
 derived setting lacks one.
+
+## R-019 — the identity projects defined no roles
+
+*Severity: critical. Resolved.*
+
+The ZITADEL module created a project and an OIDC application and stopped.
+`project_role_assertion` was already true, so a caller's roles would be written
+into the `urn:zitadel:iam:org:project:roles` claim — but a project with no roles
+defined can grant none, so every token arrived with an empty claim.
+
+The failure is silent and complete. Sign-in succeeds. The session is valid. The
+middleware reads no role and refuses every page. A perfectly provisioned,
+perfectly deployed platform that nobody can log into, and nothing in the
+provisioning output hints at why.
+
+*Resolution* — `zitadel_project_role` for each role the code parses, chosen by
+profile: the five `platform_*` roles for a control plane, the five organization
+roles for a product. A product gets no platform roles at all — staff authority
+lives in one place, and issuing `platform_admin` from a product project would
+create a second.
+
+`org_id` is set explicitly from the project. Unlike the project and application
+resources the provider does not resolve it here, and a role created in a
+different organization than its project is accepted by the API and never appears
+in anyone's token.
+
+## R-020 — nothing carried settings from Doppler into the running services
+
+*Severity: critical. Resolved.*
+
+Doppler holds the values. The containers read them from their environment.
+Nothing connected the two — not Terraform, not the deploy workflow. A deployment
+would have completed, and every service would have failed settings validation on
+a missing `ENVIRONMENT` and crash-looped.
+
+Found while reviewing what the starter provisions rather than by running it,
+which is the only reason it was found before someone tried to deploy.
+
+*Resolution* — the deploy workflow downloads the environment's settings and
+stages them with `flyctl secrets import` before the deploy, so the new release
+starts with the settings it expects in one restart rather than two.
+`--no-file` keeps the values on the pipe: writing them to a shared runner's
+workspace leaves them for anything that reads it.
+
+The whole deploy pipeline was shipped upstream at the same time. The templates
+still carried the version that ran `turbo run build` and stopped — a green check
+on every push meaning "the code compiles" while claiming to mean "the code is
+live". That had been fixed in one generated project and never pushed back.
+
+### On why deploy.yml is not a Handlebars template
+It is copied verbatim. The file is dense with GitHub `${{ ... }}` expressions,
+and Handlebars parses those: making it a `.hbs` replaced
+`${{ secrets.FLY_API_TOKEN }}` with an empty string and produced a workflow that
+looked correct and authenticated as nobody. Sixty-four tests failed at once,
+which is the good version of that discovery. The app name is built from
+`github.event.repository.name` instead, which equals the project slug.

@@ -1150,3 +1150,83 @@ describe('every generated app ships security headers', () => {
     for (const dep of workspaceDeps) expect(config).toContain(dep)
   })
 })
+
+// -- deployment scaffold ------------------------------------------------------
+// A generated project used to ship four workflows that ran `turbo run build`
+// and stopped: a green check on every push that meant "the code compiles" while
+// claiming to mean "the code is live".
+
+describe.each(['product', 'control-plane'] as const)('%s deployment', (profile) => {
+  let gen: ReturnType<typeof generate>
+
+  beforeAll(() => {
+    gen = generate(profile, `${profile}-deployscaffold`)
+  })
+
+  it('deploys rather than merely building', () => {
+    const deploy = gen.read('.github/workflows/deploy.yml')
+    expect(deploy).toContain('flyctl deploy')
+    expect(deploy).toContain('vercel@latest deploy')
+    expect(deploy).toContain('migrate.sh')
+  })
+
+  it('loads settings into the app before deploying it', () => {
+    // Without this the container starts, fails settings validation on a
+    // missing ENVIRONMENT, and crash-loops while the deployment reports
+    // success. Doppler holds the values and nothing else carries them across.
+    const deploy = gen.read('.github/workflows/deploy.yml')
+    expect(deploy).toContain('flyctl secrets import')
+    expect(deploy).toContain('doppler secrets download')
+
+    const importAt = deploy.indexOf('flyctl secrets import')
+    const deployAt = deploy.indexOf('flyctl deploy')
+    expect(importAt).toBeLessThan(deployAt)
+  })
+
+  it('never writes downloaded settings to disk', () => {
+    // A shared runner keeps the workspace around for anything that reads it.
+    const deploy = gen.read('.github/workflows/deploy.yml')
+    expect(deploy).toContain('--no-file')
+  })
+
+  it('checks its own work', () => {
+    const deploy = gen.read('.github/workflows/deploy.yml')
+    expect(deploy).toContain('/api/v1/health')
+    // The worst deployment failure puts the right code in the wrong estate,
+    // and answers every other probe correctly.
+    expect(deploy).toMatch(/environment.*inputs\.environment/)
+  })
+
+  it('names the app from the repository rather than a template expression', () => {
+    // deploy.yml is copied verbatim, never rendered. It is dense with GitHub
+    // ${{ ... }} expressions and Handlebars would parse every one of them --
+    // turning ${{ secrets.FLY_API_TOKEN }} into an empty string and leaving a
+    // workflow that looks correct and authenticates as nobody.
+    const deploy = gen.read('.github/workflows/deploy.yml')
+    expect(deploy).toContain('github.event.repository.name')
+    expect(deploy).not.toContain('{{projectSlug}}')
+    expect(deploy).toContain('secrets.FLY_API_TOKEN')
+  })
+})
+
+describe.each(['product', 'control-plane'] as const)('%s identity roles', (profile) => {
+  it('defines the roles the code parses', () => {
+    // project_role_assertion puts a caller's roles in the token claim, but a
+    // project with none defined can grant none: sign-in succeeds, the session
+    // is valid, and every page is refused. A platform nobody can log into.
+    const module = readFileSync(
+      join(__dirname, '..', '..', '..', 'infrastructure', 'terraform', 'modules', 'zitadel', 'main.tf'),
+      'utf8',
+    )
+    expect(module).toContain('zitadel_project_role')
+
+    const expected =
+      profile === 'control-plane'
+        ? ['platform_super_admin', 'platform_admin', 'platform_support', 'platform_billing', 'platform_readonly']
+        : ['organization_owner', 'organization_admin', 'billing_admin', 'security_admin', 'member']
+    for (const role of expected) {
+      expect(module).toContain(`"${role}"`)
+    }
+  })
+})
+
