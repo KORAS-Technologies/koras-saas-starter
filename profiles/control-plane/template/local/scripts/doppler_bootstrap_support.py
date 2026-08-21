@@ -150,6 +150,15 @@ def derived(source: str, environment: str) -> int:
     person" rather than as an error -- a missing output should slow someone
     down, not stop them.
     """
+    if source == "self:environment":
+        # The environment's own name. Redundant with the Doppler config it lives
+        # in, and required anyway: a deployed service reads its settings from
+        # the environment, not from Doppler's notion of which config they came
+        # from. Leaving it out is how three services shipped with every setting
+        # except the one that has no default, and crash-looped on startup.
+        print(environment, end="")
+        return 0
+
     if source.startswith("const:"):
         print(source[len("const:") :], end="")
         return 0

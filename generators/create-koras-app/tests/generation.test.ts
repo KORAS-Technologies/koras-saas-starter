@@ -1033,7 +1033,7 @@ describe.each(['product', 'control-plane'] as const)('%s secret scaffold', (prof
 
     for (const [name, klass, source] of rows) {
       if (klass !== 'derived') continue
-      expect(source, `${name} is derived with no source`).toMatch(/^(out:|const:)/)
+      expect(source, `${name} is derived with no source`).toMatch(/^(out:|const:|self:)/)
     }
   })
 
