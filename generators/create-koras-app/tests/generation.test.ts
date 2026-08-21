@@ -1272,6 +1272,27 @@ describe('application hostnames', () => {
     expect(vercel).not.toContain('git_branch')
   })
 
+  it('does not describe a preview scoping it no longer does', () => {
+    // A comment that contradicts the code is worse than no comment. The old one
+    // said every non-production environment was "a preview pinned to its own
+    // branch" and survived the rewrite sitting directly above target=production
+    // -- so the file simultaneously claimed both models. Someone debugging a
+    // settings problem would read the comment, believe previews were involved,
+    // and go looking for a branch scope that is not there.
+    for (const profile of ['control-plane', 'product']) {
+      const workflow = readFileSync(
+        join(__dirname, '..', '..', '..', 'profiles', profile,
+             'template', '.github', 'workflows', 'deploy.yml'),
+        'utf8',
+      )
+      expect(workflow).not.toMatch(/pinned to its own branch/)
+      expect(workflow).toContain('target="production"')
+      expect(workflow).toContain('scope=""')
+      // Every environment deploys to its own project's production.
+      expect(workflow).not.toMatch(/--target[= ]preview/)
+    }
+  })
+
   it('builds the package that actually exists', () => {
     // The default was the literal string
     // "pnpm turbo run build --filter=@PROJECT_SLUG/APP_NAME". Nothing

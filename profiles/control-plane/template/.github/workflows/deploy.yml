@@ -269,9 +269,6 @@ jobs:
         run: |
           curl -sSfL https://cli.doppler.com/install.sh | sudo sh >/dev/null
 
-          # Production deployments read the production target; every other
-          # environment is a preview pinned to its own branch, so its settings
-          # must be scoped the same way or dev would read stg values.
           # Always production. There is one Vercel project per environment, so
           # each project's production target is that environment and nothing
           # else -- no preview scoping, and no dependency on Vercel knowing what
