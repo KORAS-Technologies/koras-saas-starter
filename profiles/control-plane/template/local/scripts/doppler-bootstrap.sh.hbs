@@ -58,7 +58,7 @@ require_doppler() {
 
   # Not "the doppler CLI is not installed". On Windows that sentence is usually
   # false and always unhelpful: `bash` from PowerShell resolves to WSL
-  # (C:\Windows\System32ash.exe), which is a separate Linux filesystem with
+  # (C:\Windows\System32/bash.exe), which is a separate Linux filesystem with
   # its own PATH and cannot see a winget or Scoop install on the Windows side.
   # The tool is there; this shell simply is not the one that can reach it.
   echo "The doppler CLI is not on this shell's PATH." >&2

@@ -1098,3 +1098,55 @@ describe('the project manifest records its components', () => {
     expect(manifest.project.profile).toBe('product')
   })
 })
+
+// ── application security headers ─────────────────────────────────────────────
+
+describe('every generated app ships security headers', () => {
+  it('gives each application a next.config, not just one of them', () => {
+    for (const [profile, slug, apps] of [
+      ['product', 'hdr-product', ['web', 'admin']],
+      ['control-plane', 'hdr-cp', ['admin', 'portal']],
+    ] as Array<[ProfileName, string, string[]]>) {
+      const gen = generate(profile, slug)
+      for (const app of apps.filter((a) => gen.has(`apps/${a}/package.json`))) {
+        expect(gen.has(`apps/${app}/next.config.ts`)).toBe(true)
+      }
+    }
+  })
+
+  it('sets the headers that do not vary per request', () => {
+    const config = generate('control-plane', 'hdr-values').read('apps/portal/next.config.ts')
+
+    for (const header of [
+      'X-Content-Type-Options',
+      'X-Frame-Options',
+      'Referrer-Policy',
+      'Permissions-Policy',
+      'Cross-Origin-Opener-Policy',
+    ]) {
+      expect(config).toContain(header)
+    }
+    // The header advertises framework and version to anyone scanning.
+    expect(config).toContain('poweredByHeader: false')
+  })
+
+  it('leaves the CSP to middleware', () => {
+    // Next injects an inline bootstrap script, so a static CSP would need
+    // `unsafe-inline`; a nonce has to differ per request.
+    const config = generate('product', 'hdr-csp').read('apps/web/next.config.ts')
+    // The comment names the header it deliberately omits, so match the entry.
+    expect(config).not.toMatch(/key:\s*'Content-Security-Policy'/)
+  })
+
+  it('transpiles the workspace packages the app actually depends on', () => {
+    const gen = generate('product', 'hdr-transpile')
+    const pkg = JSON.parse(gen.read('apps/web/package.json'))
+    const config = gen.read('apps/web/next.config.ts')
+
+    const workspaceDeps = Object.keys(pkg.dependencies ?? {}).filter(
+      (d) => d.startsWith('@hdr-transpile/') && d !== pkg.name,
+    )
+    expect(workspaceDeps.length).toBeGreaterThan(0)
+    for (const dep of workspaceDeps) expect(config).toContain(dep)
+  })
+})
