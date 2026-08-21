@@ -97,6 +97,9 @@ export function healthyRoutes(): RouteMap {
     'api.fly.io/graphql': response(200, {
       data: { organizations: { nodes: [{ slug: 'koras-fly' }] } },
     }),
+    // The key must be LONGER than 'client/v4/zones', not merely earlier: the
+    // stub picks the longest matching key, and the DNS URL contains both.
+    'dns_records?per_page=1': response(200, { success: true, result: [] }),
     'client/v4/zones': response(200, { success: true, result: { name: 'koras.app' } }),
     'app.terraform.io/api/v2/organizations': response(200, { data: { id: 'koras' } }),
   }

@@ -288,3 +288,18 @@ validation failure; an unsupported Terraform version; Terraform state failure;
 every row still reported when nothing is configured; an unexpected throw
 becoming a failed row; exit codes in both directions; exact output format; and
 both redaction layers, including a provider echoing a live token back.
+
+## What the Cloudflare check does and does not prove
+
+It reads the zone, confirms the zone really is the primary domain, and lists one
+DNS record.
+
+That last step exists because reading the zone proves only that the token can
+see it. A token holding `Zone:Read` and nothing else passed every question here
+and then failed the apply on the first record with
+`Authentication error (10000)`. Listing records is the cheapest read-only
+question that tells `Zone:Read` apart from a token with DNS scope.
+
+It still does not prove **Edit**. Proving that means writing a record, and a
+doctor that creates DNS in a production zone is a doctor nobody runs before a
+production apply. The token needs `Zone -> DNS -> Edit`.

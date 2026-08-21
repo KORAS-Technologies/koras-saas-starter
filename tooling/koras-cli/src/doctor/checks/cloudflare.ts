@@ -83,6 +83,36 @@ export async function checkCloudflare(ctx: DoctorContext): Promise<DoctorResult>
     }
   }
 
+  // Reading the zone proves the token can see it and nothing more. A token
+  // holding only Zone:Read passes everything above and then fails the apply
+  // with "Authentication error (10000)" on the first DNS record -- which is
+  // exactly what happened on a real bootstrap, after this check reported ready.
+  //
+  // Listing DNS records is still read-only, and it is the cheapest question
+  // that distinguishes "can see the zone" from "has DNS scope at all". It does
+  // not prove Edit, and says so: proving Edit means writing, and a doctor that
+  // creates records is a doctor nobody runs before a production apply.
+  try {
+    await requestJson(
+      ctx.fetchImpl,
+      `https://api.cloudflare.com/client/v4/zones/${encodeURIComponent(zoneId)}/dns_records?per_page=1`,
+      { headers },
+    )
+  } catch (err) {
+    if (err instanceof HttpError) {
+      const detail = describe(err.body) ?? `HTTP ${err.status}`
+      return {
+        passed: false,
+        error:
+          `Zone "${name}" is readable but its DNS records are not: ${detail}\n` +
+          'The token needs Zone -> DNS -> Edit on this zone. Zone:Read alone\n' +
+          'passes every other check here and then fails the apply on the first\n' +
+          'record with "Authentication error (10000)".',
+      }
+    }
+    throw err
+  }
+
   return { passed: true }
 }
 

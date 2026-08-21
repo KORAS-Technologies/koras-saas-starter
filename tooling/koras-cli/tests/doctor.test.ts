@@ -330,6 +330,21 @@ describe('Cloudflare', () => {
     expect(output).toContain('Zone:Read')
   })
 
+  it('fails a token that can read the zone but has no DNS scope', async () => {
+    // The failure this check exists for. Zone:Read passes every other question
+    // here and then fails the apply on the first record with "Authentication
+    // error (10000)" -- which is what happened on a real bootstrap after the
+    // doctor reported ready.
+    const { output } = await run({
+      routes: { 'dns_records?per_page=1': response(403, {
+        success: false,
+        errors: [{ code: 9109, message: 'Unauthorized to access requested resource' }],
+      }) },
+    })
+    expect(output).toContain('DNS records are not')
+    expect(output).toContain('DNS -> Edit')
+  })
+
   it('passes on a zone-scoped token that cannot call /user/tokens/verify', async () => {
     // A token scoped to one zone is a perfectly good credential. Gating on
     // verify would fail it, so the zone read is what decides.

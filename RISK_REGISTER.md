@@ -532,3 +532,23 @@ The DNS records follow whichever domains were actually attached, so the two
 states are always consistent: a hostname with no record is unreachable, and a
 record with no hostname points at Vercel for a domain it will not serve.
 
+### R-022 — the doctor reported Cloudflare ready for a token that could not write DNS
+*Severity: medium. Resolved.*
+
+`bootstrap:doctor` printed `Cloudflare ✓` and the apply then failed on the first
+record with `Authentication error (10000)`.
+
+The check read the zone. That proves the token can *see* the zone and nothing
+more: a token holding `Zone:Read` alone passes it. Probing the real token showed
+exactly that split -- zone read `200`, DNS records `403`.
+
+Same shape as every other defect this week. A check that answers a question
+adjacent to the one that matters reads as reassurance, and the operator finds
+out during an apply instead.
+
+*Resolution* — the check now also lists one DNS record. Still read-only, still
+cheap, and it distinguishes `Zone:Read` from a token with DNS scope. It does not
+prove `Edit`, and the message and the runbook both say so: proving that means
+writing a record, and a doctor that creates DNS in a production zone is a doctor
+nobody runs before a production apply.
+
