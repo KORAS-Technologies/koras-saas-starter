@@ -224,7 +224,6 @@ jobs:
           npx vercel@latest pull --yes --token "$VERCEL_TOKEN" --environment=production
           npx vercel@latest build $target --token "$VERCEL_TOKEN"
           npx vercel@latest deploy --prebuilt $target --token "$VERCEL_TOKEN"
-            --cwd "apps/${{ matrix.app }}"
 
   verify:
     name: Verify (${{ inputs.environment }})
