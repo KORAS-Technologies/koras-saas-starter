@@ -202,14 +202,26 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           app="${{ github.event.repository.name }}-${{ matrix.service }}-${{ inputs.environment }}"
+
+          # Wait out `created` before starting anything. A machine still
+          # launching cannot be started -- Fly answers "unable to start machine
+          # from current state: created" -- and failing on that would mean the
+          # step fails on healthy machines purely for being fast.
+          for _ in $(seq 1 20); do
+            pending=$(flyctl machines list --app "$app" --json \
+              | jq -r '[.[] | select(.state == "created")] | length')
+            [ "$pending" -eq 0 ] && break
+            sleep 5
+          done
+
           flyctl machines list --app "$app" --json \
-            | jq -r '.[] | select(.state != "started") | .id' \
+            | jq -r '.[] | select(.state == "stopped" or .state == "suspended") | .id' \
             | xargs -r -I{} flyctl machine start {} --app "$app"
 
           remaining=$(flyctl machines list --app "$app" --json \
             | jq -r '[.[] | select(.state != "started")] | length')
           if [ "$remaining" -ne 0 ]; then
-            echo "$remaining machine(s) still not started for $app."
+            echo "$remaining machine(s) are not running for $app."
             flyctl machines list --app "$app"
             exit 1
           fi
