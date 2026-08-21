@@ -89,7 +89,8 @@ module "zitadel_prod" {
 module "vercel" {
   source = "../vercel"
 
-  primary_domain = var.primary_domain
+  primary_domain        = var.primary_domain
+  attach_branch_domains = var.attach_branch_domains
 
   project_slug            = var.project_slug
   team_id                 = var.vercel_team_id

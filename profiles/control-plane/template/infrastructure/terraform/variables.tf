@@ -112,3 +112,13 @@ variable "enable_waf" {
   type    = bool
   default = false
 }
+
+# Set true only after each application has deployed at least once. Vercel learns
+# a repository's branches from deployments, so a branch-pinned domain on a
+# project that has never deployed fails with `git_branch_not_found` even though
+# the branch exists on GitHub.
+variable "attach_branch_domains" {
+  type    = bool
+  default = false
+}
+

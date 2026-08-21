@@ -504,3 +504,31 @@ code change — only the value, in the form `authorization=Basic <base64>`.
 An empty `OTEL_EXPORTER_OTLP_ENDPOINT` remains a valid answer, and the right one
 until a collector exists: the tracing setup treats it as "no exporter", so spans
 are still created and trace context still crosses the queue.
+
+### On a chicken and egg between domains and deployments
+The first version of R-021 attached every domain, branch-pinned ones included,
+in one apply. Six of eight failed:
+
+    git_branch_not_found - Branch "develop" not found in the connected Git
+    repository.
+
+The branch existed on GitHub and the Vercel GitHub App was installed for the
+organisation. What was missing is subtler: **Vercel learns a repository's
+branches from deployments**, not from the Git provider, and neither project had
+ever deployed. So the domains wanted a deployment, and the deployment is what
+the pipeline does after provisioning.
+
+The two production domains attached fine -- they need no branch -- and because
+the DNS records derive from the whole set, a partial failure left sixteen
+hostnames configured and zero records created.
+
+*Resolution* — production and branch-pinned domains are now separate resources,
+and the branch-pinned set is behind `attach_branch_domains`, default **false**.
+A fresh estate provisions cleanly with production domains, deploys, and then
+turns the flag on. Defaulting it true would mean every new project fails its
+first apply on something that is not wrong.
+
+The DNS records follow whichever domains were actually attached, so the two
+states are always consistent: a hostname with no record is unreachable, and a
+record with no hostname points at Vercel for a domain it will not serve.
+

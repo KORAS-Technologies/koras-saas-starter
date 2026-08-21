@@ -1250,9 +1250,35 @@ describe('application hostnames', () => {
     // Without the binding a preview hostname follows whichever deployment was
     // most recent, including one from an unrelated branch.
     const vercel = moduleFile('vercel')
-    expect(vercel).toContain('git_branch')
-    // Production must NOT be pinned to a branch, or --prod cannot move it.
-    expect(vercel).toMatch(/environment == "prod" \? null/)
+    expect(vercel).toContain('git_branch = each.value.branch')
+    // Production is a separate resource with no branch, or --prod cannot move it.
+    expect(vercel).toContain('vercel_project_domain" "production"')
+    expect(vercel).toContain('vercel_project_domain" "branches"')
+  })
+
+  it('does not attach branch domains on a first provision', () => {
+    // Vercel learns a repository's branches from deployments, so attaching one
+    // to a project that has never deployed fails with git_branch_not_found even
+    // though the branch exists on GitHub. Defaulting this on would make every
+    // fresh estate fail its first apply on something that is not wrong.
+    const variables = readFileSync(
+      join(__dirname, '..', '..', '..', 'infrastructure', 'terraform', 'modules', 'vercel', 'variables.tf'),
+      'utf8',
+    )
+    expect(variables).toContain('attach_branch_domains')
+    const block = variables.slice(variables.indexOf('variable "attach_branch_domains"'))
+    expect(block).toMatch(/default\s*=\s*false/)
+  })
+
+  it('creates DNS for whichever domains were attached', () => {
+    // A hostname with no record is unreachable; a record with no hostname points
+    // at Vercel for a domain it will not serve.
+    const outputs = readFileSync(
+      join(__dirname, '..', '..', '..', 'infrastructure', 'terraform', 'modules', 'vercel', 'outputs.tf'),
+      'utf8',
+    )
+    expect(outputs).toContain('vercel_project_domain.production')
+    expect(outputs).toContain('vercel_project_domain.branches')
   })
 
   it('creates a DNS record for each attached domain', () => {

@@ -79,3 +79,18 @@ variable "application_hostnames" {
   }
 }
 
+variable "attach_branch_domains" {
+  type        = bool
+  description = <<-EOT
+    Whether to attach the per-environment domains that are pinned to a branch.
+
+    False until each application has deployed at least once. Vercel learns a
+    repository's branches from deployments rather than from the Git provider, so
+    on a project that has never deployed these fail with `git_branch_not_found`
+    even though the branch exists on GitHub.
+
+    Provision, deploy, then set this true and apply again.
+  EOT
+  default     = false
+}
+
