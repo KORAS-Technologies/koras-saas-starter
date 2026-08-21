@@ -166,7 +166,11 @@ jobs:
           # shared runner leaves them for anything that reads the workspace.
           # DOPPLER_* are the CLI's own context, meaningless to the service and
           # permanent once set. Dropped rather than shipped.
-          doppler secrets download --no-file --format env \
+          # env-no-quotes, not env. `env` renders a JSON value as
+          # KEY="[\"a\"]"; flyctl strips the outer quotes and leaves the
+          # backslashes, so the service receives text no JSON parser accepts and
+          # dies on startup with "Expecting value: line 1 column 2".
+          doppler secrets download --no-file --format env-no-quotes \
             --project "${{ github.event.repository.name }}" \
             --config "${{ inputs.environment }}" \
             | grep -v "^DOPPLER_" \
@@ -213,10 +217,13 @@ jobs:
           # become the production alias by being the most recent build.
           target=""
           if [ "${{ inputs.environment }}" = "prod" ]; then target="--prod"; fi
-          npx vercel@latest pull --yes --token "$VERCEL_TOKEN" \
-            --environment=production --cwd "apps/${{ matrix.app }}"
-          npx vercel@latest build $target --token "$VERCEL_TOKEN" --cwd "apps/${{ matrix.app }}"
-          npx vercel@latest deploy --prebuilt $target --token "$VERCEL_TOKEN" \
+          # Run from the repository root. The Vercel project already carries
+          # root_directory, so passing --cwd apps/<app> makes it look for
+          # apps/<app>/apps/<app> -- which does not exist, and Vercel then warns
+          # and silently ignores the setting rather than failing.
+          npx vercel@latest pull --yes --token "$VERCEL_TOKEN" --environment=production
+          npx vercel@latest build $target --token "$VERCEL_TOKEN"
+          npx vercel@latest deploy --prebuilt $target --token "$VERCEL_TOKEN"
             --cwd "apps/${{ matrix.app }}"
 
   verify:
