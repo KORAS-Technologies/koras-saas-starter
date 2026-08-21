@@ -580,3 +580,30 @@ verbatim, and the test that forbids that literal failed on the comment. Reworded
 rather than weakened: a check that forbids a string is defeated by any text
 repeating it, which is worth knowing before writing the next such check.
 
+## R-026 — a green deploy left the worker and scheduler stopped
+
+*Severity: high. Resolved.*
+
+The first fully green deployment shipped all three services, and the Fly
+dashboard showed one app deployed and the other two idle. Their machines had
+been created, updated, and never started: the event history reads
+`launch created` → `update stopped`, with no `start` and no `exit`.
+
+The API was unaffected because its `http_service` gives Fly a reason to start
+it. The worker and scheduler declare a process group and no service, and
+`flyctl deploy` returned success having left every machine down.
+
+So the pipeline reported a successful release while nothing consumed the queue.
+That is precisely the failure this pipeline was built to stop reporting as
+fine, arriving one layer deeper than the last time: not a deploy that ships
+nothing, but a deploy that ships and does not run.
+
+Confirmed rather than inferred: starting one worker machine by hand brought it
+up and it stayed up. The image, the settings and the code were all correct.
+
+*Resolution* — the deploy now starts anything not already started and fails if
+any machine remains stopped. `--ha=false` too: Fly's default created two
+machines per app, which for the scheduler is actively wrong -- two of them
+enqueue every sweep twice, and the audit log records two runs where one
+happened.
+

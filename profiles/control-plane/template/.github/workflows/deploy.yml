@@ -186,7 +186,33 @@ jobs:
             --config "services/${{ matrix.service }}/fly.toml" \
             --dockerfile "services/${{ matrix.service }}/Dockerfile" \
             --remote-only \
+            --ha=false \
             --wait-timeout 600
+
+      - name: Make sure the machines are actually running
+        # A green deploy means the machines were updated, not that they are up.
+        # The worker and scheduler define a process group and no http_service,
+        # and flyctl left every one of their machines `stopped` after a
+        # successful deploy -- created, updated, never started. The API was
+        # unaffected because its http_service gives Fly a reason to start it.
+        #
+        # So the deploy reported success while nothing consumed the queue: the
+        # exact shape of failure this pipeline exists to stop reporting as fine.
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          app="${{ github.event.repository.name }}-${{ matrix.service }}-${{ inputs.environment }}"
+          flyctl machines list --app "$app" --json \
+            | jq -r '.[] | select(.state != "started") | .id' \
+            | xargs -r -I{} flyctl machine start {} --app "$app"
+
+          remaining=$(flyctl machines list --app "$app" --json \
+            | jq -r '[.[] | select(.state != "started")] | length')
+          if [ "$remaining" -ne 0 ]; then
+            echo "$remaining machine(s) still not started for $app."
+            flyctl machines list --app "$app"
+            exit 1
+          fi
 
   applications:
     name: Deploy ${{ matrix.app }} (${{ inputs.environment }})
