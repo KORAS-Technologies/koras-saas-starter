@@ -253,6 +253,52 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - name: Load this environment's settings into the Vercel project
+        # The applications had none at all. Doppler settings were pushed to Fly
+        # and nowhere else, so the admin app answered 500 on its own sign-in
+        # route: with no ZITADEL_DOMAIN the authorize URL came out relative and
+        # the redirect threw. Same gap as the services had, one surface over.
+        #
+        # Pushed before `vercel pull`, because the build reads NEXT_PUBLIC_*
+        # values at build time rather than at request time.
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets[matrix.project_id_secret] }}
+        run: |
+          curl -sSfL https://cli.doppler.com/install.sh | sudo sh >/dev/null
+
+          # Production deployments read the production target; every other
+          # environment is a preview pinned to its own branch, so its settings
+          # must be scoped the same way or dev would read stg values.
+          case "${{ inputs.environment }}" in
+            prod) target="production"; scope="" ;;
+            dev)  target="preview"; scope="develop" ;;
+            stg)  target="preview"; scope="staging" ;;
+            *)    target="preview"; scope="${{ inputs.environment }}" ;;
+          esac
+
+          doppler secrets download --no-file --format env-no-quotes \
+            --project "${{ github.event.repository.name }}" \
+            --config "${{ inputs.environment }}" \
+            | grep -v "^DOPPLER_" > /tmp/settings.env
+
+          while IFS="=" read -r key value; do
+            [ -z "$key" ] && continue
+            # Removed first so a changed value takes effect. `env add` refuses
+            # to overwrite, and a stale value that silently survives a deploy is
+            # worse than a noisy failure.
+            npx --yes vercel@latest env rm "$key" "$target" $scope \
+              --yes --token "$VERCEL_TOKEN" >/dev/null 2>&1 || true
+            printf "%s" "$value" \
+              | npx --yes vercel@latest env add "$key" "$target" $scope \
+                  --token "$VERCEL_TOKEN" >/dev/null
+          done < /tmp/settings.env
+          rm -f /tmp/settings.env
+
+          echo "Settings loaded into ${target}${scope:+ (}${scope}${scope:+)}."
+
       - name: Deploy to Vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
