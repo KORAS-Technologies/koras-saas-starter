@@ -226,6 +226,7 @@ likelihood rating, impact rating, overall severity, and current mitigation.
 | R-018 | Queue polling billed per command             | 8        | Resolved                 |
 | R-019 | ZITADEL projects defined no roles            | 20       | Resolved                 |
 | R-020 | Nothing carried settings into the runtime    | 20       | Resolved                 |
+| R-021 | Applications had no hostnames                | 16       | Resolved                 |
 
 ---
 
@@ -454,3 +455,52 @@ and Handlebars parses those: making it a `.hbs` replaced
 looked correct and authenticated as nobody. Sixty-four tests failed at once,
 which is the good version of that discovery. The app name is built from
 `github.event.repository.name` instead, which equals the project slug.
+
+## R-021 — the applications had no hostnames, so sign-in ended on NXDOMAIN
+
+*Severity: high. Resolved.*
+
+The Vercel module created `vercel_project` and nothing else, and the Cloudflare
+module was wired with `dns_records = []` behind a comment saying records were
+"assembled from Vercel and Fly outputs post-apply". Nothing ever assembled them.
+
+A Vercel project with no domain answers only on its generated `*.vercel.app`
+name. Everything else in the estate was configured for the real hostnames — the
+OAuth redirect URI registered in ZITADEL, `NEXT_PUBLIC_ADMIN_URL`,
+`CORS_ORIGINS` — so the flow was: sign in, succeed, get redirected to
+`admin-dev.<domain>`, and land on a name that resolves to nothing.
+
+Everything up to that point looks healthy, which is what makes it expensive: the
+identity provider is fine, the token is valid, the application is deployed, and
+the only broken thing is a DNS record nobody created.
+
+*Resolution* — `vercel_project_domain` attaches one hostname per application per
+environment, and `project-bootstrap` feeds those domains to Cloudflare as CNAME
+records.
+
+Three decisions worth keeping:
+
+- **Non-production domains are bound to a branch.** Vercel deploys every branch
+  as a preview, and without the binding `admin-dev` follows whichever deployment
+  was most recent — including one from an unrelated branch. Production is
+  deliberately *not* bound: a `git_branch` there would pin it and stop `--prod`
+  moving it.
+- **CNAME, not A.** Vercel's edge addresses change, and a pinned address is an
+  outage nobody causes and nobody expects.
+- **Not proxied through Cloudflare.** Vercel terminates TLS for the domain
+  itself; proxying puts a second certificate in front of a valid one, which
+  fails until Vercel has issued and then serves the wrong chain.
+
+The API is deliberately absent from DNS. It answers on its Fly hostname, which
+is what the settings already point at, so a record here would be a second name
+for something reachable and a second thing to keep correct.
+
+### On authenticating to a hosted collector
+`OTEL_EXPORTER_OTLP_HEADERS` is now in both manifests. Nothing in the codebase
+reads it: the OpenTelemetry SDK picks it up from the environment on its own,
+which was measured rather than assumed. So Grafana Cloud and similar need no
+code change — only the value, in the form `authorization=Basic <base64>`.
+
+An empty `OTEL_EXPORTER_OTLP_ENDPOINT` remains a valid answer, and the right one
+until a collector exists: the tracing setup treats it as "no exporter", so spans
+are still created and trace context still crosses the queue.

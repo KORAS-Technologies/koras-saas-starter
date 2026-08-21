@@ -1230,3 +1230,43 @@ describe.each(['product', 'control-plane'] as const)('%s identity roles', (profi
   })
 })
 
+// -- hostnames ----------------------------------------------------------------
+// Creating a Vercel project was never enough. Without a domain the app answers
+// only on its generated *.vercel.app name, so the OAuth redirect URI pointed at
+// a hostname that resolved to nothing: sign-in completed and landed on NXDOMAIN.
+
+describe('application hostnames', () => {
+  const moduleFile = (name: string) =>
+    readFileSync(
+      join(__dirname, '..', '..', '..', 'infrastructure', 'terraform', 'modules', name, 'main.tf'),
+      'utf8',
+    )
+
+  it('attaches a domain to every Vercel project', () => {
+    expect(moduleFile('vercel')).toContain('vercel_project_domain')
+  })
+
+  it('binds each non-production domain to its own branch', () => {
+    // Without the binding a preview hostname follows whichever deployment was
+    // most recent, including one from an unrelated branch.
+    const vercel = moduleFile('vercel')
+    expect(vercel).toContain('git_branch')
+    // Production must NOT be pinned to a branch, or --prod cannot move it.
+    expect(vercel).toMatch(/environment == "prod" \? null/)
+  })
+
+  it('creates a DNS record for each attached domain', () => {
+    const bootstrap = moduleFile('project-bootstrap')
+    expect(bootstrap).toContain('module.vercel.domains')
+    expect(bootstrap).toContain('cname.vercel-dns.com')
+    expect(bootstrap).not.toMatch(/dns_records\s*=\s*\[\]/)
+  })
+
+  it('does not proxy the Vercel hostnames through Cloudflare', () => {
+    // Vercel terminates TLS for the domain itself. Proxying puts a second
+    // certificate in front of a valid one, which fails until Vercel has issued
+    // and then serves the wrong chain.
+    expect(moduleFile('project-bootstrap')).toMatch(/proxied\s*=\s*false/)
+  })
+})
+

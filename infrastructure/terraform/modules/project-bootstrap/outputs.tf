@@ -62,3 +62,9 @@ output "redis_endpoints" {
   description = "Map of env -> queue host, without the credential."
   value       = module.upstash.redis_endpoints
 }
+
+output "vercel_domains" {
+  description = "Map of '<app>-<environment>' -> hostname, as attached to the Vercel project."
+  value       = module.vercel.domains
+}
+

@@ -39,3 +39,43 @@ variable "build_command" {
   type    = string
   default = "pnpm turbo run build --filter=@PROJECT_SLUG/APP_NAME"
 }
+
+variable "primary_domain" {
+  type        = string
+  description = <<-EOT
+    Apex domain the applications are served under.
+
+    Empty disables domain attachment entirely, which keeps the module usable for
+    an estate that has not chosen a domain yet -- the projects still exist and
+    answer on their generated *.vercel.app names.
+  EOT
+  default     = ""
+}
+
+variable "environment_branches" {
+  type        = map(string)
+  description = "Environment -> git branch. Each becomes one domain bound to that branch."
+  default = {
+    dev  = "develop"
+    test = "test"
+    stg  = "staging"
+    prod = "main"
+  }
+}
+
+variable "application_hostnames" {
+  type        = map(string)
+  description = <<-EOT
+    Application key -> hostname label, where the two differ.
+
+    The customer portal is served at `account`, not `portal`: the name a
+    customer sees should describe what it is to them, not what the component is
+    called in this repository.
+  EOT
+  default = {
+    portal         = "account"
+    platform_admin = "admin"
+    web            = "app"
+  }
+}
+
