@@ -203,14 +203,19 @@ jobs:
         run: |
           app="${{ github.event.repository.name }}-${{ matrix.service }}-${{ inputs.environment }}"
 
-          # Wait out `created` before starting anything. A machine still
-          # launching cannot be started -- Fly answers "unable to start machine
-          # from current state: created" -- and failing on that would mean the
-          # step fails on healthy machines purely for being fast.
-          for _ in $(seq 1 20); do
-            pending=$(flyctl machines list --app "$app" --json \
-              | jq -r '[.[] | select(.state == "created")] | length')
-            [ "$pending" -eq 0 ] && break
+          not_running() {
+            flyctl machines list --app "$app" --json \
+              | jq -r '[.[] | select(.state != "started")] | length'
+          }
+
+          # Machine state is eventually consistent, so every question here is
+          # asked with a deadline rather than once. Two races have already been
+          # found by asking instantly: a machine still in `created` cannot be
+          # started, and a machine mid-restart reads as not-running a second
+          # before it reads as started. Both failed deploys of healthy services.
+          for _ in $(seq 1 30); do
+            [ "$(flyctl machines list --app "$app" --json \
+                 | jq -r '[.[] | select(.state == "created")] | length')" -eq 0 ] && break
             sleep 5
           done
 
@@ -218,13 +223,17 @@ jobs:
             | jq -r '.[] | select(.state == "stopped" or .state == "suspended") | .id' \
             | xargs -r -I{} flyctl machine start {} --app "$app"
 
-          remaining=$(flyctl machines list --app "$app" --json \
-            | jq -r '[.[] | select(.state != "started")] | length')
-          if [ "$remaining" -ne 0 ]; then
-            echo "$remaining machine(s) are not running for $app."
+          for _ in $(seq 1 30); do
+            [ "$(not_running)" -eq 0 ] && break
+            sleep 5
+          done
+
+          if [ "$(not_running)" -ne 0 ]; then
+            echo "Machines are still not running for $app after waiting:"
             flyctl machines list --app "$app"
             exit 1
           fi
+          echo "All machines running for $app."
 
   applications:
     name: Deploy ${{ matrix.app }} (${{ inputs.environment }})
