@@ -126,9 +126,4 @@ variable "upstash_region" {
   default     = "us-east-1"
 }
 
-variable "attach_branch_domains" {
-  type        = bool
-  description = "Attach branch-pinned preview domains. Requires each app to have deployed once."
-  default     = false
-}
 

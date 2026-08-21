@@ -1246,28 +1246,30 @@ describe('application hostnames', () => {
     expect(moduleFile('vercel')).toContain('vercel_project_domain')
   })
 
-  it('binds each non-production domain to its own branch', () => {
-    // Without the binding a preview hostname follows whichever deployment was
-    // most recent, including one from an unrelated branch.
+  it('gives every environment its own project', () => {
+    // Two projects and four environments does not work: a Vercel project has
+    // three env-var targets, not one per estate, so isolating four needs
+    // branch-scoped preview variables -- and Vercel only learns branches from
+    // git-triggered deploys, which CLI deploys never are.
     const vercel = moduleFile('vercel')
-    expect(vercel).toContain('git_branch = each.value.branch')
-    // Production is a separate resource with no branch, or --prod cannot move it.
-    expect(vercel).toContain('vercel_project_domain" "production"')
-    expect(vercel).toContain('vercel_project_domain" "branches"')
+
+    // Asserted on what the resource iterates, not on the file merely mentioning
+    // the matrix. The first version of this checked for the string and passed
+    // happily when for_each was reverted to one project per app.
+    const project = vercel.slice(vercel.indexOf('resource "vercel_project" "apps"'))
+    expect(project.slice(0, project.indexOf('}'))).toContain('for_each = local.project_matrix')
+
+    expect(vercel).toContain('each.value.environment')
+    expect(vercel).toContain('production_branch = each.value.branch')
   })
 
-  it('does not attach branch domains on a first provision', () => {
-    // Vercel learns a repository's branches from deployments, so attaching one
-    // to a project that has never deployed fails with git_branch_not_found even
-    // though the branch exists on GitHub. Defaulting this on would make every
-    // fresh estate fail its first apply on something that is not wrong.
-    const variables = readFileSync(
-      join(__dirname, '..', '..', '..', 'infrastructure', 'terraform', 'modules', 'vercel', 'variables.tf'),
-      'utf8',
-    )
-    expect(variables).toContain('attach_branch_domains')
-    const block = variables.slice(variables.indexOf('variable "attach_branch_domains"'))
-    expect(block).toMatch(/default\s*=\s*false/)
+  it('needs no branch binding on a domain', () => {
+    // The project is the environment, so its production deployment is the only
+    // thing the hostname should point at. The branch-bound variant could not be
+    // created at all until the project had already deployed once.
+    const vercel = moduleFile('vercel')
+    expect(vercel).toContain('vercel_project_domain" "primary"')
+    expect(vercel).not.toContain('git_branch')
   })
 
   it('builds the package that actually exists', () => {
@@ -1278,7 +1280,7 @@ describe('application hostnames', () => {
     // deployment, with "No package found".
     const vercel = moduleFile('vercel')
     expect(vercel).not.toContain('@PROJECT_SLUG/APP_NAME')
-    expect(vercel).toContain('local.package_names[each.key]')
+    expect(vercel).toContain('local.package_names[each.value.app]')
 
     const variables = readFileSync(
       join(__dirname, '..', '..', '..', 'infrastructure', 'terraform', 'modules', 'vercel', 'variables.tf'),
@@ -1294,15 +1296,15 @@ describe('application hostnames', () => {
     expect(moduleFile('vercel')).toContain('basename(lookup(var.application_source_dirs')
   })
 
-  it('creates DNS for whichever domains were attached', () => {
+  it('creates DNS for every attached domain', () => {
     // A hostname with no record is unreachable; a record with no hostname points
     // at Vercel for a domain it will not serve.
     const outputs = readFileSync(
       join(__dirname, '..', '..', '..', 'infrastructure', 'terraform', 'modules', 'vercel', 'outputs.tf'),
       'utf8',
     )
-    expect(outputs).toContain('vercel_project_domain.production')
-    expect(outputs).toContain('vercel_project_domain.branches')
+    expect(outputs).toContain('vercel_project_domain.primary')
+    expect(moduleFile('project-bootstrap')).toContain('module.vercel.domains')
   })
 
   it('creates a DNS record for each attached domain', () => {

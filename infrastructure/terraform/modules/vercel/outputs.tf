@@ -1,24 +1,20 @@
 output "project_ids" {
-  description = "Map of app name → Vercel project ID"
-  value       = { for k, v in vercel_project.apps : k => v.id }
+  description = <<-EOT
+    Map of '<app>-<environment>' -> Vercel project id.
+
+    Keyed by environment because there is one project per environment. The
+    deploy pipeline reads the id for the environment it is releasing, which is
+    what keeps a dev release from being pushed into the production project.
+  EOT
+  value       = { for key, p in vercel_project.apps : key => p.id }
 }
 
 output "project_urls" {
-  description = "Map of app name → Vercel project URL"
+  description = "Map of '<app>-<environment>' -> the project's generated Vercel URL."
   value       = { for k, v in vercel_project.apps : k => "${v.name}.vercel.app" }
 }
 
 output "domains" {
-  description = <<-EOT
-    Map of '<app>-<environment>' -> hostname attached to that project.
-
-    Both sets, so the DNS records follow whatever was actually attached. A
-    hostname with no record is unreachable; a record with no hostname points at
-    Vercel for a domain it will not serve.
-  EOT
-  value = merge(
-    { for key, d in vercel_project_domain.production : key => d.domain },
-    { for key, d in vercel_project_domain.branches : key => d.domain },
-  )
+  description = "Map of '<app>-<environment>' -> the hostname that project answers on."
+  value       = { for key, d in vercel_project_domain.primary : key => d.domain }
 }
-

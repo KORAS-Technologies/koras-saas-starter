@@ -25,46 +25,29 @@ locals {
   }
 }
 
-resource "vercel_project" "apps" {
-  for_each = toset(var.applications)
 
-  name      = "${var.project_slug}-${local.app_names[each.key]}"
-  team_id   = var.team_id
-  framework = var.framework
-
-  git_repository = {
-    type              = "github"
-    repo              = var.git_repository
-    production_branch = "main"
-  }
-
-  build_command    = coalesce(var.build_command, "pnpm turbo run build --filter=${local.package_names[each.key]}")
-  output_directory = ".next"
-  install_command  = "pnpm install --frozen-lockfile"
-  root_directory   = lookup(var.application_source_dirs, each.key, "apps/${each.key}")
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-# The hostnames each application actually answers on.
-#
-# Creating the project was never enough: a Vercel project with no domain is
-# reachable only at its generated *.vercel.app URL, so the redirect URI ZITADEL
-# sends a browser to after login pointed at a name that resolved to nothing.
-# Sign-in completed and then landed on NXDOMAIN.
-#
-# One domain per environment, bound to that environment's branch. Vercel deploys
-# every branch as a preview and this is what gives a preview a stable name --
-# without the binding, `admin-dev` would follow whichever deployment was most
-# recent, including one from an unrelated branch.
-#
-# `prod` is deliberately absent from the branch binding: the production domain
-# follows the production deployment, which is what `--prod` on the `main` branch
-# produces.
 locals {
-  domain_matrix = merge([
+  # One project per application per environment.
+  #
+  # Two projects and four environments does not work, and the reason is
+  # structural rather than a configuration mistake. A Vercel project has three
+  # environment-variable targets -- production, preview, development -- not one
+  # per estate. Isolating four environments inside one project therefore needs
+  # preview variables scoped per git branch, and Vercel only learns a
+  # repository's branches from git-triggered deployments. These are deployed
+  # from CI with the CLI, so it never learns them: every branch-scoped call
+  # fails with `Branch "develop" not found in the connected Git repository`.
+  #
+  # Splitting by environment removes the dependency instead of working around
+  # it. Each project has exactly one estate, so its own production target holds
+  # that estate's settings, its own domain points at it, and nothing needs to
+  # know what a branch is. It also matches how the rest of the estate is already
+  # arranged -- four Supabase projects, four ZITADEL instances, twelve Fly apps.
+  #
+  # The cost is eight projects rather than two. The alternative was one working
+  # application environment and dev credentials living in a target named
+  # production.
+  project_matrix = merge([
     for app in var.applications : {
       for environment, branch in var.environment_branches :
       "${app}-${environment}" => {
@@ -81,38 +64,41 @@ locals {
   ]...)
 }
 
-# Production domains. These follow the production deployment and need no
-# branch, so they attach to a project that has never deployed.
-resource "vercel_project_domain" "production" {
-  for_each = {
-    for key, d in local.domain_matrix : key => d if d.environment == "prod"
+resource "vercel_project" "apps" {
+  for_each = local.project_matrix
+
+  name      = "${var.project_slug}-${local.app_names[each.value.app]}-${each.value.environment}"
+  team_id   = var.team_id
+  framework = var.framework
+
+  git_repository = {
+    type = "github"
+    repo = var.git_repository
+    # This environment's branch is this project's production branch. That is
+    # what makes each project a single estate rather than a shared one.
+    production_branch = each.value.branch
   }
 
-  project_id = vercel_project.apps[each.value.app].id
-  team_id    = var.team_id
-  domain     = each.value.domain
+  build_command    = coalesce(var.build_command, "pnpm turbo run build --filter=${local.package_names[each.value.app]}")
+  output_directory = ".next"
+  install_command  = "pnpm install --frozen-lockfile"
+  root_directory   = lookup(var.application_source_dirs, each.value.app, "apps/${each.value.app}")
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
-# Per-environment domains, each pinned to the branch that deploys it.
+# The hostname this project answers on.
 #
-# Gated, because attaching one requires Vercel to already know the branch
-# exists -- and Vercel learns a repository's branches from deployments, not from
-# the Git provider. On a project that has never deployed, every one of these
-# fails with `git_branch_not_found` even though the branch is present on GitHub
-# and the Git integration is installed.
-#
-# That makes first-time provisioning a chicken and egg: the domains want a
-# deployment, and a deployment is what the pipeline does after provisioning. So
-# the order is provision, deploy once, then set attach_branch_domains and apply
-# again. Defaulting this to true would mean every fresh estate fails its first
-# apply on something that is not wrong.
-resource "vercel_project_domain" "branches" {
-  for_each = var.attach_branch_domains ? {
-    for key, d in local.domain_matrix : key => d if d.environment != "prod"
-  } : {}
+# One per project, on the production target, with no branch binding: the
+# project *is* the environment, so its production deployment is the only thing
+# the name should ever point at. The branch-bound variant this replaces could
+# not be created at all until the project had already deployed once.
+resource "vercel_project_domain" "primary" {
+  for_each = var.primary_domain == "" ? {} : local.project_matrix
 
-  project_id = vercel_project.apps[each.value.app].id
+  project_id = vercel_project.apps[each.key].id
   team_id    = var.team_id
   domain     = each.value.domain
-  git_branch = each.value.branch
 }

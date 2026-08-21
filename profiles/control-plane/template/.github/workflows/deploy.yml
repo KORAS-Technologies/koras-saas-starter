@@ -272,12 +272,12 @@ jobs:
           # Production deployments read the production target; every other
           # environment is a preview pinned to its own branch, so its settings
           # must be scoped the same way or dev would read stg values.
-          case "${{ inputs.environment }}" in
-            prod) target="production"; scope="" ;;
-            dev)  target="preview"; scope="develop" ;;
-            stg)  target="preview"; scope="staging" ;;
-            *)    target="preview"; scope="${{ inputs.environment }}" ;;
-          esac
+          # Always production. There is one Vercel project per environment, so
+          # each project's production target is that environment and nothing
+          # else -- no preview scoping, and no dependency on Vercel knowing what
+          # a branch is.
+          target="production"
+          scope=""
 
           doppler secrets download --no-file --format env-no-quotes \
             --project "${{ github.event.repository.name }}" \
@@ -305,11 +305,11 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets[matrix.project_id_secret] }}
         run: |
-          # `--prod` only on prod. Every other environment gets a preview
-          # deployment aliased to its own domain, so a staging push cannot
-          # become the production alias by being the most recent build.
-          target=""
-          if [ "${{ inputs.environment }}" = "prod" ]; then target="--prod"; fi
+          # --prod everywhere, because "production" here means this
+          # environment's own project. A staging release cannot reach the
+          # production estate: it is a different project with a different
+          # domain and its own settings.
+          target="--prod"
           # Run from the repository root. The Vercel project already carries
           # root_directory, so passing --cwd apps/<app> makes it look for
           # apps/<app>/apps/<app> -- which does not exist, and Vercel then warns

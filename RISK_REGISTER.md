@@ -607,3 +607,54 @@ machines per app, which for the scheduler is actively wrong -- two of them
 enqueue every sweep twice, and the audit log records two runs where one
 happened.
 
+## R-027 — the applications had no settings, and two projects could not hold four
+
+*Severity: high. Resolved.*
+
+The admin app answered 500 on its own sign-in route. Its Vercel project held
+zero environment variables: settings were pushed to Fly and nowhere else, so
+`ZITADEL_DOMAIN` was empty, the authorize URL came out relative, and the
+redirect threw. The same gap the services had, one surface over.
+
+Fixing it exposed a structural problem rather than a second oversight. A Vercel
+project has three environment-variable targets -- production, preview,
+development -- not one per estate. Isolating four environments inside one
+project therefore needs preview variables scoped per git branch, and Vercel
+learns a repository's branches only from git-triggered deployments. These deploy
+from CI with the CLI, so it never learns them: every scoped call failed with
+`Branch "develop" not found in the connected Git repository`.
+
+The alternatives were one working application environment, or a shared non-prod
+configuration in which a staging deployment reads dev's database and dev's
+identity provider -- a cross-environment read, and the browser tier being the
+one place the four-environment model stopped.
+
+*Resolution* — one project per application per environment. Eight rather than
+two, matching four Supabase projects, four ZITADEL instances and twelve Fly
+apps. Each project is a single estate, so its own production target holds that
+estate's settings and its own domain points at it. Nothing needs to know what a
+branch is, which is why `attach_branch_domains` is gone: the flag existed only
+to defer domains that cannot be created before a project has deployed, and
+there are no such domains now.
+
+The deploy pushes the environment's settings into its project before building --
+before, because the build reads `NEXT_PUBLIC_*` at build time -- and deploys
+with `--prod` in every environment, because production here means this
+environment's own project.
+
+### Migrating an estate that already has two
+`for_each` is re-keyed, so Terraform proposes destroying the two existing
+projects and creating eight. Both carry `prevent_destroy`, so it will refuse
+rather than do it. Move the two production ones into their new addresses first:
+
+    terraform state mv       'module.bootstrap.module.vercel.vercel_project.apps["platform_admin"]'       'module.bootstrap.module.vercel.vercel_project.apps["platform_admin-prod"]'
+
+and the same for the portal, plus their `vercel_project_domain` entries. The
+plan then reads as six creates and two in-place renames.
+
+### On a test that passed while the thing it guarded was reverted
+The first version asserted the module *mentioned* `project_matrix`. Reverting
+`for_each` to one project per application left every one of those strings in
+place and the test still passed. It now reads the resource block and asserts
+what it iterates.
+
