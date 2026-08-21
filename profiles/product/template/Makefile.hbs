@@ -5,6 +5,10 @@
 
 PROFILE := {{profile}}
 PROJECT_SLUG := {{projectSlug}}
+# Raise on a machine with memory to spare; lower if builds die with allocation
+# failures. See the `build` target.
+BUILD_CONCURRENCY ?= 4
+
 APPS := {{#each enabledApplications}}{{this}} {{/each}}
 SERVICES := {{#each enabledServices}}{{this}} {{/each}}
 
@@ -89,8 +93,14 @@ typecheck: ## Type-check all sources
 	uv run mypy python-packages
 	@for svc in $(SERVICES); do echo "mypy services/$$svc"; uv run mypy "services/$$svc"; done
 
+# --concurrency is capped deliberately. Turbo defaults to roughly one task per
+# core, and each `tsc` reserves a few hundred MB of commit before it does any
+# work. On a developer machine already running a local stack, twenty at once
+# exhausts the Windows commit limit and the builds fail together with
+# VirtualAlloc, DLL-init and zone-allocation errors, none of which name memory
+# as the cause.
 build: ## Build all packages
-	pnpm turbo run build
+	pnpm turbo run build --concurrency=$(BUILD_CONCURRENCY)
 
 clean: ## Remove build artifacts
 	pnpm turbo run clean

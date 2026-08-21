@@ -1,6 +1,13 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  // Linting runs as its own turbo task (`eslint src` per app) against the root
+  // flat config, which applies the Next plugin to `apps/**`. Next's built-in
+  // lint step resolves config from the app directory, cannot see that, and
+  // warns on every build that a plugin it is in fact using was "not detected".
+  // Disabling the duplicate pass removes the warning without removing a check.
+  eslint: { ignoreDuringBuilds: true },
+
   transpilePackages: [
     '@{{projectSlug}}/auth',
     '@{{projectSlug}}/branding',
