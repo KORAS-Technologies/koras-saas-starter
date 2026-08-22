@@ -1,0 +1,29 @@
+
+/**
+ * Sign in.
+ *
+ * A KORAS page with a KORAS button. The redirect passes through ZITADEL as an
+ * OAuth authorize call and returns here; the customer never sees a
+ * ZITADEL-hosted screen, which is invariant 4.
+ */
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>
+}) {
+  const { next } = await searchParams
+  // The link points at a route handler rather than straight at ZITADEL: the
+  // flow needs to store a CSRF token and a PKCE verifier first, and only a
+  // handler can set cookies.
+  const href = `/api/auth/start?next=${encodeURIComponent(next ?? '/')}`
+
+  return (
+    <main className="login">
+      <h1>Your KORAS account</h1>
+      <p>Sign in to manage your organization, products and users.</p>
+      <a className="button" href={href} data-testid="sign-in">
+        Sign in
+      </a>
+    </main>
+  )
+}

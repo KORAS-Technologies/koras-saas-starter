@@ -1,0 +1,16 @@
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { cookieOptions } from '@{{projectSlug}}/auth'
+
+/**
+ * Sign out.
+ *
+ * POST rather than GET: a sign-out reachable by navigation can be triggered by
+ * any page that can make the browser load a URL, which is a nuisance rather
+ * than a breach but is trivially avoided.
+ */
+export async function POST(request: NextRequest) {
+  const response = NextResponse.redirect(new URL('/login', request.nextUrl.origin))
+  response.cookies.set('session', '', cookieOptions({ secure: request.nextUrl.protocol === 'https:', maxAge: 0 }))
+  return response
+}

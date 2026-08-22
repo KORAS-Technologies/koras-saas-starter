@@ -1235,6 +1235,83 @@ describe.each(['product', 'control-plane'] as const)('%s identity roles', (profi
 // only on its generated *.vercel.app name, so the OAuth redirect URI pointed at
 // a hostname that resolved to nothing: sign-in completed and landed on NXDOMAIN.
 
+describe('a generated control plane can actually sign someone in', () => {
+  let gen: ReturnType<typeof generate>
+  beforeAll(() => {
+    gen = generate('control-plane', 'auth-cp')
+  })
+
+  it('ships the routes a sign-in needs', () => {
+    // The auth package was a 33-line stub whose verifySession returned null
+    // unconditionally, and there were no route handlers at all -- so every
+    // generated project redirected every request to /login forever, before
+    // anyone configured anything.
+    for (const app of ['admin', 'portal']) {
+      for (const route of ['start', 'callback', 'signout']) {
+        expect(gen.has(`apps/${app}/src/app/api/auth/${route}/route.ts`)).toBe(true)
+      }
+      expect(gen.has(`apps/${app}/src/middleware.ts`)).toBe(true)
+    }
+  })
+
+  it('does not verify a session by returning null', () => {
+    const auth = gen.read('packages/auth/src/index.ts')
+    expect(auth).not.toContain('Verification delegated')
+    expect(auth).toContain('export async function readSession')
+    expect(auth).toContain('export async function mintSession')
+  })
+
+  it('does not carry the destination in the state parameter', () => {
+    // One parameter, two defects: a predictable CSRF token, and an open
+    // redirect that puts a phishing link on a KORAS domain.
+    const oauth = gen.read('packages/auth/src/oauth.ts')
+    expect(oauth).toContain('safeReturnPath')
+    expect(oauth).toContain('code_challenge_method')
+    const auth = gen.read('packages/auth/src/index.ts')
+    expect(auth).not.toContain('state: callbackUrl')
+  })
+
+  it('reads the session without a network call', () => {
+    // The edge runtime could not reach the identity provider the Node runtime
+    // could, so verifying the provider's token per request meant every valid
+    // session read as no session.
+    const auth = gen.read('packages/auth/src/index.ts')
+    const reader = auth.slice(auth.indexOf('export async function readSession'))
+    expect(reader.slice(0, reader.indexOf('\n}\n'))).not.toContain('jwksFor')
+    for (const app of ['admin', 'portal']) {
+      expect(gen.read(`apps/${app}/src/middleware.ts`)).toContain('readSession')
+    }
+  })
+
+  it('names itself, not the project it was extracted from', () => {
+    // The session issuer was a hardcoded `koras-control-plane`, so every
+    // generated estate signed cookies as though it were that one.
+    expect(gen.read('packages/auth/src/index.ts')).toContain("SESSION_ISSUER = 'auth-cp'")
+    for (const file of ['packages/auth/src/index.ts', 'packages/auth/src/oauth.ts']) {
+      expect(gen.read(file)).not.toContain('koras-control-plane')
+    }
+  })
+
+  it('asks for the key that signs its cookies', () => {
+    expect(gen.read('local/config/secrets.manifest')).toContain('SESSION_SECRET supplied')
+    expect(gen.read('local/config/.env.local.example')).toContain('SESSION_SECRET=')
+  })
+
+  it('puts the roles in the token the applications read', () => {
+    // project_role_assertion governs the access token; the applications read
+    // the ID token. Without this a user with a role signs in carrying none,
+    // and the middleware answers "this application is for KORAS staff" --
+    // the correct refusal for that token, and entirely misleading about why.
+    const zitadel = readFileSync(
+      join(__dirname, '..', '..', '..', 'infrastructure', 'terraform',
+           'modules', 'zitadel', 'main.tf'),
+      'utf8',
+    )
+    expect(zitadel).toMatch(/id_token_role_assertion\s*=\s*true/)
+    expect(zitadel).toMatch(/id_token_userinfo_assertion\s*=\s*true/)
+  })
+})
+
 describe('sign-in is configured per environment', () => {
   const bootstrap = () =>
     readFileSync(

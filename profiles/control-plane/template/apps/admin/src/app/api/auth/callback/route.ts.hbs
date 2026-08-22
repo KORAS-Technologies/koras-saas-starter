@@ -1,0 +1,106 @@
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import {
+  OAUTH_COOKIES,
+  cookieOptions,
+  ExchangeError,
+  exchangeCode,
+  mintSession,
+  resolveToken,
+  safeReturnPath,
+  tokensMatch,
+} from '@{{projectSlug}}/auth'
+
+/**
+ * Finish the sign-in.
+ *
+ * The state in the query string must match the one in the cookie. That is the
+ * whole CSRF defence for the flow: without it, an attacker can hand someone a
+ * callback URL carrying their own authorization code and silently sign that
+ * browser into the attacker's account.
+ */
+export async function GET(request: NextRequest) {
+  const url = request.nextUrl
+  const code = url.searchParams.get('code')
+  const state = url.searchParams.get('state')
+
+  const expected = request.cookies.get(OAUTH_COOKIES.state)?.value
+  const verifier = request.cookies.get(OAUTH_COOKIES.verifier)?.value
+
+  if (!code || !tokensMatch(state ?? undefined, expected) || !verifier) {
+    // One message for every failure. Telling the caller whether the state was
+    // wrong or the code was missing tells them which half of their attempt to
+    // fix.
+    return new NextResponse('The sign-in could not be completed.', { status: 400 })
+  }
+
+  let tokens
+  try {
+    tokens = await exchangeCode({
+      zitadelDomain: process.env.ZITADEL_DOMAIN ?? '',
+      clientId: process.env.ZITADEL_CLIENT_ID ?? '',
+      // The application is a confidential client; without this ZITADEL
+      // rejects the code and the sign-in fails on its last step.
+      clientSecret: process.env.ZITADEL_CLIENT_SECRET,
+      redirectUri: process.env.ZITADEL_ADMIN_REDIRECT_URI ?? '',
+      code,
+      codeVerifier: verifier,
+    })
+  } catch (error) {
+    // Logged, never returned. The browser gets one flat message for every
+    // cause -- which is right, and is also why a 401 from an unauthenticated
+    // token exchange went unexplained through four environments. The server
+    // log is the place that may say what happened.
+    console.error('token exchange failed', {
+      status: error instanceof ExchangeError ? error.status : undefined,
+    })
+    return new NextResponse('The sign-in could not be completed.', { status: 400 })
+  }
+
+  // Verified here, in the Node runtime, because this is where ZITADEL can be
+  // reached: the edge runtime cannot fetch this deployment's key set, and
+  // discovering that took a login loop through four rounds of fixes.
+  const outcome = await resolveToken(tokens.idToken, {
+    zitadelDomain: process.env.ZITADEL_DOMAIN ?? '',
+    clientId: process.env.ZITADEL_CLIENT_ID ?? '',
+    projectId: process.env.ZITADEL_PROJECT_ID,
+    // MFA is enforced by the middleware, which can tell the caller to enrol.
+    // Refusing here would send them back to a sign-in they just completed.
+    requireMfa: false,
+  })
+  if (outcome.status === 'anonymous') {
+    console.error('the provider issued a token this application cannot verify')
+    return new NextResponse('The sign-in could not be completed.', { status: 400 })
+  }
+
+  const lifetime = tokens.expiresIn ?? 3600
+  let cookie: string
+  try {
+    cookie = await mintSession(
+      outcome.session,
+      process.env.SESSION_SECRET ?? '',
+      Math.floor(Date.now() / 1000) + lifetime,
+    )
+  } catch (error) {
+    // A missing or too-short signing key. Said out loud in the log, because
+    // the alternative is a sign-in that completes and leaves no session.
+    console.error('cannot mint a session', {
+      reason: error instanceof Error ? error.message : 'unknown',
+    })
+    return new NextResponse('The sign-in could not be completed.', { status: 500 })
+  }
+
+  const destination = safeReturnPath(request.cookies.get(OAUTH_COOKIES.returnTo)?.value)
+  const secure = url.protocol === 'https:'
+  const response = NextResponse.redirect(new URL(destination, url.origin))
+
+  // This application's own cookie, not the provider's token. Nothing in it
+  // beyond what authorisation reads.
+  response.cookies.set('session', cookie, cookieOptions({ secure, maxAge: lifetime }))
+  // The flow is over, so its secrets go. A verifier left in the browser is
+  // reusable material for a code that leaks later.
+  for (const name of Object.values(OAUTH_COOKIES)) {
+    response.cookies.set(name, '', cookieOptions({ secure, maxAge: 0 }))
+  }
+  return response
+}

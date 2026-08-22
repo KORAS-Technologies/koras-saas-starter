@@ -1,0 +1,30 @@
+
+/**
+ * The sign-in page.
+ *
+ * A KORAS page with a KORAS button. The button starts an OAuth redirect through
+ * ZITADEL and the browser lands back here; staff never see a ZITADEL-hosted
+ * screen, which invariant 4 requires of customers and which there is no reason
+ * to relax for staff.
+ */
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>
+}) {
+  const { next } = await searchParams
+  // The link points at a route handler rather than straight at ZITADEL: the
+  // flow needs to store a CSRF token and a PKCE verifier first, and only a
+  // handler can set cookies.
+  const href = `/api/auth/start?next=${encodeURIComponent(next ?? '/')}`
+
+  return (
+    <main className="login">
+      <h1>KORAS Platform Admin</h1>
+      <p>This application is for KORAS staff. Multi-factor authentication is required.</p>
+      <a className="button" href={href} data-testid="sign-in">
+        Sign in
+      </a>
+    </main>
+  )
+}

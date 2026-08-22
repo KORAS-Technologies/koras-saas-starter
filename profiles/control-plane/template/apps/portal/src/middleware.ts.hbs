@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { readSession } from '@{{projectSlug}}/auth'
-import { areaForPath, canAccess } from '@{{projectSlug}}/permissions'
 
 /**
- * Every route requires a signed-in member of KORAS staff, and each area
- * requires one of the roles that area admits.
+ * The portal is for customer organization users.
  *
- * Gating happens here rather than per page so that a new page is protected by
- * default: forgetting to add a check is the failure this shape prevents.
+ * The gate is the reverse of the admin application: a session is required, and
+ * a platform role is a reason to refuse rather than to admit. Staff who need to
+ * see customer data have the admin application, where the access is attributed
+ * to them.
  */
 const PUBLIC_PATHS = ['/login', '/api/auth']
 
@@ -88,19 +88,20 @@ async function authorize(request: NextRequest, nonce: string): Promise<NextRespo
 
   const session = outcome.session
 
-  // Signed in but not staff. 403 rather than a redirect: sending a customer to
-  // a login page they have already passed is a loop, and this is a real refusal
-  // rather than a missing session.
-  if (!session.platformRole) {
-    return new NextResponse('This application is for KORAS staff.', { status: 403 })
-  }
-
-  const area = areaForPath(pathname)
-  if (area && !canAccess(area, session.platformRole)) {
+  if (session.platformRole) {
     return new NextResponse(
-      `Your role (${session.platformRole}) does not have access to ${area}.`,
+      'This is the customer portal. KORAS staff use the admin application.',
       { status: 403 },
     )
+  }
+
+  // A customer token that carries no organization cannot be scoped to one, and
+  // the API would refuse every request anyway. Saying so here is clearer than
+  // an empty page.
+  if (!session.organizationId) {
+    return new NextResponse('Your account is not linked to an organization.', {
+      status: 403,
+    })
   }
 
   return withNonce(request, nonce)

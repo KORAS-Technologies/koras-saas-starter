@@ -1,0 +1,29 @@
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { OAUTH_COOKIES, beginAuthorization, cookieOptions } from '@{{projectSlug}}/auth'
+
+/**
+ * Start the sign-in.
+ *
+ * A route handler rather than a link built on the login page, because the flow
+ * needs to remember two secrets across the redirect and only a handler may set
+ * cookies. Putting them in the URL instead -- which is what carrying the
+ * destination in `state` amounted to -- is the thing this exists to avoid.
+ */
+export async function GET(request: NextRequest) {
+  const start = await beginAuthorization({
+    zitadelDomain: process.env.ZITADEL_DOMAIN ?? '',
+    clientId: process.env.ZITADEL_CLIENT_ID ?? '',
+    redirectUri: process.env.ZITADEL_PORTAL_REDIRECT_URI ?? '',
+    returnTo: request.nextUrl.searchParams.get('next'),
+  })
+
+  const response = NextResponse.redirect(start.url)
+  // Short-lived: these are only needed for the round trip through ZITADEL, and
+  // a stale verifier lying around is a replay waiting for a leaked code.
+  const options = cookieOptions({ secure: request.nextUrl.protocol === 'https:', maxAge: 600 })
+  response.cookies.set(OAUTH_COOKIES.state, start.state, options)
+  response.cookies.set(OAUTH_COOKIES.verifier, start.codeVerifier, options)
+  response.cookies.set(OAUTH_COOKIES.returnTo, start.returnTo, options)
+  return response
+}

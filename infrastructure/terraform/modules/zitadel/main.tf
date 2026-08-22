@@ -96,6 +96,21 @@ resource "zitadel_application_oidc" "web" {
   version                   = "OIDC_VERSION_1_0"
   access_token_type         = "OIDC_TOKEN_TYPE_JWT"
 
+  # Put the roles and the profile into the ID token.
+  #
+  # `project_role_assertion` on the project above is not enough: it governs
+  # the access token, and the applications read the ID token. Without these
+  # two, a user with a platform role signs in successfully and arrives
+  # carrying no role at all -- so the middleware answers `This application is
+  # for KORAS staff`, which is the correct refusal for a token that genuinely
+  # says nothing, and completely misleading about why.
+  #
+  # The userinfo assertion is here for the same reason: email and name are
+  # read from the same token, and a session with no name renders a signed-in
+  # user as anonymous.
+  id_token_role_assertion     = true
+  id_token_userinfo_assertion = true
+
   # Relaxed OIDC checks are acceptable in dev only.
   dev_mode = var.environment == "dev"
 
