@@ -1,0 +1,71 @@
+import { cookies } from 'next/headers'
+import { PlatformApiClient } from '@{{projectSlug}}/api-client'
+import type { PlatformRole } from '@{{projectSlug}}/permissions'
+import { readSessionToken } from '@{{projectSlug}}/auth'
+
+/**
+ * The signed-in staff member.
+ *
+ * This used to decode the cookie without verifying it and look for ZITADEL's
+ * `urn:zitadel:iam:org:project:roles` claim -- a second reader of the same
+ * cookie, kept in step with the first by hand. When the cookie became one
+ * this application signs, this copy found nothing: every page rendered as
+ * though nobody was signed in, while the middleware let the request through.
+ *
+ * There is one reader now, and it verifies. Verification is a local signature
+ * check with no network call, so the reason for skipping it is gone too.
+ */
+export interface StaffSession {
+  userId: string
+  email?: string
+  name?: string
+  platformRole: PlatformRole
+}
+
+export async function currentStaff(): Promise<StaffSession | null> {
+  const outcome = await readSessionToken((await cookies()).get('session')?.value, {
+    secret: process.env.SESSION_SECRET ?? '',
+  })
+  if (outcome.status !== 'ok' || !outcome.session.platformRole) return null
+
+  return {
+    userId: outcome.session.userId,
+    email: outcome.session.email,
+    name: outcome.session.name,
+    platformRole: outcome.session.platformRole,
+  }
+}
+/**
+ * An API client carrying the staff member's own token.
+ *
+ * Deliberately not a service credential. Calls made on behalf of a person are
+ * attributed to that person in the audit log, and the API applies their role
+ * rather than trusting this application to have applied it.
+ */
+export async function apiClient(): Promise<PlatformApiClient | null> {
+  const token = (await cookies()).get('session')?.value
+  if (!token) return null
+  return new PlatformApiClient({
+    // PLATFORM_API_URL was never a setting: not in the contract, not in the
+    // manifest, not in Doppler. It fell back to localhost, which on a
+    // deployed function reaches nothing -- so every page answered `The
+    // platform API could not be reached` while the API was healthy.
+    baseUrl: apiBaseUrl(),
+    token,
+  })
+}
+
+/**
+ * Where the platform API lives.
+ *
+ * One declared setting rather than an undeclared one with a localhost
+ * default. A default that silently points somewhere useless is worse than no
+ * default: the failure looks like the API being down.
+ */
+function apiBaseUrl(): string {
+  const base = process.env.NEXT_PUBLIC_API_URL ?? ''
+  if (!base) {
+    console.error('NEXT_PUBLIC_API_URL is not set; no platform API call can succeed')
+  }
+  return base
+}

@@ -49,7 +49,10 @@ export async function middleware(request: NextRequest) {
   // the error paths are the ones easiest to forget.
   response.headers.set(
     'Content-Security-Policy',
-    contentSecurityPolicy(nonce, process.env.NEXT_PUBLIC_API_BASE_URL ?? ''),
+    // NEXT_PUBLIC_API_BASE_URL was never a setting either, so connect-src
+    // was 'self' alone and the browser blocked every call to the platform
+    // API. Two names for one thing, and neither was the one Doppler holds.
+    contentSecurityPolicy(nonce, process.env.NEXT_PUBLIC_API_URL ?? ''),
   )
   return response
 }

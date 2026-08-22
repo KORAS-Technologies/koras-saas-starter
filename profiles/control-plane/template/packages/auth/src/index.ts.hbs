@@ -308,7 +308,25 @@ export async function readSession(
   request: NextRequest,
   options: { secret: string; requireMfa?: boolean },
 ): Promise<SessionOutcome> {
-  const token = request.cookies.get('session')?.value
+  return readSessionToken(request.cookies.get('session')?.value, options)
+}
+
+/**
+ * The same read, from a token a server component already has.
+ *
+ * Exported because the applications had their own copy of this, decoding the
+ * cookie without verifying it and looking for ZITADEL's roles claim. Once the
+ * cookie became one this application signs, that copy found nothing and every
+ * page rendered as though nobody was signed in -- while the middleware, which
+ * used the real reader, let the request through.
+ *
+ * Two readers of one cookie is one reader too many. Verification is local and
+ * costs nothing, so there is no reason for the second to skip it either.
+ */
+export async function readSessionToken(
+  token: string | undefined,
+  options: { secret: string; requireMfa?: boolean },
+): Promise<SessionOutcome> {
   if (!token) return { status: 'anonymous' }
 
   if (!options.secret) {

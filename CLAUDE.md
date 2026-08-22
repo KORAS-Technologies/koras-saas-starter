@@ -28,6 +28,7 @@ pnpm create-koras-app <project> --profile <profile>
 | `BOOTSTRAP_DOCTOR.md`     | `pnpm koras bootstrap:doctor` — preflight checks |
 | `PROVISIONING_RUNBOOK.md` | Commands, estate prerequisites, failure recovery |
 | `RISK_REGISTER.md`        | Identified risks and mitigations               |
+| `SYNC_BACKLOG.md`         | Gaps between the factory, the two profiles and the generated repositories |
 
 ## Repository layout (target state)
 

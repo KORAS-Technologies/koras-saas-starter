@@ -1,0 +1,121 @@
+/**
+ * Does a deployed environment actually let the right people in, and no one else?
+ *
+ * Ten defects in this sign-in reached production, one behind another, because
+ * every layer failed the same way from outside: a redirect to the login page.
+ * A working deployment and a broken one looked identical in a browser.
+ *
+ * The session cookie is one this application signs, so this can mint a valid
+ * one and exercise the deployed application directly -- no browser, no TOTP
+ * prompt, no ZITADEL round trip. That is a property of the design rather than
+ * a way around it: the signature checked here is the signature the middleware
+ * checks.
+ *
+ * It needs the environment's own SESSION_SECRET, so it runs from a machine
+ * that can read Doppler, not from CI:
+ *
+ *   BASE=https://admin-dev.korastechnologies.com  *   USER_ID=<a user id with a platform role>  *   SESSION_SECRET=$(doppler secrets get SESSION_SECRET  *     --project {{projectSlug}} --config dev --plain)  *   node local/scripts/smoke-signin.mjs
+ *
+ * Every check must pass. The negative ones matter most: they are the ones that
+ * would still pass if authorisation stopped working entirely.
+ */
+import { SignJWT } from 'jose'
+
+/**
+ * Exercise the deployed application as a signed-in staff member.
+ *
+ * The session cookie is one this application signs, so a test can mint a valid
+ * one without driving a browser through ZITADEL and a TOTP prompt. That is a
+ * property of the fix, not a way around it: the same signature the middleware
+ * checks is the one minted here.
+ */
+const BASE = process.env.BASE
+const SECRET = new TextEncoder().encode(process.env.SESSION_SECRET)
+const USER = process.env.USER_ID
+
+const mint = (claims, expiresIn = 3600) =>
+  new SignJWT(claims)
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer('{{projectSlug}}')
+    .setSubject(USER)
+    .setIssuedAt()
+    .setExpirationTime(Math.floor(Date.now() / 1000) + expiresIn)
+    .sign(SECRET)
+
+async function get(path, cookie) {
+  const r = await fetch(`${BASE}${path}`, {
+    headers: cookie ? { cookie: `session=${cookie}` } : {},
+    redirect: 'manual',
+  })
+  return { status: r.status, location: r.headers.get('location'), body: await r.text() }
+}
+
+let failed = 0
+const check = (name, ok, detail = '') => {
+  if (!ok) failed += 1
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  -- ' + detail : ''}`)
+}
+process.on('beforeExit', () => {
+  // A smoke test that reports failures and exits zero is the shape of thing
+  // this whole exercise was about.
+  if (failed) {
+    console.error(`
+${failed} check(s) failed.`)
+    process.exitCode = 1
+  }
+})
+
+const staff = await mint({
+  email: 'kora.kanchan+dev_koras_staff_2@gmail.com',
+  name: 'Dev Staff Two',
+  role: 'platform_admin',
+  mfa: true,
+})
+
+// 1. No cookie at all.
+let r = await get('/')
+check('anonymous is sent to the login page', r.status === 307 && (r.location ?? '').includes('/login'), `${r.status} ${r.location ?? ''}`)
+
+// 2. A signed-in member of staff.
+r = await get('/', staff)
+check('staff reach the dashboard', r.status === 200, String(r.status))
+check('the dashboard is not an error page', !r.body.includes('could not be reached'),
+      r.body.includes('could not be reached') ? 'still says the API is unreachable' : '')
+
+// 3. A forged cookie.
+const forged = await new SignJWT({ role: 'platform_admin', mfa: true })
+  .setProtectedHeader({ alg: 'HS256' }).setIssuer('{{projectSlug}}').setSubject(USER)
+  .setIssuedAt().setExpirationTime('1h')
+  .sign(new TextEncoder().encode('x'.repeat(48)))
+r = await get('/', forged)
+check('a cookie signed with another key is refused', r.status === 307, String(r.status))
+
+// 4. Signed in, no role.
+const noRole = await mint({ email: 'nobody@example.com', mfa: true })
+r = await get('/', noRole)
+check('no platform role is refused with 403', r.status === 403, String(r.status))
+
+// 5. Staff without a second factor.
+const noMfa = await mint({ role: 'platform_admin', mfa: false })
+r = await get('/', noMfa)
+check('staff without MFA are told to enrol', r.status === 403 && r.body.includes('Multi-factor'),
+      `${r.status} ${r.body.slice(0, 60)}`)
+
+// 6. An expired session.
+const expired = await mint({ role: 'platform_admin', mfa: true }, -60)
+r = await get('/', expired)
+check('an expired session is not a session', r.status === 307, String(r.status))
+
+// 7. Role-gated area: platform_admin may see plans, platform_readonly may not.
+r = await get('/plans', staff)
+check('platform_admin may open plans', r.status === 200, String(r.status))
+const readonly = await mint({ role: 'platform_readonly', mfa: true })
+r = await get('/plans', readonly)
+check('platform_readonly may not open plans', r.status === 403, String(r.status))
+
+// 8. The sign-in route still redirects to ZITADEL.
+r = await get('/api/auth/start?next=%2F')
+check('sign-in redirects to the identity provider',
+      r.status === 307 && (r.location ?? '').includes('/oauth/v2/authorize'), String(r.status))
+
+if (process.exitCode === undefined) process.exitCode = 0
