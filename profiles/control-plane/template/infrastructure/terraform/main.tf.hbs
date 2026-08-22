@@ -106,8 +106,24 @@ output "zitadel_domains" {
     instead would hide it from `terraform output -json`, and the Doppler
     bootstrap reads it from there; the setting would silently become a prompt.
   EOT
+  # A base URL, scheme included, because that is what the description
+  # promises and what every consumer builds on. It emitted a bare hostname,
+  # so `${ZITADEL_DOMAIN}/oauth/v2/authorize` came out as a relative path,
+  # NextResponse.redirect refused it, and the sign-in route answered 500 --
+  # in every environment, for both applications, with nothing in the message
+  # to suggest a setting was at fault.
+  #
+  # `port` and `insecure` are honoured rather than assumed: a self-hosted
+  # ZITADEL on http and a non-default port is the shape the local stack uses,
+  # and hardcoding https here would work everywhere except there.
   value = {
-    for name, instance in nonsensitive(var.zitadel_instances) : name => instance.domain
+    for name, instance in nonsensitive(var.zitadel_instances) :
+    name => format(
+      "%s://%s%s",
+      instance.insecure ? "http" : "https",
+      instance.domain,
+      contains([80, 443, 0], instance.port) ? "" : format(":%d", instance.port),
+    )
   }
 }
 

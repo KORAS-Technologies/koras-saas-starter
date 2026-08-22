@@ -81,7 +81,7 @@ jobs:
       services: ${{ steps.read.outputs.services }}
       applications: ${{ steps.read.outputs.applications }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - id: read
         run: |
           # A service is a directory that can actually be deployed. Requiring
@@ -120,7 +120,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # Named explicitly rather than discovered at the point of use. A missing
       # token otherwise surfaces halfway through, with the schema migrated and
       # the services not deployed -- the one state this pipeline should never
@@ -172,7 +172,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install the Doppler CLI
         run: |
           curl -sSfL https://cli.doppler.com/install.sh | sudo sh
@@ -198,7 +198,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install a Postgres client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Apply migrations and policies
@@ -229,7 +229,7 @@ jobs:
       matrix:
         service: ${{ fromJSON(needs.discover.outputs.services) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: superfly/flyctl-actions/setup-flyctl@master
       - name: Load this environment's settings into the app
         # The link nothing else provides. Doppler holds the values, the app
@@ -274,51 +274,59 @@ jobs:
             --wait-timeout 600
 
       - name: Make sure the machines are actually running
-        # A green deploy means the machines were updated, not that they are up.
-        # The worker and scheduler define a process group and no http_service,
-        # and flyctl left every one of their machines `stopped` after a
-        # successful deploy -- created, updated, never started. The API was
-        # unaffected because its http_service gives Fly a reason to start it.
-        #
-        # So the deploy reported success while nothing consumed the queue: the
-        # exact shape of failure this pipeline exists to stop reporting as fine.
+        # A green deploy means the machines were updated, not that they are
+        # up. The worker and scheduler define no http_service, and flyctl
+        # left every one of their machines stopped after a successful deploy
+        # -- created, updated, never started. The API was unaffected because
+        # its http_service gives Fly a reason to start it. So the deploy
+        # reported success while nothing consumed the queue: the exact shape
+        # of failure this pipeline exists to stop reporting as fine.
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           app="${{ github.event.repository.name }}-${{ matrix.service }}-${{ inputs.environment }}"
 
-          not_running() {
-            flyctl machines list --app "$app" --json \
-              | jq -r '[.[] | select(.state != "started")] | length'
+          # Machine state is eventually consistent, and -- this is the part
+          # two earlier attempts got wrong -- `machines list` and the machine
+          # itself can disagree. A previous version read the list, saw
+          # `stopped`, called start, and was told the machine was `created`.
+          # Waiting on the list first did not help: the wait also reads the
+          # list, so a stale read satisfies it.
+          #
+          # So nothing here treats any single read as authoritative. Attempt,
+          # tolerate the refusal, look again. Only the deadline fails the job.
+          states() {
+            flyctl machines list --app "$app" --json | jq -r '.[] | .id + " " + .state'
           }
 
-          # Machine state is eventually consistent, so every question here is
-          # asked with a deadline rather than once. Two races have already been
-          # found by asking instantly: a machine still in `created` cannot be
-          # started, and a machine mid-restart reads as not-running a second
-          # before it reads as started. Both failed deploys of healthy services.
-          for _ in $(seq 1 30); do
-            [ "$(flyctl machines list --app "$app" --json \
-                 | jq -r '[.[] | select(.state == "created")] | length')" -eq 0 ] && break
+          deadline=$(( $(date +%s) + 300 ))
+          while :; do
+            pending=0
+            while read -r id state; do
+              [ -z "$id" ] && continue
+              case "$state" in
+                started) continue ;;
+                # `created` is pre-start: Fly refuses to start from it, and it
+                # leaves on its own within seconds. Count it and look again.
+                created) pending=$((pending + 1)); continue ;;
+              esac
+              pending=$((pending + 1))
+              # || true: a refusal here is information, not a failure. The
+              # next pass sees the real state and acts on it.
+              flyctl machine start "$id" --app "$app" || true
+            done <<< "$(states)"
+
+            [ "$pending" -eq 0 ] && break
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "Machines are still not running for $app after five minutes:"
+              flyctl machines list --app "$app"
+              exit 1
+            fi
             sleep 5
           done
 
-          flyctl machines list --app "$app" --json \
-            | jq -r '.[] | select(.state == "stopped" or .state == "suspended") | .id' \
-            | xargs -r -I{} flyctl machine start {} --app "$app"
-
-          for _ in $(seq 1 30); do
-            [ "$(not_running)" -eq 0 ] && break
-            sleep 5
-          done
-
-          if [ "$(not_running)" -ne 0 ]; then
-            echo "Machines are still not running for $app after waiting:"
-            flyctl machines list --app "$app"
-            exit 1
-          fi
           echo "All machines running for $app."
-
+          flyctl machines list --app "$app"
   applications:
     name: Deploy ${{ matrix.app }} (${{ inputs.environment }})
     needs: [discover, services]
@@ -328,9 +336,9 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover.outputs.applications) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4.2.0
+      - uses: actions/setup-node@v5
         with: { node-version: 20, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - name: Load this environment's settings into the Vercel project
@@ -401,7 +409,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: The API is serving and says which environment it is
         # A deployment that finishes without anyone checking the result is a
         # deployment that can succeed while the service crash-loops. The

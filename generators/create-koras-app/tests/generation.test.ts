@@ -1267,6 +1267,19 @@ describe('the deployment pipeline matches the components generated', () => {
         expect(workflow).toContain('fromJSON(needs.discover.outputs.applications)')
       })
 
+      it('pins no action that runs on a deprecated Node', () => {
+        // Every workflow run carried ten deprecation warnings. Harmless until
+        // GitHub removes the runtime, at which point every pipeline in every
+        // generated project fails at once, for a reason none of them changed.
+        const stale = ['actions/checkout@v4', 'actions/setup-node@v4', 'astral-sh/setup-uv@v3']
+        for (const file of ['deploy.yml', 'ci.yml']) {
+          const workflow = gen.read(`.github/workflows/${file}`)
+          for (const action of stale) {
+            expect(workflow).not.toContain(action)
+          }
+        }
+      })
+
       it('every job names an environment', () => {
         // Not cosmetic. This workflow declares its secrets `required: true`,
         // the callers pass `secrets: inherit`, and inherit carries only
