@@ -170,6 +170,22 @@ export async function resolveToken(
     const platformRole = parseRole(claims)
     const mfa = usedMfa(claims)
 
+    if (!platformRole) {
+      // A verified token that grants nothing. The middleware's refusal is
+      // correct and reads as a misconfigured account, which is what sent
+      // someone to the ZITADEL console to check a grant that was already
+      // there: the role was asserted into the access token and the
+      // applications read the ID token.
+      //
+      // Claim names only. Whether `urn:zitadel:iam:org:project:roles` is
+      // present separates a provider that is not asserting roles from an
+      // account that has none, and those need opposite fixes. The values
+      // are not logged: names are enough to tell them apart.
+      console.warn('token carries no platform role', {
+        claims: Object.keys(claims).sort(),
+      })
+    }
+
     const session: Session = {
       userId: subject,
       email: typeof claims.email === 'string' ? claims.email : undefined,
