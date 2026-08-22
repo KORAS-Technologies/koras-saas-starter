@@ -35,10 +35,14 @@ on:
         required: true
       VERCEL_ORG_ID:
         required: true
-      VERCEL_ADMIN_PROJECT_ID:
-        required: true
-      VERCEL_PORTAL_PROJECT_ID:
-        required: true
+      # The per-application Vercel project ids are deliberately not declared.
+      # A workflow_call secrets block must be a static list, and their names
+      # are derived from the applications this repository actually has
+      # (apps/web -> VERCEL_WEB_PROJECT_ID). Naming two of them here is what
+      # made this file describe the control plane's components regardless of
+      # the project it was generated into. The callers pass `secrets: inherit`
+      # so they arrive anyway, and preflight-apps fails the run -- before the
+      # migration -- if one is missing.
       DOPPLER_TOKEN:
         # Read-only service token, scoped to this environment's config. Used
         # only to list secret *names*; no value is ever fetched.
@@ -52,6 +56,58 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  discover:
+    name: Components (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    # What gets deployed is read from the repository, never listed here.
+    #
+    # These matrices were hardcoded, and the list was the control plane's:
+    # services [api, worker, scheduler] and applications [admin, portal]. A
+    # product has `web` rather than `portal` and may have two services, so
+    # its pipeline deployed an application that does not exist, skipped the
+    # one that does, and tried to deploy a service with no Dockerfile. It
+    # failed at the deploy -- the last place that could still be reached.
+    #
+    # A generator-side template would have fixed the generated case only, and
+    # gone stale again the first time anyone added a service by hand.
+    outputs:
+      services: ${{ steps.read.outputs.services }}
+      applications: ${{ steps.read.outputs.applications }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        run: |
+          # A service is a directory that can actually be deployed. Requiring
+          # both files means a half-scaffolded directory is skipped here
+          # rather than failing three jobs later.
+          services='[]'
+          if [ -d services ]; then
+            services=$(find services -mindepth 1 -maxdepth 1 -type d \
+              -exec test -f '{}/Dockerfile' -a -f '{}/fly.toml' ';' -print \
+              | xargs -rn1 basename | sort | jq -R . | jq -sc .)
+          fi
+
+          # Applications are keyed by directory, which is also what the
+          # project id secret is named after: apps/web -> VERCEL_WEB_PROJECT_ID.
+          applications='[]'
+          if [ -d apps ]; then
+            applications=$(find apps -mindepth 1 -maxdepth 1 -type d \
+              -exec test -f '{}/package.json' ';' -print \
+              | xargs -rn1 basename | sort \
+              | jq -R '{app: ., project_id_secret: ("VERCEL_" + (. | ascii_upcase | gsub("-"; "_")) + "_PROJECT_ID")}' \
+              | jq -sc .)
+          fi
+
+          # Deploying nothing is the failure this whole job exists to catch.
+          if [ "$services" = '[]' ] && [ "$applications" = '[]' ]; then
+            echo 'No deployable components found in services/ or apps/.'
+            exit 1
+          fi
+
+          echo "services=$services" >> "$GITHUB_OUTPUT"
+          echo "applications=$applications" >> "$GITHUB_OUTPUT"
+          echo "services:     $services"
+          echo "applications: $applications"
   preflight:
     name: Preflight (${{ inputs.environment }})
     runs-on: ubuntu-latest
@@ -69,12 +125,9 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_ADMIN_PROJECT_ID: ${{ secrets.VERCEL_ADMIN_PROJECT_ID }}
-          VERCEL_PORTAL_PROJECT_ID: ${{ secrets.VERCEL_PORTAL_PROJECT_ID }}
         run: |
           missing=""
-          for name in DATABASE_URL FLY_API_TOKEN VERCEL_TOKEN VERCEL_ORG_ID \
-                      VERCEL_ADMIN_PROJECT_ID VERCEL_PORTAL_PROJECT_ID; do
+          for name in DATABASE_URL FLY_API_TOKEN VERCEL_TOKEN VERCEL_ORG_ID; do
             if [ -z "${!name}" ]; then missing="$missing $name"; fi
           done
           if [ -n "$missing" ]; then
@@ -83,9 +136,32 @@ jobs:
             exit 1
           fi
 
+  preflight-apps:
+    name: Preflight ${{ matrix.app }} (${{ inputs.environment }})
+    needs: discover
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    # Separate from preflight because a project id secret is named after an
+    # application, and the set of applications is not known until discover
+    # has run. Still ahead of the migration, so the guarantee holds: nothing
+    # is touched until every credential this deployment needs is present.
+    strategy:
+      matrix:
+        include: ${{ fromJSON(needs.discover.outputs.applications) }}
+    steps:
+      - name: Require this application's Vercel project id
+        env:
+          PROJECT_ID: ${{ secrets[matrix.project_id_secret] }}
+        run: |
+          if [ -z "$PROJECT_ID" ]; then
+            echo "Missing ${{ matrix.project_id_secret }} for ${{ inputs.environment }}."
+            echo 'There is one Vercel project per application per environment;'
+            echo 'set this on the ${{ inputs.environment }} GitHub environment.'
+            exit 1
+          fi
   settings:
     name: Settings present (${{ inputs.environment }})
-    needs: preflight
+    needs: [preflight, preflight-apps]
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     steps:
@@ -125,7 +201,7 @@ jobs:
 
   services:
     name: Deploy ${{ matrix.service }} (${{ inputs.environment }})
-    needs: migrate
+    needs: [discover, migrate]
     # `always()` plus an explicit failure check, so skipping migrations does not
     # skip the deployment behind them.
     # `settings` is checked for success, not merely for not-failure. A skipped
@@ -133,6 +209,7 @@ jobs:
     # deployment would proceed past a settings check that never passed.
     if: >-
       always()
+      && needs.discover.result == 'success'
       && needs.preflight.result == 'success'
       && needs.settings.result == 'success'
       && needs.migrate.result != 'failure'
@@ -143,7 +220,7 @@ jobs:
       # make a partial rollout harder to read than it needs to be.
       max-parallel: 1
       matrix:
-        service: [api, worker, scheduler]
+        service: ${{ fromJSON(needs.discover.outputs.services) }}
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
@@ -237,16 +314,12 @@ jobs:
 
   applications:
     name: Deploy ${{ matrix.app }} (${{ inputs.environment }})
-    needs: services
+    needs: [discover, services]
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     strategy:
       matrix:
-        include:
-          - app: admin
-            project_id_secret: VERCEL_ADMIN_PROJECT_ID
-          - app: portal
-            project_id_secret: VERCEL_PORTAL_PROJECT_ID
+        include: ${{ fromJSON(needs.discover.outputs.applications) }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

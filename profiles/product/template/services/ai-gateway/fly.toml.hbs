@@ -1,0 +1,35 @@
+# Fly configuration for the AI gateway.
+#
+# The app name is supplied per environment on the command line, not written
+# here. One file serves four estates, and no file in the repository names
+# production -- so a hurried `flyctl deploy` cannot pick production up as its
+# default.
+#
+# There is no [processes] block: the Dockerfile's CMD is what runs. Naming the
+# command again here means two places to change and one of them will be missed.
+
+primary_region = "{{flyRegion}}"
+
+[build]
+
+[env]
+  PORT = "4000"
+
+[http_service]
+  internal_port = 4000
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { rmSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs'
 import { loadProfile } from '../src/profiles/index.js'
 import type { ProfileName } from '../src/profiles/loader.js'
 import {
@@ -1235,6 +1235,81 @@ describe.each(['product', 'control-plane'] as const)('%s identity roles', (profi
 // only on its generated *.vercel.app name, so the OAuth redirect URI pointed at
 // a hostname that resolved to nothing: sign-in completed and landed on NXDOMAIN.
 
+describe('the deployment pipeline matches the components generated', () => {
+  // Every one of these was a real failure, and all three shared a shape: the
+  // pipeline named components instead of looking at them, so it stayed green
+  // right up to the deploy and then failed on something the repository could
+  // have answered.
+  const cases: Array<[ProfileName, string, string[], string[]]> = [
+    ['product', 'pipe-product', ['api', 'worker'], ['admin', 'web']],
+    ['control-plane', 'pipe-cp', ['api', 'scheduler', 'worker'], ['admin', 'portal']],
+  ]
+
+  for (const [profile, slug, services, apps] of cases) {
+    describe(profile, () => {
+      let gen: ReturnType<typeof generate>
+      beforeAll(() => {
+        gen = generate(profile, slug)
+      })
+
+      it('names no component in the workflow', () => {
+        // The matrices were literal lists copied from the control-plane
+        // profile: services [api, worker, scheduler] and applications
+        // [admin, portal]. A product has `web`, not `portal`, and two
+        // services -- so its pipeline deployed an application that does not
+        // exist, never deployed the one that does, and tried to deploy a
+        // service with no Dockerfile.
+        const workflow = gen.read('.github/workflows/deploy.yml')
+        expect(workflow).not.toContain('service: [api, worker, scheduler]')
+        expect(workflow).not.toContain('app: portal')
+        expect(workflow).not.toContain('app: admin')
+        expect(workflow).toContain('fromJSON(needs.discover.outputs.services)')
+        expect(workflow).toContain('fromJSON(needs.discover.outputs.applications)')
+      })
+
+      it('refuses to report success having deployed nothing', () => {
+        // The guard that would have caught all of this: an empty matrix is a
+        // green pipeline that shipped no code, which is indistinguishable
+        // from a working one until someone checks the running version.
+        const workflow = gen.read('.github/workflows/deploy.yml')
+        expect(workflow).toContain('No deployable components found')
+      })
+
+      it('every service it will try to deploy can be deployed', () => {
+        // flyctl is invoked with --config services/<svc>/fly.toml and
+        // --dockerfile services/<svc>/Dockerfile. The generator wrote the
+        // Dockerfile and never the fly.toml, so no generated project could
+        // deploy a service at all -- this repository has them only because
+        // they were written by hand.
+        for (const service of services) {
+          expect(gen.has(`services/${service}/Dockerfile`)).toBe(true)
+          expect(gen.has(`services/${service}/fly.toml`)).toBe(true)
+        }
+      })
+
+      it('discovery finds exactly the components on disk', () => {
+        // Mirrors the shell in the discover job: a service is a directory
+        // holding both files, an application is one holding a package.json.
+        const found = services.filter(
+          (svc) => gen.has(`services/${svc}/Dockerfile`) && gen.has(`services/${svc}/fly.toml`),
+        )
+        expect(found).toEqual(services)
+        for (const app of apps) {
+          expect(gen.has(`apps/${app}/package.json`)).toBe(true)
+        }
+      })
+
+      it('derives each project id secret from the application directory', () => {
+        const workflow = gen.read('.github/workflows/deploy.yml')
+        expect(workflow).toContain('ascii_upcase')
+        expect(workflow).toContain('_PROJECT_ID')
+        // Named nowhere, so it cannot name the wrong one.
+        expect(workflow).not.toContain('VERCEL_PORTAL_PROJECT_ID')
+      })
+    })
+  }
+})
+
 describe('application hostnames', () => {
   const moduleFile = (name: string) =>
     readFileSync(
@@ -1270,6 +1345,31 @@ describe('application hostnames', () => {
     const vercel = moduleFile('vercel')
     expect(vercel).toContain('vercel_project_domain" "primary"')
     expect(vercel).not.toContain('git_branch')
+  })
+
+  it('ships no Terraform working files with the shared modules', () => {
+    // The engine skipped a directory named `.terraform` and said so in a
+    // comment, which did nothing about `.terraform.lock.hcl` sitting beside it:
+    // the name only starts the same way. Two of those were committed to the
+    // starter after an init inside a module directory, and --refresh-modules
+    // copied them into a real project as though they were part of the module.
+    //
+    // A lock belongs to a root configuration. The modules are not root
+    // configurations, so one here is meaningless at best and pins a generated
+    // project to whatever versions someone happened to have at worst.
+    const modules = join(__dirname, '..', '..', '..', 'infrastructure', 'terraform', 'modules')
+    const strays: string[] = []
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === '.terraform' || entry.name === '.terraform.lock.hcl') {
+          strays.push(join(dir, entry.name))
+          continue
+        }
+        if (entry.isDirectory()) walk(join(dir, entry.name))
+      }
+    }
+    walk(modules)
+    expect(strays).toEqual([])
   })
 
   it('does not describe a preview scoping it no longer does', () => {

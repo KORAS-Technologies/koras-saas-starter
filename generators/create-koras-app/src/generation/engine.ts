@@ -44,13 +44,69 @@ Handlebars.registerHelper('pad', (value: unknown, width: unknown) =>
 )
 
 /**
- * Directories that appear inside a source tree but must never be copied out of
+ * `concat` joins its arguments into one string.
+ */
+Handlebars.registerHelper('concat', (...args: unknown[]) =>
+  args.slice(0, -1).map(String).join(''),
+)
+
+/**
+ * `gh` wraps an expression in GitHub Actions' ${{ ... }} syntax.
+ *
+ * A template cannot simply write those braces: Handlebars reads `${{{{` as
+ * the opening of a raw block and fails to parse the file. This emits them
+ * instead, so a workflow can be generated from the components a project
+ * actually has rather than hardcoding a list that drifts from reality.
+ */
+Handlebars.registerHelper('gh', (expression: unknown) =>
+  new Handlebars.SafeString('${{ ' + String(expression) + ' }}'),
+)
+
+/**
+ * `basename` takes the last path segment.
+ *
+ * The deployment matrix is keyed by the directory an application lives in,
+ * not by its component key: control-plane's `platform_admin` lives in
+ * `apps/admin`, and the Vercel project, its package name and its secret are
+ * all named after the directory.
+ */
+Handlebars.registerHelper('basename', (value: unknown) =>
+  String(value).split('/').pop() ?? String(value),
+)
+
+/**
+ * `upper` upper-cases a value.
+ *
+ * Used to build a secret name from a directory name (`apps/web` ->
+ * VERCEL_WEB_PROJECT_ID) so the deployment matrix cannot name a component the
+ * project does not have.
+ */
+Handlebars.registerHelper('upper', (value: unknown) => String(value).toUpperCase())
+
+/**
+ * Entries that appear inside a source tree but must never be copied out of
  * it. `.terraform` is the one that bites: running any Terraform command inside
  * the shared modules leaves a provider cache there, and a walk of the
  * filesystem then ships a ~50MB `terraform-provider-*.exe` into every
  * generated project. It is gitignored, so it never shows up in review.
+ *
+ * `.terraform.lock.hcl` is its sibling and slipped through, because skipping a
+ * directory named `.terraform` does nothing about a file whose name merely
+ * starts the same way. A lock file belongs to a root configuration; the shared
+ * modules are not root configurations, so an init run inside one leaves a lock
+ * that means nothing -- and `--refresh-modules` then copied it into a real
+ * project as though it were part of the module. Generated projects write their
+ * own on first init.
  */
-const SKIP_ENTRIES = new Set(['.terraform', '.git', 'node_modules', '.turbo', '.next', 'dist'])
+const SKIP_ENTRIES = new Set([
+  '.terraform',
+  '.terraform.lock.hcl',
+  '.git',
+  'node_modules',
+  '.turbo',
+  '.next',
+  'dist',
+])
 
 export interface RenderedFile {
   sourcePath: string
