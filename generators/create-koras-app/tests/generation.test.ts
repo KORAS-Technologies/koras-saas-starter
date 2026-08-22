@@ -1166,7 +1166,7 @@ describe.each(['product', 'control-plane'] as const)('%s deployment', (profile) 
   it('deploys rather than merely building', () => {
     const deploy = gen.read('.github/workflows/deploy.yml')
     expect(deploy).toContain('flyctl deploy')
-    expect(deploy).toContain('vercel@latest deploy')
+    expect(deploy).toMatch(/vercel@\$\{VERCEL_CLI\}" deploy/)
     expect(deploy).toContain('migrate.sh')
   })
 
@@ -1317,6 +1317,27 @@ describe('the deployment pipeline matches the components generated', () => {
             expect(workflow).not.toContain(action)
           }
         }
+      })
+
+      it('pins the Vercel CLI', () => {
+        // It was vercel@latest, so a CLI release broke every deployment in
+        // every environment on a day nothing in this repository changed:
+        // 59.4.0 began defaulting new variables to sensitive. A deployment
+        // pipeline should fail because of what was committed.
+        const workflow = gen.read('.github/workflows/deploy.yml')
+        expect(workflow).not.toContain('vercel@latest')
+        expect(workflow).toMatch(/VERCEL_CLI: '\d+\.\d+\.\d+'/)
+      })
+
+      it('does not label a public variable as a secret', () => {
+        // NEXT_PUBLIC_ values are compiled into the browser bundle, so storing
+        // them as secrets is a claim the deployment contradicts the moment it
+        // ships. Vercel refuses the combination, which is how this surfaced.
+        const workflow = gen.read('.github/workflows/deploy.yml')
+        expect(workflow).toContain('NEXT_PUBLIC_*)')
+        expect(workflow).toContain('--no-sensitive --visibility config')
+        // And only for those: everything else must stay sensitive.
+        expect(workflow).toContain('$scope $visibility')
       })
 
       it('every job names an environment', () => {

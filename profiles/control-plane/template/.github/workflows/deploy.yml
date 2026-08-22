@@ -48,6 +48,20 @@ on:
         # only to list secret *names*; no value is ever fetched.
         required: true
 
+env:
+  # Pinned to a version rather than a floating tag, because a CLI release
+  # could -- and did -- break every deployment in every environment on a day
+  # nothing in this repository changed: 59.4.0 began defaulting new variables
+  # to sensitive, which Vercel then refuses for NEXT_PUBLIC_ names.
+  #
+  # The floating tag is not written out anywhere here. A check that forbids a
+  # literal string is defeated by a comment quoting it, which has now happened
+  # three times in this repository.
+  #
+  # A deployment pipeline should fail because of what was committed. Bumping
+  # this is a commit, reviewed like any other.
+  VERCEL_CLI: '59.4.0'
+
 concurrency:
   # One deployment per environment at a time, and later commits win. Two
   # concurrent runs can apply migrations in overlapping transactions and leave
@@ -371,13 +385,24 @@ jobs:
 
           while IFS="=" read -r key value; do
             [ -z "$key" ] && continue
+
+            # A NEXT_PUBLIC_ value is compiled into the browser bundle, so
+            # storing it as a secret is a label the deployment contradicts the
+            # moment it ships. Vercel refuses the combination outright, which
+            # is the right call and broke every deploy the day its CLI started
+            # defaulting new variables to sensitive.
+            visibility=""
+            case "$key" in
+              NEXT_PUBLIC_*) visibility="--no-sensitive --visibility config" ;;
+            esac
+
             # Removed first so a changed value takes effect. `env add` refuses
             # to overwrite, and a stale value that silently survives a deploy is
             # worse than a noisy failure.
-            npx --yes vercel@latest env rm "$key" "$target" $scope \
+            npx --yes "vercel@${VERCEL_CLI}" env rm "$key" "$target" $scope \
               --yes --token "$VERCEL_TOKEN" >/dev/null 2>&1 || true
             printf "%s" "$value" \
-              | npx --yes vercel@latest env add "$key" "$target" $scope \
+              | npx --yes "vercel@${VERCEL_CLI}" env add "$key" "$target" $scope $visibility \
                   --token "$VERCEL_TOKEN" >/dev/null
           done < /tmp/settings.env
           rm -f /tmp/settings.env
@@ -399,9 +424,9 @@ jobs:
           # root_directory, so passing --cwd apps/<app> makes it look for
           # apps/<app>/apps/<app> -- which does not exist, and Vercel then warns
           # and silently ignores the setting rather than failing.
-          npx vercel@latest pull --yes --token "$VERCEL_TOKEN" --environment=production
-          npx vercel@latest build $target --token "$VERCEL_TOKEN"
-          npx vercel@latest deploy --prebuilt $target --token "$VERCEL_TOKEN"
+          npx --yes "vercel@${VERCEL_CLI}" pull --yes --token "$VERCEL_TOKEN" --environment=production
+          npx --yes "vercel@${VERCEL_CLI}" build $target --token "$VERCEL_TOKEN"
+          npx --yes "vercel@${VERCEL_CLI}" deploy --prebuilt $target --token "$VERCEL_TOKEN"
 
   verify:
     name: Verify (${{ inputs.environment }})
