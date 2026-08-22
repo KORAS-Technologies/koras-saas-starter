@@ -126,4 +126,15 @@ variable "upstash_region" {
   default     = "us-east-1"
 }
 
-
+# Environment -> git branch. The key set is the list of environments, which
+# is what the OIDC redirect URIs and the Vercel projects are both keyed by:
+# one definition, so an environment cannot exist in one and not the other.
+variable "environment_branches" {
+  type = map(string)
+  default = {
+    dev  = "develop"
+    test = "test"
+    stg  = "staging"
+    prod = "main"
+  }
+}

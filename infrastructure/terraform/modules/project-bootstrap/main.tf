@@ -39,6 +39,50 @@ module "supabase" {
   default_region  = var.supabase_region
 }
 
+locals {
+  # Each environment's OIDC app accepts only its own callback URLs.
+  #
+  # `zitadel_redirect_uris` was one flat list handed to all four instances,
+  # and it defaulted to empty and was never set -- so every OIDC app in every
+  # generated estate had no redirect URI at all and ZITADEL refused every
+  # sign-in with `The requested redirect_uri is missing in the client
+  # configuration`. Sign-in could not work anywhere. Same shape as the
+  # project roles that were never created: infrastructure that applies
+  # cleanly and cannot do the one thing it exists for.
+  #
+  # Setting that list would have fixed the symptom and broken isolation: one
+  # list means dev's ZITADEL accepts prod's callback, so a code issued by dev
+  # can be redirected into the production application. Every other external
+  # adapter here takes an explicit environment; this one would have been the
+  # exception.
+  #
+  # Derived from the hostnames Vercel actually attaches, so the two cannot
+  # disagree -- a domain added there is accepted here and nowhere else.
+  auth_environments = keys(var.environment_branches)
+
+  redirect_uris = {
+    for environment in local.auth_environments : environment => concat(
+      [
+        for key, host in module.vercel.domains :
+        "https://${host}/api/auth/callback"
+        if endswith(key, "-${environment}")
+      ],
+      var.zitadel_redirect_uris,
+    )
+  }
+
+  post_logout_redirect_uris = {
+    for environment in local.auth_environments : environment => concat(
+      [
+        for key, host in module.vercel.domains :
+        "https://${host}/"
+        if endswith(key, "-${environment}")
+      ],
+      var.zitadel_post_logout_redirect_uris,
+    )
+  }
+}
+
 # One module instance per ZITADEL instance. Terraform cannot index providers,
 # so each environment is wired explicitly to its aliased provider.
 
@@ -49,8 +93,10 @@ module "zitadel_dev" {
   project_slug              = var.project_slug
   profile                   = var.profile
   environment               = "dev"
-  redirect_uris             = var.zitadel_redirect_uris
-  post_logout_redirect_uris = var.zitadel_post_logout_redirect_uris
+  redirect_uris             = local.redirect_uris["dev"]
+  post_logout_redirect_uris = local.post_logout_redirect_uris["dev"]
+
+  depends_on = [module.vercel]
 }
 
 module "zitadel_test" {
@@ -60,8 +106,8 @@ module "zitadel_test" {
   project_slug              = var.project_slug
   profile                   = var.profile
   environment               = "test"
-  redirect_uris             = var.zitadel_redirect_uris
-  post_logout_redirect_uris = var.zitadel_post_logout_redirect_uris
+  redirect_uris             = local.redirect_uris["test"]
+  post_logout_redirect_uris = local.post_logout_redirect_uris["test"]
 }
 
 module "zitadel_stg" {
@@ -71,8 +117,8 @@ module "zitadel_stg" {
   project_slug              = var.project_slug
   profile                   = var.profile
   environment               = "stg"
-  redirect_uris             = var.zitadel_redirect_uris
-  post_logout_redirect_uris = var.zitadel_post_logout_redirect_uris
+  redirect_uris             = local.redirect_uris["stg"]
+  post_logout_redirect_uris = local.post_logout_redirect_uris["stg"]
 }
 
 module "zitadel_prod" {
@@ -82,14 +128,18 @@ module "zitadel_prod" {
   project_slug              = var.project_slug
   profile                   = var.profile
   environment               = "prod"
-  redirect_uris             = var.zitadel_redirect_uris
-  post_logout_redirect_uris = var.zitadel_post_logout_redirect_uris
+  redirect_uris             = local.redirect_uris["prod"]
+  post_logout_redirect_uris = local.post_logout_redirect_uris["prod"]
 }
 
 module "vercel" {
   source = "../vercel"
 
   primary_domain = var.primary_domain
+
+  # Shared with the OIDC redirect URIs above, so a hostname Vercel attaches
+  # is one ZITADEL accepts, in that environment and no other.
+  environment_branches = var.environment_branches
 
   project_slug            = var.project_slug
   team_id                 = var.vercel_team_id

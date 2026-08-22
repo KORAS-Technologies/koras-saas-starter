@@ -1235,6 +1235,45 @@ describe.each(['product', 'control-plane'] as const)('%s identity roles', (profi
 // only on its generated *.vercel.app name, so the OAuth redirect URI pointed at
 // a hostname that resolved to nothing: sign-in completed and landed on NXDOMAIN.
 
+describe('sign-in is configured per environment', () => {
+  const bootstrap = () =>
+    readFileSync(
+      join(__dirname, '..', '..', '..', 'infrastructure', 'terraform',
+           'modules', 'project-bootstrap', 'main.tf'),
+      'utf8',
+    )
+
+  it('gives no ZITADEL instance a shared redirect list', () => {
+    // `zitadel_redirect_uris` was one flat list passed to all four instances,
+    // so dev's ZITADEL would accept prod's callback: an authorization code
+    // issued by dev could be redirected into the production application.
+    // Every other external adapter takes an explicit environment.
+    const main = bootstrap()
+    expect(main).not.toContain('redirect_uris             = var.zitadel_redirect_uris')
+    for (const environment of ['dev', 'test', 'stg', 'prod']) {
+      expect(main).toContain(`local.redirect_uris["${environment}"]`)
+      expect(main).toContain(`local.post_logout_redirect_uris["${environment}"]`)
+    }
+  })
+
+  it('derives the callback URLs from the hostnames Vercel attaches', () => {
+    // The list defaulted to empty and nothing set it, so every OIDC app in
+    // every generated estate had no redirect URI and ZITADEL refused every
+    // sign-in outright. Deriving them means the two cannot disagree.
+    const main = bootstrap()
+    expect(main).toContain('module.vercel.domains')
+    expect(main).toContain('/api/auth/callback')
+    expect(main).toContain('endswith(key, "-${environment}")')
+  })
+
+  it('keys environments once, for both Vercel and ZITADEL', () => {
+    // Two lists of environments is one list that goes stale.
+    const main = bootstrap()
+    expect(main).toContain('keys(var.environment_branches)')
+    expect(main).toContain('environment_branches = var.environment_branches')
+  })
+})
+
 describe('the deployment pipeline matches the components generated', () => {
   // Every one of these was a real failure, and all three shared a shape: the
   // pipeline named components instead of looking at them, so it stayed green
