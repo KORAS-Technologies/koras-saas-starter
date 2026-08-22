@@ -59,6 +59,13 @@ jobs:
   discover:
     name: Components (${{ inputs.environment }})
     runs-on: ubuntu-latest
+    # This job reads no secret. It names the environment anyway, because the
+    # secrets this workflow declares `required: true` are set on the GitHub
+    # environment rather than on the repository, and `secrets: inherit`
+    # carries only repository-level ones. A job that names no environment
+    # therefore cannot satisfy the declaration, and the run fails before any
+    # step executes -- naming a secret it never reads.
+    environment: ${{ inputs.environment }}
     # What gets deployed is read from the repository, never listed here.
     #
     # These matrices were hardcoded, and the list was the control plane's:

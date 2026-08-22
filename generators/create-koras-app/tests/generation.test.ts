@@ -1267,6 +1267,39 @@ describe('the deployment pipeline matches the components generated', () => {
         expect(workflow).toContain('fromJSON(needs.discover.outputs.applications)')
       })
 
+      it('every job names an environment', () => {
+        // Not cosmetic. This workflow declares its secrets `required: true`,
+        // the callers pass `secrets: inherit`, and inherit carries only
+        // repository-level secrets -- these live on the GitHub environment.
+        // A job that names no environment cannot satisfy the declaration, so
+        // the whole run is rejected before a single step executes, citing
+        // secrets that job never reads. The discover job shipped without one
+        // and took the entire pipeline down with it.
+        // Scanned rather than parsed: the generator has no YAML dependency,
+        // and adding one to assert two-space indentation would be its own
+        // kind of overreach.
+        const lines = gen.read('.github/workflows/deploy.yml').replace(/\r/g, '').split('\n')
+        const start = lines.findIndex((l) => l === 'jobs:')
+        expect(start).toBeGreaterThan(-1)
+
+        const missing: string[] = []
+        let current: string | null = null
+        let hasEnvironment = false
+        for (const line of lines.slice(start + 1)) {
+          const header = /^  ([A-Za-z0-9_-]+):\s*$/.exec(line)
+          if (header) {
+            if (current && !hasEnvironment) missing.push(current)
+            current = header[1]
+            hasEnvironment = false
+            continue
+          }
+          if (current && /^    environment:/.test(line)) hasEnvironment = true
+        }
+        if (current && !hasEnvironment) missing.push(current)
+
+        expect(missing).toEqual([])
+      })
+
       it('refuses to report success having deployed nothing', () => {
         // The guard that would have caught all of this: an empty matrix is a
         // green pipeline that shipped no code, which is indistinguishable
