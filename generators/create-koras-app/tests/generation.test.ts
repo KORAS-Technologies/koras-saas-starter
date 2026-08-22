@@ -1319,6 +1319,25 @@ describe('the deployment pipeline matches the components generated', () => {
         }
       })
 
+      it('proves the identity provider answers before deploying', () => {
+        // Names were checked and values never were, and the value that broke
+        // sign-in was present and the wrong shape: a bare hostname where a base
+        // URL was meant. Every job stayed green through four environments while
+        // no one could sign in to any of them.
+        //
+        // Fetching the key set proves the chain in one public request -- the
+        // value parses, the host resolves, TLS works, and the provider is the
+        // one this release will verify tokens against.
+        const workflow = gen.read('.github/workflows/deploy.yml')
+        expect(workflow).toContain('oauth/v2/keys')
+        expect(workflow).toContain('ZITADEL_DOMAIN is not a base URL')
+        // Before the migration, not after the deployment.
+        const settings = workflow.indexOf('oauth/v2/keys')
+        const migrate = workflow.indexOf('  migrate:')
+        expect(settings).toBeGreaterThan(-1)
+        expect(settings).toBeLessThan(migrate)
+      })
+
       it('pins the Vercel CLI', () => {
         // It was vercel@latest, so a CLI release broke every deployment in
         // every environment on a day nothing in this repository changed:

@@ -205,6 +205,46 @@ jobs:
           fi
           bash local/scripts/doppler-check.sh "${{ inputs.environment }}"
 
+      - name: The identity provider this release points at actually answers
+        # A name check cannot catch a value of the wrong shape, and this is
+        # the shape that hurts: ZITADEL_DOMAIN held a bare hostname where a
+        # base URL was meant. Every setting was present, every job green, and
+        # sign-in failed in a way no layer could explain -- the authorize URL
+        # came out relative, and once that was fixed the key set could not be
+        # fetched, so a valid session verified as no session and the browser
+        # looped back to the login page.
+        #
+        # Fetching the key set proves the whole chain in one request: the
+        # value parses as a URL, the host resolves, TLS works, and the
+        # provider is the one this release will verify tokens against. No
+        # credential is involved -- the endpoint is public, which is why it
+        # can be checked here rather than after a deployment.
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: |
+          domain=$(doppler secrets get ZITADEL_DOMAIN --plain \
+            --project "${{ github.event.repository.name }}" \
+            --config "${{ inputs.environment }}" 2>/dev/null | tr -d "\r\n")
+
+          case "$domain" in
+            https://*|http://*) ;;
+            *)
+              echo "ZITADEL_DOMAIN is not a base URL."
+              echo "It needs the scheme: https://auth-<env>.example.com"
+              exit 1
+              ;;
+          esac
+
+          keys="${domain%/}/oauth/v2/keys"
+          status=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "$keys" || echo 000)
+          if [ "$status" != "200" ]; then
+            echo "The key set at $keys answered $status."
+            echo "Tokens cannot be verified against it, so every session would"
+            echo "be rejected and every sign-in would loop back to the login page."
+            exit 1
+          fi
+          echo "Key set reachable: $keys"
+
   migrate:
     name: Migrate (${{ inputs.environment }})
     needs: settings
