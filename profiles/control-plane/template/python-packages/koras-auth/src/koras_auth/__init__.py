@@ -1,71 +1,88 @@
-"""ZITADEL token verification.
+"""ZITADEL token verification for the Control Plane.
 
-Turns a bearer token into the claims a service can authorise against. Only
-verification lives here; the authorisation decision belongs to the caller.
+Turns a bearer token into a Principal: who is calling, on whose behalf, and with
+what authority. Authorisation decisions are made by the caller from that value;
+this module only establishes what is true about the token.
 """
 
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any
 
 import httpx
 from jose import JWTError, jwt
 from koras_platform import OrganizationRole, is_organization_role
+from koras_platform.platform_roles import PlatformRole, is_platform_role
 
 __all__ = [
-    "ORGANIZATION_CLAIM",
     "ROLES_CLAIM",
+    "ActorType",
     "JWKSCache",
-    "JWTClaims",
+    "Principal",
     "TokenVerificationError",
     "verify_token",
 ]
 
-# ZITADEL emits project roles as an OBJECT keyed by role name, whose values map
-# organization id to domain. Reading it as a list yields nothing, and every role
-# check then fails closed while looking like a configuration problem.
-ROLES_CLAIM = "urn:zitadel:iam:org:project:roles"
-ORGANIZATION_CLAIM = "urn:zitadel:iam:org:id"
-AMR_CLAIM = "amr"
 
-_MFA_METHODS = frozenset({"mfa", "otp", "u2f", "hwk", "sc", "totp", "webauthn"})
+class ActorType(StrEnum):
+    PLATFORM = "platform"
+    ORGANIZATION = "organization"
+    MACHINE = "machine"
 
 
 class TokenVerificationError(Exception):
     """The token could not be verified, or carries no usable identity.
 
-    Distinct from an authorisation failure on purpose: the caller maps this to
-    401, and a verified caller lacking a role to 403. Collapsing the two tells
-    an attacker which tokens are real.
+    Deliberately distinct from an authorisation failure. The caller maps this to
+    401; a Principal that lacks the required role is a 403.
     """
 
 
+# ZITADEL puts project roles under this claim, as an object keyed by role name
+# whose values map organization id to domain.
+ROLES_CLAIM = "urn:zitadel:iam:org:project:roles"
+ORGANIZATION_CLAIM = "urn:zitadel:iam:org:id"
+# Authentication Methods References, per RFC 8176. ZITADEL includes "mfa" and
+# the specific second factor used.
+AMR_CLAIM = "amr"
+
+_MFA_METHODS = frozenset({"mfa", "otp", "u2f", "hwk", "sc", "totp", "webauthn"})
+
+
 @dataclass(frozen=True)
-class JWTClaims:
-    sub: str
+class Principal:
+    """An authenticated caller."""
+
+    subject: str
+    actor_type: ActorType
     email: str | None = None
     name: str | None = None
-    roles: frozenset[OrganizationRole] = field(default_factory=frozenset)
-    unknown_roles: frozenset[str] = field(default_factory=frozenset)
-    organization_id: str | None = None
+    platform_role: PlatformRole | None = None
+    organization_roles: frozenset[OrganizationRole] = field(default_factory=frozenset)
+    zitadel_organization_id: str | None = None
     used_mfa: bool = False
 
-    def has_role(self, *roles: OrganizationRole) -> bool:
-        return bool(self.roles & frozenset(roles))
+    @property
+    def is_platform_staff(self) -> bool:
+        return self.actor_type is ActorType.PLATFORM and self.platform_role is not None
+
+    def has_organization_role(self, *roles: OrganizationRole) -> bool:
+        return bool(self.organization_roles & frozenset(roles))
 
 
 class JWKSCache:
     """Caches the signing keys for one ZITADEL instance.
 
-    Fetching them per request means two outbound round trips on every API call
-    and a hard dependency on the identity provider for requests that have no
-    other reason to need it: a brief outage takes down all authenticated
-    traffic.
+    The previous implementation fetched the OIDC discovery document and then the
+    JWKS on every single request: two outbound round trips per API call, and an
+    outage of the identity provider taking down request handling that had no
+    other reason to need it.
 
-    One cache per instance. A token minted by another environment cannot
-    validate here, because the keys that would verify it are never fetched.
+    Keys are cached for a TTL and, on a verification failure that looks like key
+    rotation, refreshed once before the token is rejected.
     """
 
     def __init__(self, domain: str, *, ttl_seconds: int = 3600) -> None:
@@ -74,14 +91,15 @@ class JWKSCache:
         self._keys: dict[str, Any] | None = None
         self._fetched_at = 0.0
 
+    def _expired(self) -> bool:
+        return self._keys is None or (time.monotonic() - self._fetched_at) > self._ttl
+
     async def get(self, *, force_refresh: bool = False) -> dict[str, Any]:
-        if force_refresh or self._keys is None or (time.monotonic() - self._fetched_at) > self._ttl:
+        if force_refresh or self._expired():
             self._keys = await self._fetch()
             self._fetched_at = time.monotonic()
-        keys = self._keys
-        if keys is None:  # pragma: no cover - set directly above
-            raise TokenVerificationError("Signing keys unavailable")
-        return keys
+        assert self._keys is not None  # noqa: S101 - narrowing, set directly above
+        return self._keys
 
     async def _fetch(self) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -99,23 +117,34 @@ class JWKSCache:
             return payload
 
 
-def _parse_roles(payload: dict[str, Any]) -> tuple[frozenset[OrganizationRole], frozenset[str]]:
-    """Read the roles claim, accepting either shape ZITADEL may emit.
+def _parse_roles(
+    payload: dict[str, Any],
+) -> tuple[PlatformRole | None, frozenset[OrganizationRole]]:
+    """Extract roles from the ZITADEL project-roles claim.
 
-    Names that are not known roles are kept separately rather than discarded, so
-    a service can log them, but they are never returned as authority.
+    ZITADEL emits an object keyed by role name. Older tokens and some
+    configurations emit a plain list, so both shapes are accepted. Anything that
+    is not a known role is discarded rather than carried forward: an unrecognised
+    role must never be treated as authority.
     """
     raw = payload.get(ROLES_CLAIM)
     if isinstance(raw, dict):
-        names = [str(name) for name in raw]
+        names = list(raw.keys())
     elif isinstance(raw, list):
-        names = [str(name) for name in raw]
+        names = [str(item) for item in raw]
     else:
         names = []
 
-    known = {OrganizationRole(name) for name in names if is_organization_role(name)}
-    unknown = {name for name in names if not is_organization_role(name)}
-    return frozenset(known), frozenset(unknown)
+    platform = [PlatformRole(name) for name in names if is_platform_role(name)]
+    organization = {OrganizationRole(name) for name in names if is_organization_role(name)}
+
+    if len(platform) > 1:
+        # Ambiguous authority. Take the least privileged rather than guessing
+        # upward: a token carrying two staff roles is a provisioning mistake.
+        order = list(PlatformRole)
+        platform.sort(key=order.index, reverse=True)
+
+    return (platform[0] if platform else None), frozenset(organization)
 
 
 def _used_mfa(payload: dict[str, Any]) -> bool:
@@ -168,8 +197,8 @@ async def verify_token(
     # so the *client* can confirm it received a matching pair. A resource
     # server holds neither the pair nor the reason to check it, and python-jose
     # refuses outright rather than skipping: 'No access_token provided to
-    # compare against at_hash claim'. Every page of an application answered 401
-    # on that sentence, which nothing was printing.
+    # compare against at_hash claim'. Every page in the admin application
+    # answered 401 on that sentence, which nothing was printing.
     options = {"verify_aud": False, "verify_at_hash": False}
     claims: dict[str, Any]
     try:

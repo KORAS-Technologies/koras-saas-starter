@@ -132,9 +132,11 @@ async def verify_token(
     project_id: str,
     client_id: str | None = None,
     issuer: str | None = None,
-    require_mfa_for_platform: bool = True,
-) -> Principal:
+) -> JWTClaims:
     """Verify a bearer token and describe who presented it.
+
+    Returns organization authority only. Staff roles belong to the Control
+    Plane; see the note on the return value below.
 
     Args:
         token: the raw bearer token.
@@ -147,13 +149,10 @@ async def verify_token(
             every ID token the applications hold, so every page answered 401
             while the API was healthy and the caller properly signed in.
         issuer: expected issuer, when it should be pinned as well as the audience.
-        require_mfa_for_platform: staff tokens without a second factor are
-            rejected. MFA is mandatory for every platform role, and checking it
-            here means no endpoint can forget to.
 
     Raises:
-        TokenVerificationError: signature, audience, issuer, expiry, identity, or
-            MFA requirement not satisfied. The message is safe to log but should
+        TokenVerificationError: signature, audience, issuer, expiry or identity
+            not satisfied. The message is safe to log but should
             not be returned to the caller verbatim.
     """
     # Audience is checked here rather than by the decoder, which takes one
@@ -206,43 +205,26 @@ async def verify_token(
     if not subject:
         raise TokenVerificationError("Token carries no subject")
 
-    platform_role, organization_roles = _parse_roles(claims)
-    used_mfa = _used_mfa(claims)
+    roles, unknown_roles = _parse_roles(claims)
 
-    if platform_role is not None:
-        if require_mfa_for_platform and not used_mfa:
-            raise TokenVerificationError(
-                f"Platform role {platform_role.value} requires multi-factor authentication"
-            )
-        return Principal(
-            subject=subject,
-            actor_type=ActorType.PLATFORM,
-            email=claims.get("email"),
-            name=claims.get("name"),
-            platform_role=platform_role,
-            zitadel_organization_id=claims.get(ORGANIZATION_CLAIM),
-            used_mfa=used_mfa,
-        )
-
-    # A ZITADEL service user presents a token with no email and no interactive
-    # authentication. Machine identities are how products and internal jobs call
-    # the platform API, and they are never granted platform roles.
-    if not claims.get("email"):
-        return Principal(
-            subject=subject,
-            actor_type=ActorType.MACHINE,
-            name=claims.get("name"),
-            organization_roles=organization_roles,
-            zitadel_organization_id=claims.get(ORGANIZATION_CLAIM),
-            used_mfa=used_mfa,
-        )
-
-    return Principal(
-        subject=subject,
-        actor_type=ActorType.ORGANIZATION,
+    # No platform branch, and no platform_role on JWTClaims.
+    #
+    # KORAS staff authority is Control Plane authority, and a product that can
+    # represent it is a product that can accidentally honour it. The roles
+    # parser here returns organization roles and the names it did not
+    # recognise -- a platform role arriving in a product's token lands in
+    # `unknown_roles`, where it can be logged and cannot be acted on.
+    #
+    # This function was a verbatim copy of the Control Plane's, which branches
+    # on a PlatformRole and returns a Principal. Neither type exists here, so
+    # the module did not typecheck as generated, and the copy also reached for
+    # authority a product must not hold.
+    return JWTClaims(
+        sub=subject,
         email=claims.get("email"),
         name=claims.get("name"),
-        organization_roles=organization_roles,
-        zitadel_organization_id=claims.get(ORGANIZATION_CLAIM),
-        used_mfa=used_mfa,
+        roles=roles,
+        unknown_roles=unknown_roles,
+        organization_id=claims.get(ORGANIZATION_CLAIM),
+        used_mfa=_used_mfa(claims),
     )

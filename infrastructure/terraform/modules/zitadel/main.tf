@@ -51,19 +51,35 @@ locals {
   # Staff roles for the Control Plane; customer roles for a product. A product
   # has no platform roles at all: staff authority lives in one place, and
   # issuing `platform_admin` from a product project would create a second.
-  project_roles = var.profile == "control-plane" ? [
-    "platform_super_admin",
-    "platform_admin",
-    "platform_support",
-    "platform_billing",
-    "platform_readonly",
-    ] : [
+  # Customer roles. Every profile needs them: a product serves customers, and
+  # so does the Control Plane -- its portal is a customer surface with its own
+  # middleware and its own API.
+  organization_roles = [
     "organization_owner",
     "organization_admin",
     "billing_admin",
     "security_admin",
     "member",
   ]
+
+  # Staff roles, for the Control Plane only. No product has platform staff.
+  platform_roles = [
+    "platform_super_admin",
+    "platform_admin",
+    "platform_support",
+    "platform_billing",
+    "platform_readonly",
+  ]
+
+  # The Control Plane needs both, and defining only the staff half made its
+  # portal unreachable at the identity layer: project_role_check below refuses
+  # a token to anyone holding no role on the project, and no customer could
+  # hold one. A customer signed in and ZITADEL answered ProjectRequired before
+  # the application saw anything.
+  project_roles = var.profile == "control-plane" ? concat(
+    local.platform_roles,
+    local.organization_roles,
+  ) : local.organization_roles
 }
 
 resource "zitadel_project_role" "roles" {
