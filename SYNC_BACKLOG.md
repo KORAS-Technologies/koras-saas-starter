@@ -91,7 +91,10 @@ hand in the downstream repository.
 
 ### A2 — the product profile's middleware redirects to a page that does not exist
 
-- [ ] `verifySession` either verifies a session, or the middleware stops calling it
+- [x] `verifySession` either verifies a session, or the middleware stops calling it
+
+**Closed by B1 (b71f176)**, as anticipated below: the sign-in was promoted
+rather than the stub repaired.
 
 **Applies to:** `profiles/product/template`
 
@@ -130,12 +133,34 @@ configuration."* `local/config/.env.local.example.hbs` never sets it, so
 
 ### B1 — sign-in was promoted to the control-plane profile only
 
-- [ ] `packages/auth` — `oauth.ts` and the full `index.ts`
-- [ ] `packages/auth` — the four test files
-- [ ] `apps/web` — `/api/auth/start`, `/api/auth/callback`, `/api/auth/signout`
-- [ ] `apps/web` — `login/page.tsx`
-- [ ] `apps/admin` — `middleware.ts` (the product's admin app has none)
-- [ ] `apps/admin` — the same three auth routes and login page
+- [x] `packages/auth` — `oauth.ts` and the full `index.ts`
+- [x] `packages/auth` — the four test files
+- [x] `apps/web` — `/api/auth/start`, `/api/auth/callback`, `/api/auth/signout`
+- [x] `apps/web` — `login/page.tsx`
+- [x] `apps/admin` — `middleware.ts` (the product's admin app has none)
+- [x] `apps/admin` — the same three auth routes and login page
+
+**Closed (b71f176).** Not a copy. `oauth.ts` is profile-agnostic and moved
+verbatim; everything else was adapted from one resolved platform role to a set
+of organization roles, because `billing_admin` and `security_admin` are scoped
+authorities a member may hold alongside others and collapsing them to one would
+silently drop the rest.
+
+`packages/permissions` defines organization roles only. A platform role
+arriving in a product's token is therefore an unrecognised name that grants
+nothing, which two tests assert directly.
+
+The two applications differ where they should: `apps/web` admits any caller
+holding a recognised role; `apps/admin` requires `organization_owner` or
+`organization_admin` **and** a second factor, because it acts on customer data
+on an operator's behalf.
+
+**A2 is closed by this** — the `verifySession` stub that returned `null`
+unconditionally is gone, and with it the redirect to a login page that did not
+exist.
+
+Verified in a generated project: build 22/22, typecheck 31/31, the auth suite
+43 pass 0 fail, pytest 20/20.
 
 **Applies to:** `profiles/product/template`
 
