@@ -13,7 +13,7 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from koras_auth import JWKSCache, JWTClaims, TokenVerificationError, verify_token
+from koras_auth import JWKSCache, Principal, TokenVerificationError, verify_token
 
 from .settings import settings
 
@@ -28,7 +28,7 @@ _jwks = JWKSCache(settings.zitadel_domain)
 
 async def require_auth(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
-) -> JWTClaims:
+) -> Principal:
     try:
         return await verify_token(
             credentials.credentials,
@@ -52,24 +52,31 @@ async def require_auth(
         ) from exc
 
 
-AuthDep = Annotated[JWTClaims, Depends(require_auth)]
+AuthDep = Annotated[Principal, Depends(require_auth)]
 
 
-def require_platform_staff(claims: AuthDep) -> JWTClaims:
+def require_platform_staff(principal: AuthDep) -> Principal:
     """Admit only KORAS staff.
 
-    The five platform roles are Control Plane authority and are defined by the
-    Control Plane, not by this template -- see koras_platform.platform_roles in
-    the generated repository. Until that is wired up this refuses everyone
-    rather than admitting anyone, because the failure mode of the alternative
-    is an open platform API.
+    The five platform roles are Control Plane authority and a product
+    repository never sees this function -- `koras_platform.platform_roles`
+    ships to this profile alone.
 
-    A product repository never sees this function.
+    This refused everyone while those roles existed only in the downstream
+    repository and not in the template, which was the right failure while it
+    lasted: the alternative to refusing everyone is an open platform API. They
+    ship here now, so the check is the real one.
+
+    `is_platform_staff` requires both a PLATFORM actor and a role. Either alone
+    is not staff -- an organization token carrying a role name it should not
+    have is still an organization token.
     """
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Platform authorisation is not configured",
-    )
+    if not principal.is_platform_staff:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This endpoint requires a platform role",
+        )
+    return principal
 
 
-PlatformAuthDep = Annotated[JWTClaims, Depends(require_platform_staff)]
+PlatformAuthDep = Annotated[Principal, Depends(require_platform_staff)]

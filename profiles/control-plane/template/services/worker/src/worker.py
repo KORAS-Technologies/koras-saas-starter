@@ -1,10 +1,13 @@
 from arq.connections import RedisSettings
 
-from .tasks import example_task
+from .tasks import provision_product, reconcile_infrastructure
 
 
 class WorkerSettings:
-    functions = [example_task]
+    # The tasks this profile actually defines. It registered `example_task`,
+    # which src/tasks does not export here -- so the worker raised ImportError
+    # on startup and the only symptom was a container that would not stay up.
+    functions = [provision_product, reconcile_infrastructure]
     redis_settings = RedisSettings(host="localhost", port=6379)
     # arq polls every 0.5s by default: two Redis commands a second per worker,
     # forever, whether or not there is work. On a per-command managed queue that

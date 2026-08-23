@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, status
 from pydantic import BaseModel
 
@@ -40,5 +42,5 @@ async def register_product(
 
 
 @router.get("/products")
-async def list_products(_claims: PlatformAuthDep) -> list[dict]:
+async def list_products(_principal: PlatformAuthDep) -> list[dict[str, Any]]:
     return []
