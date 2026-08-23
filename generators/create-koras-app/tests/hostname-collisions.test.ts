@@ -109,7 +109,7 @@ describe('the domain a project is served under', () => {
   })
 
   it('lets a product with its own brand domain say so', () => {
-    // The case INFRASTRUCTURE_PLAN.md documents, with docoris.app.
+    // The case docs/INFRASTRUCTURE_PLAN.md documents, with docoris.app.
     expect(primaryDomain(ctxFor('product', 'docoris', 'docoris.app'))).toBe('docoris.app')
   })
 

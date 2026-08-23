@@ -47,7 +47,7 @@ export function buildContext(params: {
  * products, which was the same defect one step further out.
  *
  * `--domain` overrides both, for a product with its own brand domain. That is
- * the case INFRASTRUCTURE_PLAN.md has always documented, with `docoris.app`.
+ * the case docs/INFRASTRUCTURE_PLAN.md has always documented, with `docoris.app`.
  */
 export function primaryDomain(ctx: GenerationContext): string {
   if (ctx.domain !== undefined && ctx.domain.trim() !== '') return ctx.domain.trim()

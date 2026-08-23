@@ -41,6 +41,10 @@ Tiers are ordered by what breaks if the item is left alone:
 **Last full survey:** 2026-08-22, against starter `535cd58`,
 control-plane `9546623`, sample-product `27f2949`.
 
+**Closed since:** A1, A2, A3, B1, B2, B3, B4, B5, C1, C2, C3, D1, D3, D4, E1, E2.
+D2 is guarded rather than fixed; see its entry. `koras-control-plane` has not been
+re-synced against any of it, and `output/sample-product` carries B4 but not B1.
+
 ---
 
 ## Tier A — the generator emits something that does not work
@@ -233,9 +237,9 @@ nobody produces reads as configured when it is not.
 
 ### B3 — the product `.env.local.example` is missing what the sign-in needs
 
-- [ ] `SESSION_SECRET`
-- [ ] `CORS_ORIGINS`
-- [ ] The note explaining that `make bootstrap` rewrites the ports below it
+- [x] `SESSION_SECRET`
+- [x] `CORS_ORIGINS`
+- [x] The note explaining that `make bootstrap` rewrites the ports below it
 
 **Applies to:** `profiles/product/template`
 
@@ -279,7 +283,7 @@ This is the oldest open item and the one with a known security consequence.
 
 ### B5 — the control-plane manifest claims storage it does not ship
 
-- [ ] `capabilities.storage` and the template agree
+- [x] `capabilities.storage` and the template agree
 
 **Applies to:** `profiles/control-plane/manifest.yaml`
 
@@ -297,13 +301,13 @@ One of the two is wrong. The manifest is what the generator reads and what
 
 ### C1 — secret scanning exists in one repository out of five
 
-- [ ] `.gitleaks.toml` in `profiles/product/template`
-- [ ] `.gitleaks.toml` in `profiles/control-plane/template`
-- [ ] `.gitleaks.toml` in the starter itself
-- [ ] A gitleaks job in both templates' `ci.yml`
-- [ ] The starter's `security.yml` installs the binary rather than the wrapper
-- [ ] The starter's `security.yml` passes `--max-archive-depth`
-- [ ] The starter's `security.yml` triggers on `develop` and `test`
+- [x] `.gitleaks.toml` in `profiles/product/template`
+- [x] `.gitleaks.toml` in `profiles/control-plane/template`
+- [x] `.gitleaks.toml` in the starter itself
+- [x] A gitleaks job in both templates' `ci.yml`
+- [x] The starter's `security.yml` installs the binary rather than the wrapper
+- [x] The starter's `security.yml` passes `--max-archive-depth`
+- [x] The starter's `security.yml` triggers on `develop` and `test`
 
 **Applies to:** the starter and both templates
 
@@ -320,10 +324,10 @@ happens.
 
 ### C2 — the factory is not subject to its own checks
 
-- [ ] `tests/security/test_no_state_artifacts.py` present in the starter
-- [ ] `tests/unit/test_declared_dependencies.py` present in both templates
-- [ ] `tests/security/test_settings_are_declared.py` present in both templates
-- [ ] The starter's `tests/` runs in the starter's own CI
+- [x] `tests/security/test_no_state_artifacts.py` present in the starter
+- [x] `tests/unit/test_declared_dependencies.py` present in both templates
+- [x] `tests/security/test_settings_are_declared.py` present in both templates
+- [x] The starter's `tests/` runs in the starter's own CI
 
 **Applies to:** the starter and both templates
 
@@ -338,9 +342,9 @@ environment. A1 is the fifth, and the first to reach a template.
 
 ### C3 — the starter's CI is older than the CI it ships
 
-- [ ] Starter workflows on `actions/checkout@v5`
-- [ ] Starter workflows on `actions/setup-node@v5`
-- [ ] Starter workflows on `astral-sh/setup-uv@v6`
+- [x] Starter workflows on `actions/checkout@v5`
+- [x] Starter workflows on `actions/setup-node@v5`
+- [x] Starter workflows on `astral-sh/setup-uv@v6`
 
 **Applies to:** `koras-saas-starter/.github/workflows/`
 
@@ -353,9 +357,9 @@ four workflows are the only files left on v4/v4/v3.
 
 ### D1 — nothing prevents a fix from landing in one profile only
 
-- [ ] `generator-integration.yml` generates both profiles
-- [ ] …installs, typechecks and tests each
-- [ ] …fails the build on a non-zero result
+- [x] `generator-integration.yml` generates both profiles
+- [x] …installs, typechecks and tests each
+- [x] …fails the build on a non-zero result
 
 **Applies to:** `koras-saas-starter/.github/workflows/generator-integration.yml`
 
@@ -366,13 +370,27 @@ build what it generates.
 This is the highest-leverage item in the document. Without it, this document
 needs new entries after every burst of work.
 
-### D2 — the two templates hold ~40 near-identical files with no shared source
+### D2 — the two templates hold 110 identical files with no shared source
 
+- [x] Drift between the duplicated files fails the build
 - [ ] `local/scripts/` single-sourced
 - [ ] `local/observability/`, `local/queue/` single-sourced
 - [ ] `.github/workflows/` single-sourced
 - [ ] `packages/` stubs single-sourced
 - [ ] `eslint.config.mjs`, `turbo.json`, `tsconfig.base.json` single-sourced
+
+**Guarded, not yet fixed.** The count was wrong: it is **110** byte-identical
+files, not ~40. `tests/shared-template-parity.test.ts` lists every one and fails
+when they stop matching, so a fix reaching one profile and not the other is now
+a failing build rather than something a review of either repository cannot see.
+Verified non-vacuous by appending a line to one copy of `migrate.sh`.
+
+**Why the extraction did not follow.** `shared_assets` copies verbatim — that is
+what makes `--refresh-modules` safe — and most of the 110 are `.hbs` files
+needing interpolation. A `profiles/_shared/` tree therefore needs a rendering
+path the engine does not have, plus precedence rules for profile overrides, and
+a precedence bug is silent: the wrong file wins and nothing says so. Worth doing
+deliberately rather than alongside eleven other items.
 
 **Applies to:** `profiles/`
 
@@ -388,8 +406,8 @@ name.
 
 ### D3 — a generated project cannot tell that it is behind
 
-- [ ] `starter_version` in `.koras/project.yaml` tracks something that changes
-- [ ] `--check-drift` compares it and says so
+- [x] `starter_version` in `.koras/project.yaml` tracks something that changes
+- [x] `--check-drift` compares it and says so
 
 **Applies to:** `generators/create-koras-app`
 
@@ -412,7 +430,7 @@ the advisory set into `OWNED_PATHS` (`src/generation/drift.ts`).
 
 ### D4 — `output/sample-product` has one remaining drift
 
-- [ ] `Makefile` — `BUILD_CONCURRENCY`, and the `doppler-bootstrap-prod` target
+- [x] `Makefile` — `BUILD_CONCURRENCY`, and the `doppler-bootstrap-prod` target
 
 **Applies to:** `output/sample-product`
 
@@ -424,25 +442,34 @@ Everything else is current as of `27f2949`.
 
 ### E1 — the risk register has decayed
 
-- [ ] Summary table has a row for R-022 through R-027
-- [ ] R-024 is written (commit `98fc7e0` names it; the register does not)
-- [ ] R-025 is written (commit `4f6a36e` names it; the register does not)
-- [ ] R-022 uses `##`, matching every other entry
-- [ ] The two registers no longer collide
+- [x] Summary table has a row for R-022 through R-027
+- [x] R-024 is written (commit `98fc7e0` names it; the register does not)
+- [x] R-025 is written (commit `4f6a36e` names it; the register does not)
+- [x] R-022 uses `##`, matching every other entry
+- [x] The two registers no longer collide
 
 **Applies to:** `RISK_REGISTER.md`
 
 The table holds 21 rows against 25 body sections. R-024 and R-025 appear
 nowhere — no row, no body — though both have commits naming them.
 
-`koras-control-plane/docs/RISK_REGISTER.md` numbers to R-77 in the same
+`koras-control-plane/RISK_REGISTER.md` numbers to R-77 in the same
 `R-NN` namespace this one numbers to R-027. "R-22" identifies two different
 defects depending on which repository is being read. Prefixing them
 (`KSS-22` / `KCP-77`) or merging them would fix that.
 
 ### E2 — three documentation conventions
 
-- [ ] One convention, chosen deliberately
+- [x] One convention, chosen deliberately
+
+**Closed.** `docs/`, matching what `koras-control-plane` already does. The
+starter's twelve planning documents moved out of the root; only `README.md` and
+`CLAUDE.md` remain there. Every reference was rewritten — CLAUDE.md's table, the
+cross-links between the documents, and the four source files that cite one in a
+comment — and checked afterwards for any left pointing at the old location.
+
+Both templates still ship `docs/.gitkeep` and nothing else, which is the right
+starting point for a project that has no documents yet.
 
 **Applies to:** all three repositories
 

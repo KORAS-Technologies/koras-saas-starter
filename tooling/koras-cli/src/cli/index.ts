@@ -22,7 +22,7 @@ EXAMPLES:
     pnpm koras bootstrap:doctor
 
 Exits 0 when every integration passes, 1 otherwise.
-See PROVISIONING_RUNBOOK.md for what each check requires of the estate.
+See docs/PROVISIONING_RUNBOOK.md for what each check requires of the estate.
 `.trim()
 
 export async function run(argv: string[] = process.argv): Promise<void> {

@@ -16,19 +16,22 @@ pnpm create-koras-app <project> --profile <profile>
 
 ## Key documents
 
-| Document                  | Purpose                                        |
-|---------------------------|------------------------------------------------|
-| `ARCHITECTURE.md`         | System overview and technology choices         |
-| `PROFILE_ARCHITECTURE.md` | Capability matrix for both profiles            |
-| `PRODUCT_GENERATOR_PLAN.md` | Generator CLI design                         |
-| `INFRASTRUCTURE_PLAN.md`  | Terraform module strategy                      |
-| `ENVIRONMENT_STRATEGY.md` | Branch ↔ environment mapping (immutable)       |
-| `DEPENDENCY_MAP.md`       | Package and service dependency graph           |
-| `IMPLEMENTATION_ROADMAP.md` | Phase-by-phase build plan                    |
-| `BOOTSTRAP_DOCTOR.md`     | `pnpm koras bootstrap:doctor` — preflight checks |
-| `PROVISIONING_RUNBOOK.md` | Commands, estate prerequisites, failure recovery |
-| `RISK_REGISTER.md`        | Identified risks and mitigations               |
-| `SYNC_BACKLOG.md`         | Gaps between the factory, the two profiles and the generated repositories |
+All planning and reference documents live in `docs/`, matching
+`koras-control-plane`. Only `README.md` and this file sit at the root.
+
+| Document                         | Purpose                                          |
+|----------------------------------|--------------------------------------------------|
+| `docs/ARCHITECTURE.md`           | System overview and technology choices           |
+| `docs/PROFILE_ARCHITECTURE.md`   | Capability matrix for both profiles              |
+| `docs/PRODUCT_GENERATOR_PLAN.md` | Generator CLI design                             |
+| `docs/INFRASTRUCTURE_PLAN.md`    | Terraform module strategy                        |
+| `docs/ENVIRONMENT_STRATEGY.md`   | Branch ↔ environment mapping (immutable)         |
+| `docs/DEPENDENCY_MAP.md`         | Package and service dependency graph             |
+| `docs/IMPLEMENTATION_ROADMAP.md` | Phase-by-phase build plan                        |
+| `docs/BOOTSTRAP_DOCTOR.md`       | `pnpm koras bootstrap:doctor` — preflight checks |
+| `docs/PROVISIONING_RUNBOOK.md`   | Commands, estate prerequisites, failure recovery |
+| `docs/RISK_REGISTER.md`          | Identified risks and mitigations                 |
+| `docs/SYNC_BACKLOG.md`           | Gaps between the factory, the two profiles and the generated repositories |
 
 ## Repository layout (target state)
 
@@ -95,15 +98,14 @@ This mapping is immutable (ADR required to change).
 | Phase                                  | State              | Note                                     |
 |----------------------------------------|--------------------|------------------------------------------|
 | 10 — Control Plane Registration Client | Not started        | `src/registration/` and `--skip-registration` do not exist |
-| 11 — CI/CD                             | Partially complete | Generated-project workflows done; `generator-integration.yml` is an `echo` stub |
-| 12 — Security                          | Partially complete | `security.yml` and Dependabot done; RLS suite, JWT tests, OWASP checklist missing |
+| 11 — CI/CD                             | Work complete      | Both halves done; `generator-integration.yml` builds what it generates. Closes only when its exit criterion stops naming `main` |
+| 12 — Security                          | Partially complete | Secret scanning, Dependabot and the state-artifact check done; RLS suite, JWT tests and the OWASP checklist missing |
 | 13 — End-to-End Acceptance Tests       | Not started        | Blocked on Phase 10                      |
 
-**Next step:** finish Phase 11's starter half — make
-`generator-integration.yml` generate both profiles and build them
-(generate → install → typecheck → test). It closes a roadmap phase and
-SYNC_BACKLOG.md D1 at once, and it is what would have caught the Tier A defects
-before they shipped.
+**Next step:** Phase 10, the Control Plane registration client. It is the only
+remaining phase with no work started, and Phase 13 is blocked behind it.
+`--skip-registration` matters beyond that phase: R-001's mitigation in
+`docs/RISK_REGISTER.md` is written as though the flag exists.
 
 Two caveats when reading the roadmap:
 
@@ -113,7 +115,7 @@ Two caveats when reading the roadmap:
   the criterion to `develop`.
 - The roadmap does not cover R-020 through R-027 or the OIDC sign-in work.
   Roughly twenty commits of deployment and authentication work sit outside the
-  phase structure, recorded only in `RISK_REGISTER.md`. Nothing in the plan has
+  phase structure, recorded only in `docs/RISK_REGISTER.md`. Nothing in the plan has
   "a user signs in to a deployed application" as an exit criterion.
 
 `koras-control-plane` keeps a separate Phase 0–19 roadmap. The numbers are not

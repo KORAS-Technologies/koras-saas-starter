@@ -89,7 +89,7 @@ EXAMPLES:
   override the profile's location for a one-off run.
 
 Check the estate before provisioning: pnpm koras bootstrap:doctor
-See PROVISIONING_RUNBOOK.md for prerequisites and failure recovery.
+See docs/PROVISIONING_RUNBOOK.md for prerequisites and failure recovery.
 `.trim()
 
 function printListProfiles(): void {
