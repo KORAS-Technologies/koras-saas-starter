@@ -11,6 +11,8 @@ export interface GenerationContext {
   outputDir: string
   dryRun: boolean
   provision: boolean
+  /** Explicit --domain, when the project has its own brand domain. */
+  domain?: string
 }
 
 export function buildContext(params: {
@@ -23,8 +25,37 @@ export function buildContext(params: {
   outputDir: string
   dryRun: boolean
   provision: boolean
+  domain?: string
 }): GenerationContext {
   return { ...params }
+}
+
+/**
+ * The domain this project's hostnames are issued under.
+ *
+ * Not the estate apex. Every project used to receive the apex, because
+ * `primary_domain` arrived as one `TF_VAR_primary_domain` shared by the whole
+ * bootstrap Doppler config -- so the Control Plane and every product asked
+ * Vercel for the same names, and the second one to apply was refused with
+ * `domain_already_in_use`. Half an estate had been created by then, and because
+ * the OIDC redirect URIs and the DNS records are both derived from the domain
+ * map, a hostname conflict presented as an identity and DNS outage. See R-028.
+ *
+ * The Control Plane keeps the apex: it is the platform, and `admin.<apex>` is
+ * the name that belongs to it. A product is namespaced beneath it, so
+ * `admin.<slug>.<apex>` and `admin.<apex>` cannot meet -- and neither can two
+ * products, which was the same defect one step further out.
+ *
+ * `--domain` overrides both, for a product with its own brand domain. That is
+ * the case INFRASTRUCTURE_PLAN.md has always documented, with `docoris.app`.
+ */
+export function primaryDomain(ctx: GenerationContext): string {
+  if (ctx.domain !== undefined && ctx.domain.trim() !== '') return ctx.domain.trim()
+
+  const apex = ctx.defaults.infrastructure?.domain_apex ?? ''
+  if (apex === '') return ''
+
+  return ctx.profile === 'control-plane' ? apex : `${ctx.projectSlug}.${apex}`
 }
 
 function enabledKeys(selected: Record<string, boolean>): string[] {
@@ -150,6 +181,7 @@ export function contextToTemplateVars(ctx: GenerationContext): Record<string, un
     flyRegion: ctx.defaults.infrastructure?.fly_region ?? '',
     vercelFramework: ctx.defaults.infrastructure?.vercel_framework ?? 'nextjs',
     tfOrganization: ctx.defaults.infrastructure?.terraform_organization ?? 'koras',
+    primaryDomain: primaryDomain(ctx),
 
     ports: {
       supabaseDb: ctx.defaults.local?.ports?.supabase_db ?? 54322,

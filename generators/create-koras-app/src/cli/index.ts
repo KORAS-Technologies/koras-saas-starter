@@ -54,6 +54,11 @@ OPTIONS:
                              plan against the refreshed copy.
   --dry-run                  Preview generation without writing files
   --output-dir <path>        Output parent directory (default: current directory)
+  --domain <fqdn>            Domain this project is served under. Defaults to
+                             <slug>.<apex> for a product and the apex itself for
+                             the Control Plane, where the apex is the profile's
+                             domain_apex. Pass this when a product has its own
+                             brand domain.
   --no-interactive           Disable interactive prompts
   --list-profiles            List available profiles and exit
   --help                     Show this help message
@@ -251,6 +256,7 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     outputDir: args.outputDir,
     dryRun: args.dryRun,
     provision: args.provision,
+    domain: args.domain,
   })
 
   // ── Provision an existing project ──────────────────────────────────────────

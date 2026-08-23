@@ -18,6 +18,13 @@ export interface ParsedArgs {
   all: boolean
   /** True when --output-dir was passed, as opposed to defaulting to cwd. */
   outputDirExplicit: boolean
+  /**
+   * The domain this project is served under, when it has its own.
+   *
+   * Absent, a product is namespaced beneath the profile's `domain_apex` as
+   * `<slug>.<apex>` and the Control Plane takes the apex itself. See R-028.
+   */
+  domain?: string
 }
 
 function splitList(value: string | undefined): string[] {
@@ -96,6 +103,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
         result.outputDir = args[++i]
         result.outputDirExplicit = true
         break
+      case '--domain':
+        result.domain = args[++i]
+        break
       case '--with':
         result.with.push(...splitList(args[++i]))
         break
@@ -108,6 +118,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
         } else if (arg.startsWith('--output-dir=')) {
           result.outputDir = arg.split('=')[1]
           result.outputDirExplicit = true
+        } else if (arg.startsWith('--domain=')) {
+          result.domain = arg.slice('--domain='.length)
         } else if (arg.startsWith('--with=')) {
           result.with.push(...splitList(arg.slice('--with='.length)))
         } else if (arg.startsWith('--without=')) {

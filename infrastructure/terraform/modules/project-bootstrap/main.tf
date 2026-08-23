@@ -96,7 +96,16 @@ module "zitadel_dev" {
   redirect_uris             = local.redirect_uris["dev"]
   post_logout_redirect_uris = local.post_logout_redirect_uris["dev"]
 
-  depends_on = [module.vercel]
+  # No depends_on. `local.redirect_uris` already reads `module.vercel.domains`,
+  # so the dependency is expressed by the value and applies to exactly the
+  # resources that consume it.
+  #
+  # An explicit module-level depends_on applies to every resource in the module
+  # instead, including `zitadel_project_role`, which reads no redirect URI. This
+  # module carried one and its three siblings did not, so when the Vercel module
+  # was refusing an unrelated destroy, test, stg and prod could still be given
+  # their roles and dev could not -- the one environment in daily use, failing
+  # invisibly, because the plan simply omitted them. See R-029.
 }
 
 module "zitadel_test" {

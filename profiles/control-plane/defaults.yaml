@@ -21,6 +21,9 @@ infrastructure:
   # generated repositories, so project and config are always explicit.
   doppler_project: "koras-platform-bootstrap"
   doppler_config: "prod"
+  # The Control Plane is the platform, so it is served at the apex itself
+  # rather than namespaced beneath it. Products are namespaced; see R-028.
+  domain_apex: "korastechnologies.com"
 
 output:
   include_example_env: true

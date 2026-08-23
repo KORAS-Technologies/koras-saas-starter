@@ -28,6 +28,12 @@ infrastructure:
   # generated repositories, so project and config are always explicit.
   doppler_project: "koras-platform-bootstrap"
   doppler_config: "prod"
+  # The zone this project's hostnames are issued under. A product is namespaced
+  # beneath it -- <slug>.<apex> -- because the apex belongs to the platform and
+  # a product that claims a name there takes it from the Control Plane or from
+  # the next product. Override per project with --domain when it has its own
+  # brand domain. See R-028.
+  domain_apex: "korastechnologies.com"
 
 output:
   include_example_env: true

@@ -4,7 +4,7 @@
 # modules fan out over the environment set. This file is committed, so it must
 # never hold secrets. Tokens and passwords arrive through the environment:
 #
-#   doppler run --project koras-platform-bootstrap --config default -- terraform plan
+#   doppler run --project koras-platform-bootstrap --config prod -- terraform plan
 #
 # Secret inputs supplied as TF_VAR_*:
 #   TF_VAR_supabase_environments   per-env db_password and region
@@ -13,6 +13,17 @@
 profile      = "{{profile}}"
 project_name = "{{projectName}}"
 project_slug = "{{projectSlug}}"
+
+# The domain this project's hostnames are issued under.
+#
+# Per project, not per estate. It arrived as one TF_VAR_primary_domain shared by
+# the whole bootstrap Doppler config, so the Control Plane and every product
+# asked Vercel for the same names and the second to apply was refused with
+# `domain_already_in_use` -- after half its estate existed. See R-028.
+#
+# terraform.tfvars outranks a TF_VAR_ environment variable, so a value left in
+# Doppler no longer decides this.
+primary_domain = "{{primaryDomain}}"
 
 enabled_apps     = {{{json vercelProjects}}}
 enabled_services = {{{json flyServices}}}

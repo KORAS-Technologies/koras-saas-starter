@@ -104,6 +104,11 @@ export const ProfileDefaultsSchema = z.object({
       // inputs are not already in the environment.
       doppler_project: z.string().optional(),
       doppler_config: z.string().optional(),
+      // The zone every project's hostnames are issued under, not the domain
+      // any one project uses. Read at generation time, which is why it lives
+      // here rather than in Doppler: `create-koras-app` writes terraform.tfvars
+      // long before any provisioning credential is in the environment.
+      domain_apex: z.string().optional(),
     })
     .optional(),
   output: z

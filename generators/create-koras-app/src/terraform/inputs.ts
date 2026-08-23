@@ -118,7 +118,16 @@ export function assembleZitadelInstances(env: NodeJS.ProcessEnv): string | undef
  */
 export const ACCOUNT_VARIABLES = [
   { name: 'TF_VAR_github_org', alias: 'TF_VAR_GITHUB_ORG', purpose: 'GitHub organisation that owns the repository' },
-  { name: 'TF_VAR_primary_domain', alias: 'TF_VAR_PRIMARY_DOMAIN', purpose: 'apex domain for this project' },
+  // The estate apex, which is the Cloudflare zone -- not the domain any one
+  // project is served under. Reading it as the latter is what let the Control
+  // Plane and every product ask Vercel for the same hostnames (R-028).
+  //
+  // Each project now carries its own `primary_domain` in terraform.tfvars, and
+  // terraform.tfvars outranks a TF_VAR_ environment variable, so this no longer
+  // decides what a project is served under. It stays because
+  // `koras bootstrap:doctor` compares it against the zone the token can write,
+  // which is an estate-level question and the right use of one shared value.
+  { name: 'TF_VAR_primary_domain', alias: 'TF_VAR_PRIMARY_DOMAIN', purpose: 'estate apex (Cloudflare zone)' },
   { name: 'TF_VAR_supabase_org_id', alias: 'TF_VAR_SUPABASE_ORG_ID', purpose: 'Supabase organisation ID' },
   { name: 'TF_VAR_vercel_team_id', alias: 'TF_VAR_VERCEL_TEAM_ID', purpose: 'Vercel team ID' },
   { name: 'TF_VAR_fly_org_slug', alias: 'TF_VAR_FLY_ORG_SLUG', purpose: 'Fly.io organisation slug' },
