@@ -1,60 +1,162 @@
 name: Generator Integration
 
+# Generates both profiles and builds what comes out.
+#
+# This job echoed its own command for as long as it existed, under a comment
+# saying the real version would arrive in Phase 11, and reported green the whole
+# time. What it did not catch, in order of how long each shipped broken:
+#
+#   - the control-plane profile did not typecheck as generated. packages/auth
+#     imported isPlatformRole from a permissions package that was a two-line
+#     stub, declared neither jose nor the workspace dependency, and the admin
+#     application imported an api-client it never listed.
+#   - a fresh product could not start its API: settings.py declares ENVIRONMENT
+#     with no default and .env.local.example never set it.
+#   - eight of eleven derived settings named Terraform outputs no product emits.
+#
+# All three were invisible to the 393 unit tests, because those read the files
+# the generator wrote and never ran the result. The only way to catch this class
+# is to build the output, so that is what this does.
+#
+# It is slow — install and build for two projects — which is why it runs on
+# changes to the generator or the profiles rather than on every commit.
+
 on:
   push:
-    branches: [develop, main]
+    branches: [develop, test, staging, main]
     paths:
       - "generators/**"
       - "profiles/**"
+      - "infrastructure/terraform/modules/**"
+      - ".github/workflows/generator-integration.yml"
+  pull_request:
+    paths:
+      - "generators/**"
+      - "profiles/**"
+      - "infrastructure/terraform/modules/**"
+      - ".github/workflows/generator-integration.yml"
   workflow_dispatch:
 
+concurrency:
+  group: generator-integration-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  generate-product:
-    name: Generate product project
+  generate-and-build:
+    name: ${{ matrix.profile }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      # Both profiles always run. A failure in one is not a reason to stop
+      # learning whether the other is also broken — they diverge constantly, and
+      # that divergence is the thing this job exists to measure.
+      fail-fast: false
+      matrix:
+        include:
+          - profile: product
+            slug: integration-product
+          - profile: control-plane
+            slug: integration-control-plane
+
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: pnpm
+      - uses: astral-sh/setup-uv@v6
 
-      - name: Install dependencies
+      - name: Install starter dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build generator
+      - name: Build the generator
         run: pnpm turbo run build --filter=create-koras-app
 
-      # Stub — full integration test implemented in Phase 11
-      - name: Generate (dry-run)
-        run: echo "pnpm create-koras-app sampleapp --profile product --dry-run"
+      # Outside the starter, because generating into it is refused — and because
+      # a project written inside the repository would be picked up by the
+      # starter's own workspace globs on the next step.
+      - name: Generate
+        run: |
+          mkdir -p "$RUNNER_TEMP/generated"
+          pnpm create-koras-app "${{ matrix.slug }}" \
+            --profile "${{ matrix.profile }}" \
+            --no-interactive \
+            --output-dir "$RUNNER_TEMP/generated"
 
-  generate-control-plane:
-    name: Generate control-plane project
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+      # Not --frozen-lockfile: the generated project has no lockfile, and one
+      # committed to the template would pin whatever the template's dependency
+      # ranges resolved to on the day it was written.
+      - name: Install the generated project
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: pnpm install --no-frozen-lockfile
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      # turbo, so workspace packages build before the applications importing
+      # them. This is the step that fails when a package is a stub or a
+      # dependency is undeclared.
+      - name: Build
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: pnpm turbo run build
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
+      - name: Typecheck
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: pnpm turbo run typecheck
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Test (Node)
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: pnpm turbo run test
 
-      - name: Build generator
-        run: pnpm turbo run build --filter=create-koras-app
+      # --all-packages installs every workspace member. A bare `uv sync` brings
+      # in only the root dev tools, leaving mypy unable to resolve fastapi and
+      # pydantic — and silently treating them as Any.
+      - name: Install Python packages
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: uv sync --all-packages
 
-      # Stub — full integration test implemented in Phase 11
-      - name: Generate (dry-run)
-        run: echo "pnpm create-koras-app koras-control-plane --profile control-plane --dry-run"
+      # Every service names its package `src`, so a repo-wide run aborts on
+      # duplicate modules. One root at a time, as the generated `make typecheck`
+      # does.
+      - name: Typecheck (Python)
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: |
+          uv run mypy python-packages
+          for svc in services/*/; do
+            [ -f "$svc/pyproject.toml" ] || continue
+            echo "mypy $svc"
+            uv run mypy "$svc"
+          done
+
+      # tests/security/test_no_state_artifacts.py asks git what is tracked, so
+      # the project has to be a repository before it means anything. A generated
+      # project is not one: the generator only runs `git init` after a
+      # successful provision, so a generate-only project fails two of the tests
+      # it ships with. That is a real defect and it is recorded separately —
+      # this cannot be fixed by initialising at generation time, because
+      # initAndPushToDevelop refuses to push into a directory that already has
+      # a .git and would silently stop pushing anything.
+      #
+      # Staged rather than merely initialised: `git ls-files` is empty in a
+      # fresh repository, so without `add` the first test passes over nothing
+      # and proves the opposite of what it claims.
+      - name: Make it a repository, so the security check has something to read
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: |
+          git init -q -b develop
+          git add -A
+
+      - name: Test (Python)
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: uv run pytest
+
+      # A project generated a moment ago must match what the generator would
+      # produce for it. If it does not, either the drift check is wrong or
+      # generation is not deterministic, and both are worth failing over —
+      # this check is the one that tells an existing project it is behind.
+      - name: Drift check reports nothing
+        run: |
+          pnpm create-koras-app "${{ matrix.slug }}" \
+            --profile "${{ matrix.profile }}" \
+            --no-interactive \
+            --check-drift --all \
+            --output-dir "$RUNNER_TEMP/generated"
