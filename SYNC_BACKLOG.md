@@ -149,8 +149,29 @@ middleware at all. If that is deliberate, it needs a comment saying so.
 
 ### B2 — the product profile derives 3 of 11 settings from Terraform
 
-- [ ] Every `derived out:` line in the product `secrets.manifest` names an output
+- [x] Every `derived out:` line in the product `secrets.manifest` names an output
       the product's `main.tf.hbs` actually emits
+
+**Closed against a plan, not a reading.** Six of the eight are emitted:
+`primary_domain`, `zitadel_domains`, `app_urls`, `admin_urls`,
+`app_redirect_uris`, `api_urls`, `storage_endpoints`, plus `ai_gateway_urls`
+when that service is enabled. A plan against the live estate resolves every one
+across all four environments.
+
+Two were never derivable and the manifest now says `supplied` rather than
+naming an output that cannot exist: `CONTROL_PLANE_URL` belongs to a separate
+estate with its own state, and `STORAGE_BUCKET` is a name the project picks,
+not a resource the storage module creates.
+
+The URLs are computed from `primary_domain` rather than read back from
+`module.bootstrap.vercel_domains`, because that map is empty until the apply
+that attaches the domains — and these settings are needed by the bootstrap
+that runs before it. The hostname labels match the vercel module's
+`application_hostnames` default, so `web` resolves to `app` in both places.
+
+**Still open downstream:** the Doppler configs stay at 11/31 and 1/31 until
+`output/sample-product` applies. The outputs are computed but not in state, and
+`doppler-bootstrap` reads state.
 
 **Applies to:** `profiles/product/template`
 
@@ -331,6 +352,13 @@ name.
 Both generated repositories still record `starter_version: 0.1.0` across every
 change the starter has made. The field cannot signal staleness because it never
 moves.
+
+One half of this is closed: `--check-drift` now reports any rendered file the
+project does not have, across the whole tree rather than only the reviewable
+set. That is what a project generated before a file joined the template needs,
+since `--refresh-modules` only touches declared shared assets. It caught
+`apps/admin/next.config.ts`, absent from a generated product for four days
+while every run reported the project as matching.
 
 Related: `--check-drift` prints a matching-tick headline above a list of files
 that differ. When the differing files were the shared Terraform modules —
