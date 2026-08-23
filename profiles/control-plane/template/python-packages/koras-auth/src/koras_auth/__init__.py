@@ -130,50 +130,112 @@ async def verify_token(
     *,
     jwks: JWKSCache,
     project_id: str,
+    client_id: str | None = None,
     issuer: str | None = None,
-) -> JWTClaims:
-    """Verify a bearer token and return its claims.
+    require_mfa_for_platform: bool = True,
+) -> Principal:
+    """Verify a bearer token and describe who presented it.
+
+    Args:
+        token: the raw bearer token.
+        jwks: signing keys for the ZITADEL instance this environment uses. One
+            cache per instance, so a token minted by another environment cannot
+            validate here even if it is otherwise well formed.
+        project_id: an accepted audience. ZITADEL puts it in access tokens.
+        client_id: also an accepted audience, and the one an OIDC ID token
+            actually carries. Verifying against the project id alone rejected
+            every ID token the applications hold, so every page answered 401
+            while the API was healthy and the caller properly signed in.
+        issuer: expected issuer, when it should be pinned as well as the audience.
+        require_mfa_for_platform: staff tokens without a second factor are
+            rejected. MFA is mandatory for every platform role, and checking it
+            here means no endpoint can forget to.
 
     Raises:
-        TokenVerificationError: signature, audience, issuer, expiry, or subject
-            not satisfied. Safe to log; do not return the message to the caller.
+        TokenVerificationError: signature, audience, issuer, expiry, identity, or
+            MFA requirement not satisfied. The message is safe to log but should
+            not be returned to the caller verbatim.
     """
-    options = {"verify_aud": True}
+    # Audience is checked here rather than by the decoder, which takes one
+    # value. Two are legitimate: the project id, which ZITADEL puts in access
+    # tokens, and the client id, which is what an ID token carries. Rejecting
+    # the second is what made every page answer 401.
+    allowed = {value for value in (project_id, client_id) if value}
+    if not allowed:
+        raise TokenVerificationError('No audience configured to verify against')
+    options = {"verify_aud": False}
+    claims: dict[str, Any]
     try:
-        claims: dict[str, Any] = jwt.decode(
+        claims = jwt.decode(
             token,
             await jwks.get(),
             algorithms=["RS256"],
-            audience=project_id,
             issuer=issuer,
             options=options,
         )
     except JWTError:
-        # A signing key may simply have rotated. Refresh once before rejecting;
-        # otherwise every token fails until the TTL expires.
+        # A signing key may simply have rotated. Refresh once and retry before
+        # concluding the token is bad; failing here would reject every token
+        # until the TTL expired.
         try:
             claims = jwt.decode(
                 token,
                 await jwks.get(force_refresh=True),
                 algorithms=["RS256"],
-                audience=project_id,
-                issuer=issuer,
+                    issuer=issuer,
                 options=options,
             )
         except JWTError as exc:
             raise TokenVerificationError(f"Token rejected: {exc}") from exc
 
+    # Never widened to 'any audience'. A token minted for another application
+    # on the same instance must not be accepted here.
+    presented = claims.get("aud")
+    presented = {presented} if isinstance(presented, str) else set(presented or ())
+    if not (presented & allowed):
+        raise TokenVerificationError('Token is addressed to another application')
+
     subject = claims.get("sub")
     if not subject:
         raise TokenVerificationError("Token carries no subject")
 
-    roles, unknown = _parse_roles(claims)
-    return JWTClaims(
-        sub=subject,
+    platform_role, organization_roles = _parse_roles(claims)
+    used_mfa = _used_mfa(claims)
+
+    if platform_role is not None:
+        if require_mfa_for_platform and not used_mfa:
+            raise TokenVerificationError(
+                f"Platform role {platform_role.value} requires multi-factor authentication"
+            )
+        return Principal(
+            subject=subject,
+            actor_type=ActorType.PLATFORM,
+            email=claims.get("email"),
+            name=claims.get("name"),
+            platform_role=platform_role,
+            zitadel_organization_id=claims.get(ORGANIZATION_CLAIM),
+            used_mfa=used_mfa,
+        )
+
+    # A ZITADEL service user presents a token with no email and no interactive
+    # authentication. Machine identities are how products and internal jobs call
+    # the platform API, and they are never granted platform roles.
+    if not claims.get("email"):
+        return Principal(
+            subject=subject,
+            actor_type=ActorType.MACHINE,
+            name=claims.get("name"),
+            organization_roles=organization_roles,
+            zitadel_organization_id=claims.get(ORGANIZATION_CLAIM),
+            used_mfa=used_mfa,
+        )
+
+    return Principal(
+        subject=subject,
+        actor_type=ActorType.ORGANIZATION,
         email=claims.get("email"),
         name=claims.get("name"),
-        roles=roles,
-        unknown_roles=unknown,
-        organization_id=claims.get(ORGANIZATION_CLAIM),
-        used_mfa=_used_mfa(claims),
+        organization_roles=organization_roles,
+        zitadel_organization_id=claims.get(ORGANIZATION_CLAIM),
+        used_mfa=used_mfa,
     )

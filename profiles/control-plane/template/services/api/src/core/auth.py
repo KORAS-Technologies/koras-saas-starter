@@ -7,6 +7,8 @@ attacker which tokens are real.
 
 from __future__ import annotations
 
+import logging
+
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
@@ -15,6 +17,7 @@ from koras_auth import JWKSCache, JWTClaims, TokenVerificationError, verify_toke
 
 from .settings import settings
 
+_log = logging.getLogger(__name__)
 _bearer = HTTPBearer(auto_error=True)
 
 # One cache for this environment's ZITADEL instance. Keys are fetched once and
@@ -31,10 +34,17 @@ async def require_auth(
             credentials.credentials,
             jwks=_jwks,
             project_id=settings.zitadel_project_id,
+            client_id=settings.zitadel_client_id,
         )
     except TokenVerificationError as exc:
-        # The reason is logged, not returned: it distinguishes an expired token
-        # from a forged one, which is not the caller's business.
+        # Logged, not returned. The distinction matters both ways: an expired
+        # token and a forged one must look identical to the caller, and must
+        # not look identical to whoever is on call.
+        #
+        # This comment claimed the reason was logged and nothing logged it --
+        # no logger was even imported -- so an application answered 401 on
+        # every page with no way to find out why.
+        _log.warning("token rejected: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",

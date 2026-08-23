@@ -16,6 +16,9 @@ class Settings(BaseSettings):
 
     zitadel_domain: str
     zitadel_project_id: str
+    # The OIDC client id, which is the audience of an ID token. Without it the
+    # API rejects every token the applications hold.
+    zitadel_client_id: str | None = None
 
     cors_origins: list[AnyHttpUrl] = []
 
