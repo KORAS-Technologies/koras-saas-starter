@@ -790,6 +790,11 @@ with confirmation creates all infrastructure resources for both profiles.
 ## Phase 10 — Control Plane Registration Client
 
 **Prerequisite:** Phase 9 complete
+**Status:** Not started (surveyed 2026-08-22) — `src/registration/` does not
+exist, and neither does `--skip-registration`. That flag is load-bearing outside
+this phase: R-001's mitigation in `RISK_REGISTER.md` is written as "skippable
+with `--skip-registration` if the Control Plane is not yet live", so the
+recorded mitigation currently describes a flag nobody implemented.
 
 **Scope:** Product profile registers itself with the KORAS Control Plane after
 provisioning. Control Plane profile skips registration.
@@ -819,6 +824,20 @@ Control Plane generation emits zero registration calls.
 
 **Prerequisite:** Phase 8 complete
 **Parallelizable with:** Phase 12
+**Status:** Partially complete (surveyed 2026-08-22). The generated-project half
+is done: `deploy.yml` and the four per-environment workflows are byte-identical
+across both templates, `koras-control-plane` and `output/sample-product`.
+
+The starter half is not. `.github/workflows/generator-integration.yml` has two
+jobs whose only substantive step is `echo`-ing the command it claims to run,
+under a comment reading "Stub — full integration test implemented in Phase 11".
+It reports green and generates nothing. See SYNC_BACKLOG.md D1: every Tier A
+item there would have failed this job on the commit that introduced it.
+
+**Blocked on a decision, not on work:** the exit criterion below is defined on
+`main`, and `main` is 55 commits behind `develop` as of 2026-08-22, having last
+received a commit on 2026-08-17. Either the promotion is scheduled or the
+criterion moves to `develop`.
 
 **Scope:** GitHub Actions workflows for the starter and for generated projects.
 
@@ -853,6 +872,17 @@ workflows pass lint check.
 
 **Prerequisite:** Phase 8 complete
 **Parallelizable with:** Phase 11
+**Status:** Partially complete (surveyed 2026-08-22). `security.yml` and
+`.github/dependabot.yml` exist. Still missing: the RLS policy test suite
+(`supabase/tests/` — the starter's `supabase/` holds only `.gitkeep`), the
+ZITADEL JWT validation tests, and the OWASP review checklist.
+
+**Blocked on the same decision as Phase 11, and more sharply.** The exit
+criterion is defined on `main`, and `security.yml` triggers only on `main` and
+`staging` — so the scan that would produce this phase's evidence has never run
+against any commit made since 2026-08-17. See SYNC_BACKLOG.md C1: the scan also
+uses the marketplace gitleaks wrapper, which refuses to run for organizations
+without a paid licence, and passes no `--max-archive-depth`.
 
 **Scope:** Security hardening of starter, generator, and generated output.
 
@@ -870,6 +900,9 @@ workflows pass lint check.
 ## Phase 13 — End-to-End Acceptance Tests
 
 **Prerequisite:** Phase 10 complete
+**Status:** Not started (surveyed 2026-08-22) — `tests/e2e/` does not exist and
+`tests/` holds only `.gitkeep`. Blocked by its own prerequisite: Phase 10 has
+not begun.
 
 **Scope:** Automated tests for both acceptance scenarios.
 

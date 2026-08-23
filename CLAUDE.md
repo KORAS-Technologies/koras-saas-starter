@@ -87,6 +87,34 @@ This mapping is immutable (ADR required to change).
 
 ## Current phase
 
-**Phase 1 — Shared Repository Foundation** (Phase 0 approved 2026-08-16)
+**Phases 0–9 complete.** Phase 9 (`--provision`) met its exit criterion
+2026-08-17.
 
-Do not implement Phase 2 until Phase 1 is reviewed.
+**Open:**
+
+| Phase                                  | State              | Note                                     |
+|----------------------------------------|--------------------|------------------------------------------|
+| 10 — Control Plane Registration Client | Not started        | `src/registration/` and `--skip-registration` do not exist |
+| 11 — CI/CD                             | Partially complete | Generated-project workflows done; `generator-integration.yml` is an `echo` stub |
+| 12 — Security                          | Partially complete | `security.yml` and Dependabot done; RLS suite, JWT tests, OWASP checklist missing |
+| 13 — End-to-End Acceptance Tests       | Not started        | Blocked on Phase 10                      |
+
+**Next step:** finish Phase 11's starter half — make
+`generator-integration.yml` generate both profiles and build them
+(generate → install → typecheck → test). It closes a roadmap phase and
+SYNC_BACKLOG.md D1 at once, and it is what would have caught the Tier A defects
+before they shipped.
+
+Two caveats when reading the roadmap:
+
+- Phases 11 and 12 define their exit criteria on `main`, which is 55 commits
+  behind `develop` as of 2026-08-22 and last received a commit on 2026-08-17.
+  Neither phase can close until that is resolved — by promotion, or by moving
+  the criterion to `develop`.
+- The roadmap does not cover R-020 through R-027 or the OIDC sign-in work.
+  Roughly twenty commits of deployment and authentication work sit outside the
+  phase structure, recorded only in `RISK_REGISTER.md`. Nothing in the plan has
+  "a user signs in to a deployed application" as an exit criterion.
+
+`koras-control-plane` keeps a separate Phase 0–19 roadmap. The numbers are not
+shared: Phase 12 is Security here and "Domains and branding" there.
