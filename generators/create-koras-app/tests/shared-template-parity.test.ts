@@ -56,7 +56,9 @@ const SHARED = [
   'local/scripts/migrate.sh',
   'local/scripts/reset.sh',
   'local/scripts/seed.sh.hbs',
+  'local/zitadel/.gitignore',
   'local/zitadel/config.yaml',
+  'local/zitadel/init.sh.hbs',
   'local/zitadel/machinekey/.gitignore',
   'packages/api-client/tsconfig.json',
   'packages/audit/package.json.hbs',
@@ -153,6 +155,6 @@ describe('the two profiles do not drift apart', () => {
   it('covers the files that are actually shared', () => {
     // Guards the guard. If the list were emptied or truncated, every assertion
     // above would still pass while checking nothing.
-    expect(SHARED.length).toBeGreaterThanOrEqual(110)
+    expect(SHARED.length).toBeGreaterThanOrEqual(112)
   })
 })

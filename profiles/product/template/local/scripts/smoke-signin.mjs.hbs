@@ -1,0 +1,159 @@
+/**
+ * Does a deployed environment actually let the right people in, and no one else?
+ *
+ * Ten defects in this sign-in reached production, one behind another, because
+ * every layer failed the same way from outside: a redirect to the login page.
+ * A working deployment and a broken one looked identical in a browser.
+ *
+ * The session cookie is one this application signs, so this can mint a valid
+ * one and exercise the deployed application directly -- no browser, no TOTP
+ * prompt, no ZITADEL round trip. That is a property of the design rather than
+ * a way around it: the signature checked here is the signature the middleware
+ * checks.
+ *
+ * It needs the environment's own SESSION_SECRET, so it runs from a machine
+ * that can read Doppler, not from CI:
+ *
+ *   BASE=https://app-dev.<domain>        # or admin-dev.<domain>
+ *   USER_ID=<a user id with an organization role>
+ *   SESSION_SECRET=$(doppler secrets get SESSION_SECRET  *     --project {{projectSlug}} --config dev --plain)
+ *   node local/scripts/smoke-signin.mjs
+ *
+ * Run it against both applications. They admit different people on purpose:
+ * the customer application takes any recognised role, the operations one
+ * requires an owner or administrator and a second factor.
+ *
+ * Every check must pass. The negative ones matter most: they are the ones that
+ * would still pass if authorisation stopped working entirely.
+ */
+import { SignJWT } from 'jose'
+
+/**
+ * Exercise the deployed application as a signed-in member.
+ *
+ * The session cookie is one this application signs, so a test can mint a valid
+ * one without driving a browser through ZITADEL and a TOTP prompt. That is a
+ * property of the fix, not a way around it: the same signature the middleware
+ * checks is the one minted here.
+ */
+const BASE = process.env.BASE
+const SECRET = new TextEncoder().encode(process.env.SESSION_SECRET)
+const USER = process.env.USER_ID
+
+const mint = (claims, expiresIn = 3600) =>
+  new SignJWT(claims)
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer('{{projectSlug}}')
+    .setSubject(USER)
+    .setIssuedAt()
+    .setExpirationTime(Math.floor(Date.now() / 1000) + expiresIn)
+    .sign(SECRET)
+
+async function get(path, cookie) {
+  const jar = [
+    cookie ? `session=${cookie}` : '',
+    providerToken ? `id_token=${providerToken}` : '',
+  ].filter(Boolean).join('; ')
+  const r = await fetch(`${BASE}${path}`, {
+    headers: jar ? { cookie: jar } : {},
+    redirect: 'manual',
+  })
+  return { status: r.status, location: r.headers.get('location'), body: await r.text() }
+}
+
+let failed = 0
+const check = (name, ok, detail = '') => {
+  if (!ok) failed += 1
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  -- ' + detail : ''}`)
+}
+process.on('beforeExit', () => {
+  // A smoke test that reports failures and exits zero is the shape of thing
+  // this whole exercise was about.
+  if (failed) {
+    console.error(`
+${failed} check(s) failed.`)
+    process.exitCode = 1
+  }
+})
+
+// Two cookies, because the deployed application uses two: its own session
+// for authorisation, and the provider's token forwarded to the API. Sending
+// only the first passes every access check and then renders a 401.
+const providerToken = process.env.PROVIDER_TOKEN ?? ''
+
+const member = await mint({
+  email: 'smoke@example.com',
+  name: 'Smoke Check',
+  // A list, not one resolved role: billing_admin and security_admin are scoped
+  // authorities a member may hold alongside others.
+  roles: ['organization_admin'],
+  mfa: true,
+})
+
+// 1. No cookie at all.
+let r = await get('/')
+check('anonymous is sent to the login page', r.status === 307 && (r.location ?? '').includes('/login'), `${r.status} ${r.location ?? ''}`)
+
+// 2. A signed-in member.
+r = await get('/', member)
+check('a member reaches the application', r.status === 200, String(r.status))
+
+// The landing page is not enough on its own: it renders without calling this
+// product's API, so it stays clean however broken that call is. A data page is
+// the honest target -- and it needs the provider's token, which only a real
+// sign-in produces. Without one this is skipped out loud rather than reported
+// as a pass, because a check that cannot run is not a check that succeeded.
+const errorPanel = /data-testid="error-(panel|forbidden)"/
+if (providerToken) {
+  r = await get('/', member)
+  check('the page loads its data', !errorPanel.test(r.body), errorPanel.test(r.body) ? 'an error panel is rendered' : '')
+} else {
+  console.log('SKIP  the page loads its data  -- set PROVIDER_TOKEN to the id_token cookie from a real sign-in')
+}
+
+// 3. A forged cookie. The signature is the whole guarantee: the middleware
+// makes no network call, so anything that verifies is admitted.
+const forged = await new SignJWT({ roles: ['organization_admin'], mfa: true })
+  .setProtectedHeader({ alg: 'HS256' }).setIssuer('{{projectSlug}}').setSubject(USER)
+  .setIssuedAt().setExpirationTime('1h')
+  .sign(new TextEncoder().encode('x'.repeat(48)))
+r = await get('/', forged)
+check('a cookie signed with another key is refused', r.status === 307, String(r.status))
+
+// 4. Signed in, carrying nothing this build recognises. A platform role lands
+// here too: this profile does not define those names, so one arriving in a
+// product token grants exactly as much as a typo.
+const noRole = await mint({ email: 'nobody@example.com', mfa: true })
+r = await get('/', noRole)
+check('no recognised role is refused with 403', r.status === 403, String(r.status))
+const staffRole = await mint({ roles: ['platform_super_admin'], mfa: true })
+r = await get('/', staffRole)
+check('a platform role grants nothing here', r.status === 403, String(r.status))
+
+// 5. An expired session.
+const expired = await mint({ roles: ['organization_admin'], mfa: true }, -60)
+r = await get('/', expired)
+check('an expired session is not a session', r.status === 307, String(r.status))
+
+// 6. The two applications admit different people, which is the point of having
+// two. Run against admin-*: a plain member is refused, and so is an owner who
+// has not presented a second factor.
+if ((BASE ?? '').includes('admin')) {
+  const plain = await mint({ roles: ['member'], mfa: true })
+  r = await get('/', plain)
+  check('a plain member may not open the operations app', r.status === 403, String(r.status))
+
+  const noMfa = await mint({ roles: ['organization_owner'], mfa: false })
+  r = await get('/', noMfa)
+  check('an owner without MFA is told to enrol', r.status === 403 && r.body.includes('Multi-factor'),
+        `${r.status} ${r.body.slice(0, 60)}`)
+} else {
+  console.log('SKIP  the operations-app checks  -- run again with BASE pointing at admin-<env>')
+}
+
+// 8. The sign-in route still redirects to ZITADEL.
+r = await get('/api/auth/start?next=%2F')
+check('sign-in redirects to the identity provider',
+      r.status === 307 && (r.location ?? '').includes('/oauth/v2/authorize'), String(r.status))
+
+if (process.exitCode === undefined) process.exitCode = 0

@@ -1,0 +1,233 @@
+"""Provision the local ZITADEL instance so a sign-in actually completes.
+
+The container bootstraps itself from the ZITADEL_FIRSTINSTANCE_* variables in
+local/docker-compose.yml: the KORAS organization, an admin human, and a machine
+user whose personal access token lands in local/zitadel/machinekey/pat. Those
+apply only when the instance is created.
+
+Everything past that point is here, and until now none of it existed. The old
+script created a project and stopped, so there was no OIDC application at all
+and local sign-in was impossible -- the stack could serve pages and never let
+anyone in.
+
+Worse, the project it created had role assertion off. That is the defect that
+took a day to find in the deployed estate: roles are asserted into the access
+token by default while the applications read the ID token, so a user with a
+role signs in carrying none and the middleware refuses them. Local would have
+reproduced it faithfully.
+
+Idempotent by design: every step looks before it creates. ZITADEL accepts two
+projects with the same name, which is how a stale duplicate ends up being the
+one that gets granted.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+PAT_FILE = ROOT / "local" / "zitadel" / "machinekey" / "pat"
+OUTPUT = ROOT / "local" / "zitadel" / "provisioned.env"
+
+PROJECT_NAME = os.environ.get("PROJECT_NAME", "{{projectSlug}}")
+BASE = os.environ.get("ZITADEL_URL", "http://localhost:8083").rstrip("/")
+if not BASE.startswith(("http://", "https://")):
+    # ZITADEL_URL comes from the environment, and urllib will happily open a
+    # file: or custom scheme. Checked here so the noqa below is a statement
+    # about a validated value rather than a way of not thinking about it.
+    raise SystemExit("ZITADEL_URL must be an http or https URL, not " + BASE)
+WEB_PORT = os.environ.get("KORAS_PORT_APP_WEB", "3000")
+ADMIN_PORT = os.environ.get("KORAS_PORT_APP_ADMIN", "3001")
+
+# The same five the Terraform module creates for a product. Local and deployed
+# must agree, or a check that passes here fails there for reasons nobody can
+# see.
+#
+# Organization roles, and no platform ones. Staff authority belongs to the
+# Control Plane; a product that can issue `platform_admin` locally would let
+# someone build against authority the deployed estate will never grant.
+ORGANIZATION_ROLES = [
+    "organization_owner",
+    "organization_admin",
+    "billing_admin",
+    "security_admin",
+    "member",
+]
+
+REDIRECT_URIS = [
+    "http://localhost:" + WEB_PORT + "/api/auth/callback",
+    "http://localhost:" + ADMIN_PORT + "/api/auth/callback",
+]
+POST_LOGOUT_URIS = [
+    "http://localhost:" + WEB_PORT + "/login",
+    "http://localhost:" + ADMIN_PORT + "/login",
+]
+
+
+def api(method: str, path: str, body: dict | None = None) -> dict:
+    request = urllib.request.Request(  # noqa: S310 -- scheme checked above
+        BASE + path,
+        method=method,
+        data=json.dumps(body or {}).encode(),
+        headers={"Authorization": "Bearer " + PAT, "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
+            return json.loads(response.read() or b"{}")
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", "replace")[:300]
+        # ZITADEL answers 400 when an update would change nothing. That is a
+        # success for anything meant to be re-runnable, and treating it as a
+        # failure is what made the second run of this script fail while the
+        # instance was already correct.
+        if error.code == 400 and "No changes" in detail:
+            return {}
+        raise SystemExit(
+            method + " " + path + " -> " + str(error.code) + "\n  " + detail
+        ) from error
+
+
+def project_id() -> str:
+    query = {"nameQuery": {"name": PROJECT_NAME, "method": "TEXT_QUERY_METHOD_EQUALS"}}
+    found = api("POST", "/management/v1/projects/_search", {"queries": [query]}).get("result") or []
+    if found:
+        identifier = found[0]["id"]
+        print("  project " + PROJECT_NAME + " exists (" + identifier + ")")
+    else:
+        identifier = api("POST", "/management/v1/projects", {"name": PROJECT_NAME})["id"]
+        print("  project " + PROJECT_NAME + " created (" + identifier + ")")
+
+    # Set every time, not only on create. An instance provisioned before this
+    # script existed has the flags off, and that is invisible until a sign-in
+    # arrives carrying no roles.
+    api(
+        "PUT",
+        "/management/v1/projects/" + identifier,
+        {
+            "name": PROJECT_NAME,
+            "projectRoleAssertion": True,
+            "projectRoleCheck": True,
+            "hasProjectCheck": True,
+        },
+    )
+    print("  role assertion and role check on")
+    return identifier
+
+
+def roles(pid: str) -> None:
+    found = api("POST", "/management/v1/projects/" + pid + "/roles/_search", {})
+    listed = found.get("result") or []
+    existing = {r["key"] for r in listed}
+    for key in ORGANIZATION_ROLES:
+        if key in existing:
+            continue
+        api(
+            "POST",
+            "/management/v1/projects/" + pid + "/roles",
+            {"roleKey": key, "displayName": key, "group": "organization"},
+        )
+    print("  " + str(len(ORGANIZATION_ROLES)) + " organization role(s) present")
+
+
+def application(pid: str) -> tuple[str, str | None]:
+    """The OIDC application. Returns the client id, and a secret if just issued.
+
+    ZITADEL returns the secret once, at creation. A re-run cannot recover it,
+    and regenerating silently would invalidate whatever is already in
+    .env.local -- so an existing secret is kept and the caller is told.
+    """
+    apps = api("POST", "/management/v1/projects/" + pid + "/apps/_search", {}).get("result") or []
+    found = [a for a in apps if a.get("name") == PROJECT_NAME + "-web"]
+    payload = {
+        "name": PROJECT_NAME + "-web",
+        "redirectUris": REDIRECT_URIS,
+        "postLogoutRedirectUris": POST_LOGOUT_URIS,
+        "responseTypes": ["OIDC_RESPONSE_TYPE_CODE"],
+        "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN"],
+        "appType": "OIDC_APP_TYPE_WEB",
+        "authMethodType": "OIDC_AUTH_METHOD_TYPE_BASIC",
+        "version": "OIDC_VERSION_1_0",
+        "accessTokenType": "OIDC_TOKEN_TYPE_JWT",
+        # The two that decide whether a signed-in user carries a role at all.
+        "idTokenRoleAssertion": True,
+        "idTokenUserinfoAssertion": True,
+        # Relaxed OIDC checks, so http://localhost redirect URIs are accepted.
+        "devMode": True,
+    }
+
+    if found:
+        app_id = found[0]["id"]
+        client_id = found[0]["oidcConfig"]["clientId"]
+        api("PUT", "/management/v1/projects/" + pid + "/apps/" + app_id + "/oidc_config", payload)
+        print("  application updated (" + client_id + ")")
+        return client_id, None
+
+    created = api("POST", "/management/v1/projects/" + pid + "/apps/oidc", payload)
+    print("  application created (" + created["clientId"] + ")")
+    return created["clientId"], created.get("clientSecret")
+
+
+def grant_admin(pid: str) -> None:
+    """Give the bootstrap admin a role, or they sign in and are refused.
+
+    Without this the flow completes and the middleware answers 403 -- correct
+    for a token carrying no role, and indistinguishable from a broken login.
+    """
+    query = {"userNameQuery": {"userName": "admin", "method": "TEXT_QUERY_METHOD_CONTAINS"}}
+    users = api("POST", "/management/v1/users/_search", {"queries": [query]}).get("result") or []
+    human = next((u for u in users if u.get("human")), None)
+    if not human:
+        print("  no admin human found; skipping the grant")
+        return
+
+    grants = api("POST", "/management/v1/users/grants/_search", {"query": {"limit": 100}})
+    mine = [
+        g
+        for g in (grants.get("result") or [])
+        if g.get("userId") == human["id"] and g.get("projectId") == pid
+    ]
+    if mine:
+        print("  admin already granted: " + ", ".join(mine[0].get("roleKeys") or []))
+        return
+
+    api(
+        "POST",
+        "/management/v1/users/" + human["id"] + "/grants",
+        {"projectId": pid, "roleKeys": ["organization_owner"]},
+    )
+    print("  admin granted organization_owner")
+
+
+if not PAT_FILE.is_file() or not PAT_FILE.read_text().strip():
+    raise SystemExit(
+        "No access token at " + str(PAT_FILE) + ".\n"
+        "The instance predates the first-instance bootstrap. Drop the zitadel\n"
+        "database and restart the container; see local/zitadel/init.sh."
+    )
+PAT = PAT_FILE.read_text().strip()
+
+print("Provisioning ZITADEL at " + BASE)
+PROJECT = project_id()
+roles(PROJECT)
+CLIENT_ID, CLIENT_SECRET = application(PROJECT)
+grant_admin(PROJECT)
+
+lines = [
+    "# Written by local/zitadel/provision.py, read by local/scripts/bootstrap.sh,",
+    "# which is the only thing that writes .env.local.",
+    "ZITADEL_PROJECT_ID=" + PROJECT,
+    "ZITADEL_CLIENT_ID=" + CLIENT_ID,
+]
+if CLIENT_SECRET:
+    lines.append("ZITADEL_CLIENT_SECRET=" + CLIENT_SECRET)
+OUTPUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+print("")
+print("Wrote " + str(OUTPUT.relative_to(ROOT)))
+if not CLIENT_SECRET:
+    print("  No client secret: ZITADEL returns it once, at creation, and this")
+    print("  application already existed. Whatever is in .env.local still works.")

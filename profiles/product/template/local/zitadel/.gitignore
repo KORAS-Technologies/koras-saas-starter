@@ -1,0 +1,5 @@
+# Written by provision.py: the local project and OIDC client, including the
+# client secret ZITADEL issues once at creation. A real credential, even for a
+# throwaway container, and exactly the kind of file that gets committed by a
+# hurried `git add -A`.
+provisioned.env
