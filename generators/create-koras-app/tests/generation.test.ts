@@ -1235,6 +1235,39 @@ describe.each(['product', 'control-plane'] as const)('%s identity roles', (profi
 // only on its generated *.vercel.app name, so the OAuth redirect URI pointed at
 // a hostname that resolved to nothing: sign-in completed and landed on NXDOMAIN.
 
+describe('a generated project is named after itself', () => {
+  // Identity from the project this template was extracted from leaks in ways
+  // that surface only in production. Two found so far: the session issuer, so
+  // every estate signed cookies as though it were that one, and
+  // OTEL_SERVICE_NAME, so every generated project reported its traces under the
+  // same service and collided in one dashboard. Both were single hardcoded
+  // strings that read as harmless.
+  //
+  // The name used as a *value* is the defect. Prose that mentions the Control
+  // Plane is not: a product genuinely talks to it, and its API contract says so
+  // in a docstring.
+  const SOURCE = ['koras', 'control', 'plane'].join('-')
+  const asValue = new RegExp(`(=|:\\s*|["'\`])${SOURCE}(["'\`]|$|\\s)`, 'm')
+
+  for (const profile of ['control-plane', 'product'] as const) {
+    it(`${profile}: no generated file carries the source name as a value`, () => {
+      const gen = generate(profile, `named-${profile}`)
+      const offenders: string[] = []
+      for (const file of gen.fileList) {
+        if (/node_modules|\.lock|pnpm-lock|\.(md|mdx)$/.test(file)) continue
+        let text: string
+        try {
+          text = gen.read(file)
+        } catch {
+          continue
+        }
+        if (asValue.test(text)) offenders.push(file)
+      }
+      expect(offenders).toEqual([])
+    })
+  }
+})
+
 describe('a generated control plane can actually sign someone in', () => {
   let gen: ReturnType<typeof generate>
   beforeAll(() => {
