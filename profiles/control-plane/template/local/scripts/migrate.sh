@@ -5,8 +5,12 @@
 # through `docker compose exec` rather than a host psql, so the script works on
 # a machine that has no Postgres client installed — which is most of them.
 #
-# Idempotent by convention: every migration is expected to be re-runnable, and
-# the applied set is tracked in schema_migrations so re-running is a no-op.
+# The applied set is tracked in schema_migrations, so re-running this script is
+# a no-op. That ledger is what makes it safe, not per-file idempotency: 00001
+# creates tables without `if not exists` and fails outright on a second run.
+# Write new migrations to be re-runnable anyway where it is cheap -- a
+# half-applied migration is recovered by hand, and the hand doing it has the
+# ledger to edit either way.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -61,17 +65,15 @@ for file in "$ROOT"/supabase/migrations/*.sql; do
   apply_file "$file" "$(basename "$file" .sql)"
 done
 
-# Policies are applied after the migrations, once every table exists. They are
-# versioned in the same ledger under a policies/ prefix.
+# Policies are NOT applied from supabase/policies/. They ship as numbered
+# migrations, so they are ordered and versioned like any other schema change.
 #
-# Ordering matters and is easy to get wrong: anything defined BOTH here and in a
-# migration is applied twice, with this directory winning. If a migration is
-# ever used to correct a policy, that correction must not also live here, or a
-# fresh database will silently end up with the older version -- while an
-# existing database looks fine, because it applied them in the other order.
-for file in "$ROOT"/supabase/policies/*.sql; do
-  apply_file "$file" "policies/$(basename "$file" .sql)"
-done
+# Applying them afterwards from a directory re-ran them on top of the migrations
+# that had just corrected them. An existing database looked fine, because it had
+# applied the directory first; only a clean bootstrap inverted the order, and
+# that is the case least likely to be noticed and the one that becomes
+# production. It restored a cross-organization read in the Control Plane.
+# See supabase/policies/README.md.
 
 echo ""
 echo "Schema up to date."
