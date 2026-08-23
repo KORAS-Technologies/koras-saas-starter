@@ -107,7 +107,12 @@ Superseded by **B1** if the sign-in is promoted rather than the stub repaired.
 
 ### A3 — a fresh product fails at API startup
 
-- [ ] `ENVIRONMENT` is set in the product `.env.local.example`
+- [x] `ENVIRONMENT` is set in the product `.env.local.example`
+
+**Closed (85438d8).** Found by the contract cross-check rather than by looking:
+`doppler-check` validates that every key in `.env.local.example` is classified
+in `secrets.manifest`, and running it both ways showed `ENVIRONMENT` classified
+and set nowhere.
 
 **Applies to:** `profiles/product/template`
 
