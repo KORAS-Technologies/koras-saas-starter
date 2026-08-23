@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { join, relative, sep } from 'node:path'
 import type { GenerationContext } from './context.js'
 import { renderTemplate } from './engine.js'
 import {
@@ -84,6 +84,14 @@ function isReviewable(path: string): boolean {
  * was in neither path set, so nothing looked. A project generated before a file
  * was added to the template never receives it: `--refresh-modules` only touches
  * declared shared assets, and that is the whole class this catches.
+ *
+ * A file the project renamed is not that. `koras-control-plane` moved its API
+ * from `services/api/src/core/` to `services/api/koras_api/core/` and its Next
+ * configs from `.ts` to `.mjs`, and the first version of this check reported
+ * sixteen of those as files the project "never received" -- the opposite of
+ * true, and enough noise to bury the four findings that were real. So a
+ * basename found elsewhere under the same top-level directory is reported as a
+ * probable rename, separately and without the accusation.
  */
 function missingRenderedFiles(
   rendered: Map<string, unknown>,
@@ -92,15 +100,61 @@ function missingRenderedFiles(
   const findings: DriftFinding[] = []
   for (const path of rendered.keys()) {
     if (existsSync(join(projectRoot, path))) continue
+
+    const moved = findRenamed(projectRoot, path)
     findings.push({
       subject: path,
-      detail:
-        'Missing from the project. The generator would write it and the component ' +
-        'it belongs to is enabled, so this is a file the project never received ' +
-        'rather than one it chose not to have.',
+      detail: moved
+        ? `Not at this path; the project has ${moved}. Probably a rename rather ` +
+          'than a gap, but the generator will keep writing the original path, so ' +
+          'the two will diverge until the template follows or the project does.'
+        : 'Missing from the project. The generator would write it and the component ' +
+          'it belongs to is enabled, so this is a file the project never received ' +
+          'rather than one it chose not to have.',
     })
   }
   return findings
+}
+
+/**
+ * The same basename somewhere else under the same top-level directory.
+ *
+ * Scoped to the component the file belongs to -- `apps/portal`, `services/api`
+ * -- rather than to `apps` or to the whole tree. `__init__.py` and `index.ts`
+ * appear everywhere, and a wider search reported `apps/portal/next.config.ts`
+ * as renamed to `apps/admin/next.config.mjs`: a real file, the wrong component,
+ * and a confident sentence about it. Stem-only matching covers an extension
+ * change, which is how `next.config.ts` became `next.config.mjs`.
+ */
+function findRenamed(projectRoot: string, path: string): string | undefined {
+  const segments = path.split('/')
+  if (segments.length < 2) return undefined
+
+  // Two segments where there are two: `apps/portal` and `services/api` are
+  // components, `apps` is a category.
+  const scope = segments.length > 2 ? segments.slice(0, 2) : segments.slice(0, 1)
+  const name = segments[segments.length - 1]
+  const stem = name.replace(/\.[^.]+$/, '')
+  const root = join(projectRoot, ...scope)
+  if (!existsSync(root)) return undefined
+
+  const SKIP = new Set(['node_modules', '.next', '.turbo', '.venv', 'dist', '.git'])
+  const found: string[] = []
+
+  const walk = (directory: string, depth: number): void => {
+    if (depth > 6 || found.length > 0) return
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (SKIP.has(entry.name)) continue
+      const full = join(directory, entry.name)
+      if (entry.isDirectory()) walk(full, depth + 1)
+      else if (entry.name === name || entry.name.replace(/\.[^.]+$/, '') === stem) {
+        found.push(relative(projectRoot, full).split(sep).join('/'))
+        return
+      }
+    }
+  }
+  walk(root, 0)
+  return found[0]
 }
 
 export interface DriftFinding {
