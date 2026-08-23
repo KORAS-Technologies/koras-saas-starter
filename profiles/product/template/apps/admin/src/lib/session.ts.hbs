@@ -1,0 +1,68 @@
+import { cookies } from 'next/headers'
+import type { OrganizationRole } from '@{{projectSlug}}/permissions'
+import { PROVIDER_TOKEN_COOKIE, readSessionToken } from '@{{projectSlug}}/auth'
+
+/**
+ * The signed-in member, for server components.
+ *
+ * One reader, and it verifies. The Control Plane grew a second one that decoded
+ * the cookie without checking it and looked for ZITADEL's role claim directly --
+ * kept in step with the middleware by hand. When the cookie became one the
+ * application signs itself, that copy found nothing: every page rendered as
+ * though nobody was signed in while the middleware let the request through.
+ *
+ * Verification here is a local signature check with no network call, so the
+ * reason anyone had for skipping it is gone.
+ */
+export interface MemberSession {
+  userId: string
+  email?: string
+  name?: string
+  organizationId?: string
+  organizationRoles: OrganizationRole[]
+  usedMfa: boolean
+}
+
+export async function currentMember(): Promise<MemberSession | null> {
+  const outcome = await readSessionToken((await cookies()).get('session')?.value, {
+    secret: process.env.SESSION_SECRET ?? '',
+  })
+  if (outcome.status !== 'ok') return null
+
+  return {
+    userId: outcome.session.userId,
+    email: outcome.session.email,
+    name: outcome.session.name,
+    organizationId: outcome.session.organizationId,
+    organizationRoles: outcome.session.organizationRoles,
+    usedMfa: outcome.session.usedMfa,
+  }
+}
+
+/**
+ * The provider's own token, for calling this product's API.
+ *
+ * Deliberately not the session cookie this application signed, and deliberately
+ * not a service credential. The API verifies against ZITADEL and does not trust
+ * what the browser tier signed; and a call made on behalf of a person should be
+ * attributed to that person rather than to the application.
+ *
+ * Returns undefined rather than falling back to anything. A default that
+ * silently points somewhere useless is worse than none: the failure then looks
+ * like the API being down.
+ */
+export async function providerToken(): Promise<string | undefined> {
+  return (await cookies()).get(PROVIDER_TOKEN_COOKIE)?.value
+}
+
+export function apiBaseUrl(): string {
+  const base = process.env.NEXT_PUBLIC_API_URL ?? ''
+  if (!base) {
+    // NEXT_PUBLIC_API_URL was never declared as a setting on the Control Plane:
+    // not in the contract, not in the manifest, not in Doppler. It fell back to
+    // localhost, which on a deployed function reaches nothing, so every page
+    // reported the API unreachable while the API was healthy.
+    console.error('NEXT_PUBLIC_API_URL is not set; no API call from this app can succeed')
+  }
+  return base
+}

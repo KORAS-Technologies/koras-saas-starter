@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { readSession } from '@{{projectSlug}}/auth'
-import { hasAnyRole } from '@{{projectSlug}}/permissions'
+import { canAdminister } from '@{{projectSlug}}/permissions'
 
 /**
- * Every route requires a signed-in caller holding a role in their organization.
+ * Every route requires an organization owner or administrator, with a second factor.
  *
  * Gating happens here rather than per page so that a new page is protected by
  * default: forgetting to add a check is the failure this shape prevents.
@@ -67,8 +67,12 @@ async function authorize(request: NextRequest, nonce: string): Promise<NextRespo
   // always reach the deployment's ZITADEL host, so every valid session read as
   // no session and the browser looped back to the login page forever. The
   // cookie this application signed at sign-in is checked instead.
+  // requireMfa, unlike the customer-facing application. This one acts on
+  // customer data on an operator's behalf, so a stolen session cookie is worth
+  // more here and a second factor is the cheapest thing standing in the way.
   const outcome = await readSession(request, {
     secret: process.env.SESSION_SECRET ?? '',
+    requireMfa: true,
   })
 
   if (outcome.status === 'anonymous') {
@@ -91,8 +95,11 @@ async function authorize(request: NextRequest, nonce: string): Promise<NextRespo
   // A token carrying only names this build does not recognise lands here. That
   // includes a platform role, which this profile's permissions package
   // deliberately does not define.
-  if (!hasAnyRole(outcome.session.organizationRoles)) {
-    return new NextResponse('Your account has no access to this application.', { status: 403 })
+  if (!canAdminister(outcome.session.organizationRoles)) {
+    return new NextResponse(
+      'This application is for organization owners and administrators.',
+      { status: 403 },
+    )
   }
 
   return withNonce(request, nonce)

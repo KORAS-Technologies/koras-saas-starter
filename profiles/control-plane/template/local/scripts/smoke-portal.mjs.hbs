@@ -1,0 +1,105 @@
+/**
+ * Does the customer portal admit customers, refuse everyone else, and load?
+ *
+ * The portal's gate was correct from the first day and no customer could reach
+ * it, for three independent reasons found only by signing one in: nothing
+ * created the identity link, the ZITADEL project defined no customer roles, and
+ * the organization was read from a claim ZITADEL does not send. Each was
+ * invisible to a test that mints its own token, because a minted token carries
+ * whatever the code expects.
+ *
+ * So this takes a real one. PROVIDER_TOKEN is an ID token from a genuine
+ * customer sign-in -- local/scripts/sign-in-headless.mjs produces it.
+ *
+ *   BASE=https://account-dev.korastechnologies.com \
+ *   ZITADEL_ORG_ID=<the customer's ZITADEL organization> \
+ *   USER_ID=<their ZITADEL user> \
+ *   PROVIDER_TOKEN=<id token> \
+ *   SESSION_SECRET=$(doppler secrets get SESSION_SECRET ... --plain) \
+ *   node local/scripts/smoke-portal.mjs
+ *
+ * Without PROVIDER_TOKEN the page checks are skipped out loud rather than
+ * passing: the access rules can be proved with a minted session, and whether a
+ * page actually loads cannot.
+ */
+import { SignJWT } from 'jose'
+
+const BASE = process.env.BASE
+const SECRET = new TextEncoder().encode(process.env.SESSION_SECRET)
+const ORG = process.env.ZITADEL_ORG_ID
+const USER = process.env.USER_ID ?? 'customer-1'
+const PROVIDER = process.env.PROVIDER_TOKEN ?? ''
+
+let failed = 0
+const check = (name, ok, detail = '') => {
+  if (!ok) failed += 1
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  -- ' + detail : ''}`)
+}
+process.on('beforeExit', () => {
+  if (failed) {
+    console.error(`\n${failed} check(s) failed.`)
+    process.exitCode = 1
+  }
+})
+
+const mint = (claims, expiresIn = 3600) =>
+  new SignJWT(claims).setProtectedHeader({ alg: 'HS256' })
+    .setIssuer('{{projectSlug}}').setSubject(USER)
+    .setIssuedAt().setExpirationTime(Math.floor(Date.now() / 1000) + expiresIn)
+    .sign(SECRET)
+
+async function get(path, session, withProvider = true) {
+  const jar = [
+    session ? `session=${session}` : '',
+    withProvider && PROVIDER ? `id_token=${PROVIDER}` : '',
+  ].filter(Boolean).join('; ')
+  const r = await fetch(BASE + path, {
+    headers: jar ? { cookie: jar } : {}, redirect: 'manual',
+  })
+  return { status: r.status, location: r.headers.get('location'), body: await r.text() }
+}
+
+const customer = await mint({ email: 'owner@acme.test', org: ORG, mfa: false })
+
+// ── who may open the portal at all ──────────────────────────────────────────
+let r = await get('/', undefined)
+check('anonymous is sent to the login page', r.status === 307 && (r.location ?? '').includes('/login'), String(r.status))
+
+r = await get('/', await mint({ email: 's@koras', role: 'platform_admin', mfa: true }))
+check('staff are refused', r.status === 403 && r.body.includes('customer portal'), String(r.status))
+
+r = await get('/', await mint({ email: 'nobody@acme.test' }))
+check('a customer with no organization is refused', r.status === 403 && r.body.includes('not linked'), String(r.status))
+
+const forged = await new SignJWT({ org: ORG }).setProtectedHeader({ alg: 'HS256' })
+  .setIssuer('{{projectSlug}}').setSubject(USER).setIssuedAt().setExpirationTime('1h')
+  .sign(new TextEncoder().encode('z'.repeat(48)))
+r = await get('/', forged)
+check('a cookie signed with another key is refused', r.status === 307, String(r.status))
+
+r = await get('/', await mint({ email: 'owner@acme.test', org: ORG }, -60))
+check('an expired session is not a session', r.status === 307, String(r.status))
+
+r = await get('/api/auth/start?next=%2F', undefined)
+check('sign-in redirects to the identity provider',
+      r.status === 307 && (r.location ?? '').includes('/oauth/v2/authorize'), String(r.status))
+
+// ── and whether the pages actually load ─────────────────────────────────────
+const PAGES = ['/', '/products', '/users', '/subscriptions', '/billing', '/security', '/sso', '/domains']
+if (!PROVIDER) {
+  console.log('SKIP  every page loads for a customer  -- set PROVIDER_TOKEN from a real sign-in')
+} else {
+  const broken = []
+  for (const page of PAGES) {
+    const page_r = await get(page, customer)
+    const error = page_r.body.match(/The platform API returned \d+|could not be reached/)?.[0]
+    if (page_r.status !== 200 || error) broken.push(`${page} (${page_r.status}${error ? ' ' + error : ''})`)
+  }
+  check(`every page loads for a customer (${PAGES.length})`, broken.length === 0, broken.join(', '))
+
+  // The property the whole surface rests on: a customer cannot name the
+  // organization they are reading, so the page must show their own.
+  const home = await get('/', customer)
+  check('the portal shows the customer their own organization',
+        home.body.includes('Acme Test'), 'expected the linked organization name')
+}

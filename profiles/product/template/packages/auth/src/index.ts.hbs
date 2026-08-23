@@ -1,5 +1,5 @@
 /**
- * Session verification for the Control Plane applications.
+ * Session verification for this product's applications.
  *
  * Runs in Next middleware, which is the edge runtime: no Node crypto, no
  * filesystem. `jose` is used because it works there.
@@ -13,7 +13,7 @@
 
 import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose'
 import type { NextRequest } from 'next/server'
-import { isPlatformRole, type PlatformRole } from '@{{projectSlug}}/permissions'
+import { isOrganizationRole, type OrganizationRole } from '@{{projectSlug}}/permissions'
 
 /** ZITADEL emits project roles as an object keyed by role name, not a list. */
 const ROLES_CLAIM = 'urn:zitadel:iam:org:project:roles'
@@ -25,7 +25,15 @@ export interface Session {
   userId: string
   email?: string
   name?: string
-  platformRole?: PlatformRole
+  /**
+   * Every organization role on the token, not one resolved role.
+   *
+   * The Control Plane resolves to a single platform role because staff
+   * authority is a ladder. These are not: `billing_admin` and `security_admin`
+   * are scoped authorities that a member may hold alongside others, and
+   * collapsing them to one would silently drop the rest.
+   */
+  organizationRoles: OrganizationRole[]
   organizationId?: string
   usedMfa: boolean
 }
@@ -70,7 +78,14 @@ export interface VerifyOptions {
    * caller presenting one is not rejected for the wrong reason.
    */
   projectId?: string
-  /** MFA is mandatory for staff. Overridable only for tests. */
+  /**
+   * Require a second factor.
+   *
+   * Off by default here, unlike the Control Plane: a product's callers are its
+   * customers, and forcing enrolment on everyone is a decision for whoever owns
+   * the product rather than one the template makes. The internal operations
+   * application turns it on, because it acts on customer data.
+   */
   requireMfa?: boolean
 }
 
@@ -96,7 +111,7 @@ function jwksFor(domain: string): ReturnType<typeof createRemoteJWKSet> {
   return set
 }
 
-function parseRole(claims: Record<string, unknown>): PlatformRole | undefined {
+function parseRoles(claims: Record<string, unknown>): OrganizationRole[] {
   const raw = claims[ROLES_CLAIM]
   const names =
     raw !== null && typeof raw === 'object' && !Array.isArray(raw)
@@ -106,11 +121,10 @@ function parseRole(claims: Record<string, unknown>): PlatformRole | undefined {
         : []
 
   // An unrecognised name grants nothing. Carrying it forward as authority is
-  // how a typo becomes access.
-  const platform = names.filter(isPlatformRole)
-  if (platform.length === 0) return undefined
-  // Two staff roles on one token is a provisioning mistake. Resolve downward.
-  return platform.sort()[0]
+  // how a typo becomes access -- and a platform role arriving in a product's
+  // token is exactly such a name here, which is why this profile's permissions
+  // package does not define them.
+  return names.filter(isOrganizationRole).sort()
 }
 
 /**
@@ -200,11 +214,11 @@ export async function resolveToken(
     if (!subject) return { status: 'anonymous' }
 
     const claims = payload as Record<string, unknown>
-    const platformRole = parseRole(claims)
+    const organizationRoles = parseRoles(claims)
     const mfa = usedMfa(claims)
 
-    if (!platformRole) {
-      // A verified token that grants nothing. The middleware's refusal is
+    if (organizationRoles.length === 0) {
+      // A verified token that grants nothing. The refusal downstream is
       // correct and reads as a misconfigured account, which is what sent
       // someone to the ZITADEL console to check a grant that was already
       // there: the role was asserted into the access token and the
@@ -214,7 +228,7 @@ export async function resolveToken(
       // present separates a provider that is not asserting roles from an
       // account that has none, and those need opposite fixes. The values
       // are not logged: names are enough to tell them apart.
-      console.warn('token carries no platform role', {
+      console.warn('token carries no organization role', {
         claims: Object.keys(claims).sort(),
       })
     }
@@ -223,15 +237,19 @@ export async function resolveToken(
       userId: subject,
       email: typeof claims.email === 'string' ? claims.email : undefined,
       name: typeof claims.name === 'string' ? claims.name : undefined,
-      platformRole,
+      organizationRoles,
       organizationId: organizationId(claims),
       usedMfa: mfa,
     }
 
-    // MFA is mandatory for every platform role, decided here so no route can
-    // forget it -- but reported rather than erased. A refusal a person can
-    // act on is worth telling them about.
-    if (platformRole && options.requireMfa !== false && !mfa) {
+    // Reported rather than erased. A refusal a person can act on is worth
+    // telling them about, and collapsing it into "not signed in" is what sent
+    // the Control Plane's browser round the same five redirects forever:
+    // signing in again cannot add a factor to a session that already exists.
+    //
+    // Opt-in here, so a caller that asks for it gets it and no route can
+    // forget once it has.
+    if (options.requireMfa === true && !mfa) {
       return { status: 'mfa-required', session }
     }
     return { status: 'ok', session }
@@ -332,7 +350,7 @@ export async function mintSession(
   return new SignJWT({
     email: session.email,
     name: session.name,
-    role: session.platformRole,
+    roles: session.organizationRoles,
     org: session.organizationId,
     mfa: session.usedMfa,
   })
@@ -388,19 +406,22 @@ export async function readSessionToken(
     const subject = typeof payload.sub === 'string' ? payload.sub : undefined
     if (!subject) return { status: 'anonymous' }
 
-    const role = typeof payload.role === 'string' && isPlatformRole(payload.role)
-      ? payload.role
-      : undefined
+    // Re-validated on the way out, not trusted because we signed it. The
+    // signature proves this application minted the cookie, not that the role
+    // names inside it are still ones this build recognises.
+    const roles = Array.isArray(payload.roles)
+      ? payload.roles.map(String).filter(isOrganizationRole).sort()
+      : []
     const session: Session = {
       userId: subject,
       email: typeof payload.email === 'string' ? payload.email : undefined,
       name: typeof payload.name === 'string' ? payload.name : undefined,
-      platformRole: role,
+      organizationRoles: roles,
       organizationId: typeof payload.org === 'string' ? payload.org : undefined,
       usedMfa: payload.mfa === true,
     }
 
-    if (role && options.requireMfa !== false && !session.usedMfa) {
+    if (options.requireMfa === true && !session.usedMfa) {
       return { status: 'mfa-required', session }
     }
     return { status: 'ok', session }

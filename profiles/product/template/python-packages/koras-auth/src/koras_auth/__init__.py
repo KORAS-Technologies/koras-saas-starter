@@ -118,6 +118,40 @@ def _parse_roles(payload: dict[str, Any]) -> tuple[frozenset[OrganizationRole], 
     return frozenset(known), frozenset(unknown)
 
 
+def _organization_id(payload: dict[str, Any]) -> str | None:
+    """Which ZITADEL organization this caller belongs to.
+
+    `urn:zitadel:iam:org:id` is the obvious place and ZITADEL does not send it
+    unless the authorization request named an organization -- which a login
+    form cannot, because the point of logging in is to find out who you are.
+    Reading only that claim meant every customer token resolved to no
+    organization and the portal answered 403 on every request.
+
+    The organization is in the roles claim, which ZITADEL shapes as
+    role -> {organization id: primary domain}. Roles are granted per
+    organization, so that mapping is the authoritative statement of which one.
+
+    More than one is refused rather than guessed. A customer belongs to a
+    single organization here; a token naming two is a provisioning mistake,
+    and picking one would silently scope a session to whichever came first.
+    """
+    explicit = payload.get(ORGANIZATION_CLAIM)
+    if isinstance(explicit, str) and explicit:
+        return explicit
+
+    raw = payload.get(ROLES_CLAIM)
+    if not isinstance(raw, dict):
+        return None
+
+    organizations = {
+        organization
+        for value in raw.values()
+        if isinstance(value, dict)
+        for organization in value
+    }
+    return organizations.pop() if len(organizations) == 1 else None
+
+
 def _used_mfa(payload: dict[str, Any]) -> bool:
     amr = payload.get(AMR_CLAIM)
     if not isinstance(amr, list):
@@ -225,6 +259,6 @@ async def verify_token(
         name=claims.get("name"),
         roles=roles,
         unknown_roles=unknown_roles,
-        organization_id=claims.get(ORGANIZATION_CLAIM),
+        organization_id=_organization_id(claims),
         used_mfa=_used_mfa(claims),
     )

@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { SignJWT, exportJWK, generateKeyPair } from 'jose'
 import type { NextRequest } from 'next/server'
 
-import { jwksUrl, resolveSession, verifySession } from './index.js'
+import { jwksUrl, resolveSession, resolveToken, verifySession } from './index.js'
 
 /**
  * Verifying the session cookie.
@@ -241,4 +241,49 @@ test('the key set is fetched from the ZITADEL base URL, once', async () => {
     jwksUrl('https://auth-dev.example.com/'),
     'https://auth-dev.example.com/oauth/v2/keys',
   )
+})
+
+test('the organization comes from the roles claim', async () => {
+  // urn:zitadel:iam:org:id is the obvious claim and ZITADEL does not send it
+  // unless the authorization request named an organization -- which a login
+  // form cannot. Reading only that claim meant every customer token carried no
+  // organization and the portal refused every one of them.
+  const { domain, sign } = await issuer()
+  const token = await sign(
+    {
+      sub: 'user-1',
+      email: 'owner@acme.test',
+      'urn:zitadel:iam:org:project:roles': {
+        organization_owner: { '387583042916472982': 'acme.example' },
+      },
+    },
+    CLIENT_ID,
+  )
+
+  const outcome = await resolveToken(token, { zitadelDomain: domain, clientId: CLIENT_ID })
+  assert.equal(outcome.status, 'ok')
+  assert.ok(outcome.status === 'ok')
+  assert.equal(outcome.session.organizationId, '387583042916472982')
+})
+
+test('a token naming two organizations carries none', async () => {
+  // Refused rather than guessed: picking one would scope a session to whichever
+  // came first, which is how someone reads another company's data with no error
+  // anywhere.
+  const { domain, sign } = await issuer()
+  const token = await sign(
+    {
+      sub: 'user-1',
+      email: 'owner@acme.test',
+      'urn:zitadel:iam:org:project:roles': {
+        organization_owner: { 'org-one': 'one.example' },
+        member: { 'org-two': 'two.example' },
+      },
+    },
+    CLIENT_ID,
+  )
+
+  const outcome = await resolveToken(token, { zitadelDomain: domain, clientId: CLIENT_ID })
+  assert.ok(outcome.status === 'ok')
+  assert.equal(outcome.session.organizationId, undefined)
 })
