@@ -43,8 +43,12 @@ const mint = (claims, expiresIn = 3600) =>
     .sign(SECRET)
 
 async function get(path, cookie) {
+  const jar = [
+    cookie ? `session=${cookie}` : '',
+    providerToken ? `id_token=${providerToken}` : '',
+  ].filter(Boolean).join('; ')
   const r = await fetch(`${BASE}${path}`, {
-    headers: cookie ? { cookie: `session=${cookie}` } : {},
+    headers: jar ? { cookie: jar } : {},
     redirect: 'manual',
   })
   return { status: r.status, location: r.headers.get('location'), body: await r.text() }
@@ -65,6 +69,11 @@ ${failed} check(s) failed.`)
   }
 })
 
+// Two cookies, because the deployed application uses two: its own session
+// for authorisation, and the provider's token forwarded to the API. Sending
+// only the first passes every access check and then renders a 401.
+const providerToken = process.env.PROVIDER_TOKEN ?? ''
+
 const staff = await mint({
   email: 'kora.kanchan+dev_koras_staff_2@gmail.com',
   name: 'Dev Staff Two',
@@ -79,9 +88,24 @@ check('anonymous is sent to the login page', r.status === 307 && (r.location ?? 
 // 2. A signed-in member of staff.
 r = await get('/', staff)
 check('staff reach the dashboard', r.status === 200, String(r.status))
-check('the dashboard is not an error page', !r.body.includes('could not be reached'),
-      r.body.includes('could not be reached') ? 'still says the API is unreachable' : '')
+// Whether a page loaded its data, rather than whether it matched one error
+// string. An earlier version looked for the previous failure's wording and
+// passed while the page said `The platform API returned 401`.
+const errorPanel = /data-testid="error-(panel|forbidden)"/
 
+// The dashboard is not enough on its own: it renders without calling the
+// platform API, so it stays clean however broken that call is. A data page
+// is the honest target -- and it needs the provider's token, which only a
+// real sign-in can produce. Without one this is skipped out loud rather than
+// reported as a pass, because a check that cannot run is not a check that
+// succeeded.
+if (providerToken) {
+  r = await get('/organizations', staff)
+  const detail = r.body.match(/The platform API[^<]*/)?.[0] ?? 'an error panel is rendered'
+  check('a data page loads from the platform API', !errorPanel.test(r.body), errorPanel.test(r.body) ? detail : '')
+} else {
+  console.log('SKIP  a data page loads from the platform API  -- set PROVIDER_TOKEN to the id_token cookie from a real sign-in')
+}
 // 3. A forged cookie.
 const forged = await new SignJWT({ role: 'platform_admin', mfa: true })
   .setProtectedHeader({ alg: 'HS256' }).setIssuer('{{projectSlug}}').setSubject(USER)

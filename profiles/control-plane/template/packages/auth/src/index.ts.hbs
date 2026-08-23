@@ -266,6 +266,19 @@ export async function verifySession(
  */
 const SESSION_ISSUER = '{{projectSlug}}'
 
+/**
+ * The provider's own token, kept alongside the session cookie.
+ *
+ * The platform API verifies tokens against ZITADEL directly -- audience,
+ * issuer, MFA -- and deliberately does not trust this application to have
+ * done so. Sending it a session this application signed would ask it to.
+ *
+ * So two cookies, each with one job. The session decides what a browser may
+ * open, and needs no network. This one is forwarded to the API and is
+ * meaningless to the middleware.
+ */
+export const PROVIDER_TOKEN_COOKIE = 'id_token'
+
 function signingKey(secret: string): Uint8Array {
   return new TextEncoder().encode(secret)
 }

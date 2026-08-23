@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { cookieOptions } from '@{{projectSlug}}/auth'
+import { cookieOptions, PROVIDER_TOKEN_COOKIE } from '@{{projectSlug}}/auth'
 
 /**
  * Sign out.
@@ -11,6 +11,10 @@ import { cookieOptions } from '@{{projectSlug}}/auth'
  */
 export async function POST(request: NextRequest) {
   const response = NextResponse.redirect(new URL('/login', request.nextUrl.origin))
-  response.cookies.set('session', '', cookieOptions({ secure: request.nextUrl.protocol === 'https:', maxAge: 0 }))
+  const cleared = cookieOptions({ secure: request.nextUrl.protocol === 'https:', maxAge: 0 })
+  // Both, or signing out leaves the provider's token behind and the next
+  // sign-in reuses it.
+  response.cookies.set('session', '', cleared)
+  response.cookies.set(PROVIDER_TOKEN_COOKIE, '', cleared)
   return response
 }

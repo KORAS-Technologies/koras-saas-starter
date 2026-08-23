@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import {
   OAUTH_COOKIES,
+  PROVIDER_TOKEN_COOKIE,
   cookieOptions,
   ExchangeError,
   exchangeCode,
@@ -97,6 +98,16 @@ export async function GET(request: NextRequest) {
   // This application's own cookie, not the provider's token. Nothing in it
   // beyond what authorisation reads.
   response.cookies.set('session', cookie, cookieOptions({ secure, maxAge: lifetime }))
+
+  // Forwarded to the platform API, which verifies it against ZITADEL
+  // itself. The API applies the caller's role rather than trusting this
+  // application to have applied it, and attributes the call to the person
+  // in the audit log.
+  response.cookies.set(
+    PROVIDER_TOKEN_COOKIE,
+    tokens.idToken,
+    cookieOptions({ secure, maxAge: lifetime }),
+  )
   // The flow is over, so its secrets go. A verifier left in the browser is
   // reusable material for a code that leaks later.
   for (const name of Object.values(OAUTH_COOKIES)) {
