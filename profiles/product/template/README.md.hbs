@@ -48,7 +48,7 @@ Run `make profile` to print the profile and enabled components at any time.
 
 ### On Windows, run the scripts under Git Bash
 
-`bash` from PowerShell is `C:\WINDOWS\system32ash.exe` — the WSL launcher.
+`bash` from PowerShell is `C:\WINDOWS\system32\bash.exe` — the WSL launcher.
 WSL is a separate Linux filesystem and cannot see a winget or Scoop install on
 the Windows side, so `local/scripts/*.sh` will report that `doppler`,
 `terraform` or `python` "is not installed" when it is. Either use a Git Bash
@@ -61,7 +61,7 @@ terminal, name it explicitly:
 or add this to your PowerShell profile, which leaves WSL reachable as `wsl`:
 
 ```powershell
-function bash { & 'C:\Program Files\Gitinash.exe' @args }
+function bash { & 'C:\Program Files\Git\bin\bash.exe' @args }
 ```
 
 `make` targets are unaffected — make resolves `bash` itself and finds Git Bash.
