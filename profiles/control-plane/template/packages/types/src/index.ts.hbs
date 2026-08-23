@@ -1,0 +1,128 @@
+/**
+ * Shapes returned by the platform API.
+ *
+ * Hand-written rather than generated from the OpenAPI document: generation
+ * would need the API running at build time, which would make the frontend
+ * unbuildable whenever the backend is down. The cost is that these can drift,
+ * so they carry only what the admin application actually reads.
+ */
+
+import type { OrganizationRole } from '@{{projectSlug}}/permissions'
+
+export type Environment = 'dev' | 'test' | 'stg' | 'prod'
+
+export interface Organization {
+  id: string
+  name: string
+  slug: string
+  status: string
+}
+
+export interface OrganizationUser {
+  id: string
+  organization_id: string
+  email: string
+  name: string | null
+  role: OrganizationRole
+  status: string
+}
+
+export interface Product {
+  id: string
+  code: string
+  name: string
+  slug: string
+  profile: string
+  status: string
+  environments: Environment[]
+}
+
+export interface Tenant {
+  id: string
+  organization_id: string
+  product_id: string
+  product_code: string
+  environment: Environment
+  tenant_key: string
+  external_tenant_id: string | null
+  status: string
+}
+
+export interface EffectiveEntitlement {
+  code: string
+  name: string
+  kind: 'boolean' | 'quota'
+  enabled: boolean
+  limit_value: number | null
+  period: string | null
+  source: string
+}
+
+export interface Domain {
+  id: string
+  organization_id: string
+  fqdn: string
+  kind: 'subdomain' | 'custom'
+  status: string
+  is_primary: boolean
+  verification: {
+    method: string
+    record_name: string
+    record_value: string
+  } | null
+}
+
+/**
+ * What the customer portal receives.
+ *
+ * Narrower than the platform shapes above and deliberately not derived from
+ * them: no internal identifiers, no infrastructure, no ZITADEL. If a field
+ * cannot appear here, a portal page cannot render it by accident.
+ */
+
+export interface PlatformHealth {
+  environment: Environment
+  status: 'ok' | 'degraded' | 'unhealthy'
+  components: { name: string; status: string; detail: string | null }[]
+  counts: Record<string, number>
+  open_findings: number
+}
+
+export interface PortalOrganization {
+  name: string
+  slug: string
+  status: string
+}
+
+export interface PortalMember {
+  email: string
+  name: string | null
+  role: OrganizationRole
+  status: string
+}
+
+export interface PortalProduct {
+  code: string
+  name: string
+  status: string
+}
+
+export interface PortalSubscription {
+  product_code: string
+  plan_code: string | null
+  status: string
+}
+
+export interface PortalDomain {
+  fqdn: string
+  kind: 'subdomain' | 'custom'
+  status: string
+  is_primary: boolean
+  verification: { method: string; record_name: string; record_value: string } | null
+}
+
+export interface PortalSecurity {
+  mfa_required: boolean
+  sso_configured: boolean
+  member_count: number
+}

@@ -50,12 +50,30 @@ output, not by reading the templates.
 
 ### A1 — the control-plane profile does not typecheck as generated
 
-- [ ] `packages/permissions/src/index.ts` carries the real implementation
-- [ ] `packages/auth/package.json.hbs` declares `jose`
-- [ ] `packages/auth/package.json.hbs` declares `next`
-- [ ] `packages/auth/package.json.hbs` declares the workspace `permissions` package
-- [ ] `packages/auth/package.json.hbs` sets `"type": "module"`
-- [ ] `packages/auth/package.json.hbs` defines a `test` script
+- [x] `packages/permissions/src/index.ts` carries the real implementation
+- [x] `packages/auth/package.json.hbs` declares `jose`
+- [x] `packages/auth/package.json.hbs` declares `next`
+- [x] `packages/auth/package.json.hbs` declares the workspace `permissions` package
+- [x] `packages/auth/package.json.hbs` sets `"type": "module"`
+- [x] `packages/auth/package.json.hbs` defines a `test` script
+
+Two more were needed and the survey had not found them, because reading the
+templates cannot: `packages/api-client` and `packages/types` were stubs that
+`apps/admin/src/lib/session.ts` imports, and neither application declared
+`api-client` as a dependency at all, so pnpm never linked it and turbo never
+built it.
+
+- [x] `packages/api-client` and `packages/types` carry the real implementations
+- [x] `apps/admin` and `apps/portal` declare `@<slug>/api-client`
+
+**Closed against evidence rather than inspection.** `pnpm install && pnpm turbo
+run build` on a freshly generated project: 18 of 18 tasks, and its own auth
+suite runs there — 39 tests, 0 failures.
+`generators/create-koras-app/tests/generated-builds.test.ts` now does exactly
+that on every run. It is slow, a couple of minutes, and it is the only test
+here that would have caught this: the other 393 read the files the generator
+wrote and never built the result. Verified non-vacuous by restoring the
+permissions stub, which fails it.
 
 **Applies to:** `profiles/control-plane/template`
 

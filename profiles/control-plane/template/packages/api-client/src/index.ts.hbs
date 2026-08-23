@@ -1,0 +1,203 @@
+/**
+ * Typed client for the Control Plane platform API.
+ *
+ * Server-side only. The admin application calls this from server components and
+ * route handlers, never from the browser, so the session token is never handed
+ * to client JavaScript -- a staff token with platform authority is the last
+ * thing that should be reachable from a page script.
+ */
+
+import type {
+  Domain,
+  PlatformHealth,
+  PortalDomain,
+  PortalMember,
+  PortalOrganization,
+  PortalProduct,
+  PortalSecurity,
+  PortalSubscription,
+  EffectiveEntitlement,
+  Organization,
+  OrganizationUser,
+  Product,
+  Tenant,
+} from '@{{projectSlug}}/types'
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly detail?: string,
+  ) {
+    super(message)
+  }
+}
+
+export interface ClientOptions {
+  baseUrl: string
+  token: string
+  fetchImpl?: typeof fetch
+}
+
+export class PlatformApiClient {
+  private readonly baseUrl: string
+  private readonly token: string
+  private readonly fetchImpl: typeof fetch
+
+  constructor(options: ClientOptions) {
+    this.baseUrl = options.baseUrl.replace(/\/$/, '')
+    this.token = options.token
+    this.fetchImpl = options.fetchImpl ?? fetch
+  }
+
+  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const response = await this.fetchImpl(`${this.baseUrl}/api/platform/v1${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        'Content-Type': 'application/json',
+        ...(init.headers ?? {}),
+      },
+      // Platform data changes underneath us and staff act on what they see, so
+      // a cached list is worse than a slow one.
+      cache: 'no-store',
+    })
+
+    if (!response.ok) {
+      let detail: string | undefined
+      try {
+        detail = ((await response.json()) as { detail?: string }).detail
+      } catch {
+        detail = undefined
+      }
+      throw new ApiError(
+        `${init.method ?? 'GET'} ${path} failed with ${response.status}`,
+        response.status,
+        detail,
+      )
+    }
+
+    if (response.status === 204) return undefined as T
+    return (await response.json()) as T
+  }
+
+  listProducts(): Promise<Product[]> {
+    return this.request('/products')
+  }
+
+  listOrganizations(): Promise<Organization[]> {
+    return this.request('/organizations')
+  }
+
+  getOrganization(id: string): Promise<Organization> {
+    return this.request(`/organizations/${id}`)
+  }
+
+  listOrganizationUsers(id: string): Promise<OrganizationUser[]> {
+    return this.request(`/organizations/${id}/users`)
+  }
+
+  listOrganizationTenants(id: string): Promise<Tenant[]> {
+    return this.request(`/organizations/${id}/tenants`)
+  }
+
+  listOrganizationDomains(id: string): Promise<Domain[]> {
+    return this.request(`/organizations/${id}/domains`)
+  }
+
+  async platformHealth(): Promise<PlatformHealth> {
+    // Under /api/v1 rather than the platform prefix: it is operational rather
+    // than part of the registry surface.
+    const response = await this.fetchImpl(`${this.baseUrl}/api/v1/platform-health`, {
+      headers: { Authorization: `Bearer ${this.token}` },
+      cache: 'no-store',
+    })
+    if (!response.ok) {
+      throw new ApiError(`platform health failed with ${response.status}`, response.status)
+    }
+    return (await response.json()) as PlatformHealth
+  }
+
+  effectiveEntitlements(
+    organizationId: string,
+    productCode: string,
+  ): Promise<{ plan_code: string | null; entitlements: EffectiveEntitlement[] }> {
+    return this.request(`/organizations/${organizationId}/products/${productCode}/entitlements`)
+  }
+}
+
+/**
+ * Client for the customer-facing API.
+ *
+ * A separate class from PlatformApiClient rather than extra methods on it. The
+ * two surfaces answer to different audiences, and one object that could call
+ * either is one accidental import away from a portal page reading platform
+ * data.
+ *
+ * Note the absence of an organization argument anywhere: the API resolves it
+ * from the caller identity, so there is nothing here to pass and nothing to
+ * pass wrongly.
+ */
+export class PortalApiClient {
+  private readonly baseUrl: string
+  private readonly token: string
+  private readonly fetchImpl: typeof fetch
+
+  constructor(options: ClientOptions) {
+    this.baseUrl = options.baseUrl.replace(/\/$/, '')
+    this.token = options.token
+    this.fetchImpl = options.fetchImpl ?? fetch
+  }
+
+  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const response = await this.fetchImpl(`${this.baseUrl}/api/portal/v1${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        'Content-Type': 'application/json',
+        ...(init.headers ?? {}),
+      },
+      cache: 'no-store',
+    })
+
+    if (!response.ok) {
+      let detail: string | undefined
+      try {
+        detail = ((await response.json()) as { detail?: string }).detail
+      } catch {
+        detail = undefined
+      }
+      throw new ApiError(
+        `${init.method ?? 'GET'} ${path} failed with ${response.status}`,
+        response.status,
+        detail,
+      )
+    }
+
+    return (await response.json()) as T
+  }
+
+  organization(): Promise<PortalOrganization> {
+    return this.request('/organization')
+  }
+
+  members(): Promise<PortalMember[]> {
+    return this.request('/members')
+  }
+
+  products(): Promise<PortalProduct[]> {
+    return this.request('/products')
+  }
+
+  subscriptions(): Promise<PortalSubscription[]> {
+    return this.request('/subscriptions')
+  }
+
+  domains(): Promise<PortalDomain[]> {
+    return this.request('/domains')
+  }
+
+  security(): Promise<PortalSecurity> {
+    return this.request('/security')
+  }
+}

@@ -1,0 +1,82 @@
+/**
+ * Platform and organization roles.
+ *
+ * The same two closed, disjoint sets the Python side defines in
+ * `koras_platform`. They are duplicated rather than shared because the two
+ * runtimes cannot import each other, which makes drift the risk: a role added
+ * on one side and forgotten on the other is a silent authorisation gap.
+ * `tests/unit/test_roles.py` asserts these values against the Python enums and
+ * the SQL, so the duplication is checked rather than trusted.
+ */
+
+export const PLATFORM_ROLES = [
+  'platform_super_admin',
+  'platform_admin',
+  'platform_support',
+  'platform_billing',
+  'platform_readonly',
+] as const
+
+export type PlatformRole = (typeof PLATFORM_ROLES)[number]
+
+export const ORGANIZATION_ROLES = [
+  'organization_owner',
+  'organization_admin',
+  'billing_admin',
+  'security_admin',
+  'member',
+] as const
+
+export type OrganizationRole = (typeof ORGANIZATION_ROLES)[number]
+
+export function isPlatformRole(value: string): value is PlatformRole {
+  return (PLATFORM_ROLES as readonly string[]).includes(value)
+}
+
+export function isOrganizationRole(value: string): value is OrganizationRole {
+  return (ORGANIZATION_ROLES as readonly string[]).includes(value)
+}
+
+/**
+ * Which roles may reach a given area of the admin application.
+ *
+ * Listed explicitly per area rather than ranked. A hierarchy invites
+ * "at least admin" comparisons that widen silently the moment a role is
+ * inserted into the middle of the ordering.
+ */
+export const AREA_ROLES = {
+  dashboard: PLATFORM_ROLES,
+  organizations: PLATFORM_ROLES,
+  products: PLATFORM_ROLES,
+  tenants: PLATFORM_ROLES,
+  plans: ['platform_super_admin', 'platform_admin', 'platform_billing'],
+  subscriptions: ['platform_super_admin', 'platform_admin', 'platform_billing'],
+  entitlements: ['platform_super_admin', 'platform_admin', 'platform_billing'],
+  domains: PLATFORM_ROLES,
+  branding: PLATFORM_ROLES,
+  identity: ['platform_super_admin', 'platform_admin', 'platform_support'],
+  sso: ['platform_super_admin', 'platform_admin', 'platform_support'],
+  ai: PLATFORM_ROLES,
+  storage: PLATFORM_ROLES,
+  // Infrastructure references describe how the platform itself is built, so
+  // support and billing have no reason to see them.
+  infrastructure: ['platform_super_admin', 'platform_admin'],
+  provisioning: ['platform_super_admin', 'platform_admin', 'platform_support'],
+  reconciliation: ['platform_super_admin', 'platform_admin'],
+  audit: ['platform_super_admin', 'platform_admin', 'platform_support'],
+  health: PLATFORM_ROLES,
+} as const satisfies Record<string, readonly string[]>
+
+export type Area = keyof typeof AREA_ROLES
+
+export function canAccess(area: Area, role: string | undefined): boolean {
+  if (!role || !isPlatformRole(role)) return false
+  return (AREA_ROLES[area] as readonly string[]).includes(role)
+}
+
+/** The area a pathname belongs to, or undefined for one that is not gated. */
+export function areaForPath(pathname: string): Area | undefined {
+  const segment = pathname.split('/').filter(Boolean)[0]
+  if (!segment) return 'dashboard'
+  return segment in AREA_ROLES ? (segment as Area) : undefined
+}
