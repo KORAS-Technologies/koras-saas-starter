@@ -663,7 +663,7 @@ what it iterates.
 
 ## R-028 — two estates claimed the same hostnames, and the second one lost
 
-*Severity: high. Open — resolution proposed, not applied.*
+*Severity: high. Resolved in the factory (03d260b); the estates still need re-applying.*
 
 `sample-product` could not attach four of its eight application domains:
 
@@ -698,7 +698,7 @@ are both derived from `module.vercel.domains`, so an incomplete domain map left
 the OIDC callbacks and the DNS records unbuilt in the same run. A hostname
 conflict presents as an identity and DNS outage.
 
-*Proposed resolution* — `primary_domain` becomes a per-project value carried in
+*Resolution* — `primary_domain` is now a per-project value carried in
 the generated `terraform.tfvars`, which is committed and non-secret and is where
 `INFRASTRUCTURE_PLAN.md` always said it belonged. A product defaults to
 `<slug>.<estate apex>`; the Control Plane keeps the apex, because it is the
@@ -711,7 +711,7 @@ generator composes from rather than the domain any one project uses.
 
 ## R-029 — a redundant depends_on made one environment's roles unapplyable
 
-*Severity: low. Open.*
+*Severity: low. Resolved (03d260b).*
 
 Every ZITADEL instance consumes `local.redirect_uris`, which reads
 `module.vercel.domains`, so all four already depend on the Vercel module through
@@ -727,5 +727,5 @@ dependency pulled the whole module in, including its errors.
 The effect was that the one environment in daily use was the one that could not
 receive its roles, and the reason was invisible -- the plan simply omitted them.
 
-*Proposed resolution* — remove the explicit `depends_on`. The implicit
+*Resolution* — the explicit `depends_on` is gone. The implicit
 dependency is real, narrower, and already correct.
