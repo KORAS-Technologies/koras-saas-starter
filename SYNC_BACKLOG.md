@@ -219,10 +219,24 @@ has a session. The port note is independent and applies now.
 
 ### B4 — the RLS policy-ordering defect is fixed downstream only
 
-- [ ] Policies ship as numbered migrations, not as `supabase/policies/*.sql`
-- [ ] `local/scripts/migrate.sh` no longer applies a policies directory
-- [ ] `supabase/policies/` carries the README explaining why it is empty
-- [ ] `output/sample-product` regenerated and confirmed
+- [x] Policies ship as numbered migrations, not as `supabase/policies/*.sql`
+- [x] `local/scripts/migrate.sh` no longer applies a policies directory
+- [x] `supabase/policies/` carries the README explaining why it is empty
+- [x] `output/sample-product` regenerated and confirmed
+
+**Closed (e5c802e).** Verified against postgres:15 rather than by reading: both
+migrations apply in order, seven policies exist, RLS is on for all three tables,
+and re-running the policy migration is clean.
+`generators/create-koras-app/tests/rls-policy-ordering.test.ts` asserts the
+shape for both profiles and was checked non-vacuous by restoring a stray policy
+file, which fails it.
+
+Two things the check turned up. The policies are now dropped before they are
+created, because that is what the README asks for when a policy changes and a
+file modelling the wrong pattern gets copied. And `migrate.sh` claimed every
+migration is re-runnable, which was untrue of the one it ships -- `00001`
+creates tables without `if not exists`. The ledger is what makes re-running
+safe, and the header now says so.
 
 **Applies to:** both templates, and `output/sample-product`
 
