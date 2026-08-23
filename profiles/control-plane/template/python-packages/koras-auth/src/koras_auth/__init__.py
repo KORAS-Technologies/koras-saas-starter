@@ -163,7 +163,14 @@ async def verify_token(
     allowed = {value for value in (project_id, client_id) if value}
     if not allowed:
         raise TokenVerificationError('No audience configured to verify against')
-    options = {"verify_aud": False}
+    # at_hash is not this service's business, and demanding it rejected every
+    # real token. It binds an ID token to the access token issued beside it,
+    # so the *client* can confirm it received a matching pair. A resource
+    # server holds neither the pair nor the reason to check it, and python-jose
+    # refuses outright rather than skipping: 'No access_token provided to
+    # compare against at_hash claim'. Every page of an application answered 401
+    # on that sentence, which nothing was printing.
+    options = {"verify_aud": False, "verify_at_hash": False}
     claims: dict[str, Any]
     try:
         claims = jwt.decode(
