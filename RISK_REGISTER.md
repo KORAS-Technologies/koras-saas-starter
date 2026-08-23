@@ -658,3 +658,74 @@ The first version asserted the module *mentioned* `project_matrix`. Reverting
 place and the test still passed. It now reads the resource block and asserts
 what it iterates.
 
+
+---
+
+## R-028 — two estates claimed the same hostnames, and the second one lost
+
+*Severity: high. Open — resolution proposed, not applied.*
+
+`sample-product` could not attach four of its eight application domains:
+
+```text
+Could not add domain admin-dev.korastechnologies.com to project
+prj_b3dKdLoCaQL48qFrTdj4O4KzrKjR, unexpected error: domain_already_in_use
+```
+
+`koras-control-plane` holds `admin`, `admin-dev`, `admin-test` and `admin-stg`
+on `korastechnologies.com`, and `account*` beside them. The product wanted the
+same four names.
+
+The labels are not the fault. The vercel module maps the Control Plane's
+`platform_admin` to `admin` deliberately, and the product's `admin` key falls
+through to itself -- also `admin`. Both are right in isolation. `web` mapped to
+`app` and succeeded only because nothing else wanted that name.
+
+What is wrong is that they are in the same namespace at all.
+`INFRASTRUCTURE_PLAN.md` specifies `primary_domain` as a per-project input --
+its worked example is `"primary_domain": "docoris.app"` for a product. The
+implementation reads it from `TF_VAR_primary_domain` in the shared
+`koras-platform-bootstrap` Doppler config, which holds one value for the whole
+estate. So every project the factory produces lands on the same apex.
+
+That makes the collision structural rather than particular to this pair. A
+second product collides with the first on `app` and `admin` on its first apply,
+and the failure arrives late: eight Vercel projects are created, four domains
+attach, and the apply dies partway with half the estate in place.
+
+It also reached further than Vercel. `redirect_uris` and the Cloudflare records
+are both derived from `module.vercel.domains`, so an incomplete domain map left
+the OIDC callbacks and the DNS records unbuilt in the same run. A hostname
+conflict presents as an identity and DNS outage.
+
+*Proposed resolution* — `primary_domain` becomes a per-project value carried in
+the generated `terraform.tfvars`, which is committed and non-secret and is where
+`INFRASTRUCTURE_PLAN.md` always said it belonged. A product defaults to
+`<slug>.<estate apex>`; the Control Plane keeps the apex, because it is the
+platform. `application_hostnames` and the `admin_urls` output need no change:
+once the namespace is per project, `admin.<slug>.<apex>` and
+`admin.<apex>` cannot meet.
+
+The bootstrap Doppler value stays, reinterpreted as the estate apex the
+generator composes from rather than the domain any one project uses.
+
+## R-029 — a redundant depends_on made one environment's roles unapplyable
+
+*Severity: low. Open.*
+
+Every ZITADEL instance consumes `local.redirect_uris`, which reads
+`module.vercel.domains`, so all four already depend on the Vercel module through
+the values they use. `module "zitadel_dev"` additionally declares
+`depends_on = [module.vercel]`, and its three siblings do not.
+
+An explicit module-level `depends_on` applies to every resource in the module,
+not only the ones that read the value. `zitadel_project_role` reads no redirect
+URI, so in `test`, `stg` and `prod` the roles could be created while the Vercel
+module was refusing an unrelated destroy. In `dev` they could not: the blanket
+dependency pulled the whole module in, including its errors.
+
+The effect was that the one environment in daily use was the one that could not
+receive its roles, and the reason was invisible -- the plan simply omitted them.
+
+*Proposed resolution* — remove the explicit `depends_on`. The implicit
+dependency is real, narrower, and already correct.
