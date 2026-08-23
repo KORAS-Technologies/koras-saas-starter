@@ -11,6 +11,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The whole history, not just the tip. A credential committed and then
+          # removed in a later commit is still published -- the fix is rotation,
+          # and this is what tells us rotation is needed.
+          fetch-depth: 0
+      # The gitleaks binary is MIT-licensed; only the marketplace action wrapper
+      # requires a paid licence for organizations, and it refuses to run without
+      # one. Installing the scanner directly gets the scanning without the
+      # billing relationship, and pins the version so a new rule set cannot
+      # break an unrelated pull request overnight.
+      - name: Install gitleaks
+        run: |
+          version=8.28.0
+          base=https://github.com/gitleaks/gitleaks/releases/download
+          curl -sSfL -o /tmp/gitleaks.tar.gz "$base/v$version/gitleaks_${version}_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install /tmp/gitleaks /usr/local/bin/gitleaks
+      - name: Scan history for secrets
+        # --max-archive-depth because the default is 0: gitleaks does not look
+        # inside archives at all unless asked. It decides what is an archive from
+        # the file extension, so this catches a committed .zip or .tar.gz and does
+        # NOT catch an extensionless one -- which is how Terraform names a plan
+        # file, and how a plan holding four database passwords and four OIDC
+        # client secrets got past a scan like this one. The path rule in
+        # tests/security/test_no_state_artifacts.py covers what this cannot.
+        run: |
+          gitleaks git --config .gitleaks.toml --redact --verbose --no-banner --max-archive-depth 3
+
   lint-typecheck:
     name: Lint & Typecheck
     runs-on: ubuntu-latest

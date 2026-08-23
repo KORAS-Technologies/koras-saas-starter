@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   const start = await beginAuthorization({
     zitadelDomain: process.env.ZITADEL_DOMAIN ?? '',
     clientId: process.env.ZITADEL_CLIENT_ID ?? '',
-    redirectUri: process.env.ZITADEL_ADMIN_REDIRECT_URI ?? '',
+    redirectUri: process.env.ZITADEL_REDIRECT_URI ?? '',
     returnTo: request.nextUrl.searchParams.get('next'),
   })
 

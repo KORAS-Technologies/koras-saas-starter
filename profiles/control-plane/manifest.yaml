@@ -38,6 +38,12 @@ capabilities:
   subscriptions: true
   entitlements: true
   infrastructure_registry: true
+  # Storage *policy*, not object storage. The Control Plane decides which
+  # provider handles a customer workload and never holds the objects or the
+  # credential -- Doppler holds the credential, and the product does the
+  # storing. That is why this profile ships no MinIO in its local stack and no
+  # STORAGE_ENDPOINT in its settings, which reads as a contradiction until the
+  # capability is named for what it is.
   storage: true
   email: true
   notifications: true

@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join, dirname, relative, sep } from 'node:path'
+import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import yaml from 'js-yaml'
 import { z } from 'zod'
@@ -49,6 +50,24 @@ export interface KorasProjectManifest {
     name: typeof GENERATOR_NAME
     starter_version: string
     profile_version: string
+    /**
+     * Fingerprint of the profile tree this project was generated from.
+     *
+     * Optional, because manifests written before it existed must keep
+     * validating.
+     *
+     * `starter_version` reads the workspace `package.json`, which is a release
+     * number a person maintains — and across every change the starter made in
+     * its first weeks it stayed at 0.1.0, so nothing downstream could tell a
+     * current project from one generated a month earlier. A field that only
+     * moves when someone remembers to move it cannot signal staleness.
+     *
+     * This one moves on its own: it is a digest of the profile's manifest,
+     * defaults and every file in its template. Two projects with the same
+     * digest were generated from the same definition; a different digest says
+     * the definition changed, without saying whether the change matters.
+     */
+    template_digest?: string
   }
   /**
    * The components this project was generated with.
@@ -93,6 +112,10 @@ export const KorasProjectManifestSchema = z.object({
     name: z.literal(GENERATOR_NAME),
     starter_version: semverSchema,
     profile_version: semverSchema,
+    template_digest: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/, 'must be a sha256 digest in lower-case hex')
+      .optional(),
   }),
   // Optional so that a manifest predating this field still parses. Adding an
   // optional field is backward compatible, so schema_version does not move.
@@ -106,6 +129,49 @@ export const KorasProjectManifestSchema = z.object({
 })
 
 // ── Version resolution ──────────────────────────────────────────────────────
+
+/**
+ * A digest of everything that defines a profile.
+ *
+ * Paths are sorted and included in the hash alongside the bytes, so renaming a
+ * file changes the digest even when its contents do not — a rename is a change
+ * to what gets generated.
+ *
+ * Deliberately not a digest of the rendered output: that varies with the
+ * project name, so two projects generated from one definition would disagree
+ * and the field would answer a different question than the one asked of it.
+ */
+// A space is a legal filename character and a NUL is not, so only NUL is an
+// unambiguous delimiter here.
+// A space is a legal filename character and a NUL is not, so only NUL is an
+// unambiguous delimiter between a path and the bytes that follow it.
+const NUL = Buffer.from([0])
+
+export function resolveTemplateDigest(profile: string): string {
+  const root = join(STARTER_ROOT, 'profiles', profile)
+  const files: string[] = []
+
+  const walk = (directory: string): void => {
+    for (const entry of readdirSync(directory).sort()) {
+      const full = join(directory, entry)
+      if (statSync(full).isDirectory()) walk(full)
+      else files.push(full)
+    }
+  }
+  walk(root)
+
+  const hash = createHash('sha256')
+  for (const file of files.sort()) {
+    // Separators are normalised so a digest computed on Windows matches one
+    // computed in CI. Without it every project would read as stale to half the
+    // people who checked it.
+    hash.update(relative(root, file).split(sep).join('/'))
+    hash.update(NUL)
+    hash.update(readFileSync(file))
+    hash.update(NUL)
+  }
+  return hash.digest('hex')
+}
 
 /**
  * Version of the KORAS SaaS Starter that generated the project, read from the
@@ -203,6 +269,7 @@ export function buildProjectManifest(ctx: GenerationContext): KorasProjectManife
       name: GENERATOR_NAME,
       starter_version: resolveStarterVersion(),
       profile_version: resolveProfileVersion(ctx),
+      template_digest: resolveTemplateDigest(ctx.profile),
     },
     components: enabledComponents(ctx),
   }

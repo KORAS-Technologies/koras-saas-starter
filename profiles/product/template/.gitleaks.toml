@@ -1,0 +1,33 @@
+# Secret scanning configuration.
+#
+# Doppler is the secret authority: nothing real belongs in this repository, so
+# the default rule set is used unmodified rather than narrowed. The allowlist
+# below covers the values that look like credentials and are not -- test
+# fixtures and the local stack, whose whole point is being non-secret.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Local development stack. These values are published on purpose."
+paths = [
+  '''local/config/\.env\.local\.example''',
+  '''local/docker-compose\.yml''',
+  '''local/scripts/.*''',
+]
+
+[[allowlists]]
+description = """
+Test fixtures. The redaction and audit suites must contain credential-shaped
+strings -- that is what they assert gets scrubbed, and a scanner that forbade
+them would forbid testing the defence.
+
+Stated explicitly even though the default rule set already excludes paths that
+look like tests. Relying on that would leave the exclusion invisible, and it is
+a real blind spot: a genuine credential committed under tests/ is not caught by
+this job. A blind spot nobody wrote down is one nobody remembers.
+"""
+paths = [
+  '''tests/.*''',
+  '''e2e/.*''',
+]

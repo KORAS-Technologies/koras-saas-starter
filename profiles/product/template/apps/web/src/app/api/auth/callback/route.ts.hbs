@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
       // The application is a confidential client; without this ZITADEL
       // rejects the code and the sign-in fails on its last step.
       clientSecret: process.env.ZITADEL_CLIENT_SECRET,
-      redirectUri: process.env.ZITADEL_ADMIN_REDIRECT_URI ?? '',
+      redirectUri: process.env.ZITADEL_REDIRECT_URI ?? '',
       code,
       codeVerifier: verifier,
     })

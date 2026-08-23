@@ -10,6 +10,16 @@ likelihood rating, impact rating, overall severity, and current mitigation.
 **Impact:** 1 (negligible) – 5 (critical)  
 **Severity:** L × I
 
+**These numbers are local to this repository.** `koras-control-plane` keeps its
+own register in the same `R-NN` shape, and the two have long since overlapped:
+R-05 there is a cross-organization read in the platform schema, R-05 here is
+something else entirely. When citing one across repositories, say which —
+"control-plane R-65", "starter R-028" — because the bare number identifies two
+different defects depending on which register the reader opens.
+
+The same is true of phase numbers: Phase 12 is Security here and "Domains and
+branding" there.
+
 ---
 
 ## 1. Bootstrap Risks
@@ -227,6 +237,14 @@ likelihood rating, impact rating, overall severity, and current mitigation.
 | R-019 | ZITADEL projects defined no roles            | 20       | Resolved                 |
 | R-020 | Nothing carried settings into the runtime    | 20       | Resolved                 |
 | R-021 | Applications had no hostnames                | 16       | Resolved                 |
+| R-022 | The doctor passed a token that could not write DNS                     | 8        | Resolved                 |
+| R-023 | Every Vercel project named a package that cannot exist                 | 12       | Resolved                 |
+| R-024 | Deployed services never received ENVIRONMENT                           | 20       | Resolved                 |
+| R-025 | A JSON setting arrived escaped, and a --cwd was ignored                | 16       | Resolved                 |
+| R-026 | A green deploy left the worker and scheduler stopped                   | 16       | Resolved                 |
+| R-027 | The applications had no settings, and two projects could not hold four | 20       | Resolved                 |
+| R-028 | Two estates claimed the same hostnames                                 | 20       | Resolved                 |
+| R-029 | A redundant depends_on made one environment's roles unapplyable        | 6        | Resolved                 |
 
 ---
 
@@ -532,7 +550,7 @@ The DNS records follow whichever domains were actually attached, so the two
 states are always consistent: a hostname with no record is unreachable, and a
 record with no hostname points at Vercel for a domain it will not serve.
 
-### R-022 — the doctor reported Cloudflare ready for a token that could not write DNS
+## R-022 — the doctor reported Cloudflare ready for a token that could not write DNS
 *Severity: medium. Resolved.*
 
 `bootstrap:doctor` printed `Cloudflare ✓` and the apply then failed on the first
@@ -579,6 +597,62 @@ The first version of this fix explained itself by quoting the old placeholder
 verbatim, and the test that forbids that literal failed on the comment. Reworded
 rather than weakened: a check that forbids a string is defeated by any text
 repeating it, which is worth knowing before writing the next such check.
+
+## R-024 — deployed services never received ENVIRONMENT
+
+*Severity: high. Resolved.*
+
+Reproduced from a crash-looping Fly machine: the API exited on startup with
+`ValidationError: environment Field required`. Every setting reached the
+container except the one with no default.
+
+`secrets.manifest` classified `ENVIRONMENT` as `local`, reasoning that it is set
+per Doppler config rather than stored in it. That is true of the local stack and
+false of everything deployed: a service reads its settings from the environment,
+not from Doppler's notion of which config they came from. So `doppler-check`
+never asked for it, `doppler secrets download` never produced it, and all three
+services crash-looped while the deployment reported success.
+
+The setting has no default in code on purpose -- a missing or misspelled value
+must stop a process rather than silently select an estate (R-03) -- which is
+exactly why leaving it out is fatal rather than merely untidy.
+
+*Resolution* -- a third manifest source, `self:environment`, resolving to the
+environment's own name. It is derived, so the bootstrap writes it, the checker
+verifies it and the deploy carries it. `OTEL_EXPORTER_OTLP_PROTOCOL`, which
+existed only in the generated Control Plane and not in the templates, shipped
+alongside.
+
+The generation test rejected the new source kind as unrecognised, which is the
+test working: it forbids a derived setting with no usable source. Widened
+deliberately rather than by reflex.
+
+## R-025 — a JSON setting arrived escaped, and a --cwd was silently ignored
+
+*Severity: high. Resolved.*
+
+Both from the first deployment that actually reached the services.
+
+The API crash-looped on:
+
+```text
+SettingsError: error parsing value for field "cors_origins"
+JSONDecodeError: Expecting value: line 1 column 2 (char 1)
+```
+
+`doppler secrets download --format env` renders a JSON value with the inner
+quotes escaped. flyctl strips the outer quotes and leaves the backslashes, so
+the service receives text no JSON parser accepts -- and column 2 is exactly
+where the first backslash sits. Confirmed by rendering both formats:
+`env-no-quotes` emits the array cleanly.
+
+Separately, the Vercel step passed `--cwd apps/<app>` while the project already
+carried `root_directory=apps/<app>`, so Vercel looked for the path twice over,
+warned that it did not exist, and ignored the setting rather than failing. A
+warning nobody reads is indistinguishable from a setting that worked.
+
+*Resolution* -- `env-no-quotes` for the download, and the Vercel step runs from
+the repository root so the project's own `root_directory` applies once.
 
 ## R-026 — a green deploy left the worker and scheduler stopped
 

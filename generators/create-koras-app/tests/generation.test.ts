@@ -16,6 +16,7 @@ import {
   PROJECT_MANIFEST_PATH,
   parseProjectManifest,
   renderProjectManifest,
+  resolveTemplateDigest,
 } from '../src/generation/project-manifest.js'
 import { validateProfile } from '../src/validation/profile.js'
 import { validateGeneratedProject } from '../src/validation/generated-project.js'
@@ -359,6 +360,10 @@ describe('generated project manifest', () => {
           name: 'create-koras-app',
           starter_version: starterVersion,
           profile_version: loadProfile('control-plane').manifest.version,
+          // Recomputed rather than hardcoded: pinning the digest here would
+          // mean editing this assertion on every template change, which is a
+          // test that gets updated reflexively rather than read.
+          template_digest: resolveTemplateDigest('control-plane'),
         },
         components: {
           applications: ['platform_admin', 'portal'],
@@ -402,6 +407,7 @@ describe('generated project manifest', () => {
       'name',
       'starter_version',
       'profile_version',
+      'template_digest',
       'applications',
       'services',
       'capabilities',

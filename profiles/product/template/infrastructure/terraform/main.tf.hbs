@@ -166,6 +166,16 @@ output "admin_urls" {
   }
 }
 
+output "admin_redirect_uris" {
+  description = "Map of env -> OAuth callback for the internal operations application."
+  value = {
+    for name, url in {
+      for n in nonsensitive(keys(var.zitadel_instances)) :
+      n => n == "prod" ? "https://admin.${var.primary_domain}" : "https://admin-${n}.${var.primary_domain}"
+    } : name => "${url}/api/auth/callback"
+  }
+}
+
 output "app_redirect_uris" {
   description = "Map of env -> OAuth callback for the customer-facing application."
   value = {
@@ -207,5 +217,24 @@ output "storage_endpoints" {
   value = {
     for name, url in module.bootstrap.supabase_project_api_urls :
     name => "${url}/storage/v1"
+  }
+}
+
+output "cors_origins" {
+  description = <<-EOT
+    Map of env -> JSON array of origins allowed to read an API response.
+
+    Emitted as JSON because the API parses it as a list. Built here rather than
+    by hand so it stays in step with the URLs above: an application moved to a
+    new hostname and a CORS list that still names the old one is an outage that
+    reads as an authentication bug.
+  EOT
+  value = {
+    for name in nonsensitive(keys(var.zitadel_instances)) :
+    name => jsonencode(
+      name == "prod"
+      ? ["https://app.${var.primary_domain}", "https://admin.${var.primary_domain}"]
+      : ["https://app-${name}.${var.primary_domain}", "https://admin-${name}.${var.primary_domain}"]
+    )
   }
 }

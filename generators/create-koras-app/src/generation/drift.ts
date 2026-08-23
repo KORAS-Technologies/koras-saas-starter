@@ -2,7 +2,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { GenerationContext } from './context.js'
 import { renderTemplate } from './engine.js'
-import { PROJECT_MANIFEST_PATH, parseProjectManifest } from './project-manifest.js'
+import {
+  PROJECT_MANIFEST_PATH,
+  parseProjectManifest,
+  resolveTemplateDigest,
+} from './project-manifest.js'
 import { readProjectTfvars } from '../terraform/inputs.js'
 
 /**
@@ -175,6 +179,35 @@ export function checkDrift(
         subject: PROJECT_MANIFEST_PATH,
         detail:
           `Records profile "${manifest.project.profile}", but "${ctx.profile}" was requested.`,
+      })
+    }
+
+    // The profile tree this project came from, compared against the one on
+    // disk now. `starter_version` cannot answer this: it reads a release number
+    // out of package.json, and across every change the starter made in its
+    // first weeks it stayed at 0.1.0 — so a project generated a month earlier
+    // was indistinguishable from a current one.
+    //
+    // A digest mismatch is not itself a defect. It says the definition moved,
+    // which is why it is reported alongside what actually differs rather than
+    // instead of it. Absent, the manifest predates the field, and that is worth
+    // saying once rather than treating as a match.
+    const expectedDigest = resolveTemplateDigest(ctx.profile)
+    if (manifest.generator.template_digest === undefined) {
+      findings.push({
+        subject: PROJECT_MANIFEST_PATH,
+        detail:
+          'No `template_digest` — written by an older starter, so how far this ' +
+          'project has fallen behind the profile cannot be established from the ' +
+          'manifest alone. Regenerating it records the current one.',
+      })
+    } else if (manifest.generator.template_digest !== expectedDigest) {
+      findings.push({
+        subject: `${PROJECT_MANIFEST_PATH} template_digest`,
+        detail:
+          `Generated from profile "${ctx.profile}" at ${manifest.generator.template_digest.slice(0, 12)}, ` +
+          `which is now ${expectedDigest.slice(0, 12)}. The profile has changed since ` +
+          'this project was generated; the files below say whether any of it reached here.',
       })
     }
 
