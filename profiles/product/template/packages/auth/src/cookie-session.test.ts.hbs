@@ -1,0 +1,152 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import type { NextRequest } from 'next/server'
+
+import { mintSession, readSession, type Session } from './index.js'
+
+/**
+ * This application's own session cookie.
+ *
+ * The ID token used to be the cookie and the middleware verified it against
+ * ZITADEL's key set on every request. Vercel's edge runtime could not reach
+ * this deployment's ZITADEL host -- the same host the Node runtime exchanged
+ * codes with successfully, seconds apart in the same request -- so every
+ * key-set fetch answered 404, every valid session read as no session, and the
+ * browser looped back to the login page.
+ *
+ * These tests pin the property that removes the dependency: reading a session
+ * makes no network call, so nothing about the provider's reachability can sign
+ * anyone out.
+ */
+
+const SECRET = 'a'.repeat(48)
+const OTHER_SECRET = 'b'.repeat(48)
+
+const MEMBER: Session = {
+  userId: 'user-1',
+  email: 'member@example.com',
+  name: 'A Person',
+  organizationRoles: ['organization_admin'],
+  organizationId: 'org-1',
+  usedMfa: true,
+}
+
+const soon = () => Math.floor(Date.now() / 1000) + 3600
+
+function requestWith(token?: string): NextRequest {
+  return {
+    cookies: { get: (n: string) => (n === 'session' && token ? { value: token } : undefined) },
+  } as unknown as NextRequest
+}
+
+/** Fails the test if anything reaches the network. */
+async function withNoNetwork<T>(body: () => Promise<T>): Promise<T> {
+  const real = globalThis.fetch
+  globalThis.fetch = (async (input: unknown) => {
+    throw new Error(`reading a session must not fetch: ${String(input)}`)
+  }) as typeof fetch
+  try {
+    return await body()
+  } finally {
+    globalThis.fetch = real
+  }
+}
+
+test('a minted session reads back, without touching the network', async () => {
+  const cookie = await mintSession(MEMBER, SECRET, soon())
+  const outcome = await withNoNetwork(() =>
+    readSession(requestWith(cookie), { secret: SECRET }),
+  )
+
+  assert.equal(outcome.status, 'ok')
+  assert.equal(outcome.status === 'ok' && outcome.session.userId, 'user-1')
+  assert.deepEqual(
+    outcome.status === 'ok' ? outcome.session.organizationRoles : undefined,
+    ['organization_admin'],
+  )
+  assert.equal(outcome.status === 'ok' && outcome.session.email, 'member@example.com')
+})
+
+test('a cookie signed with another key is refused', async () => {
+  // The whole security of this shape. Anyone who can mint one is signed in.
+  const cookie = await mintSession(MEMBER, OTHER_SECRET, soon())
+  const outcome = await readSession(requestWith(cookie), { secret: SECRET })
+  assert.equal(outcome.status, 'anonymous')
+})
+
+test('an expired cookie is refused', async () => {
+  const cookie = await mintSession(MEMBER, SECRET, Math.floor(Date.now() / 1000) - 60)
+  const outcome = await readSession(requestWith(cookie), { secret: SECRET })
+  assert.equal(outcome.status, 'anonymous')
+})
+
+test('an unsigned token is refused', async () => {
+  // alg=none is the oldest JWT attack there is.
+  const header = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url')
+  const body = Buffer.from(
+    JSON.stringify({ sub: 'user-1', roles: ['organization_admin'], mfa: true, iss: '{{projectSlug}}' }),
+  ).toString('base64url')
+  const outcome = await readSession(requestWith(`${header}.${body}.`), { secret: SECRET })
+  assert.equal(outcome.status, 'anonymous')
+})
+
+test('a short signing key is refused rather than used', async () => {
+  // It would fail nowhere until someone tried to forge a session.
+  await assert.rejects(mintSession(MEMBER, 'too-short', soon()), /at least 32/)
+})
+
+test('an unset signing key refuses everything rather than accepting anything', async () => {
+  const cookie = await mintSession(MEMBER, SECRET, soon())
+  const outcome = await readSession(requestWith(cookie), { secret: '' })
+  assert.equal(outcome.status, 'anonymous')
+})
+
+test('a caller without a second factor is told to enrol, not signed out', async () => {
+  // Only where the application asked for it. Collapsing this into 'anonymous'
+  // is what sent the Control Plane's browser round the same redirects forever:
+  // signing in again cannot add a factor to a session that already exists.
+  const cookie = await mintSession({ ...MEMBER, usedMfa: false }, SECRET, soon())
+  const outcome = await readSession(requestWith(cookie), {
+    secret: SECRET,
+    requireMfa: true,
+  })
+  assert.equal(outcome.status, 'mfa-required')
+})
+
+test('the customer-facing default does not demand a second factor', async () => {
+  // A product's callers are its customers. Forcing enrolment on all of them is
+  // the product owner's decision, not this template's.
+  const cookie = await mintSession({ ...MEMBER, usedMfa: false }, SECRET, soon())
+  const outcome = await readSession(requestWith(cookie), { secret: SECRET })
+  assert.equal(outcome.status, 'ok')
+})
+
+test('a role the application does not define grants nothing', async () => {
+  // A typo in ZITADEL must not become authority here.
+  const cookie = await mintSession(
+    { ...MEMBER, organizationRoles: ['organization_wizard' as never] },
+    SECRET,
+    soon(),
+  )
+  const outcome = await readSession(requestWith(cookie), { secret: SECRET })
+  assert.equal(outcome.status, 'ok')
+  assert.deepEqual(outcome.status === 'ok' ? outcome.session.organizationRoles : undefined, [])
+})
+
+test('a platform role in a product token grants nothing', async () => {
+  // Staff authority belongs to the Control Plane. This profile's permissions
+  // package does not define those names, so one arriving here is simply
+  // unrecognised -- which is the whole reason it does not define them.
+  const cookie = await mintSession(
+    { ...MEMBER, organizationRoles: ['platform_super_admin' as never] },
+    SECRET,
+    soon(),
+  )
+  const outcome = await readSession(requestWith(cookie), { secret: SECRET })
+  assert.deepEqual(outcome.status === 'ok' ? outcome.session.organizationRoles : undefined, [])
+})
+
+test('no cookie is not a session', async () => {
+  const outcome = await readSession(requestWith(undefined), { secret: SECRET })
+  assert.equal(outcome.status, 'anonymous')
+})
