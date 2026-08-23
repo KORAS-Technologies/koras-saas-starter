@@ -35,6 +35,11 @@ OUTPUT = ROOT / "local" / "zitadel" / "provisioned.env"
 
 PROJECT_NAME = os.environ.get("PROJECT_NAME", "{{projectSlug}}")
 BASE = os.environ.get("ZITADEL_URL", "http://localhost:8083").rstrip("/")
+if not BASE.startswith(("http://", "https://")):
+    # ZITADEL_URL comes from the environment, and urllib will happily open a
+    # file: or custom scheme. Checked here so the noqa below is a statement
+    # about a validated value rather than a way of not thinking about it.
+    raise SystemExit("ZITADEL_URL must be an http or https URL, not " + BASE)
 ADMIN_PORT = os.environ.get("KORAS_PORT_APP_ADMIN", "3010")
 PORTAL_PORT = os.environ.get("KORAS_PORT_APP_PORTAL", "3011")
 
@@ -59,14 +64,14 @@ POST_LOGOUT_URIS = [
 
 
 def api(method: str, path: str, body: dict | None = None) -> dict:
-    request = urllib.request.Request(
+    request = urllib.request.Request(  # noqa: S310 -- scheme checked above
         BASE + path,
         method=method,
         data=json.dumps(body or {}).encode(),
         headers={"Authorization": "Bearer " + PAT, "Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
             return json.loads(response.read() or b"{}")
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", "replace")[:300]
@@ -76,7 +81,9 @@ def api(method: str, path: str, body: dict | None = None) -> dict:
         # instance was already correct.
         if error.code == 400 and "No changes" in detail:
             return {}
-        raise SystemExit(method + " " + path + " -> " + str(error.code) + "\n  " + detail) from error
+        raise SystemExit(
+            method + " " + path + " -> " + str(error.code) + "\n  " + detail
+        ) from error
 
 
 def project_id() -> str:
@@ -107,7 +114,8 @@ def project_id() -> str:
 
 
 def roles(pid: str) -> None:
-    listed = api("POST", "/management/v1/projects/" + pid + "/roles/_search", {}).get("result") or []
+    found = api("POST", "/management/v1/projects/" + pid + "/roles/_search", {})
+    listed = found.get("result") or []
     existing = {r["key"] for r in listed}
     for key in PLATFORM_ROLES:
         if key in existing:
