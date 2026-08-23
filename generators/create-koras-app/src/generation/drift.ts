@@ -63,6 +63,42 @@ function isReviewable(path: string): boolean {
   return REVIEWABLE_PREFIXES.some((p) => path.startsWith(p)) || REVIEWABLE_FILES.includes(path)
 }
 
+/**
+ * Absent is not the same as edited, and is checked everywhere rather than only
+ * across the reviewable set.
+ *
+ * The reason the content comparison is narrow is that a healthy project edits
+ * application code constantly, so a diff there says nothing. None of that
+ * applies to a file the generator would write and the project does not have:
+ * people change `apps/web/src/app/page.tsx`, they do not delete
+ * `apps/admin/next.config.ts`. The renderer already respects the project's
+ * selections, so a disabled component is never rendered and never missing.
+ *
+ * This was added because `apps/admin/next.config.ts` was absent from a
+ * generated product for four days. The application was enabled, `apps/web` had
+ * its config, and every drift run reported the project as matching -- `apps/`
+ * was in neither path set, so nothing looked. A project generated before a file
+ * was added to the template never receives it: `--refresh-modules` only touches
+ * declared shared assets, and that is the whole class this catches.
+ */
+function missingRenderedFiles(
+  rendered: Map<string, unknown>,
+  projectRoot: string,
+): DriftFinding[] {
+  const findings: DriftFinding[] = []
+  for (const path of rendered.keys()) {
+    if (existsSync(join(projectRoot, path))) continue
+    findings.push({
+      subject: path,
+      detail:
+        'Missing from the project. The generator would write it and the component ' +
+        'it belongs to is enabled, so this is a file the project never received ' +
+        'rather than one it chose not to have.',
+    })
+  }
+  return findings
+}
+
 export interface DriftFinding {
   /** What disagrees, as a path or a short identifier. */
   subject: string
@@ -159,15 +195,17 @@ export function checkDrift(
 
   const rendered = new Map(renderTemplate(ctx).map((f) => [f.outputPath, f.content]))
 
+  findings.push(...missingRenderedFiles(rendered, projectRoot))
+
   for (const path of OWNED_PATHS) {
     const expected = rendered.get(path)
     if (expected === undefined) continue
 
+    // Absence is already reported by missingRenderedFiles, for every rendered
+    // file rather than only these four. Reporting it twice would make the count
+    // in the header disagree with the list under it.
     const actualPath = join(projectRoot, path)
-    if (!existsSync(actualPath)) {
-      findings.push({ subject: path, detail: 'Missing from the project.' })
-      continue
-    }
+    if (!existsSync(actualPath)) continue
 
     const difference = describeDifference(readFileSync(actualPath, 'utf8'), expected.toString())
     if (difference) {
@@ -179,10 +217,8 @@ export function checkDrift(
     for (const [path, expected] of rendered) {
       if (OWNED_PATHS.includes(path) || !isReviewable(path)) continue
       const actualPath = join(projectRoot, path)
-      if (!existsSync(actualPath)) {
-        reviewable.push({ subject: path, detail: 'Missing from the project.' })
-        continue
-      }
+      // Missing files are a finding, not a review note; see missingRenderedFiles.
+      if (!existsSync(actualPath)) continue
       const difference = describeDifference(readFileSync(actualPath, 'utf8'), expected.toString())
       if (difference) reviewable.push({ subject: path, detail: difference })
     }

@@ -91,3 +91,121 @@ output "redis_endpoints" {
   description = "Map of env -> queue host, without the credential."
   value       = module.bootstrap.redis_endpoints
 }
+
+# The outputs below exist so that settings which *can* be derived are derived.
+# A value that lives only inside Terraform is a value the Doppler bootstrap has
+# to ask a person for, and a prompt is where typos and stale copies come from.
+#
+# They were missing here while the control-plane profile had them, so eight of
+# the eleven `derived out:` lines in local/config/secrets.manifest named outputs
+# nothing emitted. That does not fail: doppler_bootstrap_support.py treats an
+# unresolvable source as "ask a person", so every product bootstrap silently
+# hand-typed its own application URL and OIDC redirect URI. Measured on the
+# first generated product, `dev` held 11 of 31 settings and the other three
+# environments held one each.
+
+output "primary_domain" {
+  description = "The zone customer-facing hostnames are issued under."
+  value       = var.primary_domain
+}
+
+output "zitadel_domains" {
+  description = <<-EOT
+    Map of env -> ZITADEL base URL.
+
+    Declassified deliberately. `zitadel_instances` is sensitive as a whole
+    because it carries a JWT profile, but a hostname is not a secret -- it is
+    printed in every redirect the browser follows. Marking the output sensitive
+    instead would hide it from `terraform output -json`, and the Doppler
+    bootstrap reads it from there; the setting would silently become a prompt.
+  EOT
+  # A base URL, scheme included, because that is what the description
+  # promises and what every consumer builds on. The control-plane emitted a
+  # bare hostname, so `${ZITADEL_DOMAIN}/oauth/v2/authorize` came out as a
+  # relative path and the sign-in route answered 500 in every environment.
+  # Same shape here, so the product cannot repeat it.
+  #
+  # `port` and `insecure` are honoured rather than assumed: a self-hosted
+  # ZITADEL on http and a non-default port is the shape the local stack uses,
+  # and hardcoding https here would work everywhere except there.
+  value = {
+    for name, instance in nonsensitive(var.zitadel_instances) :
+    name => format(
+      "%s://%s%s",
+      instance.insecure ? "http" : "https",
+      instance.domain,
+      contains([80, 443, 0], instance.port) ? "" : format(":%d", instance.port),
+    )
+  }
+}
+
+# The hostname labels below match the vercel module's `application_hostnames`
+# default, which maps `web` to `app`. Two spellings of the same hostname is how
+# a redirect URI stops matching the domain it was issued for, so if that default
+# changes, this changes with it.
+#
+# Computed from `primary_domain` rather than read back from
+# `module.bootstrap.vercel_domains`, because the domains map is empty until the
+# apply that attaches them. These settings are needed by the Doppler bootstrap
+# that runs *before* that apply has necessarily happened, and an output that is
+# correct only after the fact is one more prompt.
+
+output "app_urls" {
+  description = "Map of env -> customer-facing application URL."
+  value = {
+    for name in nonsensitive(keys(var.zitadel_instances)) :
+    name => name == "prod" ? "https://app.${var.primary_domain}" : "https://app-${name}.${var.primary_domain}"
+  }
+}
+
+output "admin_urls" {
+  description = "Map of env -> internal operations URL."
+  value = {
+    for name in nonsensitive(keys(var.zitadel_instances)) :
+    name => name == "prod" ? "https://admin.${var.primary_domain}" : "https://admin-${name}.${var.primary_domain}"
+  }
+}
+
+output "app_redirect_uris" {
+  description = "Map of env -> OAuth callback for the customer-facing application."
+  value = {
+    for name, url in {
+      for n in nonsensitive(keys(var.zitadel_instances)) :
+      n => n == "prod" ? "https://app.${var.primary_domain}" : "https://app-${n}.${var.primary_domain}"
+    } : name => "${url}/api/auth/callback"
+  }
+}
+
+# Read back from the Fly module rather than rebuilt from a naming convention.
+# The hostname is a real attribute of a created app, so this cannot drift from
+# what was provisioned the way a format string can.
+
+output "api_urls" {
+  description = "Map of env -> API URL, as served by Fly."
+  value = {
+    for key, host in module.bootstrap.fly_app_hostnames :
+    replace(key, "api-", "") => "https://${host}"
+    if startswith(key, "api-")
+  }
+}
+{{#if service.ai_gateway}}
+output "ai_gateway_urls" {
+  description = "Map of env -> AI gateway URL, as served by Fly."
+  value = {
+    for key, host in module.bootstrap.fly_app_hostnames :
+    replace(key, "ai_gateway-", "") => "https://${host}"
+    if startswith(key, "ai_gateway-")
+  }
+}
+{{/if}}
+# Supabase Storage, not MinIO. MinIO is the local stack's stand-in and never
+# exists in a deployed environment; the manifest lists its credentials as
+# `local` for that reason.
+
+output "storage_endpoints" {
+  description = "Map of env -> Supabase Storage S3-compatible endpoint."
+  value = {
+    for name, url in module.bootstrap.supabase_project_api_urls :
+    name => "${url}/storage/v1"
+  }
+}
