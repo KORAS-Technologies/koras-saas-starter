@@ -19,6 +19,14 @@ export interface ParsedArgs {
   /** True when --output-dir was passed, as opposed to defaulting to cwd. */
   outputDirExplicit: boolean
   /**
+   * Provision without telling the Control Plane about the result.
+   *
+   * R-001's mitigation is written as though this exists: a product may be
+   * provisioned before any Control Plane is live, and registration failing is
+   * not a reason to unwind infrastructure that succeeded.
+   */
+  skipRegistration: boolean
+  /**
    * The domain this project is served under, when it has its own.
    *
    * Absent, a product is namespaced beneath the profile's `domain_apex` as
@@ -51,6 +59,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     checkDrift: false,
     all: false,
     outputDirExplicit: false,
+    skipRegistration: false,
   }
 
   let i = 0
@@ -105,6 +114,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break
       case '--domain':
         result.domain = args[++i]
+        break
+      case '--skip-registration':
+        result.skipRegistration = true
         break
       case '--with':
         result.with.push(...splitList(args[++i]))

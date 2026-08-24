@@ -54,6 +54,11 @@ OPTIONS:
                              plan against the refreshed copy.
   --dry-run                  Preview generation without writing files
   --output-dir <path>        Output parent directory (default: current directory)
+  --skip-registration        Provision without registering the result with the
+                             Control Plane. The project and its infrastructure
+                             are unaffected; the Control Plane simply does not
+                             learn about them. Use when no Control Plane is live
+                             yet, which is the documented bootstrap order.
   --domain <fqdn>            Domain this project is served under. Defaults to
                              <slug>.<apex> for a product and the apex itself for
                              the Control Plane, where the apex is the profile's
