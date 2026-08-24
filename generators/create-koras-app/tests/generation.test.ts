@@ -1494,14 +1494,14 @@ describe('the deployment pipeline matches the components generated', () => {
         let current: string | null = null
         let hasEnvironment = false
         for (const line of lines.slice(start + 1)) {
-          const header = /^  ([A-Za-z0-9_-]+):\s*$/.exec(line)
+          const header = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(line)
           if (header) {
             if (current && !hasEnvironment) missing.push(current)
             current = header[1]
             hasEnvironment = false
             continue
           }
-          if (current && /^    environment:/.test(line)) hasEnvironment = true
+          if (current && /^ {4}environment:/.test(line)) hasEnvironment = true
         }
         if (current && !hasEnvironment) missing.push(current)
 
