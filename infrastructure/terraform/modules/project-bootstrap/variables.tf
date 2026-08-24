@@ -169,3 +169,21 @@ variable "vercel_token" {
   sensitive   = true
   description = "Vercel token, written to the repository so the deploy pipeline can use it."
 }
+
+variable "repository_visibility" {
+  type        = string
+  default     = "private"
+  description = <<-EOT
+    Repository visibility: private or public.
+
+    Declared rather than assumed. A repository made public by hand -- to get
+    free Actions minutes, most often -- was silently reverted to private by the
+    next apply, which also stopped every workflow that change was meant to
+    unblock.
+  EOT
+
+  validation {
+    condition     = contains(["private", "public"], var.repository_visibility)
+    error_message = "repository_visibility must be 'private' or 'public'."
+  }
+}

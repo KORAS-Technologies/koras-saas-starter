@@ -12,6 +12,7 @@ module "github" {
   project_slug = var.project_slug
   github_org   = var.github_org
   description  = "${var.project_name} (${var.profile})"
+  visibility   = var.repository_visibility
 
   # The deploy pipeline declares five secrets `required: true`, and a
   # workflow_call with an unsatisfied one fails before any step runs. Nothing
@@ -197,7 +198,13 @@ resource "github_actions_environment_secret" "vercel_project_ids" {
 
   repository  = module.github.repository_name
   environment = each.value.environment
-  secret_name = "VERCEL_${upper(replace(each.value.app, "-", "_"))}_PROJECT_ID"
+  # Named from the source directory, not the component key. The pipeline
+  # derives this name by listing apps/ -- apps/admin looks for
+  # VERCEL_ADMIN_PROJECT_ID -- while the component key for that same
+  # application is `platform_admin`. Keying off the component wrote
+  # VERCEL_PLATFORM_ADMIN_PROJECT_ID, a secret nothing reads, and left the
+  # deploy depending on a hand-set one that Terraform did not know about.
+  secret_name = "VERCEL_${upper(replace(basename(lookup(var.application_source_dirs, each.value.app, each.value.app)), "-", "_"))}_PROJECT_ID"
   value       = module.vercel.project_ids[each.key]
 
   # The environments are created inside the github module, and a project id is

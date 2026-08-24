@@ -144,3 +144,9 @@ variable "vercel_token" {
   sensitive   = true
   description = "Vercel token, written to the repository so the deploy pipeline can use it."
 }
+
+variable "repository_visibility" {
+  type        = string
+  default     = "private"
+  description = "Repository visibility: private or public. Public repositories get free Actions minutes."
+}

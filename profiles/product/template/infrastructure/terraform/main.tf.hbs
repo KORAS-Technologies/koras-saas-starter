@@ -24,6 +24,8 @@ module "bootstrap" {
   supabase_environments = var.supabase_environments
   supabase_region       = var.supabase_region
 
+  repository_visibility = var.repository_visibility
+
   vercel_team_id = var.vercel_team_id
   fly_org_slug   = var.fly_org_slug
   fly_api_token  = var.fly_api_token
