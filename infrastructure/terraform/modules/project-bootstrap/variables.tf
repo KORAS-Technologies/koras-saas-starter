@@ -138,3 +138,20 @@ variable "environment_branches" {
     prod = "main"
   }
 }
+
+variable "zitadel_role_grants" {
+  type    = map(map(list(string)))
+  default = {}
+
+  description = <<-EOT
+    Environment -> email address -> the roles that person holds there.
+
+    Per environment on purpose. Access to dev is not access to prod, and a
+    single list applied everywhere is how someone ends up holding production
+    authority because they needed to debug staging.
+
+    An environment absent from this map grants nobody, which leaves it
+    unreachable: project_role_check refuses a token to a user with no role.
+    That is the correct default for an estate nobody has decided about yet.
+  EOT
+}

@@ -24,6 +24,11 @@ import { join } from 'node:path'
 
 const PROFILES = join(__dirname, '..', '..', '..', 'profiles')
 
+// Deliberately absent: infrastructure/terraform/terraform.tfvars.hbs. Its
+// commented `zitadel_role_grants` example names the owner role of the profile
+// it belongs to -- organization_owner for a product, platform_super_admin for
+// the Control Plane -- and an example naming a role the project does not define
+// is worse than none, because it is the line someone uncomments.
 const SHARED = [
   '.gitattributes',
   '.github/workflows/ci.yml',
@@ -42,7 +47,6 @@ const SHARED = [
   'eslint.config.mjs',
   'infrastructure/terraform/backend.tf.hbs',
   'infrastructure/terraform/providers.tf.hbs',
-  'infrastructure/terraform/terraform.tfvars.hbs',
   'local/certs/.gitignore',
   'local/observability/loki.yml',
   'local/observability/otel-collector.yml',
@@ -155,6 +159,6 @@ describe('the two profiles do not drift apart', () => {
   it('covers the files that are actually shared', () => {
     // Guards the guard. If the list were emptied or truncated, every assertion
     // above would still pass while checking nothing.
-    expect(SHARED.length).toBeGreaterThanOrEqual(112)
+    expect(SHARED.length).toBeGreaterThanOrEqual(111)
   })
 })

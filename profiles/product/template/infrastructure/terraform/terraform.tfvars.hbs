@@ -43,3 +43,20 @@ fly_regions = {
 {{#each environments}}  {{pad this 4}} = "{{../flyRegion}}"
 {{/each}}
 }
+
+# Who can sign in to each environment.
+#
+# `project_role_check` refuses a token to a user holding no role on the ZITADEL
+# project, so an environment named nowhere here has nobody who can reach it --
+# the refusal arrives as ProjectRequired, before the application is involved.
+#
+# Bootstrap access only: the few people who must be able to open a new
+# environment. Everything after that belongs in the application's own
+# administration rather than in a provisioning tool.
+#
+# Declarative both ways. Removing someone revokes them on the next apply.
+zitadel_role_grants = {
+  # dev = {
+  #   "someone@example.com" = ["organization_owner"]
+  # }
+}

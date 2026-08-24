@@ -135,3 +135,56 @@ resource "zitadel_application_oidc" "web" {
     ignore_changes = [org_id]
   }
 }
+
+# ── Who can actually sign in ────────────────────────────────────────────────
+#
+# Roles were defined above and granted to nobody, so a freshly provisioned
+# estate had no one who could reach it: `project_role_check` refuses a token to
+# any user holding no role on the project, and the refusal surfaces as
+# ProjectRequired before the application is involved. The comment on
+# `project_roles` records the same failure reaching the Control Plane's portal.
+
+data "zitadel_human_users" "granted" {
+  for_each = var.role_grants
+
+  org_id       = zitadel_project.this.org_id
+  email        = each.key
+  email_method = "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE"
+}
+
+resource "zitadel_user_grant" "roles" {
+  for_each = var.role_grants
+
+  org_id     = zitadel_project.this.org_id
+  project_id = zitadel_project.this.id
+  user_id    = one(data.zitadel_human_users.granted[each.key].user_ids)
+  role_keys  = each.value
+
+  lifecycle {
+    precondition {
+      # `one()` returns null for an empty set, and a null user_id is accepted
+      # by the API as a grant that matches nobody -- so the apply would succeed
+      # and the person still could not sign in. Named here instead, while
+      # someone is looking at the plan.
+      condition = length(data.zitadel_human_users.granted[each.key].user_ids) == 1
+      error_message = format(
+        "%s matches %d users in this instance, not 1. A grant needs exactly one: create the user in %s first, or disambiguate the address.",
+        each.key,
+        length(data.zitadel_human_users.granted[each.key].user_ids),
+        var.environment,
+      )
+    }
+
+    precondition {
+      # A role key the project does not define is accepted by ZITADEL and never
+      # appears in anyone's token -- the same shape as the org_id note above.
+      condition = length(setsubtract(each.value, local.project_roles)) == 0
+      error_message = format(
+        "%s would be granted roles this project does not define: %s. Defined: %s.",
+        each.key,
+        join(", ", setsubtract(each.value, local.project_roles)),
+        join(", ", local.project_roles),
+      )
+    }
+  }
+}

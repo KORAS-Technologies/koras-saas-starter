@@ -95,6 +95,7 @@ module "zitadel_dev" {
   environment               = "dev"
   redirect_uris             = local.redirect_uris["dev"]
   post_logout_redirect_uris = local.post_logout_redirect_uris["dev"]
+  role_grants               = lookup(var.zitadel_role_grants, "dev", {})
 
   # No depends_on. `local.redirect_uris` already reads `module.vercel.domains`,
   # so the dependency is expressed by the value and applies to exactly the
@@ -117,6 +118,7 @@ module "zitadel_test" {
   environment               = "test"
   redirect_uris             = local.redirect_uris["test"]
   post_logout_redirect_uris = local.post_logout_redirect_uris["test"]
+  role_grants               = lookup(var.zitadel_role_grants, "test", {})
 }
 
 module "zitadel_stg" {
@@ -128,6 +130,7 @@ module "zitadel_stg" {
   environment               = "stg"
   redirect_uris             = local.redirect_uris["stg"]
   post_logout_redirect_uris = local.post_logout_redirect_uris["stg"]
+  role_grants               = lookup(var.zitadel_role_grants, "stg", {})
 }
 
 module "zitadel_prod" {
@@ -139,6 +142,7 @@ module "zitadel_prod" {
   environment               = "prod"
   redirect_uris             = local.redirect_uris["prod"]
   post_logout_redirect_uris = local.post_logout_redirect_uris["prod"]
+  role_grants               = lookup(var.zitadel_role_grants, "prod", {})
 }
 
 module "vercel" {

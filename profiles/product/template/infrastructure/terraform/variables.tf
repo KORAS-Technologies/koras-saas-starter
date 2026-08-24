@@ -112,3 +112,21 @@ variable "enable_waf" {
   type    = bool
   default = false
 }
+
+variable "zitadel_role_grants" {
+  type    = map(map(list(string)))
+  default = {}
+
+  description = <<-EOT
+    Environment -> email address -> the roles that person holds there.
+
+    Bootstrap access. `project_role_check` refuses a token to a user holding no
+    role on the project, so an environment named nowhere here has nobody who
+    can sign in to it -- which is the right default until someone decides who
+    should.
+
+    Emails and role names, so this belongs in terraform.tfvars rather than in
+    Doppler: neither is a secret, and a reviewer should be able to see who is
+    being granted what without decrypting anything.
+  EOT
+}
