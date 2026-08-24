@@ -53,9 +53,35 @@ resource "github_branch_protection" "protections" {
     }
   }
 
-  required_status_checks {
-    strict   = each.value.require_pr
-    contexts = ["CI / Lint & Typecheck", "CI / Build"]
+  # Only on the branches that gate through a pull request.
+  #
+  # A required status check cannot be satisfied by a direct push: the checks run
+  # against a commit that does not exist on the server until the push completes,
+  # so GitHub reports them as `expected` and refuses. `develop` permits direct
+  # pushes by design -- ENVIRONMENT_STRATEGY calls it fast feedback that may be
+  # broken -- so requiring checks there made every push to it a bypass, recorded
+  # as a rule violation and waved through because the pusher was an admin.
+  #
+  # A protection that is bypassed on every use is not a protection. It is a line
+  # in an audit log that everyone learns to scroll past, and it was hiding the
+  # fact that test, staging and main are gated properly.
+  dynamic "required_status_checks" {
+    for_each = each.value.require_pr ? [1] : []
+    content {
+      strict = true
+
+      # Every job the generated CI defines, named as GitHub reports a check:
+      # "<workflow name> / <job name>". Requiring only lint and build let a pull
+      # request with failing tests, or a secret in its history, merge to main --
+      # the two checks most worth blocking on were the two not required.
+      contexts = [
+        "CI / Secret scan",
+        "CI / Lint & Typecheck",
+        "CI / Test (Node)",
+        "CI / Test (Python)",
+        "CI / Build",
+      ]
+    }
   }
 
   depends_on = [github_branch.branches]
