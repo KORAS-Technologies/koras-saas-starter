@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "skills": {
+    "frontend-design": {
+      "repo": "https://github.com/anthropics/skills",
+      "path": "skills/frontend-design",
+      "ref": "main",
+      "commit": "3b3fad96af16a10759d930941b4520ba0c40edae",
+      "vendor": "anthropic"
+    },
+    "webapp-testing": {
+      "repo": "https://github.com/anthropics/skills",
+      "path": "skills/webapp-testing",
+      "ref": "main",
+      "commit": "3b3fad96af16a10759d930941b4520ba0c40edae",
+      "vendor": "anthropic"
+    },
+    "react-best-practices": {
+      "repo": "https://github.com/vercel-labs/agent-skills",
+      "path": "skills/react-best-practices",
+      "ref": "main",
+      "commit": "dd089a8c752c966dee8bf0f27cb625ba193ffd9e",
+      "vendor": "vercel"
+    },
+    "web-design-guidelines": {
+      "repo": "https://github.com/vercel-labs/agent-skills",
+      "path": "skills/web-design-guidelines",
+      "ref": "main",
+      "commit": "dd089a8c752c966dee8bf0f27cb625ba193ffd9e",
+      "vendor": "vercel"
+    }
+  }
+}

@@ -58,6 +58,54 @@ make health      # verify all services
 - Entitlement authority — feature gate decisions
 - Infrastructure registry — track all provisioned resources
 
+## Claude Code configuration
+
+This repository's Claude Code configuration lives in `.claude/` and arrived with
+generation. Do not hand-edit it — it is single-sourced in `koras-saas-starter`
+and re-copied by `create-koras-app --refresh-modules`. Fix a skill there.
+
+| Path | What it is |
+|------|-----------|
+| `.claude/CLAUDE.md` | Shared Koras engineering instructions |
+| `.claude/skills/koras-*/` | The twelve common Koras skills |
+| `.claude/skills/koras-profile-control-plane/` | This repository's profile skill |
+| `.claude/commands/` | `/feature`, `/review`, `/test`, `/ui-review` |
+| `.claude/agents/` | `architect`, `frontend`, `reviewer`, `tester` |
+| `.claude/external-skills.yaml` | Pinned external skills, locked in `.claude/external-skills.lock.json` |
+
+### Before implementing anything
+
+1. Read `.koras/project.yaml`. It is the authoritative record of which profile
+   this repository is — `{{profile}}` — and takes precedence over the directory
+   name, the git remote, or an inference from the code.
+2. Load `.claude/CLAUDE.md` for the shared rules.
+3. Load `koras-profile-control-plane` for the rules specific to this profile. Where it is
+   narrower than the shared rules, it wins.
+4. Search this repository before creating anything. Reuse the existing
+   component, hook, client, schema, service or pattern.
+
+### Routing
+
+| Working on | Load |
+|------------|------|
+| Where new code belongs | `koras-architecture` |
+| A new feature end to end | `koras-feature-development`, or `/feature` |
+| UI | `koras-ui-design-system`, `frontend-design`, `web-design-guidelines` |
+| React / Next.js | `react-best-practices` |
+| Forms and validation | `koras-forms` |
+| Calling an API | `koras-api-client` |
+| Sessions, roles, permissions | `koras-auth` |
+| Tenant-scoped data | `koras-multitenancy` |
+| Schema, RLS, generated types | `koras-supabase` |
+| A trust boundary | `koras-security` |
+| User-facing UI | `koras-accessibility` |
+| Tests and completeness | `koras-testing` |
+| Browser verification | `webapp-testing`, or `/test` |
+| Reviewing the diff | `koras-code-review`, or `/review` |
+
+The detail lives in the skills. Keep this file to workflow and orchestration
+rather than restating them.
+
 ## Generated from
 
 `koras-saas-starter` — {{profile}} profile template

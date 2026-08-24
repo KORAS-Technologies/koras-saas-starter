@@ -65,3 +65,7 @@ coverage/
 junit.xml
 
 private-keys/
+.tmp/
+
+# Temporary extraction / scratch
+.tmp/

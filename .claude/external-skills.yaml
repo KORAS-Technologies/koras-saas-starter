@@ -1,0 +1,50 @@
+# External Claude Code skills used alongside the Koras skills.
+#
+# These are NOT fetched during project generation. `create-koras-app` copies
+# `.claude/` verbatim, so a generated project receives whatever is vendored
+# under `.claude/skills/` at that moment and needs no network access
+# to obtain its standard Koras configuration.
+#
+# Vendoring is a deliberate, human-run step:
+#
+#     node .claude/scripts/sync-external-skills.mjs            # install missing
+#     node .claude/scripts/sync-external-skills.mjs --update   # re-resolve refs
+#
+# The first sync resolves each `ref` to a commit and records it in
+# `.claude/external-skills.lock.json`. Later syncs use the lock, so the vendored
+# content is reproducible rather than "whatever that branch says today".
+# Committing both this file and the lock is what makes an upgrade a reviewable
+# diff instead of a silent change.
+
+schema_version: 1
+
+install_path: .claude/skills
+
+skills:
+  - name: frontend-design
+    repo: https://github.com/anthropics/skills
+    path: skills/frontend-design
+    ref: main
+    vendor: anthropic
+    role: Visual direction and polished UI creation
+
+  - name: webapp-testing
+    repo: https://github.com/anthropics/skills
+    path: skills/webapp-testing
+    ref: main
+    vendor: anthropic
+    role: Browser-level verification with Playwright
+
+  - name: react-best-practices
+    repo: https://github.com/vercel-labs/agent-skills
+    path: skills/react-best-practices
+    ref: main
+    vendor: vercel
+    role: React/Next.js implementation quality and performance
+
+  - name: web-design-guidelines
+    repo: https://github.com/vercel-labs/agent-skills
+    path: skills/web-design-guidelines
+    ref: main
+    vendor: vercel
+    role: UX, accessibility and interface review

@@ -94,3 +94,13 @@ template_map:
 shared_assets:
   - source: infrastructure/terraform/modules
     target: infrastructure/terraform/modules
+  # The common Claude Code configuration: engineering instructions, the twelve
+  # Koras skills, the vendored external skills, the four commands and the four
+  # agents. Single-sourced here and copied verbatim, exactly like the Terraform
+  # modules, so a skill fixed in the starter is one edit rather than three.
+  #
+  # The profile overlay is NOT here. Each profile's template carries its own
+  # `.claude/skills/koras-profile-<profile>/`, which is how a product never
+  # receives control-plane instructions and vice versa.
+  - source: .claude
+    target: .claude

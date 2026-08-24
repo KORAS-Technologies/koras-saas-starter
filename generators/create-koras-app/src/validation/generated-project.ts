@@ -1,6 +1,10 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  CLAUDE_CONFIG_PATHS,
+  claudeProfileSkillPath,
+} from './claude-config.js'
+import {
   PROJECT_MANIFEST_PATH,
   parseProjectManifest,
   type KorasProjectManifest,
@@ -73,5 +77,33 @@ export function validateGeneratedProject(params: {
     }
   }
 
+  // The Claude configuration is a generation output like any other, and its
+  // absence is silent: a project missing `.claude/` still builds, still
+  // deploys, and only misbehaves later when an agent works in it without the
+  // repository's rules. Cheaper to fail here than to discover it in a diff.
+  const claudeError = missingClaudeConfig(projectRoot, manifest.project.profile)
+  if (claudeError !== undefined) return { valid: false, manifest, error: claudeError }
+
   return { valid: true, manifest }
+}
+
+/**
+ * The common Claude configuration reaches a project as a shared asset and the
+ * profile skill as a template file — two different mechanisms, so both are
+ * checked. The profile skill is checked by name rather than by presence of
+ * *some* skill: a control-plane project carrying the product skill is the
+ * failure this exists to catch.
+ */
+function missingClaudeConfig(projectRoot: string, profile: string): string | undefined {
+  const required = [...CLAUDE_CONFIG_PATHS, claudeProfileSkillPath(profile)]
+  const missing = required.filter((path) => !existsSync(join(projectRoot, path)))
+  if (missing.length === 0) return undefined
+
+  return [
+    'The generated project is missing its Claude Code configuration:',
+    ...missing.map((path) => `  ${path}`),
+    '  The common tree is a shared_asset (`.claude`) declared in ' +
+      `profiles/${profile}/manifest.yaml;`,
+    `  the profile skill is template-owned at profiles/${profile}/template/.claude/skills/.`,
+  ].join('\n')
 }

@@ -32,6 +32,7 @@ All planning and reference documents live in `docs/`, matching
 | `docs/PROVISIONING_RUNBOOK.md`   | Commands, estate prerequisites, failure recovery |
 | `docs/RISK_REGISTER.md`          | Identified risks and mitigations                 |
 | `docs/SYNC_BACKLOG.md`           | Gaps between the factory, the two profiles and the generated repositories |
+| `docs/CLAUDE_CODE.md`            | Claude Code skills, profiles and inheritance      |
 
 ## Repository layout (target state)
 
@@ -87,6 +88,45 @@ This mapping is immutable (ADR required to change).
   wrapper is typed, and an outer one is never nested
 - Generated projects claim no fixed host port — `local/scripts/ports.sh`
   resolves them per machine into `local/.env`
+
+## Claude Code configuration
+
+`.claude/` at the repository root is the **single source of truth** for the
+Claude Code configuration of every KORAS repository — this one and every project
+generated from it.
+
+```
+.claude/
+  CLAUDE.md                     Shared Koras engineering instructions
+  commands/                     /feature, /review, /test, /ui-review
+  agents/                       architect, frontend, reviewer, tester
+  skills/koras-*/               The twelve common Koras skills
+  skills/frontend-design/          skills/webapp-testing/          } Vendored external skills, pinned in
+  skills/react-best-practices/    } .claude/external-skills.yaml and locked in
+  skills/web-design-guidelines/  /  .claude/external-skills.lock.json
+  scripts/sync-external-skills.mjs
+  external-skills.yaml
+  external-skills.lock.json
+```
+
+Both profile manifests declare `.claude` as a `shared_asset`, so
+`create-koras-app` copies this tree verbatim into every generated project. On
+top of it each profile template carries exactly one overlay skill:
+
+| Profile | Overlay, at `profiles/<profile>/template/.claude/skills/` |
+|---------|----------------------------------------------------------|
+| `product` | `koras-profile-product/` |
+| `control-plane` | `koras-profile-control-plane/` |
+
+Common configuration plus one profile overlay — never two duplicate trees. A
+generated project identifies its own profile from `.koras/project.yaml`.
+
+This starter is the factory, not a generated project: it carries the common
+configuration and no overlay. Profile rules are *authored* here, not applied
+here.
+
+See `docs/CLAUDE_CODE.md` for how to add a skill, add a profile, upgrade the
+external skills, and bring an existing project back into alignment.
 
 ## Current phase
 

@@ -17,7 +17,9 @@ export interface RefreshResult {
  * Re-copies the manifest's shared asset directories into a project that already
  * exists on disk.
  *
- * A generated project owns a private copy of `infrastructure/terraform/modules`,
+ * The declared assets are the Terraform modules and the common Claude Code
+ * configuration in `.claude`. A generated project owns a private copy of
+ * `infrastructure/terraform/modules`,
  * which is what makes `--provision-only` reproducible: the plan reflects the
  * code in the project, not whatever the starter happens to contain today. The
  * cost is that a module fixed in the starter never reaches a project generated
@@ -65,13 +67,13 @@ export function refreshSharedAssets(
 
 export function formatRefreshResult(result: RefreshResult): string {
   if (result.changed.length === 0) {
-    return `\nShared modules are already up to date (${result.unchanged} files).`
+    return `\nShared files are already up to date (${result.unchanged} files).`
   }
 
   const verb = result.written ? 'Refreshed' : 'Would refresh'
   const lines = [
     '',
-    `${verb} ${result.changed.length} shared module file(s); ${result.unchanged} already current:`,
+    `${verb} ${result.changed.length} shared file(s); ${result.unchanged} already current:`,
     ...result.changed.map((path) => `  ${path}`),
   ]
   if (!result.written) lines.push('', '--dry-run: nothing was written.')
