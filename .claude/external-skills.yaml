@@ -15,6 +15,13 @@
 # content is reproducible rather than "whatever that branch says today".
 # Committing both this file and the lock is what makes an upgrade a reviewable
 # diff instead of a silent change.
+#
+# `ref: main` rather than a release tag is deliberate, not an oversight.
+# Checked 2026-08-24: anthropics/skills publishes no tags at all, and
+# vercel-labs/agent-skills publishes exactly one, whose name is the commit
+# hash. There is no reviewed release to point at, so the lock file is the
+# pinning mechanism -- `main` says where to look for an upgrade, the lock says
+# what is actually installed, and only `--update` moves it.
 
 schema_version: 1
 

@@ -138,7 +138,7 @@ external skills, and bring an existing project back into alignment.
 | Phase                                  | State              | Note                                     |
 |----------------------------------------|--------------------|------------------------------------------|
 | 10 — Control Plane Registration Client | Not started        | `src/registration/` and `--skip-registration` do not exist |
-| 11 — CI/CD                             | Work complete      | Both halves done; `generator-integration.yml` builds what it generates. Closes only when its exit criterion stops naming `main` |
+| 11 — CI/CD                             | Work complete, unverifiable | Both halves done; `generator-integration.yml` builds what it generates. Criterion now on `develop`, but the workflows have never executed |
 | 12 — Security                          | Partially complete | Secret scanning, Dependabot and the state-artifact check done; RLS suite, JWT tests and the OWASP checklist missing |
 | 13 — End-to-End Acceptance Tests       | Not started        | Blocked on Phase 10                      |
 
@@ -147,12 +147,17 @@ remaining phase with no work started, and Phase 13 is blocked behind it.
 `--skip-registration` matters beyond that phase: R-001's mitigation in
 `docs/RISK_REGISTER.md` is written as though the flag exists.
 
-Two caveats when reading the roadmap:
+Caveats when reading the roadmap:
 
-- Phases 11 and 12 define their exit criteria on `main`, which is 85 commits
-  behind `develop` as of 2026-08-23 and last received a commit on 2026-08-17.
-  Neither phase can close until that is resolved — by promotion, or by moving
-  the criterion to `develop`.
+- Phases 11 and 12 now define their exit criteria on `develop` (decided
+  2026-08-24). `main` was 85 commits behind and last received a commit on
+  2026-08-17, so a criterion defined there could not close on work already
+  done. Promotion to `main` is a release step, not a definition of done.
+- Neither phase can close yet regardless, for a different reason: **the CI,
+  Generator Integration and Security workflows have zero recorded runs.** They
+  are registered and active, repository-level Actions is enabled, and pushes to
+  `develop` have not produced a single run. Until that is resolved, every
+  CI-based exit criterion in this roadmap is unmeasurable rather than unmet.
 - The roadmap does not cover R-020 through R-027 or the OIDC sign-in work.
   Roughly twenty commits of deployment and authentication work sit outside the
   phase structure, recorded only in `docs/RISK_REGISTER.md`. Nothing in the plan has

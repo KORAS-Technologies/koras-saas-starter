@@ -839,10 +839,11 @@ profiles failed to typecheck their Python, the product's auth routes read a
 Control Plane setting name, and `services/api` imported pydantic without
 declaring it.
 
-**Blocked on a decision, not on work:** the exit criterion below is defined on
-`main`, which is 85 commits behind `develop` as of 2026-08-23 and last received
-a commit on 2026-08-17. Either the promotion is scheduled or the criterion moves
-to `develop`.
+**Decision taken 2026-08-24: the exit criterion is `develop`, not `main`.**
+`main` was 85 commits behind `develop` and last received a commit on
+2026-08-17, so a criterion defined there could not close on work that was
+already done. `develop` is where the work lands and where CI runs; promotion to
+`main` is a release step, not a definition of done.
 
 **Scope:** GitHub Actions workflows for the starter and for generated projects.
 
@@ -868,8 +869,13 @@ profiles/control-plane/template/.github/workflows/
   deploy-prod.yml
 ```
 
-**Done when:** All starter CI workflows pass on `main`. Generated project
+**Done when:** All starter CI workflows pass on `develop`. Generated project
 workflows pass lint check.
+
+Note that "pass" requires them to have *run*. As of 2026-08-24 the CI,
+Generator Integration and Security workflows have zero recorded runs, so this
+criterion is not merely unmet -- it is currently unmeasurable. See the CI
+execution note in `docs/RISK_REGISTER.md`.
 
 ---
 
@@ -903,7 +909,7 @@ starter's own.
 - RLS policy test suite (`supabase/tests/`)
 - ZITADEL JWT validation unit tests
 
-**Done when:** Zero critical/high findings in automated scans on `main`.
+**Done when:** Zero critical/high findings in automated scans on `develop`.
 
 ---
 

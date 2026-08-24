@@ -803,3 +803,46 @@ receive its roles, and the reason was invisible -- the plan simply omitted them.
 
 *Resolution* — the explicit `depends_on` is gone. The implicit
 dependency is real, narrower, and already correct.
+
+## R-030 — every CI gate in the roadmap has never run
+
+**Found:** 2026-08-24, while checking whether the newly-working `pnpm lint`
+turned the CI job green.
+
+It could not have. The **CI**, **Generator Integration** and **Security**
+workflows have `total_count: 0` recorded runs each. Not failing runs — none at
+all, across 85+ commits on `develop`, with all three registered and `active`
+and repository-level Actions reporting `{"enabled": true, "allowed_actions":
+"all"}`.
+
+**Why this matters more than a red build.** A failing job is visible and gets
+fixed. A job that never runs looks identical to a job that has nothing to say,
+and every process built on top of it inherits a confidence it never earned:
+
+- Phase 11's exit criterion is "all starter CI workflows pass". Zero runs pass
+  vacuously if read carelessly and cannot be evaluated if read carefully.
+- Phase 12's is "zero critical/high findings in automated scans". No scan has
+  executed, so the finding count is zero for the wrong reason.
+- Branch protection that requires a check GitHub never reports either blocks
+  every merge or, if the check is not marked required, waves everything
+  through. `befa163` ("Require the checks GitHub actually reports") suggests
+  this was already met from the other direction.
+
+**Compounding it:** until 2026-08-24 the lint script could not have succeeded
+anywhere. `eslint` was named in two packages' `"lint"` scripts but was not a
+dependency of any workspace package and no config existed, so `pnpm lint`
+failed on a clean checkout. That is fixed; it was necessary and nowhere near
+sufficient.
+
+**Not diagnosable from here.** Repository-level Actions is enabled, so the
+cause is above the repository: an organization-level Actions policy, or Actions
+minutes/billing for private repositories on the current plan. Reading
+`orgs/KORAS-Technologies/actions/permissions` needs `admin:org`, which this
+account does not hold.
+
+**Mitigation:** an org admin confirms whether Actions is disabled or unbilled
+at the organization level, then pushes a trivial commit to `develop` and
+confirms a run appears. Until a run is observed, treat every CI-based exit
+criterion in `docs/IMPLEMENTATION_ROADMAP.md` as **unmeasurable rather than
+unmet**, and do not mark Phase 11 or Phase 12 closed on the strength of a green
+local run.

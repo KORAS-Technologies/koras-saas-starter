@@ -81,8 +81,20 @@ and re-copied by `create-koras-app --refresh-modules`. Fix a skill there.
 2. Load `.claude/CLAUDE.md` for the shared rules.
 3. Load `koras-profile-control-plane` for the rules specific to this profile. Where it is
    narrower than the shared rules, it wins.
-4. Search this repository before creating anything. Reuse the existing
+4. Read `docs/AGENT_CONTEXT.md` if it exists. It holds rules this
+   repository wrote for itself, and it outranks the shared ones.
+5. Search this repository before creating anything. Reuse the existing
    component, hook, client, schema, service or pattern.
+
+### Project-specific rules
+
+Everything in `.claude/` and this file is generator-owned and will be
+overwritten by `create-koras-app --refresh`. Rules this repository writes for
+itself belong in `docs/AGENT_CONTEXT.md`, which the generator never writes and
+never overwrites.
+
+Read it if it exists. Where it contradicts the shared rules, it wins -- it is
+the narrower, more local statement of how this specific repository works.
 
 ### Routing
 

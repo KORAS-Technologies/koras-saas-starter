@@ -257,15 +257,53 @@ pnpm create-koras-app <slug> --profile <profile> \
 ```
 
 Naming a path explicitly is the operator saying "this file is the generator's".
-`CLAUDE.md` in particular is often edited in a live project — run
-`--check-drift --all` first, and merge rather than overwrite if it has diverged.
+Run `--check-drift --all` first and read what it says about each path: a
+project that is *ahead* of the template on a file loses that work when you
+refresh it. Anything the project genuinely owns belongs in
+`docs/AGENT_CONTEXT.md` or in the template, not in a file you keep re-merging.
 
-## Known limitation
+## Project-specific rules: `docs/AGENT_CONTEXT.md`
 
-`generator.template_digest` in `.koras/project.yaml` is a digest of
-`profiles/<profile>/` only. It moves when a profile overlay changes and does
-**not** move when the common `.claude/` tree changes — the same gap that already
-applies to the shared Terraform modules. A project can therefore be behind on a
-common skill while its digest still matches. Until that is addressed, use
-`--refresh-modules --dry-run` rather than the digest to answer "is this
-project's Claude configuration current?".
+Everything in `.claude/` and the root `CLAUDE.md` is generator-owned and gets
+overwritten by `--refresh`. A project that needs rules of its own writes them in
+`docs/AGENT_CONTEXT.md`, which the generator never writes and never touches.
+Both profile templates instruct Claude to read it and to treat it as outranking
+the shared rules, since it is the narrower statement.
+
+This exists because `koras-control-plane` had grown three sections inside its
+`CLAUDE.md` — architecture pointers, ten invariants, and known issues. That
+made the file permanently drifted from its template *and* put ten invariants one
+`--refresh CLAUDE.md` away from silent deletion. Moving them out fixed both: its
+`CLAUDE.md` now reports "already current", and the invariants live somewhere the
+generator cannot reach.
+
+If you find yourself wanting to edit a generated `CLAUDE.md`, that is the signal
+to write in `docs/AGENT_CONTEXT.md` instead.
+
+## What the template digest does and does not cover
+
+`generator.template_digest` in `.koras/project.yaml` covers **both** halves of
+what a project receives: the profile tree at `profiles/<profile>/`, and every
+directory the profile declares as a `shared_asset` — so `.claude/` and
+`infrastructure/terraform/modules` are included. Change any Koras skill, any
+command, any agent or any Terraform module and the digest moves.
+
+Two properties it took two fixes to get right, both worth not regressing:
+
+- **Line endings are normalised before hashing.** `.gitattributes` sets
+  `* text=auto`, so template files are LF in git's object store and CRLF in a
+  Windows working tree. Without normalisation the same tree hashed differently
+  in CI and on Windows, and a digest written before a merge stopped matching
+  after it.
+- **The digest skips exactly what the copier skips**, via a shared
+  `SKIP_ENTRIES`. Hashing `infrastructure/terraform/modules` naively picks up
+  whatever `.terraform` provider cache a local `terraform` run left behind,
+  which would make the digest machine-dependent and report every project as
+  stale.
+
+It is deliberately *not* a digest of rendered output: that varies with the
+project name, so two projects generated from one definition would disagree.
+
+To answer "is this project current?", compare its recorded digest with
+`resolveTemplateDigest(profile)`, or run `--refresh-modules --dry-run` for the
+file-level answer.
