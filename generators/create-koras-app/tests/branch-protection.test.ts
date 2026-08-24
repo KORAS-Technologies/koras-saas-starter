@@ -5,9 +5,18 @@ import { join } from 'node:path'
 /**
  * Branch protection asks for checks the CI actually produces.
  *
- * GitHub names a check `<workflow name> / <job name>`. Nothing connects the
- * module's `contexts` list to the workflow the templates ship, so renaming a job
- * -- or renaming the workflow -- leaves a required check that can never report.
+ * GitHub names a check after the job alone. The `<workflow> / <job>` form is
+ * real but belongs to called workflows -- deploy.yml is invoked by
+ * deploy-dev.yml, and its jobs do arrive as `deploy / Migrate (dev)`. A
+ * workflow's own jobs do not carry the prefix.
+ *
+ * This file asserted the prefixed form on both sides, so the module and the test
+ * agreed with each other and neither agreed with GitHub. Every context sat in
+ * Expected, and the first pull request that needed them -- the promotion of
+ * sample-product to test -- could not merge with all five checks green.
+ *
+ * Nothing connects the module's `contexts` list to the workflow the templates
+ * ship, so renaming a job leaves a required check that can never report.
  * A branch protected by a check nothing produces does not fail loudly: pull
  * requests simply stop being mergeable, and the reason is a string mismatch
  * nobody is looking at.
@@ -33,11 +42,11 @@ function read(...parts: string[]): string {
 
 function workflowContexts(profile: string): string[] {
   const source = read('profiles', profile, 'template', '.github', 'workflows', 'ci.yml')
-  const workflow = /^name:\s*(.+)$/m.exec(source)?.[1]?.trim()
   const jobs = [...source.matchAll(/^ {2}[a-z0-9-]+:\n {4}name:\s*(.+)$/gm)].map((m) =>
     m[1].trim(),
   )
-  return jobs.map((job) => `${workflow} / ${job}`).sort()
+  // Named as GitHub reports it: the job name, with no workflow prefix.
+  return jobs.sort()
 }
 
 function requiredContexts(): string[] {

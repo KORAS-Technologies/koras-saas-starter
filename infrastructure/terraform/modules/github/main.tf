@@ -80,16 +80,28 @@ resource "github_branch_protection" "protections" {
     content {
       strict = true
 
-      # Every job the generated CI defines, named as GitHub reports a check:
-      # "<workflow name> / <job name>". Requiring only lint and build let a pull
-      # request with failing tests, or a secret in its history, merge to main --
-      # the two checks most worth blocking on were the two not required.
+      # Every job the generated CI defines, named the way GitHub actually
+      # reports it: the job name alone.
+      #
+      # These read "CI / Secret scan" before, on the belief that a check is
+      # reported as "<workflow> / <job>". That form is real but belongs to
+      # called workflows -- deploy.yml is invoked by deploy-dev.yml and its jobs
+      # do arrive as "deploy / Migrate (dev)". A workflow's own jobs do not
+      # carry the prefix, so all five contexts sat in Expected forever and no
+      # pull request to test, staging or main could merge, while every check on
+      # it was green. A required check that cannot be reported is indistinguish-
+      # able from one that has not finished, which is why this survived: the
+      # branch looked strict rather than broken.
+      #
+      # Requiring only lint and build let a pull request with failing tests, or
+      # a secret in its history, merge to main -- the two checks most worth
+      # blocking on were the two not required.
       contexts = [
-        "CI / Secret scan",
-        "CI / Lint & Typecheck",
-        "CI / Test (Node)",
-        "CI / Test (Python)",
-        "CI / Build",
+        "Secret scan",
+        "Lint & Typecheck",
+        "Test (Node)",
+        "Test (Python)",
+        "Build",
       ]
     }
   }
