@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join, dirname, relative, sep } from 'node:path'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -6,6 +6,8 @@ import yaml from 'js-yaml'
 import { z } from 'zod'
 import type { GenerationContext } from './context.js'
 import { listProfiles, isValidProfile } from '../profiles/loader.js'
+import { isForbiddenArtifact } from '../git.js'
+import { SKIP_ENTRIES } from './skip.js'
 
 /**
  * The KORAS project manifest — `.koras/project.yaml`.
@@ -130,19 +132,6 @@ export const KorasProjectManifestSchema = z.object({
 
 // ── Version resolution ──────────────────────────────────────────────────────
 
-/**
- * A digest of everything that defines a profile.
- *
- * Paths are sorted and included in the hash alongside the bytes, so renaming a
- * file changes the digest even when its contents do not — a rename is a change
- * to what gets generated.
- *
- * Deliberately not a digest of the rendered output: that varies with the
- * project name, so two projects generated from one definition would disagree
- * and the field would answer a different question than the one asked of it.
- */
-// A space is a legal filename character and a NUL is not, so only NUL is an
-// unambiguous delimiter here.
 // A space is a legal filename character and a NUL is not, so only NUL is an
 // unambiguous delimiter between a path and the bytes that follow it.
 const NUL = Buffer.from([0])
@@ -170,25 +159,104 @@ export function normalizeForDigest(content: Buffer): Buffer {
     : content
 }
 
-export function resolveTemplateDigest(profile: string): string {
-  const root = join(STARTER_ROOT, 'profiles', profile)
-  const files: string[] = []
+/**
+ * Every file that defines what a project of this profile receives, as
+ * (namespaced path, content) pairs in a stable order.
+ *
+ * Two sources, because generation has two: the profile's own tree, and the
+ * directories its manifest declares as `shared_assets`. Namespacing keeps them
+ * from colliding -- `.claude/CLAUDE.md` as a shared asset and a hypothetical
+ * `profiles/product/.claude/CLAUDE.md` are different inputs and must hash
+ * differently.
+ *
+ * Skips exactly what the engine skips. A digest that hashed a local `.terraform`
+ * provider cache would differ on every machine and report every project as
+ * stale, which is why SKIP_ENTRIES is shared rather than restated.
+ */
+function digestInputs(profile: string): Array<[string, string]> {
+  const inputs: Array<[string, string]> = []
 
-  const walk = (directory: string): void => {
-    for (const entry of readdirSync(directory).sort()) {
-      const full = join(directory, entry)
-      if (statSync(full).isDirectory()) walk(full)
-      else files.push(full)
+  const collect = (root: string, namespace: string): void => {
+    const walk = (directory: string): void => {
+      for (const entry of readdirSync(directory).sort()) {
+        if (SKIP_ENTRIES.has(entry)) continue
+        const full = join(directory, entry)
+        if (statSync(full).isDirectory()) {
+          walk(full)
+          continue
+        }
+        // A plan or state file left in a source tree is never copied into a
+        // project, so it must not be part of the digest either.
+        if (isForbiddenArtifact(entry)) continue
+        // Separators are normalised so a digest computed on Windows matches one
+        // computed in CI. Without it every project would read as stale to half
+        // the people who checked it.
+        inputs.push([namespace + relative(root, full).split(sep).join('/'), full])
+      }
     }
+    walk(root)
   }
-  walk(root)
 
+  collect(join(STARTER_ROOT, 'profiles', profile), '')
+
+  // Read straight from the manifest rather than through loadProfile, which
+  // would make this depend on the profile validator and on defaults resolution
+  // for one array of paths.
+  for (const asset of profileSharedAssets(profile)) {
+    const source = join(STARTER_ROOT, asset.source)
+    // A declared asset that does not exist fails generation loudly in
+    // collectSharedAssets. Here it is simply nothing to hash -- throwing would
+    // make `--check-drift` unusable on a starter mid-edit.
+    if (!existsSync(source)) continue
+    collect(source, `shared:${asset.source}/`)
+  }
+
+  return inputs
+}
+
+/**
+ * The `shared_assets` a profile declares, read from its manifest.
+ *
+ * Deliberately tolerant: a malformed or missing manifest is a failure the
+ * profile loader reports far better than a digest ever could, and a digest that
+ * threw here would take `--check-drift` down with it.
+ */
+function profileSharedAssets(profile: string): Array<{ source: string }> {
+  const manifestPath = join(STARTER_ROOT, 'profiles', profile, 'manifest.yaml')
+  try {
+    const raw = yaml.load(readFileSync(manifestPath, 'utf8')) as {
+      shared_assets?: Array<{ source?: unknown }>
+    }
+    return (raw?.shared_assets ?? [])
+      .filter((a): a is { source: string } => typeof a?.source === 'string')
+  } catch {
+    return []
+  }
+}
+
+/**
+ * A digest of everything that defines what this profile generates.
+ *
+ * Covers the profile tree AND the shared assets it declares. The shared half
+ * matters more than it looks: `.claude` and `infrastructure/terraform/modules`
+ * both reach a project that way, so while the digest covered only
+ * `profiles/<profile>/` a repository could be arbitrarily far behind on every
+ * Koras skill and every Terraform module with its digest still matching
+ * exactly. A staleness signal blind to half of what it distributes is worse
+ * than none, because tooling trusts it.
+ *
+ * Paths are sorted and included in the hash alongside the bytes, so renaming a
+ * file changes the digest even when its contents do not -- a rename is a change
+ * to what gets generated.
+ *
+ * Deliberately not a digest of the rendered output: that varies with the
+ * project name, so two projects generated from one definition would disagree
+ * and the field would answer a different question than the one asked of it.
+ */
+export function resolveTemplateDigest(profile: string): string {
   const hash = createHash('sha256')
-  for (const file of files.sort()) {
-    // Separators are normalised so a digest computed on Windows matches one
-    // computed in CI. Without it every project would read as stale to half the
-    // people who checked it.
-    hash.update(relative(root, file).split(sep).join('/'))
+  for (const [path, file] of digestInputs(profile).sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+    hash.update(path)
     hash.update(NUL)
     hash.update(normalizeForDigest(readFileSync(file)))
     hash.update(NUL)

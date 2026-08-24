@@ -1,8 +1,9 @@
 import { describe, it, expect, afterAll } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { rmSync, existsSync, readFileSync } from 'node:fs'
+import { rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
+import { SKIP_ENTRIES } from '../src/generation/skip.js'
 import {
   normalizeForDigest,
   resolveTemplateDigest,
@@ -237,5 +238,75 @@ describe('the template digest describes content, not the checkout', () => {
     for (const [profile, gen] of CASES) {
       expect(gen.read('.koras/project.yaml')).toContain(resolveTemplateDigest(profile))
     }
+  })
+})
+
+describe('the template digest covers what a project actually receives', () => {
+  // The hole this closes: `.claude` and infrastructure/terraform/modules both
+  // reach a project as shared assets, and while the digest hashed only
+  // profiles/<profile>/ a repository could be arbitrarily far behind on every
+  // Koras skill and every Terraform module with its digest matching exactly.
+  const STARTER = join(process.cwd(), '../..')
+
+  function withTempFile<T>(relPath: string, body: () => T): T {
+    const target = join(STARTER, relPath)
+    expect(existsSync(target)).toBe(false)
+    writeFileSync(target, 'temporary probe\n', 'utf8')
+    try {
+      return body()
+    } finally {
+      rmSync(target, { force: true })
+    }
+  }
+
+  it('changes when a common Koras skill changes', () => {
+    const before = resolveTemplateDigest('product')
+    const after = withTempFile('.claude/skills/koras-architecture/PROBE.md', () =>
+      resolveTemplateDigest('product'),
+    )
+    expect(after).not.toBe(before)
+    expect(resolveTemplateDigest('product')).toBe(before)
+  })
+
+  it('changes when a shared Terraform module changes', () => {
+    const before = resolveTemplateDigest('control-plane')
+    const after = withTempFile('infrastructure/terraform/modules/PROBE.tf', () =>
+      resolveTemplateDigest('control-plane'),
+    )
+    expect(after).not.toBe(before)
+  })
+
+  it('still changes when the profile tree changes', () => {
+    const before = resolveTemplateDigest('product')
+    const after = withTempFile('profiles/product/template/PROBE.txt', () =>
+      resolveTemplateDigest('product'),
+    )
+    expect(after).not.toBe(before)
+  })
+
+  it('gives the two profiles different digests', () => {
+    // They share every shared asset, so an implementation that hashed only
+    // those would collapse them into one value.
+    expect(resolveTemplateDigest('product')).not.toBe(resolveTemplateDigest('control-plane'))
+  })
+
+  it('is stable across repeated computation', () => {
+    expect(resolveTemplateDigest('product')).toBe(resolveTemplateDigest('product'))
+  })
+
+  it('shares its skip rules with the engine, rather than restating them', () => {
+    // A digest that hashed a local .terraform provider cache would differ on
+    // every machine and report every project as stale. That is guaranteed
+    // structurally: the digest walks with the same SKIP_ENTRIES the engine
+    // copies with, so the two cannot disagree about what a project receives.
+    //
+    // Asserted as a shared constant rather than by planting a cache in the
+    // starter and hashing it. That version wrote into a gitignored directory
+    // in the real repository, and a cleanup that failed on Windows left the
+    // junk behind invisibly -- reproducing the exact defect it guarded against.
+    // refresh.test.ts already proves the engine excludes these.
+    expect(SKIP_ENTRIES.has('.terraform')).toBe(true)
+    expect(SKIP_ENTRIES.has('.terraform.lock.hcl')).toBe(true)
+    expect(SKIP_ENTRIES.has('node_modules')).toBe(true)
   })
 })

@@ -6,6 +6,7 @@ import type { GenerationContext } from './context.js'
 import { contextToTemplateVars } from './context.js'
 import { PROJECT_MANIFEST_PATH, renderProjectManifest } from './project-manifest.js'
 import { isForbiddenArtifact } from '../git.js'
+import { SKIP_ENTRIES } from './skip.js'
 
 const STARTER_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../../..')
 const PROFILES_ROOT = join(STARTER_ROOT, 'profiles')
@@ -83,30 +84,6 @@ Handlebars.registerHelper('basename', (value: unknown) =>
  */
 Handlebars.registerHelper('upper', (value: unknown) => String(value).toUpperCase())
 
-/**
- * Entries that appear inside a source tree but must never be copied out of
- * it. `.terraform` is the one that bites: running any Terraform command inside
- * the shared modules leaves a provider cache there, and a walk of the
- * filesystem then ships a ~50MB `terraform-provider-*.exe` into every
- * generated project. It is gitignored, so it never shows up in review.
- *
- * `.terraform.lock.hcl` is its sibling and slipped through, because skipping a
- * directory named `.terraform` does nothing about a file whose name merely
- * starts the same way. A lock file belongs to a root configuration; the shared
- * modules are not root configurations, so an init run inside one leaves a lock
- * that means nothing -- and `--refresh-modules` then copied it into a real
- * project as though it were part of the module. Generated projects write their
- * own on first init.
- */
-const SKIP_ENTRIES = new Set([
-  '.terraform',
-  '.terraform.lock.hcl',
-  '.git',
-  'node_modules',
-  '.turbo',
-  '.next',
-  'dist',
-])
 
 export interface RenderedFile {
   sourcePath: string
