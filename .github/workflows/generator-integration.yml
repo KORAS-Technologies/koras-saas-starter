@@ -114,18 +114,12 @@ jobs:
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
         run: uv sync --all-packages
 
-      # Every service names its package `src`, so a repo-wide run aborts on
-      # duplicate modules. One root at a time, as the generated `make typecheck`
-      # does.
+      # One pass. This was a loop over service roots, because every service
+      # named its package `src` and a repo-wide run aborted on duplicate
+      # modules; they are named after themselves now.
       - name: Typecheck (Python)
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
-        run: |
-          uv run mypy python-packages
-          for svc in services/*/; do
-            [ -f "$svc/pyproject.toml" ] || continue
-            echo "mypy $svc"
-            uv run mypy "$svc"
-          done
+        run: uv run mypy python-packages services
 
       # tests/security/test_no_state_artifacts.py asks git what is tracked, so
       # the project has to be a repository before it means anything. A generated

@@ -78,15 +78,12 @@ jobs:
       # pydantic and sqlalchemy -- and silently treating them as Any.
       - run: uv sync --all-packages
       - run: uv run ruff check .
-      # Every service names its package `src`, so a repo-wide run aborts on
-      # duplicate modules. Check one root at a time, as `make typecheck` does.
-      - run: uv run mypy python-packages
-      - run: |
-          for svc in services/*/; do
-            [ -f "$svc/pyproject.toml" ] || continue
-            echo "mypy $svc"
-            uv run mypy "$svc"
-          done
+      # One pass over everything. This used to be a loop over service roots,
+      # because every service named its package `src` and a repo-wide run
+      # aborted on duplicate modules. They are named after themselves now, so
+      # the loop -- and the chance of a service being silently skipped by it --
+      # is gone.
+      - run: uv run mypy python-packages services
       - run: uv run pytest
 
   build:

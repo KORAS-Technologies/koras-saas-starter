@@ -182,7 +182,7 @@ describe('generate control-plane', () => {
   })
 
   it('generates the product registry router', () => {
-    expect(gen.has('services/api/src/routers/products.py')).toBe(true)
+    expect(gen.has('services/api/koras_api/routers/products.py')).toBe(true)
   })
 })
 

@@ -90,8 +90,7 @@ lint: ## Lint all sources
 # duplicate modules and refuses to continue. Check one service root at a time.
 typecheck: ## Type-check all sources
 	pnpm turbo run typecheck
-	uv run mypy python-packages
-	@for svc in $(SERVICES); do echo "mypy services/$$svc"; uv run mypy "services/$$svc"; done
+	uv run mypy python-packages services
 
 # --concurrency is capped deliberately. Turbo defaults to roughly one task per
 # core, and each `tsc` reserves a few hundred MB of commit before it does any

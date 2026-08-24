@@ -8,7 +8,6 @@ attacker which tokens are real.
 from __future__ import annotations
 
 import logging
-
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status

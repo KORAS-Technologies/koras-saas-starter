@@ -55,6 +55,25 @@ def _normalise(name: str) -> str:
     return name.lower().replace("_", "-")
 
 
+def _own_modules(package: Path) -> set[str]:
+    """The importable packages this distributable itself provides.
+
+    A service imports itself absolutely in places -- `koras_api.main:app` is how
+    uvicorn is told what to run -- and a package need not declare itself. Read
+    from the directory rather than assumed from the manifest name: the two
+    differ by design, since a distribution is `koras-control-plane-api` and its
+    module is `koras_api`.
+    """
+    return {
+        child.name
+        for child in package.iterdir()
+        if child.is_dir() and (child / "__init__.py").exists()
+    } | {
+        child.parent.name
+        for child in package.glob("src/*/__init__.py")
+    }
+
+
 def _imported_modules(package: Path) -> set[str]:
     """Top-level modules imported by this package, excluding relative imports."""
     modules: set[str] = set()
@@ -93,7 +112,10 @@ def test_every_import_is_declared(package: Path) -> None:
     undeclared: list[str] = []
 
     for module in sorted(_imported_modules(package)):
-        if module in sys.stdlib_module_names or module == "src":
+        # The package's own top-level module. It was "src" for every service,
+        # which is the collision that made a repo-wide mypy run abort on
+        # duplicate modules and why each is now named after itself.
+        if module in sys.stdlib_module_names or module in _own_modules(package):
             continue
         providers = _distributions_for(module)
         if not providers:

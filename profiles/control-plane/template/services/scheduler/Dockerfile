@@ -3,5 +3,5 @@ WORKDIR /app
 RUN pip install uv
 COPY pyproject.toml .
 RUN uv sync --no-dev
-COPY src/ ./src/
-CMD ["uv", "run", "python", "-m", "src.main"]
+COPY koras_scheduler/ ./koras_scheduler/
+CMD ["uv", "run", "python", "-m", "koras_scheduler.main"]

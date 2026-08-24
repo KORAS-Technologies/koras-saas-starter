@@ -3,6 +3,6 @@ WORKDIR /app
 RUN pip install uv
 COPY pyproject.toml .
 RUN uv sync --no-dev
-COPY src/ ./src/
+COPY koras_ai_gateway/ ./koras_ai_gateway/
 COPY litellm_config.yaml .
-CMD ["uv", "run", "python", "-m", "src.main"]
+CMD ["uv", "run", "python", "-m", "koras_ai_gateway.main"]

@@ -15,11 +15,11 @@ const [service] = process.argv.slice(2)
 
 const COMMANDS = {
   // --reload watches src/ so edits restart the server, matching Next dev.
-  api: (port) => ['uvicorn', 'src.main:app', '--host', '127.0.0.1', '--port', port, '--reload'],
-  worker: () => ['arq', 'src.worker.WorkerSettings'],
-  scheduler: () => ['python', '-m', 'src.main'],
+  api: (port) => ['uvicorn', 'koras_api.main:app', '--host', '127.0.0.1', '--port', port, '--reload'],
+  worker: () => ['arq', 'koras_worker.worker.WorkerSettings'],
+  scheduler: () => ['python', '-m', 'koras_scheduler.main'],
   // Only present in the product profile; harmless here.
-  'ai-gateway': (port) => ['uvicorn', 'src.main:app', '--host', '127.0.0.1', '--port', port, '--reload'],
+  'ai-gateway': (port) => ['uvicorn', 'koras_ai_gateway.main:app', '--host', '127.0.0.1', '--port', port, '--reload'],
 }
 
 // Only the API publishes a port; the worker and scheduler are queue consumers.

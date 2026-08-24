@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ROUTER = REPO_ROOT / "services" / "api" / "src" / "routers" / "platform.py"
+ROUTER = REPO_ROOT / "services" / "api" / "koras_api" / "routers" / "platform.py"
 
 REQUIRED_ROUTES = (
     ("post", "/tenants"),
@@ -39,7 +39,7 @@ def test_the_contract_routes_exist(method: str, path: str) -> None:
 
 
 def test_the_router_is_mounted_at_the_contract_prefix() -> None:
-    main = (REPO_ROOT / "services" / "api" / "src" / "main.py").read_text(encoding="utf-8")
+    main = (REPO_ROOT / "services" / "api" / "koras_api" / "main.py").read_text(encoding="utf-8")
     assert 'prefix="/internal/platform/v1"' in main
 
 
