@@ -4,6 +4,14 @@ WORKDIR /app
 
 RUN pip install uv
 
+# Pin where uv puts the environment, and put it on PATH. fly.toml may override
+# the CMD below with a [processes] entry, and those run the bare command -- a
+# `python -m ...` that resolves to the system interpreter finds none of the
+# dependencies uv just installed. That failure looks like a missing dependency
+# rather than a missing PATH, and the dependency is right there in pyproject.
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
+
 # Built from the repository root, not from this directory. The service
 # depends on the shared packages in python-packages/ as uv workspace
 # members, so uv cannot resolve it without the workspace root and those

@@ -407,7 +407,35 @@ jobs:
             sleep 5
           done
 
-          echo "All machines running for $app."
+          echo "All machines reached started for $app."
+
+          # Started is not the same as staying up. A crash-looping machine
+          # reports `started` immediately after each restart, so the loop above
+          # is satisfied by a service that is dying every few seconds -- which
+          # is how a worker that could not reach Redis was reported as a
+          # successful deploy while it burned through its ten restarts and
+          # stopped for good.
+          #
+          # Fly records the exits. Settle, then read the event log rather than
+          # the state: a machine whose most recent event is an exit is not
+          # running, whatever the state field says a moment later.
+          sleep 30
+          failed=0
+          while read -r id state event; do
+            [ -z "$id" ] && continue
+            if [ "$state" != "started" ] || [ "$event" = "exit" ]; then
+              echo "Machine $id for $app is $state, last event: $event"
+              failed=1
+            fi
+          done <<< "$(flyctl machines list --app "$app" --json | jq -r '.[] | .id + " " + .state + " " + ((.events // [])[0].type // "none")')"
+
+          if [ "$failed" -ne 0 ]; then
+            echo "$app is not staying up. Recent output:"
+            flyctl logs --app "$app" --no-tail | tail -40
+            exit 1
+          fi
+
+          echo "All machines running and staying up for $app."
           flyctl machines list --app "$app"
   applications:
     name: Deploy ${{ matrix.app }} (${{ inputs.environment }})
