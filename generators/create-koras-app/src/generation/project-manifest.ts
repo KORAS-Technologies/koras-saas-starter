@@ -147,6 +147,29 @@ export const KorasProjectManifestSchema = z.object({
 // unambiguous delimiter between a path and the bytes that follow it.
 const NUL = Buffer.from([0])
 
+/**
+ * Collapses CRLF to LF so the digest describes the profile's content rather
+ * than the checkout it was computed in.
+ *
+ * `.gitattributes` sets `* text=auto`, so a template file is LF in the object
+ * store and CRLF in a Windows working tree. Hashing the raw bytes therefore
+ * produced one digest on Windows and a different one in CI for the same
+ * profile -- and worse, a digest written before a merge stopped matching after
+ * it, because the checkout rewrote the very files being hashed. That is the
+ * same failure the separator normalisation below was added to prevent; line
+ * endings were the half that got missed.
+ *
+ * A twin of `toUnixLineEndings` in writer.ts, duplicated rather than imported
+ * because writer.ts already imports this module and the cycle is not worth a
+ * shared module for four lines. That one decides what gets written; this one
+ * only feeds a hash.
+ */
+export function normalizeForDigest(content: Buffer): Buffer {
+  return content.includes('\r\n')
+    ? Buffer.from(content.toString('utf8').replace(/\r\n/g, '\n'))
+    : content
+}
+
 export function resolveTemplateDigest(profile: string): string {
   const root = join(STARTER_ROOT, 'profiles', profile)
   const files: string[] = []
@@ -167,7 +190,7 @@ export function resolveTemplateDigest(profile: string): string {
     // people who checked it.
     hash.update(relative(root, file).split(sep).join('/'))
     hash.update(NUL)
-    hash.update(readFileSync(file))
+    hash.update(normalizeForDigest(readFileSync(file)))
     hash.update(NUL)
   }
   return hash.digest('hex')

@@ -2,6 +2,11 @@ import { describe, it, expect, afterAll } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { rmSync, existsSync, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import {
+  normalizeForDigest,
+  resolveTemplateDigest,
+} from '../src/generation/project-manifest.js'
 import { loadProfile } from '../src/profiles/index.js'
 import type { ProfileName } from '../src/profiles/loader.js'
 import { resolveSelections } from '../src/profiles/validator.js'
@@ -194,5 +199,43 @@ describe('the configuration is single-sourced, not duplicated per profile', () =
     // Guards the guard: an emptied CLAUDE_CONFIG_PATHS would leave every
     // validation above passing while checking nothing.
     expect(CLAUDE_CONFIG_PATHS.length).toBeGreaterThanOrEqual(17)
+  })
+})
+
+describe('the template digest describes content, not the checkout', () => {
+  it('is unchanged by CRLF line endings', () => {
+    // `.gitattributes` sets `* text=auto`, so every profile template file is LF
+    // in the object store and CRLF in a Windows working tree. Hashing raw bytes
+    // therefore gave CI and a Windows machine different digests for the same
+    // profile, and a digest written before a merge stopped matching after it --
+    // the checkout had rewritten the files being hashed.
+    const CR = String.fromCharCode(13)
+    const LF = String.fromCharCode(10)
+
+    const sample = readFileSync(
+      join(process.cwd(), '../../profiles/product/template/CLAUDE.md.hbs'),
+      'utf8',
+    )
+    // Guards the guard: on a checkout that is already LF the assertion below
+    // would hold trivially, so prove the two forms genuinely differ as bytes.
+    const asLf = sample.split(CR + LF).join(LF)
+    const asCrlf = asLf.split(LF).join(CR + LF)
+    expect(Buffer.from(asCrlf).equals(Buffer.from(asLf))).toBe(false)
+
+    const digest = (text: string) =>
+      createHash('sha256').update(normalizeForDigest(Buffer.from(text))).digest('hex')
+    expect(digest(asCrlf)).toBe(digest(asLf))
+  })
+
+  it('still distinguishes a real content change', () => {
+    const digest = (text: string) =>
+      createHash('sha256').update(normalizeForDigest(Buffer.from(text))).digest('hex')
+    expect(digest('a' + String.fromCharCode(10))).not.toBe(digest('b' + String.fromCharCode(10)))
+  })
+
+  it('agrees with the digest the generator writes into a manifest', () => {
+    for (const [profile, gen] of CASES) {
+      expect(gen.read('.koras/project.yaml')).toContain(resolveTemplateDigest(profile))
+    }
   })
 })
