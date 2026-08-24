@@ -14,6 +14,8 @@ export interface ParsedArgs {
   /** Provision an already-generated project; skips generation entirely. */
   provisionOnly: boolean
   refreshModules: boolean
+  /** Template-owned paths to overwrite from the generator's rendering. */
+  refresh: string[]
   checkDrift: boolean
   all: boolean
   /** True when --output-dir was passed, as opposed to defaulting to cwd. */
@@ -56,6 +58,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     without: [],
     provisionOnly: false,
     refreshModules: false,
+    refresh: [],
     checkDrift: false,
     all: false,
     outputDirExplicit: false,
@@ -91,6 +94,16 @@ export function parseArgs(argv: string[]): ParsedArgs {
         // Read-only. Reports where a project no longer matches the
         // generator; never writes and never provisions.
         result.checkDrift = true
+        break
+      case '--refresh':
+        // Overwrites specific template-owned files from the generator's
+        // rendering. Separate from --refresh-modules because the two differ in
+        // who owns the file: shared assets are the starter's and can be
+        // recopied wholesale, while a rendered file may carry edits the project
+        // meant to keep. Naming the path is the consent, so nothing is
+        // discovered and overwritten in the same breath -- use --check-drift
+        // --all to find out what is stale first.
+        result.refresh.push(args[++i])
         break
       case '--refresh-modules':
         // Re-copies the shared Terraform modules into a project already on

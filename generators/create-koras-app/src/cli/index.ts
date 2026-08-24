@@ -17,7 +17,12 @@ import {
 import { buildContext } from '../generation/context.js'
 import { renderTemplate } from '../generation/engine.js'
 import { writeFiles, printDryRunManifest } from '../generation/writer.js'
-import { formatRefreshResult, refreshSharedAssets } from '../generation/refresh.js'
+import {
+  refreshSharedAssets,
+  formatRefreshResult,
+  refreshRenderedPaths,
+  formatRefreshPathResult,
+} from '../generation/refresh.js'
 import { checkDrift, formatDriftReport } from '../generation/drift.js'
 import { provision } from '../terraform/runner.js'
 import { preflightInputs } from '../terraform/inputs.js'
@@ -49,6 +54,9 @@ OPTIONS:
   --all                      With --check-drift, also list every other
                              generator-owned file that differs. Informational.
                              the generator. Read-only; exits 1 on differences.
+  --refresh <path>           Overwrite one template-owned file from the
+                             generator's rendering. Repeatable. Use
+                             --check-drift --all to see what is stale first.
   --refresh-modules          Re-copy the shared Terraform modules into an
                              existing project. Combine with --provision-only to
                              plan against the refreshed copy.
@@ -174,7 +182,8 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   // Generating into the starter repo itself is almost always a slip — the
   // default output directory is wherever you happen to be standing.
   const outputCheck = checkOutputDirectory(args.outputDir, args.outputDirExplicit)
-  const existingProject = args.provisionOnly || args.refreshModules || args.checkDrift
+  const existingProject =
+    args.provisionOnly || args.refreshModules || args.checkDrift || args.refresh.length > 0
   if (outputCheck.refused && !existingProject) {
     fail(outputCheck.message!)
   }
@@ -189,7 +198,9 @@ export async function run(argv: string[] = process.argv): Promise<void> {
         ? '--provision-only'
         : args.checkDrift
           ? '--check-drift'
-          : '--refresh-modules'
+          : args.refreshModules
+            ? '--refresh-modules'
+            : '--refresh'
       fail(
         `No generated project at ${projectRoot}\n` +
           `  ${flag} operates on an existing project.\n` +
@@ -284,8 +295,15 @@ export async function run(argv: string[] = process.argv): Promise<void> {
 
   if (args.refreshModules) {
     console.log(formatRefreshResult(refreshSharedAssets(ctx, projectRoot)))
-    if (!args.provisionOnly) return
   }
+
+  // Template-owned paths, named explicitly. After the shared assets so that a
+  // single invocation can do both, and a named path always wins.
+  if (args.refresh.length > 0) {
+    console.log(formatRefreshPathResult(refreshRenderedPaths(ctx, projectRoot, args.refresh)))
+  }
+
+  if ((args.refreshModules || args.refresh.length > 0) && !args.provisionOnly) return
 
   if (args.provisionOnly) {
     console.log(`

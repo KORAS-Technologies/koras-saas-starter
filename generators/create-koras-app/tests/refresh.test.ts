@@ -8,7 +8,12 @@ import { resolveSelections } from '../src/profiles/validator.js'
 import { buildContext } from '../src/generation/context.js'
 import { renderTemplate } from '../src/generation/engine.js'
 import { writeFiles } from '../src/generation/writer.js'
-import { refreshSharedAssets, formatRefreshResult } from '../src/generation/refresh.js'
+import {
+  refreshSharedAssets,
+  formatRefreshResult,
+  refreshRenderedPaths,
+  formatRefreshPathResult,
+} from '../src/generation/refresh.js'
 import { collectSharedAssets } from '../src/generation/engine.js'
 
 const ROOT = join(tmpdir(), `koras-refresh-${process.pid}-${Date.now()}`)
@@ -135,5 +140,58 @@ describe('what is never copied out of the starter', () => {
     expect(paths.some((p) => p.includes('/.terraform/'))).toBe(false)
     expect(paths.some((p) => p.endsWith('.exe'))).toBe(false)
     expect(paths.some((p) => p.endsWith('.tfstate') || p.endsWith('tfplan'))).toBe(false)
+  })
+})
+
+const A_RENDERED_FILE = 'services/worker/koras_worker/worker.py'
+
+describe('refreshRenderedPaths', () => {
+  it('reports a freshly generated file as already current', () => {
+    const { ctx, projectRoot } = generate('product', 'fresh-render')
+    const result = refreshRenderedPaths(ctx, projectRoot, [A_RENDERED_FILE])
+
+    expect(result.unchanged).toEqual([A_RENDERED_FILE])
+    expect(result.updated).toEqual([])
+    expect(result.written).toBe(false)
+  })
+
+  it('restores a template-owned file the project has fallen behind on', () => {
+    // The shape of the defect this exists for: a fix lands in the starter and
+    // an existing project keeps the old file, because it is rendered rather
+    // than a shared asset and nothing copies it.
+    const { ctx, projectRoot } = generate('product', 'stale-render')
+    const target = join(projectRoot, A_RENDERED_FILE)
+    const original = readFileSync(target, 'utf8')
+    writeFileSync(target, '# an older version\n')
+
+    const result = refreshRenderedPaths(ctx, projectRoot, [A_RENDERED_FILE])
+
+    expect(result.updated).toEqual([A_RENDERED_FILE])
+    expect(result.written).toBe(true)
+    expect(readFileSync(target, 'utf8')).toBe(original)
+  })
+
+  it('writes nothing under --dry-run, so it can answer "is this stale?"', () => {
+    const { ctx, projectRoot } = generate('product', 'dry-render', true)
+    writeFiles({ ...ctx, dryRun: false }, renderTemplate(ctx))
+    const target = join(projectRoot, A_RENDERED_FILE)
+    writeFileSync(target, '# an older version\n')
+
+    const result = refreshRenderedPaths(ctx, projectRoot, [A_RENDERED_FILE])
+
+    expect(result.updated).toEqual([A_RENDERED_FILE])
+    expect(result.written).toBe(false)
+    expect(readFileSync(target, 'utf8')).toBe('# an older version\n')
+  })
+
+  it('names a path the profile does not render rather than passing over it', () => {
+    // A typo silently doing nothing would read as "already up to date", which
+    // is the one answer that must never be wrong here.
+    const { ctx, projectRoot } = generate('product', 'unknown-render')
+    const result = refreshRenderedPaths(ctx, projectRoot, ['services/api/nope.txt'])
+
+    expect(result.unknown).toEqual(['services/api/nope.txt'])
+    expect(result.updated).toEqual([])
+    expect(formatRefreshPathResult(result)).toContain('renders no such file')
   })
 })
