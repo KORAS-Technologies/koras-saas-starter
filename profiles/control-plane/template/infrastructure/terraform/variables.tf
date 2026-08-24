@@ -150,3 +150,9 @@ variable "repository_visibility" {
   default     = "private"
   description = "Repository visibility: private or public. Public repositories get free Actions minutes."
 }
+
+variable "required_approvals" {
+  type        = map(number)
+  default     = {}
+  description = "Per-branch approving-review counts, e.g. { test = 0 }. Defaults: test 1, staging 1, main 2."
+}

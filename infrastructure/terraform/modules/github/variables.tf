@@ -64,3 +64,11 @@ variable "estate_deploy_secrets" {
     rather than left as a decision nobody made.
   EOT
 }
+variable "required_approvals" {
+  type        = map(number)
+  default     = {}
+  description = <<-EOT
+    Per-branch approving-review counts, overriding the defaults of test 1,
+    staging 1, main 2. `develop` is always 0 and is not overridable.
+  EOT
+}

@@ -187,3 +187,9 @@ variable "repository_visibility" {
     error_message = "repository_visibility must be 'private' or 'public'."
   }
 }
+
+variable "required_approvals" {
+  type        = map(number)
+  default     = {}
+  description = "Per-branch approving-review counts. See the github module."
+}

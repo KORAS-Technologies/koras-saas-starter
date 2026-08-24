@@ -9,10 +9,11 @@ locals {
 module "github" {
   source = "../github"
 
-  project_slug = var.project_slug
-  github_org   = var.github_org
-  description  = "${var.project_name} (${var.profile})"
-  visibility   = var.repository_visibility
+  project_slug       = var.project_slug
+  github_org         = var.github_org
+  description        = "${var.project_name} (${var.profile})"
+  visibility         = var.repository_visibility
+  required_approvals = var.required_approvals
 
   # The deploy pipeline declares five secrets `required: true`, and a
   # workflow_call with an unsatisfied one fails before any step runs. Nothing

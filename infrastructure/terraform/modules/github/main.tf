@@ -32,11 +32,21 @@ resource "github_branch_default" "default" {
 }
 
 resource "github_branch_protection" "protections" {
+  # The approval counts are overridable because how many reviewers exist is a
+  # property of the organisation, not of this factory. GitHub does not let
+  # anyone approve their own pull request, so on a single-maintainer estate
+  # every one of these above zero is a rule that cannot be satisfied rather than
+  # a rule that is strict -- the promotion simply stops, with the protection
+  # reporting REVIEW_REQUIRED and no one able to give it.
+  #
+  # Whether a pull request is required at all is not overridable. That gate
+  # costs a solo operator nothing -- they can open and merge their own -- while
+  # still running the checks.
   for_each = {
     develop = { required_approvals = 0, require_pr = false }
-    test    = { required_approvals = 1, require_pr = true }
-    staging = { required_approvals = 1, require_pr = true }
-    main    = { required_approvals = 2, require_pr = true }
+    test    = { required_approvals = lookup(var.required_approvals, "test", 1), require_pr = true }
+    staging = { required_approvals = lookup(var.required_approvals, "staging", 1), require_pr = true }
+    main    = { required_approvals = lookup(var.required_approvals, "main", 2), require_pr = true }
   }
 
   repository_id = github_repository.this.node_id
