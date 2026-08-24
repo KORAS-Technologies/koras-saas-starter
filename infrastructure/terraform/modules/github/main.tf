@@ -131,10 +131,10 @@ resource "github_actions_environment_secret" "doppler" {
   # in the repository.
   for_each = toset(nonsensitive(keys(var.doppler_deploy_tokens)))
 
-  repository      = github_repository.this.name
-  environment     = each.key
-  secret_name     = "DOPPLER_TOKEN"
-  plaintext_value = var.doppler_deploy_tokens[each.key]
+  repository  = github_repository.this.name
+  environment = each.key
+  secret_name = "DOPPLER_TOKEN"
+  value       = var.doppler_deploy_tokens[each.key]
 
   depends_on = [github_repository_environment.environments]
 }
@@ -143,7 +143,7 @@ resource "github_actions_secret" "estate" {
   # Same reason. Here the keys are the secret names themselves.
   for_each = toset(nonsensitive(keys(var.estate_deploy_secrets)))
 
-  repository      = github_repository.this.name
-  secret_name     = each.key
-  plaintext_value = var.estate_deploy_secrets[each.key]
+  repository  = github_repository.this.name
+  secret_name = each.key
+  value       = var.estate_deploy_secrets[each.key]
 }
