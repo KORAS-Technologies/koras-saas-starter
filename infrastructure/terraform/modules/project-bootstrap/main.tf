@@ -180,6 +180,31 @@ module "vercel" {
   depends_on = [module.github]
 }
 
+# The deploy pipeline resolves each application's Vercel project from a secret
+# named after the application -- apps/web looks for VERCEL_WEB_PROJECT_ID. There
+# is one Vercel project per application per environment, so these are
+# environment secrets rather than repository ones: a dev release reads the dev
+# project's id and has no way to name the production project.
+#
+# Declared here rather than inside the github module because the Vercel projects
+# are created from the repository, so github runs first and cannot see their ids
+# without a dependency cycle.
+resource "github_actions_environment_secret" "vercel_project_ids" {
+  for_each = {
+    for pair in setproduct(local.vercel_apps, keys(var.environment_branches)) :
+    "${pair[0]}-${pair[1]}" => { app = pair[0], environment = pair[1] }
+  }
+
+  repository  = module.github.repository_name
+  environment = each.value.environment
+  secret_name = "VERCEL_${upper(replace(each.value.app, "-", "_"))}_PROJECT_ID"
+  value       = module.vercel.project_ids[each.key]
+
+  # The environments are created inside the github module, and a project id is
+  # only known once Vercel has made the project.
+  depends_on = [module.github, module.vercel]
+}
+
 module "upstash" {
   source = "../upstash"
 
