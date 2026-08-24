@@ -12,6 +12,23 @@ module "github" {
   project_slug = var.project_slug
   github_org   = var.github_org
   description  = "${var.project_name} (${var.profile})"
+
+  # The deploy pipeline declares five secrets `required: true`, and a
+  # workflow_call with an unsatisfied one fails before any step runs. Nothing
+  # set them, so every generated project had a pipeline that could not start.
+  #
+  # Split by what each value is rather than by habit. The Doppler token differs
+  # per environment and is scoped to one config, so it is an environment
+  # secret. The Fly and Vercel credentials are identical in all four, so
+  # scoping them per environment would be four copies of one secret and four
+  # places to rotate it.
+  doppler_deploy_tokens = module.doppler.deploy_tokens
+  estate_deploy_secrets = {
+    FLY_API_TOKEN = var.fly_api_token
+    VERCEL_TOKEN  = var.vercel_token
+    # The team, not a credential. GitHub is simply where the pipeline reads it.
+    VERCEL_ORG_ID = var.vercel_team_id
+  }
 }
 
 module "doppler" {

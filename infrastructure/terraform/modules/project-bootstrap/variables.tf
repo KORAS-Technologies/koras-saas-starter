@@ -155,3 +155,17 @@ variable "zitadel_role_grants" {
     That is the correct default for an estate nobody has decided about yet.
   EOT
 }
+
+variable "fly_api_token" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Fly.io token, written to the repository so the deploy pipeline can use it."
+}
+
+variable "vercel_token" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Vercel token, written to the repository so the deploy pipeline can use it."
+}

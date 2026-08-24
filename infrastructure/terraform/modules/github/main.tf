@@ -112,3 +112,38 @@ resource "github_repository_environment" "environments" {
 
   depends_on = [github_branch.branches]
 }
+
+# ── What the deploy pipeline is given ───────────────────────────────────────
+#
+# The workflow declares five secrets `required: true`, and a workflow_call with
+# an unsatisfied required secret fails before any step runs. Nothing set them,
+# so every generated project had a deploy pipeline that could not start -- on
+# every push, permanently, with a log too empty to say why.
+#
+# The same shape as roles defined and granted to nobody: the resource was
+# created and the thing that makes it usable was not.
+
+resource "github_actions_environment_secret" "doppler" {
+  # Iterating the map directly is refused: a for_each key becomes part of a
+  # resource address, so Terraform will not take one from a sensitive value.
+  # Declassifying the keys is safe and the values stay sensitive -- these keys
+  # are environment names, which are already in every branch name and workflow
+  # in the repository.
+  for_each = toset(nonsensitive(keys(var.doppler_deploy_tokens)))
+
+  repository      = github_repository.this.name
+  environment     = each.key
+  secret_name     = "DOPPLER_TOKEN"
+  plaintext_value = var.doppler_deploy_tokens[each.key]
+
+  depends_on = [github_repository_environment.environments]
+}
+
+resource "github_actions_secret" "estate" {
+  # Same reason. Here the keys are the secret names themselves.
+  for_each = toset(nonsensitive(keys(var.estate_deploy_secrets)))
+
+  repository      = github_repository.this.name
+  secret_name     = each.key
+  plaintext_value = var.estate_deploy_secrets[each.key]
+}

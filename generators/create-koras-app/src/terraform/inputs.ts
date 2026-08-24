@@ -50,6 +50,26 @@ export const SECRET_VARIABLES = [
     assemble: assembleSupabaseEnvironments,
   },
   {
+    name: 'TF_VAR_fly_api_token',
+    alias: 'TF_VAR_FLY_API_TOKEN',
+    purpose: 'Fly.io token, so Terraform can write it as a deploy secret',
+    // Assembled from the credential the Fly provider already reads. The
+    // deploy pipeline needs the same token, and Terraform can only write a
+    // value it holds as a variable -- so this hands the existing one over
+    // rather than asking an operator to supply the same secret twice under a
+    // second name, which is how two names for one credential end up rotated
+    // apart.
+    flat: ['FLY_API_TOKEN'],
+    assemble: (env: NodeJS.ProcessEnv) => env.FLY_API_TOKEN,
+  },
+  {
+    name: 'TF_VAR_vercel_token',
+    alias: 'TF_VAR_VERCEL_TOKEN',
+    purpose: 'Vercel token, so Terraform can write it as a deploy secret',
+    flat: ['VERCEL_API_TOKEN'],
+    assemble: (env: NodeJS.ProcessEnv) => env.VERCEL_API_TOKEN,
+  },
+  {
     name: 'TF_VAR_zitadel_instances',
     alias: 'TF_VAR_ZITADEL_INSTANCES',
     purpose: 'per-instance ZITADEL domain, port, insecure, jwt_profile_json',

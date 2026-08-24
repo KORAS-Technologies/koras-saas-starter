@@ -27,8 +27,6 @@ on:
         default: true
         type: boolean
     secrets:
-      DATABASE_URL:
-        required: true
       FLY_API_TOKEN:
         required: true
       VERCEL_TOKEN:
@@ -141,14 +139,13 @@ jobs:
       # be able to reach.
       - name: Require every credential before touching anything
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
         run: |
           missing=""
-          for name in DATABASE_URL FLY_API_TOKEN VERCEL_TOKEN VERCEL_ORG_ID; do
+          for name in DOPPLER_TOKEN FLY_API_TOKEN VERCEL_TOKEN VERCEL_ORG_ID; do
             if [ -z "${!name}" ]; then missing="$missing $name"; fi
           done
           if [ -n "$missing" ]; then
@@ -255,10 +252,27 @@ jobs:
       - uses: actions/checkout@v5
       - name: Install a Postgres client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      # Read from Doppler rather than held as a second copy in GitHub. It
+      # carries the database password, and a credential in two stores is two
+      # places to rotate and one to forget. The token below is scoped to this
+      # project and this environment, so it can fetch this and nothing else.
+      # Read from Doppler rather than held as a second copy in GitHub. It
+      # carries the database password, and a credential in two stores is two
+      # places to rotate and one to forget. The token is scoped to this
+      # project and this environment, so it fetches this and nothing else.
       - name: Apply migrations and policies
         env:
-          MIGRATE_DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: bash local/scripts/migrate.sh
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          PROJECT: ${{ github.event.repository.name }}
+          CONFIG: ${{ inputs.environment }}
+        run: |
+          url=$(doppler secrets get DATABASE_URL --plain --project "$PROJECT" --config "$CONFIG")
+          url=$(printf "%s" "$url" | tr -d "[:space:]")
+          if [ -z "$url" ]; then
+            echo "DATABASE_URL is not set in Doppler for $CONFIG." >&2
+            exit 1
+          fi
+          MIGRATE_DATABASE_URL="$url" bash local/scripts/migrate.sh
 
   services:
     name: Deploy ${{ matrix.service }} (${{ inputs.environment }})

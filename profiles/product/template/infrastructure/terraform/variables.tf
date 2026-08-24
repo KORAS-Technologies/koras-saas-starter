@@ -130,3 +130,17 @@ variable "zitadel_role_grants" {
     being granted what without decrypting anything.
   EOT
 }
+
+variable "fly_api_token" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Fly.io token, written to the repository so the deploy pipeline can use it."
+}
+
+variable "vercel_token" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Vercel token, written to the repository so the deploy pipeline can use it."
+}
