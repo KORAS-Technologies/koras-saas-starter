@@ -271,6 +271,24 @@ jobs:
             echo "DATABASE_URL is not set in Doppler for $CONFIG." >&2
             exit 1
           fi
+
+          # A password is not a URL until it is encoded like one. libpq reads
+          # this as a URI, so an unencoded reserved character in the password
+          # is not a bad password -- it changes where libpq thinks the password
+          # ends. A `[` is the worst of them: it begins an IPv6 literal, so the
+          # host is misread too and the server rejects a username nobody wrote.
+          # That surfaces as "password authentication failed for user
+          # postgres", which sends you to check the password, which is correct.
+          userinfo=${url#*://}
+          userinfo=${userinfo%@*}
+          case "${userinfo#*:}" in
+            *[][/?#@]*)
+              echo "DATABASE_URL for $CONFIG has an unencoded reserved character in its password." >&2
+              echo "Percent-encode it in Doppler: [ is %5B, ] is %5D, / is %2F, @ is %40." >&2
+              echo "The password itself is fine; only its spelling inside the URL is wrong." >&2
+              exit 1
+              ;;
+          esac
           MIGRATE_DATABASE_URL="$url" bash local/scripts/migrate.sh
 
   services:
