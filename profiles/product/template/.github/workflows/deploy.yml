@@ -254,10 +254,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       # Read from Doppler rather than held as a second copy in GitHub. It
       # carries the database password, and a credential in two stores is two
-      # places to rotate and one to forget. The token below is scoped to this
-      # project and this environment, so it can fetch this and nothing else.
-      # Read from Doppler rather than held as a second copy in GitHub. It
-      # carries the database password, and a credential in two stores is two
       # places to rotate and one to forget. The token is scoped to this
       # project and this environment, so it fetches this and nothing else.
       - name: Apply migrations and policies
