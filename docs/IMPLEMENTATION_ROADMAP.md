@@ -824,20 +824,25 @@ Control Plane generation emits zero registration calls.
 
 **Prerequisite:** Phase 8 complete
 **Parallelizable with:** Phase 12
-**Status:** Partially complete (surveyed 2026-08-22). The generated-project half
-is done: `deploy.yml` and the four per-environment workflows are byte-identical
-across both templates, `koras-control-plane` and `output/sample-product`.
+**Status:** Work complete (2026-08-23); the exit criterion is not.
 
-The starter half is not. `.github/workflows/generator-integration.yml` has two
-jobs whose only substantive step is `echo`-ing the command it claims to run,
-under a comment reading "Stub — full integration test implemented in Phase 11".
-It reports green and generates nothing. See SYNC_BACKLOG.md D1: every Tier A
-item there would have failed this job on the commit that introduced it.
+Both halves are done. The generated-project workflows are byte-identical across
+both templates and both generated repositories, and
+`.github/workflows/generator-integration.yml` now generates both profiles and
+builds what comes out -- install, build, typecheck, test, uv sync, mypy, pytest,
+and a drift check that must report nothing about a project generated a moment
+earlier. It replaced two jobs whose only substantive step was `echo`-ing the
+command they claimed to run.
+
+It found three defects on its first run, which is the argument for it: both
+profiles failed to typecheck their Python, the product's auth routes read a
+Control Plane setting name, and `services/api` imported pydantic without
+declaring it.
 
 **Blocked on a decision, not on work:** the exit criterion below is defined on
-`main`, and `main` is 55 commits behind `develop` as of 2026-08-22, having last
-received a commit on 2026-08-17. Either the promotion is scheduled or the
-criterion moves to `develop`.
+`main`, which is 85 commits behind `develop` as of 2026-08-23 and last received
+a commit on 2026-08-17. Either the promotion is scheduled or the criterion moves
+to `develop`.
 
 **Scope:** GitHub Actions workflows for the starter and for generated projects.
 
@@ -872,17 +877,22 @@ workflows pass lint check.
 
 **Prerequisite:** Phase 8 complete
 **Parallelizable with:** Phase 11
-**Status:** Partially complete (surveyed 2026-08-22). `security.yml` and
-`.github/dependabot.yml` exist. Still missing: the RLS policy test suite
-(`supabase/tests/` — the starter's `supabase/` holds only `.gitkeep`), the
-ZITADEL JWT validation tests, and the OWASP review checklist.
+**Status:** Partially complete (2026-08-23). Secret scanning is done and now
+real: `.gitleaks.toml` ships to the starter and both templates, every job
+installs the binary rather than the licence-gated marketplace action, and the
+starter's own scan runs on `develop` -- which, for as long as the job existed,
+was the one branch it never covered. Dependabot is in place, and
+`tests/security/test_no_state_artifacts.py` now guards the factory as well as
+what it generates.
 
-**Blocked on the same decision as Phase 11, and more sharply.** The exit
-criterion is defined on `main`, and `security.yml` triggers only on `main` and
-`staging` — so the scan that would produce this phase's evidence has never run
-against any commit made since 2026-08-17. See SYNC_BACKLOG.md C1: the scan also
-uses the marketplace gitleaks wrapper, which refuses to run for organizations
-without a paid licence, and passes no `--max-archive-depth`.
+Still missing: the RLS policy test suite (`supabase/tests/` — the starter's
+`supabase/` holds only `.gitkeep`), the ZITADEL JWT validation tests, and the
+OWASP review checklist. The generated projects carry JWT coverage already --
+`packages/auth` ships 43 tests across both profiles -- so the gap is the
+starter's own.
+
+**Blocked on the same decision as Phase 11:** the exit criterion is defined on
+`main`.
 
 **Scope:** Security hardening of starter, generator, and generated output.
 

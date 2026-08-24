@@ -109,8 +109,8 @@ remaining phase with no work started, and Phase 13 is blocked behind it.
 
 Two caveats when reading the roadmap:
 
-- Phases 11 and 12 define their exit criteria on `main`, which is 55 commits
-  behind `develop` as of 2026-08-22 and last received a commit on 2026-08-17.
+- Phases 11 and 12 define their exit criteria on `main`, which is 85 commits
+  behind `develop` as of 2026-08-23 and last received a commit on 2026-08-17.
   Neither phase can close until that is resolved — by promotion, or by moving
   the criterion to `develop`.
 - The roadmap does not cover R-020 through R-027 or the OIDC sign-in work.
