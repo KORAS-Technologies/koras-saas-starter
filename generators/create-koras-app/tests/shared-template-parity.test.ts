@@ -39,6 +39,7 @@ const SHARED = [
   '.github/workflows/deploy.yml',
   '.gitignore.hbs',
   '.gitleaks.toml',
+  'contracts/product-platform.v1.json',
   'Makefile.hbs',
   'apps/admin/src/app/api/auth/signout/route.ts.hbs',
   'apps/admin/src/app/api/auth/start/route.ts.hbs',
@@ -159,6 +160,6 @@ describe('the two profiles do not drift apart', () => {
   it('covers the files that are actually shared', () => {
     // Guards the guard. If the list were emptied or truncated, every assertion
     // above would still pass while checking nothing.
-    expect(SHARED.length).toBeGreaterThanOrEqual(111)
+    expect(SHARED.length).toBeGreaterThanOrEqual(112)
   })
 })

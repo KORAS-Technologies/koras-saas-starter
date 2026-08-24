@@ -11,6 +11,7 @@ in the router with real tenant persistence; do not replace these.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -19,12 +20,13 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ROUTER = REPO_ROOT / "services" / "api" / "koras_api" / "routers" / "platform.py"
 
-REQUIRED_ROUTES = (
-    ("post", "/tenants"),
-    ("get", "/tenants/{tenant_id}"),
-    ("post", "/tenants/{tenant_id}/activate"),
-    ("post", "/tenants/{tenant_id}/suspend"),
+# Read, not restated. This list existed here, in the router, and again in the
+# Control Plane's reference implementation -- three copies of one contract, and
+# three chances for two of them to agree while the third ships.
+CONTRACT = json.loads(
+    (REPO_ROOT / "contracts" / "product-platform.v1.json").read_text(encoding="utf-8")
 )
+REQUIRED_ROUTES = tuple((r["method"], r["path"]) for r in CONTRACT["routes"])
 
 
 def _router_source() -> str:
@@ -40,7 +42,7 @@ def test_the_contract_routes_exist(method: str, path: str) -> None:
 
 def test_the_router_is_mounted_at_the_contract_prefix() -> None:
     main = (REPO_ROOT / "services" / "api" / "koras_api" / "main.py").read_text(encoding="utf-8")
-    assert 'prefix="/internal/platform/v1"' in main
+    assert f'prefix="{CONTRACT["prefix"]}"' in main
 
 
 def test_every_contract_route_requires_a_machine_identity() -> None:
@@ -72,3 +74,15 @@ def test_a_repeat_is_not_answered_with_a_conflict() -> None:
 def test_the_contract_offers_no_delete() -> None:
     """Rollback suspends. The customer may already have data behind the tenant."""
     assert "@router.delete" not in _router_source()
+
+
+def test_the_contract_is_not_empty() -> None:
+    """Guards the guard.
+
+    Every assertion above is parametrised or formatted from the contract file.
+    An empty routes list would make the parametrised test vacuous and the
+    prefix assertion compare against nothing, and the suite would pass while
+    checking that the product exposes no API at all.
+    """
+    assert len(REQUIRED_ROUTES) >= 4
+    assert CONTRACT["prefix"].startswith("/internal/platform/")
