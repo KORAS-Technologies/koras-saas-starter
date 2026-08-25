@@ -1,0 +1,100 @@
+-- Structural invariants of row-level security.
+--
+-- These assert things about the schema rather than about data, so they hold
+-- for any profile and need no fixtures. They exist because the failure they
+-- catch is silent: a table with RLS enabled and no policy, or a policy the
+-- connecting role bypasses, behaves exactly like a correctly isolated one
+-- right up until it returns another tenant's rows.
+--
+-- Run with `local/scripts/test-rls.sh`. Any failure raises, so psql with
+-- ON_ERROR_STOP=1 exits non-zero.
+
+\set ON_ERROR_STOP on
+
+do $$
+declare
+  offender text;
+begin
+  -- Every RLS table forces it.
+  --
+  -- `enable row level security` does not apply to the table's owner, and never
+  -- has. The migrations and the application both connect as the owner, so a
+  -- policy set that reads as airtight is skipped in its entirety by the one
+  -- connection that matters. `force` is what closes that, and its absence is
+  -- invisible to any test that connects as a non-owner -- which is every test
+  -- anyone writes by hand.
+  select string_agg(c.relname, ', ' order by c.relname) into offender
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public'
+    and c.relkind = 'r'
+    and c.relrowsecurity
+    and not c.relforcerowsecurity;
+
+  if offender is not null then
+    raise exception
+      'RLS is enabled but not forced on: %. The table owner bypasses every policy on these tables.',
+      offender;
+  end if;
+
+  -- Every RLS table has at least one policy.
+  --
+  -- RLS on with no policy denies everyone. That is safe, but it is also what a
+  -- half-finished migration looks like, and it presents as an empty screen
+  -- rather than as an error.
+  select string_agg(c.relname, ', ' order by c.relname) into offender
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public'
+    and c.relkind = 'r'
+    and c.relrowsecurity
+    and not exists (select 1 from pg_policy p where p.polrelid = c.oid);
+
+  if offender is not null then
+    raise exception 'RLS is enabled with no policy on: %. Every read returns nothing.', offender;
+  end if;
+
+  -- Every tenant-scoped table has RLS.
+  --
+  -- The inverse, and the one that actually leaks: a table carrying a tenant
+  -- discriminator and no RLS is readable across tenants by anyone who can
+  -- reach the database.
+  select string_agg(c.relname, ', ' order by c.relname) into offender
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public'
+    and c.relkind = 'r'
+    and not c.relrowsecurity
+    and exists (
+      select 1 from pg_attribute a
+      where a.attrelid = c.oid
+        and a.attnum > 0
+        and not a.attisdropped
+        and a.attname in ('tenant_id', 'organization_id')
+    );
+
+  if offender is not null then
+    raise exception
+      'These tables carry a tenant discriminator and no RLS: %. They are readable across tenants.',
+      offender;
+  end if;
+
+  raise notice 'rls structure: ok';
+end
+$$;
+
+-- The context helper is null-safe when nothing set it.
+--
+-- Every policy is written as `<column> = public.current_tenant_id()`. The
+-- `true` in `current_setting(..., true)` is what makes an unset GUC null
+-- rather than an error, and null is what makes those policies match no row.
+-- Were it ever to return a value with no context set, every policy would match
+-- somebody.
+do $$
+begin
+  if (select public.current_tenant_id()) is not null then
+    raise exception 'current_tenant_id() returns a value with no context set';
+  end if;
+  raise notice 'rls context helper: ok';
+end
+$$;

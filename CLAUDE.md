@@ -31,6 +31,7 @@ All planning and reference documents live in `docs/`, matching
 | `docs/BOOTSTRAP_DOCTOR.md`       | `pnpm koras bootstrap:doctor` — preflight checks |
 | `docs/PROVISIONING_RUNBOOK.md`   | Commands, estate prerequisites, failure recovery |
 | `docs/RISK_REGISTER.md`          | Identified risks and mitigations                 |
+| `docs/OWASP_CHECKLIST.md`        | OWASP API Top 10 review of the generated API     |
 | `docs/SYNC_BACKLOG.md`           | Gaps between the factory, the two profiles and the generated repositories |
 | `docs/CLAUDE_CODE.md`            | Claude Code skills, profiles and inheritance      |
 
@@ -171,13 +172,13 @@ criterion 2026-08-25. Phase 13's offline scenarios landed the same day.
 | Phase                                  | State              | Note                                     |
 |----------------------------------------|--------------------|------------------------------------------|
 | 11 — CI/CD                             | Work complete, unverifiable | Both halves done; `generator-integration.yml` builds what it generates. Criterion now on `develop`, but the workflows have never executed |
-| 12 — Security                          | Partially complete | Secret scanning, Dependabot and the state-artifact check done; RLS suite, JWT tests and the OWASP checklist missing |
+| 12 — Security                          | Deliverables complete, criterion unmeasurable | All five shipped. Writing the missing tests found two defects, both fixed: RLS was enforced against nobody (R-032) and the ZITADEL token paths pinned neither issuer nor algorithm (R-033). The SQL suite is written but has not been executed against a database. Rate limiting is absent (R-034, open) |
 | 13 — End-to-End Acceptance Tests       | All but the live apply | Both scenarios automated and passing; the live-infrastructure variant is gated behind `KORAS_E2E_LIVE` and awaits an explicit authorisation |
 
-**Next step:** Phase 12's missing halves — the RLS suite, the JWT tests, and
-the OWASP checklist — since Phase 11 cannot be measured until the workflows run
-at all, and Phase 13's remaining criterion needs an authorisation rather than
-code.
+**Next step:** get the CI workflows to run at all. Three phases now define
+exit criteria that no scan or job has ever evaluated, and Phase 12 found two
+real defects by hand that a scan should have been the second chance at. After
+that: execute the RLS suite against a database, and close R-034.
 
 **Registration, in one paragraph.** A product registers itself with the Control
 Plane after `terraform apply`, from `generators/create-koras-app/src/registration/`.

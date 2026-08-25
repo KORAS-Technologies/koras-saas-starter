@@ -89,3 +89,22 @@ create trigger organizations_updated_at
   before update on public.organizations for each row execute function public.set_updated_at();
 create trigger subscriptions_updated_at
   before update on public.subscriptions for each row execute function public.set_updated_at();
+
+-- ── Force RLS for the owner ──────────────────────────────────────────────────
+--
+-- `enable row level security` exempts the table's owner, and both the
+-- migrations and the API arrive as the owner. Without `force`, every policy
+-- below is skipped by the only connection that reads this data -- the policies
+-- are present, correct, and never consulted.
+--
+-- The exemption exists so an owner can always recover a table it has locked
+-- itself out of. That is a maintenance affordance, and it is the wrong default
+-- for a connection serving tenant traffic. A migration that needs to bypass
+-- policies can still `alter table ... no force` deliberately, in its own
+-- migration, where it is visible.
+
+alter table public.products force row level security;
+alter table public.organizations force row level security;
+alter table public.subscriptions force row level security;
+alter table public.entitlements force row level security;
+alter table public.infrastructure_resources force row level security;

@@ -46,6 +46,7 @@ async function zitadel() {
       .setIssuedAt()
       .setExpirationTime('10m')
       .setAudience(CLIENT_ID)
+      .setIssuer(domain)
       .sign(privateKey)
 
   return { domain, idToken }

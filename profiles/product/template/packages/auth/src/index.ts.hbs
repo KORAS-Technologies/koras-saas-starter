@@ -98,11 +98,23 @@ const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>()
 
 /** Where the signing keys live, for a given ZITADEL base URL. */
 export function jwksUrl(domain: string): string {
-  return `${domain.replace(/\/$/, '')}/oauth/v2/keys`
+  return `${normalizeDomain(domain)}/oauth/v2/keys`
+}
+
+/**
+ * The ZITADEL base URL, without a trailing slash.
+ *
+ * One helper because three call sites derive three things from this value --
+ * the key set URL, the cache key, and now the expected issuer -- and an issuer
+ * that normalized differently from the key set URL would reject every token
+ * from the instance it had just fetched keys from.
+ */
+export function normalizeDomain(domain: string): string {
+  return domain.replace(/\/$/, '')
 }
 
 function jwksFor(domain: string): ReturnType<typeof createRemoteJWKSet> {
-  const base = domain.replace(/\/$/, '')
+  const base = normalizeDomain(domain)
   let set = jwksCache.get(base)
   if (!set) {
     set = createRemoteJWKSet(new URL(jwksUrl(domain)))
@@ -208,6 +220,17 @@ export async function resolveToken(
   try {
     const { payload } = await jwtVerify(token, jwksFor(options.zitadelDomain), {
       audience,
+      // OIDC Core 3.1.3.7 step 3. The key set already comes from this
+      // instance, so a token signed elsewhere fails the signature and this
+      // looks redundant -- but "the next check would have caught it" is the
+      // argument that removes every check, one at a time. ZITADEL sets `iss`
+      // to its own base URL, which is the same value the key set is fetched
+      // from.
+      issuer: normalizeDomain(options.zitadelDomain),
+      // Pinned so the token header cannot pick the algorithm. The session
+      // cookie below has always done this; the path taking input from outside
+      // was the one that did not.
+      algorithms: ['RS256'],
     })
 
     const subject = typeof payload.sub === 'string' ? payload.sub : undefined

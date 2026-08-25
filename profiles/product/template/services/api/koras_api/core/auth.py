@@ -34,6 +34,13 @@ async def require_auth(
             jwks=_jwks,
             project_id=settings.zitadel_project_id,
             client_id=settings.zitadel_client_id,
+            # `verify_token` defaults this to None, so the issuer is checked
+            # only if the caller asks. The keys already come from this instance,
+            # which is why the omission never showed -- but that is the next
+            # check covering for this one, and OIDC Core 3.1.3.7 asks for both.
+            # Normalized the way JWKSCache normalizes it, so the expected issuer
+            # and the key source cannot disagree about a trailing slash.
+            issuer=settings.zitadel_domain.rstrip("/"),
         )
     except TokenVerificationError as exc:
         # Logged, not returned. The distinction matters both ways: an expired

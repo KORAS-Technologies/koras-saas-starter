@@ -70,9 +70,23 @@ async function issuer() {
       .setIssuedAt()
       .setExpirationTime('10m')
       .setAudience(audience)
+      // ZITADEL sets `iss` to its own base URL, and verification now requires
+      // it. A helper that signed without one would make every test here
+      // exercise a token no real provider issues.
+      .setIssuer(domain)
       .sign(privateKey)
 
-  return { domain, sign }
+  /** Signs with the right key but an issuer of the caller's choosing. */
+  const signAs = (iss: string, claims: Record<string, unknown>, audience: string | string[]) =>
+    new SignJWT(claims)
+      .setProtectedHeader({ alg: 'RS256', kid: 'test' })
+      .setIssuedAt()
+      .setExpirationTime('10m')
+      .setAudience(audience)
+      .setIssuer(iss)
+      .sign(privateKey)
+
+  return { domain, sign, signAs }
 }
 
 function requestWith(token?: string): NextRequest {
@@ -94,6 +108,24 @@ test('a token addressed to the client id is accepted', async () => {
 
   assert.ok(session, 'a valid ID token was rejected')
   assert.equal(session.userId, 'user-1')
+})
+
+test('a token from another issuer is rejected', async () => {
+  // The check this test was written for. The key set already makes a foreign
+  // signature fail, so the only way to exercise `iss` on its own is to sign
+  // with the *right* key and claim the wrong issuer -- which is exactly the
+  // token a second ZITADEL instance behind the same key material would
+  // produce, and exactly what OIDC Core 3.1.3.7 step 3 exists to refuse.
+  const { domain, signAs } = await issuer()
+  const token = await signAs('https://not-this-instance.example', { sub: 'user-1' }, CLIENT_ID)
+
+  const session = await verifySession(requestWith(token), {
+    zitadelDomain: domain,
+    clientId: CLIENT_ID,
+    projectId: PROJECT_ID,
+  })
+
+  assert.equal(session, null, 'a token claiming another issuer was accepted')
 })
 
 test('a token addressed to the project id is also accepted', async () => {

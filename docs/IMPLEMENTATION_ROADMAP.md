@@ -971,33 +971,105 @@ execution note in `docs/RISK_REGISTER.md`.
 
 **Prerequisite:** Phase 8 complete
 **Parallelizable with:** Phase 11
-**Status:** Partially complete (2026-08-23). Secret scanning is done and now
-real: `.gitleaks.toml` ships to the starter and both templates, every job
-installs the binary rather than the licence-gated marketplace action, and the
-starter's own scan runs on `develop` -- which, for as long as the job existed,
-was the one branch it never covered. Dependabot is in place, and
-`tests/security/test_no_state_artifacts.py` now guards the factory as well as
-what it generates.
-
-Still missing: the RLS policy test suite (`supabase/tests/` — the starter's
-`supabase/` holds only `.gitkeep`), the ZITADEL JWT validation tests, and the
-OWASP review checklist. The generated projects carry JWT coverage already --
-`packages/auth` ships 43 tests across both profiles -- so the gap is the
-starter's own.
-
-**Blocked on the same decision as Phase 11:** the exit criterion is defined on
-`main`.
+**Status:** All five deliverables exist (2026-08-25). Two of the three that were
+missing turned up defects rather than merely absent tests, and both are fixed.
+The exit criterion remains unmeasurable for the reason Phase 11 gives.
 
 **Scope:** Security hardening of starter, generator, and generated output.
 
 **Deliverables:**
-- `.github/workflows/security.yml` — CodeQL + secret scanning + `gitleaks`
-- `Dependabot` configuration
-- OWASP Top 10 review checklist for generated API
-- RLS policy test suite (`supabase/tests/`)
-- ZITADEL JWT validation unit tests
+- [x] `.github/workflows/security.yml` — CodeQL + secret scanning + `gitleaks`
+- [x] Dependabot configuration
+- [x] OWASP Top 10 review checklist — `docs/OWASP_CHECKLIST.md`
+- [x] RLS policy test suite — `supabase/tests/`, shipped to both profiles
+- [x] ZITADEL JWT validation tests — `jwt-validation.test.ts`, both tiers
+
+### Two defects, found by writing the missing tests
+
+**RLS was enforced against nobody.** Every table ran `enable row level
+security` and none ran `force`. That exempts the table's owner — and the
+migrations and the FastAPI service both connect as the owner, through the same
+`DATABASE_URL`. The policies in `00002_rls_policies.sql` were present, correct,
+and never consulted at runtime.
+
+It fails open, in the direction of cross-tenant reads, and nothing would have
+caught it by accident: a developer testing by hand connects as the owner, sees
+every policy appear to work, and is looking at a database that is applying none
+of them. `force row level security` now covers all eight tables across the two
+profiles.
+
+**The ZITADEL token paths pinned only the audience.** Neither the Next.js
+id_token path nor the FastAPI bearer path checked `iss`, and neither pinned the
+algorithm — while the session-cookie path, the one the application signs
+itself and has least reason to distrust, pinned both. The stricter check was on
+the input the application generates and the looser one on the input that
+arrives from outside.
+
+Not directly exploitable: the key set comes from that instance, so a token
+signed elsewhere fails the signature. It is required by OIDC Core §3.1.3.7, and
+the argument that the next check catches it is the argument that removes every
+check one at a time. Both tiers now pin issuer and algorithm.
+
+The Python fix matters more than the TypeScript one — `verify_token` already
+took an `issuer` argument and defaulted it to `None`, so the check was opt-in
+and nothing opted in. A fix applied to one language and not the other leaves
+the same door open on the service that holds the data.
+
+### The RLS suite
+
+```
+supabase/tests/010_rls_structure.sql    schema invariants, profile-agnostic
+supabase/tests/020_tenant_isolation.sql two tenants, one context, every policy
+local/scripts/test-rls.sh               the runner
+```
+
+Structural assertions catch the class of failure that has no symptom: RLS
+enabled but not forced, RLS enabled with no policy, a table carrying
+`tenant_id` with no RLS at all.
+
+The behavioural suite creates two tenants, sets the context to one, and asks
+every policy for the other one's rows — reads *and* writes, because a policy
+with `using` and no `with check` lets a row be written into another tenant
+while refusing to read it back, which looks like success to the caller. It also
+asserts that an unset context sees nothing, which is the state a connection is
+in when the API forgets to call `set_rls_context`.
+
+The runner creates a `nologin nobypassrls` role and `SET ROLE`s into it,
+because a suite run as the owner passes every assertion while proving nothing.
+That is the whole point of the exercise, and it is why the runner creates the
+role rather than assuming one.
+
+### What is verified, and what is not
+
+| | |
+|---|---|
+| RLS structure and enforcement | 10 starter assertions, both profiles |
+| JWT verification, both tiers | 36 starter assertions, both profiles |
+| JWT behaviour in a generated project | 44 tests, run in the lab; includes a wrong-issuer rejection |
+| **The SQL suite executed against a database** | **Not yet run** |
+
+The SQL is written and shipped but has not been executed: it needs a Postgres
+that the starter's own CI does not yet stand up. Until it runs, the structural
+assertions are guaranteed by the generator tests and the behavioural ones are
+guaranteed by nothing. That is recorded here rather than left to be assumed.
+
+### Open gaps
+
+`docs/OWASP_CHECKLIST.md` carries the full review. The one finding of substance:
+
+**API4:2023 — there is no rate limiting anywhere in the generated API.** No
+per-caller quota, no per-tenant quota. An unauthenticated caller can hammer the
+token-verification path, which is the expensive one. Closing it means a limiter
+keyed on tenant and subject rather than IP — callers arrive through a CDN — held
+in the environment's Upstash Redis rather than in process, since the API runs
+more than one machine.
 
 **Done when:** Zero critical/high findings in automated scans on `develop`.
+
+**Blocked on the same thing as Phase 11.** The Security workflow is registered,
+active, and has never executed. Every finding above was found by reading and by
+tests written for this phase, not by a scan, because no scan has ever run. The
+criterion is unmeasurable rather than unmet.
 
 ---
 

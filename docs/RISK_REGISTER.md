@@ -232,6 +232,9 @@ branding" there.
 | R-013 | Profile manifest schema changes              | 6        | Accepted                 |
 | R-014 | Control Plane not available at registration  | 4        | Accepted                 |
 | R-015 | Terraform plan committed by the generator    | 25       | Resolved                 |
+| R-032 | RLS enforced against nobody (owner exempt)   | 20       | Resolved                 |
+| R-033 | Token checks loosest on external input       | 9        | Resolved                 |
+| R-034 | No rate limiting in the generated API        | 12       | Open                     |
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
 | R-017 | Control-plane env contract was the product one | 10     | Resolved                 |
 | R-018 | Queue polling billed per command             | 8        | Resolved                 |
@@ -936,3 +939,101 @@ exit 1.
 
 Revisit if any of these ever reaches a generated project, if anyone starts
 running `vitest --ui`, or once the suite no longer blocks its workers.
+
+---
+
+## R-032 — row-level security was enforced against nobody
+
+**Severity:** 20 (likelihood 4 × impact 5) · **Status:** Resolved 2026-08-25
+
+Every table in both profiles ran `alter table … enable row level security` and
+none ran `force`. `enable` does not apply to the table's owner, and both the
+migrations and the FastAPI service connect as the owner through the same
+`DATABASE_URL`. Every policy in `00002_rls_policies.sql` was correct, present,
+and never consulted by the connection that serves tenant traffic.
+
+The `require_tenant` dependency still scoped queries in application code, so
+this was not an open door on its own — it was the removal of the second of two
+layers, and the second layer exists precisely because the first is application
+code and application code is what forgets. Tenant isolation was resting on one
+layer while appearing to rest on two.
+
+**Why nothing caught it.** It has no symptom. A developer testing by hand
+connects as the owner, sees every policy behave correctly — because the owner
+sees everything either way — and concludes the policies work. A test suite
+written the obvious way connects the same way and agrees. It fails open, and it
+fails open in the direction of cross-tenant reads.
+
+**Resolution:** `force row level security` on all eight tables across the two
+profiles. `rls-enforcement.test.ts` fails if a table ever enables RLS without
+forcing it, and `supabase/tests/010_rls_structure.sql` fails against a live
+database for the same reason. The runner creates a `nobypassrls` role and
+`SET ROLE`s into it, because a suite run as the owner passes while proving
+nothing.
+
+**Outstanding:** the SQL suite has been written and shipped but not executed —
+the starter has no CI Postgres yet. The structural half is guaranteed by the
+generator tests; the behavioural half is guaranteed by nothing until it runs.
+
+---
+
+## R-033 — the token checks were strictest on the token we issue ourselves
+
+**Severity:** 9 (likelihood 3 × impact 3) · **Status:** Resolved 2026-08-25
+
+Three verification paths ship in every generated project. Two of them —
+the Next.js ZITADEL id_token path and the FastAPI bearer path — pinned the
+audience and checked neither the issuer nor the algorithm. The third, the
+session cookie this application signs itself, pinned both.
+
+The looser checks were on the input arriving from outside and the stricter one
+on the input the application generates.
+
+The Python half was the worse of the two: `verify_token` already accepted an
+`issuer` argument and defaulted it to `None`, so the check existed, was
+opt-in, and nothing opted in. A reader of that function would see issuer
+support and reasonably assume it was in use.
+
+**Exploitability: low.** The key set is fetched from the configured instance,
+so a token signed by another issuer fails the signature regardless. What was
+missing is the check that does not depend on that remaining true — OIDC Core
+§3.1.3.7 step 3 — and "the next check would have caught it" is the argument
+that removes every check, one at a time.
+
+**Resolution:** issuer and algorithm pinned on both ZITADEL paths, in both
+profiles. `jwt-validation.test.ts` asserts all three paths pin signature,
+audience where applicable, issuer, and algorithm. Each generated project also
+gains a behavioural test signing with the correct key and a foreign `iss`,
+which must be rejected — verified in the lab: 44 tests pass, up from 43.
+
+**Assumption recorded:** the ZITADEL issuer equals the configured instance base
+URL, which is how ZITADEL issues tokens. An instance fronted by a domain whose
+`iss` differs would fail closed and loudly rather than opening.
+
+---
+
+## R-034 — the generated API has no rate limiting
+
+**Severity:** 12 (likelihood 4 × impact 3) · **Status:** Open
+
+There is no rate limiting anywhere in the generated API: no per-caller quota,
+no per-tenant quota, no request-size ceiling beyond the defaults of whatever
+sits in front of it. OWASP API4:2023.
+
+The token-verification path is the one that matters. It is reachable
+unauthenticated by definition, and it is the most expensive thing the service
+does — a JWKS lookup and an asymmetric signature check per request.
+
+**Not mitigated by anything currently shipping.** Vercel and Fly both throttle
+at the edge in ways that protect the platform rather than the tenant, and
+neither knows what a tenant is.
+
+**What closing it requires:** a limiter keyed on tenant *and* subject rather
+than IP — callers arrive through a CDN, so the IP is the CDN's — applied ahead
+of token verification so the expensive path is the protected one, with the
+counter held in the environment's Upstash Redis rather than in process. The API
+runs more than one machine, and an in-process counter is a per-machine counter
+that multiplies the real limit by the machine count.
+
+Recorded in `docs/OWASP_CHECKLIST.md` under API4 as the phase's one substantive
+open finding.

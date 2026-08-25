@@ -253,7 +253,7 @@ async def verify_token(
                 token,
                 await jwks.get(force_refresh=True),
                 algorithms=["RS256"],
-                    issuer=issuer,
+                issuer=issuer,
                 options=options,
             )
         except JWTError as exc:
