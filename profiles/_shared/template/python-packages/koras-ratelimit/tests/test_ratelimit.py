@@ -7,7 +7,6 @@ that is unreachable, and a window that has rolled over.
 from __future__ import annotations
 
 import pytest
-
 from koras_ratelimit import RateLimit, check, window_key
 
 

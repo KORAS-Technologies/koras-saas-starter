@@ -62,6 +62,30 @@ def _refuse(decision: RateLimitDecision) -> None:
     )
 
 
+
+def caller_identity(claims: object) -> tuple[str, str]:
+    """The organization and subject, whichever profile's claim type this is.
+
+    The two profiles model an authenticated caller differently and always have:
+    a product carries `JWTClaims(sub, organization_id)`, the Control Plane
+    carries `Principal(subject, zitadel_organization_id)`. This module is shared
+    by both, so it reads both shapes rather than being copied into each and
+    left to drift.
+
+    Both attributes come off a verified token either way. The fallbacks are for
+    the shape, never for the trust: nothing here reads a header or a parameter.
+
+    An unidentifiable caller is bucketed as "unknown" rather than waved through.
+    That shares one quota between every such caller, which is the safe direction
+    -- the alternative is a caller who avoids the limiter by being unreadable.
+    """
+    subject = getattr(claims, "sub", None) or getattr(claims, "subject", None)
+    organization = getattr(claims, "organization_id", None) or getattr(
+        claims, "zitadel_organization_id", None
+    )
+    return (organization or "none", subject or "unknown")
+
+
 async def limit_anonymous(request: Request) -> RateLimitDecision:
     """Tier 1. Applies to every request, including unauthenticated ones."""
     decision = await check(
@@ -85,14 +109,11 @@ async def limit_authenticated(request: Request, claims: AuthDep) -> RateLimitDec
     reached by an unverified caller -- which is the property that makes keying
     on `sub` safe.
     """
-    # `organization_id` and `sub` are both claims the signature covered. The
-    # organization is included so one tenant's traffic cannot be attributed to
-    # another if a subject is ever reused across them.
-    organization = claims.organization_id or "none"
+    organization, subject = caller_identity(claims)
     decision = await check(
         request.app.state.redis,
         bucket="tenant",
-        identity=f"{organization}:{claims.sub}",
+        identity=f"{organization}:{subject}",
         limit=AUTHENTICATED_LIMIT,
     )
     request.state.rate_limit = decision

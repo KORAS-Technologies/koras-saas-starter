@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
-from starlette.middleware.base import BaseHTTPMiddleware
 
 from .core.observability import setup_telemetry
 from .core.ratelimit import limit_anonymous
@@ -28,21 +27,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await app.state.redis.aclose()
 
 
-class RateLimitHeaders(BaseHTTPMiddleware):
-    """Puts the quota on every response, not only on the refusals.
-
-    A caller that only learns its limit by exceeding it has to exceed it to
-    learn anything.
-    """
-
-    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
-        response = await call_next(request)
-        decision = getattr(request.state, "rate_limit", None)
-        if decision is not None:
-            for header, value in decision.headers.items():
-                response.headers.setdefault(header, value)
-        return response
-
 
 app = FastAPI(
     title="KORAS Control Plane API",
@@ -52,8 +36,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(RateLimitHeaders)
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[str(origin) for origin in settings.cors_origins],
@@ -61,6 +43,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def rate_limit_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
+    """Puts the quota on every response, not only on the refusals.
+
+    A caller that learns its limit only by exceeding it has to exceed it to
+    learn anything.
+
+    FastAPI's own decorator rather than a BaseHTTPMiddleware subclass: that
+    would mean importing starlette, which resolves only because fastapi brings
+    it. An import the manifest never named is the defect this service already
+    has a test for.
+    """
+    response = await call_next(request)
+    decision = getattr(request.state, "rate_limit", None)
+    if decision is not None:
+        for header, value in decision.headers.items():
+            response.headers.setdefault(header, value)
+    return response
+
 
 setup_telemetry(app, service_name="{{projectSlug}}-api")
 
