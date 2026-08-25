@@ -50,6 +50,24 @@ wait_for "Tempo"       "${COMPOSE} ps --status running --services | grep -q '^te
 # rather than merely confirming the process is alive.
 wait_for "OTel"        "curl -sf --max-time 2 -o /dev/null -X POST -H 'content-type: application/json' -d '{\"resourceSpans\":[]}' http://localhost:${KORAS_PORT_OTLP_HTTP}/v1/traces"
 
+# The Python services run on the host under `make dev`, not in Compose, so they
+# are reported rather than waited for: `make health` is expected to pass on a
+# freshly bootstrapped stack where only the infrastructure is up. Reporting
+# beats omitting -- "not running" is an answer, and the absence of a line is
+# not.
+{{#if service.api}}printf "%-20s" "API..."
+if curl -sf --max-time 2 "http://localhost:${KORAS_PORT_SERVICE_API}/api/v1/health" >/dev/null 2>&1; then
+  echo "OK"
+else
+  echo "not running (start with: make dev)"
+fi
+{{/if}}{{#if service.ai_gateway}}printf "%-20s" "AI gateway..."
+if curl -sf --max-time 2 "http://localhost:${KORAS_PORT_SERVICE_AI_GATEWAY}/health" >/dev/null 2>&1; then
+  echo "OK"
+else
+  echo "not running (start with: make dev)"
+fi
+{{/if}}
 echo ""
 echo "All infrastructure services healthy."
 echo ""
