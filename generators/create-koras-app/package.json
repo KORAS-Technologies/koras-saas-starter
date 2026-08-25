@@ -12,6 +12,10 @@
       "types": "./dist/terraform/inputs.d.ts",
       "default": "./dist/terraform/inputs.js"
     },
+    "./redact": {
+      "types": "./dist/redact.d.ts",
+      "default": "./dist/redact.js"
+    },
     "./project-manifest": {
       "types": "./dist/generation/project-manifest.d.ts",
       "default": "./dist/generation/project-manifest.js"

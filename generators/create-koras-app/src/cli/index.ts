@@ -25,6 +25,7 @@ import {
 } from '../generation/refresh.js'
 import { checkDrift, formatDriftReport } from '../generation/drift.js'
 import { provision } from '../terraform/runner.js'
+import { runRegistration, type RegistrationReport } from '../registration/index.js'
 import { preflightInputs } from '../terraform/inputs.js'
 import {
   dopplerUnavailableMessage,
@@ -67,6 +68,9 @@ OPTIONS:
                              are unaffected; the Control Plane simply does not
                              learn about them. Use when no Control Plane is live
                              yet, which is the documented bootstrap order.
+  --control-plane-url <url>  Control Plane to register with, overriding the
+                             estate default from Doppler. The matching token is
+                             read from Doppler only, never from a flag.
   --domain <fqdn>            Domain this project is served under. Defaults to
                              <slug>.<apex> for a product and the apex itself for
                              the Control Plane, where the apex is the profile's
@@ -308,7 +312,7 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   if (args.provisionOnly) {
     console.log(`
 Provisioning the existing project in ${projectSlug}/ — nothing regenerated.`)
-    await runProvision(ctx, projectRoot, projectSlug, false)
+    await runProvision(ctx, projectRoot, projectSlug, false, args)
     return
   }
 
@@ -367,7 +371,7 @@ Provisioning the existing project in ${projectSlug}/ — nothing regenerated.`)
 
   // ── Provision infrastructure ───────────────────────────────────────────────
 
-  await runProvision(ctx, projectRoot, projectSlug, true)
+  await runProvision(ctx, projectRoot, projectSlug, true, args)
 }
 
 async function runProvision(
@@ -384,6 +388,7 @@ async function runProvision(
    * operation.
    */
   generated: boolean,
+  args: import('./args.js').ParsedArgs,
 ): Promise<void> {
   const outcome = await provision(ctx, { dryRun: ctx.dryRun, projectRoot })
 
@@ -418,6 +423,16 @@ async function runProvision(
           console.warn(`    git push origin develop`)
         }
       }
+      // Registration is last on purpose. It reports what exists, so it runs
+      // once the repository has been pushed and there is nothing further that
+      // could change the references being registered.
+      const report = await runRegistration(ctx, outcome.outputs, {
+        skipRequested: args.skipRegistration,
+        provisioned: true,
+        urlOverride: args.controlPlaneUrl,
+      })
+      printRegistrationReport(report, ctx, projectSlug)
+
       console.log(`\nNext steps:`)
       console.log(`  cd ${projectSlug}`)
       console.log(`  make bootstrap`)
@@ -446,5 +461,56 @@ async function runProvision(
           `  pnpm create-koras-app ${projectSlug} --profile ${ctx.profile} --provision-only`,
       )
       process.exitCode = 1
+  }
+}
+
+/**
+ * Reports what registration did, and what to do when it did not work.
+ *
+ * A skip is not a warning: the common one is the first product in an estate
+ * that has no Control Plane yet, which is the documented bootstrap order
+ * rather than a problem.
+ *
+ * A failure is a warning and never an error that unwinds anything. The
+ * infrastructure above this line was created successfully, and R-001 is
+ * explicit that a registry being unreachable is not a reason to tear it down.
+ * The exit code still moves so CI notices, but the message says plainly that
+ * nothing needs repairing.
+ */
+function printRegistrationReport(
+  report: RegistrationReport,
+  ctx: import('../generation/context.js').GenerationContext,
+  projectSlug: string,
+): void {
+  switch (report.kind) {
+    case 'registered':
+      console.log('\n✓ Registered with the Control Plane.')
+      console.log(`  Correlation id: ${report.correlationId}`)
+      break
+
+    case 'skipped':
+      console.log(`\nControl Plane registration skipped — ${report.detail}`)
+      if (report.reason === 'requested' || report.reason === 'not-configured') {
+        console.log('  Register it later with:')
+        console.log(
+          `    pnpm create-koras-app ${projectSlug} --profile ${ctx.profile} --provision-only`,
+        )
+      }
+      break
+
+    case 'failed':
+      console.warn(`\n⚠ Control Plane registration failed — ${report.detail}`)
+      if (report.correlationId) console.warn(`  Correlation id: ${report.correlationId}`)
+      console.warn('  The infrastructure was provisioned and is intact; nothing was rolled back.')
+      console.warn(
+        report.retryable
+          ? '  Retry once the Control Plane is reachable:'
+          : '  Fix the cause, then retry:',
+      )
+      console.warn(
+        `    pnpm create-koras-app ${projectSlug} --profile ${ctx.profile} --provision-only`,
+      )
+      process.exitCode = 1
+      break
   }
 }

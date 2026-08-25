@@ -68,6 +68,23 @@ explicitly. A bare `doppler run` here fails with "You must specify a project".
 `doppler setup --project koras-platform-bootstrap --config prod` binds the
 scope per directory if you would rather not repeat the flags in ad-hoc commands.
 
+Two of those keys are read after Terraform rather than by it, and only on a
+product run:
+
+| Key | Purpose |
+|-----|---------|
+| `KORAS_CONTROL_PLANE_URL` | Where the Control Plane is, e.g. `https://control-plane.koras.io` |
+| `KORAS_CONTROL_PLANE_TOKEN` | Bearer token the Control Plane issues to the factory |
+
+Neither is required. Absent a URL, a product is provisioned and simply not
+registered, which is the documented bootstrap order for the first project in a
+new estate (R-001) and exits 0. Present a URL without a token, provisioning
+still succeeds but registration fails as a misconfiguration — set both or
+neither.
+
+`--control-plane-url` overrides the URL for one run; the token has no flag, and
+is not to be passed on a command line.
+
 ### GitHub
 
 A fine-grained token whose **resource owner is the organization** — this cannot

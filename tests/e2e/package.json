@@ -1,0 +1,20 @@
+{
+  "name": "koras-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KORAS end-to-end acceptance tests (Phase 13)",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "create-koras-app": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

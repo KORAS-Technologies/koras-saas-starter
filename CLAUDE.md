@@ -163,22 +163,31 @@ external skills, and bring an existing project back into alignment.
 
 ## Current phase
 
-**Phases 0–9 complete.** Phase 9 (`--provision`) met its exit criterion
-2026-08-17.
+**Phases 0–10 complete.** Phase 10 (Control Plane registration) met its exit
+criterion 2026-08-25. Phase 13's offline scenarios landed the same day.
 
 **Open:**
 
 | Phase                                  | State              | Note                                     |
 |----------------------------------------|--------------------|------------------------------------------|
-| 10 — Control Plane Registration Client | Not started        | `src/registration/` and `--skip-registration` do not exist |
 | 11 — CI/CD                             | Work complete, unverifiable | Both halves done; `generator-integration.yml` builds what it generates. Criterion now on `develop`, but the workflows have never executed |
 | 12 — Security                          | Partially complete | Secret scanning, Dependabot and the state-artifact check done; RLS suite, JWT tests and the OWASP checklist missing |
-| 13 — End-to-End Acceptance Tests       | Not started        | Blocked on Phase 10                      |
+| 13 — End-to-End Acceptance Tests       | All but the live apply | Both scenarios automated and passing; the live-infrastructure variant is gated behind `KORAS_E2E_LIVE` and awaits an explicit authorisation |
 
-**Next step:** Phase 10, the Control Plane registration client. It is the only
-remaining phase with no work started, and Phase 13 is blocked behind it.
-`--skip-registration` matters beyond that phase: R-001's mitigation in
-`docs/RISK_REGISTER.md` is written as though the flag exists.
+**Next step:** Phase 12's missing halves — the RLS suite, the JWT tests, and
+the OWASP checklist — since Phase 11 cannot be measured until the workflows run
+at all, and Phase 13's remaining criterion needs an authorisation rather than
+code.
+
+**Registration, in one paragraph.** A product registers itself with the Control
+Plane after `terraform apply`, from `generators/create-koras-app/src/registration/`.
+The address and bearer token come from Doppler as `KORAS_CONTROL_PLANE_URL` and
+`KORAS_CONTROL_PLANE_TOKEN`; `--control-plane-url` overrides the former and
+nothing overrides the latter. An unconfigured Control Plane is a skip, not a
+failure — that is the documented bootstrap order (R-001). A failure never
+unwinds infrastructure. The Control Plane profile registers nothing, refused
+three independent times.
+
 
 Caveats when reading the roadmap:
 

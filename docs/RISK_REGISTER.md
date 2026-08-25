@@ -33,7 +33,8 @@ branding" there.
 | Impact       | 3 |
 | Severity     | 9 |
 | Status       | Mitigated |
-| Mitigation   | `--profile control-plane` bootstrap is explicitly designed to run without a pre-existing Control Plane. Product registration is a post-provision step that is skippable with `--skip-registration` flag if the Control Plane is not yet live. Registration failure does not roll back infrastructure. |
+| Mitigation   | `--profile control-plane` bootstrap is explicitly designed to run without a pre-existing Control Plane. Product registration is a post-provision step that is skippable with `--skip-registration` if the Control Plane is not yet live. Registration failure does not roll back infrastructure. |
+| Verified     | 2026-08-25, Phase 10. The flag exists and is honoured; an absent `KORAS_CONTROL_PLANE_URL` is treated as the documented bootstrap order and skips rather than fails; a registration failure prints the retry command and unwinds nothing. Asserted in `registration-client.test.ts` and `tests/e2e/product-provision.test.ts`. Until this date the mitigation described a flag nobody had implemented. |
 
 ---
 

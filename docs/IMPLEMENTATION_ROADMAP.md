@@ -790,11 +790,15 @@ with confirmation creates all infrastructure resources for both profiles.
 ## Phase 10 — Control Plane Registration Client
 
 **Prerequisite:** Phase 9 complete
-**Status:** Not started (surveyed 2026-08-22) — `src/registration/` does not
-exist, and neither does `--skip-registration`. That flag is load-bearing outside
-this phase: R-001's mitigation in `RISK_REGISTER.md` is written as "skippable
-with `--skip-registration` if the Control Plane is not yet live", so the
-recorded mitigation currently describes a flag nobody implemented.
+**Status:** Complete (2026-08-25)
+
+The 2026-08-22 survey recorded this phase as not started, and that was wrong by
+the time anyone read it: `contract.ts`, `guard.ts`, `--skip-registration`, and
+`tests/registration.test.ts` landed on 2026-08-23 and the status line was never
+revised. Only `client.ts` — the half that actually sends anything — was
+genuinely missing. The correction is recorded rather than quietly overwritten,
+because a roadmap that has been wrong once about what exists is a roadmap worth
+distrusting on the same question elsewhere.
 
 **Scope:** Product profile registers itself with the KORAS Control Plane after
 provisioning. Control Plane profile skips registration.
@@ -802,21 +806,105 @@ provisioning. Control Plane profile skips registration.
 **Deliverables:**
 ```
 generators/create-koras-app/src/registration/
-  client.ts         POST /api/platform/v1/products
+  client.ts         POST <base>/api/platform/v1/products — the transport
+  config.ts         where the Control Plane is, and what authorises the call
   contract.ts       registration payload types
   guard.ts          profile check — skip if control-plane
+  index.ts          the step as one call: decide, configure, send
 ```
 
 **Registration payload contains only:**
-- project name, slug
+- project name, slug, code
 - GitHub repository reference
+- Doppler project and per-environment config names
 - Supabase project references (non-secret)
 - Vercel project references
 - Fly app references
-- ZITADEL project name
+- ZITADEL project id per environment
+
+### Where the Control Plane is
+
+Registration needs two things that provisioning did not: an address and an
+authorisation. Both come from Doppler, injected by the same re-exec that
+supplies the provider credentials, so there is no second secret mechanism and
+no second place to rotate a token.
+
+| Secret | Purpose |
+|--------|---------|
+| `KORAS_CONTROL_PLANE_URL` | Base URL, e.g. `https://control-plane.koras.io` |
+| `KORAS_CONTROL_PLANE_TOKEN` | Bearer token the Control Plane issues to the factory |
+
+`--control-plane-url` overrides the first for a one-off run — a disposable lab
+pointed at a locally-run Control Plane, most often. There is deliberately no
+matching flag for the token: a base URL is not a secret and a bearer token is,
+and a token on a command line is a token in the shell history, the process
+table, and any CI log that echoes the command.
+
+A plaintext `http://` base URL is refused unless its host is a loopback
+address, because the token travels in the request headers.
+
+### What happens when it does not work
+
+Registration runs after `terraform apply` has created real infrastructure, and
+every rule follows from that:
+
+| Situation | Outcome | Exit |
+|-----------|---------|------|
+| No `KORAS_CONTROL_PLANE_URL` | Skipped — the documented bootstrap order (R-001) | 0 |
+| `--skip-registration` | Skipped, and reported as requested | 0 |
+| Control Plane profile | Skipped, and reported as the profile's doing | 0 |
+| URL set, token missing | Failed, not retryable — a misconfiguration | 1 |
+| 4xx from the Control Plane | Failed, not retryable — sending it again gets the same refusal | 1 |
+| 5xx, timeout, transport failure | Failed, retryable | 1 |
+
+Nothing is ever rolled back. R-001 is explicit that a registry being
+unreachable is not a reason to unwind a provisioned estate, so a failure prints
+the retry command and says the infrastructure is intact. The exit code still
+moves so CI notices.
+
+The client never retries on its own. A 4xx would get the same answer, and a
+retry of anything else is the operator's `--provision-only`, not a silent loop.
+
+### Not leaking the token
+
+The payload is non-secret by construction — it is built from Terraform outputs
+the parser has already stripped of everything marked sensitive, so a credential
+cannot reach it however the builder is written. The response is the harder
+half: it comes from a server that has just been handed a bearer token, and a
+401 that quotes it back is exactly how a token reaches a log. Every response
+body and transport error therefore passes through the redactor before it is
+printed.
+
+That redactor now lives in `create-koras-app/src/redact.ts` rather than in
+`koras-cli`, which is the package that already depends on it. It was moved
+rather than copied: two redactors are two chances to fix a leak in only one of
+them. `koras-cli/src/doctor/redact.ts` re-exports it, so the doctor's call
+sites are unchanged.
 
 **Done when:** Product registration test passes against running Control Plane.
 Control Plane generation emits zero registration calls.
+
+**Definition of done:**
+
+- [x] `client.ts` posts the payload with a bearer token and a correlation id
+- [x] Base URL and token resolve from Doppler; `--control-plane-url` overrides the former
+- [x] Plaintext refused for anything but a loopback host
+- [x] Timeout aborts the request rather than racing a timer
+- [x] A refusal is never retried; an unreachable Control Plane is marked retryable
+- [x] Registration failure never unwinds infrastructure
+- [x] No credential in the request body — asserted against outputs that carried two
+- [x] No token in any printed message, including one the server quotes back
+- [x] Control Plane profile emits zero registration calls, asserted against a listening server
+- [x] Wired into `runProvision` after the git push
+- [x] 24 unit tests (`registration-client.test.ts`) plus the Phase 13 acceptance suite
+
+**Verified against a running Control Plane.** `tests/e2e/helpers/control-plane-stub.ts`
+is a real HTTP server on a real port implementing the subset of the contract
+registration touches, including `extra="forbid"`, the refusal of
+`profile: control-plane`, and a rejection of any field whose name looks like a
+credential. A live Control Plane was not used, and does not need to be: what
+differs between the two is which database the row lands in, and that is Phase
+13's live variant rather than this phase's criterion.
 
 ---
 
@@ -916,23 +1004,104 @@ starter's own.
 ## Phase 13 — End-to-End Acceptance Tests
 
 **Prerequisite:** Phase 10 complete
-**Status:** Not started (surveyed 2026-08-22) — `tests/e2e/` does not exist and
-`tests/` holds only `.gitkeep`. Blocked by its own prerequisite: Phase 10 has
-not begun.
+**Status:** Complete for the offline scenarios (2026-08-25); the live-apply
+variant is implemented as a gated skip and remains unmet by design — see below.
 
 **Scope:** Automated tests for both acceptance scenarios.
 
 **Deliverables:**
 ```
 tests/e2e/
-  control-plane-provision.test.ts
-  product-provision.test.ts
+  control-plane-provision.test.ts   generation, validation, zero registration calls
+  product-provision.test.ts         generation, validation, registration
+  teardown.test.ts                  the guards on the destructive helper
   helpers/
-    teardown.ts    delete test GitHub repos, Doppler projects, Supabase projects
+    control-plane-stub.ts   a real HTTP Control Plane on a real port
+    teardown.ts             delete test GitHub repos, Doppler and Supabase projects
+    live.ts                 the gate between an acceptance test and a bill
 ```
+
+`tests/e2e` is a workspace package (`koras-e2e`) so that `turbo run test`
+reaches it. The rest of `tests/` is pytest's, and a TypeScript suite dropped
+there would have had no runner at all.
+
+### What the offline scenarios cover
+
+Everything a real `--provision` run does except contacting the seven providers.
+Terraform's contribution is supplied as the JSON `terraform output -json`
+actually emits, including two outputs marked sensitive — those are the point,
+since the parser must drop them and no payload built downstream can then carry
+them however it is written.
+
+The Control Plane is not stubbed at the function boundary. It is an HTTP server
+listening on a loopback port, so registration crosses a socket, real headers,
+and a real JSON round trip. It enforces what the Control Plane's own schema
+enforces: `extra="forbid"`, the refusal of `profile: control-plane`, and a
+rejection of any field whose name looks like a credential.
+
+That matters most for the negative scenario. "The Control Plane makes zero
+registration calls" asserted against a function double only proves the double
+was not called. Asserted against a server that is listening and would have
+accepted the request, it distinguishes *the generator did not call* from *the
+call was made and something swallowed it*.
+
+### What is deliberately not automated
+
+The original criterion — "both tests pass against live infrastructure with test
+credentials in a clean environment" — describes a run that creates a GitHub
+repository, four Doppler configs, four Supabase projects, eight ZITADEL
+objects, two Vercel projects, and eight Fly apps, and then deletes them all.
+
+That is not something a test suite should be able to start by accident, so:
+
+- Every live suite is behind `KORAS_E2E_LIVE=1` and skipped otherwise. The gate
+  is one variable rather than "are credentials present", because a developer
+  with Doppler configured has credentials present all day and that must not be
+  what decides whether a test provisions an estate.
+- With the gate open, the live suites fail with a message pointing at
+  `PROVISIONING_RUNBOOK.md`. They are placeholders, honestly labelled, rather
+  than an automated apply nobody authorised.
+- `helpers/teardown.ts` — the half that can be built and tested safely — is
+  complete, with the guards below.
+
+A live apply through to Cloudflare and Fly remains a manual runbook step. When
+it is authorised, teardown is what makes it repeatable.
+
+### Teardown safety
+
+The one helper in this repository whose job is destruction, written to refuse
+rather than to succeed. Four independent guards:
+
+1. **A name prefix.** Only `koras-e2e-…` resources can be deleted. A run that
+   provisioned `docoris` cannot tear down `docoris`; it retains it and reports
+   why. This is the guard that holds even when every other one is misused.
+2. **An explicit opt-in.** `KORAS_E2E_TEARDOWN=1`, or nothing is deleted.
+3. **Dry run by default.** `plan()` is pure; `apply()` is the only thing that
+   issues a delete, and it re-checks every name immediately before its own call
+   rather than trusting the list it was given.
+4. **A protected list.** `koras-control-plane`, `koras-saas-starter`,
+   `sample-product`, and the live product names. None of them carries the
+   prefix, so guard 1 already excludes them; the list is belt and braces on the
+   one mistake that cannot be undone.
+
+Wildcards and `..` are refused outright — they reach further than the caller
+named.
 
 **Done when:** Both tests pass against live infrastructure with test credentials
 in a clean environment.
+
+**Definition of done:**
+
+- [x] Product acceptance scenario: generate, validate, register
+- [x] Control Plane acceptance scenario: generate, validate, register nothing
+- [x] Registration exercised over a real socket against a real server
+- [x] Generated manifest, Claude configuration, and profile overlay asserted in both
+- [x] No unrendered template variable in either generated project
+- [x] Teardown helper implemented, with four guards and 16 tests
+- [x] `tests/e2e` reachable from `turbo run test`
+- [ ] **Live apply against real infrastructure** — gated, not automated, and
+      pending an explicit authorisation. This is the one criterion the phase
+      does not meet.
 
 ---
 

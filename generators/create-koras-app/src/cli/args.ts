@@ -29,6 +29,16 @@ export interface ParsedArgs {
    */
   skipRegistration: boolean
   /**
+   * The Control Plane to register with, when it is not the estate default.
+   *
+   * The default arrives from Doppler as KORAS_CONTROL_PLANE_URL. This overrides
+   * it for a one-off run -- a disposable lab project pointed at a locally-run
+   * Control Plane, most often. There is deliberately no matching flag for the
+   * token: a base URL is not a secret and a bearer token is, and a token passed
+   * on a command line is one in the shell history and the process table.
+   */
+  controlPlaneUrl?: string
+  /**
    * The domain this project is served under, when it has its own.
    *
    * Absent, a product is namespaced beneath the profile's `domain_apex` as
@@ -131,6 +141,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case '--skip-registration':
         result.skipRegistration = true
         break
+      case '--control-plane-url':
+        result.controlPlaneUrl = args[++i]
+        break
       case '--with':
         result.with.push(...splitList(args[++i]))
         break
@@ -143,6 +156,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
         } else if (arg.startsWith('--output-dir=')) {
           result.outputDir = arg.split('=')[1]
           result.outputDirExplicit = true
+        } else if (arg.startsWith('--control-plane-url=')) {
+          result.controlPlaneUrl = arg.slice('--control-plane-url='.length)
         } else if (arg.startsWith('--domain=')) {
           result.domain = arg.slice('--domain='.length)
         } else if (arg.startsWith('--with=')) {

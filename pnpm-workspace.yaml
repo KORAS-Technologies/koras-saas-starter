@@ -4,3 +4,4 @@ packages:
   - "packages/*"
   - "generators/*"
   - "tooling/*"
+  - "tests/e2e"
