@@ -291,6 +291,25 @@ jobs:
           esac
           MIGRATE_DATABASE_URL="$url" bash local/scripts/migrate.sh
 
+      # After the schema exists and before anything is deployed against it.
+      #
+      # The API makes this same check at startup and refuses to serve, which is
+      # correct and late: the release is already out and it presents as a
+      # service that will not boot. `services` needs this job, so failing here
+      # stops the deployment instead.
+      #
+      # Skips itself on the Control Plane, whose service role bypasses RLS by
+      # design. The script reads the profile from .koras/project.yaml.
+      - name: The application connects as a role RLS applies to
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          PROJECT: ${{ github.event.repository.name }}
+          CONFIG: ${{ inputs.environment }}
+        run: |
+          url=$(doppler secrets get DATABASE_URL --plain --project "$PROJECT" --config "$CONFIG")
+          url=$(printf "%s" "$url" | tr -d "[:space:]")
+          bash local/scripts/check-rls-connection.sh "$url"
+
   services:
     name: Deploy ${{ matrix.service }} (${{ inputs.environment }})
     needs: [discover, migrate]

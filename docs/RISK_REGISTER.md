@@ -1166,11 +1166,34 @@ profile — `shared-template-parity.test.ts` enforces that, and caught the first
 attempt at this split — so a package is where two profiles' shared logic
 belongs.
 
-**Still not covered.** Nothing verifies condition 2 in a *provisioned* estate.
-The startup guard catches it at deploy time, which is the right place, but no
-Terraform output or doctor check reports it beforehand. `pnpm koras
-bootstrap:doctor` already contacts Supabase, and the role a project will connect
-as is knowable before its first request.
+**Condition 2 is now checked before the deploy, 2026-08-25.**
+`local/scripts/check-rls-connection.sh` connects with the environment's own
+`DATABASE_URL` and asks `pg_roles` whether that role is a superuser or holds
+BYPASSRLS. The deploy workflow runs it in `migrate`, after the schema exists and
+before anything is deployed against it — and `services` depends on `migrate`, so
+a failure stops the release rather than producing one that will not boot.
+
+`bootstrap:doctor` was the obvious home and is the wrong one: it is preflight,
+running before the project exists, so it cannot know what role a database it has
+not created will hand out. The question is only answerable once there is a
+`DATABASE_URL`, which is why the check lives with the migration rather than with
+the estate checks.
+
+It reads the profile from `.koras/project.yaml` and skips on the Control Plane,
+whose service role bypasses RLS by design — asserting the product's rule there
+would refuse a correct deployment.
+
+Verified against a real database in all four states: a superuser fails, a
+non-superuser holding BYPASSRLS fails (the case a superuser check alone would
+miss), an ordinary role passes, and a control-plane project handed a superuser
+URL skips rather than failing.
+
+**Still not covered.** Nothing *provisions* the non-bypassing role. Terraform
+creates the database and the estate hands out its default credential; making a
+dedicated application role, granting it, and putting its URL in Doppler is
+manual. The check now says clearly when that has not been done, which is the
+half worth having first — an unfixable warning is still better than a silent
+leak — but the role itself is still assembled by hand.
 
 ---
 

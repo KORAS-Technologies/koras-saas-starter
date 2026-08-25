@@ -158,6 +158,32 @@ describe.each(PROFILES)('%s: RLS applies to the connecting role', (profile) => {
     expect(main).toMatch(/await verify_rls_enforcement\(\)/)
   })
 
+  it('checks the connection before deploying, not only at startup', () => {
+    // The API refuses to serve on a bypassing connection, which is correct and
+    // late: the release is already out and it presents as a service that will
+    // not boot. This answers it while it is still a configuration question.
+    const script = files.get('local/scripts/check-rls-connection.sh')
+    expect(script, 'local/scripts/check-rls-connection.sh is not rendered').toBeDefined()
+    expect(script).toMatch(/rolsuper/)
+    expect(script).toMatch(/rolbypassrls/)
+
+    // Reads the profile from the manifest rather than the directory name or a
+    // guess, because the two profiles want opposite answers.
+    expect(script).toMatch(/\.koras\/project\.yaml/)
+    expect(script).toMatch(/control-plane\)/)
+  })
+
+  it('gates the deployment on it, so failing stops the release', () => {
+    const deploy = files.get('.github/workflows/deploy.yml') ?? ''
+    expect(deploy).toMatch(/check-rls-connection\.sh/)
+    // In `migrate`, which `services` depends on -- so the check runs after the
+    // schema exists and before anything is deployed against it.
+    const migrateOnwards = deploy.slice(deploy.indexOf('  migrate:'))
+    expect(migrateOnwards.slice(0, migrateOnwards.indexOf('  services:'))).toMatch(
+      /check-rls-connection\.sh/,
+    )
+  })
+
   it('checks the connecting role from the suite too, when it is named', () => {
     const suite = files.get('supabase/tests/010_rls_structure.sql') ?? ''
     expect(suite).toMatch(/app_role/)
