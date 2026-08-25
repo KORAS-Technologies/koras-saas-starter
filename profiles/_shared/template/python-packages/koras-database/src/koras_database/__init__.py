@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -73,3 +73,29 @@ async def assert_rls_enforced(session: AsyncSession) -> None:
             "Connect as a role that is neither, and grant it only the table "
             "privileges the service needs."
         )
+
+
+async def verify_connection_enforces_rls(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    required: bool,
+) -> None:
+    """Startup check, for the profiles whose policies do the scoping.
+
+    Lives here rather than in each service's `core/database.py` because both
+    profiles need it and neither may hold the shared copy: `_shared` templates
+    are single-sourced, and a path there may not also exist in a profile. A
+    package is where logic two profiles share actually belongs.
+
+    `required` is the profile's answer to whether its policies do the scoping.
+    A product's do, so a connection that bypasses RLS has none of it. The
+    Control Plane has no policies at all -- its tables carry RLS as a
+    deny-by-default backstop and the service role is meant to bypass -- so
+    asserting the product's rule there would refuse to start a service working
+    exactly as designed.
+    """
+    if not required:
+        return
+
+    async with session_factory() as session:
+        await assert_rls_enforced(session)

@@ -212,6 +212,42 @@ describe.each(PROFILES)('%s: the local checks cover both languages', (profile) =
   })
 })
 
+describe.each(PROFILES)('%s: the API surface is asserted, not assumed', (profile) => {
+  const files = render(profile)
+
+  it('ships the surface tests', () => {
+    expect(files.has('tests/security/test_api_surface.py')).toBe(true)
+  })
+
+  it('can import the app from the root suite', () => {
+    // The API is a workspace member, which makes it buildable. Without also
+    // being a dependency of the root it is not installed there, and every test
+    // about the API had to read its source rather than ask the app.
+    const pyproject = files.get('pyproject.toml') ?? ''
+    expect(pyproject).toMatch(/-api",/)
+    expect(pyproject).toMatch(/-api"\s*=\s*\{\s*workspace\s*=\s*true\s*\}/)
+  })
+
+  it('keeps the shared database module free of tenant imports', () => {
+    // `core/database.py` is shared, and the Control Plane has no `.tenant`.
+    // The import was dead there until a startup check made it live, and the
+    // API stopped importing at all -- `ignore_missing_imports` kept mypy quiet
+    // and nothing imported the app to find out.
+    const shared = files.get('services/api/koras_api/core/database.py') ?? ''
+    expect(shared, 'core/database.py is not rendered').not.toBe('')
+
+    if (profile === 'product') {
+      // A product ships its own copy, which is how a shared path is overridden
+      // deliberately.
+      expect(shared).toMatch(/from \.tenant import TenantDep/)
+      expect(shared).toMatch(/async def get_db/)
+    } else {
+      expect(shared).not.toMatch(/from \.tenant import/)
+      expect(shared).toMatch(/async def get_session/)
+    }
+  })
+})
+
 describe('no application decodes a token for itself', () => {
   it.each(PROFILES)('%s: only the auth package verifies tokens', (profile) => {
     // The applications had their own cookie reader once, decoding without

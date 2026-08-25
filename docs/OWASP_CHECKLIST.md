@@ -81,7 +81,7 @@ tests in each generated project's `packages/auth`.
 
 ## API3:2023 — Broken Object Property Level Authorization
 
-**Status: Implemented.**
+**Status: Enforced** (was implemented-untested until 2026-08-25).
 
 Request and response bodies are Pydantic models on the API and Zod schemas on
 the web tier, so neither accepts an unmodelled field nor returns one by
@@ -89,8 +89,12 @@ accident. The registration payload additionally builds only from Terraform
 outputs that were not marked sensitive, so a credential cannot be serialised
 into it however the builder is written.
 
-*Gap:* no test asserts that a response model excludes internal columns. Adding
-one is cheap and is the obvious next step for this row.
+*Verified by:* `tests/security/test_api_surface.py`, which walks every schema in
+`app.openapi()` and fails on a property whose name reads as a credential or an
+internal column. Asked of the app rather than of its source, so a model reached
+by any route is covered however that route was declared.
+
+Mutation-tested: adding `api_key` to a response model fails it.
 
 ## API4:2023 — Unrestricted Resource Consumption
 
@@ -131,7 +135,7 @@ the limit at a window boundary. Fine for abuse control, not for billing.
 
 ## API5:2023 — Broken Function Level Authorization
 
-**Status: Implemented.**
+**Status: Enforced** (was implemented-untested until 2026-08-25).
 
 Authentication and authorization are separate dependencies: `require_auth`
 yields verified claims, `require_tenant` establishes trusted tenant context,
@@ -143,8 +147,15 @@ The Control Plane's internal contract sits behind `platform_auth.py` on
 `/internal/platform/v1`, separate from the public router and never exposed to a
 browser.
 
-*Gap:* no test asserts that every mutating route carries an authorization
-dependency. A route added without one would not be caught.
+*Verified by:* `tests/security/test_api_surface.py`. Every POST/PUT/PATCH/DELETE
+in `app.openapi()` must carry a `security` requirement, and the exemption list
+is exhaustive in both directions — an unauthenticated route nobody declared
+fails too, so the allowlist cannot grow quietly.
+
+Health is the only exemption, and deliberately: a liveness probe needing a token
+takes the service out of rotation the moment the identity provider is slow.
+
+Mutation-tested: removing the auth dependency from one route fails both checks.
 
 ## API6:2023 — Unrestricted Access to Sensitive Business Flows
 
@@ -221,13 +232,19 @@ reaches a log.
 
 ## Open gaps, collected
 
-| Row | Gap | Severity |
-|---|---|---|
-| API3 | No test that response models exclude internal columns | Low |
-| API5 | No test that every mutating route carries an authorization dependency | Low |
+**None.** API4 was the substantive one and closed with R-034; API3 and API5
+were controls without tests and now have them.
 
-API4 was the substantive one and is closed (R-034). Both remaining rows are
-missing *tests* rather than missing controls.
+Writing those tests found a defect neither was looking for: the API could not
+be imported from the root test suite at all, because it was a workspace member
+and not a dependency, so every existing test about the API read its source
+instead of asking the app. Fixing that surfaced a second one — the shared
+`core/database.py` imported a `.tenant` module the Control Plane does not have,
+which was dead code until a startup check made it live and stopped the API
+importing. `ignore_missing_imports` had kept mypy quiet, and nothing imported
+the app to find out.
+
+Both are recorded in R-032.
 
 ## What this checklist does not cover
 

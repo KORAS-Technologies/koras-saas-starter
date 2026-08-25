@@ -1144,6 +1144,28 @@ a lock-out for one whose policies are deliberately absent. The rule was applied
 to both profiles because both had the same three words in their migrations, not
 because both meant the same thing by them.
 
+**A second regression from the same change, found 2026-08-25 while writing the
+API surface tests.** The shared `services/api/koras_api/core/database.py`
+imported `.tenant`, which the Control Plane does not have. It was dead code
+there — nothing imported that module — until `verify_rls_enforcement` was added
+to the lifespan and made it live. The control-plane API then failed to import at
+all.
+
+Two things kept it quiet. `ignore_missing_imports = true` means mypy treats an
+unresolvable import as `Any` rather than an error, so a clean typecheck said
+nothing. And no test imported the app, because the API was a workspace *member*
+and not a root *dependency*, so `koras_api` was not installed in the environment
+the root suite runs in — every existing test about the API read its source
+instead of asking it.
+
+Resolved by making the API a dev dependency of the generated root, and by
+splitting `database.py` per profile: the product's carries the tenant-scoped
+`get_db`, the Control Plane's a plain `get_session`, and the logic both need
+moved into `koras_database`. A `_shared` template may not also exist in a
+profile — `shared-template-parity.test.ts` enforces that, and caught the first
+attempt at this split — so a package is where two profiles' shared logic
+belongs.
+
 **Still not covered.** Nothing verifies condition 2 in a *provisioned* estate.
 The startup guard catches it at deploy time, which is the right place, but no
 Terraform output or doctor check reports it beforehand. `pnpm koras
