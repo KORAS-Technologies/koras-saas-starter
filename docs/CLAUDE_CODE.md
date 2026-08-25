@@ -57,9 +57,11 @@ shared_assets:
 
 `create-koras-app` then generates in this order:
 
-1. Walk `profiles/<profile>/template/`, rendering `.hbs` files through
-   Handlebars. This is where the profile overlay skill and the root `CLAUDE.md`
-   come from.
+1. Walk `profiles/_shared/template/`, then `profiles/<profile>/template/`, both
+   rendered through Handlebars, with the profile winning on any shared path.
+   This is where the profile overlay skill and the root `CLAUDE.md` come from.
+   Nothing Claude-related lives in `_shared/` today — the overlay must not, since
+   its whole purpose is to differ per profile.
 2. Copy every `shared_assets` directory **verbatim** — no Handlebars. This is
    where the common `.claude/` tree comes from. Shared assets are never
    rendered, so a skill may contain `{{...}}` without being mangled.

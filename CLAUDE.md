@@ -42,6 +42,9 @@ services/          FastAPI / Python backend services
 packages/          Shared TypeScript packages
 python-packages/   Shared Python packages
 profiles/          Generator profile manifests and templates
+  _shared/         Template layer both profiles draw from; not a profile
+  product/         SaaS product profile
+  control-plane/   Platform authority profile
 generators/        create-koras-app CLI
 supabase/          Database migrations, policies, functions
 local/             Docker Compose local development stack
@@ -74,6 +77,35 @@ tests/             Integration and e2e tests
 | `prod`      | `main`    | Live traffic                 |
 
 This mapping is immutable (ADR required to change).
+
+## Profile templates
+
+A generated project is rendered from two template layers:
+
+```
+profiles/_shared/template/     walked first
+profiles/<profile>/template/   walked second, and wins on a shared path
+```
+
+Both are rendered through Handlebars and then filtered by the profile's
+`template_map`, so a shared file may be a `.hbs` and may live inside a
+capability-gated subtree. A profile that ships its own copy of a shared path
+overrides it — the file existing twice is the signal that the divergence was
+deliberate.
+
+`shared_assets` in a profile manifest is a different mechanism and stays for a
+different job: it copies a directory **verbatim and unconditionally** from the
+starter, which is right for the Terraform modules and for `.claude/`, and wrong
+for anything that needs rendering or capability gating.
+
+`profiles/_shared/` is not a profile. `VALID_PROFILES` is an explicit list, so
+nothing enumerates it as one.
+
+Files still duplicated across both profiles are listed in
+`generators/create-koras-app/tests/shared-template-parity.test.ts`, which fails
+when two copies drift apart. Moving a file into `_shared/` removes it from that
+list, which is the direction of travel: 16 files are single-sourced, 96 remain
+duplicated.
 
 ## Generator rules
 
