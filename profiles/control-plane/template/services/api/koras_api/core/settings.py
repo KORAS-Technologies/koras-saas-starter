@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     # The environment's own Upstash database, holding the rate-limit counters.
     # Empty is legitimate -- locally, and in a test, there is no Redis, and the
     # limiter treats its absence as the degraded case rather than an error.
+    # False, and deliberately. The Control Plane has no tenant model and no
+    # policies: its tables carry RLS as a deny-by-default backstop and the
+    # service role is meant to bypass it. Asserting the product profile's rule
+    # here refuses to start a service that is working as designed. See R-032.
+    require_rls_enforcement: bool = False
+
     redis_url: str = ""
 
     # Whether X-Forwarded-For can be believed. False by default: the header is

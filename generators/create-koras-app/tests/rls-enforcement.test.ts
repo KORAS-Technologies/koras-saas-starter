@@ -48,6 +48,25 @@ function migrations(files: Map<string, string>): string {
     .join('\n')
 }
 
+/**
+ * The two profiles mean different things by "RLS is enabled", and applying one
+ * profile's rule to the other is a lock-out rather than a hardening.
+ *
+ *   product        policies scope rows by tenant. force RLS, and connect as a
+ *                  role that cannot bypass it.
+ *   control-plane  no tenant model, no policies. RLS is a deny-by-default
+ *                  backstop and the service role is meant to bypass it.
+ *                  Forcing it binds the owner to policies that do not exist,
+ *                  so every query returns nothing.
+ *
+ * Both were briefly given the product's treatment, which left the Control Plane
+ * unable to read its own tables. That is what these assert apart.
+ */
+const SCOPES_BY_POLICY: Record<ProfileName, boolean> = {
+  product: true,
+  'control-plane': false,
+}
+
 describe.each(PROFILES)('%s: RLS applies to the connecting role', (profile) => {
   const files = render(profile)
   const sql = migrations(files)
@@ -56,19 +75,44 @@ describe.each(PROFILES)('%s: RLS applies to the connecting role', (profile) => {
     expect(sql, 'no migrations rendered').not.toBe('')
   })
 
-  it('forces RLS on every table it enables it on', () => {
-    const enabled = [...sql.matchAll(/alter table (public\.\w+) enable row level security/g)].map(
-      (m) => m[1],
-    )
-    const forced = [...sql.matchAll(/alter table (public\.\w+) force row level security/g)].map(
-      (m) => m[1],
-    )
-
+  it('enables RLS on its tables either way', () => {
+    const enabled = [...sql.matchAll(/alter table (public\.\w+) enable row level security/g)]
     expect(enabled.length, 'no table enables RLS').toBeGreaterThan(0)
-    expect(
-      enabled.filter((t) => !forced.includes(t)),
-      'these tables enable RLS without forcing it; the owner bypasses their policies',
-    ).toEqual([])
+  })
+
+  it(
+    SCOPES_BY_POLICY[profile]
+      ? 'forces RLS, so the owner cannot skip its policies'
+      : 'does not force RLS, because there are no policies for the owner to be bound to',
+    () => {
+      const enabled = [...sql.matchAll(/alter table (public\.\w+) enable row level security/g)].map(
+        (m) => m[1],
+      )
+      const forced = [...sql.matchAll(/alter table (public\.\w+) force row level security/g)].map(
+        (m) => m[1],
+      )
+
+      if (SCOPES_BY_POLICY[profile]) {
+        expect(
+          enabled.filter((t) => !forced.includes(t)),
+          'these tables enable RLS without forcing it; the owner bypasses their policies',
+        ).toEqual([])
+      } else {
+        expect(
+          forced,
+          'forcing RLS on a schema with no policies denies the owner and returns nothing',
+        ).toEqual([])
+      }
+    },
+  )
+
+  it('has policies exactly where it scopes rows by them', () => {
+    const policies = [...sql.matchAll(/create policy/g)].length
+    if (SCOPES_BY_POLICY[profile]) {
+      expect(policies, 'a tenant-scoped schema with no policies denies everything').toBeGreaterThan(0)
+    } else {
+      expect(policies, 'a deny-all backstop that grew policies is no longer deny-all').toBe(0)
+    }
   })
 
   it('ships the suite that proves the policies deny a cross-tenant read', () => {
@@ -97,6 +141,16 @@ describe.each(PROFILES)('%s: RLS applies to the connecting role', (profile) => {
 
     const wiring = files.get('services/api/koras_api/core/database.py') ?? ''
     expect(wiring).toMatch(/async def verify_rls_enforcement/)
+
+    // Asserted only where policies do the scoping. The Control Plane's service
+    // role bypasses RLS by design, so demanding it not bypass would refuse to
+    // start a service working exactly as intended.
+    const settings = files.get('services/api/koras_api/core/settings.py') ?? ''
+    expect(settings).toMatch(
+      SCOPES_BY_POLICY[profile]
+        ? /require_rls_enforcement:\s*bool\s*=\s*True/
+        : /require_rls_enforcement:\s*bool\s*=\s*False/,
+    )
 
     // At startup, before anything is served -- the failure it prevents has no
     // symptom until a tenant sees another tenant's rows.

@@ -90,21 +90,26 @@ create trigger organizations_updated_at
 create trigger subscriptions_updated_at
   before update on public.subscriptions for each row execute function public.set_updated_at();
 
--- ── Force RLS for the owner ──────────────────────────────────────────────────
+-- ── Why these tables carry RLS and no policies ───────────────────────────────
 --
--- `enable row level security` exempts the table's owner, and both the
--- migrations and the API arrive as the owner. Without `force`, every policy
--- below is skipped by the only connection that reads this data -- the policies
--- are present, correct, and never consulted.
+-- Deliberate, and the opposite of the product profile's arrangement.
 --
--- The exemption exists so an owner can always recover a table it has locked
--- itself out of. That is a maintenance affordance, and it is the wrong default
--- for a connection serving tenant traffic. A migration that needs to bypass
--- policies can still `alter table ... no force` deliberately, in its own
--- migration, where it is visible.
-
-alter table public.products force row level security;
-alter table public.organizations force row level security;
-alter table public.subscriptions force row level security;
-alter table public.entitlements force row level security;
-alter table public.infrastructure_resources force row level security;
+-- The Control Plane has no tenant model in the database. It is the platform
+-- authority, and authorisation is by platform role, checked in the API through
+-- `PlatformAuthDep`. There is no `current_tenant_id()` here because there is no
+-- tenant to scope a row to.
+--
+-- RLS is enabled anyway as a deny-by-default backstop: a table with RLS on and
+-- no policy denies every role RLS applies to, so anything that reaches this
+-- database without being the service role reads nothing. The service role
+-- bypasses RLS, which is how the API reads at all.
+--
+-- Consequently this schema must NOT use `force row level security`. `force`
+-- binds the table owner to the policies, and there are none, so forcing it
+-- denies the owner too and every query returns nothing. It was briefly added
+-- here by a change that applied the product profile's fix to both profiles
+-- without checking that both profiles meant the same thing by RLS. They do not.
+--
+-- The product profile's rule -- force RLS, connect as a role that cannot bypass
+-- it -- is right for a schema whose policies do the scoping. Applying it to a
+-- schema whose policies are deliberately absent is a lock-out.

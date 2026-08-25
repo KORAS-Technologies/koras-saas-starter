@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # The environment's own Upstash database, holding the rate-limit counters.
     # Empty is legitimate -- locally, and in a test, there is no Redis, and the
     # limiter treats its absence as the degraded case rather than an error.
+    # This schema scopes rows by tenant in its policies, so a connection that
+    # bypasses RLS has none of that scoping. Checked at startup; see R-032.
+    require_rls_enforcement: bool = True
+
     redis_url: str = ""
 
     # Whether X-Forwarded-For can be believed. False by default: the header is

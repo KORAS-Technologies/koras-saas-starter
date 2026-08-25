@@ -1107,6 +1107,43 @@ forced on: tenant_members, tenant_settings, tenants`; pointing the role check at
 behavioural suite passes against a database built from freshly generated
 migrations — reads, writes, and an unset context failing closed.
 
+**A regression, introduced by this entry's own fix and caught by executing it
+on the other profile.** `force row level security` was applied to both profiles
+uniformly. The Control Plane must not have it.
+
+Its five tables carry RLS with **no policies at all**, and that is deliberate:
+there is no tenant model here, no `current_tenant_id()`, and authorisation is
+by platform role in the API through `PlatformAuthDep`. RLS-with-no-policies is
+a deny-by-default backstop — everything that is not the service role reads
+nothing, and the service role bypasses.
+
+`force` binds the *owner* to the policies. With no policies, that denies the
+owner too:
+
+| Role | Before `force` | After `force` |
+|------|----------------|---------------|
+| service role (bypasses) | reads | reads |
+| owner / non-bypassing | 0 rows | 0 rows |
+
+Measured on a real database, the owner returns nothing either way — but paired
+with `verify_rls_enforcement`, which refuses to start on a bypassing
+connection, the combination is a lock-out: the API refuses the connection that
+works, and the connection it demands reads nothing.
+
+**Resolution.** `force` removed from the control-plane schema, with the reason
+recorded in its own migration. `require_rls_enforcement` is a setting — `True`
+for a product, `False` for the Control Plane — so the startup guard asserts the
+product's rule only where the product's arrangement holds. The structural suite
+takes `-v deny_all_by_default=1`, under which it skips the force check, reports
+the deny-all tables by name as declared rather than failing, and skips the
+`current_tenant_id()` check for a schema that scopes no rows by tenant.
+
+**What this says about the original fix.** "Enable RLS, force it, connect as a
+non-bypassing role" is right for a schema whose policies do the scoping and is
+a lock-out for one whose policies are deliberately absent. The rule was applied
+to both profiles because both had the same three words in their migrations, not
+because both meant the same thing by them.
+
 **Still not covered.** Nothing verifies condition 2 in a *provisioned* estate.
 The startup guard catches it at deploy time, which is the right place, but no
 Terraform output or doctor check reports it beforehand. `pnpm koras

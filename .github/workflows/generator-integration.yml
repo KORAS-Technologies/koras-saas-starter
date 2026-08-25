@@ -47,6 +47,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    # The row-level security suite needs a database. It is the one part of the
+    # generated output that cannot be checked by reading it: RLS is enforced by
+    # the server against the connecting role, so the only thing that can answer
+    # "are these policies applied" is a server applying them.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: rlstest
+          POSTGRES_DB: koras_rls
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     strategy:
       # Both profiles always run. A failure in one is not a reason to stop
       # learning whether the other is also broken — they diverge constantly, and
@@ -56,8 +74,14 @@ jobs:
         include:
           - profile: product
             slug: integration-product
+            # Policies do the scoping here, so the strict checks apply.
+            rls_flags: ""
           - profile: control-plane
             slug: integration-control-plane
+            # No tenant model and no policies: RLS is a deny-by-default
+            # backstop and the service role is meant to bypass it. Forcing it
+            # would deny the owner too and every query would return nothing.
+            rls_flags: "-v deny_all_by_default=1"
 
     steps:
       - uses: actions/checkout@v5
@@ -114,6 +138,76 @@ jobs:
       - name: Test (Node)
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
         run: pnpm turbo run test
+
+
+      # The row-level security suite, executed rather than shipped.
+      #
+      # `force row level security` binds the table owner and does nothing to a
+      # superuser or a BYPASSRLS role, so a schema can have correct policies,
+      # force on every table, and no isolation at all. The structural suite
+      # catches the first; `app_role` makes it check the second. Both were
+      # verified by mutation before this step existed -- removing force, and
+      # naming a superuser, each make it exit non-zero. See R-032.
+      - name: Row-level security suite
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        env:
+          PGPASSWORD: rlstest
+          PGHOST: localhost
+          PGUSER: postgres
+          PGDATABASE: koras_rls
+        run: |
+          set -euo pipefail
+
+          for file in supabase/migrations/*.sql; do
+            echo "--> migration $(basename "$file")"
+            psql -v ON_ERROR_STOP=1 -q -f "$file"
+          done
+
+          # The suite must run as a role RLS actually applies to. Guarded by a
+          # DO block so a re-run is not an error.
+          psql -v ON_ERROR_STOP=1 -q <<'SQL'
+          do $$
+          begin
+            if not exists (select 1 from pg_roles where rolname = 'koras_rls_test') then
+              create role koras_rls_test nologin nobypassrls;
+            end if;
+          end
+          $$;
+          grant usage on schema public to koras_rls_test;
+          grant select, insert, update, delete on all tables in schema public to koras_rls_test;
+          SQL
+
+          for file in supabase/tests/*.sql; do
+            echo "--> test $(basename "$file")"
+            psql -v ON_ERROR_STOP=1 -v app_role=koras_rls_test ${{ matrix.rls_flags }} -q -f "$file"
+          done
+
+      # A suite that cannot fail proves nothing, and this one had never been
+      # asked to. Dropping `force` must make it exit non-zero; if it does not,
+      # the step above has been passing vacuously.
+      # Only where force is expected. The Control Plane has none to remove, and
+      # asserting that its suite fails without one would assert the opposite of
+      # what that schema means.
+      - name: The suite catches a removed force
+        if: matrix.profile == 'product'
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        env:
+          PGPASSWORD: rlstest
+          PGHOST: localhost
+          PGUSER: postgres
+          PGDATABASE: koras_rls
+        run: |
+          set -uo pipefail
+          psql -v ON_ERROR_STOP=1 -q -t -A -c "
+            select 'alter table ' || n.nspname || '.' || c.relname || ' no force row level security;'
+            from pg_class c join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = 'public' and c.relkind = 'r' and c.relrowsecurity" | psql -q -v ON_ERROR_STOP=1
+
+          if psql -v ON_ERROR_STOP=1 -q -f supabase/tests/010_rls_structure.sql >/dev/null 2>&1; then
+            echo "::error::The RLS suite passed with force removed. It is not asserting anything."
+            exit 1
+          fi
+          echo "The suite correctly refuses a schema whose owner bypasses its policies."
 
       # --all-packages installs every workspace member. A bare `uv sync` brings
       # in only the root dev tools, leaving mypy unable to resolve fastapi and

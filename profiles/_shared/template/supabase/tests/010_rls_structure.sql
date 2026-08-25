@@ -11,11 +11,26 @@
 
 \set ON_ERROR_STOP on
 
+-- Declared by a schema whose tables carry RLS with no policies on purpose:
+-- deny-all is the arrangement, so the checks that assume policies exist are
+-- the wrong ones to run. Set here, before the blocks that read it -- the
+-- first version set it at the end of the file, where every check had already
+-- run without it.
+\if :{?deny_all_by_default}
+select set_config('koras.deny_all_by_default', 'true', false) as _;
+\else
+select set_config('koras.deny_all_by_default', 'false', false) as _;
+\endif
+
 do $$
 declare
   offender text;
 begin
-  -- Every RLS table forces it.
+  -- Every RLS table forces it -- where policies do the scoping.
+  --
+  -- Skipped when :deny_all_by_default is set, because a schema with no policies
+  -- must NOT force: force binds the owner to policies that do not exist, and
+  -- every query returns nothing. See the note in the Control Plane's 00001.
   --
   -- `enable row level security` does not apply to the table's owner, and never
   -- has. The migrations and the application both connect as the owner, so a
@@ -23,18 +38,20 @@ begin
   -- connection that matters. `force` is what closes that, and its absence is
   -- invisible to any test that connects as a non-owner -- which is every test
   -- anyone writes by hand.
-  select string_agg(c.relname, ', ' order by c.relname) into offender
-  from pg_class c
-  join pg_namespace n on n.oid = c.relnamespace
-  where n.nspname = 'public'
-    and c.relkind = 'r'
-    and c.relrowsecurity
-    and not c.relforcerowsecurity;
+  if not coalesce(nullif(current_setting('koras.deny_all_by_default', true), '')::boolean, false) then
+    select string_agg(c.relname, ', ' order by c.relname) into offender
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public'
+      and c.relkind = 'r'
+      and c.relrowsecurity
+      and not c.relforcerowsecurity;
 
-  if offender is not null then
-    raise exception
-      'RLS is enabled but not forced on: %. The table owner bypasses every policy on these tables.',
-      offender;
+    if offender is not null then
+      raise exception
+        'RLS is enabled but not forced on: %. The table owner bypasses every policy on these tables.',
+        offender;
+    end if;
   end if;
 
   -- Every RLS table has at least one policy.
@@ -51,7 +68,16 @@ begin
     and not exists (select 1 from pg_policy p where p.polrelid = c.oid);
 
   if offender is not null then
-    raise exception 'RLS is enabled with no policy on: %. Every read returns nothing.', offender;
+    -- Deny-all is a legitimate arrangement: RLS on with no policy denies every
+    -- role RLS applies to, which is how a schema with no tenant model keeps
+    -- everything but its service role out. It is also exactly what a
+    -- half-finished migration looks like, so the schema has to say which it
+    -- meant rather than the suite guessing.
+    if coalesce(nullif(current_setting('koras.deny_all_by_default', true), '')::boolean, false) then
+      raise notice 'deny-all by default on: % (declared)', offender;
+    else
+      raise exception 'RLS is enabled with no policy on: %. Every read returns nothing.', offender;
+    end if;
   end if;
 
   -- Every tenant-scoped table has RLS.
@@ -92,6 +118,14 @@ $$;
 -- somebody.
 do $$
 begin
+  -- Only where there is a tenant to scope to. A schema with no tenant model
+  -- defines no such helper, and demanding one would be demanding it invent a
+  -- concept it does not have.
+  if to_regprocedure('public.current_tenant_id()') is null then
+    raise notice 'no current_tenant_id(): this schema scopes no rows by tenant';
+    return;
+  end if;
+
   if (select public.current_tenant_id()) is not null then
     raise exception 'current_tenant_id() returns a value with no context set';
   end if;

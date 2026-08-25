@@ -19,15 +19,22 @@ async def get_db(tenant: TenantDep) -> AsyncGenerator[AsyncSession, None]:
 async def verify_rls_enforcement() -> None:
     """Startup check: this connection must be one RLS can restrain.
 
-    `force row level security` binds the table owner to its policies and does
-    nothing to a superuser or a role holding BYPASSRLS. A managed Postgres
-    usually offers a superuser as the default connection role, so a DATABASE_URL
-    taken from a dashboard produces a service with correct policies, `force` set
-    everywhere, a passing policy suite, and no row-level security at all.
+    Only where the schema's policies do the scoping. `settings.require_rls_
+    enforcement` says whether that is this profile's arrangement, because the
+    two profiles mean different things by "RLS is enabled".
 
-    Raising here stops the service rather than letting it serve, because the
-    failure it prevents is a cross-tenant read and the alternative is finding
-    out from whoever saw the other tenant's data.
+    A product scopes rows by tenant, in policies, and therefore must not connect
+    as a role that bypasses them -- `force` binds the table owner and does
+    nothing to a superuser or a BYPASSRLS role, so a DATABASE_URL taken from a
+    dashboard can produce correct policies, force everywhere, and no isolation.
+
+    The Control Plane has no tenant model and no policies. Its tables carry RLS
+    as a deny-by-default backstop and the service role is *meant* to bypass it.
+    Asserting the product's rule there refuses to start a service that is
+    working exactly as designed.
     """
+    if not settings.require_rls_enforcement:
+        return
+
     async with SessionLocal() as session:
         await assert_rls_enforced(session)
