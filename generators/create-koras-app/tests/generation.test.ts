@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { rmSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs'
+import { templatePath } from './template-path.js'
 import { loadProfile } from '../src/profiles/index.js'
 import type { ProfileName } from '../src/profiles/loader.js'
 import {
@@ -1622,8 +1623,7 @@ describe('application hostnames', () => {
     // and go looking for a branch scope that is not there.
     for (const profile of ['control-plane', 'product']) {
       const workflow = readFileSync(
-        join(__dirname, '..', '..', '..', 'profiles', profile,
-             'template', '.github', 'workflows', 'deploy.yml'),
+        templatePath(profile, '.github', 'workflows', 'deploy.yml'),
         'utf8',
       )
       expect(workflow).not.toMatch(/pinned to its own branch/)

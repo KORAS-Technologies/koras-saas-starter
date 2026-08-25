@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { templatePath } from './template-path.js'
 
 /**
  * The step that makes sure a deployed Fly machine is actually running.
@@ -18,10 +19,7 @@ import { join } from 'node:path'
  * reproduces the disagreement.
  */
 
-const WORKFLOW = join(
-  __dirname, '..', '..', '..',
-  'profiles', 'control-plane', 'template', '.github', 'workflows', 'deploy.yml',
-)
+const WORKFLOW = templatePath('control-plane', '.github', 'workflows', 'deploy.yml')
 const HARNESS = join(__dirname, 'fly', 'run-case.sh')
 
 /** Pulls the step's shell out of the workflow without a YAML dependency. */

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { mkdirSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs'
+import { templatePath } from './template-path.js'
 import {
   findForbiddenArtifacts,
   initAndPushToDevelop,
@@ -139,10 +140,7 @@ describe('the generated .gitignore', () => {
   it.each(['control-plane', 'product'])('names plan files for the %s profile', (profile) => {
     // Second line of defence. The plan is written outside the project now, so
     // this should never be load-bearing -- which is the point of having it.
-    const template = readFileSync(
-      join(__dirname, '..', '..', '..', 'profiles', profile, 'template', '.gitignore.hbs'),
-      'utf8',
-    )
+    const template = readFileSync(templatePath(profile, '.gitignore.hbs'), 'utf8')
     expect(template).toMatch(/^tfplan$/m)
     expect(template).toMatch(/^\*\.tfplan$/m)
   })

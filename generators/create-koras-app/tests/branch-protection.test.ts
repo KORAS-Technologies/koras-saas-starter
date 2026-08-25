@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { templatePath } from './template-path.js'
 
 /**
  * Branch protection asks for checks the CI actually produces.
@@ -41,7 +42,10 @@ function read(...parts: string[]): string {
 }
 
 function workflowContexts(profile: string): string[] {
-  const source = read('profiles', profile, 'template', '.github', 'workflows', 'ci.yml')
+  const source = readFileSync(
+    templatePath(profile, '.github', 'workflows', 'ci.yml'),
+    'utf8',
+  ).split(String.fromCharCode(13)).join('')
   const jobs = [...source.matchAll(/^ {2}[a-z0-9-]+:\n {4}name:\s*(.+)$/gm)].map((m) =>
     m[1].trim(),
   )
