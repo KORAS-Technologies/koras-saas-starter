@@ -61,6 +61,24 @@ ignore = []
 [tool.mypy]
 python_version = "3.12"
 strict = true
+# NOT `ignore_missing_imports = true`. That setting is global, and it makes mypy
+# treat *any* unresolvable import as `Any` -- including a first-party module
+# that does not exist. A missing `from .tenant import TenantDep` then typechecks
+# clean and fails at runtime with ModuleNotFoundError, which is exactly what
+# happened: a green `mypy` sat on top of an API that could not start. See R-032.
+#
+# Narrowed to the packages that genuinely ship no stubs, found by turning the
+# global setting off and reading what actually complained. It was one.
+ignore_missing_imports = false
+
+[[tool.mypy.overrides]]
+# The packages that genuinely ship no type information and have no stubs.
+#
+# apscheduler is listed even where no scheduler is generated: it is an optional
+# service in the product profile, so `--with scheduler` would otherwise fail a
+# check that passed before the flag was used. A module named here and never
+# imported is inert; one missing when it is needed is a broken build.
+module = ["jose.*", "apscheduler.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

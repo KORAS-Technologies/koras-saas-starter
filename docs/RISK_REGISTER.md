@@ -239,6 +239,7 @@ branding" there.
 | R-035 | `pnpm test` reported a cached pass           | 16       | Resolved                 |
 | R-031 | vitest advisories; the fix breaks the suite  | 12       | Accepted with mitigation |
 | R-036 | A live acceptance run cannot be cleaned up   | 12       | Open                     |
+| R-037 | Typecheck ignored the error it needed to report | 12    | Resolved                 |
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
 | R-017 | Control-plane env contract was the product one | 10     | Resolved                 |
 | R-018 | Queue polling billed per command             | 8        | Resolved                 |
@@ -1446,3 +1447,61 @@ and never touches the thing it is supposed to act on.
 
 Until then a live apply is authorisable only on the explicit understanding that
 cleanup is manual.
+
+---
+
+## R-037 — the typecheck was configured to ignore the error it needed to report
+
+**Found:** 2026-08-25, after R-032's second regression showed a green `mypy` on
+an API that could not import.
+
+**Severity:** 12 (likelihood 4 × impact 3) · **Status:** Resolved 2026-08-25
+
+Both profile templates set `ignore_missing_imports = true` globally. That does
+not only silence third-party packages without stubs: it makes mypy treat **any**
+unresolvable import as `Any`, including a first-party module that does not
+exist. `from .tenant import TenantDep` against a module the Control Plane does
+not have typechecked clean and failed at runtime with `ModuleNotFoundError`.
+
+Demonstrated both ways rather than argued. With the global setting, an import of
+a deliberately non-existent module reports `Success: no issues found in 33
+source files`. With it narrowed, the same import reports
+`Cannot find implementation or library stub for module named ...`.
+
+**What actually needed it: one package.** Turning the setting off and reading
+what complained produced exactly one name, `jose`, which ships no type
+information and has no stubs package. A global switch had been disarming the
+strongest static check these projects have, for a single dependency.
+
+**Resolution:** `ignore_missing_imports = false` globally, with a
+`[[tool.mypy.overrides]]` block naming `jose.*` and `apscheduler.*`.
+`apscheduler` is listed in both profiles even though the product generates no
+scheduler by default — it is an optional service there, so `--with scheduler`
+would otherwise fail a check that passed before the flag was used.
+
+### A second defect, found because narrowing made the run honest
+
+`--with scheduler` on the **product** profile produced a project that failed its
+own typecheck, and had for as long as the flag existed.
+
+APScheduler's `scheduled_job` carries no type information, so under `strict` it
+makes every job body untyped — switching off checking inside the job bodies,
+which is the one place a scheduler's mistakes are expensive. The Control Plane's
+copy carried `# type: ignore[untyped-decorator]` at each use and a comment
+explaining why. The product's copy did not.
+
+A fix landed in one profile and not the other, which is the drift class this
+repository keeps producing. It survived because the product's scheduler is
+**optional**: default generation omits it, so no CI run and no local check ever
+typechecked it. `shared-template-parity` could not catch it either — it forbids
+byte-identical copies, and these two differed, which is precisely how the
+divergence hid.
+
+Resolved by bringing the product's copy in line, at which point the two became
+identical and the parity test demanded they be single-sourced. `main.py` now
+lives in `_shared`; the rest of the scheduler already did.
+
+**Left standing:** nothing generates with optional components and checks the
+result. `--with marketing,ai_gateway,scheduler` and the `--without` variants are
+untested paths through the generator, and this defect sat in one of them. Worth
+a matrix entry in Generator Integration rather than a comment here.
