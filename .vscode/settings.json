@@ -39,5 +39,6 @@
     "**/.next/**": true,
     "**/dist/**": true,
     "**/__pycache__/**": true
-  }
+  },
+  "sarif-viewer.connectToGithubCodeScanning": "off"
 }
