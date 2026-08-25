@@ -9,8 +9,8 @@ using `--profile {{profile}}`.
 
 | Kind | Enabled |
 |------|---------|
-| Applications | {{#each enabledApplications}}`{{this}}` {{/each}} |
-| Services | {{#each enabledServices}}`{{this}}` {{/each}} |
+| Applications | {{#each applicationTargets}}`{{basename path}}` {{/each}} |
+| Services | {{#each serviceTargets}}`{{basename path}}` {{/each}} |
 | Capabilities | {{#each enabledCapabilities}}`{{this}}` {{/each}} |
 
 Components absent from this list were not selected at generation time. Do not

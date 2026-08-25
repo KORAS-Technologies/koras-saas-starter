@@ -287,3 +287,56 @@ describe('the template digest covers what a project actually receives', () => {
     }
   })
 })
+
+describe('generated files name applications by directory, not by component key', () => {
+  // The estate's rule, stated by the `basename` helper in engine.ts: a component
+  // key is an internal manifest label, and the directory is the name. The
+  // control-plane component `platform_admin` lives in `apps/admin`, and `admin`
+  // is what names the Vercel project, the package and the deployment secret.
+  //
+  // `make profile` and CLAUDE.md's component table both print these for a
+  // person to read, and both printed the component key -- a name nothing else
+  // in the estate uses, and which does not match the directory the reader is
+  // being pointed at.
+
+  it('prints the directory name in the control-plane Makefile', () => {
+    const makefile = CONTROL_PLANE.read('Makefile')
+    expect(makefile).toContain('APPS := admin portal')
+
+    // Asserted on the lines that name things, not on the whole file: the
+    // comment above them names `platform_admin` deliberately, to explain why
+    // the value below it is not that.
+    const naming = makefile
+      .split('\n')
+      .map((line) => line.replace('\r', ''))
+      .filter((line) => line.startsWith('APPS :=') || line.startsWith('# Applications:'))
+    expect(naming).toHaveLength(2)
+    for (const line of naming) expect(line).not.toContain('platform_admin')
+  })
+
+  it('prints the directory name in the control-plane CLAUDE.md table', () => {
+    const claudeMd = CONTROL_PLANE.read('CLAUDE.md')
+    expect(claudeMd).toMatch(/\| Applications \|.*`admin`.*`portal`/)
+    expect(claudeMd).not.toContain('`platform_admin`')
+  })
+
+  it('names a directory that the project actually has', () => {
+    // The point of the rule: the printed name resolves to a real path.
+    for (const [, gen] of CASES) {
+      const apps = /APPS := (.*)/.exec(gen.read('Makefile'))?.[1]?.trim().split(/\s+/) ?? []
+      expect(apps.length).toBeGreaterThan(0)
+      for (const app of apps) {
+        expect(gen.has(`apps/${app}`)).toBe(true)
+      }
+    }
+  })
+
+  it('does the same for services', () => {
+    for (const [, gen] of CASES) {
+      const services = /SERVICES := (.*)/.exec(gen.read('Makefile'))?.[1]?.trim().split(/\s+/) ?? []
+      for (const service of services) {
+        expect(gen.has(`services/${service}`)).toBe(true)
+      }
+    }
+  })
+})

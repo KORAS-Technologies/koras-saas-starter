@@ -10,8 +10,8 @@ entitlement authority for all KORAS SaaS products. Generated from
 
 | Kind | Enabled |
 |------|---------|
-| Applications | {{#each enabledApplications}}`{{this}}` {{/each}} |
-| Services | {{#each enabledServices}}`{{this}}` {{/each}} |
+| Applications | {{#each applicationTargets}}`{{basename path}}` {{/each}} |
+| Services | {{#each serviceTargets}}`{{basename path}}` {{/each}} |
 | Capabilities | {{#each enabledCapabilities}}`{{this}}` {{/each}} |
 
 ## Critical rules
