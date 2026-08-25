@@ -2,16 +2,19 @@
   "name": "koras-saas-starter",
   "version": "0.1.0",
   "private": true,
-  "description": "KORAS application factory — generates SaaS products and the KORAS Control Plane",
+  "description": "KORAS application factory \u00e2\u20ac\u201d generates SaaS products and the KORAS Control Plane",
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=9.0.0"
   },
   "scripts": {
     "build": "turbo run build",
-    "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck",
-    "test": "turbo run test",
+    "lint": "turbo run lint && pnpm lint:py",
+    "lint:py": "uv run ruff check .",
+    "typecheck": "turbo run typecheck && pnpm typecheck:py",
+    "typecheck:py": "uv run mypy .",
+    "test": "turbo run test && pnpm test:py",
+    "test:py": "uv run pytest",
     "dev": "turbo run dev",
     "clean": "turbo run clean && rimraf node_modules",
     "create-koras-app": "node generators/create-koras-app/bin/create-koras-app.js",

@@ -25,6 +25,15 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+extend-exclude = [
+  # Vendored third-party skills, copied in verbatim as a shared asset. Their
+  # content is upstream's to lint, and reformatting it here would turn every
+  # skill update into a conflict. The starter excludes the same tree for the
+  # same reason; this file did not, so a generated project reported 19 errors
+  # in code it does not own -- and nothing ran ruff on a generated project to
+  # notice.
+  ".claude/skills",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "S", "ANN"]
@@ -32,7 +41,13 @@ ignore = []
 
 [tool.ruff.lint.per-file-ignores]
 # S101 bans `assert`, which is precisely how pytest expresses expectations.
-"tests/**" = ["S101"]
+#
+# `**/tests/**`, not `tests/**`: the latter matches only the top-level suite and
+# leaves every `python-packages/*/tests/` tripping S101 on its own assertions.
+# Scoped to test trees rather than disabled globally, so an assert in a service
+# still fails.
+"**/tests/**" = ["S101"]
+"**/test_*.py" = ["S101"]
 
 [tool.mypy]
 python_version = "3.12"

@@ -1,7 +1,7 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
@@ -52,7 +52,9 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def rate_limit_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
+async def rate_limit_headers(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     """Puts the quota on every response, not only on the refusals.
 
     A caller that learns its limit only by exceeding it has to exceed it to

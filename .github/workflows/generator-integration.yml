@@ -219,6 +219,15 @@ jobs:
       # One pass. This was a loop over service roots, because every service
       # named its package `src` and a repo-wide run aborted on duplicate
       # modules; they are named after themselves now.
+      # Ruff on generated output, which nothing ran until 2026-08-25. The
+      # generated projects' own CI runs it, but that only ever executes inside a
+      # generated repository -- so a lint rule broken in a template was invisible
+      # here. It was: a fresh product reported 40 ruff errors, 19 of them in
+      # vendored skills the project does not own and should never have linted.
+      - name: Lint (Python)
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: uv run ruff check .
+
       - name: Typecheck (Python)
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
         run: uv run mypy python-packages services

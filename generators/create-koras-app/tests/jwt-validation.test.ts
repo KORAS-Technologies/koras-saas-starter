@@ -179,6 +179,39 @@ describe.each(PROFILES)('%s: the shared verifier pins the algorithm', (profile) 
   })
 })
 
+describe.each(PROFILES)('%s: the local checks cover both languages', (profile) => {
+  const scripts = JSON.parse(render(profile).get('package.json') ?? '{}').scripts ?? {}
+
+  /**
+   * A generated project is half Python, and its CI runs ruff, mypy and pytest.
+   * Its `pnpm lint`, `pnpm typecheck` and `pnpm test` ran only the JavaScript
+   * half, so a developer following the repository's own Required Verification
+   * could see three green commands over unverified Python.
+   *
+   * That is not hypothetical: it is how a ruff failure reached the remote in
+   * the starter (R-035), which has the same shape and had the same gap.
+   */
+  it.each([
+    ['lint', 'ruff'],
+    ['typecheck', 'mypy'],
+    ['test', 'pytest'],
+  ])('%s reaches the Python half', (task, tool) => {
+    const composed = String(scripts[task] ?? '')
+    const delegate = String(scripts[`${task}:py`] ?? '')
+
+    expect(composed, `${task} does not run its Python half`).toContain(`${task}:py`)
+    expect(delegate, `${task}:py does not run ${tool}`).toContain(tool)
+  })
+
+  it('keeps each half runnable on its own', () => {
+    // So a failure says which language it came from, and so a JavaScript-only
+    // change need not wait for pytest.
+    expect(scripts['lint:py']).toBeDefined()
+    expect(scripts['typecheck:py']).toBeDefined()
+    expect(scripts['test:py']).toBeDefined()
+  })
+})
+
 describe('no application decodes a token for itself', () => {
   it.each(PROFILES)('%s: only the auth package verifies tokens', (profile) => {
     // The applications had their own cookie reader once, decoding without

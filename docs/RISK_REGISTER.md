@@ -1297,9 +1297,51 @@ output, and there is no cheaper way to say so.
 Verified by editing a template and confirming the run misses cache rather than
 replaying.
 
-**Left standing:** `pnpm test` still does not run `ruff`, and CI does. That is
-not a caching problem and is not fixed here; it is why the first of the two
-failures above reached the remote at all. Anyone verifying Python template
-changes locally must run `ruff check .` themselves, or generate a project and
-run its checks — which is what Generator Integration does, and why it caught
-what the local suite could not.
+**The second half, fixed 2026-08-25.** `pnpm lint`, `pnpm typecheck` and
+`pnpm test` ran only the JavaScript side. CI's Python job runs three more
+things, and none had a local equivalent:
+
+| CI step | Local before | Local now |
+|---------|--------------|-----------|
+| `uv run ruff check .` | nothing | `pnpm lint` |
+| `uv run mypy .` | nothing | `pnpm typecheck` |
+| `uv run pytest` | nothing | `pnpm test` |
+
+A wider gap than this entry first described. It named ruff because ruff is what
+failed; mypy and pytest were equally unrun locally and equally able to reach the
+remote broken.
+
+The root scripts now chain both languages, with `lint:py`, `typecheck:py` and
+`test:py` available separately. Verified by reintroducing a ruff violation and
+confirming `pnpm lint` exits 1 on it — the same class of defect that reached the
+remote in `4a5730b` now fails before a commit.
+
+`uv` is required for these to run, which is not a new dependency: the repository
+is half Python, `uv.lock` is committed, and that half could not be verified at
+all without it. A missing `uv` fails loudly rather than skipping, because a check
+that silently does not run is the entire subject of this entry.
+
+**Closing it in the starter exposed the same hole downstream, and 40 errors
+behind it.** Every generated project had the identical gap — its `pnpm lint`
+covered JavaScript only — and the factory never ran ruff on generated output
+either. The generated projects' own `ci.yml` runs it, but that executes inside a
+generated repository, never here, so a lint rule broken in a template was
+invisible to the factory that shipped it.
+
+A freshly generated product reported **40 ruff errors**:
+
+| Count | Cause |
+|-------|-------|
+| 19 | `.claude/skills/` — vendored third-party code the project does not own. The starter excludes this tree; the template's `pyproject.toml` did not. |
+| 17 | `python-packages/*/tests/` tripping S101. The template ignored `tests/**`, which matches only the top-level suite; the starter uses `**/tests/**`. |
+| 2 | A middleware added this session with no type annotations. Mine. |
+| 2 | Line length and an `f`-string with no placeholders. |
+
+All fixed at the template, and `Lint (Python)` now runs in Generator
+Integration, so generated output is linted by the factory rather than only by
+whoever generates one.
+
+The pattern is the same each time: a check that exists but never runs against
+the thing it is supposed to check. The cached test result, the RLS suite never
+executed, ruff never run on generated output — three instances in one session,
+each invisible while everything reported green.
