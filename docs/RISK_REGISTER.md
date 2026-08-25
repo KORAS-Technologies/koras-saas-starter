@@ -236,6 +236,7 @@ branding" there.
 | R-032 | RLS enforced against nobody (owner exempt)   | 20       | Resolved                 |
 | R-033 | Token checks loosest on external input       | 9        | Resolved                 |
 | R-034 | No rate limiting in the generated API        | 12       | Resolved                 |
+| R-035 | `pnpm test` reported a cached pass           | 16       | Resolved                 |
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
 | R-017 | Control-plane env contract was the product one | 10     | Resolved                 |
 | R-018 | Queue polling billed per command             | 8        | Resolved                 |
@@ -1157,3 +1158,57 @@ twice the limit. Acceptable for abuse control; it would not be for billing.
 
 11 tests ship with the package and run in every generated project; 18 more in
 the generator assert the wiring.
+
+---
+
+## R-035 — `pnpm test` reported a cached pass over changed templates
+
+**Found:** 2026-08-25, after CI failed twice on work that `pnpm test` had just
+called green.
+
+**Severity:** 16 (likelihood 4 × impact 4) · **Status:** Resolved 2026-08-25
+
+`turbo.json` declared no `inputs` for `lint`, `typecheck` or `test`, so each
+defaulted to `$TURBO_DEFAULT$` — the files inside that package's own directory.
+The generator's test suite lives in `generators/create-koras-app/` and spends
+most of its assertions on rendered output from `profiles/`, which is outside it.
+
+So editing a template did not change the hash of `create-koras-app#test`, and
+turbo replayed the previous result. `pnpm test` printed a full green summary,
+including a test count, for a suite it had not run against the current
+templates.
+
+**What it cost.** The rate limiter went to the remote twice on the strength of
+that green:
+
+| Push | `pnpm test` said | CI found |
+|------|------------------|----------|
+| `4a5730b` | 731 passed | ruff import order; `starlette` undeclared; control-plane mypy |
+| `39ad16a` | 731 passed | 2 failed — a stale assertion in a test edited minutes earlier |
+
+The second is the clearest evidence. The assertion was rewritten and its
+subject refactored in the same sitting, and the cached result still claimed 731
+passing — a number that could only have come from before either change. The
+totals even disagreed with CI's, 731 against 729, which was the visible thread.
+
+**Why this is worse than a slow build.** A stale failure gets investigated. A
+stale *pass* is indistinguishable from a real one, and it is trusted precisely
+when it should not be: right after a change. Every "verified locally" claim
+made against this command was worth less than it appeared, and the two CI
+failures are the only reason anyone found out.
+
+**Resolution:** `globalDependencies` in `turbo.json` now lists `profiles/**`,
+`infrastructure/**`, `.claude/**`, `tsconfig.base.json` and
+`eslint.config.mjs`. Any change to those invalidates every task's cache, which
+is coarse and correct — a template edit can affect any package's rendered
+output, and there is no cheaper way to say so.
+
+Verified by editing a template and confirming the run misses cache rather than
+replaying.
+
+**Left standing:** `pnpm test` still does not run `ruff`, and CI does. That is
+not a caching problem and is not fixed here; it is why the first of the two
+failures above reached the remote at all. Anyone verifying Python template
+changes locally must run `ruff check .` themselves, or generate a project and
+run its checks — which is what Generator Integration does, and why it caught
+what the local suite could not.

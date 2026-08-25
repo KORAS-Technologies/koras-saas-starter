@@ -62,10 +62,17 @@ describe.each(PROFILES)('%s: the API limits what it serves', (profile) => {
 
   it('keys the authenticated tier on claims, never on a header', () => {
     const module = files.get('services/api/koras_api/core/ratelimit.py') ?? ''
-    // `sub` and `organization_id` come off a verified token. A tier keyed on
-    // anything the caller sends is a tier the caller can reset at will.
-    expect(module).toMatch(/claims\.sub/)
-    expect(module).toMatch(/claims\.organization_id/)
+    // Read off a verified token, never off the request. The two profiles name
+    // these differently -- a product has `sub`/`organization_id`, the Control
+    // Plane has `subject`/`zitadel_organization_id` -- so the assertion is that
+    // the identity comes from the claims object, whichever shape it is.
+    expect(module).toMatch(/caller_identity\(claims\)/)
+    expect(module).toMatch(/getattr\(claims, "sub"/)
+    expect(module).toMatch(/getattr\(claims, "subject"/)
+    // Whatever it reads, it must not be a header or a query parameter.
+    const authenticated = module.slice(module.indexOf('async def limit_authenticated'))
+    expect(authenticated).not.toMatch(/request\.headers/)
+    expect(authenticated).not.toMatch(/query_params/)
   })
 
   it('does not believe X-Forwarded-For unless told to', () => {
