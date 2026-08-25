@@ -105,8 +105,8 @@ nothing enumerates it as one.
 No file exists twice. `shared-template-parity.test.ts` asserts that
 structurally -- no path may exist in both profile templates with byte-identical
 content -- rather than by listing paths, so a file duplicated tomorrow is caught
-without anyone remembering to add it. 115 files are single-sourced in `_shared/`;
-the 66 paths that exist in both profiles do so with genuinely different content,
+without anyone remembering to add it. 126 files are single-sourced in `_shared/`;
+the 63 paths that exist in both profiles do so with genuinely different content,
 which is deliberate divergence rather than duplication.
 
 ## Generator rules
@@ -164,21 +164,29 @@ external skills, and bring an existing project back into alignment.
 
 ## Current phase
 
-**Phases 0–12 complete.** Phases 10, 11 and 12 all met their exit criteria on
-2026-08-25, and Phase 13's offline scenarios landed the same day.
+**Phases 0–12 complete.** Phases 10, 11 and 12 met their exit criteria on
+2026-08-25. Phase 13 is complete except its live-infrastructure variant.
 
 **Open:**
 
-| Phase                                  | State              | Note                                     |
-|----------------------------------------|--------------------|------------------------------------------|
-| 11 — CI/CD                             | Complete | Criterion met on `develop`. CI, Security and Generator Integration all green. Reading the criterion carefully found the generated-project lint check was genuinely missing; it now runs |
-| 12 — Security                          | Complete, with one open gap | All five deliverables shipped. Three defects fixed: RLS was enforced against nobody (R-032), the ZITADEL token paths pinned neither issuer nor algorithm (R-033), and the first CodeQL scan to actually run reported three high-severity alerts. CodeQL is now at zero; Dependabot's eight are dev-server-only and accepted under R-031. The RLS SQL suite is written but never executed. Rate limiting is absent (R-034, open) |
-| 13 — End-to-End Acceptance Tests       | All but the live apply | Both scenarios automated and passing; the live-infrastructure variant is gated behind `KORAS_E2E_LIVE` and awaits an explicit authorisation |
+| Phase | State | Note |
+|-------|-------|------|
+| 13 — End-to-End Acceptance Tests | All but the live apply | Both scenarios automated and passing. The live variant is gated behind `KORAS_E2E_LIVE`, needs an explicit authorisation, **and cannot be cleaned up** — see R-036 |
 
-**Next step:** push `feat/phase-10-registration-client` so CI evaluates the
-Phase 10, 12 and 13 work — none of it has been through a workflow yet. After
-that: execute the RLS suite against a database, and close R-034 (rate
-limiting), which is the one open finding no scan will report.
+**Open risks:** R-036 only (a live acceptance run cannot be torn down).
+R-031 stands accepted with mitigation.
+
+**Next step:** the `--with` / `--without` paths through the generator are
+untested. Nothing generates with optional components and checks the result, and
+a defect sat in one of those paths for as long as the flag existed (R-037).
+
+**What is verified, and how.** CI, Security and Generator Integration all run on
+`develop` and are green. Generator Integration generates both profiles and
+lints, builds, typechecks and tests each, runs the row-level security suite
+against a real Postgres, and mutation-tests that suite by removing `force` and
+requiring it to fail. Local `pnpm lint`, `typecheck` and `test` cover Python as
+well as JavaScript; they did not until 2026-08-25, and `turbo` was replaying
+cached results across template edits until the same day (R-035).
 
 **Registration, in one paragraph.** A product registers itself with the Control
 Plane after `terraform apply`, from `generators/create-koras-app/src/registration/`.

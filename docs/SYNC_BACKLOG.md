@@ -370,39 +370,41 @@ build what it generates.
 This is the highest-leverage item in the document. Without it, this document
 needs new entries after every burst of work.
 
-### D2 — the two templates hold 110 identical files with no shared source
+### D2 — the two templates held 110 identical files with no shared source
 
 - [x] Drift between the duplicated files fails the build
-- [ ] `local/scripts/` single-sourced
-- [ ] `local/observability/`, `local/queue/` single-sourced
-- [ ] `.github/workflows/` single-sourced
-- [ ] `packages/` stubs single-sourced
-- [ ] `eslint.config.mjs`, `turbo.json`, `tsconfig.base.json` single-sourced
+- [x] A `profiles/_shared/` layer exists and is rendered before the profile
+- [x] `local/observability/`, `local/queue/` single-sourced
+- [x] `.github/workflows/` single-sourced
+- [x] `eslint.config.mjs`, `turbo.json`, `tsconfig.base.json` single-sourced
+- [ ] `local/scripts/` — 4 files still in both profiles
+- [ ] `packages/` stubs — 18 files still in both profiles
 
-**Guarded, not yet fixed.** The count was wrong: it is **110** byte-identical
-files, not ~40. `tests/shared-template-parity.test.ts` lists every one and fails
-when they stop matching, so a fix reaching one profile and not the other is now
-a failing build rather than something a review of either repository cannot see.
-Verified non-vacuous by appending a line to one copy of `migrate.sh`.
+**Largely closed (2026-08-25).** `profiles/_shared/template/` holds **126**
+single-sourced files. **63** paths still exist in both profiles, and
+`shared-template-parity.test.ts` asserts that none of them is byte-identical, so
+each remaining pair is a divergence somebody chose rather than a copy nobody
+noticed.
 
-**Why the extraction did not follow.** `shared_assets` copies verbatim — that is
-what makes `--refresh-modules` safe — and most of the 110 are `.hbs` files
-needing interpolation. A `profiles/_shared/` tree therefore needs a rendering
-path the engine does not have, plus precedence rules for profile overrides, and
-a precedence bug is silent: the wrong file wins and nothing says so. Worth doing
-deliberately rather than alongside eleven other items.
+The two unchecked rows are counts, not verdicts: `local/scripts/` keeps
+`bootstrap.sh.hbs`, `health.sh.hbs`, `ports.sh.hbs` and `smoke-signin.mjs.hbs`
+per profile, and `packages/` keeps 18 — mostly `auth`, whose two profiles model
+an authenticated caller differently and always have. Whether those are genuine
+divergences or unextracted duplicates has not been audited file by file.
+
+**The guard has a known gap, and it hid a real defect.** Parity forbids
+byte-identical copies, so two files that differ pass — including when they
+differ *because one profile received a fix and the other did not*. On
+2026-08-25 the product's scheduler was found missing a `# type: ignore` the
+Control Plane's had carried for some time, which is precisely D1's failure mode
+surviving inside D2's guard. Fixing it made the two identical, at which point
+parity demanded they be single-sourced; `main.py` now lives in `_shared`.
+
+Nothing detects the general case. A test that could would need to compare
+*intent* rather than bytes, which is why the honest mitigation is extraction —
+a file that exists once cannot receive a fix in one profile only.
 
 **Applies to:** `profiles/`
-
-The `shared_assets` mechanism in both manifests already solves this and is used
-for exactly one entry: `infrastructure/terraform/modules`. Extending it to a
-`profiles/_shared/` tree would make "promote to one profile" impossible by
-construction rather than merely discouraged.
-
-An earlier survey found these diverged: `settings.py` (`doppler_token` in product
-only), root `package.json.hbs` (`@types/node` in product only), and the
-control-plane's hardcoded description where the product interpolates the project
-name.
 
 ### D3 — a generated project cannot tell that it is behind
 
@@ -428,13 +430,84 @@ refreshable with one flag, byte-identical by contract — the headline was
 actively misleading. Consider moving `infrastructure/terraform/modules/` from
 the advisory set into `OWNED_PATHS` (`src/generation/drift.ts`).
 
-### D4 — `output/sample-product` has one remaining drift
+### D4 — `output/sample-product` is behind the templates
 
 - [x] `Makefile` — `BUILD_CONCURRENCY`, and the `doppler-bootstrap-prod` target
+- [ ] Everything the templates gained on 2026-08-25
 
 **Applies to:** `output/sample-product`
 
-Everything else is current as of `27f2949`.
+Current as of `27f2949` and no longer. The templates changed substantially on
+2026-08-25 and none of it has been propagated — deliberately, since that
+repository is out of scope for the work that produced the changes.
+
+What it is missing, so a later sync has a list rather than a diff:
+
+| Change | Effect if left |
+|--------|----------------|
+| `force row level security` on the tenant tables | RLS policies present and never applied (R-032) |
+| Issuer and algorithm pinned on both ZITADEL token paths | OIDC Core 3.1.3.7 unchecked (R-033) |
+| `koras-ratelimit`, and its two tiers wired into the API | No rate limiting anywhere (R-034) |
+| `assert_rls_enforced` at startup, `check-rls-connection.sh` before deploy | A bypassing connection is never reported |
+| `supabase/tests/` and `local/scripts/test-rls.sh` | No way to check the policies hold |
+| `ignore_missing_imports` narrowed | A missing first-party import typechecks clean (R-037) |
+| The scheduler's `# type: ignore[untyped-decorator]` | `--with scheduler` fails its own typecheck (R-037) |
+| `lint:py` / `typecheck:py` / `test:py` in `package.json` | Local checks cover JavaScript only (R-035) |
+| `tests/security/test_api_surface.py`, and the API as a root dev dependency | No test can import the app |
+
+Regenerating is the cheap path: none of these is a hand-edit anyone made
+downstream, so nothing there is worth preserving against the template.
+
+---
+
+### D5 — optional components are generated by nobody and checked by nothing
+
+- [ ] Generator Integration generates at least one profile with `--with`
+- [ ] …and with `--without`
+- [ ] …and lints, typechecks and tests the result
+
+**Applies to:** `koras-saas-starter/.github/workflows/generator-integration.yml`
+
+Every CI run generates with default components. `--with marketing,ai_gateway,scheduler`
+and every `--without` variant are paths through the generator that nothing
+exercises, and the templates they select are checked only by whoever happens to
+pass the flag.
+
+Found the hard way on 2026-08-25: `--with scheduler` on the product profile
+produced a project that failed its own typecheck, and had for as long as the
+flag existed. The Control Plane's scheduler carried a `# type: ignore` for
+APScheduler's untyped decorator and the product's did not — D1's failure mode,
+in a file no default generation emits.
+
+D1 closed the case where a fix reaches one profile and not the other *in the
+default component set*. This is the same gap for everything outside it, and the
+component matrix is exactly where a profile's templates diverge most.
+
+Cheap to close: one extra matrix entry. The cost is CI minutes, and the thing it
+buys is the only check on a documented flag.
+
+### D6 — the Control Plane repository is behind the same changes
+
+- [ ] The 2026-08-25 template changes reach `koras-control-plane`
+
+**Applies to:** `koras-control-plane`
+
+The same list as D4, filtered to what the control-plane profile ships. It is a
+real repository under independent development rather than generated output, so
+regeneration is not the path — each change has to be applied deliberately, and
+two of them are decisions rather than patches:
+
+- **`force row level security` must NOT be applied there.** Its tables carry RLS
+  with no policies as a deny-by-default backstop, and forcing it denies the
+  owner too. This is written down because the obvious reading of R-032 is to
+  apply the fix everywhere, and doing so locks the Control Plane out of its own
+  database. It happened here on 2026-08-25 and was caught before release.
+- **`require_rls_enforcement` is `False` for this profile**, for the same
+  reason: its service role bypasses RLS by design.
+
+Everything else — the issuer and algorithm pinning, the narrowed
+`ignore_missing_imports`, the two-language local checks, the API surface tests —
+applies unchanged.
 
 ---
 
@@ -450,8 +523,13 @@ Everything else is current as of `27f2949`.
 
 **Applies to:** `RISK_REGISTER.md`
 
-The table holds 21 rows against 25 body sections. R-024 and R-025 appear
-nowhere — no row, no body — though both have commits naming them.
+Closed. The table now holds a row for every entry, and the entries added since
+(R-030 through R-037) followed the same format.
+
+Two conventions remain side by side, deliberately: R-001 through R-014 are
+`###` with a `| Field | Value |` table and describe risks identified in
+planning; R-015 onward are `##` with prose and describe defects found in
+operation. Reading either tells you which kind it is.
 
 `koras-control-plane/RISK_REGISTER.md` numbers to R-77 in the same
 `R-NN` namespace this one numbers to R-027. "R-22" identifies two different
