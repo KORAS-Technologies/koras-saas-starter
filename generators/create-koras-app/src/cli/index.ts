@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { parseArgs } from './args.js'
 import { promptInteractive } from './interactive.js'
 import { validateSlug, deriveSlug } from '../validation/slug.js'
@@ -24,6 +24,7 @@ import {
   formatRefreshPathResult,
 } from '../generation/refresh.js'
 import { checkDrift, formatDriftReport } from '../generation/drift.js'
+import { PROJECT_MANIFEST_PATH, parseProjectManifest } from '../generation/project-manifest.js'
 import { provision } from '../terraform/runner.js'
 import { runRegistration, type RegistrationReport } from '../registration/index.js'
 import { preflightInputs } from '../terraform/inputs.js'
@@ -262,6 +263,25 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     validateSelections(manifest, selections)
   } catch (err) {
     fail(err instanceof Error ? err.message : String(err))
+  }
+
+  // An existing project's own components win over today's defaults.
+  //
+  // `--check-drift` and `--refresh` act on a project already on disk, and that
+  // project may have been generated with `--with` or `--without`. Re-deriving
+  // the selections from the profile defaults renders a different project and
+  // reports every difference as drift -- so a project built with
+  // `--with scheduler` was told its scheduler was drift, by the command whose
+  // entire job is to say what has drifted.
+  //
+  // `.koras/project.yaml` records what it was generated with precisely so this
+  // is knowable without the operator remembering which flags they used a year
+  // ago. Explicit flags still win, for the case where the answer is being
+  // changed rather than read.
+  if (args.checkDrift || args.refresh.length > 0) {
+    applyRecordedComponents(selections, projectRoot, {
+      overridden: [...args.with, ...args.without],
+    })
   }
 
   // ── Build context ──────────────────────────────────────────────────────────
@@ -512,5 +532,56 @@ function printRegistrationReport(
       )
       process.exitCode = 1
       break
+  }
+}
+
+/**
+ * Applies the components a project records to the selections used to render it.
+ *
+ * A read-only command acts on what is already on disk, so what matters is the
+ * component set that project was built with -- not the profile's defaults
+ * today, and not what a later release made default. Reading them back is why
+ * `.koras/project.yaml` records them at all.
+ *
+ * A component named on the command line is left alone. `--check-drift --without
+ * worker` is a question about what the project would look like without the
+ * worker, and answering it from the recorded set would ignore the question.
+ *
+ * A manifest predating the `components` field records nothing, and this leaves
+ * the defaults in place -- the same behaviour as before, for the projects that
+ * behaviour was correct for.
+ */
+export function applyRecordedComponents(
+  selections: import('../profiles/types.js').ComponentSelections,
+  projectRoot: string,
+  options: { overridden: string[] },
+): void {
+  const manifestPath = join(projectRoot, PROJECT_MANIFEST_PATH)
+  if (!existsSync(manifestPath)) return
+
+  let recorded: { applications: string[]; services: string[]; capabilities: string[] }
+  try {
+    const manifest = parseProjectManifest(readFileSync(manifestPath, 'utf8'), manifestPath)
+    if (!manifest.components) return
+    recorded = manifest.components
+  } catch {
+    // A manifest that cannot be parsed is the drift report's business rather
+    // than this function's. It says so itself, and more usefully.
+    return
+  }
+
+  const overridden = new Set(options.overridden)
+  const categories = [
+    ['applications', recorded.applications],
+    ['services', recorded.services],
+    ['capabilities', recorded.capabilities],
+  ] as const
+
+  for (const [category, enabled] of categories) {
+    const on = new Set(enabled)
+    for (const key of Object.keys(selections[category])) {
+      if (overridden.has(key)) continue
+      selections[category][key] = on.has(key)
+    }
   }
 }

@@ -43,7 +43,7 @@ concurrency:
 
 jobs:
   generate-and-build:
-    name: ${{ matrix.profile }}
+    name: ${{ matrix.slug }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -277,6 +277,10 @@ jobs:
       # produce for it. If it does not, either the drift check is wrong or
       # generation is not deterministic, and both are worth failing over —
       # this check is the one that tells an existing project it is behind.
+      # Deliberately without ${{ matrix.components }}. A drift check on an
+      # existing project reads its component set from its own
+      # .koras/project.yaml, so repeating the flags here would test nothing --
+      # and an operator a year later will not remember them either.
       - name: Drift check reports nothing
         run: |
           pnpm create-koras-app "${{ matrix.slug }}" \

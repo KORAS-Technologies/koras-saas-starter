@@ -240,6 +240,7 @@ branding" there.
 | R-031 | vitest advisories; the fix breaks the suite  | 12       | Accepted with mitigation |
 | R-036 | A live acceptance run cannot be cleaned up   | 12       | Open                     |
 | R-037 | Typecheck ignored the error it needed to report | 12    | Resolved                 |
+| R-038 | Drift reported every optional component      | 9        | Resolved                 |
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
 | R-017 | Control-plane env contract was the product one | 10     | Resolved                 |
 | R-018 | Queue polling billed per command             | 8        | Resolved                 |
@@ -1505,3 +1506,45 @@ lives in `_shared`; the rest of the scheduler already did.
 result. `--with marketing,ai_gateway,scheduler` and the `--without` variants are
 untested paths through the generator, and this defect sat in one of them. Worth
 a matrix entry in Generator Integration rather than a comment here.
+
+---
+
+## R-038 — the drift check reported drift for every optional component
+
+**Found:** 2026-08-25, by the CI entry added to close SYNC_BACKLOG D5. It failed
+on its first run.
+
+**Severity:** 9 (likelihood 3 × impact 3) · **Status:** Resolved 2026-08-25
+
+`--check-drift` re-derived its component selections from the profile's defaults
+rather than from the project in front of it. A project generated with
+`--with scheduler` was therefore compared against a rendering that has no
+scheduler, and every one of its scheduler files was reported as drift — by the
+command whose entire purpose is to say what has drifted.
+
+The same in reverse for `--without`: a project generated without the worker was
+told the worker was missing.
+
+**Not a CI problem.** The matrix entry is what surfaced it, but the defect is in
+the CLI and reaches every operator who used an optional component. The report
+was wrong in the field, and wrong in a way that trains people to disbelieve it —
+which is worse than not having it, because the next report is real.
+
+**Resolution:** a read-only command now reads the component set from the
+project's own `.koras/project.yaml`, which records it precisely so this is
+knowable without anyone remembering flags passed a year earlier. Explicit
+`--with` / `--without` still win, because `--check-drift --with worker` on a
+project without one is a question about what it *would* look like, and answering
+it from the recorded set would ignore the question.
+
+A manifest predating the `components` field records nothing, and the previous
+behaviour is left in place for those projects.
+
+**Why nothing caught it.** `components` was added to the manifest for exactly
+this purpose and then only ever read by `compareSelections`, which checks the
+manifest against `terraform.tfvars`. The field that would have answered the
+question was present, populated, and consulted for a different one.
+
+`--check-drift` is also the last step of Generator Integration, so it had been
+running on every push — against default components only, where the defect does
+not appear.
