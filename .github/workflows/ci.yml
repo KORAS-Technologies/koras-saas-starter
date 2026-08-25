@@ -5,6 +5,11 @@ on:
     branches: [develop, test, staging, main]
   pull_request:
     branches: [develop, test, staging, main]
+  # Lets a person run CI without pushing. Added while diagnosing why this
+  # workflow had never produced a single run: a manual trigger separates
+  # "the event never fired" from "runs are blocked", which nothing else here
+  # could distinguish. Worth keeping either way.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
