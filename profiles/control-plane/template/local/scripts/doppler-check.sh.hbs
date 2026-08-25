@@ -20,6 +20,11 @@
 #
 #   bash local/scripts/doppler-check.sh            # all four environments
 #   bash local/scripts/doppler-check.sh dev stg    # only those
+#
+# Synced from koras-saas-starter:
+#   profiles/{{profile}}/template/local/scripts/doppler-check.sh.hbs
+# Change it there. A fix made only here is a fix the next generated project
+# does not get, and R-65 was exactly that shape of miss.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

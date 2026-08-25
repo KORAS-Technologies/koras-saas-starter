@@ -173,7 +173,7 @@ export function normalizeForDigest(content: Buffer): Buffer {
  * provider cache would differ on every machine and report every project as
  * stale, which is why SKIP_ENTRIES is shared rather than restated.
  */
-function digestInputs(profile: string): Array<[string, string]> {
+export function digestInputs(profile: string): Array<[string, string]> {
   const inputs: Array<[string, string]> = []
 
   const collect = (root: string, namespace: string): void => {
@@ -254,11 +254,27 @@ function profileSharedAssets(profile: string): Array<{ source: string }> {
  * and the field would answer a different question than the one asked of it.
  */
 export function resolveTemplateDigest(profile: string): string {
+  return digestOf(
+    digestInputs(profile).map(([path, file]) => [path, readFileSync(file)] as [string, Buffer]),
+  )
+}
+
+/**
+ * The hashing step, over (path, content) pairs.
+ *
+ * Separate from the filesystem walk so it can be exercised on synthetic input.
+ * The first version of its tests planted probe files in the starter tree and
+ * hashed those; vitest runs test files in parallel, so a probe sitting in
+ * profiles/product/template/ made an unrelated drift test report a difference
+ * that was not there. A test that mutates shared state to observe a pure
+ * function was the wrong shape twice over.
+ */
+export function digestOf(inputs: Array<[string, Buffer]>): string {
   const hash = createHash('sha256')
-  for (const [path, file] of digestInputs(profile).sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+  for (const [path, content] of [...inputs].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
     hash.update(path)
     hash.update(NUL)
-    hash.update(normalizeForDigest(readFileSync(file)))
+    hash.update(normalizeForDigest(content))
     hash.update(NUL)
   }
   return hash.digest('hex')

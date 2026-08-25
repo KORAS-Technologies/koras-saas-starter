@@ -8,6 +8,7 @@ dist/
 .turbo/
 out/
 build/
+*.tsbuildinfo
 
 # Python
 __pycache__/
@@ -66,3 +67,10 @@ local/certs/*.crt
 # Test artifacts
 coverage/
 junit.xml
+
+# Playwright. Both directories are regenerated on every run, and
+# e2e/support/key.json is a ZITADEL service-account key written during test
+# setup -- a real credential, in a repository that may be public.
+/test-results/
+/playwright-report/
+/e2e/support/key.json

@@ -1,11 +1,11 @@
 import { describe, it, expect, afterAll } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { createHash } from 'node:crypto'
+import { rmSync, existsSync, readFileSync } from 'node:fs'
 import { SKIP_ENTRIES } from '../src/generation/skip.js'
 import {
-  normalizeForDigest,
+  digestInputs,
+  digestOf,
   resolveTemplateDigest,
 } from '../src/generation/project-manifest.js'
 import { loadProfile } from '../src/profiles/index.js'
@@ -203,85 +203,76 @@ describe('the configuration is single-sourced, not duplicated per profile', () =
   })
 })
 
-describe('the template digest describes content, not the checkout', () => {
-  it('is unchanged by CRLF line endings', () => {
-    // `.gitattributes` sets `* text=auto`, so every profile template file is LF
-    // in the object store and CRLF in a Windows working tree. Hashing raw bytes
-    // therefore gave CI and a Windows machine different digests for the same
-    // profile, and a digest written before a merge stopped matching after it --
-    // the checkout had rewritten the files being hashed.
-    const CR = String.fromCharCode(13)
-    const LF = String.fromCharCode(10)
-
-    const sample = readFileSync(
-      join(process.cwd(), '../../profiles/product/template/CLAUDE.md.hbs'),
-      'utf8',
-    )
-    // Guards the guard: on a checkout that is already LF the assertion below
-    // would hold trivially, so prove the two forms genuinely differ as bytes.
-    const asLf = sample.split(CR + LF).join(LF)
-    const asCrlf = asLf.split(LF).join(CR + LF)
-    expect(Buffer.from(asCrlf).equals(Buffer.from(asLf))).toBe(false)
-
-    const digest = (text: string) =>
-      createHash('sha256').update(normalizeForDigest(Buffer.from(text))).digest('hex')
-    expect(digest(asCrlf)).toBe(digest(asLf))
-  })
-
-  it('still distinguishes a real content change', () => {
-    const digest = (text: string) =>
-      createHash('sha256').update(normalizeForDigest(Buffer.from(text))).digest('hex')
-    expect(digest('a' + String.fromCharCode(10))).not.toBe(digest('b' + String.fromCharCode(10)))
-  })
-
-  it('agrees with the digest the generator writes into a manifest', () => {
-    for (const [profile, gen] of CASES) {
-      expect(gen.read('.koras/project.yaml')).toContain(resolveTemplateDigest(profile))
-    }
-  })
-})
-
 describe('the template digest covers what a project actually receives', () => {
   // The hole this closes: `.claude` and infrastructure/terraform/modules both
   // reach a project as shared assets, and while the digest hashed only
   // profiles/<profile>/ a repository could be arbitrarily far behind on every
   // Koras skill and every Terraform module with its digest matching exactly.
-  const STARTER = join(process.cwd(), '../..')
+  //
+  // Asserted over the input list and a pure hash rather than by planting files
+  // in the starter and re-hashing it. Vitest runs test files in parallel, so
+  // the mutating version made an unrelated drift test report a difference that
+  // did not exist -- and left junk behind when cleanup failed on Windows.
 
-  function withTempFile<T>(relPath: string, body: () => T): T {
-    const target = join(STARTER, relPath)
-    expect(existsSync(target)).toBe(false)
-    writeFileSync(target, 'temporary probe\n', 'utf8')
-    try {
-      return body()
-    } finally {
-      rmSync(target, { force: true })
+  const paths = (profile: ProfileName) => digestInputs(profile).map(([path]) => path)
+
+  it.each(['product', 'control-plane'] as ProfileName[])(
+    'includes the common Koras skills for %s',
+    (profile) => {
+      const seen = paths(profile)
+      for (const skill of KORAS_COMMON_SKILLS) {
+        expect(seen).toContain(`shared:.claude/${claudeSkillPath(skill).slice('.claude/'.length)}`)
+      }
+    },
+  )
+
+  it('includes the shared Terraform modules', () => {
+    expect(paths('control-plane').some((p) => p.startsWith('shared:infrastructure/terraform/modules/'))).toBe(true)
+  })
+
+  it('still includes the profile tree', () => {
+    expect(paths('product')).toContain('template/CLAUDE.md.hbs')
+    expect(paths('product')).toContain('manifest.yaml')
+  })
+
+  it('namespaces shared assets so they cannot collide with profile paths', () => {
+    // Every shared entry is prefixed; nothing from the profile tree is.
+    const seen = paths('product')
+    expect(seen.some((p) => p.startsWith('shared:'))).toBe(true)
+    expect(seen).not.toContain('shared:manifest.yaml')
+  })
+
+  it('excludes what the engine excludes', () => {
+    for (const profile of ['product', 'control-plane'] as ProfileName[]) {
+      for (const p of paths(profile)) {
+        const segments = p.replace(/^shared:/, '').split('/')
+        expect(segments.some((segment) => SKIP_ENTRIES.has(segment))).toBe(false)
+      }
     }
-  }
-
-  it('changes when a common Koras skill changes', () => {
-    const before = resolveTemplateDigest('product')
-    const after = withTempFile('.claude/skills/koras-architecture/PROBE.md', () =>
-      resolveTemplateDigest('product'),
-    )
-    expect(after).not.toBe(before)
-    expect(resolveTemplateDigest('product')).toBe(before)
   })
 
-  it('changes when a shared Terraform module changes', () => {
-    const before = resolveTemplateDigest('control-plane')
-    const after = withTempFile('infrastructure/terraform/modules/PROBE.tf', () =>
-      resolveTemplateDigest('control-plane'),
-    )
-    expect(after).not.toBe(before)
+  it('changes when any single input changes, and only then', () => {
+    const base: Array<[string, Buffer]> = [
+      ['a.md', Buffer.from('one')],
+      ['b.md', Buffer.from('two')],
+    ]
+    const digest = digestOf(base)
+
+    expect(digestOf([...base].reverse())).toBe(digest)          // order-independent
+    expect(digestOf([['a.md', Buffer.from('one!')], base[1]])).not.toBe(digest)  // content
+    expect(digestOf([['a2.md', base[0][1]], base[1]])).not.toBe(digest)          // rename
+    expect(digestOf(base.slice(0, 1))).not.toBe(digest)                          // removal
   })
 
-  it('still changes when the profile tree changes', () => {
-    const before = resolveTemplateDigest('product')
-    const after = withTempFile('profiles/product/template/PROBE.txt', () =>
-      resolveTemplateDigest('product'),
-    )
-    expect(after).not.toBe(before)
+  it('is unchanged by CRLF line endings', () => {
+    const CR = String.fromCharCode(13)
+    const LF = String.fromCharCode(10)
+    const lf = `alpha${LF}beta${LF}`
+    const crlf = `alpha${CR}${LF}beta${CR}${LF}`
+    // Guards the guard: prove the two forms genuinely differ as bytes, or the
+    // assertion below would hold trivially.
+    expect(Buffer.from(crlf).equals(Buffer.from(lf))).toBe(false)
+    expect(digestOf([['x.md', Buffer.from(crlf)]])).toBe(digestOf([['x.md', Buffer.from(lf)]]))
   })
 
   it('gives the two profiles different digests', () => {
@@ -290,23 +281,9 @@ describe('the template digest covers what a project actually receives', () => {
     expect(resolveTemplateDigest('product')).not.toBe(resolveTemplateDigest('control-plane'))
   })
 
-  it('is stable across repeated computation', () => {
-    expect(resolveTemplateDigest('product')).toBe(resolveTemplateDigest('product'))
-  })
-
-  it('shares its skip rules with the engine, rather than restating them', () => {
-    // A digest that hashed a local .terraform provider cache would differ on
-    // every machine and report every project as stale. That is guaranteed
-    // structurally: the digest walks with the same SKIP_ENTRIES the engine
-    // copies with, so the two cannot disagree about what a project receives.
-    //
-    // Asserted as a shared constant rather than by planting a cache in the
-    // starter and hashing it. That version wrote into a gitignored directory
-    // in the real repository, and a cleanup that failed on Windows left the
-    // junk behind invisibly -- reproducing the exact defect it guarded against.
-    // refresh.test.ts already proves the engine excludes these.
-    expect(SKIP_ENTRIES.has('.terraform')).toBe(true)
-    expect(SKIP_ENTRIES.has('.terraform.lock.hcl')).toBe(true)
-    expect(SKIP_ENTRIES.has('node_modules')).toBe(true)
+  it('agrees with the digest the generator writes into a manifest', () => {
+    for (const [profile, gen] of CASES) {
+      expect(gen.read('.koras/project.yaml')).toContain(resolveTemplateDigest(profile))
+    }
   })
 })

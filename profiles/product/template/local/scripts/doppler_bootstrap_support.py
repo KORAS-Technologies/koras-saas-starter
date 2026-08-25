@@ -1,5 +1,12 @@
 """Helpers for doppler-bootstrap.sh.
 
+Synced from koras-saas-starter:
+  profiles/<profile>/template/local/scripts/doppler_bootstrap_support.py
+Change it there. A fix made only here is a fix the next generated project
+does not get, and R-65 was exactly that shape of miss. (This file is
+copied verbatim rather than rendered, which is why the profile is not
+filled in above.)
+
 A separate file rather than heredocs inside the shell script. Three reasons,
 and the third is the one that decided it: an inline heredoc cannot be tested,
 quoting a Python block inside a bash function is where subtle bugs hide, and a
