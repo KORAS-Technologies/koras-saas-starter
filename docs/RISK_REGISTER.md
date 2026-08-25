@@ -238,7 +238,7 @@ branding" there.
 | R-034 | No rate limiting in the generated API        | 12       | Resolved                 |
 | R-035 | `pnpm test` reported a cached pass           | 16       | Resolved                 |
 | R-031 | vitest advisories; the fix breaks the suite  | 12       | Accepted with mitigation |
-| R-036 | A live acceptance run cannot be cleaned up   | 12       | Open                     |
+| R-036 | A live acceptance run cannot be cleaned up   | 12       | Partially resolved       |
 | R-037 | Typecheck ignored the error it needed to report | 12    | Resolved                 |
 | R-038 | Drift reported every optional component      | 9        | Resolved                 |
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
@@ -1463,17 +1463,38 @@ reinforced it — sixteen passing tests about deletion, none of which delete.
 Same shape as R-035 and the RLS suite before it: a check that exists, is tested,
 and never touches the thing it is supposed to act on.
 
-**What closing it requires:**
+**Mostly built, 2026-08-25.** `koras teardown <project> <outputs.json>` exists.
+The guards moved from `tests/e2e/helpers/` into `tooling/koras-cli/src/teardown/`
+— they had looked like test scaffolding and are the safety mechanism of a
+destructive command — and six of the seven providers now have delete calls
+behind them.
 
-1. Deleters for all seven providers, behind the existing guards.
-2. `prevent_destroy` made conditional — a variable, so the guard stays on for a
-   real estate and off for `koras-e2e-` resources — or a documented
-   `state rm` procedure.
-3. A destroy path in the generator that uses the Terraform state, which already
-   knows exactly what was created.
+The inventory is built from Terraform's own outputs rather than by listing each
+provider and filtering by name. State is the record of what was created; a
+listing is a guess that can both miss and over-match.
 
-Until then a live apply is authorisable only on the explicit understanding that
-cleanup is manual.
+Verified through the command itself, not only through unit tests. Given a real
+project's outputs with `KORAS_E2E_TEARDOWN=1` set, all eight resources are
+refused by name. Given an acceptance project's outputs with the flag unset, it
+reports a dry run and issues nothing.
+
+**What is still open:**
+
+1. **ZITADEL has no deleter.** Its API needs a service-account JWT exchange
+   rather than a bearer token, which is a different flow from every other
+   provider here. Reported as skipped with that reason rather than omitted, so
+   a teardown does not claim to be complete when projects remain.
+2. **`prevent_destroy` is untouched.** It is irrelevant to the API-based path
+   above, which never invokes Terraform — but `terraform destroy` still fails on
+   five resource types, so anyone reaching for it will be stopped.
+3. **Nothing has been run against a real provider.** Every test injects a
+   `fetch` double. A green suite means the requests are shaped as the API
+   documents; it does not mean any provider accepts them.
+4. **The GitHub token cannot delete repositories.** `delete_repo` is not
+   granted, deliberately. Until it is, that deleter is written and unusable.
+
+So a live apply is closer to reversible than it was, and is not yet reversible.
+Points 3 and 4 are what stand between the two.
 
 ---
 

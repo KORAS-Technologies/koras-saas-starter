@@ -1,37 +1,21 @@
 /**
- * The rules governing deletion of the infrastructure an acceptance run creates.
+ * The rules governing deletion of acceptance-run infrastructure.
  *
- * **This module deletes nothing.** Every `Deleter` is injected, and no provider
- * implementation exists anywhere in the repository, so the tests below exercise
- * the guards against stubs. Read that as the current state rather than as a
- * design: the guards are the part worth having first, because they are what a
- * real deleter would have to pass through, but a live acceptance run cannot be
- * cleaned up by this file today.
+ * These are the guards, and nothing here issues a provider call: `apply` takes
+ * its deleters as arguments. `providers/` holds the implementations and
+ * `run.ts` wires the two together, so this file can be read and reviewed as
+ * what it is -- the answer to "may this name be deleted at all" -- without
+ * anything that could act on the answer.
  *
- * It also knows three resource kinds against the seven providers a provision
- * writes to. Upstash, ZITADEL, Vercel and Fly are absent, and `prevent_destroy`
- * is set on five resource types, so `terraform destroy` is not an alternative
- * either. See Phase 13 in IMPLEMENTATION_ROADMAP.md.
+ * Moved here from `tests/e2e/helpers/` when `koras teardown` needed it. It had
+ * lived beside the acceptance tests, which made it look like test scaffolding;
+ * it is the safety mechanism of a destructive command and belongs with the
+ * command.
  *
- * This is the one helper in the repository whose job is destruction, so it is
+ * This is the one part of the repository whose job is destruction, so it is
  * written to refuse rather than to succeed. Four independent guards stand
  * between a call and a deleted resource, and each is there because the failure
- * it prevents is unrecoverable:
- *
- *  1. **A name prefix.** Only resources named `koras-e2e-...` can be deleted.
- *     A test that provisioned `docoris` cannot tear down `docoris`; it fails
- *     the run instead and leaves the resource for a human. This is the guard
- *     that matters, because it holds even when every other one is misused.
- *  2. **An explicit opt-in.** `KORAS_E2E_TEARDOWN=1`. Absent, the helper
- *     reports what it would delete and deletes nothing.
- *  3. **Dry run by default.** `plan()` is a pure function over the inventory.
- *     `apply()` is the only thing that issues a DELETE.
- *  4. **A protected list.** Names the estate must never lose, checked after
- *     the prefix rule rather than instead of it — belt and braces on the one
- *     mistake that cannot be undone.
- *
- * Nothing here runs during an ordinary `pnpm test`. The acceptance tests that
- * call it are themselves gated behind `KORAS_E2E_LIVE=1`.
+ * it prevents is unrecoverable.
  */
 
 /** Every acceptance-run resource is named with this. Nothing else is deletable. */
@@ -54,12 +38,42 @@ export const PROTECTED_NAMES = [
   'legalapp',
 ] as const
 
-export type ResourceKind = 'github-repository' | 'doppler-project' | 'supabase-project'
+/**
+ * The kinds a provision creates.
+ *
+ * `zitadel-project` is listed although nothing deletes it: an inventory that
+ * omits it would report a complete teardown while leaving projects behind. It
+ * is reported as skipped, with the reason, which is the honest outcome.
+ */
+export type ResourceKind =
+  | 'github-repository'
+  | 'doppler-project'
+  | 'supabase-project'
+  | 'upstash-database'
+  | 'vercel-project'
+  | 'fly-app'
+  | 'zitadel-project'
 
 export interface Resource {
   kind: ResourceKind
-  /** The name or ref the provider knows it by. */
+  /**
+   * The name the guards judge.
+   *
+   * For most kinds this is also what the provider knows it by. For an opaque
+   * id -- a Supabase ref, a Vercel project id -- it is the project slug joined
+   * to that id, because an id contains no project name and the prefix guard
+   * would refuse every one of them. What makes those safe to delete is the
+   * project they belong to, so that is what the guard is given.
+   */
   name: string
+  /**
+   * What to send the provider, when it differs from the guarded name.
+   *
+   * Kept separate rather than parsed back out of `name`: a GitHub repository is
+   * `owner/repo` and splitting on the slash would hand the API a bare repo
+   * name. Two meanings in one string is how that mistake gets made.
+   */
+  providerId?: string
 }
 
 export interface TeardownPlan {

@@ -16,6 +16,10 @@
       "types": "./dist/redact.d.ts",
       "default": "./dist/redact.js"
     },
+    "./terraform-outputs": {
+      "types": "./dist/terraform/outputs.d.ts",
+      "default": "./dist/terraform/outputs.js"
+    },
     "./project-manifest": {
       "types": "./dist/generation/project-manifest.d.ts",
       "default": "./dist/generation/project-manifest.js"

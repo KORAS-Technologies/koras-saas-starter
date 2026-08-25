@@ -8,7 +8,7 @@ import {
   teardownEnabled,
   formatPlan,
   type Resource,
-} from './helpers/teardown.js'
+} from '../src/teardown/guards.js'
 
 /**
  * The guards on the one helper whose job is destruction.
