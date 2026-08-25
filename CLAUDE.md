@@ -101,11 +101,12 @@ for anything that needs rendering or capability gating.
 `profiles/_shared/` is not a profile. `VALID_PROFILES` is an explicit list, so
 nothing enumerates it as one.
 
-Files still duplicated across both profiles are listed in
-`generators/create-koras-app/tests/shared-template-parity.test.ts`, which fails
-when two copies drift apart. Moving a file into `_shared/` removes it from that
-list, which is the direction of travel: 16 files are single-sourced, 96 remain
-duplicated.
+No file exists twice. `shared-template-parity.test.ts` asserts that
+structurally -- no path may exist in both profile templates with byte-identical
+content -- rather than by listing paths, so a file duplicated tomorrow is caught
+without anyone remembering to add it. 115 files are single-sourced in `_shared/`;
+the 66 paths that exist in both profiles do so with genuinely different content,
+which is deliberate divergence rather than duplication.
 
 ## Generator rules
 
