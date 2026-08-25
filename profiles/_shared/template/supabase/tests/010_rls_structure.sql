@@ -98,3 +98,52 @@ begin
   raise notice 'rls context helper: ok';
 end
 $$;
+
+-- The role the application connects as must be one RLS can restrain.
+--
+-- `force row level security` binds the table *owner* to its policies. It does
+-- nothing to a superuser, and nothing to a role holding BYPASSRLS -- both
+-- bypass unconditionally, forced or not. Measured against a real database:
+--
+--     connecting role        force   rows visible
+--     superuser              ON      2   <- bypassed
+--     non-superuser owner    ON      1   <- isolated
+--     non-superuser owner    OFF     2   <- bypassed
+--
+-- So `force` alone does not give tenant isolation, and a managed Postgres
+-- usually offers a superuser as its default connection role. Pass
+-- `-v app_role=<role>` to check the role the service actually uses; without it
+-- the check is skipped, because this suite is run by a privileged role and
+-- cannot infer the application's.
+--
+-- The name is carried through a setting rather than interpolated into the block
+-- below: psql does not substitute its variables inside dollar-quoted strings,
+-- so `:'app_role'` there is a syntax error rather than a value.
+\if :{?app_role}
+select set_config('koras.app_role', :'app_role', false) as _;
+
+do $$
+declare
+  role_name text := current_setting('koras.app_role');
+  is_super boolean;
+  bypasses boolean;
+begin
+  select rolsuper, rolbypassrls into is_super, bypasses
+  from pg_roles where rolname = role_name;
+
+  if is_super is null then
+    raise exception 'the application role % does not exist', role_name;
+  end if;
+
+  if is_super or bypasses then
+    raise exception
+      'the application role % bypasses RLS (superuser=%, bypassrls=%). Every tenant policy is inert on its connections.',
+      role_name, is_super, bypasses;
+  end if;
+
+  raise notice 'application role: ok';
+end
+$$;
+\else
+\echo 'app_role not supplied - skipping the connecting-role check'
+\endif

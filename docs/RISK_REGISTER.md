@@ -233,7 +233,7 @@ branding" there.
 | R-014 | Control Plane not available at registration  | 4        | Accepted                 |
 | R-015 | Terraform plan committed by the generator    | 25       | Resolved                 |
 | R-030 | Every CI gate had never run                  | 20       | Resolved                 |
-| R-032 | RLS enforced against nobody (owner exempt)   | 20       | Resolved                 |
+| R-032 | RLS enforced against nobody (owner + superuser) | 20     | Resolved                 |
 | R-033 | Token checks loosest on external input       | 9        | Resolved                 |
 | R-034 | No rate limiting in the generated API        | 12       | Resolved                 |
 | R-035 | `pnpm test` reported a cached pass           | 16       | Resolved                 |
@@ -1055,9 +1055,62 @@ database for the same reason. The runner creates a `nobypassrls` role and
 `SET ROLE`s into it, because a suite run as the owner passes while proving
 nothing.
 
-**Outstanding:** the SQL suite has been written and shipped but not executed —
-the starter has no CI Postgres yet. The structural half is guaranteed by the
-generator tests; the behavioural half is guaranteed by nothing until it runs.
+**Executed 2026-08-25, and `force` alone turned out to be insufficient.**
+
+The suite above had never been run when this entry was first written. Running
+it against a real Postgres 16 confirmed the fix, then found what the fix does
+not cover.
+
+`force row level security` binds the table's **owner** to its policies. It does
+nothing to a **superuser**, and nothing to a role holding **BYPASSRLS** — both
+bypass unconditionally, forced or not. Measured rather than reasoned about, with
+two tenants and the context set to one:
+
+| Connecting role | `force` | Rows visible |
+|-----------------|---------|--------------|
+| superuser | ON | **2 — bypassed** |
+| non-superuser owner | ON | 1 — isolated |
+| non-superuser owner | OFF | **2 — bypassed** |
+
+The middle row is the fix working. The top row is the one that matters: a
+managed Postgres commonly issues a superuser as its default connection role, and
+a `DATABASE_URL` copied from a dashboard is usually that role. Such a deployment
+has correct policies, `force` on every table, a passing policy suite, and **no
+row-level security at all**.
+
+The original claim here — that `force` is "what makes layer 2 real" — was half
+the answer. Two conditions are required and only one lives in a migration:
+
+1. `force row level security` on every table. Done, and asserted.
+2. The application connects as a role that is neither a superuser nor
+   BYPASSRLS. **No migration can address this**: it is a property of the
+   credential, not of the schema.
+
+**Resolution for the second.** `assert_rls_enforced` in `koras-database` reads
+`pg_roles` for the connecting role and raises `RlsNotEnforced` if it is a
+superuser or holds BYPASSRLS. `verify_rls_enforcement` calls it from the API
+lifespan, before anything is served: the service refuses to start rather than
+serving with inert policies, because the alternative is learning about it from
+whoever saw another tenant's rows.
+
+The structural suite checks the same when told which role to check
+(`-v app_role=<role>`, or `RLS_APP_ROLE` through the runner). Unset, it skips
+rather than guesses — the suite runs as a privileged role and cannot infer the
+application's.
+
+**The suite is not vacuous, and that was tested rather than assumed.** Removing
+`force` from the three tables makes it exit 3 with `RLS is enabled but not
+forced on: tenant_members, tenant_settings, tenants`; pointing the role check at
+`postgres` makes it exit 3 with `the application role postgres bypasses RLS
+(superuser=t, bypassrls=t)`. Both mutations were run and both were caught. The
+behavioural suite passes against a database built from freshly generated
+migrations — reads, writes, and an unset context failing closed.
+
+**Still not covered.** Nothing verifies condition 2 in a *provisioned* estate.
+The startup guard catches it at deploy time, which is the right place, but no
+Terraform output or doctor check reports it beforehand. `pnpm koras
+bootstrap:doctor` already contacts Supabase, and the role a project will connect
+as is knowable before its first request.
 
 ---
 

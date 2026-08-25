@@ -83,6 +83,35 @@ describe.each(PROFILES)('%s: RLS applies to the connecting role', (profile) => {
     expect(runner).toMatch(/set role|SET ROLE|TEST_ROLE/)
   })
 
+  it('refuses to serve on a connection RLS cannot restrain', () => {
+    // Executing the suite against a real Postgres showed `force` is necessary
+    // and not sufficient: it binds the table owner and does nothing to a
+    // superuser or a BYPASSRLS role, both of which bypass unconditionally. A
+    // managed Postgres commonly hands out a superuser as the default connection
+    // role, so a DATABASE_URL from a dashboard yields correct policies, force
+    // everywhere, a passing suite, and no isolation. See R-032.
+    const db = files.get('python-packages/koras-database/src/koras_database/__init__.py') ?? ''
+    expect(db).toMatch(/async def assert_rls_enforced/)
+    expect(db).toMatch(/rolsuper/)
+    expect(db).toMatch(/rolbypassrls/)
+
+    const wiring = files.get('services/api/koras_api/core/database.py') ?? ''
+    expect(wiring).toMatch(/async def verify_rls_enforcement/)
+
+    // At startup, before anything is served -- the failure it prevents has no
+    // symptom until a tenant sees another tenant's rows.
+    const main = files.get('services/api/koras_api/main.py') ?? ''
+    expect(main).toMatch(/await verify_rls_enforcement\(\)/)
+  })
+
+  it('checks the connecting role from the suite too, when it is named', () => {
+    const suite = files.get('supabase/tests/010_rls_structure.sql') ?? ''
+    expect(suite).toMatch(/app_role/)
+    expect(suite).toMatch(/rolbypassrls/)
+    const runner = files.get('local/scripts/test-rls.sh') ?? ''
+    expect(runner).toMatch(/RLS_APP_ROLE/)
+  })
+
   it('sets the tenant context transaction-locally, not per session', () => {
     // A session-scoped context outlives the request on a pooled connection and
     // is inherited by whoever gets that connection next.

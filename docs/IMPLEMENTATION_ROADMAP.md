@@ -1069,12 +1069,23 @@ role rather than assuming one.
 | RLS structure and enforcement | 10 starter assertions, both profiles |
 | JWT verification, both tiers | 36 starter assertions, both profiles |
 | JWT behaviour in a generated project | 44 tests, run in the lab; includes a wrong-issuer rejection |
-| **The SQL suite executed against a database** | **Not yet run** |
+| **The SQL suite executed against a database** | **Run 2026-08-25 — both suites pass, both mutations caught** |
 
-The SQL is written and shipped but has not been executed: it needs a Postgres
-that the starter's own CI does not yet stand up. Until it runs, the structural
-assertions are guaranteed by the generator tests and the behavioural ones are
-guaranteed by nothing. That is recorded here rather than left to be assumed.
+The SQL was executed on 2026-08-25 against Postgres 16 in a disposable
+container, applying the freshly generated migrations. Both suites pass, and both
+mutations fail as they should — removing `force` and pointing the role check at
+a superuser each exit 3 with the specific diagnostic.
+
+**It found that the phase's own fix was incomplete.** `force` binds the table
+owner and does nothing to a superuser or a BYPASSRLS role, and a managed
+Postgres usually hands out a superuser as the default connection role. A
+`DATABASE_URL` from a dashboard therefore yields correct policies, `force`
+everywhere, a green suite, and no isolation. `assert_rls_enforced` now refuses
+to start the API on such a connection. R-032 carries the measurements.
+
+This is the argument for executing a test suite rather than shipping it: the
+structural assertions were green the whole time, and the gap was in what they
+did not think to assert.
 
 ### Open gaps
 

@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
+from .core.database import verify_rls_enforcement
 from .core.observability import setup_telemetry
 from .core.ratelimit import limit_anonymous
 from .core.settings import settings
@@ -19,6 +20,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     treats as the degraded case: requests are allowed and the decision says so.
     That is what lets the service run locally, and in a test, without a Redis.
     """
+    # Before anything is served. A connection that bypasses RLS makes every
+    # tenant policy inert, and that has no symptom until a tenant sees another
+    # tenant's rows.
+    await verify_rls_enforcement()
+
     app.state.redis = Redis.from_url(settings.redis_url) if settings.redis_url else None
     try:
         yield

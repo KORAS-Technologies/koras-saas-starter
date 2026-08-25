@@ -36,10 +36,15 @@ first is application code and application code is what forgets.
    session-scoped setting would outlive the request on a pooled connection and
    be inherited by whoever got that connection next.
 
-`enable row level security` exempts the table owner, and the API connects as
-the owner, so **`force row level security` is what makes layer 2 real**. Every
-table now sets it. Without it the policies are present, correct, and never
-consulted.
+`enable row level security` exempts the table owner, so every table sets
+`force row level security`. That is necessary and not sufficient: `force` binds
+the *owner* and does nothing to a superuser or a role with BYPASSRLS, which
+bypass unconditionally — and a managed Postgres commonly issues a superuser as
+its default connection role.
+
+So layer 2 needs both the `force` and a connection RLS can restrain.
+`assert_rls_enforced` checks the latter at startup and refuses to serve
+otherwise. Measured against a real database; see R-032.
 
 *Verified by:* `rls-enforcement.test.ts` (10 assertions, both profiles),
 `supabase/tests/010_rls_structure.sql`, `supabase/tests/020_tenant_isolation.sql`.

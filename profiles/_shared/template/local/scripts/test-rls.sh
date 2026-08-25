@@ -17,6 +17,17 @@ DB="${POSTGRES_DB:-postgres}"
 USER="${POSTGRES_USER:-postgres}"
 TEST_ROLE="koras_rls_test"
 
+# The role the service actually connects as, when it is known. The structural
+# suite checks that it is neither a superuser nor BYPASSRLS -- `force` binds the
+# table owner and does nothing to either of those, so a deployment can have
+# correct policies, force set everywhere, and no isolation at all. Unset, that
+# check is skipped rather than guessed at.
+APP_ROLE="${RLS_APP_ROLE:-}"
+PSQL_VARS=()
+if [ -n "$APP_ROLE" ]; then
+  PSQL_VARS=(-v "app_role=$APP_ROLE")
+fi
+
 if [ -n "${RLS_DATABASE_URL:-}" ]; then
   psql_exec() { psql -v ON_ERROR_STOP=1 "$RLS_DATABASE_URL" "$@"; }
 else
@@ -53,9 +64,9 @@ fi
 for file in "${tests[@]}"; do
   echo "--> $(basename "$file")"
   if [ -n "${RLS_DATABASE_URL:-}" ]; then
-    psql -v ON_ERROR_STOP=1 "$RLS_DATABASE_URL" -f "$file"
+    psql -v ON_ERROR_STOP=1 "${PSQL_VARS[@]}" "$RLS_DATABASE_URL" -f "$file"
   else
-    $COMPOSE exec -T supabase-db psql -v ON_ERROR_STOP=1 -U "$USER" -d "$DB" < "$file"
+    $COMPOSE exec -T supabase-db psql -v ON_ERROR_STOP=1 "${PSQL_VARS[@]}" -U "$USER" -d "$DB" < "$file"
   fi
 done
 
