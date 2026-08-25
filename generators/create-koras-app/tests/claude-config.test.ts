@@ -308,7 +308,10 @@ describe('generated files name applications by directory, not by component key',
     // the value below it is not that.
     const naming = makefile
       .split('\n')
-      .map((line) => line.replace('\r', ''))
+      // replaceAll, not replace: the single-argument form drops only the
+      // first occurrence, so a line carrying more than one CR kept the rest
+      // and the comparison below compared something other than it claimed.
+      .map((line) => line.replaceAll('\r', ''))
       .filter((line) => line.startsWith('APPS :=') || line.startsWith('# Applications:'))
     expect(naming).toHaveLength(2)
     for (const line of naming) expect(line).not.toContain('platform_admin')

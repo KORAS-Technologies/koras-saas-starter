@@ -912,7 +912,8 @@ differs between the two is which database the row lands in, and that is Phase
 
 **Prerequisite:** Phase 8 complete
 **Parallelizable with:** Phase 12
-**Status:** Work complete (2026-08-23); the exit criterion is not.
+**Status:** Complete (2026-08-25). The criterion was unmeasurable for two days
+and is now met.
 
 Both halves are done. The generated-project workflows are byte-identical across
 both templates and both generated repositories, and
@@ -960,10 +961,30 @@ profiles/control-plane/template/.github/workflows/
 **Done when:** All starter CI workflows pass on `develop`. Generated project
 workflows pass lint check.
 
-Note that "pass" requires them to have *run*. As of 2026-08-24 the CI,
-Generator Integration and Security workflows have zero recorded runs, so this
-criterion is not merely unmet -- it is currently unmeasurable. See the CI
-execution note in `docs/RISK_REGISTER.md`.
+**Met 2026-08-25.** "Pass" requires having *run*, and for two days nothing had:
+the workflows were registered and active with zero recorded runs across 85+
+commits. The cause was Actions billing on a private repository (R-030). The
+repository is public, minutes are free, and jobs execute.
+
+Observed on `develop` at `653a7c1`:
+
+| Workflow | Result |
+|----------|--------|
+| CI | success — Lint & Typecheck, Test (Node), Test (Python), Build |
+| Security | success |
+| Generator Integration | success — both profiles |
+
+The second half of the criterion was genuinely unmet rather than merely
+unmeasured, and reading it carefully is what found that: Generator Integration
+built, typechecked and tested what it generated but never linted it, so a lint
+rule broken in a template reached every generated repository and waited for
+whoever generated one next. A `Lint` step now runs `pnpm turbo run lint` in the
+generated project, verified against a freshly generated product first — 31
+tasks, clean.
+
+**This rests on the repository staying public.** Making it private re-blocks
+every run until the billing failure is settled, and this criterion reverts to
+unmeasurable. R-030 reopens rather than being rediscovered.
 
 ---
 
@@ -1066,10 +1087,29 @@ more than one machine.
 
 **Done when:** Zero critical/high findings in automated scans on `develop`.
 
-**Blocked on the same thing as Phase 11.** The Security workflow is registered,
-active, and has never executed. Every finding above was found by reading and by
-tests written for this phase, not by a scan, because no scan has ever run. The
-criterion is unmeasurable rather than unmet.
+**Measurable since 2026-08-25, and the first real scan failed it.** The Security
+workflow had never executed (R-030, Actions billing on a private repository).
+With the repository public it runs, and CodeQL reported **three open
+high-severity alerts** on `develop` — which is exactly the count this criterion
+asks about, and which nobody could have seen while no scan ran:
+
+| Rule | Location | Verdict |
+|------|----------|---------|
+| `js/polynomial-redos` | `src/terraform/inputs.ts` | Real. `replace(/\/+$/, '')` is quadratic on slash-heavy input |
+| `js/incomplete-sanitization` | `tests/claude-config.test.ts` | Real. `replace('','')` drops only the first occurrence |
+| `js/incomplete-hostname-regexp` | `tests/terraform.test.ts` | Real. Unescaped dots in `app.terraform.io` match any character |
+
+All three fixed. The ReDoS one had already been copied into this phase's own
+new code — `registration/config.ts` normalised a base URL the same way — so the
+scan caught a defect and its freshly-made duplicate in one pass. Both now use
+`stripTrailingSlashes`, a backwards scan that is linear and says what it does.
+
+The two in test files are not exploitable; they are wrong in the way that makes
+a test assert something other than it claims, which is its own kind of silent
+failure.
+
+**Still open:** R-034, no rate limiting. That is a design gap rather than a scan
+finding, and no automated scan will report it.
 
 ---
 

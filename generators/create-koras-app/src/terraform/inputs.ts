@@ -1,4 +1,5 @@
 import type { GenerationContext } from '../generation/context.js'
+import { stripTrailingSlashes } from '../url.js'
 
 /**
  * Doppler secret names may only contain [A-Z0-9_], but Terraform matches
@@ -122,7 +123,7 @@ export function assembleZitadelInstances(env: NodeJS.ProcessEnv): string | undef
 
     out[e] = {
       // tolerate a pasted https:// prefix or trailing slash
-      domain: domain.replace(/^https?:\/\//, '').replace(/\/+$/, ''),
+      domain: stripTrailingSlashes(domain.replace(/^https?:\/\//, '')),
       port: Number(value(env, `ZITADEL_${key}_PORT`) ?? 443),
       insecure: value(env, `ZITADEL_${key}_INSECURE`) === 'true',
       jwt_profile_json: profile,

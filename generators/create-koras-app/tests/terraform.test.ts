@@ -666,7 +666,7 @@ describe('HCP execution mode', () => {
     expect(result.status).toBe('remote')
     if (result.status !== 'remote') return
     expect(result.message).toMatch(/Execution Mode → Local/)
-    expect(result.message).toMatch(/app.terraform.io\/app\/koras\/workspaces\/docoris/)
+    expect(result.message).toMatch(/app\.terraform\.io\/app\/koras\/workspaces\/docoris/)
   })
 
   it('does not block when the workspace does not exist yet', async () => {

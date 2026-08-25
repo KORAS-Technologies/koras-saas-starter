@@ -232,6 +232,7 @@ branding" there.
 | R-013 | Profile manifest schema changes              | 6        | Accepted                 |
 | R-014 | Control Plane not available at registration  | 4        | Accepted                 |
 | R-015 | Terraform plan committed by the generator    | 25       | Resolved                 |
+| R-030 | Every CI gate had never run                  | 20       | Resolved                 |
 | R-032 | RLS enforced against nobody (owner exempt)   | 20       | Resolved                 |
 | R-033 | Token checks loosest on external input       | 9        | Resolved                 |
 | R-034 | No rate limiting in the generated API        | 12       | Open                     |
@@ -871,9 +872,33 @@ keeping the repository public, which trades the licensing position on vendored
 third-party skills for free minutes, or a self-hosted runner, which consumes no
 minutes and costs setup instead.
 
-Until a job is observed *starting*, treat every CI-based exit criterion in
-`docs/IMPLEMENTATION_ROADMAP.md` as **unmeasurable rather than unmet**, and do
-not mark Phase 11 or Phase 12 closed on the strength of a green local run.
+**Resolved 2026-08-25.** Jobs execute. The repository is public, so Actions
+minutes are free and the billing failure that blocked every private-repo run no
+longer applies. Observed rather than inferred — CI run `32805340999` on
+`develop` started four jobs and all four succeeded:
+
+| Job | Result |
+|-----|--------|
+| Lint & Typecheck | success |
+| Test (Node) | success |
+| Test (Python) | success |
+| Build | success |
+
+Security and Generator Integration are green on the same commit, and
+Generator Integration ran both profiles.
+
+**The trade this rests on is unchanged.** Free minutes come from the repository
+being public, which is the licensing position on the vendored third-party
+skills that this entry originally weighed against it. Making the repository
+private again re-blocks every run until the Actions billing failure is settled.
+If that happens, this risk reopens rather than being rediscovered.
+
+**Consequence for the roadmap:** every CI-based exit criterion is now
+measurable. Phase 11's is met. Phase 12's was measurable and *failing* — the
+first scan to actually run reported three open high-severity CodeQL alerts,
+which is the finding count the criterion asks about and which nobody could have
+seen while no scan executed. They are fixed in the commit that resolves this
+entry.
 `ci.yml` now carries `workflow_dispatch`, so the check costs one manual run
 rather than a commit.
 

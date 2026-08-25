@@ -99,6 +99,14 @@ jobs:
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
         run: pnpm turbo run build
 
+      # Phase 11 asks for generated projects to pass a lint check, and until
+      # now nothing ran one -- the workflow built, typechecked and tested what
+      # it generated, so a lint rule broken in a template reached every
+      # generated repository and was found by whoever generated one next.
+      - name: Lint
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: pnpm turbo run lint
+
       - name: Typecheck
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
         run: pnpm turbo run typecheck

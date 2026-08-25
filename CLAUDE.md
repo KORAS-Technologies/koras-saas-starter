@@ -164,21 +164,21 @@ external skills, and bring an existing project back into alignment.
 
 ## Current phase
 
-**Phases 0–10 complete.** Phase 10 (Control Plane registration) met its exit
-criterion 2026-08-25. Phase 13's offline scenarios landed the same day.
+**Phases 0–12 complete.** Phases 10, 11 and 12 all met their exit criteria on
+2026-08-25, and Phase 13's offline scenarios landed the same day.
 
 **Open:**
 
 | Phase                                  | State              | Note                                     |
 |----------------------------------------|--------------------|------------------------------------------|
-| 11 — CI/CD                             | Work complete, unverifiable | Both halves done; `generator-integration.yml` builds what it generates. Criterion now on `develop`, but the workflows have never executed |
-| 12 — Security                          | Deliverables complete, criterion unmeasurable | All five shipped. Writing the missing tests found two defects, both fixed: RLS was enforced against nobody (R-032) and the ZITADEL token paths pinned neither issuer nor algorithm (R-033). The SQL suite is written but has not been executed against a database. Rate limiting is absent (R-034, open) |
+| 11 — CI/CD                             | Complete | Criterion met on `develop`. CI, Security and Generator Integration all green. Reading the criterion carefully found the generated-project lint check was genuinely missing; it now runs |
+| 12 — Security                          | Complete, with one open gap | All five deliverables shipped. Three defects fixed: RLS was enforced against nobody (R-032), the ZITADEL token paths pinned neither issuer nor algorithm (R-033), and the first CodeQL scan to actually run reported three high-severity alerts. The RLS SQL suite is written but never executed. Rate limiting is absent (R-034, open) |
 | 13 — End-to-End Acceptance Tests       | All but the live apply | Both scenarios automated and passing; the live-infrastructure variant is gated behind `KORAS_E2E_LIVE` and awaits an explicit authorisation |
 
-**Next step:** get the CI workflows to run at all. Three phases now define
-exit criteria that no scan or job has ever evaluated, and Phase 12 found two
-real defects by hand that a scan should have been the second chance at. After
-that: execute the RLS suite against a database, and close R-034.
+**Next step:** push `feat/phase-10-registration-client` so CI evaluates the
+Phase 10, 12 and 13 work — none of it has been through a workflow yet. After
+that: execute the RLS suite against a database, and close R-034 (rate
+limiting), which is the one open finding no scan will report.
 
 **Registration, in one paragraph.** A product registers itself with the Control
 Plane after `terraform apply`, from `generators/create-koras-app/src/registration/`.
@@ -196,11 +196,12 @@ Caveats when reading the roadmap:
   2026-08-24). `main` was 85 commits behind and last received a commit on
   2026-08-17, so a criterion defined there could not close on work already
   done. Promotion to `main` is a release step, not a definition of done.
-- Neither phase can close yet regardless, for a different reason: **the CI,
-  Generator Integration and Security workflows have zero recorded runs.** They
-  are registered and active, repository-level Actions is enabled, and pushes to
-  `develop` have not produced a single run. Until that is resolved, every
-  CI-based exit criterion in this roadmap is unmeasurable rather than unmet.
+- **The workflows now run** (resolved 2026-08-25). They had zero recorded runs
+  across 85+ commits; the cause was Actions billing on a private repository,
+  and the repository being public is what makes minutes free. Jobs are observed
+  starting and succeeding. **Making the repository private again re-blocks
+  every run** and returns each CI-based criterion to unmeasurable — see R-030,
+  which reopens rather than being rediscovered.
 - The roadmap does not cover R-020 through R-027 or the OIDC sign-in work.
   Roughly twenty commits of deployment and authentication work sit outside the
   phase structure, recorded only in `docs/RISK_REGISTER.md`. Nothing in the plan has

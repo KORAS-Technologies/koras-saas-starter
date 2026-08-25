@@ -1,3 +1,5 @@
+import { stripTrailingSlashes } from '../url.js'
+
 /**
  * Where the Control Plane is, and what authorises this call.
  *
@@ -125,7 +127,7 @@ export function resolveRegistrationConfig(options: {
   return {
     ok: true,
     config: {
-      baseUrl: parsed.toString().replace(/\/+$/, ''),
+      baseUrl: stripTrailingSlashes(parsed.toString()),
       token,
       endpoint: options.endpoint,
     },
