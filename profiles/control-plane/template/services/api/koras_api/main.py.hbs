@@ -1,16 +1,58 @@
-from fastapi import FastAPI
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from redis.asyncio import Redis
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .core.observability import setup_telemetry
+from .core.ratelimit import limit_anonymous
 from .core.settings import settings
 from .routers import health, products
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Opens one Redis connection for the rate limiter, or none.
+
+    An unset REDIS_URL leaves `app.state.redis` as None, which the limiter
+    treats as the degraded case: requests are allowed and the decision says so.
+    That is what lets the service run locally, and in a test, without a Redis.
+    """
+    app.state.redis = Redis.from_url(settings.redis_url) if settings.redis_url else None
+    try:
+        yield
+    finally:
+        if app.state.redis is not None:
+            await app.state.redis.aclose()
+
+
+class RateLimitHeaders(BaseHTTPMiddleware):
+    """Puts the quota on every response, not only on the refusals.
+
+    A caller that only learns its limit by exceeding it has to exceed it to
+    learn anything.
+    """
+
+    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
+        response = await call_next(request)
+        decision = getattr(request.state, "rate_limit", None)
+        if decision is not None:
+            for header, value in decision.headers.items():
+                response.headers.setdefault(header, value)
+        return response
+
 
 app = FastAPI(
     title="KORAS Control Plane API",
     version="0.1.0",
     docs_url="/api/docs" if settings.environment != "prod" else None,
     redoc_url=None,
+    lifespan=lifespan,
 )
+
+app.add_middleware(RateLimitHeaders)
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,4 +65,10 @@ app.add_middleware(
 setup_telemetry(app, service_name="{{projectSlug}}-api")
 
 app.include_router(health.router, prefix="/api/v1")
-app.include_router(products.router, prefix="/api/platform/v1")
+app.include_router(
+    products.router,
+    prefix="/api/platform/v1",
+    # Tier 1, ahead of token verification. Health is deliberately exempt:
+    # limiting a load balancer probe takes the service out of rotation.
+    dependencies=[Depends(limit_anonymous)],
+)

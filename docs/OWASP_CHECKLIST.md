@@ -89,20 +89,40 @@ one is cheap and is the obvious next step for this row.
 
 ## API4:2023 — Unrestricted Resource Consumption
 
-**Status: Gap.**
+**Status: Enforced** (was a gap until 2026-08-25).
 
-There is **no rate limiting** in the generated API. No per-caller quota, no
-per-tenant quota, no request-size ceiling beyond the defaults of whatever sits
-in front. An authenticated caller can issue unbounded requests, and an
-unauthenticated one can hammer the token-verification path.
+`koras-ratelimit` counts in the environment's own Upstash database. Two tiers:
 
-What would close it: a limiter keyed on tenant *and* subject rather than IP
-(callers arrive through a CDN, so the IP is the CDN's), applied ahead of token
-verification so the expensive path is the protected one, with the counter in
-the environment's Upstash Redis rather than in process — the API runs more than
-one machine, and an in-process counter is a per-machine counter.
+| Tier | Runs | Keyed on | Default |
+|------|------|----------|---------|
+| `limit_anonymous` | before token verification | client address | 60/min |
+| `limit_authenticated` | after verification | `organization_id` + `sub` | 600/min |
 
-*Tracked as:* this row. Nothing else records it today.
+An earlier draft of this row said the limiter should be "keyed on tenant and
+subject, applied ahead of token verification". That is not possible — both come
+out of the token being verified — and the two tiers are the resolution: the
+cheap one guards the expensive path, the precise one runs behind `AuthDep`,
+which is what makes keying on `sub` safe.
+
+The counter is in Redis rather than in process because an in-process counter is
+a per-machine counter, and the limit would loosen every time the service scaled
+out.
+
+**It fails open.** An unreachable Redis allows the request and marks the
+decision `degraded`, so while Redis is down nothing is limited. Failing closed
+would make Redis a hard dependency of every request and turn a limiter outage
+into a total outage. `degraded` is there to be alerted on.
+
+`X-Forwarded-For` is trusted only when `trust_forwarded_for` is set, which
+defaults to false — otherwise a caller varies one header per request and the
+limiter limits nobody. Health is exempt, since limiting a probe takes the
+service out of rotation.
+
+*Verified by:* 11 tests in the package (shipped, so every generated project runs
+them) and 18 in `rate-limit.test.ts`.
+
+*Residual:* the window is fixed, not sliding, so the short-term ceiling is twice
+the limit at a window boundary. Fine for abuse control, not for billing.
 
 ## API5:2023 — Broken Function Level Authorization
 
@@ -198,9 +218,11 @@ reaches a log.
 
 | Row | Gap | Severity |
 |---|---|---|
-| API4 | No rate limiting anywhere in the generated API | **High** |
 | API3 | No test that response models exclude internal columns | Low |
 | API5 | No test that every mutating route carries an authorization dependency | Low |
+
+API4 was the substantive one and is closed (R-034). Both remaining rows are
+missing *tests* rather than missing controls.
 
 ## What this checklist does not cover
 

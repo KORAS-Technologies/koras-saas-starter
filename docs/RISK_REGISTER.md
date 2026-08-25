@@ -235,7 +235,7 @@ branding" there.
 | R-030 | Every CI gate had never run                  | 20       | Resolved                 |
 | R-032 | RLS enforced against nobody (owner exempt)   | 20       | Resolved                 |
 | R-033 | Token checks loosest on external input       | 9        | Resolved                 |
-| R-034 | No rate limiting in the generated API        | 12       | Open                     |
+| R-034 | No rate limiting in the generated API        | 12       | Resolved                 |
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
 | R-017 | Control-plane env contract was the product one | 10     | Resolved                 |
 | R-018 | Queue polling billed per command             | 8        | Resolved                 |
@@ -987,6 +987,42 @@ because a criterion that can be read two ways gets read the flattering way
 later — and "zero findings" while eight alerts are open is exactly the sentence
 that would be quoted back.
 
+**Attempted again 2026-08-25, and it is worse than recorded above.** The
+upgrade was carried out in full — `vitest@3.2.7`, with `pnpm.overrides` forcing
+`vite@7.3.6` and `esbuild@0.25.12`, since vitest 3 accepts the vulnerable vite 5
+and pnpm keeps it otherwise. The lockfile came out clean of all three
+advisories.
+
+The suite did not. The note above says every test passes and vitest merely exits
+1 on unhandled errors; that is no longer true. **18 tests fail**, in the four
+files that make the most synchronous filesystem calls:
+
+| Configuration | Failed | Errors |
+|---------------|--------|--------|
+| default | 18 | 5 |
+| `--maxWorkers=2` | 5 | 3 |
+| `--no-file-parallelism` | **4** | 3 |
+
+None of the failures is real: every one passes when its file is run alone. The
+blocked worker misses the `onTaskUpdate` RPC, vitest 3 tears the worker down,
+and reports whatever it was running as failed. Reducing parallelism reduces the
+count and never reaches zero, which rules out contention and leaves the
+blocking itself.
+
+The RPC timeout is birpc's 60-second default, handed in by the pool. It is not
+reachable from vitest config — confirmed by reading `createRuntimeRpc` in
+3.2.7, where `onTimeoutError` is defined and the timeout arrives in `options`.
+
+**What closing it would actually cost, which the note above understates.** The
+blocking is not in test helpers. It is in `writeFiles()` — the generator's own
+synchronous write path, which the tests call exactly the way production calls
+it. Making the workers responsive means making that path async, changing
+`create-koras-app`'s internals and every call site, to clear advisories that
+each require a development server this repository never starts.
+
+The upgrade was reverted. This remains the right call, and it is now backed by
+having done it rather than by having estimated it.
+
 ---
 
 ## R-032 — row-level security was enforced against nobody
@@ -1061,7 +1097,7 @@ URL, which is how ZITADEL issues tokens. An instance fronted by a domain whose
 
 ## R-034 — the generated API has no rate limiting
 
-**Severity:** 12 (likelihood 4 × impact 3) · **Status:** Open
+**Severity:** 12 (likelihood 4 × impact 3) · **Status:** Resolved 2026-08-25
 
 There is no rate limiting anywhere in the generated API: no per-caller quota,
 no per-tenant quota, no request-size ceiling beyond the defaults of whatever
@@ -1082,5 +1118,42 @@ counter held in the environment's Upstash Redis rather than in process. The API
 runs more than one machine, and an in-process counter is a per-machine counter
 that multiplies the real limit by the machine count.
 
-Recorded in `docs/OWASP_CHECKLIST.md` under API4 as the phase's one substantive
-open finding.
+**Resolved.** `koras-ratelimit` ships to both profiles, counting in the
+environment's own Upstash database.
+
+Two tiers, because the description above was not quite coherent: a quota keyed
+on tenant and subject cannot be applied *ahead of* token verification, since
+both come out of the token. What protects the expensive path is a first tier
+keyed on the client address, and the per-tenant quota is a second tier behind
+`AuthDep` — which is what makes keying on `sub` safe, because an unverified
+caller cannot reach it.
+
+| Tier | Runs | Keyed on | Default |
+|------|------|----------|---------|
+| `limit_anonymous` | before verification | client address | 60/min |
+| `limit_authenticated` | after verification | `organization_id` + `sub` | 600/min |
+
+`X-Forwarded-For` is believed only when `trust_forwarded_for` is set, and it
+defaults to false. Trusting it where no proxy rewrites it lets a caller vary one
+header for a fresh quota per request — a limiter that limits nobody while
+appearing to work.
+
+Health is exempt. Limiting a load balancer probe takes the service out of
+rotation, which is a self-inflicted outage.
+
+**It fails open, and that is a real cost, stated rather than hidden.** An
+unreachable Redis allows the request and sets `degraded` on the decision, so
+while Redis is down there is no rate limiting. The alternative makes Redis a
+hard dependency of every request — the same trade `koras_auth`'s JWKS cache
+already refuses for the identity provider — and turns a limiter outage into a
+total outage. `degraded` exists so this can be surfaced as a metric, because a
+protection that silently stops protecting is worse than one that was never
+there.
+
+The window is fixed rather than sliding: one `INCR`, atomic, no script. The
+boundary weakness is that a caller can spend a full quota at the end of one
+window and again at the start of the next, so the true short-term ceiling is
+twice the limit. Acceptable for abuse control; it would not be for billing.
+
+11 tests ship with the package and run in every generated project; 18 more in
+the generator assert the wiring.
