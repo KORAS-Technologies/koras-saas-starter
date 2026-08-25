@@ -19,9 +19,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      # No `version:` here. package.json's packageManager field pins
+      # pnpm@9.15.0, and action-setup treats a version input as a second,
+      # competing declaration -- it fails outright with "Multiple versions of
+      # pnpm specified" rather than picking one. One pin, in the file the
+      # local toolchain already reads.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - uses: actions/setup-node@v5
         with:

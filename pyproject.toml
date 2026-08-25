@@ -23,15 +23,46 @@ dev-dependencies = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+extend-exclude = [
+  # Vendored third-party skills. Their content is upstream's to lint, and
+  # reformatting it here would turn every `sync-external-skills.mjs --update`
+  # into a conflict. The ESLint config excludes the same tree for the same
+  # reason.
+  ".claude/skills",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "S", "ANN"]
-ignore = ["ANN101", "ANN102"]
+# ANN101/ANN102 were removed from ruff; listing them does nothing but emit a
+# warning on every run. Kept out rather than kept for history.
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+# S101 is bandit's "assert used", which is a real finding in application code
+# and nonsense in a test suite -- asserting is what a test does. Scoped to test
+# trees rather than disabled globally, so an assert in a service still fails.
+"**/tests/**" = ["S101"]
+"**/test_*.py" = ["S101"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
 ignore_missing_imports = true
+exclude = [
+  # Profile templates. Every Python file here exists twice -- once per profile
+  # -- and mypy refuses a run where two files map to the same module name, so
+  # `mypy .` aborted before checking anything at all rather than checking these
+  # twice.
+  #
+  # Nothing is lost by skipping them: generator-integration.yml generates a real
+  # project and runs `uv run mypy python-packages services` inside it, which is
+  # the same code with its imports actually resolvable. Checking a template in
+  # place is the weaker test of the two.
+  "^profiles/",
+  # Vendored third-party skills, excluded from ruff and ESLint for the same
+  # reason: upstream's code, and linting it makes every upgrade a conflict.
+  '^\.claude/skills/',
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
