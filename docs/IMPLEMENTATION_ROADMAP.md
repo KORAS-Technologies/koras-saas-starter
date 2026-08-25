@@ -1149,8 +1149,10 @@ The two in test files are not exploitable; they are wrong in the way that makes
 a test assert something other than it claims, which is its own kind of silent
 failure.
 
-**Still open:** R-034, no rate limiting. That is a design gap rather than a scan
-finding, and no automated scan will report it.
+**R-034, no rate limiting, was open when this section was written and is now
+resolved** — `koras-ratelimit` ships to both profiles. It is worth noting that
+no automated scan reported it, and none would have: it is an absent control
+rather than a defective one, which is the category a scanner cannot see.
 
 ---
 

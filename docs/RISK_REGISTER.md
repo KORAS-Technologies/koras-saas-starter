@@ -237,6 +237,7 @@ branding" there.
 | R-033 | Token checks loosest on external input       | 9        | Resolved                 |
 | R-034 | No rate limiting in the generated API        | 12       | Resolved                 |
 | R-035 | `pnpm test` reported a cached pass           | 16       | Resolved                 |
+| R-031 | vitest advisories; the fix breaks the suite  | 12       | Accepted with mitigation |
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
 | R-017 | Control-plane env contract was the product one | 10     | Resolved                 |
 | R-018 | Queue polling billed per command             | 8        | Resolved                 |
