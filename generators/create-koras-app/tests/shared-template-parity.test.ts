@@ -54,7 +54,7 @@ const SHARED = [
   'local/observability/tempo.yml',
   'local/queue/redis.conf',
   'local/scripts/dev-app.mjs',
-  'local/scripts/dev-service.mjs',
+  'local/scripts/dev-service.mjs.hbs',
   'local/scripts/doppler-bootstrap.sh.hbs',
   'local/scripts/doppler-check.sh.hbs',
   'local/scripts/doppler_bootstrap_support.py',

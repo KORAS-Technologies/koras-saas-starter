@@ -13,18 +13,49 @@ import { fileURLToPath } from 'node:url'
 
 const [service] = process.argv.slice(2)
 
+// Rendered per profile. This file used to be one literal shipped to both, and
+// the two things it got wrong were the two things that differ between them: it
+// declared an `ai-gateway` command for a service the control-plane profile
+// cannot have -- annotated "harmless here", which it was not -- and it
+// hardcoded the API's fallback port as 8000, the product's preference. The
+// control-plane profile deliberately uses the 8010 block so a product and the
+// Control Plane can run at the same time, and a fallback naming the other
+// profile's port defeats that the moment ports.sh has not run.
 const COMMANDS = {
-  // --reload watches src/ so edits restart the server, matching Next dev.
+  // --reload watches the source package so edits restart the server, matching
+  // Next dev.
+{{#if service.api}}
   api: (port) => ['uvicorn', 'koras_api.main:app', '--host', '127.0.0.1', '--port', port, '--reload'],
+{{/if}}
+{{#if service.worker}}
   worker: () => ['arq', 'koras_worker.worker.WorkerSettings'],
+{{/if}}
+{{#if service.scheduler}}
   scheduler: () => ['python', '-m', 'koras_scheduler.main'],
-  // Only present in the product profile; harmless here.
+{{/if}}
+{{#if service.ai_gateway}}
   'ai-gateway': (port) => ['uvicorn', 'koras_ai_gateway.main:app', '--host', '127.0.0.1', '--port', port, '--reload'],
+{{/if}}
 }
 
-// Only the API publishes a port; the worker and scheduler are queue consumers.
-const PORT_VARIABLE = { api: 'KORAS_PORT_SERVICE_API', 'ai-gateway': 'KORAS_PORT_SERVICE_AI_GATEWAY' }
-const PORT_FALLBACK = { api: '8000', 'ai-gateway': '4000' }
+// Only the API and the AI gateway publish a port; the worker and scheduler are
+// queue consumers.
+const PORT_VARIABLE = {
+{{#if service.api}}
+  api: 'KORAS_PORT_SERVICE_API',
+{{/if}}
+{{#if service.ai_gateway}}
+  'ai-gateway': 'KORAS_PORT_SERVICE_AI_GATEWAY',
+{{/if}}
+}
+const PORT_FALLBACK = {
+{{#if service.api}}
+  api: '{{ports.serviceApi}}',
+{{/if}}
+{{#if service.ai_gateway}}
+  'ai-gateway': '{{ports.serviceAiGateway}}',
+{{/if}}
+}
 
 if (!service || !(service in COMMANDS)) {
   console.error(`usage: dev-service.mjs <${Object.keys(COMMANDS).join('|')}>`)

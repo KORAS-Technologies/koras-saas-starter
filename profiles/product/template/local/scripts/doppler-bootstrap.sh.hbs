@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
+#
+# Synced from koras-saas-starter:
+#   profiles/{{profile}}/template/local/scripts/doppler-bootstrap.sh.hbs
+# Change it there. A fix made only here is a fix the next generated project
+# does not get, and R-65 was exactly that shape of miss.
+#
 # Populate Doppler for every environment, once, from Terraform plus prompts.
 # Terraform creates the Doppler project and its environments and writes no
 # values, deliberately: doppler_secret resources would put every credential into
 # Terraform state permanently, making state the authority and Doppler a replica.
 # That is backwards, and it is how one generated project published its whole
-# estate in a committed plan file.
+# estate in a committed plan file (R-65).
 #
 # So the values arrive here instead. Two rules shape this script:
 #
