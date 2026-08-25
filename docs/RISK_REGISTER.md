@@ -238,6 +238,7 @@ branding" there.
 | R-034 | No rate limiting in the generated API        | 12       | Resolved                 |
 | R-035 | `pnpm test` reported a cached pass           | 16       | Resolved                 |
 | R-031 | vitest advisories; the fix breaks the suite  | 12       | Accepted with mitigation |
+| R-036 | A live acceptance run cannot be cleaned up   | 12       | Open                     |
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
 | R-017 | Control-plane env contract was the product one | 10     | Resolved                 |
 | R-018 | Queue polling billed per command             | 8        | Resolved                 |
@@ -1390,3 +1391,58 @@ The pattern is the same each time: a check that exists but never runs against
 the thing it is supposed to check. The cached test result, the RLS suite never
 executed, ruff never run on generated output — three instances in one session,
 each invisible while everything reported green.
+
+---
+
+## R-036 — a live acceptance run could not be cleaned up
+
+**Found:** 2026-08-25, while explaining what authorising a live apply would
+involve. Nothing failed; the documents were read back and disagreed with the
+code.
+
+**Severity:** 12 (likelihood 3 × impact 4) · **Status:** Open
+
+Phase 13 said a live apply was a manual runbook step and that "teardown is what
+makes it repeatable". Teardown does not make anything repeatable, because it
+does not delete.
+
+`tests/e2e/helpers/teardown.ts` holds four guards, sixteen tests, and no
+provider call. Every `Deleter` is injected and no implementation exists, so the
+suite proves the guards refuse the right names and proves nothing about
+deletion. It also models three resource kinds — GitHub repositories, Doppler
+projects, Supabase projects — where a provision writes to seven. Upstash,
+ZITADEL, Vercel and Fly are absent entirely.
+
+`terraform destroy` is not the fallback. `prevent_destroy = true` is set on the
+GitHub repository, Supabase projects, Upstash databases, Vercel projects and Fly
+apps, and the generator exposes no destroy path at all. Destroy fails on each of
+those until somebody edits the modules — correct for a real estate, and exactly
+what makes an acceptance estate unrepeatable.
+
+**What that means in practice.** One product-profile apply creates roughly
+35–40 resources across seven providers, including four Supabase projects and
+four Upstash databases that bill. Cleaning that up today means seven provider
+consoles and a person who remembers what was created. Anything missed keeps
+costing money, and the Upstash guard exists precisely because those databases
+hold queue state.
+
+**Why it survived.** The guards were built first, deliberately and correctly:
+they are what any real deleter must pass through. The gap was then described in
+the roadmap as "the half that can be built and tested safely", which reads as
+*this half is done* rather than *this half is the guards*. The tests being green
+reinforced it — sixteen passing tests about deletion, none of which delete.
+
+Same shape as R-035 and the RLS suite before it: a check that exists, is tested,
+and never touches the thing it is supposed to act on.
+
+**What closing it requires:**
+
+1. Deleters for all seven providers, behind the existing guards.
+2. `prevent_destroy` made conditional — a variable, so the guard stays on for a
+   real estate and off for `koras-e2e-` resources — or a documented
+   `state rm` procedure.
+3. A destroy path in the generator that uses the Terraform state, which already
+   knows exactly what was created.
+
+Until then a live apply is authorisable only on the explicit understanding that
+cleanup is manual.

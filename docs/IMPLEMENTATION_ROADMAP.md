@@ -1216,11 +1216,37 @@ That is not something a test suite should be able to start by accident, so:
 - With the gate open, the live suites fail with a message pointing at
   `PROVISIONING_RUNBOOK.md`. They are placeholders, honestly labelled, rather
   than an automated apply nobody authorised.
-- `helpers/teardown.ts` — the half that can be built and tested safely — is
-  complete, with the guards below.
+- `helpers/teardown.ts` holds the *guards* on deletion — which names may be
+  deleted and under what conditions — and nothing that deletes.
 
-A live apply through to Cloudflare and Fly remains a manual runbook step. When
-it is authorised, teardown is what makes it repeatable.
+**A live apply is not currently reversible, and an earlier version of this
+section implied it was.** Two things stand in the way, and both were found by
+reading this back rather than by anything failing:
+
+`helpers/teardown.ts` issues no provider calls. Its deleters are injected and no
+real implementation exists, so every one of its 16 tests exercises the guards
+against a stub. It also knows three resource kinds — GitHub repositories,
+Doppler projects, Supabase projects — against the seven providers an apply
+writes to. Upstash, ZITADEL, Vercel and Fly have no representation in it at all.
+
+`prevent_destroy = true` is set on the GitHub repository, Supabase projects,
+Upstash databases, Vercel projects and Fly apps, and the generator has no
+destroy path. `terraform destroy` therefore fails on each of those until
+somebody edits the modules — which is correct for a real estate and is exactly
+what makes an acceptance run unrepeatable.
+
+So cleanup after a live apply is manual, across seven provider consoles, and
+anything missed keeps costing money. That is the honest position, and it is the
+thing to fix before the apply rather than after it:
+
+1. Real deleters for all seven providers, and a decision on `prevent_destroy` —
+   most likely a variable, so the guard stays on for a real estate and off for
+   `koras-e2e-` resources.
+2. A destroy path that uses the Terraform state, which already knows exactly
+   what was created, rather than a person working through consoles.
+
+A live apply through to Cloudflare and Fly remains a manual runbook step until
+those exist.
 
 ### Teardown safety
 
@@ -1252,7 +1278,10 @@ in a clean environment.
 - [x] Registration exercised over a real socket against a real server
 - [x] Generated manifest, Claude configuration, and profile overlay asserted in both
 - [x] No unrendered template variable in either generated project
-- [x] Teardown helper implemented, with four guards and 16 tests
+- [x] Teardown *guards* implemented, with four rules and 16 tests
+- [ ] **Teardown deleters** — no provider call exists; the helper cannot delete
+- [ ] **A destroy path** — `prevent_destroy` blocks `terraform destroy` on five
+      resource types and the generator offers no alternative
 - [x] `tests/e2e` reachable from `turbo run test`
 - [ ] **Live apply against real infrastructure** — gated, not automated, and
       pending an explicit authorisation. This is the one criterion the phase

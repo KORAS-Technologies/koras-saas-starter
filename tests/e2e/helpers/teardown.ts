@@ -1,5 +1,17 @@
 /**
- * Deletes the infrastructure an acceptance run created.
+ * The rules governing deletion of the infrastructure an acceptance run creates.
+ *
+ * **This module deletes nothing.** Every `Deleter` is injected, and no provider
+ * implementation exists anywhere in the repository, so the tests below exercise
+ * the guards against stubs. Read that as the current state rather than as a
+ * design: the guards are the part worth having first, because they are what a
+ * real deleter would have to pass through, but a live acceptance run cannot be
+ * cleaned up by this file today.
+ *
+ * It also knows three resource kinds against the seven providers a provision
+ * writes to. Upstash, ZITADEL, Vercel and Fly are absent, and `prevent_destroy`
+ * is set on five resource types, so `terraform destroy` is not an alternative
+ * either. See Phase 13 in IMPLEMENTATION_ROADMAP.md.
  *
  * This is the one helper in the repository whose job is destruction, so it is
  * written to refuse rather than to succeed. Four independent guards stand
