@@ -85,6 +85,55 @@ neither.
 `--control-plane-url` overrides the URL for one run; the token has no flag, and
 is not to be passed on a command line.
 
+### The application database role — once per environment
+
+Row-level security does not apply to a superuser, and does not apply to a role
+holding BYPASSRLS. `force row level security` binds the table *owner* and
+neither of those. Supabase issues a privileged role as the default credential,
+so a `DATABASE_URL` taken from its dashboard gives a service correct policies,
+`force` on every table, a passing policy suite, and **no tenant isolation at
+all**. See R-032.
+
+So the privileged credential migrates and a restricted one serves:
+
+| Doppler secret | Role | Used by |
+|----------------|------|---------|
+| `DATABASE_URL_MIGRATE` | privileged | the deploy's `migrate` job, and nothing else |
+| `DATABASE_URL` | `koras_app` | every service |
+
+The names are that way round on purpose. A secret called `DATABASE_URL_MIGRATE`
+is visibly privileged; a plain `DATABASE_URL` that happens to be a superuser is
+the trap this exists to remove. The default name gets the least privilege.
+
+For each of the four environments, once:
+
+```bash
+# 1. Create the role. Takes the privileged URL; prints the restricted one.
+bash local/scripts/create-app-role.sh "<privileged database url>"
+
+# 2. In Doppler, for that config:
+#      DATABASE_URL_MIGRATE = the privileged URL you just passed
+#      DATABASE_URL         = the URL the script printed
+```
+
+The script is idempotent: re-running rotates the credential and re-applies the
+grants, which is also how to recover from a lost one. It prints the value once
+and writes it nowhere.
+
+**Until this is done, deploys fail.** `check-rls-connection.sh` runs in the
+`migrate` job, which `services` depends on, so an environment still serving from
+the privileged role cannot deploy. That is deliberate — the alternative is a
+warning nobody actions, and the thing being warned about is a cross-tenant read.
+
+**`DATABASE_URL_MIGRATE` is not an application setting.** No service reads it,
+so it is absent from `secrets.manifest` and from `.env.local.example`. The
+migrate job checks for it directly and says what to run if it is missing.
+
+**If Supabase refuses to create the role**, its `postgres` credential is
+restricted more than stock Postgres. Create `koras_app` through the Supabase
+console or API, then re-run the script — it finds an existing role and applies
+the grants rather than trying to create one.
+
 ### GitHub
 
 A fine-grained token whose **resource owner is the organization** — this cannot

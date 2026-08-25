@@ -265,10 +265,18 @@ jobs:
           PROJECT: ${{ github.event.repository.name }}
           CONFIG: ${{ inputs.environment }}
         run: |
-          url=$(doppler secrets get DATABASE_URL --plain --project "$PROJECT" --config "$CONFIG")
+          # The privileged credential, and the only place it is still used.
+          # DATABASE_URL is the restricted role every service connects as, and
+          # it cannot run migrations -- see local/scripts/create-app-role.sh.
+          url=$(doppler secrets get DATABASE_URL_MIGRATE --plain --project "$PROJECT" --config "$CONFIG")
           url=$(printf "%s" "$url" | tr -d "[:space:]")
           if [ -z "$url" ]; then
-            echo "DATABASE_URL is not set in Doppler for $CONFIG." >&2
+            echo "DATABASE_URL_MIGRATE is not set in Doppler for $CONFIG." >&2
+            echo "" >&2
+            echo "Migrations need a privileged connection; services must not have one." >&2
+            echo "Run local/scripts/create-app-role.sh once for this environment:" >&2
+            echo "  - it creates the restricted role and prints its URL for DATABASE_URL" >&2
+            echo "  - keep the privileged URL you gave it as DATABASE_URL_MIGRATE" >&2
             exit 1
           fi
 
@@ -283,7 +291,7 @@ jobs:
           userinfo=${userinfo%@*}
           case "${userinfo#*:}" in
             *[][/?#@]*)
-              echo "DATABASE_URL for $CONFIG has an unencoded reserved character in its password." >&2
+              echo "DATABASE_URL_MIGRATE for $CONFIG has an unencoded reserved character in it." >&2
               echo "Percent-encode it in Doppler: [ is %5B, ] is %5D, / is %2F, @ is %40." >&2
               echo "The password itself is fine; only its spelling inside the URL is wrong." >&2
               exit 1
@@ -306,8 +314,14 @@ jobs:
           PROJECT: ${{ github.event.repository.name }}
           CONFIG: ${{ inputs.environment }}
         run: |
+          # DATABASE_URL, not the migrate one: the question is whether the
+          # credential the *services* use is one RLS applies to.
           url=$(doppler secrets get DATABASE_URL --plain --project "$PROJECT" --config "$CONFIG")
           url=$(printf "%s" "$url" | tr -d "[:space:]")
+          if [ -z "$url" ]; then
+            echo "DATABASE_URL is not set in Doppler for $CONFIG." >&2
+            exit 1
+          fi
           bash local/scripts/check-rls-connection.sh "$url"
 
   services:

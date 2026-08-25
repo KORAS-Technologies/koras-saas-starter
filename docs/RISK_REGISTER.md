@@ -1191,12 +1191,38 @@ non-superuser holding BYPASSRLS fails (the case a superuser check alone would
 miss), an ordinary role passes, and a control-plane project handed a superuser
 URL skips rather than failing.
 
-**Still not covered.** Nothing *provisions* the non-bypassing role. Terraform
-creates the database and the estate hands out its default credential; making a
-dedicated application role, granting it, and putting its URL in Doppler is
-manual. The check now says clearly when that has not been done, which is the
-half worth having first — an unfixable warning is still better than a silent
-leak — but the role itself is still assembled by hand.
+**The role is now created rather than only demanded (2026-08-25).**
+`local/scripts/create-app-role.sh` takes the privileged URL, creates
+`koras_app` as `nosuperuser nobypassrls`, grants it only what the service needs
+— including default privileges, so a table added by a later migration is not
+invisible until somebody remembers to grant it — and prints the connection URL
+to put in Doppler. It reads `rolsuper` and `rolbypassrls` back afterwards and
+refuses to report success if either is true.
+
+The credentials are split, and named so the privileged one is the one that looks
+privileged:
+
+| Doppler secret | Role | Used by |
+|----------------|------|---------|
+| `DATABASE_URL_MIGRATE` | privileged | the deploy's `migrate` job only |
+| `DATABASE_URL` | `koras_app` | every service |
+
+A plain `DATABASE_URL` that happens to be a superuser is the trap this entry is
+about, so the default name now carries the least privilege.
+
+Verified against a real Postgres: the role is created, the connection check
+passes for it and still fails for `postgres`, the role sees one tenant of two
+with the context set, it can insert and read back, and a second run rotates the
+credential and re-applies the grants rather than failing.
+
+**Still not covered.** Nothing verifies this against a real Supabase project.
+Supabase restricts what its `postgres` role may do, and it may refuse to create
+a role at all — in which case the role must be made through its console and the
+script re-run to apply the grants. The script says so on failure rather than
+leaving it to be guessed, but the path is untested.
+
+Also manual: running it. Four environments per project, once each, and deploys
+fail until it is done.
 
 ---
 

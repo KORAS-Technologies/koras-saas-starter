@@ -184,6 +184,32 @@ describe.each(PROFILES)('%s: RLS applies to the connecting role', (profile) => {
     )
   })
 
+  it('ships a way to create the role it demands', () => {
+    // The connection check refuses a privileged credential. Refusing without
+    // providing the alternative is a deploy that fails with no fix to hand.
+    const script = files.get('local/scripts/create-app-role.sh')
+    expect(script, 'local/scripts/create-app-role.sh is not rendered').toBeDefined()
+    expect(script).toMatch(/nosuperuser/)
+    expect(script).toMatch(/nobypassrls/)
+    // Reads the property back rather than assuming the CREATE did what it said.
+    expect(script).toMatch(/rolsuper/)
+  })
+
+  it('gives migrations their own privileged credential', () => {
+    // DATABASE_URL is the restricted role, so migrations cannot use it. The
+    // privileged one is named so that it is visibly privileged -- a plain
+    // DATABASE_URL that happens to be a superuser is the trap.
+    const deploy = files.get('.github/workflows/deploy.yml') ?? ''
+    expect(deploy).toMatch(/DATABASE_URL_MIGRATE/)
+
+    const migrate = deploy.slice(deploy.indexOf('  migrate:'))
+    const migrateJob = migrate.slice(0, migrate.indexOf('  services:'))
+    // The migration reads the privileged secret...
+    expect(migrateJob).toMatch(/secrets get DATABASE_URL_MIGRATE/)
+    // ...and the connection check reads the one the services use.
+    expect(migrateJob).toMatch(/secrets get DATABASE_URL --plain/)
+  })
+
   it('checks the connecting role from the suite too, when it is named', () => {
     const suite = files.get('supabase/tests/010_rls_structure.sql') ?? ''
     expect(suite).toMatch(/app_role/)
