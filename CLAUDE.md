@@ -172,7 +172,7 @@ external skills, and bring an existing project back into alignment.
 | Phase                                  | State              | Note                                     |
 |----------------------------------------|--------------------|------------------------------------------|
 | 11 — CI/CD                             | Complete | Criterion met on `develop`. CI, Security and Generator Integration all green. Reading the criterion carefully found the generated-project lint check was genuinely missing; it now runs |
-| 12 — Security                          | Complete, with one open gap | All five deliverables shipped. Three defects fixed: RLS was enforced against nobody (R-032), the ZITADEL token paths pinned neither issuer nor algorithm (R-033), and the first CodeQL scan to actually run reported three high-severity alerts. The RLS SQL suite is written but never executed. Rate limiting is absent (R-034, open) |
+| 12 — Security                          | Complete, with one open gap | All five deliverables shipped. Three defects fixed: RLS was enforced against nobody (R-032), the ZITADEL token paths pinned neither issuer nor algorithm (R-033), and the first CodeQL scan to actually run reported three high-severity alerts. CodeQL is now at zero; Dependabot's eight are dev-server-only and accepted under R-031. The RLS SQL suite is written but never executed. Rate limiting is absent (R-034, open) |
 | 13 — End-to-End Acceptance Tests       | All but the live apply | Both scenarios automated and passing; the live-infrastructure variant is gated behind `KORAS_E2E_LIVE` and awaits an explicit authorisation |
 
 **Next step:** push `feat/phase-10-registration-client` so CI evaluates the

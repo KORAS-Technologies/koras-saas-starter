@@ -965,6 +965,28 @@ exit 1.
 Revisit if any of these ever reaches a generated project, if anyone starts
 running `vitest --ui`, or once the suite no longer blocks its workers.
 
+**Updated 2026-08-25 — eight alerts, not seven.** Phase 13 added
+`tests/e2e/package.json`, which declares `vitest`, so Dependabot opened a fourth
+row for the same critical advisory. It is a new *location* of an accepted
+finding rather than a new vulnerability: four manifests now declare the
+dependency, and all four resolve to the one workspace copy.
+
+The upgrade got harder in the same commit rather than easier. The suite is now
+807 tests across three packages, and `tests/e2e` blocks its workers the same way
+the others do — it generates two full projects and walks their output on disk.
+Whatever async conversion closes this has one more package to cover.
+
+**This is what keeps Phase 12's exit criterion open on a strict reading**, and
+that reading is worth stating rather than resolving quietly. The criterion says
+"zero critical/high findings in automated scans". CodeQL reports zero. Dependabot
+reports four critical and one high, every one of them requiring a development
+server that is never started, in a toolchain no generated project carries.
+
+The roadmap now names CodeQL explicitly and records these as accepted here,
+because a criterion that can be read two ways gets read the flattering way
+later — and "zero findings" while eight alerts are open is exactly the sentence
+that would be quoted back.
+
 ---
 
 ## R-032 — row-level security was enforced against nobody

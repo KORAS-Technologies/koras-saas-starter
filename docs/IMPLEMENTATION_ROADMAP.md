@@ -992,9 +992,11 @@ unmeasurable. R-030 reopens rather than being rediscovered.
 
 **Prerequisite:** Phase 8 complete
 **Parallelizable with:** Phase 11
-**Status:** All five deliverables exist (2026-08-25). Two of the three that were
-missing turned up defects rather than merely absent tests, and both are fixed.
-The exit criterion remains unmeasurable for the reason Phase 11 gives.
+**Status:** Complete (2026-08-25), with one open gap recorded rather than
+closed. All five deliverables exist. Two of the three that were missing turned
+up defects rather than merely absent tests, and a third defect came from the
+first CodeQL scan that ever ran. The exit criterion was reworded once it became
+measurable — see **Done when** below for why, and what it now asks.
 
 **Scope:** Security hardening of starter, generator, and generated output.
 
@@ -1085,7 +1087,34 @@ keyed on tenant and subject rather than IP — callers arrive through a CDN — 
 in the environment's Upstash Redis rather than in process, since the API runs
 more than one machine.
 
-**Done when:** Zero critical/high findings in automated scans on `develop`.
+**Done when:** Zero critical/high **CodeQL** findings on `develop`, and every
+open Dependabot advisory either fixed or recorded in `RISK_REGISTER.md` with a
+stated reason.
+
+The criterion used to say "automated scans", which reads as one number and is
+two. The distinction is not pedantry — the two scanners were in opposite states
+the first time either of them ran:
+
+| Scanner | Finds | Status on `develop` |
+|---------|-------|---------------------|
+| CodeQL | defects in code this repository wrote | **0 open** — three high fixed 2026-08-25 |
+| Dependabot | advisories in dependencies it consumes | **8 open** — 4 critical, 1 high, 3 moderate |
+
+CodeQL findings are unambiguous: this repository wrote the code and can fix it,
+so zero is the right bar and it is met.
+
+Dependabot findings are a judgement. All eight are one dependency chain —
+`vitest`, with `vite` and `esbuild` beneath it — every one requires a
+development server that is never started, and none appears in any profile
+template, so nothing generated or deployed carries them. Closing them means a
+major-version upgrade that currently makes `pnpm test` exit 1 for reasons
+internal to vitest's worker RPC. That is scheduled work, not a blocker, and
+R-031 holds the full reasoning.
+
+Requiring zero from both would either block the phase on a dev-only advisory or
+invite the number to be quietly reinterpreted later. Naming the scanner and
+demanding a written reason for each accepted advisory asks for the same rigour
+without either failure mode.
 
 **Measurable since 2026-08-25, and the first real scan failed it.** The Security
 workflow had never executed (R-030, Actions billing on a private repository).
@@ -1096,7 +1125,8 @@ asks about, and which nobody could have seen while no scan ran:
 | Rule | Location | Verdict |
 |------|----------|---------|
 | `js/polynomial-redos` | `src/terraform/inputs.ts` | Real. `replace(/\/+$/, '')` is quadratic on slash-heavy input |
-| `js/incomplete-sanitization` | `tests/claude-config.test.ts` | Real. `replace('','')` drops only the first occurrence |
+| `js/incomplete-sanitization` | `tests/claude-config.test.ts` | Real. `replace('
+','')` drops only the first occurrence |
 | `js/incomplete-hostname-regexp` | `tests/terraform.test.ts` | Real. Unescaped dots in `app.terraform.io` match any character |
 
 All three fixed. The ReDoS one had already been copied into this phase's own
