@@ -199,6 +199,13 @@ export function digestInputs(profile: string): Array<[string, string]> {
 
   collect(join(STARTER_ROOT, 'profiles', profile), '')
 
+  // The shared template layer defines this profile's output as much as its own
+  // tree does. Omitting it would let every Koras skill's sibling problem happen
+  // again: a project arbitrarily far behind on a shared file, with a digest
+  // that still matched.
+  const sharedTemplate = join(STARTER_ROOT, 'profiles', '_shared')
+  if (existsSync(sharedTemplate)) collect(sharedTemplate, 'profile-shared:')
+
   // Read straight from the manifest rather than through loadProfile, which
   // would make this depend on the profile validator and on defaults resolution
   // for one array of paths.

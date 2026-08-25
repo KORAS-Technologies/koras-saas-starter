@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
+import { join, relative, sep } from 'node:path'
 
 /**
  * Files the two profiles hold byte-identical copies of.
@@ -30,7 +30,6 @@ const PROFILES = join(__dirname, '..', '..', '..', 'profiles')
 // the Control Plane -- and an example naming a role the project does not define
 // is worse than none, because it is the line someone uncomments.
 const SHARED = [
-  '.gitattributes',
   '.github/workflows/ci.yml',
   '.github/workflows/deploy-dev.yml',
   '.github/workflows/deploy-prod.yml',
@@ -38,33 +37,18 @@ const SHARED = [
   '.github/workflows/deploy-test.yml',
   '.github/workflows/deploy.yml',
   '.gitignore.hbs',
-  '.gitleaks.toml',
-  'contracts/product-platform.v1.json',
   'Makefile.hbs',
   'apps/admin/src/app/api/auth/signout/route.ts.hbs',
   'apps/admin/src/app/api/auth/start/route.ts.hbs',
   'apps/admin/src/app/globals.css',
   'apps/admin/tsconfig.json',
-  'eslint.config.mjs',
   'infrastructure/terraform/backend.tf.hbs',
   'infrastructure/terraform/providers.tf.hbs',
-  'local/certs/.gitignore',
-  'local/observability/loki.yml',
-  'local/observability/otel-collector.yml',
-  'local/observability/tempo.yml',
-  'local/queue/redis.conf',
-  'local/scripts/dev-app.mjs',
   'local/scripts/dev-service.mjs.hbs',
   'local/scripts/doppler-bootstrap.sh.hbs',
   'local/scripts/doppler-check.sh.hbs',
-  'local/scripts/doppler_bootstrap_support.py',
-  'local/scripts/migrate.sh',
-  'local/scripts/reset.sh',
   'local/scripts/seed.sh.hbs',
-  'local/zitadel/.gitignore',
-  'local/zitadel/config.yaml',
   'local/zitadel/init.sh.hbs',
-  'local/zitadel/machinekey/.gitignore',
   'packages/api-client/tsconfig.json',
   'packages/audit/package.json.hbs',
   'packages/audit/tsconfig.json',
@@ -160,6 +144,41 @@ describe('the two profiles do not drift apart', () => {
   it('covers the files that are actually shared', () => {
     // Guards the guard. If the list were emptied or truncated, every assertion
     // above would still pass while checking nothing.
-    expect(SHARED.length).toBeGreaterThanOrEqual(112)
+    //
+    // Counts both halves. A file moving into profiles/_shared/template/ leaves
+    // this list, which is the goal rather than a regression -- so the number
+    // that must not shrink is duplicated-plus-single-sourced, not duplicated
+    // alone.
+    expect(SHARED.length + sharedLayerFiles().length).toBeGreaterThanOrEqual(112)
+  })
+})
+
+const SHARED_LAYER = join(PROFILES, '_shared', 'template')
+
+/** Every file in the shared template layer, as project-relative paths. */
+function sharedLayerFiles(): string[] {
+  if (!existsSync(SHARED_LAYER)) return []
+  const out: string[] = []
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      if (statSync(full).isDirectory()) walk(full)
+      else out.push(relative(SHARED_LAYER, full).split(sep).join('/'))
+    }
+  }
+  walk(SHARED_LAYER)
+  return out
+}
+
+describe('the shared template layer is single-sourced', () => {
+  // The fix the list above is a stand-in for. A file here exists once, so the
+  // two profiles cannot drift apart on it -- there is nothing to drift from.
+  it.each(sharedLayerFiles())('%s exists only in _shared', (file) => {
+    expect(existsSync(join(PROFILES, 'product', 'template', file))).toBe(false)
+    expect(existsSync(join(PROFILES, 'control-plane', 'template', file))).toBe(false)
+  })
+
+  it('holds files, so the assertions above are not vacuous', () => {
+    expect(sharedLayerFiles().length).toBeGreaterThan(0)
   })
 })

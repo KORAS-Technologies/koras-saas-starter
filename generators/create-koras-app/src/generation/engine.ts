@@ -118,13 +118,42 @@ function shouldInclude(relPath: string, excluded: string[]): boolean {
   return !excluded.some((prefix) => relPath === prefix || relPath.startsWith(`${prefix}/`))
 }
 
+/**
+ * A template layer both profiles draw from, at `profiles/_shared/template/`.
+ *
+ * Not a profile: `VALID_PROFILES` is an explicit list, so nothing enumerates
+ * this as one.
+ *
+ * `shared_assets` cannot carry these. It copies verbatim, so it cannot render
+ * a `.hbs`; and it copies unconditionally, so it cannot respect the capability
+ * gating that decides whether `packages/billing` exists at all. This layer is
+ * walked exactly like a profile's own template -- rendered, then filtered by
+ * `excludedSubtrees` -- which is what those files need.
+ *
+ * Optional. With no `_shared` directory the behaviour is unchanged.
+ */
+const SHARED_TEMPLATE_DIR = join(PROFILES_ROOT, '_shared', 'template')
+
 export function renderTemplate(ctx: GenerationContext): RenderedFile[] {
   const templateDir = join(PROFILES_ROOT, ctx.profile, 'template')
   const vars = contextToTemplateVars(ctx)
   const excluded = excludedSubtrees(ctx)
-  const all = walkDirectory(templateDir, templateDir, vars)
+
+  // Shared first, profile second, keyed by output path: a profile that ships
+  // its own version of a shared file wins. Divergence stays possible and stays
+  // visible -- the file exists twice, which is the signal that it was meant to.
+  const byOutputPath = new Map<string, RenderedFile>()
+  if (existsSync(SHARED_TEMPLATE_DIR)) {
+    for (const file of walkDirectory(SHARED_TEMPLATE_DIR, SHARED_TEMPLATE_DIR, vars)) {
+      byOutputPath.set(file.outputPath, file)
+    }
+  }
+  for (const file of walkDirectory(templateDir, templateDir, vars)) {
+    byOutputPath.set(file.outputPath, file)
+  }
+
   return [
-    ...all.filter((f) => shouldInclude(f.outputPath, excluded)),
+    ...[...byOutputPath.values()].filter((f) => shouldInclude(f.outputPath, excluded)),
     ...collectSharedAssets(ctx),
     projectManifestFile(ctx),
   ]
