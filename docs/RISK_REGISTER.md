@@ -834,15 +834,104 @@ dependency of any workspace package and no config existed, so `pnpm lint`
 failed on a clean checkout. That is fixed; it was necessary and nowhere near
 sufficient.
 
-**Not diagnosable from here.** Repository-level Actions is enabled, so the
-cause is above the repository: an organization-level Actions policy, or Actions
-minutes/billing for private repositories on the current plan. Reading
-`orgs/KORAS-Technologies/actions/permissions` needs `admin:org`, which this
-account does not hold.
+**Cause, confirmed 2026-08-25:** Actions billing. GitHub states it on the run
+itself:
 
-**Mitigation:** an org admin confirms whether Actions is disabled or unbilled
-at the organization level, then pushes a trivial commit to `develop` and
-confirms a run appears. Until a run is observed, treat every CI-based exit
-criterion in `docs/IMPLEMENTATION_ROADMAP.md` as **unmeasurable rather than
-unmet**, and do not mark Phase 11 or Phase 12 closed on the strength of a green
-local run.
+> The job was not started because recent account payments have failed or your
+> spending limit needs to be increased.
+
+The earlier guess in this entry -- an organization-level Actions policy -- was
+wrong, and so was a second guess that repository-level permission state had
+gone stale. The behaviour is explained entirely by visibility and billing:
+
+| Repository | Runs created | Jobs execute |
+|------------|--------------|--------------|
+| private (before) | no | -- |
+| public | yes | **yes** -- executed and found four real defects |
+| private (again) | yes | no -- blocked on billing |
+
+Public repositories get Actions minutes free; private ones consume paid minutes,
+and this account's payment is failing. Making the repository public is what let
+CI run at all; making it private again re-blocked it.
+
+**What the working window bought.** While public, CI ran for the first time and
+failed on four things that had been true for as long as the workflows existed: a
+pnpm version declared twice so every Node job died before installing, 75 ruff
+errors, a mypy invocation that aborted before checking anything, and the AI
+gateway's bind-all. All four are fixed in `5c919a8`, verified locally. **CI has
+not verified them** -- the run for that commit never started a job.
+
+**Mitigation:** resolve Actions billing -- Settings, then Billing & plans; the
+symptom is a failed payment or a spending limit at zero. Alternatives are
+keeping the repository public, which trades the licensing position on vendored
+third-party skills for free minutes, or a self-hosted runner, which consumes no
+minutes and costs setup instead.
+
+Until a job is observed *starting*, treat every CI-based exit criterion in
+`docs/IMPLEMENTATION_ROADMAP.md` as **unmeasurable rather than unmet**, and do
+not mark Phase 11 or Phase 12 closed on the strength of a green local run.
+`ci.yml` now carries `workflow_dispatch`, so the check costs one manual run
+rather than a commit.
+
+## R-031 — the fix for three critical advisories breaks the test suite
+
+**Found:** 2026-08-25, acting on Dependabot's report of seven open advisories
+(3 critical, 1 high, 3 moderate) against the default branch.
+
+All seven are one chain. `vitest` is the only direct dependency; `vite` and
+`esbuild` arrive under it and are declared nowhere, so there is no range to bump
+and they need an explicit `overrides` entry.
+
+| Package | Installed | Patched |
+|---------|-----------|---------|
+| `vitest` | 2.1.9 | 3.2.6 |
+| `vite` | 5.4.21 | 6.4.3 |
+| `esbuild` | 0.21.5 | 0.25.0 |
+
+**The upgrade works and cannot be shipped.** With `vitest@3.2.7`,
+`vite@7.3.6` and `esbuild@0.28.2`, all 623 tests pass -- but vitest reports five
+unhandled `[vitest-worker]: Timeout calling "onTaskUpdate"` errors and **exits
+1**, so `pnpm test` fails. Every frame of those errors is inside vitest's own
+RPC and timer code; none is in this repository.
+
+The cause is synchronous blocking. Workers here spend long stretches inside
+`execFileSync`, `readdirSync` and `rmSync` -- `generated-builds.test.ts` blocks
+for roughly 175 seconds installing dependencies and running a Next build -- and
+a worker that is blocking the event loop that hard cannot answer the reporter's
+RPC. vitest 2 tolerated it; 3 does not.
+
+Two things were tried and did not fix it. `maxWorkers: 4` left the count at
+five, which also disproves parallel contention as the explanation. Excluding
+`generated-builds.test.ts` reduced it to two, so the blocking is spread across
+several files rather than isolated to one.
+
+vitest exposes no RPC timeout setting. It exposes
+`dangerouslyIgnoreUnhandledErrors`, which suppresses every unhandled error
+including real ones, and is not a fix.
+
+**Why this is not urgent, despite the severity labels.** Read what the
+advisories actually require:
+
+- `vitest` (critical) -- "when Vitest **UI server** is listening". This
+  repository runs `vitest run`, headless. `--ui` is never passed.
+- `vite` (high) -- `server.fs.deny` bypass, requires the **Vite dev server**.
+  Never started; the generated Next applications use Next's own dev server.
+- `esbuild` (moderate) -- lets any website reach the **development server**.
+- `vite` (moderate x2) -- dev-server path traversal, and launch-editor UNC
+  handling.
+
+Every one needs a development server listening. None runs here.
+
+They are also confined to this repository: `vitest`, `vite` and `esbuild`
+appear in no profile template, so no generated project and nothing deployed
+carries them. The blast radius is the starter's own test toolchain.
+
+**Mitigation:** left on `vitest@2.1.9`, deliberately, with the advisories open.
+Closing them properly means converting the synchronous filesystem and
+child-process work in the test suite to its async equivalents so workers stop
+blocking the event loop, then upgrading. That is a real piece of work and worth
+scheduling; it is not worth pushing through a change that makes `pnpm test`
+exit 1.
+
+Revisit if any of these ever reaches a generated project, if anyone starts
+running `vitest --ui`, or once the suite no longer blocks its workers.
