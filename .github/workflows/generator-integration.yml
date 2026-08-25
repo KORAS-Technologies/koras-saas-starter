@@ -76,12 +76,30 @@ jobs:
             slug: integration-product
             # Policies do the scoping here, so the strict checks apply.
             rls_flags: ""
+            components: ""
+          # Optional components, which no run generated until 2026-08-25 and
+          # which nothing therefore checked. Both defects found on the day this
+          # entry was added were in templates only these flags select: the
+          # scheduler failed its own typecheck, and the AI gateway discarded the
+          # coroutine that reads its config. See SYNC_BACKLOG D5.
+          - profile: product
+            slug: integration-product-full
+            rls_flags: ""
+            components: "--with marketing,ai_gateway,scheduler"
+          # The other direction. Removing a component must leave a project that
+          # still builds -- a workspace reference to something no longer
+          # generated fails here rather than for whoever passed the flag.
+          - profile: product
+            slug: integration-product-minimal
+            rls_flags: ""
+            components: "--without admin,worker"
           - profile: control-plane
             slug: integration-control-plane
             # No tenant model and no policies: RLS is a deny-by-default
             # backstop and the service role is meant to bypass it. Forcing it
             # would deny the owner too and every query would return nothing.
             rls_flags: "-v deny_all_by_default=1"
+            components: ""
 
     steps:
       - uses: actions/checkout@v5
@@ -106,6 +124,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/generated"
           pnpm create-koras-app "${{ matrix.slug }}" \
             --profile "${{ matrix.profile }}" \
+            ${{ matrix.components }} \
             --no-interactive \
             --output-dir "$RUNNER_TEMP/generated"
 
