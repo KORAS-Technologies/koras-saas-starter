@@ -61,3 +61,16 @@ variable "role_grants" {
     the application's own administration.
   EOT
 }
+
+variable "org_id" {
+  description = <<-DESC
+    The ZITADEL organization to create everything in.
+
+    Normally left null: the module finds the single active organization in the
+    instance. Set it where an instance holds more than one -- a ZITADEL Cloud
+    instance keeps its own default organization alongside any you create, and
+    the module cannot tell which one is yours.
+  DESC
+  type        = string
+  default     = null
+}

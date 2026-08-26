@@ -241,6 +241,7 @@ branding" there.
 | R-036 | A live acceptance run cannot be cleaned up   | 12       | Partially resolved       |
 | R-037 | Typecheck ignored the error it needed to report | 12    | Resolved                 |
 | R-038 | Drift reported every optional component      | 9        | Resolved                 |
+| R-039 | ZITADEL module could not create a new project | 16      | Resolved                 |
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
 | R-017 | Control-plane env contract was the product one | 10     | Resolved                 |
 | R-018 | Queue polling billed per command             | 8        | Resolved                 |
@@ -1615,3 +1616,61 @@ question was present, populated, and consulted for a different one.
 `--check-drift` is also the last step of Generator Integration, so it had been
 running on every push — against default components only, where the defect does
 not appear.
+
+---
+
+## R-039 — the ZITADEL module could only extend an estate it had already built
+
+**Found:** 2026-08-25, by a `--provision --dry-run` on a new project. The plan
+failed; nothing was created.
+
+**Severity:** 16 (likelihood 4 × impact 4) · **Status:** Resolved 2026-08-25
+
+```
+Error: Missing required argument
+  with module.bootstrap.module.zitadel_stg.zitadel_project_role.roles["organization_admin"]
+  93:   org_id = zitadel_project.this.org_id
+  The argument "org_id" is required, but no definition was found.
+```
+
+`org_id` on `zitadel_project` is **Optional and not Computed** — confirmed
+against the provider schema, not inferred. Leaving it unset does not mean the
+provider fills it in; it means the attribute plans as `null`. So
+`zitadel_project.this.org_id` is null for any project that is not already in
+state, and `zitadel_project_role` requires it.
+
+The module's own comment described the optionality correctly and drew the wrong
+conclusion from it — that the provider "resolves the organization and writes the
+result into state" was true, and irrelevant at plan time for a resource that
+does not exist yet.
+
+**Every existing environment kept working**, because its state already held the
+value the provider had written on first apply. Only a *new* environment failed
+— which is the one thing `create-koras-app` exists to produce. A module that
+could extend an estate it had already built and could not start one.
+
+**Why nothing caught it.** Every acceptance test in this repository supplies
+Terraform's output as JSON rather than running Terraform, deliberately: the
+alternative is an apply across seven providers. That makes everything
+downstream of the outputs testable and leaves the configuration itself checked
+only by `terraform validate`, which passes — the reference is syntactically
+perfect and semantically null. `terraform plan` against a real instance is the
+first thing that can see it, and this was the first plan against one.
+
+**Resolution:** the organization is discovered before anything is created,
+through `data "zitadel_orgs"` filtered to active, and every resource takes
+`local.org_id`. One active organization per instance is the estate's
+arrangement; `var.org_id` overrides it where that does not hold, and a
+`precondition` on the project says how many were found and what to set rather
+than failing on a null further down.
+
+`ignore_changes = [org_id]` is kept. The provider still writes the resolved
+organization back, a project cannot move organizations without being recreated,
+and a diff there could only propose destroying an environment that is serving
+traffic.
+
+**Not verified against a live instance.** `terraform validate` passes and the
+module regenerates correctly. Whether these instances hold exactly one active
+organization is unknown — a ZITADEL Cloud instance keeps its own default
+organization, so the precondition may well fire on the next plan. That is the
+designed outcome: it names the ids it found and asks for one.

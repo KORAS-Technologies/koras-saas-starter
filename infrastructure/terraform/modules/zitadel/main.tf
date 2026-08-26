@@ -8,28 +8,55 @@
 # The project name is NOT suffixed with the environment — the instance itself
 # represents the environment.
 
-# `org_id` is deliberately not set, and deliberately ignored.
+# The organization every resource in this module belongs to.
 #
-# The provider resolves the organization from the authenticated service user
-# and writes the result into state, but the attribute is Optional and ForceNew
-# rather than Computed. Terraform therefore reads the next plan as
-# `org_id = "386573..." -> null # forces replacement` and proposes to destroy
-# and recreate every project and OIDC application — rotating client_id and
-# client_secret for an environment that is already serving traffic.
+# `org_id` on `zitadel_project` is Optional and **not Computed**. Leaving it
+# unset does not mean "the provider fills it in": it means the attribute plans
+# as null, so `zitadel_project.this.org_id` is null for any project not already
+# in state.
 #
-# Ignoring it is safe: each ZITADEL instance holds exactly one KORAS
-# organization, and the service user's credential is what selects it. A project
-# cannot move between organizations without being recreated anyway, so there is
-# no real drift for this to hide.
+# That was survivable while nothing read it back. `zitadel_project_role`
+# requires `org_id`, so reading it from the project made every *new* environment
+# fail at plan with "The argument org_id is required, but no definition was
+# found" -- while every existing one kept working, because its state already
+# held the value the provider had written. A module that could only extend an
+# estate it had already built.
+#
+# So the organization is discovered before anything is created. One active
+# organization per instance is the estate's arrangement; `var.org_id` overrides
+# it where that does not hold, and the precondition below names which case it is
+# rather than failing on a null further down.
+data "zitadel_orgs" "this" {
+  state = "ORG_STATE_ACTIVE"
+}
+
+locals {
+  discovered_org_ids = data.zitadel_orgs.this.ids
+
+  org_id = var.org_id != null ? var.org_id : (
+    length(local.discovered_org_ids) == 1 ? local.discovered_org_ids[0] : null
+  )
+}
+
 resource "zitadel_project" "this" {
-  name = var.project_slug
+  name   = var.project_slug
+  org_id = local.org_id
 
   project_role_assertion = true
   project_role_check     = true
   has_project_check      = true
 
   lifecycle {
+    # Kept although org_id is now set explicitly. The provider writes the
+    # resolved organization back into state, and a project cannot move between
+    # organizations without being recreated -- so a diff here could only ever
+    # propose destroying an environment that is serving traffic.
     ignore_changes = [org_id]
+
+    precondition {
+      condition     = local.org_id != null
+      error_message = "Could not determine the ZITADEL organization: ${length(local.discovered_org_ids)} active organizations were found and this module needs exactly one. Set `org_id` on the module to name it. Found: ${join(", ", local.discovered_org_ids)}"
+    }
   }
 }
 
@@ -90,7 +117,7 @@ resource "zitadel_project_role" "roles" {
   # resolves it from the service user. Taken from the project so both always
   # agree: a role created in a different organization than its project is
   # accepted by the API and never appears in anyone's token.
-  org_id       = zitadel_project.this.org_id
+  org_id       = local.org_id
   role_key     = each.key
   display_name = each.key
 
@@ -147,7 +174,7 @@ resource "zitadel_application_oidc" "web" {
 data "zitadel_human_users" "granted" {
   for_each = var.role_grants
 
-  org_id       = zitadel_project.this.org_id
+  org_id       = local.org_id
   email        = each.key
   email_method = "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE"
 }
@@ -155,7 +182,7 @@ data "zitadel_human_users" "granted" {
 resource "zitadel_user_grant" "roles" {
   for_each = var.role_grants
 
-  org_id     = zitadel_project.this.org_id
+  org_id     = local.org_id
   project_id = zitadel_project.this.id
   user_id    = one(data.zitadel_human_users.granted[each.key].user_ids)
   role_keys  = each.value
