@@ -1669,8 +1669,30 @@ organization back, a project cannot move organizations without being recreated,
 and a diff there could only propose destroying an environment that is serving
 traffic.
 
-**Not verified against a live instance.** `terraform validate` passes and the
-module regenerates correctly. Whether these instances hold exactly one active
-organization is unknown — a ZITADEL Cloud instance keeps its own default
-organization, so the precondition may well fire on the next plan. That is the
-designed outcome: it names the ids it found and asks for one.
+**Verified against the live estate.** The next plan resolved three of four
+instances outright:
+
+| Instance | org_id |
+|----------|--------|
+| prod | `386574892088285534` |
+| stg | `386574498930987922` |
+| test | `386574248430375826` |
+
+`Plan: 99 to add, 0 to change, 0 to destroy`, with `zitadel_project_role`
+finally receiving a concrete organization instead of null.
+
+**dev holds two active organizations**, so the precondition fired rather than
+guessing — the designed outcome, and the message was not good enough. Two bare
+ids say nothing about which organization is the KORAS one, so answering it meant
+a trip to the console. A second lookup now fetches each organization's name and
+the error reads `id (name)`.
+
+An instance that must be told takes `ZITADEL_<ENV>_ORG_ID` from Doppler, through
+`zitadel_instances[env].org_id` and a `zitadel_org_ids` map into the bootstrap
+module. Ids only: the providers are configured at the root, so passing the whole
+instance object would hand that module service-account JWTs it has no use for.
+An absent id stays absent rather than arriving as null, because the Terraform
+type is `optional(string)` and the two differ there.
+
+**Still unverified:** the apply itself. A plan that succeeds is not an apply that
+succeeds, and dev has not planned at all yet.
