@@ -268,7 +268,69 @@ The control-plane profile differs only in its component set: two applications
 
 ---
 
-## 5. Related documents
+## 5. Tearing down an acceptance run
+
+Only for projects named `koras-e2e-...`. Every guard in `koras teardown` refuses
+anything else by name, and a real estate is refused even with deletion enabled.
+
+### The sequence
+
+```bash
+# 1. Read the outputs and hand them straight to teardown. Nothing on disk.
+terraform -chdir=../output/<project>/infrastructure/terraform output -json \
+  | pnpm koras teardown <project> -
+
+# 2. The same command with deletion enabled. It asks for the project name.
+KORAS_E2E_TEARDOWN=1 doppler run --project koras-platform-bootstrap --config prod -- \
+  bash -c 'terraform -chdir=../output/<project>/infrastructure/terraform output -json \
+    | pnpm koras teardown <project> -'
+```
+
+Step 1 is a dry run because `KORAS_E2E_TEARDOWN` is unset — that is the default
+and needs no flag. Read the list before enabling anything.
+
+**Pipe, do not write a file.** `terraform output -json` includes the values of
+outputs marked sensitive, so the file it writes holds live credentials: Upstash
+URLs with their passwords, ZITADEL client secrets. One was committed to this
+public repository on 2026-08-26 and had to be rotated by destroying the
+resources. `-` reads stdin and keeps it out of the filesystem. R-041.
+
+**Credentials come from Doppler.** Teardown does not re-exec itself under
+`doppler run` the way `--provision` does, so the wrapper is typed by hand. It
+reads `GITHUB_TOKEN`, `DOPPLER_TOKEN`, `SUPABASE_ACCESS_TOKEN`, `UPSTASH_EMAIL`,
+`UPSTASH_API_KEY`, `VERCEL_API_TOKEN`, `VERCEL_TEAM_ID` and `FLY_API_TOKEN`. A
+missing one is named once, at the top, and its resources are skipped rather than
+failed.
+
+**It asks for the project name**, not `yes`. Anything else cancels. There is no
+`--yes` and no `--force`.
+
+### What it does not delete
+
+| Left behind | Why | Where |
+|-------------|-----|-------|
+| ZITADEL projects | Its API needs a service-account JWT exchange rather than a bearer token, which no other provider here uses | Each instance's console, project `<project>` |
+| HCP Terraform workspace | Holds the state of what was just deleted. Terraform is never invoked by teardown, so nothing removes it | app.terraform.io, workspace `<project>` |
+| The generated directory | It is yours, on your disk | `rm -rf ../output/<project>` |
+
+The first is reported as `skipped` with its reason on every run rather than
+omitted, because an inventory that quietly leaves out a provider reports a
+complete teardown while resources stay alive. That happened to Upstash, which
+was absent from the inventory entirely until R-040.
+
+### If something fails
+
+A failure does not stop the rest, and each resource reports its own outcome.
+Re-running is safe: an already-deleted resource answers 404, which counts as
+success, so a second run finishes what a partial one started.
+
+A resource that fails repeatedly is deleted from its provider's console. The
+inventory comes from Terraform's outputs, so the names and ids in the report are
+the ones the provider knows.
+
+---
+
+## 6. Related documents
 
 | Document | Purpose |
 |---|---|
