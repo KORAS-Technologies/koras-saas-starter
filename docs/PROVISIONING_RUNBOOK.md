@@ -12,6 +12,9 @@ carry them, so no wrapper has to be typed.
 
 ## 1. The command sequence
 
+Provisioning is below; **tearing down is §5**, and applies only to projects
+named `koras-e2e-...`.
+
 ```bash
 # 0. Confirm the estate is ready. Read-only; creates nothing.
 pnpm koras bootstrap:doctor

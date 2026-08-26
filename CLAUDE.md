@@ -29,7 +29,7 @@ All planning and reference documents live in `docs/`, matching
 | `docs/DEPENDENCY_MAP.md`         | Package and service dependency graph             |
 | `docs/IMPLEMENTATION_ROADMAP.md` | Phase-by-phase build plan                        |
 | `docs/BOOTSTRAP_DOCTOR.md`       | `pnpm koras bootstrap:doctor` — preflight checks |
-| `docs/PROVISIONING_RUNBOOK.md`   | Commands, estate prerequisites, failure recovery |
+| `docs/PROVISIONING_RUNBOOK.md`   | Commands, estate prerequisites, failure recovery, teardown |
 | `docs/RISK_REGISTER.md`          | Identified risks and mitigations                 |
 | `docs/OWASP_CHECKLIST.md`        | OWASP API Top 10 review of the generated API     |
 | `docs/SYNC_BACKLOG.md`           | Gaps between the factory, the two profiles and the generated repositories |
