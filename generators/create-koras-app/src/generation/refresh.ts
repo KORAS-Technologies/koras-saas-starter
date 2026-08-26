@@ -65,9 +65,37 @@ export function refreshSharedAssets(
   return { changed, unchanged, written: true }
 }
 
+/**
+ * What --refresh-modules did *not* do.
+ *
+ * It refreshes shared assets and nothing else, which is correct and is not
+ * obvious. A change spanning a Terraform module and the rendered file that
+ * passes a variable into it lands half-applied: the module is current, the
+ * caller still holds the old signature, and the failure shows up at plan time
+ * looking like something unrelated to refreshing.
+ *
+ * That happened. A ZITADEL fix landed in `modules/zitadel` while
+ * `infrastructure/terraform/main.tf` kept the old module call, and two rounds
+ * of re-running the plan went by before anyone read the files. Saying so here
+ * costs a few lines and removes the trap.
+ */
+const REFRESH_FOOTER = [
+  '',
+  'Shared assets only. Files rendered from the profile template -- main.tf,',
+  'variables.tf, workflows, Dockerfiles -- are untouched by this flag.',
+  'If a fix spans both, name them too:',
+  '',
+  '  --check-drift --all       what is behind',
+  '  --refresh <path>          bring one rendered file forward',
+]
+
 export function formatRefreshResult(result: RefreshResult): string {
   if (result.changed.length === 0) {
-    return `\nShared files are already up to date (${result.unchanged} files).`
+    return [
+      '',
+      `Shared files are already up to date (${result.unchanged} files).`,
+      ...REFRESH_FOOTER,
+    ].join(String.fromCharCode(10))
   }
 
   const verb = result.written ? 'Refreshed' : 'Would refresh'
@@ -75,9 +103,10 @@ export function formatRefreshResult(result: RefreshResult): string {
     '',
     `${verb} ${result.changed.length} shared file(s); ${result.unchanged} already current:`,
     ...result.changed.map((path) => `  ${path}`),
+    ...REFRESH_FOOTER,
   ]
   if (!result.written) lines.push('', '--dry-run: nothing was written.')
-  return lines.join('\n')
+  return lines.join(String.fromCharCode(10))
 }
 
 export interface RefreshPathResult {

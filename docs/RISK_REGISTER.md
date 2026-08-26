@@ -1694,5 +1694,26 @@ instance object would hand that module service-account JWTs it has no use for.
 An absent id stays absent rather than arriving as null, because the Terraform
 type is `optional(string)` and the two differ there.
 
+**A change that spans a module and a rendered file lands half-applied.**
+`--refresh-modules` refreshes shared assets and nothing else, which is correct
+and is not obvious. The ZITADEL fix touched `modules/zitadel` *and*
+`infrastructure/terraform/main.tf`, which passes the new variable in. Refreshing
+brought the module forward and left the caller on the old signature, so the plan
+kept failing with the original error and looked like the fix had not worked.
+
+Two rounds of re-running went by before anyone read the files. The diagnosis
+took one command:
+
+| Link | State after `--refresh-modules` |
+|------|-------------------------------|
+| `modules/zitadel/main.tf` | current |
+| `modules/project-bootstrap/variables.tf` | current |
+| `infrastructure/terraform/main.tf` | **stale** — did not pass `zitadel_org_ids` |
+| `infrastructure/terraform/variables.tf` | **stale** — instance type had no `org_id` |
+
+`--refresh <path>` brings a rendered file forward, and `--check-drift --all`
+lists what is behind. Neither was reached for, because nothing said the flag had
+limits. `formatRefreshResult` now prints them on every run.
+
 **Still unverified:** the apply itself. A plan that succeeds is not an apply that
-succeeds, and dev has not planned at all yet.
+succeeds, and dev has not planned cleanly yet.
