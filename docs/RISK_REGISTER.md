@@ -243,6 +243,7 @@ branding" there.
 | R-038 | Drift reported every optional component      | 9        | Resolved                 |
 | R-039 | ZITADEL module could not create a new project | 16      | Resolved                 |
 | R-040 | Teardown missed a whole provider silently    | 16       | Resolved                 |
+| R-041 | Teardown made the operator write secrets to disk | 20   | Resolved                 |
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
 | R-017 | Control-plane env contract was the product one | 10     | Resolved                 |
 | R-018 | Queue polling billed per command             | 8        | Resolved                 |
@@ -1772,3 +1773,54 @@ there.
 **Cleanup of the run that found it was manual.** Four databases named
 `koras-e2e-test-*` had to be removed from the Upstash console, because the
 teardown that should have removed them had already reported success.
+
+---
+
+## R-041 — a teardown instruction told the operator to write credentials to disk, and they were committed
+
+**Found:** 2026-08-26, by `gitleaks` failing the Security workflow — after the
+commit had been pushed to a public repository.
+
+**Severity:** 20 (likelihood 4 × impact 5) · **Status:** Resolved 2026-08-26
+
+`koras teardown` took a path to a file produced by `terraform output -json`.
+That command **includes the values of outputs marked sensitive**, so the file it
+writes is a credential store: four Upstash URLs each embedding its password, and
+four ZITADEL client secrets. The teardown instructions said to write it into the
+repository working directory.
+
+It was then committed by a `git add -A`, and pushed. Public.
+
+**Two failures, and the second is the one worth keeping.**
+
+The immediate one is `git add -A` in a directory known to contain a credential
+file. That is a discipline failure and the fix is discipline.
+
+The design failure is worse: **the command required a credential-bearing
+artifact to exist at all.** Teardown needs ids — Fly app names, Supabase refs,
+Upstash database ids — every one of them non-secret. It never needed the
+passwords. The file carried them because `terraform output -json` emits
+everything and nobody filtered it. An interface that makes the caller
+materialise secrets it does not use will eventually have one of them
+mishandled, and the mishandling is a symptom.
+
+**What worked.** `gitleaks` caught it, on history, and failed the build. That
+job had never run before 2026-08-25 (R-030) and had been green ever since, so
+this is its first real finding. Scanning history rather than the working tree is
+what made it catch a secret already deleted from the tree.
+
+**Resolution:**
+
+- `koras teardown <project> -` reads the outputs from stdin, so the documented
+  form is `terraform output -json | pnpm koras teardown <project> -` and nothing
+  reaches disk. A file path still works, and the help says plainly what it costs.
+- `.gitignore` covers `*-outputs.json` and `terraform-outputs*.json`.
+- `.gitleaks.toml` allowlists the two specific commits that carry the file, by
+  full SHA, with the reason. Not the path: a future leak in a file of that name
+  is a new finding and must fail.
+
+**Remediation.** History was not rewritten. Rewriting a pushed public branch
+does not un-distribute what has already been fetched, and pretending otherwise
+is worse than recording it. The credentials were destroyed by deleting the
+resources they belonged to, which is the only remedy that works after
+disclosure.

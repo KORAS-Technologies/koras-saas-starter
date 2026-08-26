@@ -34,3 +34,29 @@ paths = [
   '''generators/.*/tests/.*''',
   '''tooling/.*/tests/.*''',
 ]
+
+[[allowlists]]
+description = """
+A real leak, in history, whose credentials are destroyed.
+
+On 2026-08-26 `koras-e2e-test-outputs.json` was committed in 11e44c0 by a
+`git add -A` that swept up a working file. `terraform output -json` includes the
+values of outputs marked sensitive, so it carried four Upstash URLs with their
+passwords and four ZITADEL client secrets, into a public repository.
+
+This entry is not a judgement that the finding was false. It was true. The
+credentials were destroyed by deleting the resources they belonged to, which is
+the only remedy that works once something has been pushed -- rewriting a public
+branch's history does not un-distribute what has already been fetched.
+
+Scoped to the two commits that carry the file and nothing else. A later leak in
+a file matching this name is a new finding and will fail this job, which is why
+this names commits rather than a path pattern. `.gitignore` covers the pattern
+so the file cannot be committed again.
+
+See R-041.
+"""
+commits = [
+  "11e44c000139878be05fc05d7220a2b5fb65d9e8",
+  "33827355e4bfbe57fbfcd279b3cebe182520f3eb",
+]

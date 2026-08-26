@@ -21,7 +21,12 @@ COMMANDS:
   bootstrap:doctor           Check that every bootstrap integration is configured
                              and reachable. Read-only.
 
-  teardown <project>         Remove the infrastructure of an acceptance run.
+  teardown <project> <src>   Remove the infrastructure of an acceptance run.
+                             <src> is Terraform's JSON output. Use a single
+                             dash for stdin, which keeps it off disk: a
+                             file holds live credentials, because
+                             terraform output -json includes the values
+                             of outputs marked sensitive.
                              Lists what it would delete and deletes nothing
                              unless KORAS_E2E_TEARDOWN=1 is set. Only resources
                              named koras-e2e-... can ever be deleted; a real
@@ -88,37 +93,51 @@ export async function run(argv: string[] = process.argv): Promise<void> {
  */
 async function runTeardown(args: string[]): Promise<number> {
   const projectSlug = args[0]
-  const outputsPath = args[1]
+  const source = args[1]
 
   if (!projectSlug) {
-    console.error('usage: pnpm koras teardown <project-slug> [terraform-outputs.json]')
+    console.error('usage: pnpm koras teardown <project-slug> [outputs.json|-]')
     return 2
   }
 
-  if (!outputsPath) {
-    // Read from a file rather than run `terraform output` for you. This command
-    // deletes things, and what it deletes should come from something a person
-    // can look at first.
+  if (!source) {
     console.error(
       [
         '',
-        'No Terraform outputs given.',
+        'No Terraform outputs given. Prefer the pipe:',
         '',
-        '  terraform -chdir=<project>/infrastructure/terraform output -json > outputs.json',
-        `  pnpm koras teardown ${projectSlug} outputs.json`,
+        '  terraform -chdir=<project>/infrastructure/terraform output -json |',
+        `    pnpm koras teardown ${projectSlug} -`,
+        '',
+        'A file also works, and is worse. `terraform output -json` includes the',
+        'values of outputs marked sensitive, so the file it writes holds live',
+        'credentials -- Upstash URLs with their password, ZITADEL client secrets.',
+        'One was committed to a public repository on 2026-08-26. Piping keeps it',
+        'off disk entirely.',
+        '',
+        '  pnpm koras teardown <project> outputs.json',
         '',
       ].join(String.fromCharCode(10)),
     )
     return 2
   }
 
-  let inventory
+  let raw: string
   try {
-    const outputs = parseTerraformOutputs(readFileSync(outputsPath, 'utf8'))
-    inventory = qualify(inventoryFromOutputs(outputs), projectSlug)
+    // `-` reads stdin, which is the form that never writes a credential to disk.
+    raw = source === '-' ? readFileSync(0, 'utf8') : readFileSync(source, 'utf8')
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
-    console.error(`Could not read ${outputsPath}: ${detail}`)
+    console.error(`Could not read ${source}: ${detail}`)
+    return 1
+  }
+
+  let inventory
+  try {
+    inventory = qualify(inventoryFromOutputs(parseTerraformOutputs(raw)), projectSlug)
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    console.error(`Could not parse the Terraform outputs: ${detail}`)
     return 1
   }
 
