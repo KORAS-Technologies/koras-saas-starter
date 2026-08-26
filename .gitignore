@@ -69,3 +69,13 @@ private-keys/
 
 # Temporary extraction / scratch
 .tmp/
+
+# Terraform outputs captured for teardown.
+#
+# `terraform output -json` includes the values of outputs marked sensitive, so
+# such a file holds live credentials -- Upstash URLs with their password, ZITADEL
+# client secrets. One was committed to this repository on 2026-08-26 and had to
+# be rotated. It is a working file for `koras teardown`; it belongs on disk and
+# never in git.
+*-outputs.json
+terraform-outputs*.json
