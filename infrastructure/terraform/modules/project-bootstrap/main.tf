@@ -115,6 +115,9 @@ module "zitadel_dev" {
   redirect_uris             = local.redirect_uris["dev"]
   post_logout_redirect_uris = local.post_logout_redirect_uris["dev"]
   role_grants               = lookup(var.zitadel_role_grants, "dev", {})
+  # Absent unless this instance holds more than one organization. See the
+  # zitadel module: it discovers the single active one and refuses to guess.
+  org_id = lookup(var.zitadel_org_ids, "dev", null)
 
   # No depends_on. `local.redirect_uris` already reads `module.vercel.domains`,
   # so the dependency is expressed by the value and applies to exactly the
@@ -138,6 +141,9 @@ module "zitadel_test" {
   redirect_uris             = local.redirect_uris["test"]
   post_logout_redirect_uris = local.post_logout_redirect_uris["test"]
   role_grants               = lookup(var.zitadel_role_grants, "test", {})
+  # Absent unless this instance holds more than one organization. See the
+  # zitadel module: it discovers the single active one and refuses to guess.
+  org_id = lookup(var.zitadel_org_ids, "test", null)
 }
 
 module "zitadel_stg" {
@@ -150,6 +156,9 @@ module "zitadel_stg" {
   redirect_uris             = local.redirect_uris["stg"]
   post_logout_redirect_uris = local.post_logout_redirect_uris["stg"]
   role_grants               = lookup(var.zitadel_role_grants, "stg", {})
+  # Absent unless this instance holds more than one organization. See the
+  # zitadel module: it discovers the single active one and refuses to guess.
+  org_id = lookup(var.zitadel_org_ids, "stg", null)
 }
 
 module "zitadel_prod" {
@@ -162,6 +171,9 @@ module "zitadel_prod" {
   redirect_uris             = local.redirect_uris["prod"]
   post_logout_redirect_uris = local.post_logout_redirect_uris["prod"]
   role_grants               = lookup(var.zitadel_role_grants, "prod", {})
+  # Absent unless this instance holds more than one organization. See the
+  # zitadel module: it discovers the single active one and refuses to guess.
+  org_id = lookup(var.zitadel_org_ids, "prod", null)
 }
 
 module "vercel" {

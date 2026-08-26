@@ -30,8 +30,21 @@ data "zitadel_orgs" "this" {
   state = "ORG_STATE_ACTIVE"
 }
 
+# Names for what was discovered, so an ambiguous instance can be resolved from
+# the error message rather than from a trip to the console. Two ids alone say
+# nothing about which organization is which.
+data "zitadel_org" "discovered" {
+  for_each = toset(data.zitadel_orgs.this.ids)
+  id       = each.key
+}
+
 locals {
   discovered_org_ids = data.zitadel_orgs.this.ids
+
+  discovered_orgs = [
+    for id in local.discovered_org_ids :
+    "${id} (${data.zitadel_org.discovered[id].name})"
+  ]
 
   org_id = var.org_id != null ? var.org_id : (
     length(local.discovered_org_ids) == 1 ? local.discovered_org_ids[0] : null
@@ -55,7 +68,7 @@ resource "zitadel_project" "this" {
 
     precondition {
       condition     = local.org_id != null
-      error_message = "Could not determine the ZITADEL organization: ${length(local.discovered_org_ids)} active organizations were found and this module needs exactly one. Set `org_id` on the module to name it. Found: ${join(", ", local.discovered_org_ids)}"
+      error_message = "Could not determine the ZITADEL organization: ${length(local.discovered_org_ids)} active organizations were found and this module needs exactly one. Set `org_id` on the module to name it. Found: ${join(", ", local.discovered_orgs)}"
     }
   }
 }

@@ -92,6 +92,14 @@ variable "zitadel_instances" {
     port             = number
     insecure         = bool
     jwt_profile_json = string
+    # Which organization to build in, where the instance holds more than one.
+    #
+    # Optional, and normally absent: the module finds the single active
+    # organization by itself. A ZITADEL Cloud instance keeps its own default
+    # organization alongside any you create, and an instance that has ever been
+    # set up by hand may hold two -- at which point the module cannot tell which
+    # is yours and says so, naming both.
+    org_id = optional(string)
   }))
   sensitive = true
 }

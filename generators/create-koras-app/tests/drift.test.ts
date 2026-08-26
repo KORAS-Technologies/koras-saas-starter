@@ -126,7 +126,16 @@ describe('checkDrift', () => {
     // A project checked out on Windows carries CRLF; the renderer emits LF.
     const { ctx, projectRoot } = generate('product', 'crlf')
     const main = join(projectRoot, 'infrastructure/terraform/main.tf')
-    writeFileSync(main, readFileSync(main, 'utf8').replace(/\n/g, '\r\n'))
+    //
+    // Normalized to LF before converting, rather than converting whatever is
+    // there. `.tf` is not in the renderer's unix-line-endings set, so a
+    // rendered main.tf carries whatever the *template* had -- and with
+    // core.autocrlf=true every template in the working tree is CRLF.
+    // Doubling that produced a CR CR LF sequence, which survives
+    // normalization as a trailing CR and failed this test for a reason it
+    // was not testing. It passed only where the working tree held LF.
+    const asLf = readFileSync(main, 'utf8').split(String.fromCharCode(13) + String.fromCharCode(10)).join(String.fromCharCode(10))
+    writeFileSync(main, asLf.split(String.fromCharCode(10)).join(String.fromCharCode(13) + String.fromCharCode(10)))
 
     expect(checkDrift(ctx, projectRoot).findings).toEqual([])
   })

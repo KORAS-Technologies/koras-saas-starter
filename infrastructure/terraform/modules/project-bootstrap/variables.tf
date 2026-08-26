@@ -193,3 +193,20 @@ variable "required_approvals" {
   default     = {}
   description = "Per-branch approving-review counts. See the github module."
 }
+
+variable "zitadel_org_ids" {
+  description = <<-DESC
+    Which ZITADEL organization to build in, per environment.
+
+    Only the ids, not the instance config: the providers are configured at the
+    root and passed in, so this module needs nothing else about an instance --
+    and passing the whole object would hand it service-account JWTs it has no
+    use for.
+
+    Normally empty. The zitadel module finds the single active organization by
+    itself and refuses to guess when an instance holds more than one, naming
+    both. An entry here answers that question for that environment.
+  DESC
+  type        = map(string)
+  default     = {}
+}

@@ -112,7 +112,13 @@ export function assembleSupabaseEnvironments(env: NodeJS.ProcessEnv): string | u
 export function assembleZitadelInstances(env: NodeJS.ProcessEnv): string | undefined {
   const out: Record<
     string,
-    { domain: string; port: number; insecure: boolean; jwt_profile_json: string }
+    {
+      domain: string
+      port: number
+      insecure: boolean
+      jwt_profile_json: string
+      org_id?: string
+    }
   > = {}
 
   for (const e of ENVIRONMENTS) {
@@ -127,6 +133,14 @@ export function assembleZitadelInstances(env: NodeJS.ProcessEnv): string | undef
       port: Number(value(env, `ZITADEL_${key}_PORT`) ?? 443),
       insecure: value(env, `ZITADEL_${key}_INSECURE`) === 'true',
       jwt_profile_json: profile,
+      // Only where the instance holds more than one organization. The module
+      // finds the single active one by itself and refuses to guess otherwise,
+      // naming both -- which is when this is worth setting, and not before.
+      // Omitted rather than sent as null: the Terraform type is
+      // `optional(string)`, and absent and null are different there.
+      ...(value(env, `ZITADEL_${key}_ORG_ID`) !== undefined
+        ? { org_id: value(env, `ZITADEL_${key}_ORG_ID`) }
+        : {}),
     }
   }
 

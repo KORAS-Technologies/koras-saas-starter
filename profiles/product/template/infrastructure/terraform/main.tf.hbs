@@ -39,6 +39,14 @@ module "bootstrap" {
   zitadel_role_grants               = var.zitadel_role_grants
   zitadel_redirect_uris             = var.zitadel_redirect_uris
   zitadel_post_logout_redirect_uris = var.zitadel_post_logout_redirect_uris
+
+  # Only where an instance holds more than one organization. Filtered rather
+  # than passed whole: an absent org_id must stay absent, not arrive as null in
+  # a map the module would then have to distinguish from unset.
+  zitadel_org_ids = {
+    for env, instance in var.zitadel_instances :
+    env => instance.org_id if instance.org_id != null
+  }
 }
 
 output "profile" {
