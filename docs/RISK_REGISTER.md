@@ -1490,11 +1490,31 @@ reports a dry run and issues nothing.
 3. **Nothing has been run against a real provider.** Every test injects a
    `fetch` double. A green suite means the requests are shaped as the API
    documents; it does not mean any provider accepts them.
-4. **The GitHub token cannot delete repositories.** `delete_repo` is not
-   granted, deliberately. Until it is, that deleter is written and unusable.
+4. ~~The GitHub token cannot delete repositories.~~ **Wrong, corrected
+   2026-08-25.** `delete_repo` is the *classic* token scope name; the estate
+   uses a fine-grained token, where repository deletion falls under
+   **Repository → Administration: Read and write** — which it already holds,
+   for branch protection. Checked against the token's settings. This was
+   recorded as a blocker for several hours and was never one.
 
 So a live apply is closer to reversible than it was, and is not yet reversible.
-Points 3 and 4 are what stand between the two.
+Point 3 is what stands between the two: nothing here has met a real API.
+
+**A confirmation was added on top of the guards (2026-08-25).** With deletion
+enabled and a plan that is not empty, the command names the project and the
+resource counts and requires the operator to type the project name back. `yes`
+is refused, an empty answer is refused, and a session with no terminal is
+refused rather than reading EOF as agreement.
+
+`confirmApply` in the generator asks for `yes` before *creating* infrastructure.
+This asks for more because the mistakes differ: applying to the wrong project
+leaves resources that can be deleted, and deleting the wrong project leaves
+nothing. `yes` is a reflex by the third time anyone sees it; a name has to be
+read off the screen and matched against what the prompt says it is about.
+
+There is deliberately no `--yes` or `--force`. A flag that skips confirmation is
+the first thing a script reaches for, and a script is what should never be able
+to run this.
 
 ---
 

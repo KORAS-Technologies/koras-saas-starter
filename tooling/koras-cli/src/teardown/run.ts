@@ -1,6 +1,7 @@
 import type { FetchLike } from '../doctor/types.js'
 import { apply, plan, formatPlan, teardownEnabled, type Resource, type DeleteResult } from './guards.js'
 import { providerDeleters, UNIMPLEMENTED_KINDS, type ProviderCredentials } from './providers/index.js'
+import { confirmTeardown, type ConfirmOptions } from './confirm.js'
 
 /**
  * The teardown command, assembled from parts that each refuse on their own.
@@ -15,6 +16,10 @@ export interface TeardownOptions {
   credentials: ProviderCredentials
   fetchImpl: FetchLike
   env?: NodeJS.ProcessEnv
+  /** Named on the prompt, and what the operator must type back. */
+  projectSlug: string
+  /** Injected for tests. Without it, a real TTY is required. */
+  confirm?: ConfirmOptions
 }
 
 export interface TeardownOutcome {
@@ -57,7 +62,18 @@ export async function teardown(options: TeardownOptions): Promise<TeardownOutcom
   }
 
   let results: DeleteResult[] | undefined
-  if (enabled) {
+  if (enabled && decided.deletable.length > 0) {
+    // After the plan and before the deletion, so what is confirmed is what was
+    // just described rather than what was asked for.
+    const confirmed = await confirmTeardown(
+      options.projectSlug,
+      decided.deletable,
+      options.confirm ?? {},
+    )
+    if (!confirmed) {
+      const cancelled = [...lines, formatPlan(decided), '', 'Cancelled.']
+      return { output: cancelled.join(String.fromCharCode(10)), failed: false }
+    }
     results = await apply(decided, { deleters, env })
   }
 

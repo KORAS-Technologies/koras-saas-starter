@@ -124,6 +124,7 @@ async function runTeardown(args: string[]): Promise<number> {
 
   const outcome = await teardown({
     inventory,
+    projectSlug,
     credentials: credentialsFromEnv(),
     fetchImpl: globalThis.fetch as never,
   })

@@ -190,6 +190,8 @@ describe('the teardown command', () => {
       credentials: ALL_CREDENTIALS,
       fetchImpl: fetch,
       env: {},
+      projectSlug: 'koras-e2e-shop',
+      confirm: { ask: async () => 'koras-e2e-shop' },
     })
 
     expect(calls, 'a dry run issued a request').toEqual([])
@@ -204,6 +206,8 @@ describe('the teardown command', () => {
       credentials: ALL_CREDENTIALS,
       fetchImpl: fetch,
       env: { KORAS_E2E_TEARDOWN: '1' },
+      projectSlug: 'koras-e2e-shop',
+      confirm: { ask: async () => 'koras-e2e-shop' },
     })
 
     expect(calls.length).toBeGreaterThan(0)
@@ -218,6 +222,8 @@ describe('the teardown command', () => {
       credentials: ALL_CREDENTIALS,
       fetchImpl: fetch,
       env: { KORAS_E2E_TEARDOWN: '1' },
+      projectSlug: 'docoris',
+      confirm: { ask: async () => 'docoris' },
     })
     expect(calls, 'a non-acceptance project was contacted').toEqual([])
   })
@@ -229,10 +235,92 @@ describe('the teardown command', () => {
       credentials: { githubToken: 'gh' },
       fetchImpl: fetch,
       env: { KORAS_E2E_TEARDOWN: '1' },
+      projectSlug: 'koras-e2e-shop',
+      confirm: { ask: async () => 'koras-e2e-shop' },
     })
 
     expect(outcome.output).toContain('No deleter for these kinds')
     expect(outcome.output.match(/supabase-project —/g) ?? []).toHaveLength(1)
+  })
+
+  it('deletes nothing when the name typed is wrong', async () => {
+    const { fetch, calls } = recorder()
+    const outcome = await teardown({
+      inventory,
+      credentials: ALL_CREDENTIALS,
+      fetchImpl: fetch,
+      env: { KORAS_E2E_TEARDOWN: '1' },
+      projectSlug: 'koras-e2e-shop',
+      confirm: { ask: async () => 'koras-e2e-shopp' },
+    })
+
+    expect(calls, 'a typo in the confirmation still deleted').toEqual([])
+    expect(outcome.output).toContain('Cancelled.')
+  })
+
+  it('does not accept "yes" in place of the name', async () => {
+    // The whole reason it asks for the name: `yes` is a reflex by the third
+    // time anyone sees it, and a name has to be read off the screen.
+    const { fetch, calls } = recorder()
+    await teardown({
+      inventory,
+      credentials: ALL_CREDENTIALS,
+      fetchImpl: fetch,
+      env: { KORAS_E2E_TEARDOWN: '1' },
+      projectSlug: 'koras-e2e-shop',
+      confirm: { ask: async () => 'yes' },
+    })
+    expect(calls).toEqual([])
+  })
+
+  it('deletes nothing when the answer is empty', async () => {
+    const { fetch, calls } = recorder()
+    await teardown({
+      inventory,
+      credentials: ALL_CREDENTIALS,
+      fetchImpl: fetch,
+      env: { KORAS_E2E_TEARDOWN: '1' },
+      projectSlug: 'koras-e2e-shop',
+      confirm: { ask: async () => '' },
+    })
+    expect(calls).toEqual([])
+  })
+
+  it('refuses without a terminal, rather than reading EOF as agreement', async () => {
+    // How an automated run deletes an estate nobody meant to touch.
+    const { fetch, calls } = recorder()
+    const outcome = await teardown({
+      inventory,
+      credentials: ALL_CREDENTIALS,
+      fetchImpl: fetch,
+      env: { KORAS_E2E_TEARDOWN: '1' },
+      projectSlug: 'koras-e2e-shop',
+      confirm: { isTTY: false },
+    })
+
+    expect(calls).toEqual([])
+    expect(outcome.output).toContain('Cancelled.')
+  })
+
+  it('never prompts when there is nothing to delete', async () => {
+    // A prompt for an empty plan trains people to type the name without
+    // reading it.
+    let asked = false
+    const { fetch } = recorder()
+    await teardown({
+      inventory: qualify(inventoryFromOutputs(REAL_OUTPUTS), 'docoris'),
+      credentials: ALL_CREDENTIALS,
+      fetchImpl: fetch,
+      env: { KORAS_E2E_TEARDOWN: '1' },
+      projectSlug: 'docoris',
+      confirm: {
+        ask: async () => {
+          asked = true
+          return 'docoris'
+        },
+      },
+    })
+    expect(asked, 'prompted with an empty plan').toBe(false)
   })
 
   it('reports a failure without rolling anything back', async () => {
@@ -242,6 +330,8 @@ describe('the teardown command', () => {
       credentials: ALL_CREDENTIALS,
       fetchImpl: fetch,
       env: { KORAS_E2E_TEARDOWN: '1' },
+      projectSlug: 'koras-e2e-shop',
+      confirm: { ask: async () => 'koras-e2e-shop' },
     })
 
     expect(outcome.failed).toBe(true)
