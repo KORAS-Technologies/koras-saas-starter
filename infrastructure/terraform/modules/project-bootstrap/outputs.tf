@@ -63,6 +63,11 @@ output "redis_endpoints" {
   value       = module.upstash.redis_endpoints
 }
 
+output "redis_database_ids" {
+  description = "Map of env -> Upstash database id. What teardown deletes by."
+  value       = module.upstash.redis_database_ids
+}
+
 output "vercel_domains" {
   description = "Map of '<app>-<environment>' -> hostname, as attached to the Vercel project."
   value       = module.vercel.domains

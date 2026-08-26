@@ -242,6 +242,7 @@ branding" there.
 | R-037 | Typecheck ignored the error it needed to report | 12    | Resolved                 |
 | R-038 | Drift reported every optional component      | 9        | Resolved                 |
 | R-039 | ZITADEL module could not create a new project | 16      | Resolved                 |
+| R-040 | Teardown missed a whole provider silently    | 16       | Resolved                 |
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
 | R-017 | Control-plane env contract was the product one | 10     | Resolved                 |
 | R-018 | Queue polling billed per command             | 8        | Resolved                 |
@@ -1717,3 +1718,57 @@ limits. `formatRefreshResult` now prints them on every run.
 
 **Still unverified:** the apply itself. A plan that succeeds is not an apply that
 succeeds, and dev has not planned cleanly yet.
+
+---
+
+## R-040 — teardown reported a complete run and left a whole provider alive
+
+**Found:** 2026-08-26, on the first real teardown. It printed
+`Teardown — 26 deletable, 0 retained` and every line said `deleted`.
+
+**Severity:** 16 (likelihood 4 × impact 4) · **Status:** Resolved 2026-08-26
+
+Four Upstash Redis databases were created by the apply and appeared nowhere in
+the inventory. They were still running, and billing, after a teardown that
+reported success.
+
+`inventoryFromOutputs` read `outputs.redisDatabaseIds`. No such output existed:
+the Upstash module exported `redis_urls` (sensitive, and dropped by the parser)
+and `redis_endpoints` (a hostname, which the delete API cannot use), and never
+an id. The parser had no such field either. So the expression evaluated to
+`undefined`, the `?? {}` fallback turned that into an empty map, and Upstash
+silently contributed nothing.
+
+**Every layer was individually reasonable.** The module exported what the
+bootstrap script needed. The parser mapped the outputs that existed. The
+inventory read the field it expected. Nothing connected them, and the type
+that should have was `redisDatabaseIds?: Record<string, string>` — optional,
+so a caller omitting it was legal, and every caller omitted it.
+
+**What made it invisible.** A missing provider has no symptom. A failed
+deletion prints `failed`; a provider that never enters the inventory prints
+nothing at all, and the summary counts only what it found. `0 retained` reads
+as "nothing was left behind" and means "nothing I looked at was left behind".
+
+ZITADEL was handled the opposite way on purpose — it has no deleter and is
+listed as skipped with the reason — and that is exactly why it did *not* go
+missing. The same care was not taken for a provider nobody remembered was
+there.
+
+**Resolution:**
+
+- `redis_database_ids` is exported by the Upstash module, re-exported by
+  `project-bootstrap`, and surfaced at the root. Ids, not endpoints: the delete
+  API takes an id, and an id addresses a database without opening one, so it is
+  not sensitive and survives the parser.
+- `parseTerraformOutputs` reads it into `redisDatabaseIds`.
+- The inventory's field is **required**, not optional. A missing output is now
+  a type error at the boundary rather than an absence discovered from a bill.
+  Making it required immediately failed the build until the parser was updated,
+  which is the check that was missing.
+- A test asserts the inventory contains all seven kinds, rather than the ones
+  that happen to work.
+
+**Cleanup of the run that found it was manual.** Four databases named
+`koras-e2e-test-*` had to be removed from the Upstash console, because the
+teardown that should have removed them had already reported success.

@@ -27,6 +27,16 @@ export interface ProvisionOutputs {
   zitadelProjectIds: Record<string, string>
   vercelProjectIds: Record<string, string>
   flyApps: string[]
+  /**
+   * Upstash database ids, keyed by environment.
+   *
+   * Ids rather than endpoints, because the delete API takes an id. Teardown
+   * read a field the module never exported and therefore found no Upstash at
+   * all -- reporting a complete run while four databases stayed alive. An
+   * output nobody parses and a parser field nobody exports look identical from
+   * either side.
+   */
+  redisDatabaseIds: Record<string, string>
   /** Outputs Terraform marked sensitive, recorded by name only. */
   withheld: string[]
 }
@@ -77,6 +87,7 @@ export function parseTerraformOutputs(json: string): ProvisionOutputs {
     zitadelProjectIds: asStringMap('zitadel_project_ids'),
     vercelProjectIds: asStringMap('vercel_project_ids'),
     flyApps: Object.values(flyAppNames).sort(),
+    redisDatabaseIds: asStringMap('redis_database_ids'),
     withheld,
   }
 }

@@ -73,6 +73,24 @@ describe('the inventory', () => {
     expect(kinds.indexOf('supabase-project')).toBeLessThan(kinds.indexOf('github-repository'))
   })
 
+  it('includes every provider a provision writes to', () => {
+    // Teardown reported "26 deletable, 0 retained" on a real estate and left
+    // four Upstash databases alive: the inventory read an output the module
+    // never exported, found nothing, and looked complete. A missing provider
+    // has no symptom -- which is why this asserts the whole set rather than
+    // the ones that happened to work.
+    const kinds = new Set(inventoryFromOutputs(OUTPUTS).map((r) => r.kind))
+    expect([...kinds].sort()).toEqual([
+      'doppler-project',
+      'fly-app',
+      'github-repository',
+      'supabase-project',
+      'upstash-database',
+      'vercel-project',
+      'zitadel-project',
+    ])
+  })
+
   it('includes ZITADEL even though nothing deletes it', () => {
     // Omitting it would report a complete teardown while leaving projects behind.
     expect(inventoryFromOutputs(OUTPUTS).map((r) => r.kind)).toContain('zitadel-project')

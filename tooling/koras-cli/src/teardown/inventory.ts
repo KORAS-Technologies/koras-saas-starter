@@ -20,7 +20,20 @@ export interface ProvisionOutputsLike {
   zitadelProjectIds: Record<string, string>
   vercelProjectIds: Record<string, string>
   flyApps: string[]
-  redisDatabaseIds?: Record<string, string>
+  /**
+   * Required, not optional.
+   *
+   * It was optional, and the module exported no such output, so
+   * `outputs.redisDatabaseIds` was always undefined and Upstash never entered
+   * the inventory. Teardown reported "26 deletable, 0 retained" and left four
+   * billing databases alive -- a complete-looking run, missing a whole
+   * provider, with nothing to notice.
+   *
+   * Optional here means "the caller may omit it", and every caller did.
+   * Required makes a missing output a type error at the boundary instead of an
+   * absence discovered from a bill.
+   */
+  redisDatabaseIds: Record<string, string>
 }
 
 /**
@@ -50,7 +63,7 @@ export function inventoryFromOutputs(outputs: ProvisionOutputsLike): Resource[] 
 
   for (const name of outputs.flyApps) add('fly-app', name)
   for (const id of Object.values(outputs.vercelProjectIds)) add('vercel-project', id)
-  for (const id of Object.values(outputs.redisDatabaseIds ?? {})) add('upstash-database', id)
+  for (const id of Object.values(outputs.redisDatabaseIds)) add('upstash-database', id)
   for (const ref of Object.values(outputs.supabaseProjectRefs)) add('supabase-project', ref)
   for (const id of Object.values(outputs.zitadelProjectIds)) add('zitadel-project', id)
   add('doppler-project', outputs.dopplerProject)
