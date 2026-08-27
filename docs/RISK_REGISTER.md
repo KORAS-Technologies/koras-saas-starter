@@ -238,7 +238,7 @@ branding" there.
 | R-034 | No rate limiting in the generated API        | 12       | Resolved                 |
 | R-035 | `pnpm test` reported a cached pass           | 16       | Resolved                 |
 | R-031 | vitest advisories; the fix breaks the suite  | 12       | Accepted with mitigation |
-| R-036 | A live acceptance run cannot be cleaned up   | 12       | All seven have credentials; none has met a real API |
+| R-036 | A live acceptance run cannot be cleaned up   | 12       | Resolved                 |
 | R-037 | Typecheck ignored the error it needed to report | 12    | Resolved                 |
 | R-038 | Drift reported every optional component      | 9        | Resolved                 |
 | R-039 | ZITADEL module could not create a new project | 16      | Resolved                 |
@@ -1559,11 +1559,29 @@ reports a dry run and issues nothing.
 2. **`prevent_destroy` is untouched.** It is irrelevant to the API-based path
    above, which never invokes Terraform — but `terraform destroy` still fails on
    five resource types, so anyone reaching for it will be stopped.
-3. **Nothing has been run against a real provider.** Every test injects a
-   `fetch` double. A green suite means the requests are shaped as the API
-   documents; it does not mean any provider accepts them. This is the last
-   thing standing between R-036 and closed, and it is the one item on this list
-   that no amount of test-writing can retire.
+3. ~~**Nothing has been run against a real provider.**~~ **Done 2026-08-27.**
+
+   A live product estate — 82 resources across seven providers, four Supabase
+   projects and four Upstash databases among them — was provisioned, then torn
+   down with `koras teardown koras-e2e-shop --product-path ../output/koras-e2e-shop`.
+   Thirty resources planned, thirty deleted, no skips.
+
+   Confirmed two ways, because teardown counts 404 as success and its own output
+   therefore proves nothing on a first run. Direct API calls to each provider
+   answered 404 (Supabase 400, "Resource has been removed"); and a subsequent
+   `terraform plan` — refreshing through each provider's own credential, which
+   for ZITADEL is the JWT profile rather than the PAT teardown used — found
+   every resource missing and proposed to recreate all 82. Two unrelated auth
+   paths agreeing is what makes this evidence rather than an echo.
+
+   Six defects were found by running it that no test had: a stale `dist/` the
+   CLI ran without complaint, Upstash credentials stored under a `TF_VAR_`
+   prefix nothing looked for, a confirmation prompt reading the stdin the
+   outputs had already consumed, a sensitive mark that made the org id
+   unexportable, one ZITADEL token where four instances needed four, and a
+   documented command that could not run in PowerShell at all.
+
+   That is the whole of the risk. **R-036 is closed.**
 
 4. **A general form of R-040 is now closed.** `parseTerraformOutputs` reads
    each value by name and returns empty when it is absent — correct, because a

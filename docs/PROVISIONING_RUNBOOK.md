@@ -463,6 +463,17 @@ the first live run, open each console and look:
 ZITADEL is the one to check hardest. Its delete is the newest, and a wrong
 organization answers 404 — which reads as success.
 
+**Done once, on 2026-08-27**, against a product estate of 82 resources: thirty
+planned, thirty deleted, no skips, and every provider confirmed gone by direct
+API call. A second confirmation came free — the `terraform plan` that follows
+refreshes through each provider's *own* credential, which for ZITADEL is the JWT
+profile rather than the PAT teardown uses, and it found nothing left. Two
+unrelated auth paths agreeing is what makes it evidence rather than an echo.
+
+That was the last open item in R-036. Checking by hand is still worth doing
+after a change to any deleter; it is no longer the first thing anyone here has
+ever learned about them.
+
 ### Step 4 — the three things teardown never touches
 
 Four ZITADEL projects, the workspace, and the directory:
@@ -480,6 +491,32 @@ PowerShell for the last one:
 ```powershell
 Remove-Item -Recurse -Force ../output/<product>
 ```
+
+### Step 5 — do not re-plan against the old state
+
+After a teardown, the Terraform state describes an estate that no longer exists.
+Running `--provision-only` in that directory does not start again cleanly: it
+refreshes first, and three providers treat a deleted resource as an error rather
+than as absence.
+
+```
+Error: Could not find App "koras-e2e-shop-api-dev"
+Error: Unable to read project, got status 400: {"message":"Resource has been removed"}
+Error: Get Redis Database failed, status code: 404 response: "database not found"
+```
+
+Fly, Supabase and Upstash each fail the plan on that. GitHub, Vercel, ZITADEL
+and Doppler are gentler — they drop the resource from state and propose to
+recreate it, which is why the same run reports `Plan: 82 to add` beside the
+errors.
+
+Nothing is wrong. Read it as confirmation: those messages *are* the providers
+saying the resources are gone. The state is spent, and the remedy is to discard
+it rather than repair it — delete the HCP workspace and the directory, per
+step 6. A new acceptance run generates a new project with a new workspace.
+
+Worth being deliberate about, because `--provision-only` on a torn-down estate
+is one keystroke from **recreating all 82 resources and their bills.**
 
 ### If a step fails
 

@@ -176,12 +176,12 @@ external skills, and bring an existing project back into alignment.
 
 | Phase | State | Note |
 |-------|-------|------|
-| 13 — End-to-End Acceptance Tests | All but the live apply | Both scenarios automated and passing. The live variant is gated behind `KORAS_E2E_LIVE` and needs an explicit authorisation. It can now be torn down: all seven providers have deleters, though none has been run against a real API — see R-036 |
+| 13 — End-to-End Acceptance Tests | Complete | Both scenarios automated and passing. The live variant ran on 2026-08-27: a product estate of 82 resources provisioned across seven providers and torn down completely, verified against each provider's API and by a `terraform plan` that found nothing left. R-036 closed |
 
-**Open risks:** R-036 only, and narrowed: teardown covers all seven providers,
-but every one of them has only ever been exercised against an injected `fetch`.
-A green suite says the requests are shaped as the APIs document, not that any
-API accepts them.
+**Open risks:** R-042 only — documentation and comments are the one part of the
+repository that can be wrong without anything going red. Claims about *where*
+are now checked; claims about *why* are not, and probably cannot be.
+R-031 stands accepted with mitigation.
 R-031 stands accepted with mitigation.
 
 **Next step:** the `--with` / `--without` paths through the generator are
