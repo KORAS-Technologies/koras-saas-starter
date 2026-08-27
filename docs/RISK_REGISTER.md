@@ -1531,11 +1531,19 @@ reports a dry run and issues nothing.
    credential does not. Deleting four projects needs four tokens, or a JWT
    exchange that mints one per instance.
 
-   So on a real estate the ZITADEL projects are still reported as skipped, now
-   for a credential reason rather than a capability one, and are still deleted
-   from each instance's console by hand. What changed is that the path exists
-   and is proven for anyone holding a PAT; what did not change is that
-   provisioning does not hand you one.
+   **Closed the same day.** The token is now chosen per resource the way the
+   endpoint already was: `ZITADEL_<ENV>_SERVICE_TOKEN` in
+   `koras-platform-bootstrap/prod`, one per instance, beside the
+   `ZITADEL_<ENV>_DOMAIN` and `ZITADEL_<ENV>_ORG_ID` that were already there. A
+   project whose instance has no token is refused by name rather than attempted
+   with another instance's, because that failure is silent: a token from the
+   wrong server authenticates, does not find the project, and answers 404, which
+   this code reads as "already gone".
+
+   The four keys exist and are empty. Until they hold PATs the projects are
+   reported as skipped for a missing credential, which is the honest state --
+   an empty value reads as absent rather than as a credential that does not
+   work.
 
    Recorded rather than quietly re-fixed because the sequence is the point: a
    comment nothing could test was wrong, replacing it with confidence was also

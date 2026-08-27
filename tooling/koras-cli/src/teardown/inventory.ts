@@ -77,7 +77,7 @@ export function inventoryFromOutputs(outputs: ProvisionOutputsLike): Resource[] 
   const add = (
     kind: ResourceKind,
     name: string | undefined,
-    extra: { endpoint?: string; scope?: string } = {},
+    extra: { endpoint?: string; scope?: string; environment?: string } = {},
   ): void => {
     if (name && name.trim() !== '') found.push({ kind, name: name.trim(), ...extra })
   }
@@ -94,6 +94,7 @@ export function inventoryFromOutputs(outputs: ProvisionOutputsLike): Resource[] 
     add('zitadel-project', id, {
       endpoint: outputs.zitadelDomains[env],
       scope: outputs.zitadelOrgIds[env],
+      environment: env,
     })
   }
   add('doppler-project', outputs.dopplerProject)

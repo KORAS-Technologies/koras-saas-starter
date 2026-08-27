@@ -499,10 +499,39 @@ hand is harmless — it is simply never needed, and every command in this sectio
 is written without it.
 
 It reads `GITHUB_TOKEN`, `DOPPLER_TOKEN`, `SUPABASE_ACCESS_TOKEN`,
-`UPSTASH_EMAIL`, `UPSTASH_API_KEY`, `VERCEL_API_TOKEN`, `VERCEL_TEAM_ID`,
-`FLY_API_TOKEN` and `ZITADEL_SERVICE_TOKEN`, each also accepted under its
-`TF_VAR_` spelling — the estate stores Upstash's two that way, and reading only
-the bare name is how four billing databases were once reported as skipped.
+`UPSTASH_EMAIL`, `UPSTASH_API_KEY`, `VERCEL_API_TOKEN`, `VERCEL_TEAM_ID` and
+`FLY_API_TOKEN`, each also accepted under its `TF_VAR_` spelling — the estate
+stores Upstash's two that way, and reading only the bare name is how four
+billing databases were once reported as skipped.
+
+**ZITADEL needs four, one per instance**, in `koras-platform-bootstrap/prod`
+alongside the `ZITADEL_<ENV>_DOMAIN` and `ZITADEL_<ENV>_ORG_ID` they sit beside:
+
+| Key | Instance |
+|-----|----------|
+| `ZITADEL_DEV_SERVICE_TOKEN` | the dev instance |
+| `ZITADEL_TEST_SERVICE_TOKEN` | the test instance |
+| `ZITADEL_STG_SERVICE_TOKEN` | the stg instance |
+| `ZITADEL_PROD_SERVICE_TOKEN` | the prod instance |
+
+Each is a **personal access token on a machine user in that instance**, created
+in its console. Not `ZITADEL_<ENV>_SERVICE_ACCOUNT_KEY_JSON`, which is a JWT
+profile and a different credential — teardown does not exchange it.
+
+One token per instance is not bureaucracy. dev, test, stg and prod are four
+separate ZITADEL servers, so a dev token used against stg authenticates fine,
+fails to find the project, and returns **404** — which teardown reads as
+"already gone". Teardown therefore refuses a project whose instance it has no
+token for, naming the key, rather than reaching for another one.
+
+`koras-control-plane` already keeps a `ZITADEL_SERVICE_TOKEN` per environment
+config for its own provisioning. These are the same kind of credential and may
+be the same machine users; they live here because teardown runs under the
+bootstrap project, which has one config rather than four, so the environment has
+to be in the key name.
+
+A bare `ZITADEL_SERVICE_TOKEN` is accepted as a fallback for every environment.
+That is right for a single-instance estate and wrong for this one.
 
 A missing credential is named once, at the top, and its resources are skipped
 rather than failed. A skip is a provider that will still exist afterwards.

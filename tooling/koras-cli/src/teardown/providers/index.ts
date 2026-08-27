@@ -35,7 +35,15 @@ export interface ProviderCredentials {
   vercelToken?: string
   vercelTeamId?: string
   flyToken?: string
-  zitadelServiceToken?: string
+  /**
+   * One personal access token per ZITADEL instance, keyed by environment.
+   *
+   * Not one token. Each environment is a separate ZITADEL instance with its own
+   * machine users, so a token minted in dev is not a credential anywhere else --
+   * it authenticates, against the wrong server, and the project it is asked for
+   * is not there. That answers 404, which this file reads as "already gone".
+   */
+  zitadelServiceTokens?: Record<string, string>
 }
 
 /** A 404 means the resource is not there, which is the outcome being asked for. */
@@ -166,7 +174,7 @@ export function providerDeleters(
     }
   }
 
-  if (credentials.zitadelServiceToken) {
+  if (credentials.zitadelServiceTokens && Object.keys(credentials.zitadelServiceTokens).length > 0) {
     deleters['zitadel-project'] = async (resource: Resource) => {
       // Two things this deleter needs that no other one does, both from the
       // inventory rather than from configuration.
@@ -183,6 +191,15 @@ export function providerDeleters(
       const kind: ResourceKind = 'zitadel-project'
       const base = need(resource.endpoint, `a ZITADEL instance URL for ${resource.name}`, kind)
       const org = need(resource.scope, `a ZITADEL organization for ${resource.name}`, kind)
+      const env = need(resource.environment, `a ZITADEL environment for ${resource.name}`, kind)
+      // Named rather than defaulted. A token for the wrong instance is worse
+      // than no token: it authenticates, the project is not there, and 404 is
+      // read as success.
+      const token = need(
+        credentials.zitadelServiceTokens?.[env],
+        `ZITADEL_${env.toUpperCase()}_SERVICE_TOKEN`,
+        kind,
+      )
 
       await deleteOrAlreadyGone(
         fetchImpl,
@@ -190,8 +207,9 @@ export function providerDeleters(
         {
           // A personal access token, presented as a bearer token -- the same
           // way local/zitadel/provision.py talks to this API. The note that
-          // once stood here claimed a service-account JWT exchange was needed.
-          authorization: `Bearer ${need(credentials.zitadelServiceToken, 'ZITADEL_SERVICE_TOKEN', kind)}`,
+          // once stood here claimed a service-account JWT exchange was needed;
+          // that is one way, and not the only one.
+          authorization: `Bearer ${token}`,
           'x-zitadel-orgid': org,
           accept: 'application/json',
         },

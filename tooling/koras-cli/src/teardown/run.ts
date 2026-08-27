@@ -106,6 +106,23 @@ function first(env: NodeJS.ProcessEnv, ...names: string[]): string | undefined {
   return undefined
 }
 
+/**
+ * Per-instance ZITADEL tokens, keyed by environment.
+ *
+ * Absent environments are simply not in the map: the deleter refuses a resource
+ * whose environment it holds no token for, by name, rather than reaching for
+ * another instance's credential.
+ */
+function zitadelTokensFromEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  const shared = first(env, 'ZITADEL_SERVICE_TOKEN')
+  const tokens: Record<string, string> = {}
+  for (const name of ['dev', 'test', 'stg', 'prod']) {
+    const token = first(env, `ZITADEL_${name.toUpperCase()}_SERVICE_TOKEN`) ?? shared
+    if (token) tokens[name] = token
+  }
+  return tokens
+}
+
 /** Reads provider credentials from the environment, naming none of their values. */
 export function credentialsFromEnv(env: NodeJS.ProcessEnv = process.env): ProviderCredentials {
   return {
@@ -117,9 +134,17 @@ export function credentialsFromEnv(env: NodeJS.ProcessEnv = process.env): Provid
     vercelToken: first(env, 'VERCEL_API_TOKEN', 'TF_VAR_VERCEL_TOKEN'),
     vercelTeamId: first(env, 'VERCEL_TEAM_ID', 'TF_VAR_VERCEL_TEAM_ID'),
     flyToken: first(env, 'FLY_API_TOKEN', 'TF_VAR_FLY_API_TOKEN'),
-    // A personal access token on a ZITADEL machine user. Not the
-    // ZITADEL_<ENV>_SERVICE_ACCOUNT_KEY_JSON the estate provisions with -- that
-    // is a JWT profile, which this does not exchange. See R-036.
-    zitadelServiceToken: first(env, 'ZITADEL_SERVICE_TOKEN'),
+    // One personal access token per instance, as ZITADEL_<ENV>_SERVICE_TOKEN.
+    //
+    // Named after the instance because there are four of them. The estate's
+    // ZITADEL_<ENV>_SERVICE_ACCOUNT_KEY_JSON is a different thing -- a JWT
+    // profile, which this does not exchange -- so these are created for the
+    // purpose, the same way koras-control-plane holds one per environment for
+    // its own provisioning.
+    //
+    // A bare ZITADEL_SERVICE_TOKEN is accepted as a fallback for every
+    // environment. That suits a single-instance estate and is wrong for this
+    // one; it is a fallback rather than the documented form for that reason.
+    zitadelServiceTokens: zitadelTokensFromEnv(env),
   }
 }

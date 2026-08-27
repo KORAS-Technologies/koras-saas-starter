@@ -98,6 +98,15 @@ export interface Resource {
    * from a project that has already been deleted, and read as success.
    */
   scope?: string
+  /**
+   * Which environment produced it, where the credential differs per environment.
+   *
+   * Only ZITADEL so far, and not a stylistic choice: dev, test, stg and prod are
+   * four separate ZITADEL instances, each with its own machine user. One token
+   * cannot reach all four however it is obtained, so the token has to be chosen
+   * per resource the way the endpoint already is.
+   */
+  environment?: string
 }
 
 export interface TeardownPlan {

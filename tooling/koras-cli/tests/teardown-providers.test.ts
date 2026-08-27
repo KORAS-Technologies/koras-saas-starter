@@ -36,7 +36,7 @@ const ALL_CREDENTIALS = {
   upstashApiKey: 'up',
   vercelToken: 'vc',
   flyToken: 'fly',
-  zitadelServiceToken: 'zt',
+  zitadelServiceTokens: { dev: 'zt-dev', test: 'zt-test', stg: 'zt-stg', prod: 'zt-prod' },
 }
 
 const OUTPUTS = {
@@ -212,6 +212,7 @@ describe('the delete calls', () => {
       providerId: 'z-dev',
       endpoint: 'https://zitadel-dev.example.invalid/',
       scope: 'org-dev',
+      environment: 'dev',
     })
 
     expect(calls).toHaveLength(1)
@@ -222,7 +223,10 @@ describe('the delete calls', () => {
       'https://zitadel-dev.example.invalid/management/v1/projects/z-dev',
     )
     expect(calls[0]?.headers?.['x-zitadel-orgid']).toBe('org-dev')
-    expect(calls[0]?.headers?.authorization).toBe('Bearer zt')
+    // dev's token, not another instance's. A token from the wrong instance
+    // authenticates against the wrong server, does not find the project, and
+    // answers 404 -- which teardown counts as success.
+    expect(calls[0]?.headers?.authorization).toBe('Bearer zt-dev')
   })
 
   it('refuses a ZITADEL project whose organization is unknown', async () => {
@@ -238,6 +242,7 @@ describe('the delete calls', () => {
         name: 'koras-e2e-shop-zitadel-project-z-dev',
         providerId: 'z-dev',
         endpoint: 'https://zitadel-dev.example.invalid',
+        environment: 'dev',
       }),
     ).rejects.toThrow(/organization/)
     expect(calls, 'it called the API without knowing the org').toEqual([])
@@ -253,9 +258,34 @@ describe('the delete calls', () => {
         name: 'koras-e2e-shop-zitadel-project-z-dev',
         providerId: 'z-dev',
         scope: 'org-dev',
+        environment: 'dev',
       }),
     ).rejects.toThrow(/instance/)
     expect(calls).toEqual([])
+  })
+
+
+  it('refuses a ZITADEL project in an instance it holds no token for', async () => {
+    // The failure this prevents is silent, not loud: reaching for another
+    // instance's token would authenticate, miss the project, and read 404 as
+    // "already gone".
+    const { fetch, calls } = recorder()
+    const deleter = providerDeleters(fetch, {
+      ...ALL_CREDENTIALS,
+      zitadelServiceTokens: { dev: 'zt-dev' },
+    })['zitadel-project']
+
+    await expect(
+      deleter?.({
+        kind: 'zitadel-project',
+        name: 'koras-e2e-shop-zitadel-project-z-stg',
+        providerId: 'z-stg',
+        endpoint: 'https://zitadel-stg.example.invalid',
+        scope: 'org-stg',
+        environment: 'stg',
+      }),
+    ).rejects.toThrow(/ZITADEL_STG_SERVICE_TOKEN/)
+    expect(calls, 'it fell back to another instance token').toEqual([])
   })
 
   it('leaves no kind without a deleter', () => {
