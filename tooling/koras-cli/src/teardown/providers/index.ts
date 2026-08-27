@@ -3,6 +3,9 @@ import type { FetchLike } from '../../doctor/types.js'
 import { HttpError } from '../../doctor/http.js'
 import { del } from '../http.js'
 import { providerId } from '../inventory.js'
+// Reused rather than rewritten as /\/+$/, which is the pattern CodeQL flagged
+// as js/polynomial-redos and this helper exists to replace.
+import { stripTrailingSlashes } from 'create-koras-app/url'
 
 /**
  * The calls that actually delete something.
@@ -32,6 +35,7 @@ export interface ProviderCredentials {
   vercelToken?: string
   vercelTeamId?: string
   flyToken?: string
+  zitadelServiceToken?: string
 }
 
 /** A 404 means the resource is not there, which is the outcome being asked for. */
@@ -162,23 +166,55 @@ export function providerDeleters(
     }
   }
 
+  if (credentials.zitadelServiceToken) {
+    deleters['zitadel-project'] = async (resource: Resource) => {
+      // Two things this deleter needs that no other one does, both from the
+      // inventory rather than from configuration.
+      //
+      // The instance, because ZITADEL is self-hosted per environment: there is
+      // no api.zitadel.com to default to, and a hardcoded base URL would delete
+      // from one environment however many were asked for.
+      //
+      // The organization, because the management API acts in the org of
+      // whoever holds the token. Sent explicitly as x-zitadel-orgid so that a
+      // 404 means the project is gone, which is what deleteOrAlreadyGone reads
+      // it as. Without the header a project in another org answers 404 too, and
+      // teardown would count leaving it behind as having removed it.
+      const kind: ResourceKind = 'zitadel-project'
+      const base = need(resource.endpoint, `a ZITADEL instance URL for ${resource.name}`, kind)
+      const org = need(resource.scope, `a ZITADEL organization for ${resource.name}`, kind)
+
+      await deleteOrAlreadyGone(
+        fetchImpl,
+        `${stripTrailingSlashes(base)}/management/v1/projects/${encodeURIComponent(providerId(resource))}`,
+        {
+          // A personal access token, presented as a bearer token -- the same
+          // way local/zitadel/provision.py talks to this API. The note that
+          // once stood here claimed a service-account JWT exchange was needed.
+          authorization: `Bearer ${need(credentials.zitadelServiceToken, 'ZITADEL_SERVICE_TOKEN', kind)}`,
+          'x-zitadel-orgid': org,
+          accept: 'application/json',
+        },
+      )
+    }
+  }
+
   return deleters
 }
 
 /**
  * Kinds with no deleter, and why.
  *
- * ZITADEL is deliberately absent. Deleting one of its projects needs a token
- * minted from a service-account JWT rather than a bearer token from the
- * environment, which is a different authentication flow from every other
- * provider here and is not worth carrying for a teardown path that has never
- * run. A ZITADEL project left behind costs nothing and is visible in the
- * console; this says so rather than leaving its absence to be noticed.
+ * Empty, and kept. Every kind the inventory can produce is deletable now, but
+ * the mechanism is the reason a gap would ever be visible: a kind with no entry
+ * here and no deleter is one `apply` cannot delete and does not mention.
+ *
+ * ZITADEL was the only occupant. Its recorded reason -- "needs a service-account
+ * JWT exchange rather than a bearer token" -- was wrong, and stayed wrong
+ * because a comment explaining why something is absent is the one claim in a
+ * file like this that no test can contradict. The personal access token the
+ * local provisioner has always sent as `Authorization: Bearer` is accepted by
+ * the same management API. What actually made the delete hard was neither
+ * authentication nor discovery: it was knowing which organization to act in.
  */
-export const UNIMPLEMENTED_KINDS: ReadonlyArray<{ kind: string; reason: string }> = [
-  {
-    kind: 'zitadel-project',
-    reason:
-      'needs a service-account JWT exchange rather than a bearer token; delete it from the ZITADEL console',
-  },
-]
+export const UNIMPLEMENTED_KINDS: ReadonlyArray<{ kind: string; reason: string }> = []

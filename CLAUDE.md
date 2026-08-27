@@ -171,9 +171,12 @@ external skills, and bring an existing project back into alignment.
 
 | Phase | State | Note |
 |-------|-------|------|
-| 13 — End-to-End Acceptance Tests | All but the live apply | Both scenarios automated and passing. The live variant is gated behind `KORAS_E2E_LIVE`, needs an explicit authorisation, **and cannot be cleaned up** — see R-036 |
+| 13 — End-to-End Acceptance Tests | All but the live apply | Both scenarios automated and passing. The live variant is gated behind `KORAS_E2E_LIVE` and needs an explicit authorisation. It can now be torn down: all seven providers have deleters, though none has been run against a real API — see R-036 |
 
-**Open risks:** R-036 only (a live acceptance run cannot be torn down).
+**Open risks:** R-036 only, and narrowed: teardown covers all seven providers,
+but every one of them has only ever been exercised against an injected `fetch`.
+A green suite says the requests are shaped as the APIs document, not that any
+API accepts them.
 R-031 stands accepted with mitigation.
 
 **Next step:** the `--with` / `--without` paths through the generator are

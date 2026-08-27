@@ -18,6 +18,23 @@ export interface ProvisionOutputsLike {
   dopplerProject: string
   supabaseProjectRefs: Record<string, string>
   zitadelProjectIds: Record<string, string>
+  /**
+   * Required, for the reason redisDatabaseIds below is.
+   *
+   * A ZITADEL project id is not enough to delete by. Without the organization
+   * the delete lands in whichever one the token belongs to, and an id that is
+   * not there answers 404 -- which this code reads as "already gone" and counts
+   * as a success. Optional would mean every caller could omit it and get that
+   * outcome silently.
+   */
+  zitadelOrgIds: Record<string, string>
+  /**
+   * Which instance holds each environment's project.
+   *
+   * Required for the same reason: ZITADEL is self-hosted per environment, so
+   * there is no single API to fall back to.
+   */
+  zitadelDomains: Record<string, string>
   vercelProjectIds: Record<string, string>
   flyApps: string[]
   /**
@@ -57,15 +74,28 @@ const ORDER: ResourceKind[] = [
 export function inventoryFromOutputs(outputs: ProvisionOutputsLike): Resource[] {
   const found: Resource[] = []
 
-  const add = (kind: ResourceKind, name: string | undefined): void => {
-    if (name && name.trim() !== '') found.push({ kind, name: name.trim() })
+  const add = (
+    kind: ResourceKind,
+    name: string | undefined,
+    extra: { endpoint?: string; scope?: string } = {},
+  ): void => {
+    if (name && name.trim() !== '') found.push({ kind, name: name.trim(), ...extra })
   }
 
   for (const name of outputs.flyApps) add('fly-app', name)
   for (const id of Object.values(outputs.vercelProjectIds)) add('vercel-project', id)
   for (const id of Object.values(outputs.redisDatabaseIds)) add('upstash-database', id)
   for (const ref of Object.values(outputs.supabaseProjectRefs)) add('supabase-project', ref)
-  for (const id of Object.values(outputs.zitadelProjectIds)) add('zitadel-project', id)
+  // Paired by environment, because that is the only thing that relates them.
+  // An environment with a project and no org is kept rather than dropped: it
+  // still needs deleting, and the deleter says so plainly instead of this
+  // silently shortening the inventory.
+  for (const [env, id] of Object.entries(outputs.zitadelProjectIds)) {
+    add('zitadel-project', id, {
+      endpoint: outputs.zitadelDomains[env],
+      scope: outputs.zitadelOrgIds[env],
+    })
+  }
   add('doppler-project', outputs.dopplerProject)
   add('github-repository', outputs.githubRepository)
 

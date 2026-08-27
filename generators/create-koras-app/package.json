@@ -27,6 +27,10 @@
     "./doppler": {
       "types": "./dist/terraform/doppler.d.ts",
       "default": "./dist/terraform/doppler.js"
+    },
+    "./url": {
+      "types": "./dist/url.d.ts",
+      "default": "./dist/url.js"
     }
   },
   "scripts": {

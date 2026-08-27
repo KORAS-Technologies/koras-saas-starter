@@ -98,5 +98,9 @@ export function credentialsFromEnv(env: NodeJS.ProcessEnv = process.env): Provid
     vercelToken: env.VERCEL_API_TOKEN,
     vercelTeamId: env.VERCEL_TEAM_ID,
     flyToken: env.FLY_API_TOKEN,
+    // The same secret the Control Plane provisions ZITADEL with. Deliberately
+    // the same one: a second credential able to delete projects would be a
+    // second thing to rotate and one more to forget.
+    zitadelServiceToken: env.ZITADEL_SERVICE_TOKEN,
   }
 }

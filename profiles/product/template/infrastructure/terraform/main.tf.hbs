@@ -78,6 +78,12 @@ output "zitadel_project_ids" {
   value = module.bootstrap.zitadel_project_ids
 }
 
+# Needed only by teardown, and needed absolutely: a project id identifies
+# nothing without the organization it lives in. See the module output.
+output "zitadel_resolved_org_ids" {
+  value = module.bootstrap.zitadel_resolved_org_ids
+}
+
 output "zitadel_client_ids" {
   sensitive = true
   value     = module.bootstrap.zitadel_client_ids

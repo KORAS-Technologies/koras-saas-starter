@@ -29,6 +29,30 @@ output "zitadel_project_ids" {
   }
 }
 
+output "zitadel_resolved_org_ids" {
+  description = <<-EOT
+    Map of env → the organization each ZITADEL project was created in.
+
+    Not `zitadel_org_ids`, which is the *variable* above and means something
+    narrower: the orgs an operator named. This is what each module resolved --
+    the named one where there was one, the discovered one everywhere else. One
+    name for both would make the difference invisible at exactly the point it
+    matters.
+
+    Paired with zitadel_project_ids, and useless apart from it: a project id
+    identifies nothing without the org it lives in. Teardown sends both, because
+    a management-API delete aimed at the wrong organization answers 404 rather
+    than failing, and 404 is how teardown recognises a resource that is already
+    gone.
+  EOT
+  value = {
+    dev  = module.zitadel_dev.org_id
+    test = module.zitadel_test.org_id
+    stg  = module.zitadel_stg.org_id
+    prod = module.zitadel_prod.org_id
+  }
+}
+
 output "zitadel_client_ids" {
   description = "Map of env → OIDC client ID (non-secret)"
   sensitive   = true

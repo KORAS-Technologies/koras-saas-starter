@@ -318,7 +318,8 @@ resources. `-` reads stdin and keeps it out of the filesystem. R-041.
 **Credentials come from Doppler.** Teardown does not re-exec itself under
 `doppler run` the way `--provision` does, so the wrapper is typed by hand. It
 reads `GITHUB_TOKEN`, `DOPPLER_TOKEN`, `SUPABASE_ACCESS_TOKEN`, `UPSTASH_EMAIL`,
-`UPSTASH_API_KEY`, `VERCEL_API_TOKEN`, `VERCEL_TEAM_ID` and `FLY_API_TOKEN`. A
+`UPSTASH_API_KEY`, `VERCEL_API_TOKEN`, `VERCEL_TEAM_ID`, `FLY_API_TOKEN` and
+`ZITADEL_SERVICE_TOKEN`. A
 missing one is named once, at the top, and its resources are skipped rather than
 failed.
 
@@ -329,14 +330,27 @@ failed.
 
 | Left behind | Why | Where |
 |-------------|-----|-------|
-| ZITADEL projects | Its API needs a service-account JWT exchange rather than a bearer token, which no other provider here uses | Each instance's console, project `<project>` |
 | HCP Terraform workspace | Holds the state of what was just deleted. Terraform is never invoked by teardown, so nothing removes it | app.terraform.io, workspace `<project>` |
 | The generated directory | It is yours, on your disk | `rm -rf ../output/<project>` |
 
-The first is reported as `skipped` with its reason on every run rather than
-omitted, because an inventory that quietly leaves out a provider reports a
-complete teardown while resources stay alive. That happened to Upstash, which
-was absent from the inventory entirely until R-040.
+ZITADEL projects used to be on this list, on the stated grounds that their API
+needed a service-account JWT exchange. It does not: the same personal access
+token the local provisioner sends as a bearer token works, and it is the one the
+estate already holds as `ZITADEL_SERVICE_TOKEN`. Set that variable and the
+projects are deleted with everything else; leave it unset and they are reported
+as skipped, like any other missing credential.
+
+The genuine difficulty was never authentication. ZITADEL projects belong to an
+organization, and its management API acts in the organization of whoever holds
+the token — so in an instance with more than one, a delete aimed at the wrong
+org answers **404**, which teardown reads as "already gone" and counts as
+success. Teardown therefore sends the organization explicitly, taken from the
+`zitadel_resolved_org_ids` output rather than assumed.
+
+Anything without a deleter is reported as `skipped` with its reason on every
+run rather than omitted, because an inventory that quietly leaves out a provider
+reports a complete teardown while resources stay alive. That happened to
+Upstash, which was absent from the inventory entirely until R-040.
 
 ### If something fails
 

@@ -36,6 +36,7 @@ const ALL_CREDENTIALS = {
   upstashApiKey: 'up',
   vercelToken: 'vc',
   flyToken: 'fly',
+  zitadelServiceToken: 'zt',
 }
 
 const OUTPUTS = {
@@ -43,6 +44,8 @@ const OUTPUTS = {
   dopplerProject: 'koras-e2e-shop',
   supabaseProjectRefs: { dev: 'ref-dev', prod: 'ref-prod' },
   zitadelProjectIds: { dev: 'z-dev' },
+  zitadelOrgIds: { dev: 'org-dev' },
+  zitadelDomains: { dev: 'https://zitadel-dev.example.invalid/' },
   vercelProjectIds: { 'web-dev': 'prj_a' },
   flyApps: ['koras-e2e-shop-api-dev'],
   redisDatabaseIds: { dev: 'redis-dev' },
@@ -54,6 +57,8 @@ const REAL_OUTPUTS = {
   dopplerProject: 'docoris',
   supabaseProjectRefs: { dev: 'ref-dev', prod: 'ref-prod' },
   zitadelProjectIds: { dev: 'z-dev' },
+  zitadelOrgIds: { dev: 'org-dev' },
+  zitadelDomains: { dev: 'https://zitadel-dev.example.invalid/' },
   vercelProjectIds: { 'web-dev': 'prj_a' },
   flyApps: ['docoris-api-dev'],
   redisDatabaseIds: { dev: 'redis-dev' },
@@ -191,10 +196,73 @@ describe('the delete calls', () => {
     expect(deleters['supabase-project']).toBeUndefined()
   })
 
-  it('offers none for ZITADEL, and says why', () => {
-    const { fetch } = recorder()
-    expect(providerDeleters(fetch, ALL_CREDENTIALS)['zitadel-project']).toBeUndefined()
-    expect(UNIMPLEMENTED_KINDS.find((u) => u.kind === 'zitadel-project')?.reason).toMatch(/JWT/)
+  it('deletes a ZITADEL project in the organization the inventory names', async () => {
+    // The organization is the whole reason this deleter was hard. ZITADEL's
+    // management API acts in the org of whoever holds the token, and this
+    // estate has two: without the header, a project in the other one answers
+    // 404, which deleteOrAlreadyGone reads as "already gone". The teardown
+    // would report success and leave the project standing.
+    const { fetch, calls } = recorder()
+    const deleter = providerDeleters(fetch, ALL_CREDENTIALS)['zitadel-project']
+    expect(deleter, 'no ZITADEL deleter').toBeDefined()
+
+    await deleter?.({
+      kind: 'zitadel-project',
+      name: 'koras-e2e-shop-zitadel-project-z-dev',
+      providerId: 'z-dev',
+      endpoint: 'https://zitadel-dev.example.invalid/',
+      scope: 'org-dev',
+    })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.method).toBe('DELETE')
+    // The instance from the inventory, not a constant, and exactly one slash
+    // between base and path.
+    expect(calls[0]?.url).toBe(
+      'https://zitadel-dev.example.invalid/management/v1/projects/z-dev',
+    )
+    expect(calls[0]?.headers?.['x-zitadel-orgid']).toBe('org-dev')
+    expect(calls[0]?.headers?.authorization).toBe('Bearer zt')
+  })
+
+  it('refuses a ZITADEL project whose organization is unknown', async () => {
+    // An environment that produced a project id but no org id. Deleting anyway
+    // would aim at whichever org the token belongs to; dropping it from the
+    // inventory would hide it. Failing loudly is the only honest option.
+    const { fetch, calls } = recorder()
+    const deleter = providerDeleters(fetch, ALL_CREDENTIALS)['zitadel-project']
+
+    await expect(
+      deleter?.({
+        kind: 'zitadel-project',
+        name: 'koras-e2e-shop-zitadel-project-z-dev',
+        providerId: 'z-dev',
+        endpoint: 'https://zitadel-dev.example.invalid',
+      }),
+    ).rejects.toThrow(/organization/)
+    expect(calls, 'it called the API without knowing the org').toEqual([])
+  })
+
+  it('refuses a ZITADEL project whose instance is unknown', async () => {
+    const { fetch, calls } = recorder()
+    const deleter = providerDeleters(fetch, ALL_CREDENTIALS)['zitadel-project']
+
+    await expect(
+      deleter?.({
+        kind: 'zitadel-project',
+        name: 'koras-e2e-shop-zitadel-project-z-dev',
+        providerId: 'z-dev',
+        scope: 'org-dev',
+      }),
+    ).rejects.toThrow(/instance/)
+    expect(calls).toEqual([])
+  })
+
+  it('leaves no kind without a deleter', () => {
+    // UNIMPLEMENTED_KINDS is empty now. It is kept because it is the only way a
+    // future gap becomes visible rather than silent, and this asserts the
+    // current state rather than the mechanism's removal.
+    expect(UNIMPLEMENTED_KINDS).toEqual([])
   })
 })
 

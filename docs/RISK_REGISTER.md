@@ -238,7 +238,7 @@ branding" there.
 | R-034 | No rate limiting in the generated API        | 12       | Resolved                 |
 | R-035 | `pnpm test` reported a cached pass           | 16       | Resolved                 |
 | R-031 | vitest advisories; the fix breaks the suite  | 12       | Accepted with mitigation |
-| R-036 | A live acceptance run cannot be cleaned up   | 12       | Partially resolved       |
+| R-036 | A live acceptance run cannot be cleaned up   | 12       | Unverified against providers |
 | R-037 | Typecheck ignored the error it needed to report | 12    | Resolved                 |
 | R-038 | Drift reported every optional component      | 9        | Resolved                 |
 | R-039 | ZITADEL module could not create a new project | 16      | Resolved                 |
@@ -1483,16 +1483,54 @@ reports a dry run and issues nothing.
 
 **What is still open:**
 
-1. **ZITADEL has no deleter.** Its API needs a service-account JWT exchange
-   rather than a bearer token, which is a different flow from every other
-   provider here. Reported as skipped with that reason rather than omitted, so
-   a teardown does not claim to be complete when projects remain.
+1. ~~**ZITADEL has no deleter.** Its API needs a service-account JWT exchange
+   rather than a bearer token.~~ **Wrong, and built 2026-08-27.**
+
+   There is no JWT exchange. `local/zitadel/provision.py` has always talked to
+   the same management API with `Authorization: Bearer <personal access token>`,
+   and the token in question — `ZITADEL_SERVICE_TOKEN` — is one the estate
+   already holds. The stated blocker was never tested because it was not a
+   claim about behaviour; it was a comment explaining an absence, and the one
+   sentence in a file of tested code that nothing could contradict.
+
+   It surfaced sideways. A reader asked why a Doppler secret was missing, the
+   audit of that config turned up `ZITADEL_SERVICE_TOKEN`, and reading what it
+   was for is what showed the comment to be false. Nobody was looking at
+   teardown.
+
+   The real difficulty was elsewhere, and unstated: **which organization to act
+   in**. ZITADEL projects are org-scoped and the management API acts in the org
+   of whoever holds the token. This estate has two active organizations, so a
+   delete aimed at the wrong one returns 404 — indistinguishable from a project
+   that is already gone, which teardown counts as success. The failure mode was
+   not "cannot delete"; it was "reports having deleted".
+
+   So the org travels with the resource: `zitadel_resolved_org_ids` is a new
+   root output, paired by environment with `zitadel_project_ids`, and the
+   deleter sends it as `x-zitadel-orgid`. The instance URL travels the same way
+   — ZITADEL is self-hosted per environment, so there is no single API to
+   default to. A project whose org or instance is unknown is refused loudly
+   rather than deleted hopefully or dropped from the inventory.
+
+   `UNIMPLEMENTED_KINDS` is now empty and kept: it is the mechanism by which a
+   future gap is visible rather than silent.
 2. **`prevent_destroy` is untouched.** It is irrelevant to the API-based path
    above, which never invokes Terraform — but `terraform destroy` still fails on
    five resource types, so anyone reaching for it will be stopped.
 3. **Nothing has been run against a real provider.** Every test injects a
    `fetch` double. A green suite means the requests are shaped as the API
-   documents; it does not mean any provider accepts them.
+   documents; it does not mean any provider accepts them. This is the last
+   thing standing between R-036 and closed, and it is the one item on this list
+   that no amount of test-writing can retire.
+
+4. **A general form of R-040 is now closed.** `parseTerraformOutputs` reads
+   each value by name and returns empty when it is absent — correct, because a
+   provision that made no Vercel projects should not throw, and indistinguishable
+   from a typo. That tolerance is what made `redis_database_ids` return `{}`
+   forever. `terraform-output-names.test.ts` now compares the names the parser
+   reads against the outputs both profile roots emit, so a name nobody exports
+   fails instead of parsing as nothing. Mutation-checked: renaming one output by
+   a single character fails three assertions.
 4. ~~The GitHub token cannot delete repositories.~~ **Wrong, corrected
    2026-08-25.** `delete_repo` is the *classic* token scope name; the estate
    uses a fine-grained token, where repository deletion falls under

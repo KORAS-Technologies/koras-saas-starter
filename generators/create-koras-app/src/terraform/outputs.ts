@@ -25,6 +25,16 @@ export interface ProvisionOutputs {
   dopplerProject: string
   supabaseProjectRefs: Record<string, string>
   zitadelProjectIds: Record<string, string>
+  /**
+   * The organization each ZITADEL project lives in.
+   *
+   * Carried beside the project ids rather than looked up, because it cannot be
+   * looked up: a management-API call acts in the organization of whoever holds
+   * the token unless told otherwise, and this estate has more than one.
+   */
+  zitadelOrgIds: Record<string, string>
+  /** Base URL of the ZITADEL instance each environment uses. */
+  zitadelDomains: Record<string, string>
   vercelProjectIds: Record<string, string>
   flyApps: string[]
   /**
@@ -85,6 +95,8 @@ export function parseTerraformOutputs(json: string): ProvisionOutputs {
     dopplerProject: asString('doppler_project_name'),
     supabaseProjectRefs: asStringMap('supabase_project_refs'),
     zitadelProjectIds: asStringMap('zitadel_project_ids'),
+    zitadelOrgIds: asStringMap('zitadel_resolved_org_ids'),
+    zitadelDomains: asStringMap('zitadel_domains'),
     vercelProjectIds: asStringMap('vercel_project_ids'),
     flyApps: Object.values(flyAppNames).sort(),
     redisDatabaseIds: asStringMap('redis_database_ids'),

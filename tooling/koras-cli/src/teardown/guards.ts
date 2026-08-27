@@ -41,9 +41,14 @@ export const PROTECTED_NAMES = [
 /**
  * The kinds a provision creates.
  *
- * `zitadel-project` is listed although nothing deletes it: an inventory that
- * omits it would report a complete teardown while leaving projects behind. It
- * is reported as skipped, with the reason, which is the honest outcome.
+ * `zitadel-project` was listed here for a while with nothing to delete it, so
+ * that an inventory could not report a complete teardown while leaving projects
+ * behind. It has a deleter now, and the reason it did not is worth keeping: the
+ * blocker recorded was "needs a service-account JWT exchange rather than a
+ * bearer token", and that was simply untrue -- the same personal access token
+ * the local provisioner already sends as `Authorization: Bearer` works against
+ * the management API. Nothing tested the claim because nothing could: it was a
+ * comment explaining an absence.
  */
 export type ResourceKind =
   | 'github-repository'
@@ -74,6 +79,25 @@ export interface Resource {
    * name. Two meanings in one string is how that mistake gets made.
    */
   providerId?: string
+  /**
+   * Which instance the call goes to, for a provider that is not one global API.
+   *
+   * Every other provider here has a single endpoint, so the base URL is a
+   * constant in the deleter. ZITADEL is self-hosted per environment, so the
+   * inventory has to say which of four instances a project belongs to; a
+   * constant would delete from whichever one was hardcoded.
+   */
+  endpoint?: string
+  /**
+   * The account or organization the call must act in.
+   *
+   * Only meaningful where the credential's own default context is not the right
+   * one, which so far is ZITADEL alone. Its management API acts in the
+   * organization of whoever holds the token, and an instance with two
+   * organizations answers 404 for a project in the other -- indistinguishable
+   * from a project that has already been deleted, and read as success.
+   */
+  scope?: string
 }
 
 export interface TeardownPlan {
