@@ -26,7 +26,21 @@
 # organization per instance is the estate's arrangement; `var.org_id` overrides
 # it where that does not hold, and the precondition below names which case it is
 # rather than failing on a null further down.
+# Skipped entirely when `org_id` is given. Discovery is a fallback for an
+# operator who has not said which organization to build in, and asking anyway is
+# not free: these are live calls to an instance that may be asleep, restarting,
+# or behind a gateway having a bad minute.
+#
+# It cost a plan. One environment's ZITADEL answered 503 with an HTML error page
+# and `terraform plan` failed for the whole estate -- on a lookup whose only
+# purpose was to put organization *names* into an error message that was not
+# going to be shown, because the org was already known. Four instances meant
+# four chances for an unrelated one to be down.
+#
+# So: name the org and nothing is queried. This is also why `zitadel_org_ids` is
+# worth setting per environment even where discovery would succeed.
 data "zitadel_orgs" "this" {
+  count = var.org_id == null ? 1 : 0
   state = "ORG_STATE_ACTIVE"
 }
 
@@ -34,12 +48,12 @@ data "zitadel_orgs" "this" {
 # the error message rather than from a trip to the console. Two ids alone say
 # nothing about which organization is which.
 data "zitadel_org" "discovered" {
-  for_each = toset(data.zitadel_orgs.this.ids)
+  for_each = toset(local.discovered_org_ids)
   id       = each.key
 }
 
 locals {
-  discovered_org_ids = data.zitadel_orgs.this.ids
+  discovered_org_ids = var.org_id == null ? data.zitadel_orgs.this[0].ids : []
 
   discovered_orgs = [
     for id in local.discovered_org_ids :

@@ -197,6 +197,14 @@ Organization identifiers, four database passwords, and one domain plus one
 service-account key per ZITADEL instance. All are listed in
 BOOTSTRAP_DOCTOR.md and validated by the doctor.
 
+**Set `org_id` on every ZITADEL instance, not just the ambiguous ones.** The
+module can discover the organization when an instance holds exactly one, and
+that fallback is a live API call per instance made on every plan. An instance
+that is asleep, restarting, or behind a gateway returning 503 fails the plan for
+the whole estate — including the three environments that were fine — on a lookup
+whose only purpose is to name organizations in an error message. Naming the org
+skips the call entirely.
+
 ---
 
 ## 3. When it fails
@@ -293,38 +301,106 @@ The control-plane profile differs only in its component set: two applications
 Only for projects named `koras-e2e-...`. Every guard in `koras teardown` refuses
 anything else by name, and a real estate is refused even with deletion enabled.
 
-### The sequence
+### Before you start
+
+Three things, none of which the command checks for you:
+
+1. **You are in the starter.** Every command below runs from
+   `C:\repos\Projects\koras-saas-starter`. The generated project lives beside
+   it, at `../output/<project>/`, and you never `cd` into it.
+2. **The project is named `koras-e2e-something`.** The guards refuse every other
+   name, deletion enabled or not. This is the safety mechanism, not a
+   convention.
+3. **`ZITADEL_SERVICE_TOKEN` is set in the bootstrap Doppler project.** If it is
+   missing, ZITADEL is *skipped* rather than failed — the run finishes, says so
+   once at the top, and looks successful while the projects are still there.
+
+### Step 1 — see what exists, delete nothing
 
 ```bash
-# 1. Read the outputs and hand them straight to teardown. Nothing on disk.
 terraform -chdir=../output/<project>/infrastructure/terraform output -json \
   | pnpm koras teardown <project> -
+```
 
-# 2. The same command with deletion enabled. It asks for the project name.
+This is a dry run. Not because of a flag you passed, but because
+`KORAS_E2E_TEARDOWN` is unset, which is the default — you have to go out of your
+way to delete. It prints every resource it found, grouped by provider, and
+issues no requests.
+
+**Read that list before going further.** You are checking two things: that the
+count looks like a whole estate rather than part of one, and that nothing is
+reported as skipped for a missing credential.
+
+### Step 2 — delete
+
+Same command, with deletion enabled and the credentials in scope:
+
+```bash
 KORAS_E2E_TEARDOWN=1 doppler run --project koras-platform-bootstrap --config prod -- \
   bash -c 'terraform -chdir=../output/<project>/infrastructure/terraform output -json \
     | pnpm koras teardown <project> -'
 ```
 
-Step 1 is a dry run because `KORAS_E2E_TEARDOWN` is unset — that is the default
-and needs no flag. Read the list before enabling anything.
+It stops and asks you to type the project name. Not `yes` — the name. Anything
+else cancels, and there is no `--yes` or `--force` to get past it.
 
-**Pipe, do not write a file.** `terraform output -json` includes the values of
-outputs marked sensitive, so the file it writes holds live credentials: Upstash
+### Step 3 — check the consoles yourself, this once
+
+Teardown treats **404 as success**, because a resource that is already gone
+satisfies the request and re-running after a partial teardown has to work. The
+cost is that "I deleted it" and "it was never there" print the same.
+
+That is fine once the path is proven. It is not fine the first time, because no
+deleter here has ever run against a real API — only against a test double. So on
+the first live run, open each console and look:
+
+| Provider | What to look for |
+|----------|------------------|
+| GitHub | the repository is gone |
+| Supabase | four projects gone — these bill |
+| Upstash | four databases gone — these bill |
+| Vercel | the projects are gone |
+| Fly.io | the apps are gone |
+| Doppler | the project, and its configs with it |
+| ZITADEL | the project in **each** instance's console |
+
+ZITADEL is the one to check hardest. Its delete is the newest, and a wrong
+organization answers 404 — which reads as success.
+
+### Step 4 — the three things teardown never touches
+
+```bash
+# 1. The HCP Terraform workspace, at app.terraform.io. Delete it by hand.
+# 2. The generated directory, which is yours:
+rm -rf ../output/<project>
+# 3. Nothing else. There is no fourth.
+```
+
+### If a step fails
+
+A failure does not stop the rest, and each resource reports its own outcome.
+Re-run the same command: an already-deleted resource answers 404, which counts
+as success, so a second run finishes what a partial one started.
+
+A resource that fails repeatedly is deleted from its provider's console. The
+inventory comes from Terraform's outputs, so the names and ids in the report are
+the ones the provider knows it by.
+
+### The two rules worth not forgetting
+
+**Pipe, never write a file.** `terraform output -json` includes the values of
+outputs marked sensitive, so the file it writes holds live credentials — Upstash
 URLs with their passwords, ZITADEL client secrets. One was committed to this
 public repository on 2026-08-26 and had to be rotated by destroying the
-resources. `-` reads stdin and keeps it out of the filesystem. R-041.
+resources it belonged to. `-` reads stdin and keeps it off the disk entirely.
+R-041.
 
-**Credentials come from Doppler.** Teardown does not re-exec itself under
-`doppler run` the way `--provision` does, so the wrapper is typed by hand. It
-reads `GITHUB_TOKEN`, `DOPPLER_TOKEN`, `SUPABASE_ACCESS_TOKEN`, `UPSTASH_EMAIL`,
+**Credentials come from Doppler, and the wrapper is typed by hand.** Teardown
+does not re-exec itself under `doppler run` the way `--provision` does. It reads
+`GITHUB_TOKEN`, `DOPPLER_TOKEN`, `SUPABASE_ACCESS_TOKEN`, `UPSTASH_EMAIL`,
 `UPSTASH_API_KEY`, `VERCEL_API_TOKEN`, `VERCEL_TEAM_ID`, `FLY_API_TOKEN` and
-`ZITADEL_SERVICE_TOKEN`. A
-missing one is named once, at the top, and its resources are skipped rather than
-failed.
-
-**It asks for the project name**, not `yes`. Anything else cancels. There is no
-`--yes` and no `--force`.
+`ZITADEL_SERVICE_TOKEN`. A missing one is named once, at the top, and its
+resources are skipped rather than failed.
 
 ### What it does not delete
 
@@ -351,16 +427,6 @@ Anything without a deleter is reported as `skipped` with its reason on every
 run rather than omitted, because an inventory that quietly leaves out a provider
 reports a complete teardown while resources stay alive. That happened to
 Upstash, which was absent from the inventory entirely until R-040.
-
-### If something fails
-
-A failure does not stop the rest, and each resource reports its own outcome.
-Re-running is safe: an already-deleted resource answers 404, which counts as
-success, so a second run finishes what a partial one started.
-
-A resource that fails repeatedly is deleted from its provider's console. The
-inventory comes from Terraform's outputs, so the names and ids in the report are
-the ones the provider knows.
 
 ---
 
