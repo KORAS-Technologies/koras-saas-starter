@@ -253,7 +253,7 @@ than restarting. Fix the cause, then run step 4.
 | `403` on `GET /repos/{org}/{repo}/git/ref/heads/main` | Token lacks repository **Contents** | Add Contents: Read and write |
 | `403` creating `github_repository_environment` | Token lacks repository **Environments** | Add Environments: Read and write |
 | Vercel `repo_not_found` for a repository that exists | Vercel GitHub App not installed on the org | Install it for the organization |
-| `/bin/bash: terraform: command not found` and `/mnt/c/...: exec: node: not found` | The Git Bash command was run from PowerShell, where `bash` is WSL's bash — a different machine with a different PATH | Use the PowerShell form in §5, which runs `pwsh` as the inner shell |
+| `/bin/bash: terraform: command not found` and `/mnt/c/...: exec: node: not found` | A `bash -c '...'` command was run from PowerShell, where `bash` is WSL's bash — a different machine with a different PATH. The `/mnt/c/` prefix is the tell | §5 no longer wraps anything in `bash -c`; its commands are the same in both shells. If you are running an older copy of a command, use the current one |
 | Vercel `internal_server_error - An unexpected internal error occurred` on *some* projects | Vercel's own 500, not the configuration. Eight projects are created at once and a few can fail under that concurrency; the ones that fail differ only by which they were | Re-run the apply; Terraform creates only what is missing. Seen 2026-08-27: six of eight succeeded, `web-stg` and `admin-stg` failed, and one retry created both with no change to the configuration. Confirmed transient |
 | `Invalid Attribute Value Match` on a Vercel or Fly name | Fixed — component keys are hyphenated in the modules | Update the generated project's `modules/` copy, or regenerate |
 | `pipefail: invalid option name` from `make` | Fixed — shell scripts are pinned to LF | Regenerate, or convert CRLF to LF in place |
@@ -354,36 +354,30 @@ Three things, none of which the command checks for you:
 
 ### Step 1 — see what exists, delete nothing
 
-**Run from the starter**, `C:\repos\Projects\koras-saas-starter`. Not from the
-generated project — the path below is relative to the starter, and `pnpm koras`
-resolves from there.
-
-Credentials have to be in scope or every provider reports as skipped, which
-tells you nothing:
-
-Git Bash:
+**Run from the starter**, `C:\repos\Projects\koras-saas-starter`. Identical in
+Git Bash and PowerShell:
 
 ```bash
-doppler run --project koras-platform-bootstrap --config prod -- \
-  pnpm koras teardown <project> --terraform ../output/<project>/infrastructure/terraform
+pnpm koras teardown <project> --project-path ../output/<project>
 ```
 
-PowerShell — the same command; nothing needs quoting because there is no
-`-chdir` on the command line any more:
+**No `doppler run` wrapper.** Teardown fetches its own credentials by
+re-running itself under `doppler run --project koras-platform-bootstrap --config
+prod`, exactly as `bootstrap:doctor` does, and says so on stdout when it happens.
+An outer wrapper is detected rather than nested, so one typed by hand still
+works — it is just never necessary. This was the last command in the repository
+still asking for one.
 
-```powershell
-doppler run --project koras-platform-bootstrap --config prod -- `
-  pnpm koras teardown <project> --terraform ../output/<project>/infrastructure/terraform
-```
+`--project-path` takes the **generated project**, not its Terraform directory.
+Teardown appends `infrastructure/terraform` itself and runs
+`terraform output -json` there. That is not only about typing: the outputs
+include the values of outputs marked sensitive, so they must not reach disk —
+and must not reach *stdin* either, which is why they are no longer piped in. See
+step 2.
 
 This is a dry run. Not because of a flag you passed, but because
 `KORAS_E2E_TEARDOWN` is unset, which is the default — you have to go out of your
 way to delete.
-
-**`--terraform` runs `terraform output -json` for you**, in the directory you
-name. That matters for more than typing: the outputs include the values of
-outputs marked sensitive, so they must never reach disk, and they must not reach
-*stdin* either — see step 2.
 
 **Read the list before going further.** Two things: the count looks like a whole
 estate rather than part of one, and nothing is skipped for a missing credential.
@@ -392,13 +386,12 @@ exist afterwards.
 
 ### Step 2 — delete
 
-Same command with `KORAS_E2E_TEARDOWN=1`.
+The same command with `KORAS_E2E_TEARDOWN=1`.
 
 Git Bash:
 
 ```bash
-KORAS_E2E_TEARDOWN=1 doppler run --project koras-platform-bootstrap --config prod -- \
-  pnpm koras teardown <project> --terraform ../output/<project>/infrastructure/terraform
+KORAS_E2E_TEARDOWN=1 pnpm koras teardown <project> --project-path ../output/<project>
 ```
 
 PowerShell — `VAR=1 cmd` is not PowerShell syntax; set it on `$env:` first, and
@@ -406,8 +399,7 @@ clear it afterwards so the next dry run is still a dry run:
 
 ```powershell
 $env:KORAS_E2E_TEARDOWN = "1"
-doppler run --project koras-platform-bootstrap --config prod -- `
-  pnpm koras teardown <project> --terraform ../output/<project>/infrastructure/terraform
+pnpm koras teardown <project> --project-path ../output/<project>
 Remove-Item Env:\KORAS_E2E_TEARDOWN
 ```
 
@@ -424,18 +416,14 @@ terraform -chdir=... output -json | pnpm koras teardown <project> -
 
 The JSON arrives on stdin and is read to end-of-file. The prompt then reads the
 same stdin, gets the empty string, and cancels. It looked like the command
-ignoring the operator. Piping is now refused outright when deletion is enabled,
-with a message pointing here; `-` still works for listing, and for scripts that
-already hold the JSON.
+ignoring the operator. Piping is refused outright when deletion is enabled, with
+a message pointing here; `-` still lists, and still suits a script that already
+holds the JSON.
 
-Two related traps if you are assembling a command by hand:
-
-- `KORAS_E2E_TEARDOWN=1 terraform ... | pnpm koras ...` sets the variable on
-  **terraform**, not on teardown. In a pipeline the prefix applies to the first
-  command only.
-- In PowerShell, `bash` is WSL's bash — a different machine with a different
-  PATH. `terraform: command not found` followed by `/mnt/c/...: exec: node: not
-  found` is that, not a broken install.
+One trap if you are assembling a command by hand:
+`KORAS_E2E_TEARDOWN=1 terraform ... | pnpm koras ...` sets the variable on
+**terraform**, not on teardown — in a pipeline the prefix applies to the first
+command only.
 
 ### Step 3 — check the consoles yourself, this once
 
@@ -488,8 +476,9 @@ public repository on 2026-08-26 and had to be rotated by destroying the
 resources it belonged to. `-` reads stdin and keeps it off the disk entirely.
 R-041.
 
-**Credentials come from Doppler, and the wrapper is typed by hand.** Teardown
-does not re-exec itself under `doppler run` the way `--provision` does. It reads
+**Credentials come from Doppler, and teardown fetches them itself.** It
+re-execs under `doppler run` the way `--provision` and `bootstrap:doctor` do, so
+no wrapper is typed. It reads
 `GITHUB_TOKEN`, `DOPPLER_TOKEN`, `SUPABASE_ACCESS_TOKEN`, `UPSTASH_EMAIL`,
 `UPSTASH_API_KEY`, `VERCEL_API_TOKEN`, `VERCEL_TEAM_ID`, `FLY_API_TOKEN` and
 `ZITADEL_SERVICE_TOKEN`. A missing one is named once, at the top, and its

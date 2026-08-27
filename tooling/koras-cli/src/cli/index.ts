@@ -3,6 +3,7 @@ import { teardown, credentialsFromEnv } from '../teardown/run.js'
 import { inventoryFromOutputs, qualify } from '../teardown/inventory.js'
 import { parseTerraformOutputs } from 'create-koras-app/terraform-outputs'
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { BOOTSTRAP_DOPPLER_CONFIG, BOOTSTRAP_DOPPLER_PROJECT } from '../doctor/env.js'
 import { preflightInputs } from 'create-koras-app/terraform'
@@ -22,11 +23,14 @@ COMMANDS:
   bootstrap:doctor           Check that every bootstrap integration is configured
                              and reachable. Read-only.
 
-  teardown <project> --terraform <dir>
+  teardown <project> --project-path <dir>
                              Remove the infrastructure of an acceptance run.
-                             Runs terraform output -json in <dir> itself, so
-                             stdin stays free for the confirmation prompt and
-                             no credential is written to disk.
+                             <dir> is the generated project, not its Terraform
+                             directory. Pulls its own credentials from Doppler
+                             and runs terraform output -json itself, so no
+                             wrapper is typed, stdin stays free for the
+                             confirmation prompt, and no credential is written
+                             to disk.
 
                              Lists what it would delete and deletes nothing
                              unless KORAS_E2E_TEARDOWN=1 is set. Only resources
@@ -39,8 +43,12 @@ COMMANDS:
                              nothing to read the answer from.
 
 EXAMPLES:
-  doppler run --project ${BOOTSTRAP_DOPPLER_PROJECT} --config ${BOOTSTRAP_DOPPLER_CONFIG} -- \\
-    pnpm koras bootstrap:doctor
+  pnpm koras bootstrap:doctor
+  pnpm koras teardown koras-e2e-shop --project-path ../output/koras-e2e-shop
+
+Both fetch what they need from Doppler (${BOOTSTRAP_DOPPLER_PROJECT} /
+${BOOTSTRAP_DOPPLER_CONFIG}) by re-running themselves under it. Do not type a
+wrapper; an outer one is detected rather than nested.
 
 Exits 0 when every integration passes, 1 otherwise.
 See docs/PROVISIONING_RUNBOOK.md for what each check requires of the estate.
@@ -56,6 +64,31 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   }
 
   if (command === 'teardown') {
+    // Same contract as bootstrap:doctor, and the same reason. The repository
+    // rule is that credentials are pulled from Doppler by the CLI itself and no
+    // wrapper is typed; teardown was the one command still asking for one, so
+    // the documented command carried a `doppler run ... --` prefix that every
+    // other command had stopped needing.
+    //
+    // `stdio: 'inherit'` matters more here than for the doctor: the child has
+    // to inherit a real terminal or the confirmation prompt cannot be answered.
+    if (
+      shouldReexecUnderDoppler({
+        required: true,
+        satisfied: hasTeardownCredentials(),
+      })
+    ) {
+      const location = {
+        project: process.env.DOPPLER_PROJECT ?? BOOTSTRAP_DOPPLER_PROJECT,
+        config: process.env.DOPPLER_CONFIG ?? BOOTSTRAP_DOPPLER_CONFIG,
+      }
+      try {
+        process.exit(await reexecUnderDoppler(location, process.argv))
+      } catch {
+        console.error(dopplerUnavailableMessage(location))
+        process.exit(1)
+      }
+    }
     process.exit(await runTeardown(args.slice(1)))
   }
 
@@ -87,7 +120,29 @@ export async function run(argv: string[] = process.argv): Promise<void> {
 }
 
 /**
- * `koras teardown <project> [outputs.json]`
+ * Are the provider credentials already in the environment?
+ *
+ * Deliberately not "are they all there". A partial set is a real situation --
+ * an operator with GITHUB_TOKEN exported and nothing else -- and the honest
+ * answer is to fetch the rest rather than to proceed and report five providers
+ * as skipped. One missing credential means one provider silently survives, so
+ * the bar for skipping the fetch is that nothing is missing.
+ */
+function hasTeardownCredentials(): boolean {
+  const c = credentialsFromEnv()
+  return Boolean(
+    c.githubToken &&
+      c.dopplerToken &&
+      c.supabaseToken &&
+      c.upstashEmail &&
+      c.upstashApiKey &&
+      c.vercelToken &&
+      c.flyToken,
+  )
+}
+
+/**
+ * `koras teardown <project> --project-path <dir>`
  *
  * Reads what Terraform recorded rather than asking each provider what exists.
  * State is the record of what this configuration created; a listing is a guess
@@ -102,9 +157,7 @@ async function runTeardown(args: string[]): Promise<number> {
   const source = args[1]
 
   if (!projectSlug) {
-    console.error(
-      'usage: pnpm koras teardown <project-slug> --terraform <terraform-dir>',
-    )
+    console.error('usage: pnpm koras teardown <project-slug> --project-path <project-dir>')
     return 2
   }
 
@@ -114,7 +167,7 @@ async function runTeardown(args: string[]): Promise<number> {
         '',
         'No Terraform outputs given. Let teardown read them:',
         '',
-        `  pnpm koras teardown ${projectSlug} --terraform <project>/infrastructure/terraform`,
+        `  pnpm koras teardown ${projectSlug} --project-path ../output/${projectSlug}`,
         '',
         'A file also works, and is worse. terraform output -json includes the',
         'values of outputs marked sensitive, so the file it writes holds live',
@@ -131,12 +184,17 @@ async function runTeardown(args: string[]): Promise<number> {
   }
 
   let raw: string
-  if (source === '--terraform') {
-    const dir = args[2]
-    if (!dir) {
-      console.error('usage: pnpm koras teardown <project-slug> --terraform <terraform-dir>')
+  if (source === '--project-path') {
+    const projectPath = args[2]
+    if (!projectPath) {
+      console.error('usage: pnpm koras teardown <project-slug> --project-path <project-dir>')
       return 2
     }
+    // The project root, not its Terraform directory. The operator knows where
+    // they generated the project; `infrastructure/terraform` is this tool's own
+    // layout and asking them to append it is asking them to know an internal
+    // detail in order to delete something.
+    const dir = join(projectPath, 'infrastructure', 'terraform')
     // Run Terraform rather than being piped its output.
     //
     // The pipe was the documented form and it cannot work: the JSON arrives on
@@ -196,7 +254,7 @@ async function runTeardown(args: string[]): Promise<number> {
         '',
         'Let teardown run Terraform instead, which leaves stdin free:',
         '',
-        `  pnpm koras teardown ${projectSlug} --terraform <project>/infrastructure/terraform`,
+        `  pnpm koras teardown ${projectSlug} --project-path ../output/${projectSlug}`,
         '',
       ].join(String.fromCharCode(10)),
     )
