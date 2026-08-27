@@ -507,11 +507,20 @@ by reading the templates, because both are only wrong once something runs them.
 That is expected: the secret is new, and creating it is part of the
 `create-app-role.sh` step, not something to add by hand ahead of it.
 
-`dev` also holds **`ZITADEL_SERVICE_TOKEN`**, which nothing in either profile
-reads and which appears in no contract or manifest. It predates this work and is
-most likely left from the OIDC sign-in work recorded in R-020 to R-027. Worth
-confirming it is dead before removing it — an orphaned credential is still a
-credential.
+`dev` also holds **`ZITADEL_SERVICE_TOKEN`**, which this audit first recorded as
+an orphan because no template declared it. That was the wrong conclusion, and it
+is worth keeping the correction visible: the secret is real and load-bearing —
+`koras-control-plane` carries a runbook for it, its local contract names it, and
+its test suite stubs it — and what was actually missing was the *factory's*
+declaration of it. The direction of a divergence is not obvious from one side of
+it, and "the generator does not mention this" reads identically whether the
+estate has something spurious or the generator has a gap. Deleting on that
+reading would have removed a working credential.
+
+Now declared `supplied` in the control-plane profile. Still to propagate the
+other way: the code that reads it lives only in `koras-control-plane`, so a
+freshly generated Control Plane declares the credential and has nothing that
+uses it yet.
 
 The same list as D4, filtered to what the control-plane profile ships. It is a
 real repository under independent development rather than generated output, so
