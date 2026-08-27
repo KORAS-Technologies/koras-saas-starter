@@ -202,13 +202,46 @@ DOPPLER_TOKEN                   TF_VAR_FLY_ORG_SLUG
 FLY_API_TOKEN                   TF_VAR_GITHUB_ORG
 GITHUB_TOKEN                    TF_VAR_PRIMARY_DOMAIN
 SUPABASE_ACCESS_TOKEN           TF_VAR_SUPABASE_ORG_ID
-VERCEL_API_TOKEN                TF_VAR_VERCEL_TEAM_ID
-TF_TOKEN_APP_TERRAFORM_IO
+VERCEL_API_TOKEN                TF_VAR_UPSTASH_EMAIL
+TF_TOKEN_APP_TERRAFORM_IO       TF_VAR_UPSTASH_API_KEY
+                                TF_VAR_VERCEL_TEAM_ID
 
 SUPABASE_DB_PASSWORD_{DEV,TEST,STG,PROD}
 ZITADEL_{DEV,TEST,STG,PROD}_DOMAIN
 ZITADEL_{DEV,TEST,STG,PROD}_SERVICE_ACCOUNT_KEY_JSON
 ```
+
+The Upstash pair was missing from this list while the preflight required it, so
+a reader assembling the estate from this page would have got as far as an apply
+before finding out. Upstash is configured through variables rather than a bare
+token, which is why it appears in the right-hand column and not the left.
+
+### Also in the bootstrap project, and not checked here
+
+The doctor answers "can this estate provision", so it asks for what an apply
+needs. These are held in the same place and used afterwards:
+
+```text
+ZITADEL_{DEV,TEST,STG,PROD}_ORG_ID              provisioning, optional
+ZITADEL_{DEV,TEST,STG,PROD}_SERVICE_TOKEN       teardown only
+KORAS_CONTROL_PLANE_URL                         product registration
+KORAS_CONTROL_PLANE_TOKEN                       product registration
+```
+
+`ZITADEL_<ENV>_ORG_ID` is optional in the sense that the module discovers a
+single active organization by itself. It is worth setting anyway: discovery is a
+live API call per instance on every plan, and an instance that is asleep or
+answering 503 fails the plan for the whole estate.
+
+`ZITADEL_<ENV>_SERVICE_TOKEN` is read only by `koras teardown`, one per
+instance, and is a personal access token on a machine user — not the JWT profile
+in `ZITADEL_<ENV>_SERVICE_ACCOUNT_KEY_JSON` beside it. See §5 of
+PROVISIONING_RUNBOOK.md.
+
+The doctor does not check either, and that is a decision rather than an
+oversight: a preflight that fails on a credential the apply does not need is a
+preflight people learn to skip. The cost is that a missing teardown token is
+found at teardown, where it presents as a provider reported as skipped.
 
 ---
 

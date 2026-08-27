@@ -233,6 +233,20 @@ Organization identifiers, four database passwords, and one domain plus one
 service-account key per ZITADEL instance. All are listed in
 BOOTSTRAP_DOCTOR.md and validated by the doctor.
 
+Four ZITADEL keys per environment, three of which the doctor does not check:
+
+| Key | Read by | Checked by the doctor |
+|-----|---------|-----------------------|
+| `ZITADEL_<ENV>_DOMAIN` | Terraform | yes |
+| `ZITADEL_<ENV>_SERVICE_ACCOUNT_KEY_JSON` | Terraform — a JWT profile | yes |
+| `ZITADEL_<ENV>_ORG_ID` | Terraform, when set | no — optional |
+| `ZITADEL_<ENV>_SERVICE_TOKEN` | `koras teardown` — a machine-user PAT | no |
+
+The last two are easy to confuse with the second and are neither: the org id is
+not a credential, and the service token is a *personal access token* rather than
+a JWT profile. Teardown does not exchange the profile, which is why it needs its
+own credential; §5 covers what it is for.
+
 **Set `org_id` on every ZITADEL instance, not just the ambiguous ones.** The
 module can discover the organization when an instance holds exactly one, and
 that fallback is a live API call per instance made on every plan. An instance
