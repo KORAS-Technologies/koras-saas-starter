@@ -424,3 +424,41 @@ describe('the teardown command', () => {
     expect(outcome.output).toContain('re-running is safe')
   })
 })
+
+describe('the confirmation prompt and the outputs cannot share stdin', () => {
+  const inventory = qualify(inventoryFromOutputs(OUTPUTS), 'koras-e2e-shop')
+
+  it('an empty answer deletes nothing', async () => {
+    // What a pipe actually produced. `terraform output -json` was read from
+    // stdin to end-of-file, so the prompt read the same stream, got '', and
+    // cancelled. Safe, and indistinguishable from the command ignoring you.
+    const { fetch, calls } = recorder()
+    const outcome = await teardown({
+      inventory,
+      credentials: ALL_CREDENTIALS,
+      fetchImpl: fetch,
+      env: { KORAS_E2E_TEARDOWN: '1' },
+      projectSlug: 'koras-e2e-shop',
+      confirm: { ask: async () => '' },
+    })
+
+    // The cancellation notice is printed by the prompt, not returned here.
+    // What matters is the only thing that is irreversible: no request went out.
+    expect(calls, 'an unanswered prompt deleted something').toEqual([])
+    expect(outcome.failed, 'a cancelled teardown reported failure').toBe(false)
+  })
+
+  it('deletes when the name is typed', async () => {
+    const { fetch, calls } = recorder()
+    await teardown({
+      inventory,
+      credentials: ALL_CREDENTIALS,
+      fetchImpl: fetch,
+      env: { KORAS_E2E_TEARDOWN: '1' },
+      projectSlug: 'koras-e2e-shop',
+      confirm: { ask: async () => 'koras-e2e-shop' },
+    })
+
+    expect(calls.length, 'typing the name deleted nothing').toBeGreaterThan(0)
+  })
+})

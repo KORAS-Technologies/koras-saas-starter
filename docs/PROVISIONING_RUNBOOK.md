@@ -355,88 +355,87 @@ Three things, none of which the command checks for you:
 ### Step 1 — see what exists, delete nothing
 
 **Run from the starter**, `C:\repos\Projects\koras-saas-starter`. Not from the
-generated project — the path below is relative to the starter, and every
-`pnpm koras` command resolves from there.
+generated project — the path below is relative to the starter, and `pnpm koras`
+resolves from there.
+
+Credentials have to be in scope or every provider reports as skipped, which
+tells you nothing:
 
 Git Bash:
 
 ```bash
-terraform -chdir=../output/<project>/infrastructure/terraform output -json \
-  | pnpm koras teardown <project> -
+doppler run --project koras-platform-bootstrap --config prod -- \
+  pnpm koras teardown <project> --terraform ../output/<project>/infrastructure/terraform
 ```
 
-PowerShell — **quote `-chdir`**, or Terraform never sees the value:
+PowerShell — the same command; nothing needs quoting because there is no
+`-chdir` on the command line any more:
 
 ```powershell
-terraform "-chdir=../output/<project>/infrastructure/terraform" output -json |
-  pnpm koras teardown <project> -
+doppler run --project koras-platform-bootstrap --config prod -- `
+  pnpm koras teardown <project> --terraform ../output/<project>/infrastructure/terraform
 ```
-
-Unquoted, PowerShell splits the argument at the `=` and Terraform answers
-`Invalid -chdir option: must include an equals sign followed by a directory
-path` — then the empty pipe reaches teardown, which reports
-`Unexpected end of JSON input`. Two errors, one cause, and the second is the
-one people read.
 
 This is a dry run. Not because of a flag you passed, but because
 `KORAS_E2E_TEARDOWN` is unset, which is the default — you have to go out of your
-way to delete. It prints every resource it found, grouped by provider, and
-issues no requests.
+way to delete.
 
-**Read that list before going further.** You are checking two things: that the
-count looks like a whole estate rather than part of one, and that nothing is
-reported as skipped for a missing credential. A skip is not a warning you can
-carry forward — it is a provider that will still exist afterwards.
+**`--terraform` runs `terraform output -json` for you**, in the directory you
+name. That matters for more than typing: the outputs include the values of
+outputs marked sensitive, so they must never reach disk, and they must not reach
+*stdin* either — see step 2.
 
-Note that step 1 has *no credentials in scope*, so it reports every provider as
-skipped. That is expected here and tells you nothing. The list that matters is
-the one from step 2's command with the deletion flag left off, which is the
-first block below.
+**Read the list before going further.** Two things: the count looks like a whole
+estate rather than part of one, and nothing is skipped for a missing credential.
+A skip is not a warning you can carry forward; it is a provider that will still
+exist afterwards.
 
 ### Step 2 — delete
 
-Same command, with the credentials in scope. Run it **once without**
-`KORAS_E2E_TEARDOWN` to see the real skip list, then again with it.
+Same command with `KORAS_E2E_TEARDOWN=1`.
 
 Git Bash:
 
 ```bash
-# credentials loaded, still a dry run -- this is the list that counts
-doppler run --project koras-platform-bootstrap --config prod -- \
-  bash -c 'terraform -chdir=../output/<project>/infrastructure/terraform output -json \
-    | pnpm koras teardown <project> -'
-
-# and for real
 KORAS_E2E_TEARDOWN=1 doppler run --project koras-platform-bootstrap --config prod -- \
-  bash -c 'terraform -chdir=../output/<project>/infrastructure/terraform output -json \
-    | pnpm koras teardown <project> -'
+  pnpm koras teardown <project> --terraform ../output/<project>/infrastructure/terraform
 ```
 
-PowerShell — **do not run the Git Bash form here.** `bash` in PowerShell
-resolves to WSL's bash, not Git Bash, and WSL is a different machine with a
-different PATH:
-
-```
-/bin/bash: line 1: terraform: command not found
-/mnt/c/nvm4w/nodejs/pnpm: 15: exec: node: not found
-```
-
-The `/mnt/c/` prefix is the tell. Use `pwsh` as the inner shell instead. Also
-`VAR=1 cmd` is not PowerShell syntax — set it on `$env:` first, and clear it
-afterwards so a later dry run is still a dry run:
+PowerShell — `VAR=1 cmd` is not PowerShell syntax; set it on `$env:` first, and
+clear it afterwards so the next dry run is still a dry run:
 
 ```powershell
-doppler run --project koras-platform-bootstrap --config prod -- `
-  pwsh -NoProfile -Command "terraform '-chdir=../output/<project>/infrastructure/terraform' output -json | pnpm koras teardown <project> -"
-
 $env:KORAS_E2E_TEARDOWN = "1"
 doppler run --project koras-platform-bootstrap --config prod -- `
-  pwsh -NoProfile -Command "terraform '-chdir=../output/<project>/infrastructure/terraform' output -json | pnpm koras teardown <project> -"
+  pnpm koras teardown <project> --terraform ../output/<project>/infrastructure/terraform
 Remove-Item Env:\KORAS_E2E_TEARDOWN
 ```
 
 It stops and asks you to type the project name. Not `yes` — the name. Anything
 else cancels, and there is no `--yes` or `--force` to get past it.
+
+**Do not pipe the outputs in.** This section used to say to, and the command it
+gave could not delete anything:
+
+```bash
+# the old form -- prints the prompt, then answers it with nothing
+terraform -chdir=... output -json | pnpm koras teardown <project> -
+```
+
+The JSON arrives on stdin and is read to end-of-file. The prompt then reads the
+same stdin, gets the empty string, and cancels. It looked like the command
+ignoring the operator. Piping is now refused outright when deletion is enabled,
+with a message pointing here; `-` still works for listing, and for scripts that
+already hold the JSON.
+
+Two related traps if you are assembling a command by hand:
+
+- `KORAS_E2E_TEARDOWN=1 terraform ... | pnpm koras ...` sets the variable on
+  **terraform**, not on teardown. In a pipeline the prefix applies to the first
+  command only.
+- In PowerShell, `bash` is WSL's bash — a different machine with a different
+  PATH. `terraform: command not found` followed by `/mnt/c/...: exec: node: not
+  found` is that, not a broken install.
 
 ### Step 3 — check the consoles yourself, this once
 
