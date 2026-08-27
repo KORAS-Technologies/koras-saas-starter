@@ -253,6 +253,7 @@ than restarting. Fix the cause, then run step 4.
 | `403` on `GET /repos/{org}/{repo}/git/ref/heads/main` | Token lacks repository **Contents** | Add Contents: Read and write |
 | `403` creating `github_repository_environment` | Token lacks repository **Environments** | Add Environments: Read and write |
 | Vercel `repo_not_found` for a repository that exists | Vercel GitHub App not installed on the org | Install it for the organization |
+| `/bin/bash: terraform: command not found` and `/mnt/c/...: exec: node: not found` | The Git Bash command was run from PowerShell, where `bash` is WSL's bash — a different machine with a different PATH | Use the PowerShell form in §5, which runs `pwsh` as the inner shell |
 | Vercel `internal_server_error - An unexpected internal error occurred` on *some* projects | Vercel's own 500, not the configuration. Eight projects are created at once and a few can fail under that concurrency; the ones that fail differ only by which they were | Re-run the apply; Terraform creates only what is missing. Seen 2026-08-27: six of eight succeeded, `web-stg` and `admin-stg` failed, and one retry created both with no change to the configuration. Confirmed transient |
 | `Invalid Attribute Value Match` on a Vercel or Fly name | Fixed — component keys are hyphenated in the modules | Update the generated project's `modules/` copy, or regenerate |
 | `pipefail: invalid option name` from `make` | Fixed — shell scripts are pinned to LF | Regenerate, or convert CRLF to LF in place |
@@ -411,8 +412,18 @@ KORAS_E2E_TEARDOWN=1 doppler run --project koras-platform-bootstrap --config pro
     | pnpm koras teardown <project> -'
 ```
 
-PowerShell — `VAR=1 cmd` is not PowerShell syntax; set it on `$env:` first, and
-remember to clear it:
+PowerShell — **do not run the Git Bash form here.** `bash` in PowerShell
+resolves to WSL's bash, not Git Bash, and WSL is a different machine with a
+different PATH:
+
+```
+/bin/bash: line 1: terraform: command not found
+/mnt/c/nvm4w/nodejs/pnpm: 15: exec: node: not found
+```
+
+The `/mnt/c/` prefix is the tell. Use `pwsh` as the inner shell instead. Also
+`VAR=1 cmd` is not PowerShell syntax — set it on `$env:` first, and clear it
+afterwards so a later dry run is still a dry run:
 
 ```powershell
 doppler run --project koras-platform-bootstrap --config prod -- `
