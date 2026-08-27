@@ -80,10 +80,11 @@ Notes that matter:
   and production is silently skipped. That is why step 7 is two commands.
   Anything else the script accepts — `--dry-run`, `--outputs`, `--overwrite` —
   has to be passed to the script directly.
-- **Doppler is invoked for you.** Steps 0, 2, 3, and 4 need the bootstrap
-  secrets, so each re-runs itself as `doppler run --project
-  koras-platform-bootstrap --config prod -- <the same command>` and says so on
-  stdout. Step 1 needs no credentials and is never wrapped. Wrapping by hand
+- **Doppler is invoked for you.** Steps 0, 2, 3 and 4 need the bootstrap
+  secrets, and so does `koras teardown` in §5, so each re-runs itself as
+  `doppler run --project koras-platform-bootstrap --config prod -- <the same
+  command>` and says so on stdout. **No command in this document should be typed
+  with that wrapper.** Step 1 needs no credentials and is never wrapped. Wrapping by hand
   still works and is not applied twice; `DOPPLER_PROJECT` and `DOPPLER_CONFIG`
   override the location for a one-off run.
 
@@ -478,20 +479,33 @@ the ones the provider knows it by.
 
 ### The two rules worth not forgetting
 
-**Pipe, never write a file.** `terraform output -json` includes the values of
-outputs marked sensitive, so the file it writes holds live credentials — Upstash
-URLs with their passwords, ZITADEL client secrets. One was committed to this
-public repository on 2026-08-26 and had to be rotated by destroying the
-resources it belonged to. `-` reads stdin and keeps it off the disk entirely.
-R-041.
+**Never write the outputs to a file.** `terraform output -json` includes the
+values of outputs marked sensitive, so the file it writes holds live credentials
+— Upstash URLs with their passwords, ZITADEL client secrets. One was committed
+to this public repository on 2026-08-26 and had to be rotated by destroying the
+resources it belonged to. R-041.
 
-**Credentials come from Doppler, and teardown fetches them itself.** It
-re-execs under `doppler run` the way `--provision` and `bootstrap:doctor` do, so
-no wrapper is typed. It reads
-`GITHUB_TOKEN`, `DOPPLER_TOKEN`, `SUPABASE_ACCESS_TOKEN`, `UPSTASH_EMAIL`,
-`UPSTASH_API_KEY`, `VERCEL_API_TOKEN`, `VERCEL_TEAM_ID`, `FLY_API_TOKEN` and
-`ZITADEL_SERVICE_TOKEN`. A missing one is named once, at the top, and its
-resources are skipped rather than failed.
+`--product-path` is how that is avoided now: teardown runs `terraform output
+-json` itself and keeps the result in memory. An earlier version of this section
+said to pipe instead, which also kept it off disk and had a second problem — the
+JSON took stdin, so the confirmation prompt had nothing to read. Piping is
+refused for deletion; a file is accepted and remains a bad idea.
+
+**Credentials come from Doppler, and teardown fetches them itself.** It re-execs
+under `doppler run --project koras-platform-bootstrap --config prod` the way
+`--provision` and `bootstrap:doctor` do, and says so on stdout. **Do not type
+that wrapper.** An outer one is detected rather than nested, so one typed by
+hand is harmless — it is simply never needed, and every command in this section
+is written without it.
+
+It reads `GITHUB_TOKEN`, `DOPPLER_TOKEN`, `SUPABASE_ACCESS_TOKEN`,
+`UPSTASH_EMAIL`, `UPSTASH_API_KEY`, `VERCEL_API_TOKEN`, `VERCEL_TEAM_ID`,
+`FLY_API_TOKEN` and `ZITADEL_SERVICE_TOKEN`, each also accepted under its
+`TF_VAR_` spelling — the estate stores Upstash's two that way, and reading only
+the bare name is how four billing databases were once reported as skipped.
+
+A missing credential is named once, at the top, and its resources are skipped
+rather than failed. A skip is a provider that will still exist afterwards.
 
 ### What it does not delete
 

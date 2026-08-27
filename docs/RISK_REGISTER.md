@@ -1879,6 +1879,14 @@ what made it catch a secret already deleted from the tree.
 - `koras teardown <project> -` reads the outputs from stdin, so the documented
   form is `terraform output -json | pnpm koras teardown <project> -` and nothing
   reaches disk. A file path still works, and the help says plainly what it costs.
+
+  **Superseded 2026-08-27, and the credential half still holds.** Piping kept
+  the outputs off disk and broke the confirmation prompt: the JSON was read from
+  stdin to end-of-file, so the prompt read the same stream and got nothing. The
+  documented form is now
+  `pnpm koras teardown <product> --product-path ../output/<product>`, which runs
+  Terraform itself and keeps the result in memory — the same guarantee, with a
+  prompt that can be answered. Piping is refused when deletion is enabled.
 - `.gitignore` covers `*-outputs.json` and `terraform-outputs*.json`.
 - `.gitleaks.toml` allowlists the two specific commits that carry the file, by
   full SHA, with the reason. Not the path: a future leak in a file of that name
