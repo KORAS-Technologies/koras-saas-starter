@@ -136,9 +136,18 @@ and writes it nowhere.
 the privileged role cannot deploy. That is deliberate — the alternative is a
 warning nobody actions, and the thing being warned about is a cross-tenant read.
 
-**`DATABASE_ADMIN_URL` is not an application setting.** No service reads it,
-so it is absent from `secrets.manifest` and from `.env.local.example`. The
-migrate job checks for it directly and says what to run if it is missing.
+**`DATABASE_ADMIN_URL` is in `secrets.manifest` but not in
+`.env.local.example`.** No service reads it, so it is not part of the local
+contract — but a deployed environment does need it, and that is the question
+the manifest answers. `doppler-check.sh` therefore demands it in the settings
+preflight, before anything is migrated or deployed.
+
+It was left out of the manifest at first, on the reasoning that a setting no
+service reads is not a service setting. That was the wrong test: the file's own
+header says it records "whether a deployed environment needs it". Omitting it
+meant nothing asked for the value until the migrate step, halfway through a
+deploy — and the gap was found by someone reading their Doppler config and not
+finding the secret the runbook told them to set.
 
 **If Supabase refuses to create the role**, its `postgres` credential is
 restricted more than stock Postgres. Create `koras_app` through the Supabase

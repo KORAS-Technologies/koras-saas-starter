@@ -502,6 +502,17 @@ by reading the templates, because both are only wrong once something runs them.
 
 **Applies to:** `koras-control-plane`
 
+**Its Doppler configs are missing `DATABASE_ADMIN_URL`** — checked against
+`dev` on 2026-08-26, which holds 18 of the 19 settings the manifest requires.
+That is expected: the secret is new, and creating it is part of the
+`create-app-role.sh` step, not something to add by hand ahead of it.
+
+`dev` also holds **`ZITADEL_SERVICE_TOKEN`**, which nothing in either profile
+reads and which appears in no contract or manifest. It predates this work and is
+most likely left from the OIDC sign-in work recorded in R-020 to R-027. Worth
+confirming it is dead before removing it — an orphaned credential is still a
+credential.
+
 The same list as D4, filtered to what the control-plane profile ships. It is a
 real repository under independent development rather than generated output, so
 regeneration is not the path — each change has to be applied deliberately, and
