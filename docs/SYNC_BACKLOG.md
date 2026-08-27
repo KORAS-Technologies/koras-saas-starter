@@ -364,11 +364,27 @@ four workflows are the only files left on v4/v4/v3.
 **Applies to:** `koras-saas-starter/.github/workflows/generator-integration.yml`
 
 Every Tier A item, and the dependency half of B1, would have failed such a gate
-on the commit that introduced it. The workflow already exists; it does not yet
-build what it generates.
+on the commit that introduced it.
 
-This is the highest-leverage item in the document. Without it, this document
-needs new entries after every burst of work.
+**Closed 2026-08-25.** The workflow generates both profiles and then installs,
+builds, lints, typechecks and tests each one, plus runs the row-level security
+suite against a real Postgres and mutation-tests it by removing `force` and
+requiring failure. Three optional-component variants run alongside the two
+defaults, so `--with` and `--without` are covered too. A failure in one matrix
+leg does not cancel the others, because knowing which profiles broke is the
+point.
+
+The paragraph above used to end "the workflow already exists; it does not yet
+build what it generates", and stayed there for as long as it took someone to
+read this entry beside the file it describes. Line 3 of that workflow says
+"Generates both profiles and builds what comes out."
+
+Worth recording rather than quietly deleting, because it is R-042 inside the
+document whose job is tracking divergence. The reference-checking test added for
+R-042 would not have caught it: the path is real and current, and the false part
+is the claim *about* it. A stale "not yet" is the most expensive kind of wrong
+sentence in a backlog -- it keeps an item alive, and it ranked this one as the
+highest-leverage work outstanding when there was no work in it at all.
 
 ### D2 — the two templates held 110 identical files with no shared source
 
@@ -403,6 +419,22 @@ parity demanded they be single-sourced; `main.py` now lives in `_shared`.
 Nothing detects the general case. A test that could would need to compare
 *intent* rather than bytes, which is why the honest mitigation is extraction —
 a file that exists once cannot receive a fix in one profile only.
+
+**A narrower gap, closed 2026-08-27.** "Byte-identical" was taken literally.
+Five Python package markers — the `__init__.py` of `koras_api`, its `core` and
+`routers`, `koras_scheduler` and `koras_worker` — existed in both profiles,
+empty in `product` and holding a single newline in `control-plane`. Two bytes is
+not zero bytes, so the guard passed on every run for as long as they had both
+existed, and each was counted as deliberate divergence in the 63 above.
+
+They are the easiest duplicate in the world to create: an editor adds the
+trailing newline without being asked. The comparison now trims trailing
+whitespace as well as normalising line endings, and the five are single-sourced
+in `_shared/`, which takes real divergence from 63 paths to 58.
+
+Mutation-checked in both directions — a twin differing only by a trailing
+newline now fails the duplicate rule, and a copy left in a profile alongside its
+`_shared/` original fails the single-source rule.
 
 **Applies to:** `profiles/`
 

@@ -105,9 +105,14 @@ nothing enumerates it as one.
 No file exists twice. `shared-template-parity.test.ts` asserts that
 structurally -- no path may exist in both profile templates with byte-identical
 content -- rather than by listing paths, so a file duplicated tomorrow is caught
-without anyone remembering to add it. 126 files are single-sourced in `_shared/`;
-the 63 paths that exist in both profiles do so with genuinely different content,
+without anyone remembering to add it. 132 files are single-sourced in `_shared/`;
+the 58 paths that exist in both profiles do so with genuinely different content,
 which is deliberate divergence rather than duplication.
+
+The comparison normalises trailing whitespace as well as line endings. It did
+not, and five Python package markers were duplicated across both profiles for
+months — empty in one, a single newline in the other. Two bytes is not zero
+bytes, so the test passed every time it ran.
 
 ## Generator rules
 

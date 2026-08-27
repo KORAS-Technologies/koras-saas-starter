@@ -40,10 +40,23 @@ function filesUnder(root: string): string[] {
 }
 
 
-/** Line endings are normalised: a checkout on Windows carries CRLF. */
+/**
+ * Line endings are normalised, and so is trailing whitespace.
+ *
+ * CRLF because a checkout on Windows carries it. The trailing trim is the
+ * second lesson: five Python package markers sat in both profiles for months,
+ * empty in one and holding a single newline in the other, and this test passed
+ * on every run because two bytes is not zero bytes. A duplicate that differs
+ * only in whether the file ends with a newline is still a duplicate, and it is
+ * the *easiest* kind to create -- an editor does it without being asked.
+ */
 function read(profile: string, file: string): string {
   const CR = String.fromCharCode(13)
-  return readFileSync(join(PROFILES, profile, 'template', file), 'utf8').split(CR).join('')
+  return readFileSync(join(PROFILES, profile, 'template', file), 'utf8')
+    .split(CR)
+    .join('')
+    .replace(/\s+$/gm, '')
+    .trim()
 }
 
 const productFiles = filesUnder(join(PROFILES, 'product', 'template'))
