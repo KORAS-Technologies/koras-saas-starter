@@ -238,7 +238,7 @@ branding" there.
 | R-034 | No rate limiting in the generated API        | 12       | Resolved                 |
 | R-035 | `pnpm test` reported a cached pass           | 16       | Resolved                 |
 | R-031 | vitest advisories; the fix breaks the suite  | 12       | Accepted with mitigation |
-| R-036 | A live acceptance run cannot be cleaned up   | 12       | Unverified against providers |
+| R-036 | A live acceptance run cannot be cleaned up   | 12       | Six providers proven; ZITADEL needs a credential the estate does not issue |
 | R-037 | Typecheck ignored the error it needed to report | 12    | Resolved                 |
 | R-038 | Drift reported every optional component      | 9        | Resolved                 |
 | R-039 | ZITADEL module could not create a new project | 16      | Resolved                 |
@@ -1516,6 +1516,31 @@ reports a dry run and issues nothing.
 
    `UNIMPLEMENTED_KINDS` is now empty and kept: it is the mechanism by which a
    future gap is visible rather than silent.
+
+   **And a correction to the correction, 2026-08-27.** "The blocker was
+   fiction" was itself too fast. A bearer token does work, and the deleter
+   built on that is right — but it needs a *personal access token on a machine
+   user*, and this estate does not provision one. What it holds is
+   `ZITADEL_<ENV>_SERVICE_ACCOUNT_KEY_JSON`: a JWT profile per instance, which
+   is exactly the thing the original comment named and exactly the thing this
+   code does not exchange.
+
+   There is a second half nobody had noticed either. Each environment is a
+   *separate ZITADEL instance*, so one `ZITADEL_SERVICE_TOKEN` cannot reach all
+   four however it is obtained. The endpoint travels per resource; the
+   credential does not. Deleting four projects needs four tokens, or a JWT
+   exchange that mints one per instance.
+
+   So on a real estate the ZITADEL projects are still reported as skipped, now
+   for a credential reason rather than a capability one, and are still deleted
+   from each instance's console by hand. What changed is that the path exists
+   and is proven for anyone holding a PAT; what did not change is that
+   provisioning does not hand you one.
+
+   Recorded rather than quietly re-fixed because the sequence is the point: a
+   comment nothing could test was wrong, replacing it with confidence was also
+   wrong, and only running the command against a real estate distinguished the
+   two.
 2. **`prevent_destroy` is untouched.** It is irrelevant to the API-based path
    above, which never invokes Terraform — but `terraform destroy` still fails on
    five resource types, so anyone reaching for it will be stopped.

@@ -353,10 +353,29 @@ Three things, none of which the command checks for you:
 
 ### Step 1 — see what exists, delete nothing
 
+**Run from the starter**, `C:\repos\Projects\koras-saas-starter`. Not from the
+generated project — the path below is relative to the starter, and every
+`pnpm koras` command resolves from there.
+
+Git Bash:
+
 ```bash
 terraform -chdir=../output/<project>/infrastructure/terraform output -json \
   | pnpm koras teardown <project> -
 ```
+
+PowerShell — **quote `-chdir`**, or Terraform never sees the value:
+
+```powershell
+terraform "-chdir=../output/<project>/infrastructure/terraform" output -json |
+  pnpm koras teardown <project> -
+```
+
+Unquoted, PowerShell splits the argument at the `=` and Terraform answers
+`Invalid -chdir option: must include an equals sign followed by a directory
+path` — then the empty pipe reaches teardown, which reports
+`Unexpected end of JSON input`. Two errors, one cause, and the second is the
+one people read.
 
 This is a dry run. Not because of a flag you passed, but because
 `KORAS_E2E_TEARDOWN` is unset, which is the default — you have to go out of your
@@ -365,16 +384,44 @@ issues no requests.
 
 **Read that list before going further.** You are checking two things: that the
 count looks like a whole estate rather than part of one, and that nothing is
-reported as skipped for a missing credential.
+reported as skipped for a missing credential. A skip is not a warning you can
+carry forward — it is a provider that will still exist afterwards.
+
+Note that step 1 has *no credentials in scope*, so it reports every provider as
+skipped. That is expected here and tells you nothing. The list that matters is
+the one from step 2's command with the deletion flag left off, which is the
+first block below.
 
 ### Step 2 — delete
 
-Same command, with deletion enabled and the credentials in scope:
+Same command, with the credentials in scope. Run it **once without**
+`KORAS_E2E_TEARDOWN` to see the real skip list, then again with it.
+
+Git Bash:
 
 ```bash
+# credentials loaded, still a dry run -- this is the list that counts
+doppler run --project koras-platform-bootstrap --config prod -- \
+  bash -c 'terraform -chdir=../output/<project>/infrastructure/terraform output -json \
+    | pnpm koras teardown <project> -'
+
+# and for real
 KORAS_E2E_TEARDOWN=1 doppler run --project koras-platform-bootstrap --config prod -- \
   bash -c 'terraform -chdir=../output/<project>/infrastructure/terraform output -json \
     | pnpm koras teardown <project> -'
+```
+
+PowerShell — `VAR=1 cmd` is not PowerShell syntax; set it on `$env:` first, and
+remember to clear it:
+
+```powershell
+doppler run --project koras-platform-bootstrap --config prod -- `
+  pwsh -NoProfile -Command "terraform '-chdir=../output/<project>/infrastructure/terraform' output -json | pnpm koras teardown <project> -"
+
+$env:KORAS_E2E_TEARDOWN = "1"
+doppler run --project koras-platform-bootstrap --config prod -- `
+  pwsh -NoProfile -Command "terraform '-chdir=../output/<project>/infrastructure/terraform' output -json | pnpm koras teardown <project> -"
+Remove-Item Env:\KORAS_E2E_TEARDOWN
 ```
 
 It stops and asks you to type the project name. Not `yes` — the name. Anything
@@ -445,12 +492,16 @@ resources are skipped rather than failed.
 | HCP Terraform workspace | Holds the state of what was just deleted. Terraform is never invoked by teardown, so nothing removes it | app.terraform.io, workspace `<project>` |
 | The generated directory | It is yours, on your disk | `rm -rf ../output/<project>` |
 
-ZITADEL projects used to be on this list, on the stated grounds that their API
-needed a service-account JWT exchange. It does not: the same personal access
-token the local provisioner sends as a bearer token works, and it is the one the
-estate already holds as `ZITADEL_SERVICE_TOKEN`. Set that variable and the
-projects are deleted with everything else; leave it unset and they are reported
-as skipped, like any other missing credential.
+**ZITADEL projects, in practice, are still deleted by hand.** The deleter
+exists and works, and it needs a personal access token on a machine user, set as
+`ZITADEL_SERVICE_TOKEN`. Provisioning does not issue one: the estate holds
+`ZITADEL_<ENV>_SERVICE_ACCOUNT_KEY_JSON`, which is a JWT profile, and teardown
+does not exchange it. Each environment is also a separate instance, so one token
+would not reach all four in any case.
+
+Until a PAT exists per instance, the four projects are reported as skipped for a
+missing credential and removed from each instance's console. That is a real gap,
+not a formality — see R-036.
 
 The genuine difficulty was never authentication. ZITADEL projects belong to an
 organization, and its management API acts in the organization of whoever holds

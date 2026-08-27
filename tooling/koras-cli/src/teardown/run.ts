@@ -87,20 +87,39 @@ export async function teardown(options: TeardownOptions): Promise<TeardownOutcom
   return { output: lines.join('\n'), failed }
 }
 
+/**
+ * The first name that holds a value.
+ *
+ * The estate stores several of these under a `TF_VAR_` prefix, because
+ * Terraform needed them as variables before teardown needed them as
+ * credentials. Reading only the bare name is how Upstash came to be skipped on
+ * a real estate: `UPSTASH_EMAIL` was unset, `TF_VAR_UPSTASH_EMAIL` held the
+ * value, and teardown reported "credential not set" and moved on -- leaving
+ * four databases that bill. The same shape as R-040, one layer up: a lookup
+ * that finds nothing and a run that calls itself complete.
+ */
+function first(env: NodeJS.ProcessEnv, ...names: string[]): string | undefined {
+  for (const name of names) {
+    const value = env[name]
+    if (value !== undefined && value.trim() !== '') return value
+  }
+  return undefined
+}
+
 /** Reads provider credentials from the environment, naming none of their values. */
 export function credentialsFromEnv(env: NodeJS.ProcessEnv = process.env): ProviderCredentials {
   return {
-    githubToken: env.GITHUB_TOKEN,
-    dopplerToken: env.DOPPLER_TOKEN,
-    supabaseToken: env.SUPABASE_ACCESS_TOKEN,
-    upstashEmail: env.UPSTASH_EMAIL,
-    upstashApiKey: env.UPSTASH_API_KEY,
-    vercelToken: env.VERCEL_API_TOKEN,
-    vercelTeamId: env.VERCEL_TEAM_ID,
-    flyToken: env.FLY_API_TOKEN,
-    // The same secret the Control Plane provisions ZITADEL with. Deliberately
-    // the same one: a second credential able to delete projects would be a
-    // second thing to rotate and one more to forget.
-    zitadelServiceToken: env.ZITADEL_SERVICE_TOKEN,
+    githubToken: first(env, 'GITHUB_TOKEN', 'TF_VAR_GITHUB_TOKEN'),
+    dopplerToken: first(env, 'DOPPLER_TOKEN', 'TF_VAR_DOPPLER_TOKEN'),
+    supabaseToken: first(env, 'SUPABASE_ACCESS_TOKEN', 'TF_VAR_SUPABASE_ACCESS_TOKEN'),
+    upstashEmail: first(env, 'UPSTASH_EMAIL', 'TF_VAR_UPSTASH_EMAIL'),
+    upstashApiKey: first(env, 'UPSTASH_API_KEY', 'TF_VAR_UPSTASH_API_KEY'),
+    vercelToken: first(env, 'VERCEL_API_TOKEN', 'TF_VAR_VERCEL_TOKEN'),
+    vercelTeamId: first(env, 'VERCEL_TEAM_ID', 'TF_VAR_VERCEL_TEAM_ID'),
+    flyToken: first(env, 'FLY_API_TOKEN', 'TF_VAR_FLY_API_TOKEN'),
+    // A personal access token on a ZITADEL machine user. Not the
+    // ZITADEL_<ENV>_SERVICE_ACCOUNT_KEY_JSON the estate provisions with -- that
+    // is a JWT profile, which this does not exchange. See R-036.
+    zitadelServiceToken: first(env, 'ZITADEL_SERVICE_TOKEN'),
   }
 }
