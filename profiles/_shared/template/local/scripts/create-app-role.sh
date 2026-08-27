@@ -10,11 +10,11 @@
 #
 # So the privileged credential migrates, and a restricted one serves:
 #
-#     DATABASE_URL_MIGRATE   privileged. Runs migrations. Used by CI only.
+#     DATABASE_ADMIN_URL   privileged. Runs migrations. Used by CI only.
 #     DATABASE_URL           this role. Used by every service.
 #
 # The names are that way round deliberately. A secret called
-# DATABASE_URL_MIGRATE is visibly privileged; a plain DATABASE_URL that happens
+# DATABASE_ADMIN_URL is visibly privileged; a plain DATABASE_URL that happens
 # to be a superuser is the trap. The default name gets the least privilege.
 #
 #     bash local/scripts/create-app-role.sh "$PRIVILEGED_DATABASE_URL"
@@ -26,11 +26,11 @@
 # also how to recover from a lost one.
 set -euo pipefail
 
-URL="${1:-${DATABASE_URL_MIGRATE:-}}"
+URL="${1:-${DATABASE_ADMIN_URL:-}}"
 ROLE="${KORAS_APP_ROLE:-koras_app}"
 
 if [ -z "$URL" ]; then
-  echo "usage: $0 <privileged-database-url>   (or set DATABASE_URL_MIGRATE)" >&2
+  echo "usage: $0 <privileged-database-url>   (or set DATABASE_ADMIN_URL)" >&2
   exit 2
 fi
 
@@ -129,7 +129,7 @@ cat <<MSG
 
     ${proto}://${ROLE}:${GENERATED}@${hostpart}
 
-  Keep the privileged URL you passed here as DATABASE_URL_MIGRATE. That is what
+  Keep the privileged URL you passed here as DATABASE_ADMIN_URL. That is what
   runs migrations, and it is the only place it is still needed.
 
   The generated value is shown once and stored nowhere. Re-run this script to

@@ -1207,7 +1207,7 @@ privileged:
 
 | Doppler secret | Role | Used by |
 |----------------|------|---------|
-| `DATABASE_URL_MIGRATE` | privileged | the deploy's `migrate` job only |
+| `DATABASE_ADMIN_URL` | privileged | the deploy's `migrate` job only |
 | `DATABASE_URL` | `koras_app` | every service |
 
 A plain `DATABASE_URL` that happens to be a superuser is the trap this entry is

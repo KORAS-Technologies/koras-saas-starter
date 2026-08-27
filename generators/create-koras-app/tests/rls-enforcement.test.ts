@@ -200,14 +200,29 @@ describe.each(PROFILES)('%s: RLS applies to the connecting role', (profile) => {
     // privileged one is named so that it is visibly privileged -- a plain
     // DATABASE_URL that happens to be a superuser is the trap.
     const deploy = files.get('.github/workflows/deploy.yml') ?? ''
-    expect(deploy).toMatch(/DATABASE_URL_MIGRATE/)
+    expect(deploy).toMatch(/DATABASE_ADMIN_URL/)
 
     const migrate = deploy.slice(deploy.indexOf('  migrate:'))
     const migrateJob = migrate.slice(0, migrate.indexOf('  services:'))
     // The migration reads the privileged secret...
-    expect(migrateJob).toMatch(/secrets get DATABASE_URL_MIGRATE/)
+    expect(migrateJob).toMatch(/secrets get DATABASE_ADMIN_URL/)
     // ...and the connection check reads the one the services use.
     expect(migrateJob).toMatch(/secrets get DATABASE_URL --plain/)
+
+    // Not DATABASE_URL_MIGRATE, which this was called first. migrate.sh reads a
+    // variable named MIGRATE_DATABASE_URL -- the same words reordered, referred
+    // to three lines apart -- and the first person to read the workflow asked
+    // whether they were the same thing.
+    //
+    // Comments stripped before asserting. The comment in deploy.yml explaining
+    // why the old name is gone contains the old name, and the first version of
+    // this check failed on it -- the third time in this suite that prose about
+    // a string has broken an assertion about that string.
+    const withoutComments = deploy
+      .split(String.fromCharCode(10))
+      .filter((line) => !line.trim().startsWith('#'))
+      .join(String.fromCharCode(10))
+    expect(withoutComments).not.toMatch(/DATABASE_URL_MIGRATE/)
   })
 
   it('checks the connecting role from the suite too, when it is named', () => {

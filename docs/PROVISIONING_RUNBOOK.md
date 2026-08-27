@@ -101,12 +101,20 @@ So the privileged credential migrates and a restricted one serves:
 
 | Doppler secret | Role | Used by |
 |----------------|------|---------|
-| `DATABASE_URL_MIGRATE` | privileged | the deploy's `migrate` job, and nothing else |
+| `DATABASE_ADMIN_URL` | privileged | the deploy's `migrate` job, and nothing else |
 | `DATABASE_URL` | `koras_app` | every service |
 
-The names are that way round on purpose. A secret called `DATABASE_URL_MIGRATE`
+The names are that way round on purpose. A secret called `DATABASE_ADMIN_URL`
 is visibly privileged; a plain `DATABASE_URL` that happens to be a superuser is
 the trap this exists to remove. The default name gets the least privilege.
+
+**Not `DATABASE_URL_MIGRATE`**, which is what this was called first.
+`local/scripts/migrate.sh` already reads a variable named
+`MIGRATE_DATABASE_URL` — the same words in a different order, referred to three
+lines apart in the deploy workflow. The first person to read it asked whether
+they were the same thing. They are not: `DATABASE_ADMIN_URL` is the Doppler
+secret, `MIGRATE_DATABASE_URL` is how `migrate.sh` is pointed at a database, and
+the workflow reads the first and passes the second.
 
 For each of the four environments, once:
 
@@ -115,8 +123,8 @@ For each of the four environments, once:
 bash local/scripts/create-app-role.sh "<privileged database url>"
 
 # 2. In Doppler, for that config:
-#      DATABASE_URL_MIGRATE = the privileged URL you just passed
-#      DATABASE_URL         = the URL the script printed
+#      DATABASE_ADMIN_URL = the privileged URL you just passed
+#      DATABASE_URL       = the URL the script printed
 ```
 
 The script is idempotent: re-running rotates the credential and re-applies the
@@ -128,7 +136,7 @@ and writes it nowhere.
 the privileged role cannot deploy. That is deliberate — the alternative is a
 warning nobody actions, and the thing being warned about is a cross-tenant read.
 
-**`DATABASE_URL_MIGRATE` is not an application setting.** No service reads it,
+**`DATABASE_ADMIN_URL` is not an application setting.** No service reads it,
 so it is absent from `secrets.manifest` and from `.env.local.example`. The
 migrate job checks for it directly and says what to run if it is missing.
 
