@@ -238,7 +238,7 @@ branding" there.
 | R-034 | No rate limiting in the generated API        | 12       | Resolved                 |
 | R-035 | `pnpm test` reported a cached pass           | 16       | Resolved                 |
 | R-031 | vitest advisories; the fix breaks the suite  | 12       | Accepted with mitigation |
-| R-036 | A live acceptance run cannot be cleaned up   | 12       | Six providers proven; ZITADEL needs a credential the estate does not issue |
+| R-036 | A live acceptance run cannot be cleaned up   | 12       | All seven have credentials; none has met a real API |
 | R-037 | Typecheck ignored the error it needed to report | 12    | Resolved                 |
 | R-038 | Drift reported every optional component      | 9        | Resolved                 |
 | R-039 | ZITADEL module could not create a new project | 16      | Resolved                 |
@@ -1540,10 +1540,17 @@ reports a dry run and issues nothing.
    wrong server authenticates, does not find the project, and answers 404, which
    this code reads as "already gone".
 
-   The four keys exist and are empty. Until they hold PATs the projects are
-   reported as skipped for a missing credential, which is the honest state --
-   an empty value reads as absent rather than as a credential that does not
-   work.
+   The four keys hold PATs as of 2026-08-27, copied from the per-environment
+   `ZITADEL_SERVICE_TOKEN` that `koras-control-plane` already keeps for its own
+   provisioning. A dry run against a real estate now reports thirty resources
+   and **no skips** — the first time teardown has been able to cover an estate
+   end to end.
+
+   Worth noting as a standing cost rather than a resolution: those tokens are a
+   second copy of a credential that lives in another Doppler project, which is
+   two places to rotate and one to forget. Separate machine users scoped to
+   teardown would be better, and matter more if this is ever pointed at
+   something not named `koras-e2e-`.
 
    Recorded rather than quietly re-fixed because the sequence is the point: a
    comment nothing could test was wrong, replacing it with confidence was also
