@@ -244,6 +244,7 @@ branding" there.
 | R-039 | ZITADEL module could not create a new project | 16      | Resolved                 |
 | R-040 | Teardown missed a whole provider silently    | 16       | Resolved                 |
 | R-041 | Teardown made the operator write secrets to disk | 20   | Resolved                 |
+| R-042 | Prose is the only untested part of the repository | 12  | Partly closed            |
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
 | R-017 | Control-plane env contract was the product one | 10     | Resolved                 |
 | R-018 | Queue polling billed per command             | 8        | Resolved                 |
@@ -1437,8 +1438,9 @@ Phase 13 said a live apply was a manual runbook step and that "teardown is what
 makes it repeatable". Teardown does not make anything repeatable, because it
 does not delete.
 
-`tests/e2e/helpers/teardown.ts` holds four guards, sixteen tests, and no
-provider call. Every `Deleter` is injected and no implementation exists, so the
+`tests/e2e/helpers/teardown.ts` — since moved to
+`tooling/koras-cli/src/teardown/guards.ts` — holds four guards, sixteen tests,
+and no provider call. Every `Deleter` is injected and no implementation exists, so the
 suite proves the guards refuse the right names and proves nothing about
 deletion. It also models three resource kinds — GitHub repositories, Doppler
 projects, Supabase projects — where a provision writes to seven. Upstash,
@@ -1862,3 +1864,51 @@ does not un-distribute what has already been fetched, and pretending otherwise
 is worse than recording it. The credentials were destroyed by deleting the
 resources they belonged to, which is the only remedy that works after
 disclosure.
+
+
+---
+
+## R-042 — prose is the only part of this repository that can be wrong quietly
+
+**Severity 12 (likelihood 4 × impact 3). Partly closed 2026-08-27.**
+
+Three defects inside one session came from documentation and comments rather
+than from code, and none of them could have been caught by the test suite:
+
+| Claim | Where | Reality |
+|-------|-------|---------|
+| ZITADEL teardown "needs a service-account JWT exchange rather than a bearer token" | `providers/index.ts` | Never true. A bearer token has always worked, and the estate already held one |
+| `DATABASE_ADMIN_URL` "is not an application setting, so it is absent from `secrets.manifest`" | `PROVISIONING_RUNBOOK.md` | A decision, and the wrong one. The preflight could not ask for a secret the deploy required |
+| `ZITADEL_SERVICE_TOKEN` is an orphan | a Doppler audit | The secret was real; the *factory's declaration* of it was missing |
+
+The common shape is not carelessness. Each was a statement about something that
+does **not** exist — an unbuilt deleter, an omitted entry, an undeclared
+setting — and an absence has no behaviour to assert. Every other claim in this
+repository is executable and has a test standing behind it; these three were the
+kind that no green suite could ever have contradicted, which is exactly why they
+survived being read many times.
+
+**What is now checked.** `tests/docs/file-references.test.ts` verifies that every
+path a document names exists. That covers claims about *where*, which is the
+commonest kind of documentation rot — files move and the prose does not move
+with them — and it found two stale references the moment it was written.
+
+Two escape hatches exist and both are self-checking, because an exemption is a
+claim as well:
+
+- `ABSENT_ON_PURPOSE` — paths named in order to say they do not exist. Each is
+  asserted *absent*, so a document claiming a file was never created fails when
+  somebody creates it.
+- `MOVED` — old paths kept inside dated accounts, where editing the path would
+  falsify the record. The old path must be gone *and* the replacement must
+  exist.
+
+Mutation-checked in both directions: an invented path in a document fails, and
+an exemption naming a file that does exist fails.
+
+**What is still open, and cannot be closed this way.** A false claim about
+*where* is mechanical. A false claim about *why* — the JWT sentence, the
+manifest reasoning — is not. The only defence there is that an explanation of
+why something is absent should be treated as the least trustworthy sentence in
+any file, because it is the one thing nothing can verify. Prefer building the
+thing to explaining why it is missing.

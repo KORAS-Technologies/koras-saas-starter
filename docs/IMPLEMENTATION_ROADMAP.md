@@ -1217,7 +1217,10 @@ That is not something a test suite should be able to start by accident, so:
   `PROVISIONING_RUNBOOK.md`. They are placeholders, honestly labelled, rather
   than an automated apply nobody authorised.
 - `helpers/teardown.ts` holds the *guards* on deletion — which names may be
-  deleted and under what conditions — and nothing that deletes.
+  deleted and under what conditions — and nothing that deletes. (It has since
+  moved to `tooling/koras-cli/src/teardown/guards.ts`: it had looked like test
+  scaffolding and is the safety mechanism of a destructive command. The account
+  below describes what was true when it was written.)
 
 **A live apply is not currently reversible, and an earlier version of this
 section implied it was.** Two things stand in the way, and both were found by

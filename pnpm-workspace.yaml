@@ -5,3 +5,4 @@ packages:
   - "generators/*"
   - "tooling/*"
   - "tests/e2e"
+  - "tests/docs"

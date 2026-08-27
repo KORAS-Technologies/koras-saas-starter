@@ -1,0 +1,17 @@
+{
+  "name": "koras-docs-tests",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Checks the claims this repository's documentation makes about itself",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
