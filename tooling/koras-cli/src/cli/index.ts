@@ -23,9 +23,9 @@ COMMANDS:
   bootstrap:doctor           Check that every bootstrap integration is configured
                              and reachable. Read-only.
 
-  teardown <project> --project-path <dir>
+  teardown <product> --product-path <dir>
                              Remove the infrastructure of an acceptance run.
-                             <dir> is the generated project, not its Terraform
+                             <dir> is the generated product, not its Terraform
                              directory. Pulls its own credentials from Doppler
                              and runs terraform output -json itself, so no
                              wrapper is typed, stdin stays free for the
@@ -37,14 +37,14 @@ COMMANDS:
                              named koras-e2e-... can ever be deleted; a real
                              estate is refused by name.
 
-  teardown <project> <src>   The same, reading outputs from a file, or from
+  teardown <product> <src>   The same, reading outputs from a file, or from
                              stdin with a single dash. Cannot delete: the JSON
                              consumes stdin, so the confirmation prompt has
                              nothing to read the answer from.
 
 EXAMPLES:
   pnpm koras bootstrap:doctor
-  pnpm koras teardown koras-e2e-shop --project-path ../output/koras-e2e-shop
+  pnpm koras teardown koras-e2e-shop --product-path ../output/koras-e2e-shop
 
 Both fetch what they need from Doppler (${BOOTSTRAP_DOPPLER_PROJECT} /
 ${BOOTSTRAP_DOPPLER_CONFIG}) by re-running themselves under it. Do not type a
@@ -142,7 +142,7 @@ function hasTeardownCredentials(): boolean {
 }
 
 /**
- * `koras teardown <project> --project-path <dir>`
+ * `koras teardown <product> --product-path <dir>`
  *
  * Reads what Terraform recorded rather than asking each provider what exists.
  * State is the record of what this configuration created; a listing is a guess
@@ -153,11 +153,11 @@ function hasTeardownCredentials(): boolean {
  * only caller.
  */
 async function runTeardown(args: string[]): Promise<number> {
-  const projectSlug = args[0]
+  const productSlug = args[0]
   const source = args[1]
 
-  if (!projectSlug) {
-    console.error('usage: pnpm koras teardown <project-slug> --project-path <project-dir>')
+  if (!productSlug) {
+    console.error('usage: pnpm koras teardown <product-slug> --product-path <product-dir>')
     return 2
   }
 
@@ -167,7 +167,7 @@ async function runTeardown(args: string[]): Promise<number> {
         '',
         'No Terraform outputs given. Let teardown read them:',
         '',
-        `  pnpm koras teardown ${projectSlug} --project-path ../output/${projectSlug}`,
+        `  pnpm koras teardown ${productSlug} --product-path ../output/${productSlug}`,
         '',
         'A file also works, and is worse. terraform output -json includes the',
         'values of outputs marked sensitive, so the file it writes holds live',
@@ -184,17 +184,17 @@ async function runTeardown(args: string[]): Promise<number> {
   }
 
   let raw: string
-  if (source === '--project-path') {
-    const projectPath = args[2]
-    if (!projectPath) {
-      console.error('usage: pnpm koras teardown <project-slug> --project-path <project-dir>')
+  if (source === '--product-path') {
+    const productPath = args[2]
+    if (!productPath) {
+      console.error('usage: pnpm koras teardown <product-slug> --product-path <product-dir>')
       return 2
     }
-    // The project root, not its Terraform directory. The operator knows where
-    // they generated the project; `infrastructure/terraform` is this tool's own
-    // layout and asking them to append it is asking them to know an internal
-    // detail in order to delete something.
-    const dir = join(projectPath, 'infrastructure', 'terraform')
+    // The product root, not its Terraform directory. The operator knows where
+    // they generated it; `infrastructure/terraform` is this tool's own layout,
+    // and asking them to append it is asking them to know an internal detail in
+    // order to delete something.
+    const dir = join(productPath, 'infrastructure', 'terraform')
     // Run Terraform rather than being piped its output.
     //
     // The pipe was the documented form and it cannot work: the JSON arrives on
@@ -234,7 +234,7 @@ async function runTeardown(args: string[]): Promise<number> {
 
   let inventory
   try {
-    inventory = qualify(inventoryFromOutputs(parseTerraformOutputs(raw)), projectSlug)
+    inventory = qualify(inventoryFromOutputs(parseTerraformOutputs(raw)), productSlug)
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
     console.error(`Could not parse the Terraform outputs: ${detail}`)
@@ -254,7 +254,7 @@ async function runTeardown(args: string[]): Promise<number> {
         '',
         'Let teardown run Terraform instead, which leaves stdin free:',
         '',
-        `  pnpm koras teardown ${projectSlug} --project-path ../output/${projectSlug}`,
+        `  pnpm koras teardown ${productSlug} --product-path ../output/${productSlug}`,
         '',
       ].join(String.fromCharCode(10)),
     )
@@ -263,7 +263,10 @@ async function runTeardown(args: string[]): Promise<number> {
 
   const outcome = await teardown({
     inventory,
-    projectSlug,
+    // The command says "product" because that is what an operator generated
+    // and what they type. The guards below judge a name and do not care which
+    // profile produced it, so they keep the neutral term.
+    projectSlug: productSlug,
     credentials: credentialsFromEnv(),
     fetchImpl: globalThis.fetch as never,
   })

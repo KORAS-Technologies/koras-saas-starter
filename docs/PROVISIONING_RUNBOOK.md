@@ -335,7 +335,7 @@ The control-plane profile differs only in its component set: two applications
 
 ## 5. Tearing down an acceptance run
 
-Only for projects named `koras-e2e-...`. Every guard in `koras teardown` refuses
+Only for products named `koras-e2e-...`. Every guard in `koras teardown` refuses
 anything else by name, and a real estate is refused even with deletion enabled.
 
 ### Before you start
@@ -344,7 +344,7 @@ Three things, none of which the command checks for you:
 
 1. **You are in the starter.** Every command below runs from
    `C:\repos\Projects\koras-saas-starter`. The generated project lives beside
-   it, at `../output/<project>/`, and you never `cd` into it.
+   it, at `../output/<product>/`, and you never `cd` into it.
 2. **The project is named `koras-e2e-something`.** The guards refuse every other
    name, deletion enabled or not. This is the safety mechanism, not a
    convention.
@@ -358,7 +358,7 @@ Three things, none of which the command checks for you:
 Git Bash and PowerShell:
 
 ```bash
-pnpm koras teardown <project> --project-path ../output/<project>
+pnpm koras teardown <product> --product-path ../output/<product>
 ```
 
 **No `doppler run` wrapper.** Teardown fetches its own credentials by
@@ -368,7 +368,7 @@ An outer wrapper is detected rather than nested, so one typed by hand still
 works — it is just never necessary. This was the last command in the repository
 still asking for one.
 
-`--project-path` takes the **generated project**, not its Terraform directory.
+`--product-path` takes the **generated product**, not its Terraform directory.
 Teardown appends `infrastructure/terraform` itself and runs
 `terraform output -json` there. That is not only about typing: the outputs
 include the values of outputs marked sensitive, so they must not reach disk —
@@ -391,7 +391,7 @@ The same command with `KORAS_E2E_TEARDOWN=1`.
 Git Bash:
 
 ```bash
-KORAS_E2E_TEARDOWN=1 pnpm koras teardown <project> --project-path ../output/<project>
+KORAS_E2E_TEARDOWN=1 pnpm koras teardown <product> --product-path ../output/<product>
 ```
 
 PowerShell — `VAR=1 cmd` is not PowerShell syntax; set it on `$env:` first, and
@@ -399,7 +399,7 @@ clear it afterwards so the next dry run is still a dry run:
 
 ```powershell
 $env:KORAS_E2E_TEARDOWN = "1"
-pnpm koras teardown <project> --project-path ../output/<project>
+pnpm koras teardown <product> --product-path ../output/<product>
 Remove-Item Env:\KORAS_E2E_TEARDOWN
 ```
 
@@ -411,7 +411,7 @@ gave could not delete anything:
 
 ```bash
 # the old form -- prints the prompt, then answers it with nothing
-terraform -chdir=... output -json | pnpm koras teardown <project> -
+terraform -chdir=... output -json | pnpm koras teardown <product> -
 ```
 
 The JSON arrives on stdin and is read to end-of-file. The prompt then reads the
@@ -450,11 +450,20 @@ organization answers 404 — which reads as success.
 
 ### Step 4 — the three things teardown never touches
 
+Four ZITADEL projects, the workspace, and the directory:
+
 ```bash
-# 1. The HCP Terraform workspace, at app.terraform.io. Delete it by hand.
-# 2. The generated directory, which is yours:
-rm -rf ../output/<project>
-# 3. Nothing else. There is no fourth.
+# 1. The four ZITADEL projects, one per instance console. Teardown reports them
+#    as skipped for a missing credential -- see the note below and R-036.
+# 2. The HCP Terraform workspace, at app.terraform.io. Delete it by hand.
+# 3. The generated directory, which is yours:
+rm -rf ../output/<product>
+```
+
+PowerShell for the last one:
+
+```powershell
+Remove-Item -Recurse -Force ../output/<product>
 ```
 
 ### If a step fails
@@ -488,8 +497,8 @@ resources are skipped rather than failed.
 
 | Left behind | Why | Where |
 |-------------|-----|-------|
-| HCP Terraform workspace | Holds the state of what was just deleted. Terraform is never invoked by teardown, so nothing removes it | app.terraform.io, workspace `<project>` |
-| The generated directory | It is yours, on your disk | `rm -rf ../output/<project>` |
+| HCP Terraform workspace | Holds the state of what was just deleted. Terraform is never invoked by teardown, so nothing removes it | app.terraform.io, workspace `<product>` |
+| The generated directory | It is yours, on your disk | `rm -rf ../output/<product>` |
 
 **ZITADEL projects, in practice, are still deleted by hand.** The deleter
 exists and works, and it needs a personal access token on a machine user, set as
