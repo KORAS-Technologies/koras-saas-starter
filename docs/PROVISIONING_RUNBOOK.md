@@ -30,6 +30,23 @@ pnpm create-koras-app <name> --profile <profile> --provision --output-dir ../out
 
 # 4. Retry after a partial failure. Skips generation, keeps existing state.
 pnpm create-koras-app <name> --profile <profile> --provision-only --output-dir ../output
+
+# --- the apply is done; the project cannot deploy anything yet ---
+
+cd ../output/<name>
+
+# 5. Create the restricted database role, once per environment. Keep both URLs.
+bash local/scripts/create-app-role.sh "<privileged database url>"
+
+# 6. See what Doppler will be asked for. Writes nothing.
+bash local/scripts/doppler-bootstrap.sh --dry-run
+
+# 7. Populate dev, test and stg, then prod. Two targets, deliberately.
+make doppler-bootstrap
+make doppler-bootstrap-prod
+
+# 8. Confirm every environment holds every setting. Names only, never values.
+make doppler-check
 ```
 
 Notes that matter:
@@ -45,6 +62,24 @@ Notes that matter:
   path, not an exception.
 - **Never skip step 0.** Every failure in the table below was found *during*
   an apply, after other providers had already created real resources.
+- **Steps 5 to 8 are not optional, and provisioning does not do them.**
+  Terraform creates the Doppler *project* and its four configs; it never writes
+  a setting into them. It cannot: it does not know the Supabase password or the
+  ZITADEL service token, and a value it could derive is still one it has no
+  reason to write. So an apply that succeeds completely leaves every Doppler
+  config empty, and the first sign is an empty Secrets tab rather than an error.
+  This section stopped at step 4 until someone provisioned an estate and asked
+  why nothing was there.
+- **Step 5 comes before step 6 for a reason.** `doppler-bootstrap` prompts for
+  `DATABASE_URL` and `DATABASE_ADMIN_URL`; both are outputs of
+  `create-app-role.sh`. Run them the other way round and you are being asked for
+  values that do not exist yet.
+- **`make doppler-bootstrap` skips `prod` deliberately**, and
+  `make doppler-bootstrap --environment prod` does not reach the script — make
+  consumes the option and reads `prod` as a target name, so the default set runs
+  and production is silently skipped. That is why step 7 is two commands.
+  Anything else the script accepts — `--dry-run`, `--outputs`, `--overwrite` —
+  has to be passed to the script directly.
 - **Doppler is invoked for you.** Steps 0, 2, 3, and 4 need the bootstrap
   secrets, so each re-runs itself as `doppler run --project
   koras-platform-bootstrap --config prod -- <the same command>` and says so on
@@ -218,6 +253,7 @@ than restarting. Fix the cause, then run step 4.
 | `403` on `GET /repos/{org}/{repo}/git/ref/heads/main` | Token lacks repository **Contents** | Add Contents: Read and write |
 | `403` creating `github_repository_environment` | Token lacks repository **Environments** | Add Environments: Read and write |
 | Vercel `repo_not_found` for a repository that exists | Vercel GitHub App not installed on the org | Install it for the organization |
+| Vercel `internal_server_error - An unexpected internal error occurred` on *some* projects | Vercel's own 500, not the configuration. Eight projects are created at once and a few can fail under that concurrency; the ones that fail differ only by which they were | Re-run the apply; Terraform creates only what is missing. Seen 2026-08-27: six of eight succeeded, `web-stg` and `admin-stg` failed. Whether the retry succeeds is not yet recorded here — fill this in once it has |
 | `Invalid Attribute Value Match` on a Vercel or Fly name | Fixed — component keys are hyphenated in the modules | Update the generated project's `modules/` copy, or regenerate |
 | `pipefail: invalid option name` from `make` | Fixed — shell scripts are pinned to LF | Regenerate, or convert CRLF to LF in place |
 | Workspace runs in `remote` execution mode | HCP default | Workspace → Settings → General → Execution Mode → Local |

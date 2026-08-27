@@ -43,8 +43,28 @@ module "bootstrap" {
   # Only where an instance holds more than one organization. Filtered rather
   # than passed whole: an absent org_id must stay absent, not arrive as null in
   # a map the module would then have to distinguish from unset.
+  #
+  # `nonsensitive` here, and nowhere downstream, is the whole of it.
+  #
+  # `zitadel_instances` is sensitive as a map because it carries a JWT profile.
+  # Reading `instance.org_id` out of it carries that mark onto an organization
+  # id, which is not a secret -- it appears in console URLs and in every
+  # management API call. The mark then travels: into the module's `var.org_id`,
+  # into `local.org_id`, out through the module output, and into the root
+  # output, where Terraform refuses to export it.
+  #
+  # Removing it at that end does not work. `nonsensitive()` applied to a map
+  # built from a module output leaves the mark in place, so the error repeats
+  # unchanged with the call added -- verified against a minimal configuration
+  # rather than assumed. The mark has to come off where the value leaves the
+  # sensitive variable, which is here.
+  #
+  # It also unmarks the discovery path: a `for_each` cannot accept a sensitive
+  # value at all, so `data.zitadel_org.discovered` failed for the same reason.
+  #
+  # This is what the `zitadel_domains` output below has always done.
   zitadel_org_ids = {
-    for env, instance in var.zitadel_instances :
+    for env, instance in nonsensitive(var.zitadel_instances) :
     env => instance.org_id if instance.org_id != null
   }
 }
@@ -79,20 +99,21 @@ output "zitadel_project_ids" {
 }
 
 # Needed only by teardown, and needed absolutely: a project id identifies
-# nothing without the organization it lives in. See the module output.
+# nothing without the organization it lives in.
 #
-# Declassified for the same reason zitadel_domains below is, and with more at
-# stake. The value derives from `zitadel_instances`, which is sensitive as a
-# whole because it carries a JWT profile; an organization id is not a secret --
-# it appears in console URLs and in every management API call.
+# Plain, with no `sensitive` and no `nonsensitive`. The mark is removed where
+# the value leaves `var.zitadel_instances`, at the module call above, which is
+# the only place removing it works.
 #
-# `sensitive = true` is what Terraform suggests in the error this produced, and
-# it is the wrong answer here: parseTerraformOutputs withholds every sensitive
-# output by design, so teardown would read an empty map, find no organization
-# for any project, and skip ZITADEL -- reporting a complete teardown while the
-# projects stayed. That is R-040 exactly, reached from a different direction.
+# `sensitive = true` is what Terraform suggests in the error this used to
+# produce, and it is the wrong answer: parseTerraformOutputs withholds every
+# sensitive output by design, so teardown would read an empty map, find no
+# organization for any project, and skip ZITADEL -- reporting a complete
+# teardown while the projects stayed. That is R-040, reached from a different
+# direction. Taking the suggestion would have turned a failed plan into a
+# successful one that quietly could not clean up after itself.
 output "zitadel_resolved_org_ids" {
-  value = nonsensitive(module.bootstrap.zitadel_resolved_org_ids)
+  value = module.bootstrap.zitadel_resolved_org_ids
 }
 
 output "zitadel_client_ids" {
