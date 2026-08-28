@@ -26,6 +26,22 @@ from this mapping without a corresponding ADR.
 
 Each environment is physically isolated:
 
+### GitHub
+
+One repository, four long-lived branches, and four GitHub Environments named for
+them — the same four names every other provider uses:
+
+```
+develop → dev      test → test      staging → stg      main → prod
+```
+
+The environments carry the deploy credentials and the protection rules; §3 has
+the branch protection and promotion detail, which is where most of the GitHub
+configuration lives. It is named here as well because this section is where a
+reader looks for *what exists per environment*, and a provider that appears in
+neither place is one nobody notices is missing — which is how Upstash and
+Cloudflare were absent from this document while being provisioned every time.
+
 ### Supabase
 
 Four separate Supabase projects:

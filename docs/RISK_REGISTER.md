@@ -2003,6 +2003,26 @@ claim as well:
 Mutation-checked in both directions: an invented path in a document fails, and
 an exemption naming a file that does exist fails.
 
+**A second mechanical class, closed 2026-08-28: lists.** Nearly every defect
+found in the preceding week came from an enumeration written by hand and then
+not updated. Teardown knew seven resource kinds where a provision creates eight.
+The test guarding that asserted a *second* hand-written list carrying the same
+omission, under a comment claiming it asserted "the whole set".
+INFRASTRUCTURE_PLAN said "all seven modules" beside a table of seven while the
+directory held eight. Upstash and Cloudflare are the two that get left off, and
+each of them outlived an estate as a result.
+
+A list is correct when written and has no way of noticing the world moved.
+Nothing fails and nobody counts. `tests/docs/enumerations.test.ts` compares each
+one against a source that cannot drift: the Terraform modules directory, and the
+`RESOURCE_KINDS` array the CLI dispatches on. Five mutations checked -- remove a
+table row, rename a heading, miscount the prose, drop a kind, add a module with
+no documentation.
+
+Not extended to the credential and prompt tables, which map to values with no
+runtime source: a test there would be a third copy of the same list rather than
+a check of it.
+
 **What is still open, and cannot be closed this way.** A false claim about
 *where* is mechanical. A false claim about *why* — the JWT sentence, the
 manifest reasoning — is not. The only defence there is that an explanation of
