@@ -41,6 +41,7 @@ const OUTPUTS = JSON.stringify({
   github_repository_full_name: { value: 'KORAS-Technologies/shop' },
   github_repository_url: { value: 'https://github.com/KORAS-Technologies/shop' },
   doppler_project_name: { value: 'shop' },
+  cloudflare_zone_id: { value: 'zone-1' },
   supabase_project_refs: { value: { dev: 'ref-dev', test: 'ref-test', stg: 'ref-stg', prod: 'ref-prod' } },
   zitadel_project_ids: { value: { dev: '1', test: '2', stg: '3', prod: '4' } },
   vercel_project_ids: {
@@ -96,6 +97,38 @@ describe('the registration payload', () => {
   it('does not attribute another environment resources to dev', () => {
     expect(payload.environments.prod.infrastructure.fly_apps).toEqual({ api: 'shop-api-prod' })
     expect(payload.environments.prod.infrastructure.supabase_project_ref).toBe('ref-prod')
+  })
+
+  it('tells the Control Plane where to call this product back', () => {
+    // Contract section 6 is the reverse direction: the Control Plane calls
+    // /internal/platform/v1/tenants on the product. It cannot do that without
+    // an address, and this field was absent until 2026-08-28 -- so every
+    // product registered before then sits in the registry with a null one.
+    // Nothing broke, because the Control Plane's product platform client is
+    // still a mock; it would have broken the moment that client was wired.
+    expect(payload.environments.dev.infrastructure.platform_api_base_url).toBe(
+      'https://shop-api-dev.fly.dev',
+    )
+    // Derived from the Fly app Terraform made, not reassembled from the slug,
+    // so the two cannot drift apart.
+    expect(payload.environments.prod.infrastructure.platform_api_base_url).toBe(
+      'https://shop-api-prod.fly.dev',
+    )
+  })
+
+  it('omits the callback address where there is no api service', () => {
+    // stg and test have no fly apps in these outputs. An absent field leaves
+    // whatever the registry holds alone; a URL that answers nothing would be
+    // worse than silence, because reconciliation would then compare against it.
+    expect(payload.environments.stg.infrastructure.platform_api_base_url).toBeUndefined()
+  })
+
+  it('registers the Cloudflare zone the hostnames live in', () => {
+    // Available from the outputs and accepted by the contract since it was
+    // written, and sent by nothing until the same date. One zone per project,
+    // so the same id is correct in all four environments.
+    expect(payload.environments.dev.infrastructure.cloudflare_zone_id).toBe('zone-1')
+    expect(payload.environments.prod.infrastructure.cloudflare_zone_id).toBe('zone-1')
   })
 
   it('carries no credential, whatever the outputs held', () => {

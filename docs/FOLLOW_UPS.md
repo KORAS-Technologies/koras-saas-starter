@@ -101,6 +101,28 @@ generator's configuration resolution and to the shell script, with tests for
 both, and it should be decided together with F3 — a product minting its own
 registration credential is the same trust question one layer down.
 
+### F2c — every product registered before 2026-08-28 has a null callback address
+
+- [ ] Re-register the products already in the registry
+
+Generation-time registration never sent `platform_api_base_url`, so
+`product_environments.platform_api_base_url` is NULL for every product
+registered up to that date, including `koras-e2e-atlas`. It also never sent
+`cloudflare_zone_id`, which the contract has always accepted and the Terraform
+outputs have always carried.
+
+Both are sent now. Nothing had broken, because the Control Plane's product
+platform client does not exist yet — `ProductPlatformAdapter` is a Protocol whose
+only implementation is `MockProductPlatformAdapter`. It would have broken the
+moment that client was wired, and it would have read as a Control Plane defect
+rather than a registration one: the tenant endpoints exist in every generated
+product, and the registry simply had no address for them.
+
+**Why not done here:** re-registering means re-running `--provision-only`
+against a live estate, which is an operator action rather than a change to this
+repository. References are upserted and never pruned, so a re-run fills the two
+missing fields and disturbs nothing else.
+
 ### F2b — the per-product registration credential was designed and never built
 
 - [ ] Have registration issue a per-product credential, or decide it should not
