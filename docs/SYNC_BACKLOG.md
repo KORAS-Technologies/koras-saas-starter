@@ -431,8 +431,28 @@ Single-sourced in `_shared/`, which takes real divergence from 58 paths to 48.
 Everything else in `packages/` is genuine. `auth` is four files at 78–94%
 similarity, which is the two profiles modelling an authenticated caller
 differently and always have. `branding` and `tenant` are 9% and 11% similar —
-different files that share a name. `api-client` and `types` differ by a
-`permissions` dependency the product has no package for.
+different files that share a name.
+
+`api-client` and `types` were recorded here as differing by "a `permissions`
+dependency the product has no package for", and that was wrong twice over. The
+product *does* ship `packages/permissions` — it is in `_shared/`. And looking at
+what each package imports rather than what it declares gives three different
+answers:
+
+| Package | Imports `permissions` | Declares it | |
+|---------|----------------------|-------------|-|
+| product `types` | no | no | correct |
+| control-plane `types` | yes | yes | correct |
+| control-plane `api-client` | **no** | **yes** | unused; removed 2026-08-28 |
+
+The dependency appeared in no source file in that package. It is gone, and the
+two `api-client` manifests still differ — correctly, because the control-plane's
+imports `@<slug>/types` and the product's imports nothing at all. That is the
+divergence; the third dependency was never part of it.
+
+Worth recording because the original note explained the difference with a reason
+that was not the reason, and a wrong explanation is harder to catch than a
+missing one: it reads as settled.
 
 All ten `local/` files are genuine too, and the "4 files" was wrong in the other
 direction: `.env.local.example` is 46% similar between profiles,
