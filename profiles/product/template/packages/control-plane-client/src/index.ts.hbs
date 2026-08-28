@@ -8,6 +8,16 @@
  * The registration payload carries infrastructure references only. Secret
  * values must never be sent, logged, or stored here — Doppler is the sole
  * secret authority.
+ *
+ * **Specification:** `koras-control-plane/docs/PRODUCT_REGISTRATION_CONTRACT.md`.
+ * That document is authoritative for both directions. This package is the
+ * *outbound* half only — the client for calling the Control Plane. The inbound
+ * half, the `/internal/platform/v1/tenants` endpoints the Control Plane calls
+ * back into (contract §6), is served by `services/api` and is a different thing
+ * that is easy to conflate with this one.
+ *
+ * The shapes below do not match that contract, and a request built from them is
+ * refused. See `docs/SYNC_BACKLOG.md`, A4.
  */
 
 export const PRODUCT_SLUG = '{{projectSlug}}'

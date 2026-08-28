@@ -248,6 +248,20 @@ When `--provision` is passed:
 `--provision` combined with `--dry-run` runs steps 1–5 and exits. No apply.
 No registration.
 
+### What step 10 sends
+
+The registration request and its rules — the endpoint, the authentication, the
+per-environment payload, the idempotency guarantee, the forbidden fields, and
+the Product Platform API a product must serve in the other direction — are
+specified by **`koras-control-plane/docs/PRODUCT_REGISTRATION_CONTRACT.md`**.
+That document is authoritative; `src/registration/contract.ts` implements it and
+carries the same pointer in its header.
+
+Step 10 is not the last word on the registry. It records the estate as it stood
+the day the project was generated, and nothing about that estate is frozen
+afterwards, so the generated `deploy.yml` re-registers each environment after it
+deploys it. See [REGISTRATION_LIFECYCLE.md](REGISTRATION_LIFECYCLE.md).
+
 ---
 
 ## 9. Dry-Run Output Format

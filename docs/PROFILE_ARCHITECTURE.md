@@ -503,6 +503,20 @@ requires explicit human confirmation before `terraform apply`.
 
 ## 6. Registration Behavior
 
+**The contract lives in the Control Plane, not here.**
+`koras-control-plane/docs/PRODUCT_REGISTRATION_CONTRACT.md` is authoritative for
+both directions: the payload a product sends when it registers, and the Product
+Platform API a product must serve so the Control Plane can call back into it.
+This repository implements the client half of it, in
+`generators/create-koras-app/src/registration/` and in
+`profiles/product/template/packages/control-plane-client/`. Where this document
+and that one disagree, that one is right.
+
+The link is here because its absence had a cost: a second document describing
+the same contract was written in the Control Plane repository, contradicting the
+real one in four places, because nothing connected an implementation to its
+specification.
+
 | Profile         | Registers with Control Plane? | Notes                          |
 |-----------------|-------------------------------|--------------------------------|
 | `product`       | Yes                           | After infrastructure is live   |
@@ -537,19 +551,67 @@ Terraform
 Validate infrastructure
   ↓
 POST /api/platform/v1/products
-  {
-    "name": "docoris",
-    "slug": "docoris",
-    "github_repo": "koras-org/docoris",
-    "supabase_projects": { "dev": "...", "test": "...", ... },
-    "vercel_projects": { "web": "...", "admin": "..." },
-    "fly_apps": { "api": "...", "worker": "..." },
-    "zitadel_project": "docoris"
-  }
 ```
 
+The payload is defined by the contract and built by
+`src/registration/contract.ts`. It is keyed by environment, because a product
+has four of them and each has its own Supabase project, ZITADEL project and Fly
+apps:
+
+```json
+{
+  "code": "docoris",
+  "name": "docoris",
+  "slug": "docoris",
+  "repository": "korastech/docoris",
+  "profile": "product",
+  "primary_domain": "docoris.com",
+  "environments": {
+    "dev": {
+      "infrastructure": {
+        "github_repository": "korastech/docoris",
+        "doppler_project": "docoris",
+        "doppler_config": "dev",
+        "supabase_project_ref": "...",
+        "zitadel_instance": "dev",
+        "zitadel_project_id": "...",
+        "vercel_projects": { "web": "prj_...", "admin": "prj_..." },
+        "fly_apps": { "api": "docoris-api-dev", "worker": "docoris-worker-dev" },
+        "platform_api_base_url": "https://docoris-api-dev.fly.dev"
+      },
+      "services": ["api", "worker"]
+    }
+  }
+}
+```
+
+This document previously printed a flat payload with `github_repo`,
+`supabase_projects` and `zitadel_project` in it. No such request has ever been
+sent: the Control Plane's request model sets `extra="forbid"`, so every one of
+those field names is a 422. It was an illustration nobody checked against the
+schema — which is the failure mode R-042 names.
+
 The payload contains **only infrastructure references** — never secret values
-such as API keys, connection strings, or tokens.
+such as API keys, connection strings, or tokens. Enforced twice: the generator
+builds it from Terraform outputs that were not marked sensitive, and the Control
+Plane rejects secret-shaped field names outright rather than dropping them.
+
+### The two halves are different packages
+
+`packages/control-plane-client` in a generated product is the **outbound** half
+— the client for calling the Control Plane. The **inbound** half, the
+`/internal/platform/v1/tenants` endpoints the Control Plane calls back into
+(contract §6), is served by `services/api` and is a separate thing that is easy
+to conflate with it. The `control_plane_client` capability generates the
+outbound half only.
+
+### Registration happens once, and then again on every deployment
+
+Generation-time registration reports what Terraform just created. It cannot
+report what changes afterwards, so `deploy.yml` re-registers the environment it
+just deployed. See [REGISTRATION_LIFECYCLE.md](REGISTRATION_LIFECYCLE.md) for
+what each pass can and cannot carry, and for why the Control Plane never runs
+that job.
 
 ---
 

@@ -239,3 +239,6 @@ ZITADEL PROD  →  main branch     →  prod environment
 - Terraform never auto-applies — explicit human approval required
 - Generator never silently overwrites or destroys existing resources
 - Control Plane registration never transmits secret values — only infrastructure references
+- Registration is specified by `koras-control-plane/docs/PRODUCT_REGISTRATION_CONTRACT.md`,
+  which is authoritative for both directions; this repository implements the
+  client half of it. See [REGISTRATION_LIFECYCLE.md](REGISTRATION_LIFECYCLE.md)

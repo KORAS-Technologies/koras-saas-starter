@@ -283,6 +283,12 @@ The Control Plane must be deployed and reachable before a product can register.
 The Control Plane itself never registers with anything — it is bootstrapped
 independently.
 
+A product that is generated before any Control Plane exists is not stuck there.
+That is the documented bootstrap order (R-001), and registration is retried by
+the `register` job in every environment's deployment, so the entry appears at
+the first deployment after a Control Plane is live. See
+[REGISTRATION_LIFECYCLE.md](REGISTRATION_LIFECYCLE.md).
+
 ---
 
 ## 8. Local Development Service Dependencies

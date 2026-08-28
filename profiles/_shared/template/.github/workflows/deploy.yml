@@ -592,3 +592,51 @@ jobs:
           done
           echo "The API never became healthy."
           exit 1
+
+  register:
+    name: Register with the Control Plane (${{ inputs.environment }})
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    # Last, and after `verify`, because the registry should record what is
+    # serving rather than what was attempted -- `platform_api_base_url` is a URL
+    # the previous job has just proved answers, and answers for this
+    # environment.
+    #
+    # This exists because registration used to happen exactly once, at
+    # generation, from the outputs of the first `terraform apply`. Nothing
+    # re-sent a reference afterwards, so a service added later, an environment
+    # provisioned later, a rotated ZITADEL project, or a product generated
+    # before its Control Plane existed all left the registry holding the day the
+    # project was generated -- and reconciliation, which compares the registry
+    # against reality, turned every one of those into drift nobody could
+    # explain.
+    #
+    # This workflow is shared by both profiles, and the Control Plane must never
+    # register itself: that would make the platform a customer of itself. The
+    # refusal lives in the script rather than in a job condition here, because
+    # this file is copied into a generated project verbatim and never rendered
+    # -- Handlebars would consume every ${{ ... }} expression in it -- so there
+    # is no generation-time conditional available. The script reads the profile
+    # from .koras/project.yaml, the same way check-rls-connection.sh above does,
+    # and refuses on control-plane. It is the fourth of four independent
+    # refusals; the other three are in the generator, in the Control Plane's
+    # request schema, and in its database.
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the Doppler CLI
+        run: |
+          curl -sSfL https://cli.doppler.com/install.sh | sudo sh
+      - name: Re-register this environment's infrastructure references
+        # References only, read by name from Doppler. No credential is fetched,
+        # and none could be sent: the Control Plane rejects secret-shaped field
+        # names rather than dropping them, and the script applies the same rule
+        # before the request leaves.
+        #
+        # An unconfigured Control Plane is a skip rather than a failure -- R-001,
+        # the documented bootstrap order, and the same rule the generator
+        # applies. A *misconfigured* one fails the job, because a
+        # misconfiguration reported as nothing-to-do is one nobody fixes.
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: bash local/scripts/register-with-control-plane.sh "${{ inputs.environment }}"

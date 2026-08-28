@@ -34,6 +34,8 @@ All planning and reference documents live in `docs/`, matching
 | `docs/OWASP_CHECKLIST.md`        | OWASP API Top 10 review of the generated API     |
 | `docs/SYNC_BACKLOG.md`           | Gaps between the factory, the two profiles and the generated repositories |
 | `docs/CLAUDE_CODE.md`            | Claude Code skills, profiles and inheritance      |
+| `docs/REGISTRATION_LIFECYCLE.md` | When a product registers, and what each pass carries |
+| `docs/FOLLOW_UPS.md`             | Work identified and deliberately left undone, with the reason |
 
 ## Repository layout (target state)
 
@@ -198,13 +200,21 @@ well as JavaScript; they did not until 2026-08-25, and `turbo` was replaying
 cached results across template edits until the same day (R-035).
 
 **Registration, in one paragraph.** A product registers itself with the Control
-Plane after `terraform apply`, from `generators/create-koras-app/src/registration/`.
-The address and bearer token come from Doppler as `KORAS_CONTROL_PLANE_URL` and
+Plane after `terraform apply`, from `generators/create-koras-app/src/registration/`,
+and again after every deployment of an environment, from
+`local/scripts/register-with-control-plane.sh` in the shared template. The
+address and bearer token come from Doppler as `KORAS_CONTROL_PLANE_URL` and
 `KORAS_CONTROL_PLANE_TOKEN`; `--control-plane-url` overrides the former and
 nothing overrides the latter. An unconfigured Control Plane is a skip, not a
-failure — that is the documented bootstrap order (R-001). A failure never
-unwinds infrastructure. The Control Plane profile registers nothing, refused
-three independent times.
+failure — that is the documented bootstrap order (R-001) — while a
+*misconfigured* one is a failure, because a misconfiguration reported as
+nothing-to-do is one nobody fixes. A failure never unwinds infrastructure. The
+Control Plane profile registers nothing, refused four independent times; the
+fourth matters because `deploy.yml` is shared by both profiles and cannot be a
+Handlebars template. The contract is
+`koras-control-plane/docs/PRODUCT_REGISTRATION_CONTRACT.md` and it is
+authoritative; `docs/REGISTRATION_LIFECYCLE.md` records what each pass can and
+cannot carry, and why.
 
 
 Caveats when reading the roadmap:
