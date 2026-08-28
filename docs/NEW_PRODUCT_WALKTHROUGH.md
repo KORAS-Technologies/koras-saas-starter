@@ -28,9 +28,12 @@ that a plan can only be created with `curl` and a staff token. Stage 4.2 is the
 way through. Without it you will create the organization, start a run, and have
 it name a plan that does not exist.
 
-**2. `KORAS_CONTROL_PLANE_TOKEN` is not issued by the Control Plane**, whatever
-`PROVISIONING_RUNBOOK.md` used to say. It is a ZITADEL token for a service user,
-nothing provisions it, and §A below is the only description of it that exists.
+**2. Neither Control Plane setting exists in the bootstrap config**, so
+registration has never actually run in this estate — checked, not assumed. And
+`KORAS_CONTROL_PLANE_TOKEN` is not issued by the Control Plane, whatever
+`PROVISIONING_RUNBOOK.md` used to say: it is a ZITADEL token for the `registrar`
+service account, it lasts 12 hours, and §A.2 is the only description of it that
+exists.
 
 **3. `doppler-bootstrap` never asks for the two Control Plane settings.** They
 are deliberately absent from the environment contract so that
@@ -40,153 +43,297 @@ hand. Stage 3.3.
 
 ---
 
-# A. The two credentials, and how to get them
+# A. The three credentials, and where each comes from
 
-This section exists because the answer was not written down anywhere, and the
-one sentence that tried was wrong.
+Measured against the live dev estate on 2026-08-28, not described from the
+shape of the code. Where a value is given below it was read from Doppler or
+from ZITADEL; where a result is given it was observed.
+
+**Neither name exists in `koras-platform-bootstrap` / `prod` today.** Listed by
+name on 2026-08-28: Cloudflare, Doppler, Fly, GitHub, Supabase, Terraform,
+Vercel and four ZITADEL instances' worth of settings, and neither of these
+among them. So generation-time registration has never run in this estate —
+every product so far was skipped as not-configured, correctly and silently.
 
 ## A.1 `KORAS_CONTROL_PLANE_URL`
 
-**What it is:** the origin of the Control Plane's platform API. Scheme and host,
-no path and no trailing slash — both the generator and
-`local/scripts/register-with-control-plane.sh` append
+The origin of the Control Plane's platform API: scheme and host, no path and no
+trailing slash. The generator and
+`local/scripts/register-with-control-plane.sh` both append
 `/api/platform/v1/products` themselves.
 
-```
-https://koras-control-plane-api-prod.fly.dev
-```
+**The values.** Read from `koras-control-plane`'s own Doppler configs, which
+already carry this name in all four:
 
-or the custom hostname if the Control Plane's Cloudflare zone gives it one.
+| Control Plane environment | Value |
+|---|---|
+| dev | `https://koras-control-plane-api-dev.fly.dev` |
+| test | `https://koras-control-plane-api-test.fly.dev` |
+| stg | `https://koras-control-plane-api-stg.fly.dev` |
+| prod | `https://koras-control-plane-api-prod.fly.dev` |
 
-**Where to find it:** it is the Control Plane's own API, so it comes from the
-Control Plane's estate rather than from anything this product knows. Two
-reliable ways:
+The pattern is the one `deploy.yml` deploys to — `<repository>-<service>-<environment>.fly.dev`
+— so it holds for any Control Plane the same pipeline built.
+
+**Which one goes where.** Two different questions, and they have different
+answers:
+
+- **In `koras-platform-bootstrap` / `prod`**, read by the generator: there is
+  one name and one value, because generation-time registration sends all four
+  of a product's environments in a single request to a single registry. Point it
+  at the Control Plane that owns this estate. For an acceptance run like
+  `koras-e2e-atlas`, that is **dev**.
+- **In the product's own four Doppler configs**, read by the deploy-time
+  `register` job: each may point somewhere different, so the product's dev
+  deployment registers with the Control Plane's dev and its prod with prod. If
+  you have only one Control Plane, put the same value in all four.
+
+Confirmed reachable while writing this:
 
 ```bash
-# From the Control Plane project's Terraform outputs.
-terraform -chdir=../output/koras-control-plane/infrastructure/terraform \
-  output -json | jq -r '.api_urls.value'
-```
-
-or read it off the deployment: the shared `deploy.yml` names Fly apps
-`<repository>-<service>-<environment>`, so the Control Plane's production API is
-`https://<its repository name>-api-prod.fly.dev`.
-
-**Rules the tooling enforces.** It must parse as a URL; it must be `https`
-unless the host is a loopback address; and it must carry no embedded
-credentials — a bearer token already travels in the request header, and
-`https://user:pass@host` would put a second one in the URL and in printed
-output. A trailing slash is stripped rather than rejected.
-
-**Confirm before you store it:**
-
-```bash
-curl -sS "$KORAS_CONTROL_PLANE_URL/api/v1/health"
+$ curl -sS https://koras-control-plane-api-dev.fly.dev/api/v1/health
+{"status":"ok","version":"0.1.0","environment":"dev"}
 ```
 
 ## A.2 `KORAS_CONTROL_PLANE_TOKEN`
 
-**What it is not.** There is no endpoint on the Control Plane that issues one.
-Its routers are products, organizations, entitlements, tenants, domains,
-branding, policies, operations, infrastructure, portal and health — not one of
-them mints a credential. The description carried in this repository's documents
-for months, *"bearer token the Control Plane issues to the factory"*, was wrong
-in the specific way R-042 names: a claim about **where** something comes from
-that nothing could contradict.
+### What it has to be
 
-**What it is.** A **ZITADEL token for a service user**, presented as
-`Authorization: Bearer`. The Control Plane verifies it in
-`koras-control-plane/services/api/koras_api/core/auth.py`, which fetches the key
-set from its own ZITADEL instance. Four things have to be true, and the fourth
-is the one that surprises people:
+A **JWT access token for the `registrar` service account**, obtained from
+ZITADEL by the JWT-profile grant, carrying the Control Plane's project in its
+audience. Every clause in that sentence is load-bearing, and three of them were
+measured by getting it wrong first.
 
-| Requirement | Why | Failure |
+The account already exists — `KORAS Product Registrar`, username `registrar`,
+in each environment's ZITADEL instance. It has a JSON key and its access token
+type is JWT, which is the setting that matters most:
+
+```
+$ GET /management/v1/users/<id>          (dev instance, 2026-08-28)
+
+KORAS Terraform Automation   accessTokenType unset  -> Bearer
+KORAS Product Registrar      accessTokenType ACCESS_TOKEN_TYPE_JWT
+KORAS Provisioning Worker    accessTokenType unset  -> Bearer
+```
+
+**Why that setting decides everything.** A service account left on the default
+issues an *opaque* token. The Control Plane verifies against a JWKS key set, so
+an opaque token cannot be verified at all. Observed, using the Terraform
+account's key against the dev Control Plane:
+
+```
+exchange      : HTTP 200          <- the grant works
+expires       : 43199 seconds
+form          : opaque            <- because that account is Bearer
+control plane : HTTP 401          "Invalid or expired token"
+```
+
+The grant succeeded and the token was still useless. `registrar` is set to JWT
+precisely so this does not happen; **do not reuse the Terraform or Worker
+accounts**, and if you create a replacement, set the access token type to JWT
+at creation.
+
+The other three requirements, from
+`koras-control-plane/services/api/koras_api/core/auth.py`:
+
+| Requirement | Failure if wrong |
+|---|---|
+| Signed by *that environment's* ZITADEL instance | `401` — the keys that would verify it are never fetched |
+| Audience contains the Control Plane's `zitadel_project_id` or `zitadel_client_id` | `401` — *addressed to another application* |
+| No `email` claim — that is what marks a service user | `403` — *requires a machine identity* |
+| **No platform role granted to it** | `403` — same message, different cause |
+
+That last row is the trap. Told the factory needs permission to register
+products, the instinct is to grant `registrar` the `platform_admin` role. That
+**breaks** registration: a platform role reclassifies the token as staff, and
+the endpoint admits machines only.
+
+### The reference values you need
+
+Read from `koras-control-plane`'s Doppler configs:
+
+| Environment | Control Plane project id | ZITADEL instance | `registrar` user id |
+|---|---|---|---|
+| dev | `386896303700837805` | `https://auth-dev.korastechnologies.com` | `388065508789893846` |
+| test | `386896303432402349` | `https://koras-test-zjjy6j.us1.zitadel.cloud` | `388159672206518965` |
+| stg | `386896303432467885` | `https://koras-stg-yfcztt.us1.zitadel.cloud` | `388159782114060981` |
+| prod | `386896303449179565` | `https://koras-prod-xvn69x.us1.zitadel.cloud` | `388160767641283253` |
+
+All four `registrar` accounts exist and **all four report an access token type
+of JWT**, read off each instance on 2026-08-28. So the identity side of this is
+already correct in every environment; what is missing is only the key material
+and the two Doppler settings.
+
+### Minting one
+
+**One command.** Signing an RS256 assertion is not something to do at a shell
+prompt, so it is not asked of you:
+
+```bash
+pnpm koras:token          # mint and verify, store nothing
+pnpm koras:token --set    # ...and write it to KORAS_CONTROL_PLANE_TOKEN
+```
+
+It fetches its own credentials from `koras-platform-bootstrap` / `prod`, the way
+`bootstrap:doctor` and `teardown` do, so **no `doppler run` wrapper is typed**.
+Nothing it prints is secret: not the key, not the assertion, not the token.
+`--set` writes through stdin, so the token reaches neither the terminal, the
+process table nor the shell history.
+
+It needs three names in that config, and works out the rest:
+
+| Name | What it is |
+|---|---|
+| `KORAS_CONTROL_PLANE_KEY_JSON` | the `registrar` service account's JSON key, downloaded from ZITADEL |
+| `KORAS_CONTROL_PLANE_URL` | the Control Plane origin, from §A.1 |
+| `KORAS_CONTROL_PLANE_PROJECT_ID` | that Control Plane's ZITADEL project id, from the table above |
+
+The ZITADEL instance is **not** a fourth setting. The script reads the
+environment out of the Control Plane URL — `…-api-dev.fly.dev` is dev — and
+takes the instance from the `ZITADEL_DEV_DOMAIN` family already in that config.
+Deriving it rather than asking is deliberate: a separately-answered instance can
+disagree with the Control Plane it is supposed to belong to, and that mismatch
+is a `401` indistinguishable from an expired token.
+
+Observed on 2026-08-28 against dev:
+
+```
+==> Control Plane : https://koras-control-plane-api-dev.fly.dev  (dev)
+    ZITADEL       : https://auth-dev.korastechnologies.com
+    service user  : 388065508789893846
+    token         : JWT, valid for 12 hours
+    accepted      : yes (422 on an empty body, which is the identity passing)
+```
+
+That last line is the check worth having. `422` means the Control Plane accepted
+the identity and refused only the empty body — the one outcome that tells a good
+token from a merely well-formed one. The script fails with the cause named
+instead: `401` points at the audience or the instance, `403` at the identity,
+and an opaque token is caught before it is ever sent.
+
+### It expires in twelve hours
+
+**Measured:** the exchange returns a lifetime of 43,199 seconds.
+`KORAS_CONTROL_PLANE_TOKEN` is read from Doppler as a finished string, so a
+value stored today stops working tomorrow. It fails as a *misconfiguration* —
+provisioning succeeds, registration fails, loudly — which is the right failure
+and a daily one.
+
+So mint it when you are about to use it rather than in advance.
+
+### The whole configuration, and where it belongs
+
+**Four names, in `koras-platform-bootstrap` / `prod`**, and only one of them is
+read by the generator:
+
+| Name | Read by | Purpose |
 |---|---|---|
-| Signed by the Control Plane's ZITADEL instance and verifiable against its key set | A token minted by another environment cannot validate here, because the keys that would verify it are never fetched | `401` |
-| Audience includes the Control Plane's `zitadel_project_id` or `zitadel_client_id` | Never widened to "any audience": a token minted for another application is not a token for this one | `401` — *addressed to another application* |
-| **No** `email` claim | That is how a service user is told apart from a person | `403` |
-| **No** platform role granted to it | A token carrying a platform role is classified as staff, and registration admits machines only — *"a human token must be rejected even when the human is an admin"* | `403` — *requires a machine identity* |
+| `KORAS_CONTROL_PLANE_URL` | generator, `pnpm koras:token` | where to register |
+| `KORAS_CONTROL_PLANE_TOKEN` | **generator** | the bearer it presents |
+| `KORAS_CONTROL_PLANE_KEY_JSON` | `pnpm koras:token` only | what mints the bearer |
+| `KORAS_CONTROL_PLANE_PROJECT_ID` | `pnpm koras:token` only | the audience to ask for |
 
-That last row is the trap. The instinct, on being told the factory needs
-permission to register products, is to grant the service user `platform_admin`.
-Doing so **breaks registration**, and the error says nothing about roles.
+That split is worth understanding, because the shape of it is temporary. The
+generator reads a base URL and a finished bearer token and nothing else — see
+`src/registration/config.ts`, which declares exactly those two names. It cannot
+mint, so the key and the project id exist for the script rather than for the
+generator, and the token is the hand-off between them.
 
-### Steps
+Storing the key is therefore *not* optional dressing: without it there is
+nothing to re-mint from when the token expires twelve hours later.
 
-1. **ZITADEL console → Users → Service Accounts → New**, in the Control Plane's
-   instance for the environment you are registering against.
-   - Name: `KORAS Factory`
-   - Username: `factory`
-2. **Grant it no platform role.** Not an omission — see the table above. It
-   needs none: registration checks only that the caller is a machine.
-3. **Obtain an access token addressed to the Control Plane's application.** A
-   ZITADEL *personal access token* is validated by ZITADEL's own introspection
-   endpoint rather than against a key set, so it will not verify here. Use the
-   service user's credentials against the token endpoint — client credentials,
-   or the JWT-profile grant with its downloaded key — and ask for the Control
-   Plane's project as the audience.
-4. **Check it before you store it**, because the failures above are otherwise
-   indistinguishable:
+That config is the right home because it is the factory's own credential store:
+`GITHUB_TOKEN`, `FLY_API_TOKEN` and the four
+`ZITADEL_DEV_SERVICE_ACCOUNT_KEY_JSON`-style keys already live there, and the
+generator re-runs itself under it.
 
-   ```bash
-   curl -s -o /dev/null -w '%{http_code}\n' \
-     -X POST "$KORAS_CONTROL_PLANE_URL/api/platform/v1/products" \
-     -H "authorization: Bearer $KORAS_CONTROL_PLANE_TOKEN" \
-     -H 'content-type: application/json' -d '{}'
-   ```
+Not `koras-control-plane`'s configs — those are the Control Plane's *runtime*
+settings, loaded into its Fly machines at boot. A credential for calling the
+Control Plane, held by the Control Plane, points the wrong way and would be
+shipped to a process that never uses it.
 
-   `422` is success — the token was accepted and the empty body was refused.
-   `401` is the token. `403` is the identity: it has an email claim, or it has a
-   platform role.
+Not a product's configs either. Stage 3.3 is why, and it matters more than it
+looks.
 
-5. **Store it in Doppler**, `koras-platform-bootstrap` / `prod`, beside the URL.
-   It has no command-line flag and is never to be given one: a token on a
-   command line is a token in shell history, in the process table, and in
-   whatever CI log echoes the command. `--control-plane-url` overrides the URL
-   for one run; nothing overrides the token.
+**The URL and the token must agree.** Both names are singular because
+generation-time registration targets a single registry. The token has to have
+been minted in the ZITADEL instance belonging to whatever Control Plane the URL
+names: a URL on prod with a token minted in dev is a `401` that reads as an
+expired token.
 
-> **Nothing provisions this.** The ZITADEL Terraform module creates a project,
-> its roles, an OIDC application and user grants — no service account and no
-> credential. Recorded in `docs/FOLLOW_UPS.md`.
+The token has no command-line flag and must never be given one — a token on a
+command line is a token in shell history, in the process table, and in whatever
+CI log echoes the command. `--control-plane-url` overrides the URL for one run;
+nothing overrides the token.
+
+### Why this arrangement is temporary
+
+Storing a twelve-hour credential as standing configuration is wrong, and the fix
+is a code change rather than a different secret name: the generator should hold
+the *key* and mint a token per call, which is what the ZITADEL Terraform
+provider already does with the `ZITADEL_DEV_SERVICE_ACCOUNT_KEY_JSON` family.
+Registration is the one caller that never adopted that pattern.
+
+Tracked as `F2a` in `docs/FOLLOW_UPS.md`. Until it lands, the two names above are
+the complete and only configuration.
 
 ## A.3 `STAFF_TOKEN` — the one in the `curl` examples
 
-**What it is:** the ZITADEL **ID token** belonging to a human who holds a
-platform role. It is not a separate credential to create; it is what you already
-have once you have signed in to the console.
+Not a credential you create, and not related to registration. Registration is
+machine-to-machine; this is *you*, acting as staff, and it is only needed where
+the console has no form.
 
-The console does not call the platform API with its own authority. It stores the
-provider's ID token in a cookie named `id_token` and forwards it as the bearer,
-so the API applies the caller's role rather than trusting the console to have
-applied it, and the audit log attributes the call to the person rather than to
+**You may not need one at all.** Every read in this document has a console page
+showing the same thing — Products, Organizations, Tenants — and needs no token.
+A staff token is required for stage 4.2, which creates a plan and its
+entitlement, because those have no user interface.
+
+**What it is.** The ZITADEL **ID token** for a signed-in human holding a platform
+role. The console does not call the platform API with its own authority: it
+stores the provider's ID token in a cookie named `id_token` and forwards it as
+the bearer, so the API applies your role and the audit log names you rather than
 the application.
 
 **How to get one:**
 
 1. Sign in to the Control Plane console for that environment.
-2. DevTools → Application → Cookies → the console's origin → copy `id_token`.
-3. `export STAFF_TOKEN=<that value>`
+2. DevTools -> **Application** -> Cookies -> the console's own origin.
+3. Copy the **Value** of the cookie named `id_token`.
+4. `export STAFF_TOKEN='<paste>'`
 
-It expires with the session. When calls start returning `401`, reload the
-console and copy it again.
+**It has to be the Application tab.** The cookie is set `httpOnly` on purpose,
+so a script injected into the page cannot read the session. `document.cookie` in
+the browser console therefore returns nothing, which looks exactly like the
+cookie being absent. DevTools shows `httpOnly` cookies anyway; that is why this
+route works and the obvious one does not.
 
-**Which role you need**, read off the endpoint dependencies rather than assumed:
+Check it before relying on it:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -H "authorization: Bearer $STAFF_TOKEN" \
+  "$KORAS_CONTROL_PLANE_URL/api/platform/v1/products"
+```
+
+`200` is good. `401` is expired, or a sign-in that did not use a second factor.
+`403` is the role.
+
+**Which role**, read off the endpoint dependencies rather than assumed:
 
 | What you are doing | Roles admitted |
 |---|---|
-| Reading anything — products, organizations, tenants | any platform role |
+| Reading — products, organizations, tenants | any platform role |
 | Creating organizations, starting a provisioning run | `platform_super_admin`, `platform_admin` |
-| Creating entitlements, plans, subscriptions | those two, plus `platform_billing` |
+| Creating entitlements, plans, subscriptions (stage 4.2) | those two, plus `platform_billing` |
 
-**Two things that will bite:**
+**Two things that bite.** MFA is mandatory for staff —
+`require_mfa_for_platform` defaults to true, and a token that did not go through
+a second factor is rejected as `401`, not `403`, because verification is what
+failed. And a token carrying **two** platform roles resolves to the *least*
+privileged, deliberately, rather than guessing upward: if an endpoint refuses
+someone you believe is an admin, look for a second role on them.
 
-- **MFA is mandatory for staff.** `require_mfa_for_platform` defaults to true, so
-  a platform token that did not go through a second factor is rejected — as a
-  `401` rather than a `403`, because it is verification that failed.
-- **Exactly one platform role.** A token carrying two is treated as a
-  provisioning mistake, and the **least** privileged wins, deliberately, rather
-  than the check guessing upward. If an endpoint refuses a user you believe is
-  an admin, look for a second role on them.
+It expires with the session. When calls start returning `401`, reload the
+console and copy it again.
 
 ---
 
@@ -261,6 +408,10 @@ in `koras-platform-bootstrap` / `prod`.
 
 ### 3.2 Confirm it landed
 
+**The console answers this**: Products lists the product with a tag per
+registered environment, and needs no token. The call below is the same read,
+for when you want it in a script.
+
 ```bash
 curl -s -H "authorization: Bearer $STAFF_TOKEN" \
   "$KORAS_CONTROL_PLANE_URL/api/platform/v1/products" \
@@ -269,25 +420,35 @@ curl -s -H "authorization: Bearer $STAFF_TOKEN" \
 
 A read, so any platform role will do.
 
-### 3.3 Switch on re-registration — the step nothing prompts for
+### 3.3 Deploy-time re-registration — leave it off for now
 
-Set both names in **each of the product's own four Doppler configs**, not only
-in the bootstrap project:
+**Recommendation: do not set these in the product's Doppler configs yet.** The
+`register` job will report that no Control Plane is configured and exit 0, which
+is correct, and the references will be those of generation day.
 
-```bash
-for env in dev test stg prod; do
-  doppler secrets set KORAS_CONTROL_PLANE_URL   --project koras-e2e-atlas --config "$env"
-  doppler secrets set KORAS_CONTROL_PLANE_TOKEN --project koras-e2e-atlas --config "$env"
-done
-```
+The reason is not that the job does not work. It is what switching it on would
+require you to put in a product's CI.
 
-Without them the `register` job still runs, reports that no Control Plane is
-configured, and exits 0 — correct behaviour, and indistinguishable from working.
-With them, every deployment re-sends that environment's references, and carries
-`zitadel_client_id`, which generation-time registration cannot send because its
-Terraform output is marked sensitive.
+`registrar` is an **estate-wide** identity: a token minted from its key can
+register, and therefore rewrite, the registry entry of *any* product. Copying
+that key or a token from it into `koras-e2e-atlas`'s Doppler configs makes
+anyone who can read that product's deployment credentials able to rewrite every
+other product's registration. For one disposable acceptance product that is a
+poor trade, and for a real one it is the wrong shape outright.
 
-`docs/REGISTRATION_LIFECYCLE.md` covers what each pass can and cannot carry.
+The right credential for this already has a name and a place in the contract.
+`CONTROL_PLANE_API_KEY` is declared in the product's own environment contract
+and in `secrets.manifest` as *supplied*, and `PROVISIONING_RUNBOOK.md` describes
+it as "issued by the Control Plane when the product registers". Nothing issues
+it: the registration response carries an id, a code, a name, a slug, a profile,
+a status and a list of environments, and no credential. So the per-product
+credential this job should authenticate with was designed, written into the
+environment contract, and never built.
+
+Until it is, generation-time registration is the whole story, and a product's
+references are refreshed by re-running `--provision-only`. Tracked as `F2b` in
+`docs/FOLLOW_UPS.md`; `docs/REGISTRATION_LIFECYCLE.md` covers what each pass can
+and cannot carry.
 
 ## Stage 4 — make it visible to a platform user
 
@@ -308,20 +469,31 @@ No console form exists for any of this. Needs `platform_billing` or above.
 CP="$KORAS_CONTROL_PLANE_URL/api/platform/v1"
 H="authorization: Bearer $STAFF_TOKEN"
 
+# `kind` is boolean or quota, and nothing else. A quota needs both a default
+# limit and a period -- a model validator refuses one without the other, because
+# a quota with no period is a number nobody can act on.
 curl -sX PUT "$CP/entitlements" -H "$H" -H 'content-type: application/json' \
-  -d '{"code":"seats","name":"Seats","kind":"limit","unit":"user"}'
+  -d '{"code":"seats","name":"Seats","kind":"quota","default_limit":25,"default_period":"month"}'
 
 curl -sX PUT "$CP/plans" -H "$H" -H 'content-type: application/json' \
   -d '{"product_code":"koras-e2e-atlas","code":"standard","name":"Standard"}'
 
 curl -sX PUT "$CP/products/koras-e2e-atlas/plans/standard/entitlements" \
   -H "$H" -H 'content-type: application/json' \
-  -d '{"entitlement_code":"seats","enabled":true,"limit_value":25}'
+  -d '{"entitlement_code":"seats","enabled":true,"limit_value":25,"period":"month"}'
 ```
 
 All three, not the first two. A plan that can be created but not populated is
 the same shape of half-done as a provisioning run that reports success without
 creating a tenant.
+
+Each of those three bodies was validated against the Control Plane's own request
+models before being written here. The first one previously read
+`"kind":"limit","unit":"user"`, and neither exists: `kind` accepts `boolean` or
+`quota`, `unit` is not a field, and the model forbids unknown ones. It was an
+invented payload that nobody had checked against the schema — the same mistake,
+in the same document, that section 6 of `PROFILE_ARCHITECTURE.md` had made about
+the registration request.
 
 ### 4.3 Create the organization
 
@@ -363,7 +535,8 @@ product's business tables; every interaction goes through that contract.
 | Organizations | Atlas Test Co; open it for users, granted products and identity links |
 | Provisioning | the run, and each step as it completes |
 | Tenants | the tenant created inside the product |
-| Plans, Entitlements, Subscriptions | read-only views of what 4.2 created |
+| Plans, Subscriptions | read-only views of what 4.2 created |
+| Entitlements | **not a catalogue browser.** It resolves what one organization may do in one product, across plan, subscription and override, so it stays empty until 4.4 has created a subscription |
 | Audit | the registration, the organization, and the provisioning actions |
 
 A figure that renders as an em dash rather than `0` is the console refusing to

@@ -42,6 +42,12 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   attach_branch_domains: 'a removed resource, named in the entry recording its removal',
   storage_buckets: 'named in SYNC_BACKLOG as something the storage module does not create',
   vercel_target: 'named in ENVIRONMENT_STRATEGY to say it has never existed',
+  // A shell variable in NEW_PRODUCT_WALKTHROUGH's curl examples, not a setting
+  // the platform has. The credential it holds is a ZITADEL id token copied out
+  // of the console's cookie, which no code here names -- so it must stay absent,
+  // and a name like this appearing in the code would mean somebody had started
+  // storing a staff token.
+  STAFF_TOKEN: "a shell variable in a worked example; the platform has no such setting",
   // The Control Plane's registry tables. REGISTRATION_LIFECYCLE names them
   // because the safety of a single-environment re-registration rests on which
   // of them prune and which do not -- read out of that repository rather than
