@@ -42,25 +42,29 @@ function contentSecurityPolicy(nonce: string, connectSrc: string): string {
 
 export async function middleware(request: NextRequest) {
   const nonce = crypto.randomUUID().replace(/-/g, '')
-  const response = await authorize(request, nonce)
+  // One policy, built once. The response used to recompute it, which was
+  // identical only because the function is pure and the nonce was the same:
+  // two expressions that had to stay in step, and if one gained a
+  // connect-src source the other did not, the policy the browser enforces
+  // would stop naming the nonce the renderer used.
+  const policy = contentSecurityPolicy(nonce, process.env.NEXT_PUBLIC_API_URL ?? '')
+  const response = await authorize(request, nonce, policy)
 
   // Applied to every response the function can produce, including the refusals.
   // A 403 rendered without a policy is still a page in the user's browser, and
   // the error paths are the ones easiest to forget.
-  response.headers.set(
-    'Content-Security-Policy',
-    // NEXT_PUBLIC_API_BASE_URL was never a setting either, so connect-src
-    // was 'self' alone and the browser blocked every call to the platform
-    // API. Two names for one thing, and neither was the one Doppler holds.
-    contentSecurityPolicy(nonce, process.env.NEXT_PUBLIC_API_URL ?? ''),
-  )
+  response.headers.set('Content-Security-Policy', policy)
   return response
 }
 
-async function authorize(request: NextRequest, nonce: string): Promise<NextResponse> {
+async function authorize(
+  request: NextRequest,
+  nonce: string,
+  policy: string,
+): Promise<NextResponse> {
   const { pathname } = request.nextUrl
   if (PUBLIC_PATHS.some((path) => pathname.startsWith(path))) {
-    return withNonce(request, nonce)
+    return withNonce(request, nonce, policy)
   }
 
   // No network call. This used to verify the provider's token against
@@ -106,7 +110,7 @@ async function authorize(request: NextRequest, nonce: string): Promise<NextRespo
     )
   }
 
-  return withNonce(request, nonce)
+  return withNonce(request, nonce, policy)
 }
 
 /**
@@ -116,9 +120,20 @@ async function authorize(request: NextRequest, nonce: string): Promise<NextRespo
  * reads it per request, and a nonce shared between two concurrent renders would
  * let one page's policy authorise another page's script.
  */
-function withNonce(request: NextRequest, nonce: string): NextResponse {
+function withNonce(request: NextRequest, nonce: string, policy: string): NextResponse {
   const headers = new Headers(request.headers)
   headers.set('x-nonce', nonce)
+  // The policy goes on the request as well as the response, because that is
+  // where the framework looks for it. Next reads `Content-Security-Policy` off
+  // the incoming request, lifts the nonce out of it, and stamps that nonce onto
+  // the script tags it renders; given only `x-nonce` it finds nothing and emits
+  // bare `<script>` tags, which this policy then blocks.
+  //
+  // Nothing notices while every page is a server component and there is no
+  // interactive code to break -- the application has a working policy and no
+  // hydration to lose. The first client component to ship goes dead in the
+  // browser, with a console error as the only symptom.
+  headers.set('Content-Security-Policy', policy)
   return NextResponse.next({ request: { headers } })
 }
 
