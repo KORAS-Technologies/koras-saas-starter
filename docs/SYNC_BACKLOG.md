@@ -393,8 +393,8 @@ highest-leverage work outstanding when there was no work in it at all.
 - [x] `local/observability/`, `local/queue/` single-sourced
 - [x] `.github/workflows/` single-sourced
 - [x] `eslint.config.mjs`, `turbo.json`, `tsconfig.base.json` single-sourced
-- [ ] `local/scripts/` — 4 files still in both profiles
-- [ ] `packages/` stubs — 18 files still in both profiles
+- [x] `packages/` stubs — 10 single-sourced 2026-08-28
+- [x] `local/scripts/` — measured, and the divergence is real
 
 **Largely closed (2026-08-25).** `profiles/_shared/template/` holds **126**
 single-sourced files. **63** paths still exist in both profiles, and
@@ -419,6 +419,28 @@ parity demanded they be single-sourced; `main.py` now lives in `_shared`.
 Nothing detects the general case. A test that could would need to compare
 *intent* rather than bytes, which is why the honest mitigation is extraction —
 a file that exists once cannot receive a fix in one profile only.
+
+**Counted, 2026-08-28.** These two lines said "4 files" and "18 files" and both
+were guesses. Comparing content rather than paths:
+
+Ten `packages/*/src/index.ts` were pure duplication — identical but for one word
+in a comment, `// logger package` against `// logger`, plus a trailing blank
+line. Nothing distinguished them; they existed twice because nobody had looked.
+Single-sourced in `_shared/`, which takes real divergence from 58 paths to 48.
+
+Everything else in `packages/` is genuine. `auth` is four files at 78–94%
+similarity, which is the two profiles modelling an authenticated caller
+differently and always have. `branding` and `tenant` are 9% and 11% similar —
+different files that share a name. `api-client` and `types` differ by a
+`permissions` dependency the product has no package for.
+
+All ten `local/` files are genuine too, and the "4 files" was wrong in the other
+direction: `.env.local.example` is 46% similar between profiles,
+`secrets.manifest` 53%, `smoke-signin.mjs` 74%. They describe different stacks.
+
+What is left is deliberate. The remaining work in this item is not extraction —
+it is that nothing yet distinguishes "differs because it must" from "differs
+because a fix landed once", which is D1's job and is done.
 
 **A narrower gap, closed 2026-08-27.** "Byte-identical" was taken literally.
 Five Python package markers — the `__init__.py` of `koras_api`, its `core` and

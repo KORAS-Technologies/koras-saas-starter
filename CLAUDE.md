@@ -105,8 +105,8 @@ nothing enumerates it as one.
 No file exists twice. `shared-template-parity.test.ts` asserts that
 structurally -- no path may exist in both profile templates with byte-identical
 content -- rather than by listing paths, so a file duplicated tomorrow is caught
-without anyone remembering to add it. 132 files are single-sourced in `_shared/`;
-the 58 paths that exist in both profiles do so with genuinely different content,
+without anyone remembering to add it. 142 files are single-sourced in `_shared/`;
+the 48 paths that exist in both profiles do so with genuinely different content,
 which is deliberate divergence rather than duplication.
 
 The comparison normalises trailing whitespace as well as line endings. It did
