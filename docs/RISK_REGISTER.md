@@ -1277,7 +1277,7 @@ The token-verification path is the one that matters. It is reachable
 unauthenticated by definition, and it is the most expensive thing the service
 does — a JWKS lookup and an asymmetric signature check per request.
 
-**Not mitigated by anything currently shipping.** Vercel and Fly both throttle
+**Not mitigated by anything shipping as of 2026-08-28.** Vercel and Fly both throttle
 at the edge in ways that protect the platform rather than the tenant, and
 neither knows what a tenant is.
 
@@ -2022,6 +2022,59 @@ no documentation.
 Not extended to the credential and prompt tables, which map to values with no
 runtime source: a test there would be a third copy of the same list rather than
 a check of it.
+
+**A third mechanical class, closed 2026-08-28: identifiers.** An
+`environments/dev.tfvars` configured through a `vercel_target`; a
+`terraform.tfvars.json` written to a temporary directory and deleted. Neither
+has existed at any point. Both read as descriptions of the system and were
+descriptions of a plan replaced before it was built, which is the hardest kind
+to notice because nothing about the prose says which it is.
+
+`tests/docs/identifiers.test.ts` requires every backticked identifier in a
+document to appear somewhere outside `docs/`. Measured before it was written:
+683 identifier-shaped mentions, 12 resolving to nothing, 8 of those legitimate
+and now exempt with a reason each. Four real problems in 683 mentions is a ratio
+worth keeping; a check that flagged a hundred would be switched off, so the
+filters are narrow — SCREAMING_SNAKE, or lower_snake with an underscore, and
+never a bare lowercase word, because `microservice` is prose and matching it
+would flag English.
+
+**A fourth class, swept but not automated: hedged claims.** "does not yet",
+"currently", "for now" — sentences true when written that decay silently. D1
+said the generator-integration workflow "does not yet build what it generates"
+for days after it did, and ranked itself the highest-leverage work outstanding
+on the strength of it.
+
+A sweep found seven across every document. One was false:
+IMPLEMENTATION_ROADMAP said "a live apply is not currently reversible", written
+2026-08-25 and untrue since teardown was built. Corrected, with the dated
+account kept. Two more were true and are now dated. The remaining two are
+legitimately undated — a risk *description*, and a quotation of old text inside
+its own correction.
+
+Not automated, and the measurement is why: seven instances is too few to justify
+a test that would mostly assert nothing, and the phrase list would need
+maintaining. The class is recorded here so the next sweep is a `grep` rather
+than a rediscovery.
+
+**Two classes are accepted rather than pending, because nothing can reach them.**
+
+*Wrong explanations.* The ZITADEL comment said deletion "needs a service-account
+JWT exchange"; a bearer token had always worked. SYNC_BACKLOG said two
+`package.json` templates differed by "a `permissions` dependency the product has
+no package for"; the product ships that package, and the real difference was
+elsewhere. Both were reasons, both plausible, both wrong — and a wrong reason is
+worse than a missing one, because it reads as settled and nobody re-derives what
+a document already accounts for. Each of these was repeated as fact before being
+checked.
+
+*Fabricated examples.* PROVISIONING_RUNBOOK carried a thirty-line sample of
+teardown output, with an elision, that nothing had ever printed — written into
+the section explaining why teardown's own output cannot be trusted. Nothing
+distinguishes a plausible sample from a real one after the fact.
+
+The only mitigation for either is the habit the commit log already shows: run
+the thing, and paste what it printed.
 
 **What is still open, and cannot be closed this way.** A false claim about
 *where* is mechanical. A false claim about *why* — the JWT sentence, the

@@ -51,6 +51,8 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   'local/mail/mailpit.yml': 'IMPLEMENTATION_ROADMAP records it as a deviation: never created',
   'local/storage/minio.yml': 'IMPLEMENTATION_ROADMAP records it as a deviation: never created',
   'local/certs/README.md': 'IMPLEMENTATION_ROADMAP records it as absent; generate.sh explains itself',
+  'environments/dev.tfvars': 'named in ENVIRONMENT_STRATEGY and R-042 to say it has never existed',
+  'terraform.tfvars.json': 'named in INFRASTRUCTURE_PLAN and R-042 to say it has never existed',
 }
 
 /**

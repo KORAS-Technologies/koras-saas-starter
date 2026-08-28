@@ -1118,7 +1118,7 @@ Dependabot findings are a judgement. All eight are one dependency chain —
 `vitest`, with `vite` and `esbuild` beneath it — every one requires a
 development server that is never started, and none appears in any profile
 template, so nothing generated or deployed carries them. Closing them means a
-major-version upgrade that currently makes `pnpm test` exit 1 for reasons
+major-version upgrade that as of 2026-08-28 makes `pnpm test` exit 1 for reasons
 internal to vitest's worker RPC. That is scheduled work, not a blocker, and
 R-031 holds the full reasoning.
 
@@ -1222,9 +1222,15 @@ That is not something a test suite should be able to start by accident, so:
   scaffolding and is the safety mechanism of a destructive command. The account
   below describes what was true when it was written.)
 
-**A live apply is not currently reversible, and an earlier version of this
-section implied it was.** Two things stand in the way, and both were found by
-reading this back rather than by anything failing:
+**A live apply was not reversible when this was written (2026-08-25), and an
+earlier version of this section implied it was.** It is now: `koras teardown`
+deletes across all eight providers and verifies itself, and an estate of 82
+resources was provisioned and torn down on 2026-08-27. See R-036, which stays
+open only on a second run.
+
+The account below is what was true that day, kept because the two things
+standing in the way were both found by reading this back rather than by anything
+failing — which is the point it was recorded to make:
 
 `helpers/teardown.ts` issues no provider calls. Its deleters are injected and no
 real implementation exists, so every one of its 16 tests exercises the guards
