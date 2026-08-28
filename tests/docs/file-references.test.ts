@@ -25,7 +25,9 @@ import { join } from 'node:path'
  * that named them does not move with them.
  *
  * Deliberately narrow, so it stays worth having: only backticked tokens shaped
- * like a path with an extension; globs and `<placeholders>` skipped, since they
+ * like a path with an extension — up to seven characters, because a five-limit
+ * silently exempted `environments/dev.tfvars`, a file this repository has never
+ * had and a document described for months; globs and `<placeholders>` skipped, since they
  * name a shape rather than a file; other repositories skipped, since this one
  * cannot see them; matched by suffix, because a document reasonably writes
  * `src/terraform/inputs.ts` for a file two package directories down.
@@ -96,7 +98,7 @@ function referencedPaths(doc: string): string[] {
   for (const match of text.matchAll(/`([^`\n]+)`/g)) {
     const token = (match[1] as string).trim()
     if (token.includes(' ') || !token.includes('/')) continue
-    if (!/\.[a-z]{1,5}$/.test(token)) continue
+    if (!/\.[a-z]{1,7}$/.test(token)) continue
     if (token.includes('*') || token.includes('<')) continue
     if (/^(https?:|--|\$|#|\.\.\/)/.test(token)) continue
     // Another repository, named on purpose. SYNC_BACKLOG is mostly this.
