@@ -41,7 +41,9 @@ Tiers are ordered by what breaks if the item is left alone:
 **Last full survey:** 2026-08-22, against starter `535cd58`,
 control-plane `9546623`, sample-product `27f2949`.
 
-**Closed since:** A1, A2, A3, B1, B2, B3, B4, B5, C1, C2, C3, D1, D3, D4, E1, E2.
+**Closed since:** A1, A2, A3, A5, A6, B1, B2, B3, B4, B5, C1, C2, C3, D1, D3, D4,
+E1, E2, E3. A4 and C4 are open; C4 carries two actions no change to this
+repository can close.
 D2 is guarded rather than fixed; see its entry. `koras-control-plane` has not been
 re-synced against any of it, and `output/sample-product` carries B4 but not B1.
 
@@ -132,6 +134,150 @@ configuration."* `local/config/.env.local.example.hbs` never sets it, so
 `.env.local.example.hbs` sets `ENVIRONMENT=dev` with a four-line explanation.
 
 ---
+
+### A4 — the generated `control-plane-client` cannot produce a request the Control Plane accepts
+
+- [ ] `ProductRegistration` in the template matches `ProductRegistrationRequest`
+- [x] The template header says so, and points at the contract
+- [x] `PROFILE_ARCHITECTURE.md` distinguishes the outbound half from the inbound one
+
+**Applies to:** `profiles/product/template/packages/control-plane-client`
+
+Promoted from `koras-control-plane/docs/starter-promotion/SYNC_BACKLOG_ENTRIES.md`,
+where it was recorded as an accuracy note. It is worse than that.
+
+`capabilities.control_plane_client` generates a package whose payload type is:
+
+```ts
+{ projectName, projectSlug, profile, githubRepository,
+  zitadelProject, vercelProjects: string[], environments: EnvironmentReference[] }
+```
+
+The Control Plane's `ProductRegistrationRequest` requires `code`, `name`,
+`slug`, `profile` and an `environments` **map** keyed by environment, and sets
+`extra="forbid"`. Every field name above is therefore either missing or
+rejected: a request built from this type is a 422 in full, not a partial match.
+
+It has never been noticed because **nothing calls it**. Registration is
+performed by `generators/create-koras-app/src/registration/`, which is written
+against the contract and is correct, and now also by
+`local/scripts/register-with-control-plane.sh` at deploy time. This package is
+generated, compiled, shipped, and used by nothing — so the first caller to trust
+it gets a 422 that reads like an authentication problem.
+
+The accuracy note it came from is worth keeping beside it: this package is the
+**outbound** half only, the client for calling the Control Plane. The inbound
+half — the `/internal/platform/v1/tenants` endpoints the Control Plane calls back
+into, contract §6 — is served by `services/api` and is a different thing that has
+already been conflated with this one once.
+
+**Not fixed here.** Rewriting the types is easy; deciding whether the package
+should exist at all is not, and doing the first without the second leaves a
+correct implementation that nothing calls, next to two that everything calls.
+
+### A5 — registration happened once, at generation, and never again
+
+- [x] A re-registration step in the generated deployment pipeline
+- [x] It refuses to run in the Control Plane
+- [x] The decision, and what each pass can carry, written down
+- [x] `starter_version` and `profile_version` actually sent
+
+**Closed.** Promoted from
+`koras-control-plane/docs/starter-promotion/SYNC_BACKLOG_ENTRIES.md`.
+
+**Applies to:** `profiles/_shared/template`
+
+`runRegistration` is the last thing generation does, and its comment says why:
+*"It reports what exists, so it runs once the repository has been pushed and
+there is nothing further that could change the references being registered."*
+That was true of the moment and not of the following year. Nothing re-sent a
+reference, and the generated `.github/workflows/` had no registration step at
+all — confirmed by looking rather than by inference: neither profile ships its
+own `.github/`, and the shared `deploy.yml` ended at `verify`.
+
+So a service added later, an environment provisioned later, a rotated ZITADEL
+project, or a product generated before its Control Plane existed (R-001, the
+documented bootstrap order) all left the registry holding the day the project
+was generated. Reconciliation compares the registry against reality, so each of
+those became drift with no explanation attached.
+
+**What was added.** `local/scripts/register-with-control-plane.sh` in the shared
+template, called from a `register` job in `deploy.yml` after `verify`. It sends
+the one environment that just deployed. That is safe because the Control Plane
+upserts environments and references without pruning them — read out of its
+repository layer rather than assumed — and it is *only* safe under that reading,
+which is why `docs/REGISTRATION_LIFECYCLE.md` records it rather than leaving it
+as a property of two files in different repositories.
+
+**The trap, named because it nearly caught this.** `deploy.yml` is shared by both
+profiles, and the Control Plane must never register itself. The generator does
+expose `registersAsProduct` to the template context, but that conditional is
+unavailable here: `deploy.yml` is copied verbatim and must never become a `.hbs`,
+because Handlebars would parse every GitHub expression in it and turn
+`secrets.FLY_API_TOKEN` into an empty string. The guard is therefore at runtime,
+in the script, reading `.koras/project.yaml` — the same mechanism
+`check-rls-connection.sh` already uses in the same workflow.
+
+**A defect found on the way.** `buildRegistration` declared `starter_version` and
+`profile_version` on its payload type and populated neither, so every product
+registered so far reads as generated from nothing in particular — the two fields
+the contract provides precisely so the Control Plane can identify products
+needing an upgrade. Both are sent now.
+
+### A6 — Tailwind never compiled, and the CSP nonce never reached the renderer
+
+- [x] `postcss.config.mjs` in `_shared/apps/admin`
+- [x] `postcss.config.mjs` in `control-plane/apps/portal`
+- [x] `postcss.config.mjs` in `product/apps/web`
+- [x] All four `middleware.ts.hbs` set the policy on the forwarded request
+- [ ] `product/apps/marketing` either gets a stylesheet or drops the dependency
+
+**Closed** by applying `koras-control-plane/docs/starter-promotion/starter-promotion.patch`,
+which was staged there on 2026-08-25 and never applied. `git apply --check`
+passed against the current templates before it was used, so it was applied
+rather than regenerated.
+
+**Applies to:** both templates
+
+Two defects latent in every generated project, neither of which shows up until
+somebody writes the first line of code that depends on the broken thing.
+
+**Tailwind had never compiled.** Every app template does `@import "tailwindcss"`,
+declares `tailwindcss` and `@tailwindcss/postcss`, and shipped no PostCSS config
+— there was not one `postcss.config.*` anywhere in the repository. Without it
+Next handles the import with its own CSS pipeline, inlines the package
+stylesheet and serves it verbatim, so the built bundle carries a literal
+`@tailwind utilities` directive and no utility class exists at runtime.
+Preflight still arrives, because Next resolves the package's nested imports,
+which is what makes it quiet: the page looks styled. It surfaces the first time
+somebody writes `bg-surface` and the element renders unstyled, at which point
+the obvious suspect is their class name rather than the build.
+
+Measured downstream before promotion: adding the config *shrank* the stylesheet
+from 23,175 to 5,991 bytes, because the unused default theme block stops being
+shipped whole; and applied to an app using no utility classes at all, the
+rendered page was byte-identical before and after.
+
+**The CSP nonce never reached the renderer.** All four `middleware.ts.hbs`
+minted a per-request nonce, named it in the policy, and forwarded it as
+`x-nonce`. Next does not read `x-nonce`. It reads `Content-Security-Policy` off
+the incoming request, lifts the nonce out of it, and stamps that onto the script
+tags it renders; given only `x-nonce` it finds nothing, emits bare `<script>`
+tags, and the policy then blocks them. This costs nothing while every page is a
+server component — there is no hydration to lose. The first client component to
+ship goes dead in the browser, with a console error as the only symptom, while
+the policy looks correct in every response header.
+
+The same change collapses a duplicate: the response recomputed the policy rather
+than reusing the one the request carries. Identical today, because the function
+is pure and the nonce is the same — but if one gained a `connect-src` source and
+the other did not, the policy the browser enforces would stop naming the nonce
+the renderer used. That is this same bug one level up.
+
+**Left open deliberately.** `product/apps/marketing` declares `tailwindcss` and
+has no CSS file at all, so a PostCSS config there would do nothing. Either it
+gets a `globals.css` or it drops the dependency; that is a design decision
+rather than a fix.
 
 ## Tier B — capability present in one profile, absent in the other
 
@@ -352,6 +498,55 @@ Both templates and both generated repositories are on v5/v5/v6. The starter's
 four workflows are the only files left on v4/v4/v3.
 
 ---
+
+### C4 — R-65 was never reported upstream, and `sample-product` still carries it
+
+- [x] The generator writes the plan outside the project
+- [x] Both templates' `.gitignore` name `tfplan`, `*.tfplan`, `*.plan.out`
+- [x] `initAndPushToDevelop` refuses to commit one, checked before `git add`
+- [x] Generated projects carry `tests/security/test_no_state_artifacts.py`
+- [x] Both templates' `ci.yml` passes `--max-archive-depth 3`, and says what it still cannot catch
+- [ ] The eight exposed credentials are rotated
+- [ ] `output/sample-product`'s published history is dealt with
+
+**Applies to:** the starter, both templates, and `output/sample-product`
+
+`koras-control-plane/docs/RISK_REGISTER.md` R-65 ends *"Report upstream.
+`koras-saas-starter` — the generator — committed this file, so every project it
+produces carries the same leak."* It was never reported: this document had zero
+mentions of it until now. The fix landed here (`f32711b`); the **record** of why
+it landed did not, which is the failure this document exists to catch, arriving
+from the other direction.
+
+**What the leak was.** `infrastructure/terraform/tfplan`, committed by the
+generator in `chore: initial project generation` and pushed. It is a zip holding
+a full Terraform state snapshot: four Supabase database passwords and four
+ZITADEL OIDC client secrets, in plaintext.
+
+**Why no scanner saw it, and why no scanner can.** gitleaks decides whether to
+look inside an archive from the **file extension**, and Terraform writes plan
+files without one. Measured rather than inferred: `tfplan` scans as **zero
+bytes** and reports nothing, while the byte-identical file named `tfplan.zip`
+yields **28 findings**. The scanner is structurally blind to precisely the
+artifact most likely to carry an entire estate's credentials, and no tuning
+fixes it — which is why the layer that actually closes it is a **path** rule
+(`test_no_state_artifacts.py`), on files that have no legitimate reason to be
+committed at all. Every generated project now inherits both the rule and the
+knowledge of the blindness: the comments in `.gitignore.hbs` and in `ci.yml`
+state it, so the next person to raise the archive depth knows what it does not
+buy them.
+
+**Still open, and not closable from this repository.**
+
+The eight credentials were published. Deleting a file does not unpublish it, and
+nothing in the factory can rotate them.
+
+`output/sample-product` is worse than the risk register allowed for. Checked: the
+plan file is not in the working tree and `.gitignore` names it, but commit
+`af81b9b` — reachable from `develop`, and the repository has a GitHub remote —
+added `infrastructure/terraform/tfplan`, 53,688 bytes. Those credentials are in
+that repository's published history now. Untracking a file does not remove its
+blob.
 
 ## Tier D — structural
 
@@ -658,3 +853,30 @@ starting point for a project that has no documents yet.
 The starter keeps 13 flat `SCREAMING_SNAKE.md` files at the root. The
 control-plane moved the equivalent set into `docs/`. Both templates ship
 `docs/.gitkeep` and nothing else, so a generated project starts with neither.
+### E3 — nothing here pointed at the contract this repository implements
+
+- [x] `docs/PROFILE_ARCHITECTURE.md` names it
+- [x] `docs/PRODUCT_GENERATOR_PLAN.md` names it
+- [x] `src/registration/contract.ts` names it in its header
+- [x] The generated `control-plane-client` names it in its header
+
+**Closed.** Promoted from
+`koras-control-plane/docs/starter-promotion/SYNC_BACKLOG_ENTRIES.md`.
+
+**Applies to:** the starter's documentation and two source headers
+
+`koras-control-plane/docs/PRODUCT_REGISTRATION_CONTRACT.md` is authoritative for
+both directions of product registration. This repository implements the client
+half of it in two places and named it in none of them.
+
+That is not a tidiness problem. A duplicate of that contract was written in the
+Control Plane repository, contradicting the real one in four places, because
+nothing connected an implementation to its specification. Four one-line pointers
+are the cheapest defence available against the second occurrence.
+
+The same pass found `PROFILE_ARCHITECTURE.md` §6 printing an invented payload —
+flat, with `github_repo`, `supabase_projects` and `zitadel_project` in it. No
+such request has ever been sent or could be: the Control Plane's request model
+sets `extra="forbid"`, so every one of those names is a 422. It was an
+illustration nobody had checked against the schema, which is R-042 exactly. It
+now shows the real shape, and says what it used to say.
