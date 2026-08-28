@@ -184,8 +184,10 @@ bash local/scripts/register-with-control-plane.sh prod
   repository is deleted. The Control Plane's teardown owns that question; see
   R-036 and the provisioning runbook.
 - **Which credential should authorise a product's own re-registration.** This
-  uses `KORAS_CONTROL_PLANE_TOKEN`, the same factory-issued bearer token the
-  generator uses, kept in that environment's Doppler config. The contract (§2)
+  uses `KORAS_CONTROL_PLANE_TOKEN`, the same token the generator uses, kept in
+  that environment's Doppler config. It is a ZITADEL token for a service user;
+  nothing issues or provisions it, and NEW_PRODUCT_WALKTHROUGH.md §A.2 is the
+  only description of it that exists. The contract (§2)
   says registration should require a role narrower than the human admin one, and
   that the narrower role does not exist yet. Whether a *product* should hold a
   token that can rewrite its own registry entry is a Control Plane authorization

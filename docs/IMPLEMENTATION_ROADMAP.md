@@ -840,7 +840,7 @@ no second place to rotate a token.
 | Secret | Purpose |
 |--------|---------|
 | `KORAS_CONTROL_PLANE_URL` | Base URL, e.g. `https://control-plane.koras.io` |
-| `KORAS_CONTROL_PLANE_TOKEN` | Bearer token the Control Plane issues to the factory |
+| `KORAS_CONTROL_PLANE_TOKEN` | ZITADEL token for a service user in the Control Plane's instance. **Not issued by the Control Plane** — it has no endpoint that mints one, and nothing provisions this. See NEW_PRODUCT_WALKTHROUGH.md §A.2 |
 
 `--control-plane-url` overrides the first for a one-off run — a disposable lab
 pointed at a locally-run Control Plane, most often. There is deliberately no

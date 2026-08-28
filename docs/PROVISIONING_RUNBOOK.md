@@ -189,10 +189,24 @@ derived and 8 asked.
 | `STORAGE_BUCKET` | a name you pick. The storage module provisions no buckets, so there is nothing to derive it from |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | only when `ai_gateway` is enabled |
 
-An empty answer is recorded as empty and counts as answered. That is deliberate
-for the four settings above that are legitimately empty, and it means a value
-you skipped by pressing enter is indistinguishable from one you meant to leave
-blank — `make doppler-check` verifies presence, not correctness.
+**An empty answer is not recorded.** Pressing enter prints `skipped, still
+missing`, writes nothing, and marks the run failed; the script then hands off to
+`doppler-check.sh`, which reports it as absent. This sentence used to claim the
+opposite — that empty counted as answered — and it was wrong in a way that
+matters, because four of the settings above are *legitimately* empty and the
+prompt cannot express that.
+
+Until that is fixed (F5a), set those four directly, which does record an empty
+value:
+
+```bash
+printf '' | doppler secrets set OTEL_EXPORTER_OTLP_ENDPOINT \
+  --project <product> --config <environment> --no-interactive
+```
+
+`doppler-check` reads names and never values, so an empty-valued secret passes
+it. That is the same guarantee as before; only the way to arrive at one has
+changed.
 
 Values are read with `read -rs` and piped to `doppler secrets set` on stdin, so
 none reaches `ps` output or shell history. Already-set values are skipped unless
@@ -229,7 +243,7 @@ product run:
 | Key | Purpose |
 |-----|---------|
 | `KORAS_CONTROL_PLANE_URL` | Where the Control Plane is, e.g. `https://control-plane.koras.io` |
-| `KORAS_CONTROL_PLANE_TOKEN` | Bearer token the Control Plane issues to the factory |
+| `KORAS_CONTROL_PLANE_TOKEN` | ZITADEL token for a service user in the Control Plane's instance. **Not issued by the Control Plane** — it has no endpoint that mints one, and nothing provisions this. See NEW_PRODUCT_WALKTHROUGH.md §A.2 |
 
 Neither is required. Absent a URL, a product is provisioned and simply not
 registered, which is the documented bootstrap order for the first project in a

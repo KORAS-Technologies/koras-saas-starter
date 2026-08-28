@@ -42,7 +42,7 @@ Tiers are ordered by what breaks if the item is left alone:
 control-plane `9546623`, sample-product `27f2949`.
 
 **Closed since:** A1, A2, A3, A5, A6, B1, B2, B3, B4, B5, C1, C2, C3, D1, D3, D4,
-E1, E2, E3. A4 and C4 are open; C4 carries two actions no change to this
+E1, E2, E3. A4, A7 and C4 are open; C4 carries two actions no change to this
 repository can close.
 D2 is guarded rather than fixed; see its entry. `koras-control-plane` has not been
 re-synced against any of it, and `output/sample-product` carries B4 but not B1.
@@ -278,6 +278,53 @@ the renderer used. That is this same bug one level up.
 has no CSS file at all, so a PostCSS config there would do nothing. Either it
 gets a `globals.css` or it drops the dependency; that is a design decision
 rather than a fix.
+
+### A7 — two role resolvers that disagree, so the console shows authority the API refuses
+
+- [ ] One resolution rule, shared or tested against the other
+- [ ] A test asserting the two agree for every combination of platform roles
+
+**Applies to:** `profiles/control-plane/template`
+
+Both halves are generated from this repository, so every Control Plane it
+produces carries this.
+
+A token may carry more than one platform role. Both implementations call that a
+provisioning mistake and resolve *downward* rather than guessing upward, which
+is right. They then disagree about which role is lower.
+
+| Where | Rule |
+|---|---|
+| `packages/auth/src/index.ts.hbs` | `platform.sort()[0]` — **alphabetical** on the role string |
+| `python-packages/koras-auth/src/koras_auth/__init__.py` | sorted by position in `PlatformRole`, descending |
+
+`PlatformRole` is declared most-privileged-first, so the Python side genuinely
+takes the least privileged. Alphabetical order is not privilege order, and the
+two coincide only by luck:
+
+| Roles held | Console (TypeScript) | API (Python) |
+|---|---|---|
+| `platform_admin`, `platform_billing`, `platform_super_admin` | `platform_admin` | `platform_billing` |
+| `platform_admin`, `platform_readonly` | `platform_admin` | `platform_readonly` |
+| `platform_admin`, `platform_support` | `platform_admin` | `platform_support` |
+| `platform_billing`, `platform_super_admin` | `platform_billing` | `platform_billing` |
+
+**What it looks like when it bites**, observed on dev 2026-08-28: the console
+header names the signed-in operator `platform_admin`, the Plans page answers
+*"Not permitted — Insufficient platform role"*, and the same call by `curl`
+returns `{"detail":"Insufficient platform role"}`. The operator has been told
+they hold a role the API is not applying, and nothing names the second role that
+caused it.
+
+The failure is safe — both resolve downward, so neither grants authority nobody
+was given — but it is unexplainable from either side alone, and the console is
+the side people believe.
+
+**Why this is one defect and not two.** The rule is written twice because the
+session is minted in TypeScript and verified in Python. Neither is wrong on its
+own terms; there is simply no test that they answer the same question the same
+way, and a shared table of role precedence would make the divergence impossible
+rather than merely detectable.
 
 ## Tier B — capability present in one profile, absent in the other
 

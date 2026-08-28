@@ -36,6 +36,7 @@ All planning and reference documents live in `docs/`, matching
 | `docs/CLAUDE_CODE.md`            | Claude Code skills, profiles and inheritance      |
 | `docs/REGISTRATION_LIFECYCLE.md` | When a product registers, and what each pass carries |
 | `docs/FOLLOW_UPS.md`             | Work identified and deliberately left undone, with the reason |
+| `docs/NEW_PRODUCT_WALKTHROUGH.md` | A worked example: new product to visible in the console |
 
 ## Repository layout (target state)
 
