@@ -98,6 +98,16 @@ output "zitadel_project_ids" {
   value = module.bootstrap.zitadel_project_ids
 }
 
+# DNS records, and the zone they need to be deleted from. Exported for
+# teardown, which had no idea they existed.
+output "cloudflare_record_ids" {
+  value = module.bootstrap.cloudflare_record_ids
+}
+
+output "cloudflare_zone_id" {
+  value = module.bootstrap.cloudflare_zone_id
+}
+
 # Needed only by teardown, and needed absolutely: a project id identifies
 # nothing without the organization it lives in.
 #

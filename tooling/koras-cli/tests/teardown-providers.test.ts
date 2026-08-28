@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 
 import { providerDeleters, UNIMPLEMENTED_KINDS } from '../src/teardown/providers/index.js'
 import { inventoryFromOutputs, qualify, providerId } from '../src/teardown/inventory.js'
-import { plan, type Resource } from '../src/teardown/guards.js'
+import { plan, RESOURCE_KINDS, type Resource } from '../src/teardown/guards.js'
 import { teardown } from '../src/teardown/run.js'
 import type { FetchLike } from '../src/doctor/types.js'
 
@@ -36,6 +36,7 @@ const ALL_CREDENTIALS = {
   upstashApiKey: 'up',
   vercelToken: 'vc',
   flyToken: 'fly',
+  cloudflareApiToken: 'cf',
   zitadelServiceTokens: { dev: 'zt-dev', test: 'zt-test', stg: 'zt-stg', prod: 'zt-prod' },
 }
 
@@ -49,6 +50,8 @@ const OUTPUTS = {
   vercelProjectIds: { 'web-dev': 'prj_a' },
   flyApps: ['koras-e2e-shop-api-dev'],
   redisDatabaseIds: { dev: 'redis-dev' },
+  cloudflareRecordIds: { 'app-dev.koras-e2e-shop.example.invalid': 'rec-dev' },
+  cloudflareZoneId: 'zone-1',
 }
 
 /** A real project's outputs. Nothing in them may ever be deleted. */
@@ -62,6 +65,8 @@ const REAL_OUTPUTS = {
   vercelProjectIds: { 'web-dev': 'prj_a' },
   flyApps: ['docoris-api-dev'],
   redisDatabaseIds: { dev: 'redis-dev' },
+  cloudflareRecordIds: { 'app-dev.docoris.example.invalid': 'rec-dev' },
+  cloudflareZoneId: 'zone-1',
 }
 
 describe('the inventory', () => {
@@ -69,7 +74,9 @@ describe('the inventory', () => {
     const found = inventoryFromOutputs(OUTPUTS)
     expect(found.map((r) => r.kind)).toContain('fly-app')
     expect(found.map((r) => r.kind)).toContain('github-repository')
-    expect(found).toHaveLength(8)
+    // One per entry in OUTPUTS. Counted rather than written down, so adding a
+    // provider to the fixture cannot leave this asserting the old total.
+    expect(found).toHaveLength(9)
   })
 
   it('orders the dependent resources before the ones holding their credentials', () => {
@@ -79,21 +86,17 @@ describe('the inventory', () => {
   })
 
   it('includes every provider a provision writes to', () => {
-    // Teardown reported "26 deletable, 0 retained" on a real estate and left
-    // four Upstash databases alive: the inventory read an output the module
-    // never exported, found nothing, and looked complete. A missing provider
-    // has no symptom -- which is why this asserts the whole set rather than
-    // the ones that happened to work.
+    // Twice now a whole provider has been missing from the inventory and the
+    // run has reported nothing retained: Upstash in R-040, Cloudflare in R-036.
+    // A missing provider has no symptom, and the count cannot show it.
+    //
+    // The previous version of this test listed the kinds it expected, and its
+    // comment claimed to assert "the whole set". It asserted a second
+    // hand-written list, which omitted Cloudflare in the same way the inventory
+    // did. Compared against RESOURCE_KINDS now, so a kind that exists and is
+    // never inventoried fails here.
     const kinds = new Set(inventoryFromOutputs(OUTPUTS).map((r) => r.kind))
-    expect([...kinds].sort()).toEqual([
-      'doppler-project',
-      'fly-app',
-      'github-repository',
-      'supabase-project',
-      'upstash-database',
-      'vercel-project',
-      'zitadel-project',
-    ])
+    expect([...kinds].sort()).toEqual([...RESOURCE_KINDS].sort())
   })
 
   it('includes ZITADEL even though nothing deletes it', () => {
@@ -127,7 +130,7 @@ describe('the inventory', () => {
     // were rightly still deletable. Incoherent input, and it proved nothing.
     const real = qualify(inventoryFromOutputs(REAL_OUTPUTS), 'docoris')
     expect(plan(real).deletable).toEqual([])
-    expect(plan(real).retained).toHaveLength(8)
+    expect(plan(real).retained).toHaveLength(9)
   })
 })
 
@@ -286,6 +289,28 @@ describe('the delete calls', () => {
       }),
     ).rejects.toThrow(/ZITADEL_STG_SERVICE_TOKEN/)
     expect(calls, 'it fell back to another instance token').toEqual([])
+  })
+
+  it('deletes a Cloudflare DNS record by id, in its zone', async () => {
+    // Absent from the inventory entirely until 2026-08-27. Eight records
+    // outlived an estate whose teardown reported nothing retained, because a
+    // count of what the inventory holds cannot show what it omits.
+    const { fetch, calls } = recorder()
+    const deleter = providerDeleters(fetch, ALL_CREDENTIALS)['cloudflare-record']
+    expect(deleter, 'no Cloudflare deleter').toBeDefined()
+
+    await deleter?.({
+      kind: 'cloudflare-record',
+      name: 'app-dev.koras-e2e-shop.example.invalid',
+      providerId: 'rec-dev',
+      scope: 'zone-1',
+    })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.method).toBe('DELETE')
+    expect(calls[0]?.url).toBe(
+      'https://api.cloudflare.com/client/v4/zones/zone-1/dns_records/rec-dev',
+    )
   })
 
   it('leaves no kind without a deleter', () => {

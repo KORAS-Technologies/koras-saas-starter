@@ -44,6 +44,7 @@ export interface ProviderCredentials {
    * is not there. That answers 404, which this file reads as "already gone".
    */
   zitadelServiceTokens?: Record<string, string>
+  cloudflareApiToken?: string
 }
 
 /** A 404 means the resource is not there, which is the outcome being asked for. */
@@ -211,6 +212,25 @@ export function providerDeleters(
           // that is one way, and not the only one.
           authorization: `Bearer ${token}`,
           'x-zitadel-orgid': org,
+          accept: 'application/json',
+        },
+      )
+    }
+  }
+
+  if (credentials.cloudflareApiToken) {
+    deleters['cloudflare-record'] = async (resource: Resource) => {
+      // Guarded by hostname and deleted by id: the hostname carries the project
+      // name, which is what the prefix guard judges, and the API addresses the
+      // record by id within its zone. Neither alone is enough.
+      const kind: ResourceKind = 'cloudflare-record'
+      const zone = need(resource.scope, `a Cloudflare zone for ${resource.name}`, kind)
+
+      await deleteOrAlreadyGone(
+        fetchImpl,
+        `https://api.cloudflare.com/client/v4/zones/${encodeURIComponent(zone)}/dns_records/${encodeURIComponent(providerId(resource))}`,
+        {
+          authorization: `Bearer ${need(credentials.cloudflareApiToken, 'CLOUDFLARE_API_TOKEN', kind)}`,
           accept: 'application/json',
         },
       )

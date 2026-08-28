@@ -97,3 +97,19 @@ output "vercel_domains" {
   value       = module.vercel.domains
 }
 
+output "cloudflare_record_ids" {
+  description = <<-EOT
+    Map of hostname → Cloudflare DNS record id.
+
+    The module has exported record_ids since it was written; nothing above it
+    ever asked, so eight records survived a teardown that reported none
+    retained. An inventory can only miss what it is not told about, and the
+    count it prints is the least likely thing to reveal the omission.
+  EOT
+  value       = module.cloudflare.record_ids
+}
+
+output "cloudflare_zone_id" {
+  description = "The zone the records live in. A record id cannot be deleted without it."
+  value       = var.cloudflare_zone_id
+}

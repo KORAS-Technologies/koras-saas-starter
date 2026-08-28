@@ -176,12 +176,13 @@ external skills, and bring an existing project back into alignment.
 
 | Phase | State | Note |
 |-------|-------|------|
-| 13 — End-to-End Acceptance Tests | Complete | Both scenarios automated and passing. The live variant ran on 2026-08-27: a product estate of 82 resources provisioned across seven providers and torn down completely, verified against each provider's API and by a `terraform plan` that found nothing left. R-036 closed |
+| 13 — End-to-End Acceptance Tests | Live variant run, one gap found | A product estate of 82 resources was provisioned and torn down on 2026-08-27. Seven providers deleted cleanly; **Cloudflare was not in the inventory at all**, so eight DNS records survived a run reporting nothing retained. Now the eighth provider — R-036 reopened for a second live run |
 
-**Open risks:** R-042 only — documentation and comments are the one part of the
-repository that can be wrong without anything going red. Claims about *where*
-are now checked; claims about *why* are not, and probably cannot be.
-R-031 stands accepted with mitigation.
+**Open risks:** R-036 (a second live teardown, now that Cloudflare is in the
+inventory) and R-042 (documentation and comments are the one part of the
+repository that can be wrong without anything going red — claims about *where*
+are checked now, claims about *why* are not). R-031 stands accepted with
+mitigation.
 R-031 stands accepted with mitigation.
 
 **Next step:** the `--with` / `--without` paths through the generator are

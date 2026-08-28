@@ -238,7 +238,7 @@ branding" there.
 | R-034 | No rate limiting in the generated API        | 12       | Resolved                 |
 | R-035 | `pnpm test` reported a cached pass           | 16       | Resolved                 |
 | R-031 | vitest advisories; the fix breaks the suite  | 12       | Accepted with mitigation |
-| R-036 | A live acceptance run cannot be cleaned up   | 12       | Resolved                 |
+| R-036 | A live acceptance run cannot be cleaned up   | 12       | Reopened — Cloudflare was never in the inventory |
 | R-037 | Typecheck ignored the error it needed to report | 12    | Resolved                 |
 | R-038 | Drift reported every optional component      | 9        | Resolved                 |
 | R-039 | ZITADEL module could not create a new project | 16      | Resolved                 |
@@ -1581,7 +1581,26 @@ reports a dry run and issues nothing.
    unexportable, one ZITADEL token where four instances needed four, and a
    documented command that could not run in PowerShell at all.
 
-   That is the whole of the risk. **R-036 is closed.**
+   **That claim was wrong, and it was wrong the same day.** Cloudflare is an
+   eighth provider. Its eight DNS records were never in the inventory -- no
+   deleter, no entry in UNIMPLEMENTED_KINDS, nothing -- so they were not
+   reported as skipped either. They survived the teardown, and were found only
+   when the next apply refused to create a record that already existed.
+
+   `30 deletable, 0 retained` was quoted as evidence of a complete teardown. It
+   counts what the inventory knows about, which is the one thing it cannot use
+   to find a provider the inventory omits. Verifying each listed provider had
+   the same blind spot by construction: every check passed, and the set being
+   checked was short.
+
+   The `terraform plan` called an independent confirmation *did* contain the
+   evidence -- the eight `cloudflare_record` resources were among the 82 it
+   proposed to recreate -- and it was read for the providers already expected
+   rather than for what else was in it.
+
+   R-040 said "an optional field plus a never-exported output is a silent gap".
+   This is the same defect with neither: the module exports `record_ids` and
+   always has; nothing above it ever asked.
 
 4. **A general form of R-040 is now closed.** `parseTerraformOutputs` reads
    each value by name and returns empty when it is absent — correct, because a

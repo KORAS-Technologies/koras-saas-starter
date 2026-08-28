@@ -35,6 +35,10 @@ export interface ProvisionOutputs {
   zitadelOrgIds: Record<string, string>
   /** Base URL of the ZITADEL instance each environment uses. */
   zitadelDomains: Record<string, string>
+  /** Hostname -> Cloudflare DNS record id. */
+  cloudflareRecordIds: Record<string, string>
+  /** The zone those records live in; a record id is not addressable without it. */
+  cloudflareZoneId: string
   vercelProjectIds: Record<string, string>
   flyApps: string[]
   /**
@@ -97,6 +101,8 @@ export function parseTerraformOutputs(json: string): ProvisionOutputs {
     zitadelProjectIds: asStringMap('zitadel_project_ids'),
     zitadelOrgIds: asStringMap('zitadel_resolved_org_ids'),
     zitadelDomains: asStringMap('zitadel_domains'),
+    cloudflareRecordIds: asStringMap('cloudflare_record_ids'),
+    cloudflareZoneId: asString('cloudflare_zone_id'),
     vercelProjectIds: asStringMap('vercel_project_ids'),
     flyApps: Object.values(flyAppNames).sort(),
     redisDatabaseIds: asStringMap('redis_database_ids'),

@@ -41,6 +41,11 @@ export const PROTECTED_NAMES = [
 /**
  * The kinds a provision creates.
  *
+ * `cloudflare-record` was not listed at all until 2026-08-27, which is worse
+ * than being listed without a deleter: eight DNS records survived a teardown
+ * that reported nothing retained, because a count of what the inventory holds
+ * cannot reveal what it omits.
+ *
  * `zitadel-project` was listed here for a while with nothing to delete it, so
  * that an inventory could not report a complete teardown while leaving projects
  * behind. It has a deleter now, and the reason it did not is worth keeping: the
@@ -50,14 +55,27 @@ export const PROTECTED_NAMES = [
  * the management API. Nothing tested the claim because nothing could: it was a
  * comment explaining an absence.
  */
-export type ResourceKind =
-  | 'github-repository'
-  | 'doppler-project'
-  | 'supabase-project'
-  | 'upstash-database'
-  | 'vercel-project'
-  | 'fly-app'
-  | 'zitadel-project'
+/**
+ * The list, not a union, so it exists at runtime.
+ *
+ * A test can then assert that a full estate's inventory produces every one of
+ * them. That assertion used to be written out by hand, and the hand-written
+ * copy omitted Cloudflare in exactly the way the inventory did -- a test whose
+ * comment said it "asserts the whole set" while asserting a second list with
+ * the same gap.
+ */
+export const RESOURCE_KINDS = [
+  'github-repository',
+  'doppler-project',
+  'supabase-project',
+  'upstash-database',
+  'vercel-project',
+  'fly-app',
+  'zitadel-project',
+  'cloudflare-record',
+] as const
+
+export type ResourceKind = (typeof RESOURCE_KINDS)[number]
 
 export interface Resource {
   kind: ResourceKind

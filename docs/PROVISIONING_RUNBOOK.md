@@ -452,6 +452,7 @@ the first live run, open each console and look:
 
 | Provider | What to look for |
 |----------|------------------|
+| Cloudflare | the DNS records for `*.<product>.<zone>` are gone |
 | GitHub | the repository is gone |
 | Supabase | four projects gone — these bill |
 | Upstash | four databases gone — these bill |
@@ -464,15 +465,21 @@ ZITADEL is the one to check hardest. Its delete is the newest, and a wrong
 organization answers 404 — which reads as success.
 
 **Done once, on 2026-08-27**, against a product estate of 82 resources: thirty
-planned, thirty deleted, no skips, and every provider confirmed gone by direct
-API call. A second confirmation came free — the `terraform plan` that follows
-refreshes through each provider's *own* credential, which for ZITADEL is the JWT
-profile rather than the PAT teardown uses, and it found nothing left. Two
-unrelated auth paths agreeing is what makes it evidence rather than an echo.
+planned, thirty deleted, no skips.
 
-That was the last open item in R-036. Checking by hand is still worth doing
-after a change to any deleter; it is no longer the first thing anyone here has
-ever learned about them.
+**And it was still not complete.** Cloudflare was not in the inventory at all —
+no deleter, no skip, no mention — so eight DNS records survived, and were found
+only when the next apply refused to create a record that already existed.
+`30 deletable, 0 retained` counts what the inventory holds, which is the one
+thing that cannot reveal a provider it omits.
+
+That is why this step says *check the providers*, not *check the list*. Reading
+the list back to itself is what failed. The eighth provider is in the inventory
+now; the reason to look by hand is that a ninth would look exactly like this. The `terraform plan` that follows is the better check, and it is free: it
+refreshes through each provider's *own* credential, and it refreshes
+**everything the configuration declares** rather than everything teardown knows
+about. The Cloudflare records were in its output as resources to recreate. It
+was read for the providers already expected.
 
 ### Step 4 — the three things teardown never touches
 

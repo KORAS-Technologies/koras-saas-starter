@@ -35,6 +35,15 @@ export interface ProvisionOutputsLike {
    * there is no single API to fall back to.
    */
   zitadelDomains: Record<string, string>
+  /**
+   * Hostname -> Cloudflare DNS record id, and the zone holding them.
+   *
+   * Required, like the two above and for the same reason -- except this one was
+   * not optional, it was absent. The module exported record_ids all along and
+   * nothing above it asked, so eight records outlived an estate.
+   */
+  cloudflareRecordIds: Record<string, string>
+  cloudflareZoneId: string
   vercelProjectIds: Record<string, string>
   flyApps: string[]
   /**
@@ -62,6 +71,9 @@ export interface ProvisionOutputsLike {
  * estate reads in the order somebody would fix it.
  */
 const ORDER: ResourceKind[] = [
+  // First: a DNS record pointing at an application that no longer exists is the
+  // one leftover a visitor can see.
+  'cloudflare-record',
   'fly-app',
   'vercel-project',
   'upstash-database',
@@ -77,7 +89,12 @@ export function inventoryFromOutputs(outputs: ProvisionOutputsLike): Resource[] 
   const add = (
     kind: ResourceKind,
     name: string | undefined,
-    extra: { endpoint?: string; scope?: string; environment?: string } = {},
+    extra: {
+      endpoint?: string
+      scope?: string
+      environment?: string
+      providerId?: string
+    } = {},
   ): void => {
     if (name && name.trim() !== '') found.push({ kind, name: name.trim(), ...extra })
   }
@@ -96,6 +113,10 @@ export function inventoryFromOutputs(outputs: ProvisionOutputsLike): Resource[] 
       scope: outputs.zitadelOrgIds[env],
       environment: env,
     })
+  }
+  for (const [hostname, id] of Object.entries(outputs.cloudflareRecordIds)) {
+    // Guarded by hostname, which carries the project name, and deleted by id.
+    add('cloudflare-record', hostname, { providerId: id, scope: outputs.cloudflareZoneId })
   }
   add('doppler-project', outputs.dopplerProject)
   add('github-repository', outputs.githubRepository)

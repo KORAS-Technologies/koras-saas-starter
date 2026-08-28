@@ -146,5 +146,6 @@ export function credentialsFromEnv(env: NodeJS.ProcessEnv = process.env): Provid
     // environment. That suits a single-instance estate and is wrong for this
     // one; it is a fallback rather than the documented form for that reason.
     zitadelServiceTokens: zitadelTokensFromEnv(env),
+    cloudflareApiToken: first(env, 'CLOUDFLARE_API_TOKEN', 'TF_VAR_CLOUDFLARE_API_TOKEN'),
   }
 }
