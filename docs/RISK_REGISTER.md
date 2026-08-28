@@ -1602,6 +1602,18 @@ reports a dry run and issues nothing.
    This is the same defect with neither: the module exports `record_ids` and
    always has; nothing above it ever asked.
 
+   **The estate is clean as of 2026-08-27**, confirmed provider by provider
+   rather than from any command's own report: no `koras-e2e-*` GitHub
+   repository, Supabase project, Doppler project, Upstash database, Vercel
+   project or Fly app; no DNS record in the zone; and HCP holding only
+   `koras-control-plane` and `sample-product`.
+
+   That is the estate being gone, not the teardown being proven. Cloudflare and
+   the workspace were removed by hand and by API call while the deleters for
+   them were being written, so what has run end to end is six providers, not
+   eight. The second live run is still owed, and it is the only thing this risk
+   is still open on.
+
 4. **A general form of R-040 is now closed.** `parseTerraformOutputs` reads
    each value by name and returns empty when it is absent — correct, because a
    provision that made no Vercel projects should not throw, and indistinguishable
