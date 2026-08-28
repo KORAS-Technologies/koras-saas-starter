@@ -55,6 +55,79 @@ folder that only ever grows is a record of things nobody did."*
 
 **Why not done here:** `koras-control-plane` is read-only from this session.
 
+### F2a — registration stores a token that expires in twelve hours
+
+- [ ] Store the `registrar` service-account key instead of a finished token
+- [ ] Mint the token at call time, in the generator and in
+      `local/scripts/register-with-control-plane.sh`
+- [ ] Decide whether the service account should be a Terraform resource
+
+**This one is a design defect, not a missing document**, and it was found by
+running the thing rather than reading it.
+
+`KORAS_CONTROL_PLANE_TOKEN` is read from Doppler as a finished bearer string.
+The credential it has to hold is a ZITADEL access token for the `registrar`
+service account, and the exchange returns a lifetime of **43,199 seconds** —
+measured against the dev instance on 2026-08-28. So a value stored today stops
+working tomorrow. It fails loudly, as a misconfiguration rather than a skip,
+which is the right failure and a daily one.
+
+The estate already has the shape this should take.
+`ZITADEL_DEV_SERVICE_ACCOUNT_KEY_JSON` and its three siblings hold a *key* that
+the ZITADEL Terraform provider exchanges when it runs. Registration is the one
+caller that did not adopt it: store a key, mint a token per call, store no
+token anywhere.
+
+**Two related findings from the same session**, both measured:
+
+- **The token's form is decided by a ZITADEL setting nobody would think to
+  check.** A service account left on the default access token type issues an
+  *opaque* token, and the Control Plane verifies against a JWKS key set, so it
+  cannot verify one at all. Using the Terraform account's key, the grant
+  returned `200` and the Control Plane then returned `401`. `KORAS Product
+  Registrar` is set to JWT and the other two service accounts are not, so the
+  account is right and reusing either of the others would not be.
+- **Neither Control Plane setting exists in `koras-platform-bootstrap` / `prod`.**
+  Generation-time registration has therefore never run in this estate; every
+  product so far was skipped as not-configured. That is correct behaviour and it
+  means the path has never been exercised end to end against a real registry —
+  see F7.
+
+`docs/NEW_PRODUCT_WALKTHROUGH.md` §A.2 carries the whole of this, with the
+values and the observed results.
+
+**Why not done here:** minting a token at call time is a change to the
+generator's configuration resolution and to the shell script, with tests for
+both, and it should be decided together with F3 — a product minting its own
+registration credential is the same trust question one layer down.
+
+### F2b — the per-product registration credential was designed and never built
+
+- [ ] Have registration issue a per-product credential, or decide it should not
+- [ ] Until then, keep deploy-time re-registration switched off
+
+`CONTROL_PLANE_API_KEY` is declared in the product template's environment
+contract and in its `secrets.manifest` as *supplied*, and
+`PROVISIONING_RUNBOOK.md` describes it as "issued by the Control Plane when the
+product registers". Checked: the registration response carries an id, a code, a
+name, a slug, a profile, a status and a list of environments. There is no
+credential in it, and no endpoint mints one.
+
+**This matters because of what fills the gap.** The only credential that can
+register a product today is the estate-wide `registrar` service account, and a
+token minted from its key can rewrite *any* product's registry entry. Switching
+on the deploy-time `register` job means putting that in each product's CI, which
+turns a product's deployment credentials into estate-wide registry write access.
+
+So the job added on 2026-08-28 is correct and should stay **off** until the
+credential it deserves exists. That is a qualification of that work rather than
+a defect in it: generation-time registration is unaffected, and re-running
+`--provision-only` refreshes a product's references in the meantime.
+
+**Why not done here:** what the Control Plane issues, and to whom, is the
+Control Plane's decision. It is the same question as F3, arriving from the other
+side.
+
 ### F3 — which credential should authorise a product's own re-registration
 
 - [ ] Decide whether a product may hold a token that can rewrite its own registry entry
@@ -91,6 +164,47 @@ noticed.
 deciding the first question leaves a *third* correct implementation of the same
 contract that nothing calls, next to the two that everything calls. The right
 order is the other way round.
+
+### F4a — the plan catalogue is empty and has no user interface
+
+- [ ] Build the plan, entitlement and subscription forms the console is missing
+
+A provisioning run requires a plan code, and
+`koras-control-plane/docs/COMMERCIAL_CATALOGUE.md` measures dev as zero plans,
+zero entitlements and zero subscriptions. The console can start a run naming a
+plan nobody can create from the console; a plan can only be created with `curl`
+and a staff token.
+
+This blocks the first real end-to-end run rather than merely inconveniencing it,
+which is why it is here and not only in that document. The workaround is
+NEW_PRODUCT_WALKTHROUGH.md stage 4.2.
+
+**Why not done here:** the console is `koras-control-plane`'s, and that document
+already specifies what to build.
+
+### F5a — `doppler-bootstrap` cannot express a legitimately empty setting
+
+- [ ] Let the prompt record an empty value deliberately, rather than treating
+      every empty answer as a skip
+
+Found by running it. The prompt loop treats an empty answer as `skipped, still
+missing`, writes nothing, and fails the run. Four settings in the product
+contract are legitimately empty until infrastructure exists that needs them —
+the three `OTEL_EXPORTER_OTLP_*` names and `CONTROL_PLANE_API_KEY` — and there
+is no way to answer them. The operator has to leave the script and use the
+Doppler CLI directly.
+
+`CONTROL_PLANE_API_KEY` is the sharper case: it is declared `supplied` in
+`secrets.manifest`, and nothing can supply it, because the Control Plane issues
+no such credential (F2b). A manifest entry that demands a value the platform
+cannot produce is a check that can only be satisfied by inventing one.
+
+`PROVISIONING_RUNBOOK.md` claimed empty answers were recorded and counted. They
+are not; that claim is corrected.
+
+**Why not done here:** the fix is a small change to a template script, and it
+should be made together with the decision in F2b about whether
+`CONTROL_PLANE_API_KEY` should be in the contract at all.
 
 ### F5 — `apps/marketing` declares Tailwind and imports no stylesheet
 
