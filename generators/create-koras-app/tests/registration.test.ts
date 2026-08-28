@@ -64,6 +64,17 @@ describe('the registration payload', () => {
     expect(payload.repository).toBe('KORAS-Technologies/shop')
   })
 
+  it('says what the product was generated from', () => {
+    // The two fields the contract provides so the Control Plane can identify
+    // products needing an upgrade. They were declared on the payload type from
+    // the start and populated by nothing, so every product registered so far
+    // read as generated from nothing in particular -- and the registry
+    // overwrites the column from the request, so a later registration omitting
+    // them blanks a correct value rather than leaving it alone.
+    expect(payload.starter_version).toMatch(/^\d+\.\d+\.\d+/)
+    expect(payload.profile_version).toMatch(/^\d+\.\d+\.\d+/)
+  })
+
   it('describes every environment the profile declares', () => {
     expect(Object.keys(payload.environments).sort()).toEqual(['dev', 'prod', 'stg', 'test'])
   })

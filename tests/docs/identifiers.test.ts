@@ -42,6 +42,14 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   attach_branch_domains: 'a removed resource, named in the entry recording its removal',
   storage_buckets: 'named in SYNC_BACKLOG as something the storage module does not create',
   vercel_target: 'named in ENVIRONMENT_STRATEGY to say it has never existed',
+  // The Control Plane's registry tables. REGISTRATION_LIFECYCLE names them
+  // because the safety of a single-environment re-registration rests on which
+  // of them prune and which do not -- read out of that repository rather than
+  // assumed. A product repository must never have them, so asserting their
+  // absence here is worth something on its own.
+  product_environments: 'a Control Plane registry table; no product repository has one',
+  product_services: 'a Control Plane registry table; no product repository has one',
+  infrastructure_references: 'a Control Plane registry table; no product repository has one',
 }
 
 function tracked(): string[] {

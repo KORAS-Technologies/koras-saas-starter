@@ -803,6 +803,14 @@ distrusting on the same question elsewhere.
 **Scope:** Product profile registers itself with the KORAS Control Plane after
 provisioning. Control Plane profile skips registration.
 
+**Extended 2026-08-28.** Registration is no longer generation-time only. A
+`register` job in the shared `deploy.yml` re-registers each environment after it
+deploys, so a reference that changes after generation day reaches the registry
+instead of turning into drift nobody can explain. The reasoning, and what each
+of the two passes can and cannot carry, is in
+[REGISTRATION_LIFECYCLE.md](REGISTRATION_LIFECYCLE.md); the contract itself is
+owned by `koras-control-plane`.
+
 **Deliverables:**
 ```
 generators/create-koras-app/src/registration/

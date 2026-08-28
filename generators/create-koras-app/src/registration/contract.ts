@@ -1,9 +1,22 @@
 import type { GenerationContext } from '../generation/context.js'
+import {
+  resolveStarterVersion,
+  resolveProfileVersion,
+} from '../generation/project-manifest.js'
 import { primaryDomain } from '../generation/context.js'
 import type { ProvisionOutputs } from '../terraform/outputs.js'
 
 /**
  * The registration payload, as the Control Plane defines it.
+ *
+ * **Specification:** `koras-control-plane/docs/PRODUCT_REGISTRATION_CONTRACT.md`.
+ * That document is authoritative for both directions — what this file sends,
+ * and the Product Platform API a product must serve so the Control Plane can
+ * call back into it. Where it and this file disagree, it is right and this is
+ * the bug. The pointer is here because its absence had a cost: a second
+ * document describing this contract was written in the Control Plane
+ * repository, contradicting the real one in four places, because nothing
+ * connected an implementation to its specification.
  *
  * Mirrors `ProductRegistrationRequest` in the Control Plane's
  * `schemas/product.py`, which sets `extra="forbid"` — so a field this side
@@ -144,6 +157,15 @@ export function buildRegistration(
     repository: outputs.githubRepository || undefined,
     profile: ctx.profile,
     primary_domain: domain || undefined,
+    // The contract's reason for holding these: they record what each product
+    // was generated from, so the Control Plane can identify the ones needing
+    // an upgrade. The fields were declared on the interface from the start and
+    // never populated, so every product registered so far reads as generated
+    // from nothing in particular -- and the registry column is overwritten from
+    // the request, so a later registration that omitted them would blank a
+    // correct value rather than leave it alone.
+    starter_version: resolveStarterVersion(),
+    profile_version: resolveProfileVersion(ctx),
     environments,
   })
 }
