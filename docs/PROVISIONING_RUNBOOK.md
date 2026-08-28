@@ -35,7 +35,8 @@ pnpm create-koras-app <name> --profile <profile> --provision-only --output-dir .
 
 cd ../output/<name>
 
-# 5. Create the restricted database role, once per environment. Keep both URLs.
+# 5. Create the restricted database role, ONCE PER ENVIRONMENT. Keep both URLs.
+#    Needs psql. On Windows use Git Bash explicitly -- see the note below.
 bash local/scripts/create-app-role.sh "<privileged database url>"
 
 # 6. See what Doppler will be asked for. Writes nothing.
@@ -62,6 +63,61 @@ Notes that matter:
   path, not an exception.
 - **Never skip step 0.** Every failure in the table below was found *during*
   an apply, after other providers had already created real resources.
+- **Step 5 needs `psql`, and on Windows needs Git Bash.** Two separate traps
+  that produce one message.
+
+  `bash` typed at a PowerShell prompt resolves to `C:/WINDOWS/system32/bash.exe`
+  — the **WSL** launcher, a different machine with its own filesystem and PATH.
+  A tool installed on the Windows side is invisible to it, so the script reports
+  `psql is not installed` whether or not it is. Run it explicitly:
+
+  ```powershell
+  & "C:/Program Files/Git/bin/bash.exe" local/scripts/create-app-role.sh "<url>"
+  ```
+
+  And install the client, which is not part of the estate prerequisites because
+  nothing else needs it:
+
+  ```powershell
+  winget install -e --id PostgreSQL.PostgreSQL.17
+  ```
+
+  There is no client-only package on winget; the server installs with it and
+  does not need to run.
+
+  **The installer does not put `psql` on PATH.** It lands in
+  `C:/Program Files/PostgreSQL/17/bin/psql.exe` and nothing points at it, so the
+  script reports the same "psql is not installed" after a successful install as
+  it did before one — which reads as the install having failed. Reopening the
+  shell does not help; there is nothing new to pick up.
+
+  For the current shell:
+
+  ```powershell
+  $env:PATH = "C:/Program Files/PostgreSQL/17/bin;$env:PATH"
+  ```
+
+  Or permanently, once:
+
+  ```powershell
+  [Environment]::SetEnvironmentVariable(
+    "PATH",
+    [Environment]::GetEnvironmentVariable("PATH", "User") + ";C:/Program Files/PostgreSQL/17/bin",
+    "User")
+  ```
+
+  Git Bash inherits the Windows PATH, so this is what makes the script find it;
+  no separate install is needed on the Git Bash side. Adjust `17` to the version
+  you installed.
+
+  `make` targets are unaffected by the Git Bash question — make resolves `bash`
+  itself and finds Git Bash — but they are affected by this one: a `make` target
+  calling a script that needs `psql` fails the same way until PATH includes it.
+
+  **Run it once per environment**, with that environment's privileged Supabase
+  URL. Four environments, four runs, four pairs of URLs. The script prints the
+  restricted URL once and stores it nowhere.
+
 - **Steps 5 to 8 are not optional, and provisioning does not do them.**
   Terraform creates the Doppler *project* and its four configs; it never writes
   a setting into them. It cannot: it does not know the Supabase password or the
@@ -87,6 +143,66 @@ Notes that matter:
   with that wrapper.** Step 1 needs no credentials and is never wrapped. Wrapping by hand
   still works and is not applied twice; `DOPPLER_PROJECT` and `DOPPLER_CONFIG`
   override the location for a one-off run.
+
+### What steps 5 to 8 ask for
+
+**Step 5 runs once per environment, not once.** Four Supabase projects, four
+privileged URLs, four runs, four pairs of URLs out. The refs are in the
+Terraform outputs:
+
+```bash
+terraform -chdir=../output/<product>/infrastructure/terraform output -json |
+  python3 -c "import json,sys; [print(e, r) for e, r in sorted(json.load(sys.stdin)['supabase_project_refs']['value'].items())]"
+```
+
+The password for each is `SUPABASE_DB_PASSWORD_<ENV>` in
+`koras-platform-bootstrap/prod` — the same value Terraform created the project
+with. Supabase's pooled connection string looks like:
+
+```
+postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
+```
+
+Each run prints the restricted URL **once** and stores it nowhere. Keep both:
+the printed one becomes `DATABASE_URL`, the one you passed becomes
+`DATABASE_ADMIN_URL`. Losing it costs a re-run, which rotates the credential —
+that is the recovery path, not a failure.
+
+**Step 7 prompts per environment.** For a product, 11 settings come from
+Terraform and 13 are asked for — 11 of them unless `ai_gateway` is enabled,
+which adds `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`. For the Control Plane, 12
+derived and 8 asked.
+
+| Prompt | Where the value comes from |
+|--------|----------------------------|
+| `DATABASE_URL` | printed by step 5 — the `koras_app` role |
+| `DATABASE_ADMIN_URL` | the privileged URL you passed to step 5 |
+| `ZITADEL_CLIENT_SECRET` | that environment's ZITADEL console → the project → its OIDC application. ZITADEL shows it once |
+| `ZITADEL_SERVICE_TOKEN` | Control Plane only. A PAT on a machine user in that instance |
+| `SESSION_SECRET` | `openssl rand -base64 48`. **Different in every environment** — one shared key makes a development cookie a production cookie |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | **Empty is valid and is the right answer until a collector exists.** Empty means no exporter, not no tracing: spans are still created and context still propagates |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Empty unless a hosted collector needs auth, then `authorization=Basic <base64>` |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` for a managed collector, `grpc` otherwise. Not inferable — the local collector is an `http://` URL that speaks gRPC |
+| `OTEL_SERVICE_NAME` | the product slug |
+| `CONTROL_PLANE_API_KEY` | issued by the Control Plane when the product registers. Empty if there is none yet — that is the documented bootstrap order (R-001) |
+| `CONTROL_PLANE_URL` | the Control Plane's address. Empty if there is none. It cannot be derived: the Control Plane is a separate estate with its own state |
+| `STORAGE_BUCKET` | a name you pick. The storage module provisions no buckets, so there is nothing to derive it from |
+| `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | only when `ai_gateway` is enabled |
+
+An empty answer is recorded as empty and counts as answered. That is deliberate
+for the four settings above that are legitimately empty, and it means a value
+you skipped by pressing enter is indistinguishable from one you meant to leave
+blank — `make doppler-check` verifies presence, not correctness.
+
+Values are read with `read -rs` and piped to `doppler secrets set` on stdin, so
+none reaches `ps` output or shell history. Already-set values are skipped unless
+`--overwrite`. A value that appears in a committed Terraform artifact is
+**refused**: it has been published, and storing it would record a burned
+credential as live. Rotate and paste the new one.
+
+**On Windows**, `make` resolves `bash` itself and finds Git Bash, so steps 7 and
+8 work from PowerShell unchanged. Step 5 and the `--dry-run` in step 6 are typed
+as `bash ...` and need the explicit path — see the note above.
 
 ---
 
@@ -282,7 +398,8 @@ than restarting. Fix the cause, then run step 4.
 | `EADDRINUSE :::3000` from `next dev` | Another project's dev server holds the port | Fixed — app ports resolve through `local/.env` too. `make ports` re-resolves |
 | `Error acquiring the state lock` | A plan or apply was killed before it could release the workspace | The command now prints the exact `terraform force-unlock` line. For `backend "remote"` the lock ID is `<org>/<workspace>` — **not** the UUID under `Lock Info:` |
 | `turbo run build` fails across many packages at once with `VirtualAlloc failed`, `STATUS_DLL_INIT_FAILED`, zone-allocation failures, or "out of memory" at a heap of a few MB | Not a build error. Turbo runs roughly one task per core and each `tsc` reserves hundreds of MB of commit; on a machine already running a local stack the Windows **commit limit** is exhausted and the tasks fail together, each reporting whichever allocation lost | `make build` caps this via `BUILD_CONCURRENCY` (default 4); lower it, or run `pnpm turbo run build --concurrency=2`. Check headroom with `Get-CimInstance Win32_OperatingSystem` — commit in use versus limit, not free RAM. Stopping an unused `docker compose` stack and `wsl --shutdown` both free a lot |
-| A `local/scripts/*.sh` reports a tool "is not installed" that plainly is | On Windows, `bash` from PowerShell resolves to `C:\WINDOWS\system32ash.exe` — the **WSL** launcher, a separate Linux filesystem that cannot see a winget or Scoop install on the Windows side | Run it under Git Bash: `& "C:/Program Files/Git/bin/bash.exe" <script>`. `make` targets are unaffected — make resolves `bash` itself and finds Git Bash |
+| `psql is not installed` after installing PostgreSQL | The installer does not add it to PATH. It is at `C:/Program Files/PostgreSQL/<v>/bin/psql.exe` and nothing points there, so the message is identical before and after a successful install | Prepend that directory to `PATH` — see §1 step 5. Reopening the shell does not help; there is nothing new to pick up |
+| A `local/scripts/*.sh` reports a tool "is not installed" that plainly is | On Windows, `bash` from PowerShell resolves to `C:/WINDOWS/system32/bash.exe` — the **WSL** launcher, a separate Linux filesystem that cannot see a winget or Scoop install on the Windows side | Run it under Git Bash: `& "C:/Program Files/Git/bin/bash.exe" <script>`. `make` targets are unaffected — make resolves `bash` itself and finds Git Bash |
 | `spawn pnpm ENOENT` during git initialisation | Fixed — `pnpm` is a `.cmd` shim on Windows, which needs a shell | Update the starter and rebuild: `pnpm --filter create-koras-app build` |
 
 ### The generated project owns its own modules
@@ -355,7 +472,7 @@ anything else by name, and a real estate is refused even with deletion enabled.
 
 ### Before you start
 
-Three things, none of which the command checks for you:
+Four things, none of which the command checks for you:
 
 1. **You are in the starter.** Every command below runs from
    `C:\repos\Projects\koras-saas-starter`. The generated project lives beside
@@ -363,9 +480,15 @@ Three things, none of which the command checks for you:
 2. **The project is named `koras-e2e-something`.** The guards refuse every other
    name, deletion enabled or not. This is the safety mechanism, not a
    convention.
-3. **`ZITADEL_SERVICE_TOKEN` is set in the bootstrap Doppler project.** If it is
-   missing, ZITADEL is *skipped* rather than failed — the run finishes, says so
-   once at the top, and looks successful while the projects are still there.
+3. **The credentials exist in `koras-platform-bootstrap/prod`.** A missing one
+   is *skipped*, not failed — the run finishes, names it once at the top, and
+   looks successful while that provider's resources are still there. Eight
+   providers, and the two easiest to forget are the newest:
+   `ZITADEL_{DEV,TEST,STG,PROD}_SERVICE_TOKEN`, one per instance, and
+   `TF_TOKEN_APP_TERRAFORM_IO` for the workspace.
+4. **The project directory still exists.** Teardown reads the HCP organization
+   from its `backend.tf`. Delete the directory after teardown, not before, or
+   the workspace outlives it — see steps 4 and 6.
 
 ### Step 1 — see what exists, delete nothing
 
@@ -399,6 +522,29 @@ estate rather than part of one, and nothing is skipped for a missing credential.
 A skip is not a warning you can carry forward; it is a provider that will still
 exist afterwards.
 
+Eight kinds are possible, and a product with `web`, `admin`, `api` and `worker`
+produces all of them:
+
+| Kind | Typical count |
+|------|---------------|
+| `cloudflare-record` | 8 — deleted first; a DNS record pointing at nothing is the one leftover a stranger sees |
+| `fly-app` | 8 |
+| `vercel-project` | 8 |
+| `upstash-database` | 4 |
+| `supabase-project` | 4 |
+| `zitadel-project` | 4 |
+| `doppler-project` | 1 |
+| `github-repository` | 1 |
+| `terraform-workspace` | 1 — deleted last; it is the record of what the rest were |
+
+**A kind absent from the list is the failure mode to look for**, and it does not
+announce itself: the count counts what the inventory holds, so a provider it was
+never told about is missing from both. That is how eight DNS records and four
+Upstash databases each survived a run reporting nothing retained — see R-040 and
+R-036. Teardown warns explicitly when the outputs carry no
+`cloudflare_record_ids`, which is the one case still possible on an older
+project.
+
 ### Step 2 — delete
 
 The same command with `KORAS_E2E_TEARDOWN=1`.
@@ -421,6 +567,42 @@ Remove-Item Env:\KORAS_E2E_TEARDOWN
 It stops and asks you to type the project name. Not `yes` — the name. Anything
 else cancels, and there is no `--yes` or `--force` to get past it.
 
+**It verifies itself when it finishes.** After the deletes, it asks each
+provider whether the resource is still there and prints one line each, then a
+total. This is the shape, from a real run of the same check against a single
+resource that had *not* been deleted:
+
+```
+Verified 1 resource(s) — nothing was deleted here.
+
+  ALIVE    terraform-workspace  koras-e2e-user  (HTTP 200)
+
+  0 gone, 1 still there, 0 unknown.
+```
+
+A full estate prints thirty such lines, one per resource in step 1's list.
+Exit 1 if anything is `alive` or `unknown`.
+
+That is not the same as reading the delete output. Teardown counts 404 as
+success — a resource already gone satisfies the request, and re-running after a
+partial teardown has to work — so *deleted* and *never found* print identically,
+and a delete aimed at the wrong ZITADEL instance or Cloudflare zone produces the
+second while looking like the first. The check probes the URL each deleter used
+rather than one it rebuilt: the deleters are run against a fetch that records
+and sends nothing, and the recorded URL is issued as a `GET`.
+
+**`unknown` is not `gone`.** The provider did not say the resource was absent —
+it refused, it failed, or it was never asked because a credential is missing.
+Supabase answers `400 "Resource has been removed"` for a deleted project, which
+is genuinely neither. Check those by hand.
+
+**Why it runs here and not as a second command.** Terraform has already run,
+once, before anything was deleted; everything after that is HTTP. A separate
+verification would re-read the outputs, and `terraform output` against a
+`remote` backend **creates the workspace when it is missing** — putting back the
+one resource teardown deletes last, and then reporting it alive. Observed: two
+workspaces before a run, three after, the new one stamped "a few seconds ago".
+
 **Do not pipe the outputs in.** This section used to say to, and the command it
 gave could not delete anything:
 
@@ -440,66 +622,136 @@ One trap if you are assembling a command by hand:
 **terraform**, not on teardown — in a pipeline the prefix applies to the first
 command only.
 
-### Step 3 — check the consoles yourself, this once
+### Step 3 — DNS records, only for a product generated before 2026-08-27
 
-Teardown treats **404 as success**, because a resource that is already gone
-satisfies the request and re-running after a partial teardown has to work. The
-cost is that "I deleted it" and "it was never there" print the same.
+Skip this if the product was generated from a starter that exports
+`cloudflare_record_ids`; teardown deletes the records with everything else, and
+step 1 lists them under `cloudflare-record`. If it does not list them, its
+`main.tf` predates that output and the records are invisible to it — the
+inventory cannot delete what it was never told about, and the count says nothing
+because it counts the same set. R-036.
 
-That is fine once the path is proven. It is not fine the first time, because no
-deleter here has ever run against a real API — only against a test double. So on
-the first live run, open each console and look:
+PowerShell, and **not** `bash -c`: `bash` here is WSL's, which does not inherit
+the environment `doppler run` injects, so every variable arrives empty and the
+API answers with `result: null`. That reads as `'NoneType' object is not
+iterable` from whatever parses it.
 
-| Provider | What to look for |
-|----------|------------------|
-| Cloudflare | the DNS records for `*.<product>.<zone>` are gone |
-| GitHub | the repository is gone |
-| Supabase | four projects gone — these bill |
-| Upstash | four databases gone — these bill |
-| Vercel | the projects are gone |
-| Fly.io | the apps are gone |
-| Doppler | the project, and its configs with it |
-| ZITADEL | the project in **each** instance's console |
+```powershell
+$z = doppler secrets get TF_VAR_CLOUDFLARE_ZONE_ID --plain `
+       --project koras-platform-bootstrap --config prod
+$t = doppler secrets get CLOUDFLARE_API_TOKEN --plain `
+       --project koras-platform-bootstrap --config prod
 
-ZITADEL is the one to check hardest. Its delete is the newest, and a wrong
-organization answers 404 — which reads as success.
+# List first. Read-only.
+$api = "https://api.cloudflare.com/client/v4/zones/$z/dns_records"
+$doomed = (Invoke-RestMethod -Uri "${api}?per_page=200" `
+             -Headers @{ Authorization = "Bearer $t" }).result |
+          Where-Object { $_.name -like "*<product>*" }
+$doomed | Select-Object id, type, name | Format-Table -AutoSize
 
-**Done once, on 2026-08-27**, against a product estate of 82 resources: thirty
-planned, thirty deleted, no skips.
-
-**And it was still not complete.** Cloudflare was not in the inventory at all —
-no deleter, no skip, no mention — so eight DNS records survived, and were found
-only when the next apply refused to create a record that already existed.
-`30 deletable, 0 retained` counts what the inventory holds, which is the one
-thing that cannot reveal a provider it omits.
-
-That is why this step says *check the providers*, not *check the list*. Reading
-the list back to itself is what failed. The eighth provider is in the inventory
-now; the reason to look by hand is that a ninth would look exactly like this. The `terraform plan` that follows is the better check, and it is free: it
-refreshes through each provider's *own* credential, and it refreshes
-**everything the configuration declares** rather than everything teardown knows
-about. The Cloudflare records were in its output as resources to recreate. It
-was read for the providers already expected.
-
-### Step 4 — the three things teardown never touches
-
-Four ZITADEL projects, the workspace, and the directory:
-
-```bash
-# 1. The four ZITADEL projects, one per instance console. Teardown reports them
-#    as skipped for a missing credential -- see the note below and R-036.
-# 2. The HCP Terraform workspace, at app.terraform.io. Delete it by hand.
-# 3. The generated directory, which is yours:
-rm -rf ../output/<product>
+# Then delete what was listed, and nothing else.
+foreach ($r in $doomed) {
+  Invoke-RestMethod -Method Delete -Uri "$api/$($r.id)" `
+    -Headers @{ Authorization = "Bearer $t" } | Out-Null
+  "deleted $($r.name)"
+}
 ```
 
-PowerShell for the last one:
+The filter is the guard. `koras teardown` refuses a name that is not
+`koras-e2e-...`; this loop has no such protection, so the `-like` pattern is the
+only thing standing between it and a record somebody needs. Read the list before
+running the second half.
+
+### Step 4 — anything teardown left behind
+
+One thing, and it is not a provider.
+
+**The HCP Terraform workspace is deleted for you now.** It was on this list
+because teardown never invokes Terraform, so nothing removed it — and it holds
+the state of the estate that was just deleted. It is addressed by organization
+and name through the HCP API, using `TF_TOKEN_APP_TERRAFORM_IO`; the
+organization is read from the project's own `backend.tf`, which is the only
+record of it left by then. It is deleted **last**, after everything it recorded,
+so a run that fails halfway can be finished while the state still describes the
+estate.
+
+That also means **the workspace survives if you delete the project directory
+first**. There is nothing left to read the organization from, and the inventory
+drops it rather than guessing. Delete the directory after teardown, not before.
+To remove a workspace whose project is already gone:
+
+```powershell
+$t = doppler secrets get TF_TOKEN_APP_TERRAFORM_IO --plain `
+       --project koras-platform-bootstrap --config prod
+Invoke-RestMethod -Method Delete `
+  -Uri "https://app.terraform.io/api/v2/organizations/<org>/workspaces/<product>" `
+  -Headers @{ Authorization = "Bearer $t" }
+```
+
+The generated directory is dealt with in step 6, after verifying — see below.
+
+### Step 5 — `--verify` on its own, and when not to use it
+
+Step 2 already verified what it deleted. This flag runs the same check without
+deleting anything:
+
+```powershell
+pnpm koras teardown <product> --product-path ../output/<product> --verify
+```
+
+**It refuses after a completed teardown**, rather than warning and proceeding.
+Reading the Terraform outputs would create the workspace — that is what a
+`remote` backend does with one it cannot find — so every teardown command now
+asks HCP over HTTP first, and stops if the workspace is already gone:
+
+```
+The HCP workspace koras/koras-e2e-user does not exist.
+
+Nothing to do. Reading the Terraform outputs would create it --
+that is what a `remote` backend does with a workspace it cannot
+find -- so this stops instead, and the estate stays torn down.
+```
+
+Exit 0. Nothing is wrong; there is nothing left to look at.
+
+A warning came first and was not enough: it printed, Terraform ran, the
+workspace was re-created anyway, and the command exited 1 for a resource it had
+just made. The guard applies to the dry run too — step 1 after a completed
+teardown would have re-created it just as readily.
+
+It is for an estate that still exists: checking a partial teardown before
+re-running one, or confirming what a dry run listed is really there.
+
+#### What it can and cannot catch
+
+It asks only about resources the inventory knows. It catches a delete that
+failed or went to the wrong instance. It cannot catch a provider nobody told it
+about — Cloudflare was missing from the inventory for months, so no amount of
+verifying would have mentioned it.
+
+For that, read the *shape* of step 1's list against the table there, and read
+what `terraform plan` proposes to recreate: that covers everything the
+configuration declares, rather than everything teardown happens to know.
+
+**Done once by hand, on 2026-08-27**, against a product estate of 82 resources:
+thirty planned, thirty deleted, and each provider asked directly. It was still
+not complete — eight DNS records survived, found only when the next apply
+refused to create a record that already existed. `30 deletable, 0 retained`
+counts what the inventory holds, which is the one thing that cannot reveal a
+provider it omits.
+
+### Step 6 — remove the directory, and do not re-plan
+
+Last, because everything above needs it: the inventory, the HCP organization in
+`backend.tf`, and anything `--verify` reads all come out of this directory.
 
 ```powershell
 Remove-Item -Recurse -Force ../output/<product>
 ```
 
-### Step 5 — do not re-plan against the old state
+```bash
+rm -rf ../output/<product>
+```
 
 After a teardown, the Terraform state describes an estate that no longer exists.
 Running `--provision-only` in that directory does not start again cleanly: it
@@ -519,8 +771,12 @@ errors.
 
 Nothing is wrong. Read it as confirmation: those messages *are* the providers
 saying the resources are gone. The state is spent, and the remedy is to discard
-it rather than repair it — delete the HCP workspace and the directory, per
+it rather than repair it — the workspace goes in step 4 and the directory in
 step 6. A new acceptance run generates a new project with a new workspace.
+
+Note the same trap as step 5, from the other direction: any Terraform command
+run in this directory against a `remote` backend re-creates the workspace if it
+is missing. Removing the directory is what closes that door.
 
 Worth being deliberate about, because `--provision-only` on a torn-down estate
 is one keystroke from **recreating all 82 resources and their bills.**
@@ -598,19 +854,24 @@ rather than failed. A skip is a provider that will still exist afterwards.
 
 | Left behind | Why | Where |
 |-------------|-----|-------|
-| HCP Terraform workspace | Holds the state of what was just deleted. Terraform is never invoked by teardown, so nothing removes it | app.terraform.io, workspace `<product>` |
 | The generated directory | It is yours, on your disk | `rm -rf ../output/<product>` |
+| DNS records, for a product generated before 2026-08-27 | Its `main.tf` predates the `cloudflare_record_ids` output, so the inventory cannot see them. Teardown says so rather than leaving it to the count | Step 3 above |
+| The HCP workspace, **if the directory was deleted first** | Its organization is read from `backend.tf`; with the project gone there is nothing to read | Step 4 above |
+| DNS records, for a product generated before 2026-08-27 | Its `main.tf` predates the `cloudflare_record_ids` output, so the inventory cannot see them | Step 3 above |
 
-**ZITADEL projects, in practice, are still deleted by hand.** The deleter
-exists and works, and it needs a personal access token on a machine user, set as
-`ZITADEL_SERVICE_TOKEN`. Provisioning does not issue one: the estate holds
-`ZITADEL_<ENV>_SERVICE_ACCOUNT_KEY_JSON`, which is a JWT profile, and teardown
-does not exchange it. Each environment is also a separate instance, so one token
-would not reach all four in any case.
+**ZITADEL projects were on this list and are not any more.** The deleter needs
+a personal access token on a machine user in that instance, and provisioning
+issues none: what the estate holds is
+`ZITADEL_<ENV>_SERVICE_ACCOUNT_KEY_JSON`, a JWT profile, which teardown does not
+exchange. Four instances also cannot share one token. So four were created —
+`ZITADEL_{DEV,TEST,STG,PROD}_SERVICE_TOKEN` — and the deleter picks the one
+matching each project's environment, refusing by name rather than reaching for
+another instance's. A token from the wrong server authenticates, does not find
+the project, and answers 404, which teardown reads as already gone.
 
-Until a PAT exists per instance, the four projects are reported as skipped for a
-missing credential and removed from each instance's console. That is a real gap,
-not a formality — see R-036.
+If one of the four is missing, that instance's project is reported as skipped
+and has to come out of its console by hand — which is a credential to add, not a
+deleter to write.
 
 The genuine difficulty was never authentication. ZITADEL projects belong to an
 organization, and its management API acts in the organization of whoever holds
@@ -621,8 +882,13 @@ success. Teardown therefore sends the organization explicitly, taken from the
 
 Anything without a deleter is reported as `skipped` with its reason on every
 run rather than omitted, because an inventory that quietly leaves out a provider
-reports a complete teardown while resources stay alive. That happened to
-Upstash, which was absent from the inventory entirely until R-040.
+reports a complete teardown while resources stay alive. `UNIMPLEMENTED_KINDS` is
+empty today and kept for exactly that: a kind with no deleter and no entry is
+one the command can neither delete nor mention.
+
+It has happened twice. Upstash was absent from the inventory until R-040, and
+Cloudflare until R-036 — four billing databases and eight DNS records, each
+outliving a run that reported nothing retained.
 
 ---
 
