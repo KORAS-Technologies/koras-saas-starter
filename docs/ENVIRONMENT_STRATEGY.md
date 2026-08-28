@@ -72,30 +72,98 @@ token cannot be used against a prod API.
 
 ### Doppler
 
-Four Doppler environments per project:
+**One Doppler project, four configs inside it** — not four projects:
 
 ```
-<project>-dev
-<project>-test
-<project>-stg
-<project>-prod
+<project>            the project
+  ├── dev
+  ├── test
+  ├── stg
+  └── prod
 ```
 
-Doppler is the sole source of truth for all secrets. Secrets never leave
-Doppler into source control, Docker images, or CI logs.
+The configs are named for the environment alone. This section previously showed
+them as `<project>-dev`, which is neither the project name nor the config name
+and matches nothing you can select in the dashboard.
+
+Terraform creates the project and the four configs and **writes no values into
+them**. That is deliberate: `doppler_secret` resources would put every
+credential into Terraform state permanently, making state the authority and
+Doppler a replica — which is backwards, and is how one project published its
+whole estate in a committed plan file. Values arrive from
+`local/scripts/doppler-bootstrap.sh`, which is §1 steps 5–8 of
+PROVISIONING_RUNBOOK.md. **A successful apply leaves every config empty**, and
+the only sign is an empty Secrets tab.
+
+Doppler is the sole source of truth for all secrets. Secrets never leave Doppler
+into source control, Docker images, or CI logs.
 
 ### Fly.io
 
-Each service creates a Fly app per environment:
+One Fly app per service per environment. A product with `api` and `worker` gets
+eight; `scheduler` is optional and adds four more when enabled with
+`--with scheduler`:
 
 ```
-<project>-api-dev
-<project>-api-test
-<project>-api-stg
-<project>-api-prod
+<project>-api-dev       <project>-worker-dev
+<project>-api-test      <project>-worker-test
+<project>-api-stg       <project>-worker-stg
+<project>-api-prod      <project>-worker-prod
 ```
 
-Fly secrets are populated from Doppler via CI/CD.
+Underscores in a component name become hyphens: `ai_gateway` is
+`<project>-ai-gateway-dev`. Fly rejects the underscore, and the two spellings
+being different is what a name in state and a name at the provider disagreeing
+looks like.
+
+Fly secrets are populated from Doppler by the deploy workflow.
+
+### Upstash
+
+One Redis database per environment — the queue, never shared:
+
+```
+<project>-dev    <project>-test    <project>-stg    <project>-prod
+```
+
+Two constraints worth knowing before changing anything here:
+
+`region` must be `"global"`. Creating a single-region database now fails with
+`400 "regional db creation is deprecated"`; a global database with one
+`primary_region` and no read replicas is the regional equivalent. The provider
+documents `primary_region` as working only when `region` is `"global"`, so the
+two change together or not at all.
+
+Eviction is off. An evicted key is a lost job, and a queue that silently drops
+work under memory pressure is worse than one that refuses it.
+
+TLS is on for every environment.
+
+### Cloudflare
+
+DNS only, and only for the frontends. One `CNAME` per Vercel domain, pointing at
+`cname.vercel-dns.com`:
+
+```
+app-dev.<project>.<apex>      admin-dev.<project>.<apex>
+app-test.<project>.<apex>     admin-test.<project>.<apex>
+app-stg.<project>.<apex>      admin-stg.<project>.<apex>
+app.<project>.<apex>          admin.<project>.<apex>
+```
+
+**Unproxied.** Vercel terminates TLS for the domain itself, and proxying through
+Cloudflare puts a second certificate in front of one that is already valid —
+which fails until Vercel has issued, and then serves the wrong chain.
+
+**The API has no DNS record.** It answers on its Fly hostname, which is what the
+settings point at. A record here would be a second name for something already
+reachable, and a second thing to keep correct.
+
+A WAF ruleset (Cloudflare's OWASP core) is available behind `enable_waf`, which
+defaults to `false` because the managed ruleset needs a Pro plan.
+
+These records were the last thing teardown learned to delete, and eight of them
+outlived an estate before it did — see R-036.
 
 ### Vercel
 
@@ -234,18 +302,40 @@ Rotation is performed in Doppler and then redeployed. No code changes required.
 
 ## 7. Observability per Environment
 
-All four environments have observability enabled:
+This section described Prometheus, Sentry, BetterStack and PagerDuty
+escalation. **None of those exist anywhere in this repository** — not in a
+template, not in a module, not in a compose file. What follows is what is built.
 
-| Stack           | Tool                      |
-|-----------------|---------------------------|
-| Metrics         | Prometheus / Grafana Cloud |
-| Logs            | Loki / Grafana Cloud       |
-| Traces          | Tempo / Grafana Cloud      |
-| Error tracking  | Sentry                     |
-| Uptime          | BetterStack / Grafana      |
+**Locally**, `make dev` runs three containers from `local/observability/`:
 
-Production alerting is more aggressive (lower thresholds, PagerDuty escalation).
-Development observability is local Docker Compose only.
+| Container | What it does |
+|-----------|--------------|
+| `otel-collector` | receives OTLP from the services |
+| `loki` | logs |
+| `tempo` | traces |
+
+There is no Grafana container, so nothing renders them; they are reachable by
+API and are there so that instrumentation has somewhere to send to.
+
+**In a deployed environment**, four settings, all from Doppler and all
+`supplied`:
+
+| Setting | Note |
+|---------|------|
+| `OTEL_SERVICE_NAME` | names the service in traces |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | **empty is valid, and is the right value until a collector exists** |
+| `OTEL_EXPORTER_OTLP_HEADERS` | auth for a hosted collector, e.g. `authorization=Basic <base64>`; read by the SDK, not by any code here |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` or `http/protobuf`. Not inferable — the local collector is an `http://` URL that speaks gRPC, and getting it wrong gives a connection error against a healthy gateway |
+
+An empty endpoint means *no exporter*, not *no tracing*: spans are still created
+and trace context still propagates across the queue. Only the export is off. So
+a project with no collector is correctly configured rather than incomplete, and
+turning one on later is a setting change with no code change.
+
+There is **no error tracking, no uptime monitoring, no alerting and no
+per-environment threshold configuration**. Adding any of them is work, not
+configuration, and the aspiration is recorded here rather than in a table that
+reads as a description of what exists.
 
 ---
 

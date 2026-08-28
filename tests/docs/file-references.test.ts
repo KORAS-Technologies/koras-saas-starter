@@ -103,6 +103,10 @@ function referencedPaths(doc: string): string[] {
     if (/^(https?:|--|\$|#|\.\.\/)/.test(token)) continue
     // Another repository, named on purpose. SYNC_BACKLOG is mostly this.
     if (/^koras-(control-plane|saas-starter)\//.test(token)) continue
+    // An absolute path on the reader's machine -- C:/Program Files/Git/bin/bash.exe,
+    // C:/WINDOWS/system32/bash.exe. Named because the reader has to type them,
+    // and not this repository's to have.
+    if (/^[A-Za-z]:\//.test(token)) continue
     found.add(token)
   }
   return [...found].sort()

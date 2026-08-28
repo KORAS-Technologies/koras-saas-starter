@@ -33,6 +33,7 @@ Two profiles exist initially:
 | `services/ai-gateway`       | Optional  | No (default off)|
 | **Data**                    |           |                 |
 | Supabase                    | Yes       | Yes             |
+| Upstash (queue, 1 per env)  | Yes       | Yes             |
 | ZITADEL                     | Yes       | Yes             |
 | **Infrastructure**          |           |                 |
 | Doppler                     | Yes       | Yes             |

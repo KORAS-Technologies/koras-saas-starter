@@ -20,9 +20,10 @@ Every KORAS project provisions resources across seven platforms:
 | ZITADEL       | Identity provider project per ZITADEL inst. | `modules/zitadel`             |
 | Vercel        | Frontend application hosting                | `modules/vercel`              |
 | Fly.io        | Backend service hosting                     | `modules/fly`                 |
+| Upstash       | Redis queue, one database per environment   | `modules/upstash`             |
 | Cloudflare    | DNS, CDN, WAF                               | `modules/cloudflare`          |
 
-The `modules/project-bootstrap` orchestration module calls all seven modules
+The `modules/project-bootstrap` orchestration module calls all eight modules
 with the correct inputs derived from the generator context.
 
 ---
@@ -240,6 +241,51 @@ output "app_hostnames"   { value = { for k, v in fly_app.apps: k => v.hostname }
 
 ---
 
+### `modules/upstash`
+
+Absent from this document until 2026-08-27, while the module had existed and
+been applied for months. The table above said "all seven modules" and listed
+seven; there were eight. The same omission reached the teardown, where four
+billing databases survived a run that reported nothing retained — see R-040.
+
+**Creates:**
+- One Redis database per environment, the queue for that environment
+- Named: `<project_slug>-<env>`
+- Never shared between environments: a dev worker taking a prod job is the
+  failure this prevents
+
+**Variables:**
+```hcl
+variable "project_slug" { type = string }
+variable "environments" { type = set(string) }
+variable "region"       { type = string; default = "us-east-1" }
+variable "eviction"     { type = bool;   default = false }
+```
+
+**Two constraints, both load-bearing:**
+
+`region` is hardcoded to `"global"` in the resource and `var.region` becomes
+`primary_region`. Creating a single-region database now fails with
+`400 "regional db creation is deprecated"`, and the provider documents
+`primary_region` as working only when region is `"global"` — so the two change
+together or not at all.
+
+`eviction` defaults to false. An evicted key is a lost job.
+
+**Outputs:**
+```hcl
+output "redis_urls"         { }  # sensitive: embeds the password
+output "redis_endpoints"    { }  # host only, safe to expose
+output "redis_database_ids" { }  # what teardown deletes by
+```
+
+`redis_database_ids` exists because it did not. It was read by the teardown
+inventory and exported by nothing, so Upstash was silently absent from every
+teardown — the field was optional at the boundary, so every caller omitted it
+and got an empty map. It is required now.
+
+---
+
 ### `modules/cloudflare`
 
 **Creates:**
@@ -364,6 +410,8 @@ locals {
 
 ## 4. Environment Directory Structure
 
+In the starter:
+
 ```
 infrastructure/terraform/
 ├── modules/
@@ -373,53 +421,91 @@ infrastructure/terraform/
 │   ├── zitadel/
 │   ├── vercel/
 │   ├── fly/
+│   ├── upstash/
 │   ├── cloudflare/
 │   └── project-bootstrap/
 │
-├── environments/
-│   ├── dev.tfvars
-│   ├── test.tfvars
-│   ├── stg.tfvars
-│   └── prod.tfvars
-│
 └── templates/
     ├── backend.tf.tpl          Remote state configuration
-    ├── providers.tf.tpl        Provider versions
+    ├── providers.tf.tpl        Provider versions and aliases
+    ├── variables.tf.tpl        Root variables
     └── main.tf.tpl             Root module entry point
 ```
 
-Generated projects include a rendered version of these templates under
-`infrastructure/terraform/`.
+In a generated project, rendered:
+
+```
+infrastructure/terraform/
+├── modules/            copied verbatim; refresh with --refresh-modules
+├── backend.tf
+├── providers.tf
+├── variables.tf
+├── main.tf             rendered from the profile template, not a shared asset
+└── terraform.tfvars    generated once, project identity and shape
+```
+
+**There is no `environments/` directory and no `*.tfvars` per environment.**
+This tree listed four of them, and they have never existed. One configuration
+provisions all four environments in a single apply, because the estate is four
+of everything rather than one thing deployed four times; what varies per
+environment is a map keyed by environment name.
+
+The distinction between `modules/` and `main.tf` matters when picking up a fix:
+`--refresh-modules` re-copies the shared modules and touches nothing rendered,
+so a fix spanning both needs `--refresh infrastructure/terraform/main.tf` as
+well. `--check-drift` says which.
 
 ---
 
 ## 5. Terraform Variable Inputs from Generator
 
-The generator assembles variables from the `GenerationContext` and passes them
-to Terraform as a generated `terraform.tfvars.json` file (never committed):
+There is no `terraform.tfvars.json`, and nothing is written to a temporary
+directory and deleted. That was the plan; what exists is two paths, split by
+whether a value is a secret.
 
-```json
-{
-  "project_name": "Docoris",
-  "project_slug": "docoris",
-  "profile": "product",
-  "github_org": "koras-technologies",
-  "primary_domain": "docoris.app",
-  "enabled_apps": ["web", "admin"],
-  "enabled_services": ["api", "worker", "ai_gateway"],
-  "storage_provider": "supabase",
-  "ai_providers": ["openai", "anthropic"],
-  "environment_configuration": {
-    "dev":  { "region": "us-east-1", "fly_region": "iad" },
-    "test": { "region": "us-east-1", "fly_region": "iad" },
-    "stg":  { "region": "us-east-1", "fly_region": "iad" },
-    "prod": { "region": "us-east-1", "fly_region": "iad" }
-  }
+**Not secret — rendered once into `infrastructure/terraform/terraform.tfvars`**
+when the project is generated, and committed with it. It describes what the
+project *is*, which does not change between runs:
+
+```hcl
+profile      = "product"
+project_name = "Docoris"
+project_slug = "docoris"
+
+primary_domain = "docoris.app"
+
+enabled_apps            = ["web", "admin"]
+enabled_services        = ["api", "worker"]
+application_source_dirs = { web = "apps/web", admin = "apps/admin" }
+
+supabase_region = "us-east-1"
+enable_waf      = false
+
+fly_regions = {
+  dev  = "iad"
+  test = "iad"
+  stg  = "iad"
+  prod = "iad"
 }
 ```
 
-This file is written to a temporary directory, used for the plan/apply, and
-then deleted. It is never committed.
+**Secret — from Doppler as `TF_VAR_*`, in the process environment only**, never
+written to a file at all. Terraform reads `TF_VAR_<name>` natively, so nothing
+has to marshal them. The CLI re-runs itself under `doppler run` to get them, and
+assembles the per-environment maps from the individual estate secrets:
+
+| Variable | Assembled from |
+|----------|----------------|
+| `TF_VAR_supabase_environments` | `SUPABASE_DB_PASSWORD_<ENV>` |
+| `TF_VAR_zitadel_instances` | `ZITADEL_<ENV>_DOMAIN`, `_SERVICE_ACCOUNT_KEY_JSON`, `_ORG_ID` |
+| `TF_VAR_upstash_email`, `TF_VAR_upstash_api_key` | directly |
+| `TF_VAR_fly_api_token`, `TF_VAR_vercel_token`, … | directly |
+
+The split is the point: a credential that never enters a file cannot be
+committed, and a `.tfvars` holding only non-secret shape is safe to keep beside
+the code that depends on it. The alternative — one generated file holding
+both — is what put an estate's credentials into a plan file that was committed
+(R-041).
 
 ---
 
