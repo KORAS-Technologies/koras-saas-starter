@@ -87,6 +87,29 @@ function flyAppsFor(environment: string, slug: string, names: string[]): Record<
   return apps
 }
 
+/**
+ * Where the Control Plane calls this environment's product back.
+ *
+ * Derived from the Fly app Terraform created rather than reassembled from the
+ * slug and the environment. The two agree today, and deriving from the app name
+ * means they cannot stop agreeing: if the naming convention changes, this
+ * follows it, and if there is no `api` service in this environment there is no
+ * platform API to call and the field is absent rather than a URL that answers
+ * nothing.
+ *
+ * This was missing entirely until 2026-08-28, so every product registered
+ * before then has a null `platform_api_base_url` in the registry. Nothing broke,
+ * because the Control Plane's product platform client does not exist yet -- its
+ * only implementation is a mock. It would have broken the moment that client
+ * was wired, and it would have looked like a Control Plane defect rather than a
+ * registration one: the endpoints exist in every generated product, and the
+ * registry simply had no address for them.
+ */
+function platformApiBaseUrl(flyApps: Record<string, string>): string | undefined {
+  const api = flyApps.api
+  return api === undefined ? undefined : `https://${api}.fly.dev`
+}
+
 /** Vercel project ids for one environment, keyed by application. */
 function vercelProjectsFor(
   environment: string,
@@ -128,6 +151,8 @@ export function buildRegistration(
     .sort()
 
   for (const environment of ctx.manifest.environments) {
+    const flyApps = flyAppsFor(environment, ctx.projectSlug, outputs.flyApps)
+
     environments[environment] = {
       infrastructure: present({
         github_repository: outputs.githubRepository || undefined,
@@ -137,7 +162,13 @@ export function buildRegistration(
         zitadel_instance: environment,
         zitadel_project_id: outputs.zitadelProjectIds[environment],
         vercel_projects: vercelProjectsFor(environment, outputs.vercelProjectIds),
-        fly_apps: flyAppsFor(environment, ctx.projectSlug, outputs.flyApps),
+        fly_apps: flyApps,
+        // One zone for the project rather than one per environment: the module
+        // issues every hostname under a single zone, so the same id is correct
+        // in all four. Also absent until 2026-08-28, and also a field the
+        // Control Plane has always accepted.
+        cloudflare_zone_id: outputs.cloudflareZoneId || undefined,
+        platform_api_base_url: platformApiBaseUrl(flyApps),
       }),
       services,
     }
