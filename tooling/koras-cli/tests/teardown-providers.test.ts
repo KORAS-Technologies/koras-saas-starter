@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest'
 
-import { providerDeleters, UNIMPLEMENTED_KINDS } from '../src/teardown/providers/index.js'
+import {
+  providerDeleters,
+  probeResources,
+  UNIMPLEMENTED_KINDS,
+} from '../src/teardown/providers/index.js'
 import { inventoryFromOutputs, qualify, providerId } from '../src/teardown/inventory.js'
 import { plan, RESOURCE_KINDS, type Resource } from '../src/teardown/guards.js'
 import { teardown } from '../src/teardown/run.js'
@@ -37,6 +41,7 @@ const ALL_CREDENTIALS = {
   vercelToken: 'vc',
   flyToken: 'fly',
   cloudflareApiToken: 'cf',
+  terraformToken: 'tfe',
   zitadelServiceTokens: { dev: 'zt-dev', test: 'zt-test', stg: 'zt-stg', prod: 'zt-prod' },
 }
 
@@ -52,6 +57,8 @@ const OUTPUTS = {
   redisDatabaseIds: { dev: 'redis-dev' },
   cloudflareRecordIds: { 'app-dev.koras-e2e-shop.example.invalid': 'rec-dev' },
   cloudflareZoneId: 'zone-1',
+  terraformOrganization: 'koras',
+  terraformWorkspace: 'koras-e2e-shop',
 }
 
 /** A real project's outputs. Nothing in them may ever be deleted. */
@@ -67,6 +74,8 @@ const REAL_OUTPUTS = {
   redisDatabaseIds: { dev: 'redis-dev' },
   cloudflareRecordIds: { 'app-dev.docoris.example.invalid': 'rec-dev' },
   cloudflareZoneId: 'zone-1',
+  terraformOrganization: 'koras',
+  terraformWorkspace: 'docoris',
 }
 
 describe('the inventory', () => {
@@ -76,7 +85,7 @@ describe('the inventory', () => {
     expect(found.map((r) => r.kind)).toContain('github-repository')
     // One per entry in OUTPUTS. Counted rather than written down, so adding a
     // provider to the fixture cannot leave this asserting the old total.
-    expect(found).toHaveLength(9)
+    expect(found).toHaveLength(10)
   })
 
   it('orders the dependent resources before the ones holding their credentials', () => {
@@ -130,7 +139,7 @@ describe('the inventory', () => {
     // were rightly still deletable. Incoherent input, and it proved nothing.
     const real = qualify(inventoryFromOutputs(REAL_OUTPUTS), 'docoris')
     expect(plan(real).deletable).toEqual([])
-    expect(plan(real).retained).toHaveLength(9)
+    expect(plan(real).retained).toHaveLength(10)
   })
 })
 
@@ -311,6 +320,32 @@ describe('the delete calls', () => {
     expect(calls[0]?.url).toBe(
       'https://api.cloudflare.com/client/v4/zones/zone-1/dns_records/rec-dev',
     )
+  })
+
+  it('deletes the HCP workspace last, by organization and name', async () => {
+    // The one thing teardown could not remove, so it stayed on a by-hand list
+    // holding the state of an estate that no longer existed. Addressed by name
+    // because its id lived in the state being deleted.
+    const { fetch, calls } = recorder()
+    const deleter = providerDeleters(fetch, ALL_CREDENTIALS)['terraform-workspace']
+    expect(deleter, 'no workspace deleter').toBeDefined()
+
+    await deleter?.({
+      kind: 'terraform-workspace',
+      name: 'koras-e2e-shop',
+      scope: 'koras',
+    })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.method).toBe('DELETE')
+    expect(calls[0]?.url).toBe(
+      'https://app.terraform.io/api/v2/organizations/koras/workspaces/koras-e2e-shop',
+    )
+  })
+
+  it('deletes the workspace after everything it recorded', () => {
+    const kinds = inventoryFromOutputs(OUTPUTS).map((r) => r.kind)
+    expect(kinds.indexOf('terraform-workspace')).toBe(kinds.length - 1)
   })
 
   it('leaves no kind without a deleter', () => {
@@ -515,5 +550,67 @@ describe('the confirmation prompt and the outputs cannot share stdin', () => {
     })
 
     expect(calls.length, 'typing the name deleted nothing').toBeGreaterThan(0)
+  })
+})
+
+describe('--verify asks the providers instead of trusting the output', () => {
+  const inventory = qualify(inventoryFromOutputs(OUTPUTS), 'koras-e2e-shop')
+  const one = plan(inventory).deletable.filter((r) => r.kind === 'github-repository')
+
+  /** A fetch that answers every GET with one status. */
+  function answering(status: number) {
+    const seen: { url: string; method: string }[] = []
+    const impl = (async (url: string, init?: { method?: string }) => {
+      seen.push({ url, method: init?.method ?? 'GET' })
+      return { ok: status < 400, status, text: async () => '' }
+    }) as never
+    return { impl, seen }
+  }
+
+  it('reports 404 as gone and issues no DELETE', async () => {
+    const { impl, seen } = answering(404)
+    const results = await probeResources(impl, ALL_CREDENTIALS, one)
+
+    expect(results[0]?.liveness).toBe('gone')
+    // The whole point: verifying must not delete anything.
+    expect(seen.every((r) => r.method === 'GET'), 'verify issued a DELETE').toBe(true)
+  })
+
+  it('reports 200 as alive — the case the delete could not have shown', async () => {
+    const { impl } = answering(200)
+    const results = await probeResources(impl, ALL_CREDENTIALS, one)
+    expect(results[0]?.liveness).toBe('alive')
+  })
+
+  it('reports anything else as unknown rather than guessing', async () => {
+    // Supabase answers 400 "Resource has been removed" for a deleted project,
+    // and a 403 means the provider refused to say. Neither is `gone`, and
+    // calling either one gone is inventing a result.
+    for (const status of [400, 403, 500]) {
+      const { impl } = answering(status)
+      const results = await probeResources(impl, ALL_CREDENTIALS, one)
+      expect(results[0]?.liveness, `HTTP ${status}`).toBe('unknown')
+    }
+  })
+
+  it('reports a missing credential as unknown, not gone', async () => {
+    // Not asking is not the same as being told the resource is absent.
+    const { impl } = answering(404)
+    const results = await probeResources(impl, { githubToken: undefined }, one)
+    expect(results[0]?.liveness).toBe('unknown')
+    expect(results[0]?.detail).toContain('credential')
+  })
+
+  it('probes the URL the deleter would have used', async () => {
+    // The guarantee that makes this evidence: it runs the deleter's own code
+    // path against a recording fetch and issues what that produced. A probe
+    // that built its own URL could check something the delete never touched.
+    const { impl, seen } = answering(404)
+    await probeResources(impl, ALL_CREDENTIALS, one)
+
+    const { fetch: deleteFetch, calls } = recorder()
+    await providerDeleters(deleteFetch, ALL_CREDENTIALS)['github-repository']?.(one[0] as Resource)
+
+    expect(seen[0]?.url).toBe(calls[0]?.url)
   })
 })

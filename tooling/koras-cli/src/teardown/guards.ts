@@ -73,6 +73,7 @@ export const RESOURCE_KINDS = [
   'fly-app',
   'zitadel-project',
   'cloudflare-record',
+  'terraform-workspace',
 ] as const
 
 export type ResourceKind = (typeof RESOURCE_KINDS)[number]

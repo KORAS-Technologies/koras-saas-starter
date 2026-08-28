@@ -1,5 +1,8 @@
 import { doctor } from '../doctor/run.js'
 import { teardown, credentialsFromEnv } from '../teardown/run.js'
+import { probeResources, type ProbeResult } from '../teardown/providers/index.js'
+import { probe } from '../teardown/http.js'
+import { plan } from '../teardown/guards.js'
 import { inventoryFromOutputs, qualify } from '../teardown/inventory.js'
 import { parseTerraformOutputs } from 'create-koras-app/terraform-outputs'
 import { readFileSync } from 'node:fs'
@@ -31,6 +34,17 @@ COMMANDS:
                              wrapper is typed, stdin stays free for the
                              confirmation prompt, and no credential is written
                              to disk.
+
+  teardown <product> --product-path <dir> --verify
+                             Ask every provider whether each resource is still
+                             there. Read-only, and deletes nothing. Run it after
+                             a teardown: a 404 counts as success, so the delete's
+                             own output cannot tell "deleted" from "was never
+                             found". Exits 1 if anything is alive or unknown.
+
+                             Deletes the HCP Terraform workspace too, reading
+                             its organization from the project's backend.tf --
+                             so run this before removing the directory.
 
                              Lists what it would delete and deletes nothing
                              unless KORAS_E2E_TEARDOWN=1 is set. Only resources
@@ -89,7 +103,23 @@ export async function run(argv: string[] = process.argv): Promise<void> {
         process.exit(1)
       }
     }
-    process.exit(await runTeardown(args.slice(1)))
+    // `process.exitCode`, not `process.exit()`.
+    //
+    // Calling process.exit() straight after an undici fetch aborts on Windows:
+    //
+    //   Assertion failed: !(handle->flags & UV_HANDLE_CLOSING),
+    //   file src/win/async.c, line 76        (exit code 3221226505)
+    //
+    // It happens after the output is printed and the result is correct, which
+    // is the confusing part -- the command answered and then could not leave.
+    // Reproduced in a dozen lines: fetch, read the body, process.exit. Removing
+    // the exit removes the crash, and Node still exits promptly on its own once
+    // the sockets settle.
+    //
+    // Setting the code and returning does the same job without asking libuv to
+    // tear down handles it is already closing.
+    process.exitCode = await runTeardown(args.slice(1))
+    return
   }
 
   if (command !== 'bootstrap:doctor') {
@@ -195,6 +225,39 @@ async function runTeardown(args: string[]): Promise<number> {
     // and asking them to append it is asking them to know an internal detail in
     // order to delete something.
     const dir = join(productPath, 'infrastructure', 'terraform')
+
+    // Refuse before running Terraform at all, if the workspace is already gone.
+    //
+    // `terraform output` against a `remote` backend **creates the workspace
+    // when it is missing**. So every teardown command -- the dry run included
+    // -- puts back the resource a completed teardown deleted last, and then
+    // reports it alive. A warning was not enough: it printed, the workspace was
+    // re-created anyway, and the run exited 1 for a resource it had just made.
+    //
+    // Checked over HTTP, which creates nothing. A 404 means there is no state
+    // to read and therefore nothing to tear down or verify.
+    const backendCheck = readBackend(productPath)
+    if (backendCheck.terraformWorkspace && backendCheck.terraformOrganization) {
+      const gone = await workspaceIsGone(backendCheck)
+      if (gone) {
+        console.log(
+          [
+            '',
+            `The HCP workspace ${backendCheck.terraformOrganization}/${backendCheck.terraformWorkspace} does not exist.`,
+            '',
+            'Nothing to do. Reading the Terraform outputs would create it --',
+            'that is what a `remote` backend does with a workspace it cannot',
+            'find -- so this stops instead, and the estate stays torn down.',
+            '',
+            'The generated directory can be removed now; see',
+            'PROVISIONING_RUNBOOK.md section 5, step 6.',
+            '',
+          ].join(String.fromCharCode(10)),
+        )
+        return 0
+      }
+    }
+
     // Run Terraform rather than being piped its output.
     //
     // The pipe was the documented form and it cannot work: the JSON arrives on
@@ -234,11 +297,98 @@ async function runTeardown(args: string[]): Promise<number> {
 
   let inventory
   try {
-    inventory = qualify(inventoryFromOutputs(parseTerraformOutputs(raw)), productSlug)
+    const outputs = parseTerraformOutputs(raw)
+    const backend = readBackend(args[2])
+
+    // Two different situations, and the first version of this said the second
+    // when it meant the first.
+    //
+    // Empty outputs across the board means the estate was never applied: the
+    // workspace exists because `terraform init` made it, and nothing else does.
+    // Warning about DNS records there is noise, and noise next to a real
+    // warning is how the real one stops being read.
+    //
+    // Outputs that exist but carry no cloudflare_record_ids is the case that
+    // matters: a product generated before that output existed has records this
+    // inventory cannot see. Said out loud rather than left to a count that only
+    // counts what it knows about -- which is how eight of them outlived an
+    // estate reporting nothing retained.
+    const applied =
+      outputs.githubRepository !== '' ||
+      Object.keys(outputs.supabaseProjectRefs).length > 0 ||
+      outputs.flyApps.length > 0
+    if (!applied) {
+      console.warn(
+        [
+          '',
+          'No Terraform outputs beyond the workspace.',
+          '',
+          'This product has not been applied, or its state has been emptied.',
+          'There is nothing to tear down but the workspace itself.',
+          '',
+        ].join(String.fromCharCode(10)),
+      )
+    } else if (Object.keys(outputs.cloudflareRecordIds).length === 0) {
+      console.warn(
+        [
+          '',
+          'No cloudflare_record_ids in the Terraform outputs.',
+          '',
+          'Either this product has no DNS records, or it was generated before',
+          'that output existed and its records are invisible here. Check the',
+          'zone, and see PROVISIONING_RUNBOOK.md section 5, step 3.',
+          '',
+        ].join(String.fromCharCode(10)),
+      )
+    }
+
+    inventory = qualify(
+      inventoryFromOutputs({ ...outputs, ...backend }),
+      productSlug,
+    )
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
     console.error(`Could not parse the Terraform outputs: ${detail}`)
     return 1
+  }
+
+  // Read-only, and the reason it exists is that the delete's own output is not
+  // evidence: 404 counts as success, so "deleted" and "was never there" print
+  // the same. This asks each provider directly, afterwards.
+  if (args.includes('--verify')) {
+    // Reading the outputs already ran `terraform output -json`, and against a
+    // `remote` backend that **creates the workspace if it is missing**. So a
+    // standalone verify after a completed teardown puts back the one resource
+    // the teardown deleted last, and then truthfully reports it alive.
+    //
+    // Observed, not theorised: two workspaces before, three after, the new one
+    // stamped "a few seconds ago". Checked once in a directory where the
+    // workspace still existed, which proved nothing and was reported as proof.
+    //
+    // This is why a delete run verifies itself at the end (below) instead of
+    // being followed by a second command: that path runs Terraform once, before
+    // deleting anything, and probes over HTTP afterwards.
+    console.warn(
+      [
+        '',
+        'Reading the outputs ran `terraform output`, which re-creates the HCP',
+        'workspace when it is missing. If the teardown had already removed it,',
+        'it exists again now and is reported below as alive.',
+        '',
+        'A delete run verifies itself; this flag is for checking an estate that',
+        'has not been torn down yet.',
+        '',
+      ].join(String.fromCharCode(10)),
+    )
+
+    const results = await probeResources(
+      globalThis.fetch as never,
+      credentialsFromEnv(),
+      plan(inventory).deletable,
+    )
+
+    console.log(formatProbes(results))
+    return results.some((r) => r.liveness !== 'gone') ? 1 : 0
   }
 
   // Deleting needs an answer typed at the prompt, and `-` has already spent
@@ -272,5 +422,105 @@ async function runTeardown(args: string[]): Promise<number> {
   })
 
   console.log(outcome.output)
+
+  // Verification belongs here rather than in a second command. Terraform has
+  // already run, once, before anything was deleted; everything below is HTTP.
+  // A second invocation would re-run `terraform output` and re-create the
+  // workspace it had just removed.
+  if (process.env.KORAS_E2E_TEARDOWN === '1' && !outcome.failed) {
+    const results = await probeResources(
+      globalThis.fetch as never,
+      credentialsFromEnv(),
+      plan(inventory).deletable,
+    )
+    console.log(formatProbes(results))
+    const unresolved = results.filter((r) => r.liveness !== 'gone')
+    if (unresolved.length > 0) return 1
+  }
+
   return outcome.failed ? 1 : 0
+}
+
+/**
+ * The HCP organization and workspace, read from the project's own backend.tf.
+ *
+ * Not a Terraform output -- the generator renders it into the backend block,
+ * and by the time teardown runs there is no other record of it. Without this
+ * the workspace is the one thing left on a "delete this by hand" list, holding
+ * the state of an estate that no longer exists.
+ *
+ * A project whose backend.tf cannot be read yields empty strings, and the
+ * inventory drops empty names, so an unreadable file loses the workspace rather
+ * than failing the teardown of everything else.
+ */
+function readBackend(productPath: string | undefined): {
+  terraformOrganization: string
+  terraformWorkspace: string
+} {
+  const empty = { terraformOrganization: '', terraformWorkspace: '' }
+  if (!productPath) return empty
+  try {
+    const text = readFileSync(join(productPath, 'infrastructure', 'terraform', 'backend.tf'), 'utf8')
+    const org = /organization\s*=\s*"([^"]+)"/.exec(text)
+    const name = /name\s*=\s*"([^"]+)"/.exec(text)
+    if (!org || !name) return empty
+    return { terraformOrganization: org[1] as string, terraformWorkspace: name[1] as string }
+  } catch {
+    return empty
+  }
+}
+
+/** One line per resource, and a total that does not round `unknown` into either column. */
+function formatProbes(results: ProbeResult[]): string {
+  const width = Math.max(...results.map((r) => r.resource.kind.length), 0)
+  const lines = ['', `Verified ${String(results.length)} resource(s) — nothing was deleted here.`, '']
+  for (const r of results) {
+    const mark = r.liveness === 'gone' ? 'gone   ' : r.liveness === 'alive' ? 'ALIVE  ' : 'unknown'
+    lines.push(`  ${mark}  ${r.resource.kind.padEnd(width)}  ${r.resource.name}  (${r.detail})`)
+  }
+
+  const alive = results.filter((r) => r.liveness === 'alive').length
+  const unknown = results.filter((r) => r.liveness === 'unknown').length
+  lines.push('')
+  lines.push(
+    `${String(results.length - alive - unknown)} gone, ${String(alive)} still there, ` +
+      `${String(unknown)} unknown.`,
+  )
+  if (unknown > 0) {
+    lines.push('')
+    lines.push('`unknown` is not `gone`. The provider did not say the resource was')
+    lines.push('absent -- it refused, failed, or was never asked because a credential')
+    lines.push('is missing. Check those by hand.')
+  }
+  lines.push('')
+  return lines.join(String.fromCharCode(10))
+}
+
+/**
+ * Is the HCP workspace already gone?
+ *
+ * Asked over HTTP, deliberately, because the obvious way to find out -- running
+ * a Terraform command -- is the thing that would create it.
+ *
+ * Answers false when it cannot tell: no token, a refusal, a network failure.
+ * Not knowing is not the same as knowing it is absent, and the cost of guessing
+ * wrong in that direction is only that Terraform runs as it always did.
+ */
+async function workspaceIsGone(backend: {
+  terraformOrganization: string
+  terraformWorkspace: string
+}): Promise<boolean> {
+  const token = credentialsFromEnv().terraformToken
+  if (!token) return false
+
+  try {
+    const status = await probe(
+      globalThis.fetch as never,
+      `https://app.terraform.io/api/v2/organizations/${encodeURIComponent(backend.terraformOrganization)}/workspaces/${encodeURIComponent(backend.terraformWorkspace)}`,
+      { authorization: `Bearer ${token}`, 'content-type': 'application/vnd.api+json' },
+    )
+    return status === 404
+  } catch {
+    return false
+  }
 }

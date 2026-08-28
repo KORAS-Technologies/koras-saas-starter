@@ -44,6 +44,20 @@ export interface ProvisionOutputsLike {
    */
   cloudflareRecordIds: Record<string, string>
   cloudflareZoneId: string
+  /**
+   * The HCP Terraform workspace holding this estate's state, and its org.
+   *
+   * Not a `terraform output` -- it is read from the project's own backend.tf,
+   * which is where the generator renders it. Teardown never invokes Terraform,
+   * so nothing else would remove the workspace, and it was the last thing on
+   * the "delete this by hand" list.
+   *
+   * Deleted last. It is the record of what everything else was, and a run that
+   * fails halfway is easier to finish while the state still describes the
+   * estate.
+   */
+  terraformOrganization: string
+  terraformWorkspace: string
   vercelProjectIds: Record<string, string>
   flyApps: string[]
   /**
@@ -81,6 +95,8 @@ const ORDER: ResourceKind[] = [
   'zitadel-project',
   'doppler-project',
   'github-repository',
+  // Last: it is the record of what the rest were.
+  'terraform-workspace',
 ]
 
 export function inventoryFromOutputs(outputs: ProvisionOutputsLike): Resource[] {
@@ -120,6 +136,9 @@ export function inventoryFromOutputs(outputs: ProvisionOutputsLike): Resource[] 
   }
   add('doppler-project', outputs.dopplerProject)
   add('github-repository', outputs.githubRepository)
+  add('terraform-workspace', outputs.terraformWorkspace, {
+    scope: outputs.terraformOrganization,
+  })
 
   const rank = new Map(ORDER.map((kind, index) => [kind, index]))
   return found.sort((a, b) => (rank.get(a.kind) ?? 0) - (rank.get(b.kind) ?? 0))

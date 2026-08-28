@@ -147,5 +147,6 @@ export function credentialsFromEnv(env: NodeJS.ProcessEnv = process.env): Provid
     // one; it is a fallback rather than the documented form for that reason.
     zitadelServiceTokens: zitadelTokensFromEnv(env),
     cloudflareApiToken: first(env, 'CLOUDFLARE_API_TOKEN', 'TF_VAR_CLOUDFLARE_API_TOKEN'),
+    terraformToken: first(env, 'TF_TOKEN_APP_TERRAFORM_IO', 'TFE_TOKEN'),
   }
 }

@@ -1,7 +1,7 @@
 import type { Deleter, Resource, ResourceKind } from '../guards.js'
 import type { FetchLike } from '../../doctor/types.js'
 import { HttpError } from '../../doctor/http.js'
-import { del } from '../http.js'
+import { del, probe } from '../http.js'
 import { providerId } from '../inventory.js'
 // Reused rather than rewritten as /\/+$/, which is the pattern CodeQL flagged
 // as js/polynomial-redos and this helper exists to replace.
@@ -45,6 +45,7 @@ export interface ProviderCredentials {
    */
   zitadelServiceTokens?: Record<string, string>
   cloudflareApiToken?: string
+  terraformToken?: string
 }
 
 /** A 404 means the resource is not there, which is the outcome being asked for. */
@@ -237,6 +238,25 @@ export function providerDeleters(
     }
   }
 
+  if (credentials.terraformToken) {
+    deleters['terraform-workspace'] = async (resource: Resource) => {
+      // Addressed by organization and name rather than by id, which is the one
+      // HCP endpoint that takes a name -- and the only identifier a torn-down
+      // project still has, since its id lived in the state being deleted.
+      const kind: ResourceKind = 'terraform-workspace'
+      const org = need(resource.scope, `a Terraform organization for ${resource.name}`, kind)
+
+      await deleteOrAlreadyGone(
+        fetchImpl,
+        `https://app.terraform.io/api/v2/organizations/${encodeURIComponent(org)}/workspaces/${encodeURIComponent(providerId(resource))}`,
+        {
+          authorization: `Bearer ${need(credentials.terraformToken, 'TF_TOKEN_APP_TERRAFORM_IO', kind)}`,
+          'content-type': 'application/vnd.api+json',
+        },
+      )
+    }
+  }
+
   return deleters
 }
 
@@ -256,3 +276,126 @@ export function providerDeleters(
  * authentication nor discovery: it was knowing which organization to act in.
  */
 export const UNIMPLEMENTED_KINDS: ReadonlyArray<{ kind: string; reason: string }> = []
+
+/** What a probe found. Three outcomes, because two would have to lie about one. */
+export type Liveness = 'gone' | 'alive' | 'unknown'
+
+export interface ProbeResult {
+  resource: Resource
+  liveness: Liveness
+  detail: string
+}
+
+/**
+ * Ask each provider whether a resource is still there.
+ *
+ * `--verify` exists because teardown's own output is not evidence. A 404 is
+ * counted as success, so "I deleted it" and "it was never there" print
+ * identically, and a deleter aimed at the wrong instance or organization
+ * produces the second while looking like the first.
+ *
+ * The URL is not rebuilt here. Each deleter is run against a fetch double that
+ * records what it was asked to send and sends nothing, and the recorded URL and
+ * headers are then issued as a GET. A verification that constructed its own URL
+ * could check something the delete never touched and report it as proof; this
+ * cannot, because it is the delete's own code path.
+ *
+ * Three outcomes, and `unknown` is the important one: a provider that answers
+ * 403, 500 or a timeout has not said the resource is gone, and folding that
+ * into either answer would be inventing a result. A missing credential is
+ * `unknown` for the same reason -- not asking is not the same as being told.
+ */
+export async function probeResources(
+  fetchImpl: FetchLike,
+  credentials: ProviderCredentials,
+  resources: Resource[],
+): Promise<ProbeResult[]> {
+  const deleters = providerDeleters(recordingFetch(), credentials)
+  const results: ProbeResult[] = []
+
+  for (const resource of resources) {
+    const deleter = deleters[resource.kind]
+    if (!deleter) {
+      results.push({ resource, liveness: 'unknown', detail: 'credential not set' })
+      continue
+    }
+
+    let sent: Sent
+    try {
+      takeCaptured()
+      await deleter(resource)
+      sent = takeCaptured()
+    } catch (err) {
+      results.push({
+        resource,
+        liveness: 'unknown',
+        detail: err instanceof Error ? err.message : String(err),
+      })
+      continue
+    }
+
+    if (!sent) {
+      results.push({ resource, liveness: 'unknown', detail: 'no request was built' })
+      continue
+    }
+
+    try {
+      const status = await probe(fetchImpl, sent.url, sent.headers)
+      if (status === 404 || status === 410) {
+        results.push({ resource, liveness: 'gone', detail: `HTTP ${String(status)}` })
+      } else if (status >= 200 && status < 300) {
+        results.push({ resource, liveness: 'alive', detail: `HTTP ${String(status)}` })
+      } else {
+        // Supabase answers 400 "Resource has been removed" for a deleted
+        // project, which is neither of the above and is not a failure either.
+        results.push({ resource, liveness: 'unknown', detail: `HTTP ${String(status)}` })
+      }
+    } catch (err) {
+      results.push({
+        resource,
+        liveness: 'unknown',
+        detail: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  return results
+}
+
+type Sent = { url: string; headers: Record<string, string> } | undefined
+
+let captured: Sent
+
+/**
+ * Read and clear.
+ *
+ * Through a function rather than by reading the variable: assigning `undefined`
+ * and reading it back after a call narrows to `undefined` at the type level,
+ * and the compiler is right to -- nothing in the types says the deleter writes
+ * here. A function returning the union states the possibility that the
+ * assignment hides.
+ */
+function takeCaptured(): Sent {
+  const value = captured
+  captured = undefined
+  return value
+}
+
+/**
+ * A fetch that records and sends nothing.
+ *
+ * Answers 204 so `deleteOrAlreadyGone` completes rather than treating the
+ * recording as a failure. It exists only inside `probeResources`, and the
+ * deleters it is handed are never returned to a caller that could delete with
+ * them.
+ */
+function recordingFetch(): FetchLike {
+  return (async (url: string, init?: { headers?: Record<string, string> }) => {
+    captured = { url, headers: init?.headers ?? {} }
+    return {
+      ok: true,
+      status: 204,
+      text: async () => '',
+    }
+  }) as unknown as FetchLike
+}
