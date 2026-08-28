@@ -453,9 +453,7 @@ async function runProvision(
       })
       printRegistrationReport(report, ctx, projectSlug)
 
-      console.log(`\nNext steps:`)
-      console.log(`  cd ${projectSlug}`)
-      console.log(`  make bootstrap`)
+      for (const line of provisionedNextSteps(projectSlug)) console.log(line)
       break
     }
     case 'planned':
@@ -584,4 +582,45 @@ export function applyRecordedComponents(
       selections[category][key] = on.has(key)
     }
   }
+}
+
+/**
+ * What to do once an estate exists.
+ *
+ * Extracted so it can be asserted. It printed `cd <slug>` and `make bootstrap`
+ * and nothing else, which is the local Docker stack -- right for a generated
+ * project, wrong for a provisioned one. Terraform creates the Doppler project
+ * and its four configs and writes no setting into them; it cannot, knowing
+ * neither the Supabase password nor the ZITADEL service token. So following the
+ * tool's own instructions left every config empty, with no error anywhere and
+ * an empty Secrets tab as the only sign.
+ *
+ * Nothing tested it, which is why it could say the wrong thing for as long as
+ * it did.
+ */
+export function provisionedNextSteps(projectSlug: string): string[] {
+  return [
+    '',
+    'Next steps — the estate exists, and nothing can deploy to it yet.',
+    'Doppler holds a project and four empty configs; these fill them.',
+    '',
+    `  cd ${projectSlug}`,
+    '',
+    '  # 1. The restricted database role, once per environment. Prints the URL',
+    '  #    for DATABASE_URL; keep the one you passed as DATABASE_ADMIN_URL.',
+    '  bash local/scripts/create-app-role.sh "<privileged database url>"',
+    '',
+    '  # 2. What Doppler will be asked for. Writes nothing.',
+    '  bash local/scripts/doppler-bootstrap.sh --dry-run',
+    '',
+    '  # 3. dev, test and stg -- then prod, which the first deliberately skips.',
+    '  make doppler-bootstrap',
+    '  make doppler-bootstrap-prod',
+    '',
+    '  # 4. Every environment holds every setting. Names only, never values.',
+    '  make doppler-check',
+    '',
+    'make bootstrap starts the local Docker stack and is unrelated to the four',
+    'steps above. See PROVISIONING_RUNBOOK.md section 1 in the starter.',
+  ]
 }
