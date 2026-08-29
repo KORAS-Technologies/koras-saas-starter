@@ -86,9 +86,17 @@ begin
     raise exception 'the insert returned no row, so the API could not tell a create from a retry';
   end if;
 
-  -- The owner's membership, written in the same transaction. A separate policy,
-  -- and insert-only: provisioning creates the first administrator and has no
-  -- business reading anybody's membership afterwards.
+  -- The owner's membership, written in the same transaction, under its own
+  -- pair of policies.
+  --
+  -- This statement is the reason `tenant_members` has a provisioning *select*
+  -- policy and not only an insert one. `on conflict` naming an arbiter index
+  -- requires the select policies to admit the proposed row, because the
+  -- uniqueness check would otherwise reveal rows the caller cannot see. With
+  -- insert alone this is refused as "new row violates row-level security
+  -- policy" -- which reads like a `with check` failure and is not one, and cost
+  -- an hour to find the first time. Removing that select policy as unused
+  -- breaks this line and nothing else, so this is where it is asserted.
   insert into public.tenant_members (tenant_id, user_id, role)
   values (first_id, 'rls-prov-owner-subject', 'organization_owner')
   on conflict (tenant_id, user_id) do nothing;

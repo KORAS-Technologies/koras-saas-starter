@@ -111,8 +111,31 @@ create policy "tenants_update_provisioning"
   with check (public.is_provisioning());
 
 -- The owner's membership row, written in the same transaction as the tenant.
--- Insert only: provisioning creates the first administrator and has no business
--- reading or changing anybody's membership afterwards.
+--
+-- Insert *and* select, and the select is not decoration. `tenant_store.py`
+-- writes this row with `on conflict (tenant_id, user_id) do nothing`, and an
+-- `on conflict` that names an arbiter index requires the table's select
+-- policies to admit the proposed row -- otherwise the uniqueness check could
+-- tell the caller about rows it may not see. Without a select policy the insert
+-- is refused with "new row violates row-level security policy", which reads
+-- like a `with check` failure and is not one.
+--
+-- The pair above got this by accident: `tenants` needed a select policy anyway,
+-- for the lookup by `tenant_key`, so its identical `on conflict` worked and
+-- this one did not. The asymmetry was the bug.
+--
+-- Dropping the arbiter would be the other way out and is worse: `on conflict do
+-- nothing` with no arbiter swallows every unique violation on the table,
+-- including ones nobody has thought about. Naming the conflict that is expected
+-- is the point of naming it.
+--
+-- No update or delete. Provisioning creates the first administrator; what
+-- happens to a membership afterwards is the tenant's own business.
+drop policy if exists "tenant_members_select_provisioning" on public.tenant_members;
+create policy "tenant_members_select_provisioning"
+  on public.tenant_members for select
+  using (public.is_provisioning());
+
 drop policy if exists "tenant_members_insert_provisioning" on public.tenant_members;
 create policy "tenant_members_insert_provisioning"
   on public.tenant_members for insert
