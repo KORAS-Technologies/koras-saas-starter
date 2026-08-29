@@ -188,9 +188,15 @@ are checked now, claims about *why* are not). R-031 stands accepted with
 mitigation.
 R-031 stands accepted with mitigation.
 
-**Next step:** the `--with` / `--without` paths through the generator are
-untested. Nothing generates with optional components and checks the result, and
-a defect sat in one of those paths for as long as the flag existed (R-037).
+**Next step:** the register job has never run in a real pipeline (`FOLLOW_UPS.md`
+F7), and a second live teardown is owed now that Cloudflare is in the inventory
+(R-036).
+
+This said the `--with` / `--without` paths were untested. They have been tested
+since 2026-08-25: `generator-integration.yml` carries an
+`--with marketing,ai_gateway,scheduler` row and an `--without admin,worker` row,
+each built, linted, typechecked, tested and run through the RLS suite. The claim
+outlived the work by four days, in the one file every session reads first.
 
 **What is verified, and how.** CI, Security and Generator Integration all run on
 `develop` and are green. Generator Integration generates both profiles and

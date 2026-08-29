@@ -536,13 +536,26 @@ session by instruction.
 
 ### F8 — the `--with` / `--without` generation paths remain untested
 
-- [ ] Generate with optional components and read the output
+- [x] Generate with optional components and read the output
 
-Pre-existing, tracked as R-037 and `SYNC_BACKLOG.md` D5, and named in `CLAUDE.md`
-as the next step. Recorded here only because it now also covers the register job:
-that job comes from the shared template and is present regardless of component
-selection, but nothing has generated a product with optional components and
-checked it.
+**This was already true when it was written, and the entry was wrong.**
 
-**Why not done here:** it is the repository's existing next step and larger than
-this session's scope.
+`generator-integration.yml` has carried two extra matrix rows since 2026-08-25 --
+`--with marketing,ai_gateway,scheduler` and `--without admin,worker` -- and each
+is installed, built, linted, typechecked, tested and run through the row-level
+security suite. They are the `integration-product-full` and
+`integration-product-minimal` jobs, and they run on every push that touches
+`profiles/` or `generators/`.
+
+`SYNC_BACKLOG.md` D5 has all three boxes ticked and records the two defects the
+rows caught on the day they were added: `--with scheduler` produced a project
+that failed its own typecheck, and the AI gateway discarded the coroutine that
+reads its config. This entry was written the same day and repeated the gap as
+though it were still open.
+
+**What is actually untested is the register job**, which is the half of this
+entry that was true: it ships from the shared template regardless of component
+selection, and no run exercises it. That is F7, where it already lives -- so
+this entry was one real gap filed under another one's name.
+
+Corrected 2026-08-29, by reading the workflow rather than the entry.
