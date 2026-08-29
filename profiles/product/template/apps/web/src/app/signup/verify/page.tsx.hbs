@@ -1,0 +1,52 @@
+import { verifySignup } from '../actions'
+
+/**
+ * Where the link in the email lands.
+ *
+ * The token arrives in the query string, which is how an email link can carry
+ * anything at all, and it is spent here on the server -- the browser never
+ * sends it anywhere itself.
+ *
+ * A failure says one thing for every cause. The Control Plane answers unknown,
+ * expired and already-used identically on purpose, and a page that guessed
+ * between them would undo that: telling somebody their link "has expired" tells
+ * whoever is holding a guessed token that it was once real.
+ */
+export default async function VerifyPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string }>
+}) {
+  const { token } = await searchParams
+
+  if (!token) {
+    return (
+      <main>
+        <h1>That link is incomplete</h1>
+        <p>Open the link from your email again, or start over.</p>
+      </main>
+    )
+  }
+
+  const { ok } = await verifySignup(token)
+
+  if (!ok) {
+    return (
+      <main data-testid="verify-failed">
+        <h1>That link is not valid</h1>
+        <p>It may have been used already, or it may have expired. Sign up again to get a new one.</p>
+      </main>
+    )
+  }
+
+  return (
+    <main data-testid="verify-ok">
+      <h1>You are all set</h1>
+      <p>
+        We are setting up {{projectName}} for you now. This takes a few minutes; we will email you
+        when it is ready.
+      </p>
+      <a href="/login">Sign in</a>
+    </main>
+  )
+}

@@ -1,0 +1,23 @@
+import { SignupForm } from './SignupForm'
+
+/**
+ * Where a customer starts, before they have anything to sign in to.
+ *
+ * Deliberately in `apps/web` beside `/login` rather than in `apps/marketing`:
+ * the marketing site is optional and a product generated without it would have
+ * no way to sign anybody up, and the verification link has to land in this
+ * application anyway.
+ *
+ * Nothing is created by loading or submitting this page. The Control Plane
+ * writes one pending row and sends one email; an account exists only after the
+ * link in it is opened.
+ */
+export default function SignupPage() {
+  return (
+    <main>
+      <h1>Start with {{projectName}}</h1>
+      <p>Tell us where to send your confirmation link.</p>
+      <SignupForm />
+    </main>
+  )
+}

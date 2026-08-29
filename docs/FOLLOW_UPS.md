@@ -293,8 +293,8 @@ quietly.
 Five pieces, in the order they unblock each other, from the review on 2026-08-29
 of how a customer gets from nothing to a working tenant.
 
-F9, F10 and the blocking half of F12 closed the same day. What remains is
-**F11**, then F13, and `packages/email` whenever a product needs one.
+F9, F10 and the blocking half of F12 closed the same day. What remains is F13, and the one
+box F11 uncovered: a public way to learn which plans are on sale.
 
 **This is forward scope and therefore belongs in a roadmap**; it is written here
 because the pieces began as "identified and deliberately not started", which is
@@ -340,11 +340,11 @@ table's select policies, and `tenant_members` had been given insert alone.
 
 ### F11 — there is no way for a customer to start signing up
 
-- [ ] An unauthenticated signup endpoint on the Control Plane
-- [ ] Rate limiting, and address verification before a job is created
-- [ ] Some way for a plan to say it may be bought unattended, so trial is
-      reachable and enterprise is not
-- [ ] One shared, brandable signup surface in `profiles/_shared/template`
+- [x] An unauthenticated signup endpoint on the Control Plane
+- [x] Rate limiting, and address verification before a job is created
+- [x] A column on a plan saying it may be bought unattended, defaulting to false
+- [x] A signup surface in the product template
+- [ ] An anonymous way to learn which plans are on sale
 
 `PROVISIONING_DESIGN.md` §1 begins "customer opens product → branded signup",
 and no endpoint serves that. `POST /organizations` and
@@ -370,9 +370,25 @@ behind a NAT and a fresh budget to every address an attacker holds. That is the
 forcing case for the Control Plane's own TS-01, which asks whether a
 per-instance ceiling is enough and answers "for the registry, probably".
 
-**Why not done here:** the endpoint is the Control Plane's and waits on F12. The
-shared signup surface is this repository's and should not be designed before the
-endpoint it posts to.
+**Closed 2026-08-29** apart from the last box, which the work uncovered.
+
+**The gap it left:** nothing anonymous can list which plans are self-serve.
+`GET /plans` takes the billing role, correctly -- a plan carries commercial
+information -- so a signup form cannot offer a choice and has to name one plan
+fixed at generation time. That is honest for a product selling a single trial
+and wrong for one selling three tiers, and it is the reason `SIGNUP_PLAN` is a
+constant with a comment rather than a form field.
+
+Closing it means a public read that returns *only* what an anonymous visitor may
+buy: code, name, and nothing about what it costs or who is on it. That is a
+smaller endpoint than `GET /plans` narrowed, and it should be written as one
+rather than as a permission relaxed.
+
+**Where the surface landed, and why not where the design said.** In `apps/web`
+beside `/login`, not `apps/marketing`. Marketing is optional, so a product
+generated without it would have had no way to sign anybody up -- and the
+verification link has to land in the application that has a session to send
+somebody into anyway.
 
 ### F12 — a provisioning run finished and told nobody
 

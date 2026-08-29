@@ -1,0 +1,135 @@
+'use server'
+
+/**
+ * Signing up, from the product's own page.
+ *
+ * Both actions post to the Control Plane, and both run on the server for one
+ * reason above the others: `KORAS_CONTROL_PLANE_URL` and the shape of that API
+ * are not the browser's business. A form posting directly would put the
+ * platform's address in every visitor's page source and make the product's
+ * signup page a client of an API it does not own.
+ *
+ * The Control Plane decides everything that matters here -- whether the plan may
+ * be bought unattended, whether the address is already known, what a token is
+ * worth. These actions carry a form across and report what came back. They must
+ * not add validation that duplicates the platform's, because the copy that
+ * drifts is always the one further from the decision.
+ */
+
+// Types only. A `'use server'` module may export nothing but async functions,
+// so `SignupState` and `IDLE` live in `./state` and are imported here.
+import type { SignupState } from './state'
+
+/**
+ * The plan a visitor is signing up for.
+ *
+ * Fixed at generation time, and it has to be: the Control Plane offers no
+ * anonymous way to list which plans are self-serve, so a form cannot present a
+ * choice without one. Sending a plan that is not self-serve is refused, which
+ * is the correct failure but a confusing one to meet on a marketing page.
+ *
+ * Change this to the plan this product actually sells to new customers.
+ */
+const SIGNUP_PLAN = 'trial'
+
+function controlPlane(): string | null {
+  const base = process.env.KORAS_CONTROL_PLANE_URL
+  return base ? base.replace(/\/$/, '') : null
+}
+
+/** Turn a refusal into something a stranger can act on. */
+async function explain(response: Response): Promise<SignupState> {
+  if (response.status === 429) {
+    return {
+      status: 'error',
+      message: 'Too many attempts from here. Please try again shortly.',
+    }
+  }
+  if (response.status === 404) {
+    // The plan is not on sale. True and unhelpful to a visitor, so it says what
+    // they can do rather than what the platform decided.
+    return {
+      status: 'error',
+      message: 'That plan is not available to sign up for online. Please contact us.',
+    }
+  }
+  if (response.status === 422) {
+    return { status: 'error', field: 'email', message: 'Check the details and try again.' }
+  }
+  return { status: 'error', message: 'Something went wrong. Please try again.' }
+}
+
+export async function startSignup(
+  _previous: SignupState,
+  form: FormData,
+): Promise<SignupState> {
+  const email = String(form.get('email') ?? '').trim()
+  const organizationName = String(form.get('organizationName') ?? '').trim()
+  const ownerName = String(form.get('ownerName') ?? '').trim()
+
+  if (!email.includes('@')) {
+    return { status: 'error', field: 'email', message: 'Enter your email address.' }
+  }
+  if (!organizationName) {
+    return {
+      status: 'error',
+      field: 'organizationName',
+      message: 'What is your organisation called?',
+    }
+  }
+
+  const base = controlPlane()
+  if (!base) {
+    // Unconfigured, and said plainly rather than presented as the visitor's
+    // fault. A signup page that silently fails is worse than one that is
+    // honestly switched off.
+    return {
+      status: 'error',
+      message: 'Signing up is not available yet. Please contact us.',
+    }
+  }
+
+  let response: Response
+  try {
+    response = await fetch(`${base}/api/signup/v1/registrations`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        email,
+        organization_name: organizationName,
+        owner_name: ownerName || undefined,
+        product_code: '{{projectSlug}}',
+        plan_code: SIGNUP_PLAN,
+      }),
+    })
+  } catch {
+    return { status: 'error', message: 'We could not reach the signup service.' }
+  }
+
+  if (!response.ok) return explain(response)
+
+  // Deliberately the same message whatever happened on the other side. The
+  // Control Plane answers identically for a new address, a repeat and one that
+  // already has an account; repeating that here is what keeps this page from
+  // becoming the oracle the API refused to be.
+  return {
+    status: 'ok',
+    message: `Check ${email} for a link to confirm your address. Nothing is created until you do.`,
+  }
+}
+
+export async function verifySignup(token: string): Promise<{ ok: boolean }> {
+  const base = controlPlane()
+  if (!base) return { ok: false }
+
+  try {
+    const response = await fetch(`${base}/api/signup/v1/registrations/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token }),
+    })
+    return { ok: response.ok }
+  } catch {
+    return { ok: false }
+  }
+}
