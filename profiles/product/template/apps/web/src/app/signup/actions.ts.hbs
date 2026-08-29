@@ -20,21 +20,42 @@
 // so `SignupState` and `IDLE` live in `./state` and are imported here.
 import type { SignupState } from './state'
 
-/**
- * The plan a visitor is signing up for.
- *
- * Fixed at generation time, and it has to be: the Control Plane offers no
- * anonymous way to list which plans are self-serve, so a form cannot present a
- * choice without one. Sending a plan that is not self-serve is refused, which
- * is the correct failure but a confusing one to meet on a marketing page.
- *
- * Change this to the plan this product actually sells to new customers.
- */
-const SIGNUP_PLAN = 'trial'
-
 function controlPlane(): string | null {
   const base = process.env.KORAS_CONTROL_PLANE_URL
   return base ? base.replace(/\/$/, '') : null
+}
+
+export interface PublicPlan {
+  code: string
+  name: string
+}
+
+/**
+ * What this product sells to somebody without an account.
+ *
+ * Read on the server when the page renders, not chosen at generation time. An
+ * empty list is the common answer and a meaningful one: no plan is self-serve
+ * until somebody marks it so, and a page that receives none should say signup
+ * is unavailable rather than show an empty control.
+ *
+ * Failures answer empty too. A visitor cannot act on "the platform is
+ * unreachable" any differently from "nothing is on sale", and the page says the
+ * same thing for both.
+ */
+export async function availablePlans(): Promise<PublicPlan[]> {
+  const base = controlPlane()
+  if (!base) return []
+
+  try {
+    const response = await fetch(
+      `${base}/api/signup/v1/plans?product_code={{projectSlug}}`,
+      { cache: 'no-store' },
+    )
+    if (!response.ok) return []
+    return (await response.json()) as PublicPlan[]
+  } catch {
+    return []
+  }
 }
 
 /** Turn a refusal into something a stranger can act on. */
@@ -66,6 +87,7 @@ export async function startSignup(
   const email = String(form.get('email') ?? '').trim()
   const organizationName = String(form.get('organizationName') ?? '').trim()
   const ownerName = String(form.get('ownerName') ?? '').trim()
+  const planCode = String(form.get('planCode') ?? '').trim()
 
   if (!email.includes('@')) {
     return { status: 'error', field: 'email', message: 'Enter your email address.' }
@@ -76,6 +98,11 @@ export async function startSignup(
       field: 'organizationName',
       message: 'What is your organisation called?',
     }
+  }
+  if (!planCode) {
+    // Only reachable if the list arrived empty and somebody posted anyway. The
+    // Control Plane would refuse it too; this says so in the visitor's words.
+    return { status: 'error', message: 'Signing up is not available right now.' }
   }
 
   const base = controlPlane()
@@ -99,7 +126,7 @@ export async function startSignup(
         organization_name: organizationName,
         owner_name: ownerName || undefined,
         product_code: '{{projectSlug}}',
-        plan_code: SIGNUP_PLAN,
+        plan_code: planCode,
       }),
     })
   } catch {

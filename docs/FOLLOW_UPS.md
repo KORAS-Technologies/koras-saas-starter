@@ -293,8 +293,8 @@ quietly.
 Five pieces, in the order they unblock each other, from the review on 2026-08-29
 of how a customer gets from nothing to a working tenant.
 
-F9, F10 and the blocking half of F12 closed the same day. What remains is F13, and the one
-box F11 uncovered: a public way to learn which plans are on sale.
+F9, F10 and the blocking half of F12 closed the same day. What remains is F13, which is a commercial
+decision rather than an implementation.
 
 **This is forward scope and therefore belongs in a roadmap**; it is written here
 because the pieces began as "identified and deliberately not started", which is
@@ -344,7 +344,7 @@ table's select policies, and `tenant_members` had been given insert alone.
 - [x] Rate limiting, and address verification before a job is created
 - [x] A column on a plan saying it may be bought unattended, defaulting to false
 - [x] A signup surface in the product template
-- [ ] An anonymous way to learn which plans are on sale
+- [x] An anonymous way to learn which plans are on sale
 
 `PROVISIONING_DESIGN.md` §1 begins "customer opens product → branded signup",
 and no endpoint serves that. `POST /organizations` and
@@ -372,17 +372,13 @@ per-instance ceiling is enough and answers "for the registry, probably".
 
 **Closed 2026-08-29** apart from the last box, which the work uncovered.
 
-**The gap it left:** nothing anonymous can list which plans are self-serve.
-`GET /plans` takes the billing role, correctly -- a plan carries commercial
-information -- so a signup form cannot offer a choice and has to name one plan
-fixed at generation time. That is honest for a product selling a single trial
-and wrong for one selling three tiers, and it is the reason `SIGNUP_PLAN` is a
-constant with a comment rather than a form field.
+**Fully closed.** The gap it left first -- nothing anonymous could list which
+plans are self-serve, so the form named one plan fixed at generation time -- is
+`GET /api/signup/v1/plans` now: code and name, self-serve and active only.
 
-Closing it means a public read that returns *only* what an anonymous visitor may
-buy: code, name, and nothing about what it costs or who is on it. That is a
-smaller endpoint than `GET /plans` narrowed, and it should be written as one
-rather than as a permission relaxed.
+Written as its own query rather than `GET /plans` narrowed, because a narrowed
+staff read grows the next column somebody adds to the staff read, and the first
+time that happens nobody notices it reached an anonymous caller.
 
 **Where the surface landed, and why not where the design said.** In `apps/web`
 beside `/login`, not `apps/marketing`. Marketing is optional, so a product
