@@ -167,6 +167,33 @@ and that the narrower role does not exist yet.
 to decide, not the factory's. Recorded in `REGISTRATION_LIFECYCLE.md` under what
 is not covered.
 
+### F3a — the tenant endpoints now answer 422 and 409, and the Control Plane has not been told
+
+- [ ] Teach the Control Plane's reference product the two refusals
+- [ ] Decide whether a `409` on the tenant step should roll a job back or hold it
+
+`services/api` used to keep tenants in a dict and could refuse almost nothing.
+It persists them now, and two refusals came with that:
+
+- **`422` when the request's `environment` is not this service's own.** A
+  misconfigured caller, and correctly non-retryable — the Control Plane's retry
+  policy fails a 4xx immediately.
+- **`409` when a second organization asks for a slug the first holds.** Not the
+  repeat case, which still answers `200`: this is two different customers asking
+  for one name, and nothing on either side can resolve it without a person.
+
+Neither is in `PRODUCT_REGISTRATION_CONTRACT.md` §6, which enumerates `200`,
+`201` and the machine-identity rule and stops there. Both are refusals rather
+than new behaviour a caller must invoke, so a Control Plane that has not been
+updated is not broken by them — it will report a failed step, which is what
+should happen in both cases. But `tests/contract/reference_product.py` over
+there mirrors this router, and mirroring it as it now stands is what would make
+the second bullet's question concrete.
+
+**Why not done here:** the reference product and the retry policy are the
+Control Plane's. The 409 in particular is a product decision this repository
+can state and a platform decision only that repository can make.
+
 ---
 
 ## Decisions this repository can make, and has not

@@ -5,8 +5,9 @@ product half of a contract whose other half lives in koras-control-plane, and a
 product that drops or renames one breaks customer onboarding rather than
 anything visible in its own test suite.
 
-These assert the contract, not the implementation. Replace the placeholder store
-in the router with real tenant persistence; do not replace these.
+These assert the contract, not the implementation. Persistence lives in
+`core/tenant_store.py` and is free to change; the four routes, their status
+codes and the identity they require are not.
 """
 
 from __future__ import annotations

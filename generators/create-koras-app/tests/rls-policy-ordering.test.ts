@@ -29,6 +29,22 @@ import { renderTemplate } from '../src/generation/engine.js'
 
 const PROFILES: ProfileName[] = ['product', 'control-plane']
 
+/**
+ * Every rendered migration, as one string.
+ *
+ * Read across the whole directory rather than out of a named file. The
+ * assertions below were written against `00002_rls_policies.sql` alone, which
+ * meant a policy added in a later migration — which is where a policy is
+ * supposed to be added — was asserted about by nothing.
+ */
+function migrationSql(files: Map<string, string>): string {
+  return [...files.entries()]
+    .filter(([path]) => path.startsWith('supabase/migrations/') && path.endsWith('.sql'))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, content]) => content)
+    .join('\n')
+}
+
 function render(profile: ProfileName) {
   const { manifest, defaults } = loadProfile(profile)
   const ctx = buildContext({
@@ -90,12 +106,45 @@ describe('the product ships its policies as a migration', () => {
     // `auth.role() = 'authenticated'` was the shape that leaked on the Control
     // Plane: it admits any signed-in caller to every row. Nothing here
     // authenticates through Supabase, so it is also always NULL.
-    const migration = files.get('supabase/migrations/00002_rls_policies.sql') ?? ''
-    expect(migration).not.toContain('auth.role()')
-    for (const statement of migration.split('create policy').slice(1)) {
+    //
+    // Read across every migration rather than out of 00002 alone. This was
+    // written against that one file, so a policy added in a later migration --
+    // which is where policies are supposed to be added -- was asserted about by
+    // nothing at all.
+    const sql = migrationSql(files)
+
+    expect(sql).not.toContain('auth.role()')
+    for (const statement of sql.split('create policy').slice(1)) {
+      // Two predicates are acceptable, and only two.
+      //
+      // `current_tenant_id()` is the normal one: the row belongs to the tenant
+      // making the request.
+      //
+      // `is_provisioning()` is the Control Plane creating a tenant, where there
+      // is no tenant yet to be scoped by -- so those policies are unscoped by
+      // necessity, and what keeps them narrow is that one transaction-local
+      // flag, set by one dependency, reachable from one machine-only router.
+      // Nothing derives it from a request.
       expect(statement, 'a policy with no tenant predicate admits every tenant').toMatch(
-        /current_tenant_id\(\)/,
+        /current_tenant_id\(\)|is_provisioning\(\)/,
       )
     }
+  })
+
+  it('sets the provisioning flag from nothing a caller can reach', () => {
+    // The predicate above is only as good as what can turn it on. If a header,
+    // a body field or a claim could set `app.provisioning`, every policy gated
+    // on it would be reachable by asking.
+    const sql = migrationSql(files)
+
+    // Null when nothing set it, which is what makes the default false.
+    expect(sql).toMatch(/current_setting\('app\.provisioning', true\)/)
+
+    // And exactly one place sets it, on a session that carries no tenant.
+    const helper = files.get('services/api/koras_api/core/database.py') ?? ''
+    expect(helper).toContain('set_provisioning_context')
+    expect(helper, 'the provisioning session must not also resolve a tenant').toMatch(
+      /async def get_platform_session\(\) -> AsyncGenerator/,
+    )
   })
 })
