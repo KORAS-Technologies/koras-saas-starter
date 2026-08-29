@@ -26,10 +26,17 @@ dev = [
   # into the root environment, and `tests/` could not import it at all -- so
   # every test about the API had to read its source instead of asking it.
   "{{projectSlug}}-api",
+  # Same reason as the API above, and the same trap. `koras-email` is a
+  # workspace member, which makes it buildable and does not install it -- so its
+  # own tests could not import it and silently collected nothing. Nothing
+  # *depends* on it yet, deliberately: a service adds it when it has a message
+  # to send. Until then this is what makes its tests run at all.
+  "koras-email",
 ]
 
 [tool.uv.sources]
 "{{projectSlug}}-api" = { workspace = true }
+koras-email = { workspace = true }
 
 [tool.ruff]
 line-length = 100

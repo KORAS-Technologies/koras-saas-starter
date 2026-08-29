@@ -1,0 +1,13 @@
+[project]
+name = "koras-email"
+version = "0.1.0"
+requires-python = ">=3.12"
+# No dependencies, deliberately. Stdlib smtplib on a worker thread is enough for
+# transactional mail at the volume a product sends it, and a provider SDK on the
+# critical path of somebody's first sign-in is a dependency that has to be right
+# forever. Swap the transport by implementing EmailSender, not by adding one here.
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
