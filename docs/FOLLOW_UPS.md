@@ -290,15 +290,17 @@ quietly.
 
 ## The customer-onboarding sequence
 
-Five pieces, in the order they unblock each other, from the review on
-2026-08-29 of how a customer gets from nothing to a working tenant. F9 and F10
-are closed. The remaining order is **F12, then F11, then F13** — F11 was written
-ahead of F12 and cannot be built before it. **This is
-forward scope and therefore belongs in a roadmap**; it is written here because
-four of the five are "identified and deliberately not started", which is what
-this file is for, and because three of them are another repository's to build.
-When any of them is started, the phase it becomes should be recorded in the
-owning repository's `IMPLEMENTATION_ROADMAP.md` and this entry reduced to a
+Five pieces, in the order they unblock each other, from the review on 2026-08-29
+of how a customer gets from nothing to a working tenant.
+
+F9, F10 and the blocking half of F12 closed the same day. What remains is
+**F11**, then F13, and `packages/email` whenever a product needs one.
+
+**This is forward scope and therefore belongs in a roadmap**; it is written here
+because the pieces began as "identified and deliberately not started", which is
+what this file is for, and because most of them are another repository's to
+build. When one is started, the phase it becomes should be recorded in the
+owning repository's `IMPLEMENTATION_ROADMAP.md` and its entry here reduced to a
 pointer.
 
 The design rationale is not restated here. `PROVISIONING_DESIGN.md` §1 and §3
@@ -307,7 +309,7 @@ own the sequence, `COMMERCIAL_CATALOGUE.md` owns the two-authorities split, and
 `koras-control-plane`.
 
 **The finding that orders them:** onboarding is a Control Plane responsibility
-and is already designed as one. Of the twelve provisioning steps, the product
+and is already designed as one. Of the thirteen provisioning steps, the product
 owns exactly one — `POST /internal/platform/v1/tenants`. So the answer to "does
 each product need an onboarding form" is no: one shared acquisition form, and a
 first-run setup wizard per product for the part that genuinely differs.
@@ -372,10 +374,20 @@ per-instance ceiling is enough and answers "for the registry, probably".
 shared signup surface is this repository's and should not be designed before the
 endpoint it posts to.
 
-### F12 — a provisioning run finishes and tells nobody
+### F12 — a provisioning run finished and told nobody
 
-- [ ] A `notify` step after `verify` in the state machine, idempotent like the rest
-- [ ] `packages/email` implemented once in `_shared`, against one provider
+- [x] A `notify` step after `verify` in the state machine
+- [x] Something that actually sends, in the Control Plane
+- [ ] `packages/email` in `_shared`, for the products themselves
+
+**The step and the sender are done** (2026-08-29, `koras-control-plane`). F11 is
+unblocked: verification mail has a transport now.
+
+**The third box is a different consumer**, which this entry originally
+conflated. The notify step is Python in the Control Plane's worker;
+`packages/email` is TypeScript for a generated product's own mail. They cannot
+be the same code, and nothing currently needs the second one -- so it stays open
+without blocking anything.
 
 `packages/email` and `packages/notifications` are both `export {}`. The state
 machine ends at `READY`.
@@ -383,13 +395,14 @@ machine ends at `READY`.
 The step is safe-to-reverse in the rollback classification and must be as
 idempotent as every other one: a retried job must not send a second welcome.
 
-**F11 waits on this**, which the first version of this list had backwards. A
-self-serve signup must prove an address before anything is provisioned, and
-proving one means sending to it. So this is the next thing to build in the
-sequence, not the one after next.
+What the step cost, because it is the one thing on that engine that could not be
+made idempotent the usual way: every other step asks the remote system what
+exists and adopts it, and nothing can be asked whether a message was delivered.
+The welcome is therefore **at-least-once** -- a duplicate is mildly irritating,
+and a missing one leaves a working account nobody knows about.
 
-**Why not done here:** the step is the Control Plane's and the package is this
-repository's, so it is two changes in two repositories rather than one.
+**Why the last box is not done here:** nothing needs it yet. A generated product
+sends no mail of its own until it has a feature that does.
 
 ### F13 — nothing bills anyone, and that is not an oversight
 
