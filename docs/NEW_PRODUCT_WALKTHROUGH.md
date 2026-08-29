@@ -21,12 +21,15 @@ pick it when it is not.
 
 ## Read this first — three things that will stop you
 
-**1. The plan catalogue is empty and has no user interface.** A provisioning run
-requires a plan code. `koras-control-plane/docs/COMMERCIAL_CATALOGUE.md`
-measured dev as zero plans, zero entitlements, zero subscriptions, and states
-that a plan can only be created with `curl` and a staff token. Stage 4.2 is the
-way through. Without it you will create the organization, start a run, and have
-it name a plan that does not exist.
+**1. The plan catalogue starts empty.** A provisioning run requires a plan code,
+and no plan exists until somebody creates one -- so without stage 4.2 you will
+create the organization, start a run, and have it name a plan that does not
+exist.
+
+The console has forms for this since 2026-08-29. Stage 4.2 keeps the `curl`
+calls because they are what a scripted or repeated run wants, and because the
+request bodies below are the contract the forms post: if a form and a curl
+disagree, one of them is wrong and this is where you can see both.
 
 **2. Neither Control Plane setting exists in the bootstrap config**, so
 registration has never actually run in this estate — checked, not assumed. And
@@ -512,9 +515,15 @@ That is why a plan entitlement can set `limit_value` alone and still behave, and
 why an override for one customer does not require restating the whole
 entitlement.
 
-### 4.2 Create a plan — the blocker
+### 4.2 Create a plan
 
-No console form exists for any of this. Needs `platform_billing` or above.
+Needs `platform_billing` or above -- the same role the console forms require,
+because the console posts to these endpoints and adds no authority of its own.
+
+**This stopped being the blocker on 2026-08-29.** Entitlements, Plans and
+Subscriptions each carry a form now, and `GET /entitlements` was added with them
+so a form can name a capability. Doing it here instead is the right choice for a
+repeatable run; doing it in the console is the right choice for one customer.
 
 ```bash
 CP="$KORAS_CONTROL_PLANE_URL/api/platform/v1"
