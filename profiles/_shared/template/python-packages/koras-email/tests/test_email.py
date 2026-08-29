@@ -17,9 +17,11 @@ from koras_email import (
     sender_for,
 )
 
-pytestmark = pytest.mark.asyncio
+# Applied per test rather than to the module: half of these are synchronous,
+# and a module-wide asyncio mark on a plain function is a warning on every run.
 
 
+@pytest.mark.asyncio
 async def test_the_recording_sender_says_it_is_simulated() -> None:
     """The one property a caller must surface.
 
@@ -33,6 +35,7 @@ async def test_the_recording_sender_says_it_is_simulated() -> None:
     assert result.simulated is True
 
 
+@pytest.mark.asyncio
 async def test_the_recording_sender_keeps_what_it_would_have_sent() -> None:
     """Kept, not discarded.
 
@@ -47,6 +50,7 @@ async def test_the_recording_sender_keeps_what_it_would_have_sent() -> None:
     ]
 
 
+@pytest.mark.asyncio
 async def test_message_ids_differ_between_recipients() -> None:
     """So a duplicate is recognisable as one.
 
