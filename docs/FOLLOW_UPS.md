@@ -291,7 +291,9 @@ quietly.
 ## The customer-onboarding sequence
 
 Five pieces, in the order they unblock each other, from the review on
-2026-08-29 of how a customer gets from nothing to a working tenant. **This is
+2026-08-29 of how a customer gets from nothing to a working tenant. F9 and F10
+are closed. The remaining order is **F12, then F11, then F13** — F11 was written
+ahead of F12 and cannot be built before it. **This is
 forward scope and therefore belongs in a roadmap**; it is written here because
 four of the five are "identified and deliberately not started", which is what
 this file is for, and because three of them are another repository's to build.
@@ -310,21 +312,18 @@ owns exactly one — `POST /internal/platform/v1/tenants`. So the answer to "doe
 each product need an onboarding form" is no: one shared acquisition form, and a
 first-run setup wizard per product for the part that genuinely differs.
 
-### F9 — the plan catalogue cannot be authored, and nothing downstream works without it
+### F9 — the plan catalogue could not be authored
 
-- [ ] Five client methods and a form per page, per `COMMERCIAL_CATALOGUE.md`
+- [x] Five client methods and a form per page, per `COMMERCIAL_CATALOGUE.md`
+- [x] The read that was missing, so a form can name a capability
+- [x] Browser coverage of each write
 
-Already tracked as F4a, and repeated in the sequence only because it is first.
-A provisioning run requires a `plan_code`; dev measures zero plans, zero
-entitlements, zero subscriptions; a plan can be created only with `curl` and a
-staff token. Nothing below can be tested until this exists.
+**Closed 2026-08-29**, in `koras-control-plane`. F4a closes with it.
 
-For a product with four plans and around six capabilities that is four `plans`
-rows, six `entitlements` rows and roughly twenty `plan_entitlements` rows —
-small, and unreachable.
-
-**Why not done here:** the console is `koras-control-plane`'s, its Phase 14, and
-`COMMERCIAL_CATALOGUE.md` already specifies what to build.
+One thing that document did not anticipate: `PUT /entitlements` had existed
+since the entitlement work with nothing reading it back, so a form for what a
+plan grants had no way to name an entitlement. `GET /entitlements` was added
+with the forms.
 
 ### F10 — the tenant store was in memory
 
@@ -351,12 +350,27 @@ and no endpoint serves that. `POST /organizations` and
 portal's routes all require an organization that does not exist yet. So today a
 member of KORAS staff creates the organization and starts the run by hand.
 
-This is the piece that decides whether onboarding is self-serve at all, and the
-only one where the shape is not already settled by an existing document.
+**The shape is settled now.** `koras-control-plane/docs/SELF_SERVE_SIGNUP.md`,
+written 2026-08-29. The load-bearing decision is that a signup creates *no*
+organization: it writes one pending row and sends one email, and provisioning
+begins only when the address has been proven. A junk signup at the far end of
+that chain would otherwise cost a ZITADEL organization that rollback policy
+forbids deleting.
 
-**Why not done here:** the endpoint is the Control Plane's, and the form should
-not be designed before the endpoint it posts to. The shared template half is
-this repository's and lands after.
+**It depends on F12, not the other way round.** Proving an address means sending
+to it, and nothing in either repository sends email. This list originally
+ordered them the other way, which was wrong.
+
+Two corrections to what was written here first. The Control Plane *does* have a
+rate limiter — `koras-control-plane/services/api/koras_api/core/security.py`, global and per-caller — so the gap is not its
+absence but its shape: for an anonymous write it gives one budget to everyone
+behind a NAT and a fresh budget to every address an attacker holds. That is the
+forcing case for the Control Plane's own TS-01, which asks whether a
+per-instance ceiling is enough and answers "for the registry, probably".
+
+**Why not done here:** the endpoint is the Control Plane's and waits on F12. The
+shared signup surface is this repository's and should not be designed before the
+endpoint it posts to.
 
 ### F12 — a provisioning run finishes and tells nobody
 
@@ -369,9 +383,13 @@ machine ends at `READY`.
 The step is safe-to-reverse in the rollback classification and must be as
 idempotent as every other one: a retried job must not send a second welcome.
 
-**Why not done here:** the step is the Control Plane's, the package is this
-repository's, and neither is worth writing before F9 and F11 make a run
-reachable by a customer.
+**F11 waits on this**, which the first version of this list had backwards. A
+self-serve signup must prove an address before anything is provisioned, and
+proving one means sending to it. So this is the next thing to build in the
+sequence, not the one after next.
+
+**Why not done here:** the step is the Control Plane's and the package is this
+repository's, so it is two changes in two repositories rather than one.
 
 ### F13 — nothing bills anyone, and that is not an oversight
 
