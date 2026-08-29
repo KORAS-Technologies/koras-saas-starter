@@ -18,11 +18,46 @@ async def set_rls_context(session: AsyncSession, tenant_id: str) -> None:
     in the one function the whole tenant boundary depends on. The third argument
     scopes the setting to the current transaction, matching what ``LOCAL`` would
     have given, so nothing leaks to the next request on a pooled connection.
+
+    ``app.provisioning`` is cleared here as well. It is transaction-local too,
+    so on any path either function is reachable from it is already empty -- but
+    "already empty" is a property of how the sessions happen to be opened today,
+    and the cost of not relying on that is one statement. A tenant request that
+    ran with the provisioning flag still set would read every tenant's rows.
     """
     await session.execute(
-        text("select set_config('app.tenant_id', :tenant_id, true)"),
+        text(
+            "select set_config('app.tenant_id', :tenant_id, true), "
+            "set_config('app.provisioning', 'off', true)"
+        ),
         {"tenant_id": tenant_id},
     )
+
+
+async def set_provisioning_context(session: AsyncSession) -> None:
+    """Mark this transaction as the Control Plane provisioning a tenant.
+
+    There is no tenant to scope to yet -- creating the tenant is the point --
+    so the policies keyed to ``current_tenant_id()`` match no row, and an insert
+    against them is refused rather than merely returning nothing.
+
+    So the product's schema carries a second, narrow set of policies gated on
+    this flag, and this is the only function that sets it. Three properties are
+    what make that safe rather than an escape hatch:
+
+    - It is transaction-local, exactly as the tenant context is, so it cannot
+      outlive the request on a pooled connection.
+    - Nothing derives it from a request. No header, body field or claim reaches
+      it -- a caller cannot ask for it, and there is no value to tamper with.
+    - The only dependency that calls it serves the private platform router,
+      which admits a machine identity alone.
+
+    What it grants is real and worth stating plainly: within such a transaction
+    the connection can read and write every tenant row, because a lookup by
+    ``tenant_key`` has no tenant context to be scoped by. That is why the
+    dependency granting it is separate from ``get_db`` rather than a flag on it.
+    """
+    await session.execute(text("select set_config('app.provisioning', 'on', true)"))
 
 
 class RlsNotEnforced(RuntimeError):

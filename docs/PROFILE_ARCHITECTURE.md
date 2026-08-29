@@ -605,6 +605,60 @@ Plane rejects secret-shaped field names outright rather than dropping them.
 to conflate with it. The `control_plane_client` capability generates the
 outbound half only.
 
+### How the inbound half stores a tenant
+
+`services/api/koras_api/routers/platform.py` used to keep tenants in a
+module-level dict, with a comment saying to replace it. It now writes to
+`public.tenants` through `core/tenant_store.py`, and three properties of that
+are worth knowing before changing any of it.
+
+**The create is idempotent through the database, not through a lookup.** The
+insert is `on conflict (tenant_key) do nothing ... returning`, so exactly one of
+two concurrent retries of the same provisioning job gets a row back and the
+other finds the committed one. A select-then-insert has a window between the two
+statements, and concurrent retries of one job are precisely what this has to
+survive. Returning a row is also what decides `201` from `200`, which is the
+distinction the Control Plane uses to tell a first attempt from a retry.
+
+**A provisioning transaction is not a tenant transaction.** Every policy in
+`00002` reads `<column> = current_tenant_id()`, which is right for a request made
+by a tenant's own user and useless for the call that creates the tenant: there
+is no tenant yet, so the predicate matches nothing and the insert is refused.
+`00003` adds a second, narrow set of policies gated on
+`public.is_provisioning()`, and `koras_database.set_provisioning_context` is the
+only thing that turns it on.
+
+What that grants is real: inside such a transaction the connection reads and
+writes every tenant row, because a lookup by `tenant_key` has no tenant context
+to be scoped by. Four things keep it narrow, and all four are load-bearing —
+
+- it is transaction-local, exactly as the tenant context is, so it cannot
+  outlive a request on a pooled connection;
+- nothing derives it from a request: no header, body field or claim reaches it,
+  so a caller cannot ask for it;
+- `set_rls_context` clears it when it sets a tenant, so the two can never both
+  be in effect;
+- the only dependency that sets it, `get_platform_session`, serves the one
+  router that admits a machine identity alone — and it is a separate dependency
+  rather than a flag on `get_db` precisely so that no customer-facing route can
+  reach it.
+
+The first and third are asserted against a real database by
+`supabase/tests/030_provisioning_context.sql`, run as a role that is neither
+superuser nor table owner — the only kind RLS applies to. The second and fourth
+are properties of the code rather than of the schema, and what holds them is the
+generator's `rls-policy-ordering` test: it requires every policy in every
+migration to carry one of the two predicates, so a third unscoped policy cannot
+be added without declaring which it is, and it checks that the flag is set from
+`get_platform_session` rather than from anything a request supplies.
+
+**The request's environment is checked against the service's own.** A product
+database belongs to exactly one environment, so a create naming another is a
+misconfigured caller and answers `422` rather than writing the row. The Control
+Plane's retry policy fails a 4xx immediately, which is right — the input will not
+become valid by being sent again. This mirrors `ExternalAdapter` on the Control
+Plane side, which refuses construction for any environment but its own.
+
 ### Registration happens once, and then again on every deployment
 
 Generation-time registration reports what Terraform just created. It cannot
