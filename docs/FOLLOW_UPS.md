@@ -288,6 +288,113 @@ quietly.
 
 ---
 
+## The customer-onboarding sequence
+
+Five pieces, in the order they unblock each other, from the review on
+2026-08-29 of how a customer gets from nothing to a working tenant. **This is
+forward scope and therefore belongs in a roadmap**; it is written here because
+four of the five are "identified and deliberately not started", which is what
+this file is for, and because three of them are another repository's to build.
+When any of them is started, the phase it becomes should be recorded in the
+owning repository's `IMPLEMENTATION_ROADMAP.md` and this entry reduced to a
+pointer.
+
+The design rationale is not restated here. `PROVISIONING_DESIGN.md` §1 and §3
+own the sequence, `COMMERCIAL_CATALOGUE.md` owns the two-authorities split, and
+`DOMAIN_MODEL.md` §5 owns entitlement precedence — all three in
+`koras-control-plane`.
+
+**The finding that orders them:** onboarding is a Control Plane responsibility
+and is already designed as one. Of the twelve provisioning steps, the product
+owns exactly one — `POST /internal/platform/v1/tenants`. So the answer to "does
+each product need an onboarding form" is no: one shared acquisition form, and a
+first-run setup wizard per product for the part that genuinely differs.
+
+### F9 — the plan catalogue cannot be authored, and nothing downstream works without it
+
+- [ ] Five client methods and a form per page, per `COMMERCIAL_CATALOGUE.md`
+
+Already tracked as F4a, and repeated in the sequence only because it is first.
+A provisioning run requires a `plan_code`; dev measures zero plans, zero
+entitlements, zero subscriptions; a plan can be created only with `curl` and a
+staff token. Nothing below can be tested until this exists.
+
+For a product with four plans and around six capabilities that is four `plans`
+rows, six `entitlements` rows and roughly twenty `plan_entitlements` rows —
+small, and unreachable.
+
+**Why not done here:** the console is `koras-control-plane`'s, its Phase 14, and
+`COMMERCIAL_CATALOGUE.md` already specifies what to build.
+
+### F10 — the tenant store was in memory
+
+- [x] Persist tenants rather than holding them in a module-level dict
+- [x] Keep the lookup by `tenant_key` first, and 200 apart from 201
+- [x] Policies that let a call with no tenant context create one
+
+**Closed 2026-08-29.** `core/tenant_store.py`, migration `00003`, and
+`supabase/tests/030_provisioning_context.sql`. The last of those found a real
+defect on its first CI run — an `on conflict` naming an arbiter needs the
+table's select policies, and `tenant_members` had been given insert alone.
+
+### F11 — there is no way for a customer to start signing up
+
+- [ ] An unauthenticated signup endpoint on the Control Plane
+- [ ] Rate limiting, and address verification before a job is created
+- [ ] Some way for a plan to say it may be bought unattended, so trial is
+      reachable and enterprise is not
+- [ ] One shared, brandable signup surface in `profiles/_shared/template`
+
+`PROVISIONING_DESIGN.md` §1 begins "customer opens product → branded signup",
+and no endpoint serves that. `POST /organizations` and
+`POST /organizations/{id}/provision` both take `PlatformAdminDep`, and the
+portal's routes all require an organization that does not exist yet. So today a
+member of KORAS staff creates the organization and starts the run by hand.
+
+This is the piece that decides whether onboarding is self-serve at all, and the
+only one where the shape is not already settled by an existing document.
+
+**Why not done here:** the endpoint is the Control Plane's, and the form should
+not be designed before the endpoint it posts to. The shared template half is
+this repository's and lands after.
+
+### F12 — a provisioning run finishes and tells nobody
+
+- [ ] A `notify` step after `verify` in the state machine, idempotent like the rest
+- [ ] `packages/email` implemented once in `_shared`, against one provider
+
+`packages/email` and `packages/notifications` are both `export {}`. The state
+machine ends at `READY`.
+
+The step is safe-to-reverse in the rollback classification and must be as
+idempotent as every other one: a retried job must not send a second welcome.
+
+**Why not done here:** the step is the Control Plane's, the package is this
+repository's, and neither is worth writing before F9 and F11 make a run
+reachable by a customer.
+
+### F13 — nothing bills anyone, and that is not an oversight
+
+- [ ] Decide whether self-serve ships trial-only first
+
+No table holds an amount. `COMMERCIAL_CATALOGUE.md` says so directly: plans are
+entitlement bundles, not price points. The portal's Billing section is an honest
+`NotYet`, and `packages/billing` is `export {}`.
+
+The recommendation is to ship trial-only self-serve and keep paid plans
+staff-provisioned until the catalogue and the provisioning path have run
+end-to-end once. Designing webhook reconciliation against a flow nobody has
+executed is the mistake `SSO_DESIGN.md` avoids when it chooses A1 over A3.
+
+When it is built: the subscription lifecycle stays in the Control Plane, the
+processor holds price and payment method, `subscriptions.status` becomes the
+thing a webhook drives, and no product ever holds a processor credential.
+
+**Why not done here:** it is a commercial decision before it is an
+implementation, and it is the one item here with no dependency forcing it now.
+
+---
+
 ## Verification that has not happened
 
 ### F7 — nothing has exercised the register job in a real pipeline

@@ -56,6 +56,11 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   product_environments: 'a Control Plane registry table; no product repository has one',
   product_services: 'a Control Plane registry table; no product repository has one',
   infrastructure_references: 'a Control Plane registry table; no product repository has one',
+  // The commercial catalogue's join table, named in FOLLOW_UPS because the size
+  // of the authoring gap is measured in rows of it. Same rule as the three
+  // above: it is the Control Plane's, and a product that had one would be
+  // deciding its own entitlements.
+  plan_entitlements: 'a Control Plane catalogue table; no product repository has one',
 }
 
 function tracked(): string[] {
