@@ -215,27 +215,31 @@ deciding the first question leaves a *third* correct implementation of the same
 contract that nothing calls, next to the two that everything calls. The right
 order is the other way round.
 
-### F4a — the plan catalogue is empty and has no user interface
+### F4a — the plan catalogue was empty and had no user interface
 
-- [ ] Build the plan, entitlement and subscription forms the console is missing
+- [x] Build the plan, entitlement and subscription forms the console is missing
 
-A provisioning run requires a plan code, and
-`koras-control-plane/docs/COMMERCIAL_CATALOGUE.md` measures dev as zero plans,
-zero entitlements and zero subscriptions. The console can start a run naming a
-plan nobody can create from the console; a plan can only be created with `curl`
-and a staff token.
+**Closed 2026-08-29**, in `koras-control-plane`. Same work as F9; kept here
+because this is where it was first written down.
 
-This blocks the first real end-to-end run rather than merely inconveniencing it,
-which is why it is here and not only in that document. The workaround is
-NEW_PRODUCT_WALKTHROUGH.md stage 4.2.
-
-**Why not done here:** the console is `koras-control-plane`'s, and that document
-already specifies what to build.
+What it needed beyond the five forms: `GET /entitlements`, which had never
+existed. A form for what a plan grants has to name an entitlement, and nothing
+could tell it which exist.
 
 ### F5a — `doppler-bootstrap` cannot express a legitimately empty setting
 
-- [ ] Let the prompt record an empty value deliberately, rather than treating
-      every empty answer as a skip
+- [ ] Promote the `optional` class from `koras-control-plane` into both templates
+
+**The fix exists upstream.** `koras-control-plane` added a fourth manifest class
+on 2026-08-29 -- `optional`: prompted like `supplied`, an empty answer accepted
+as an answer, and absent from what `doppler-check` demands of a deployment. That
+is exactly what this entry asks for, and it now needs copying into
+`profiles/*/template/local/` rather than designing.
+
+It was added under pressure rather than as tidying: declaring SMTP as `supplied`
+blocked the Control Plane's dev deploy, because a worker whose whole design is
+that an unset host selects a recording sender could no longer be deployed
+without a mail provider.
 
 Found by running it. The prompt loop treats an empty answer as `skipped, still
 missing`, writes nothing, and fails the run. Four settings in the product
@@ -244,17 +248,53 @@ the three `OTEL_EXPORTER_OTLP_*` names and `CONTROL_PLANE_API_KEY` — and there
 is no way to answer them. The operator has to leave the script and use the
 Doppler CLI directly.
 
-`CONTROL_PLANE_API_KEY` is the sharper case: it is declared `supplied` in
-`secrets.manifest`, and nothing can supply it, because the Control Plane issues
-no such credential (F2b). A manifest entry that demands a value the platform
-cannot produce is a check that can only be satisfied by inventing one.
+`KORAS_CONTROL_PLANE_TOKEN` is the sharper case -- named
+`CONTROL_PLANE_API_KEY` when this was written, see F14. It is declared
+`supplied`, and nothing can supply it, because the Control Plane issues no such
+credential (F2b). A manifest entry that demands a value the platform cannot
+produce is a check that can only be satisfied by inventing one.
+
+Both it and `KORAS_CONTROL_PLANE_URL` are `optional` in the class's own terms:
+legitimately empty until a Control Plane exists, which is the documented
+bootstrap order (R-001).
 
 `PROVISIONING_RUNBOOK.md` claimed empty answers were recorded and counted. They
 are not; that claim is corrected.
 
-**Why not done here:** the fix is a small change to a template script, and it
-should be made together with the decision in F2b about whether
-`CONTROL_PLANE_API_KEY` should be in the contract at all.
+**Why not done here:** the promotion is small and the decision beside it is
+not -- F2b still asks whether that credential belongs in the contract at all,
+and reclassifying it is easier to get right once that is answered.
+
+### F14 — two names for the Control Plane, and neither side noticed
+
+- [x] Declare the settings under the names Doppler actually holds
+- [x] Correct the runbook an operator follows
+- [ ] Extend `test_settings_are_declared.py` here to the Python services
+
+**Closed 2026-08-29 apart from the last box.**
+
+`register-with-control-plane.sh`, the generator's registration client and
+`CLAUDE.md` all use `KORAS_CONTROL_PLANE_URL` and `KORAS_CONTROL_PLANE_TOKEN`.
+`secrets.manifest` declared `CONTROL_PLANE_URL` and `CONTROL_PLANE_API_KEY`, and
+`PROVISIONING_RUNBOOK.md` told an operator to set those. So `doppler-bootstrap`
+prompted for one pair of secrets and every reader looked for another.
+
+**Nothing failed, and that is the whole finding.** An unset URL is a documented
+skip rather than an error -- R-001, the bootstrap order -- so deploy-time
+registration would report *no Control Plane configured* in an estate that had
+one, indefinitely. A defect whose symptom is a correct-looking skip is one
+nobody goes looking for.
+
+**This is probably what F7 would have found.** That entry says nothing has
+exercised the register job in a real pipeline; this is the class of thing such a
+run exists to catch, and it was found instead by a test in a different
+repository rejecting a *new* setting for the same reason.
+
+**The last box is the durable half.** `koras-control-plane` extended its
+equivalent test to read pydantic `Settings` fields, having found that scanning
+only `process.env` in `.ts` caught one half of this defect and said nothing
+about the other. The same test here has the same gap: nothing checks that a
+Python service reads only settings the manifest declares. Promote it.
 
 ### F5 — `apps/marketing` declares Tailwind and imports no stylesheet
 
@@ -293,15 +333,25 @@ quietly.
 Five pieces, in the order they unblock each other, from the review on 2026-08-29
 of how a customer gets from nothing to a working tenant.
 
-F9, F10 and the blocking half of F12 closed the same day. What remains is F13, which is a commercial
-decision rather than an implementation.
+**All of it closed on 2026-08-29 except F13**, which is a commercial decision
+rather than an implementation. A customer can go from a product's `/signup` page
+to a provisioned tenant with a welcome email, choosing from the plans that
+product actually sells, without a member of staff touching anything.
 
-**This is forward scope and therefore belongs in a roadmap**; it is written here
-because the pieces began as "identified and deliberately not started", which is
-what this file is for, and because most of them are another repository's to
-build. When one is started, the phase it becomes should be recorded in the
-owning repository's `IMPLEMENTATION_ROADMAP.md` and its entry here reduced to a
-pointer.
+Two settings decide whether that works in a given environment, and neither has a
+value yet: without `SMTP_HOST` the sender records instead of sending, and
+without `SIGNUP_VERIFY_BASE_URL` the verification task refuses rather than mail
+a link to nowhere. Both are `optional` in the Control Plane's manifest, so a
+deployment does not demand them -- which means the failure is silent in the
+first case and loud in the second, deliberately.
+
+**This is forward scope and belonged in a roadmap**; it was written here because
+the pieces began as "identified and deliberately not started", which is what
+this file is for. Now that they are built, the record of *what was decided and
+why* belongs in the owning repository's design documents -- and mostly is:
+`SELF_SERVE_SIGNUP.md` owns the signup shape, `PROVISIONING_DESIGN.md` owns the
+notify step. This section should shrink to a pointer at those once somebody is
+confident nothing here is the only copy.
 
 The design rationale is not restated here. `PROVISIONING_DESIGN.md` §1 and §3
 own the sequence, `COMMERCIAL_CATALOGUE.md` owns the two-authorities split, and
@@ -390,16 +440,21 @@ somebody into anyway.
 
 - [x] A `notify` step after `verify` in the state machine
 - [x] Something that actually sends, in the Control Plane
-- [ ] `packages/email` in `_shared`, for the products themselves
+- [x] A sender a generated product can use
 
-**The step and the sender are done** (2026-08-29, `koras-control-plane`). F11 is
-unblocked: verification mail has a transport now.
+**Closed 2026-08-29.**
 
-**The third box is a different consumer**, which this entry originally
-conflated. The notify step is Python in the Control Plane's worker;
-`packages/email` is TypeScript for a generated product's own mail. They cannot
-be the same code, and nothing currently needs the second one -- so it stays open
-without blocking anything.
+**The third box was a different consumer**, which this entry originally
+conflated -- and it was also written in the wrong language. The notify step is
+Python in the Control Plane's worker; `packages/email` was TypeScript. Mail is
+sent server-side, because the address, the transport credential and the decision
+to contact somebody all belong to the API: a browser must never hold an SMTP
+credential, and a Next.js action sending mail directly would be a second place
+deciding who gets written to.
+
+So `python-packages/koras-email` is the real thing and `packages/email` says why
+it is empty and where to go instead. Nothing depends on it yet, deliberately: a
+service adds it when it has a message to send.
 
 `packages/email` and `packages/notifications` are both `export {}`. The state
 machine ends at `READY`.
@@ -413,8 +468,10 @@ exists and adopts it, and nothing can be asked whether a message was delivered.
 The welcome is therefore **at-least-once** -- a duplicate is mildly irritating,
 and a missing one leaves a working account nobody knows about.
 
-**Why the last box is not done here:** nothing needs it yet. A generated product
-sends no mail of its own until it has a feature that does.
+One thing the package cost, and it is the trap the root `pyproject` already
+documents for the API: a workspace member nothing depends on is buildable and
+**not installed**, so its own tests could not import it and collected nothing. It
+is in the dev group for that reason alone.
 
 ### F13 — nothing bills anyone, and that is not an oversight
 
@@ -441,6 +498,12 @@ implementation, and it is the one item here with no dependency forcing it now.
 ## Verification that has not happened
 
 ### F7 — nothing has exercised the register job in a real pipeline
+
+> Since this was written, F14 found a defect of exactly the shape a real run
+> would have caught: the job read two settings the manifest declared under other
+> names, and reported *no Control Plane configured* rather than failing. The
+> entry below still stands -- that was found by a test in another repository,
+> not by running this.
 
 - [ ] Observe the `register` job run in a generated project's deployment
 - [ ] Confirm the Control Plane's stored references change as a result
