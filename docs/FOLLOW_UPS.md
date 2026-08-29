@@ -228,9 +228,13 @@ could tell it which exist.
 
 ### F5a — `doppler-bootstrap` cannot express a legitimately empty setting
 
-- [ ] Promote the `optional` class from `koras-control-plane` into both templates
+- [x] Promote the `optional` class from `koras-control-plane` into both templates
 
-**The fix exists upstream.** `koras-control-plane` added a fourth manifest class
+**Closed 2026-08-29.** `KORAS_CONTROL_PLANE_URL`, `KORAS_CONTROL_PLANE_TOKEN`
+and the three `OTEL_EXPORTER_OTLP_*` names are `optional` in the product
+manifest -- which is the set this entry listed as impossible to answer.
+
+**The fix existed upstream.** `koras-control-plane` added a fourth manifest class
 on 2026-08-29 -- `optional`: prompted like `supplied`, an empty answer accepted
 as an answer, and absent from what `doppler-check` demands of a deployment. That
 is exactly what this entry asks for, and it now needs copying into
@@ -261,15 +265,15 @@ bootstrap order (R-001).
 `PROVISIONING_RUNBOOK.md` claimed empty answers were recorded and counted. They
 are not; that claim is corrected.
 
-**Why not done here:** the promotion is small and the decision beside it is
-not -- F2b still asks whether that credential belongs in the contract at all,
-and reclassifying it is easier to get right once that is answered.
+F2b is untouched by this. Whether that credential belongs in the contract at all
+is still open; `optional` only means the bootstrap no longer demands a value
+nothing can produce.
 
 ### F14 — two names for the Control Plane, and neither side noticed
 
 - [x] Declare the settings under the names Doppler actually holds
 - [x] Correct the runbook an operator follows
-- [ ] Extend `test_settings_are_declared.py` here to the Python services
+- [x] Extend `test_settings_are_declared.py` here to the Python services
 
 **Closed 2026-08-29 apart from the last box.**
 
@@ -290,11 +294,22 @@ exercised the register job in a real pipeline; this is the class of thing such a
 run exists to catch, and it was found instead by a test in a different
 repository rejecting a *new* setting for the same reason.
 
-**The last box is the durable half.** `koras-control-plane` extended its
-equivalent test to read pydantic `Settings` fields, having found that scanning
-only `process.env` in `.ts` caught one half of this defect and said nothing
-about the other. The same test here has the same gap: nothing checks that a
-Python service reads only settings the manifest declares. Promote it.
+**The durable half is done.** The shared test reads pydantic `Settings` fields
+now as well as `process.env`, having found upstream that scanning only `.ts`
+caught one half of this defect and said nothing about the other.
+
+It found four undeclared settings in the product template on its first run.
+Two were tunables and are declared `optional`. `REQUIRE_RLS_ENFORCEMENT` is not
+a tunable: a deployment with it false has correct policies, `force` on every
+table, a green policy suite and no tenant isolation at all, which is R-032. It
+is listed as never settable, with that reason, and the list is asserted both
+ways -- an entry that becomes declared fails, and an entry nothing reads fails.
+
+The second assertion earned itself immediately: `DOPPLER_TOKEN` was listed there
+and the control-plane profile does not read it, so a fact about one profile was
+being stated in a file both share. It is `PROVIDED_BY_THE_PLATFORM` instead,
+which is what it is -- a credential injected at deploy time that cannot live in
+Doppler.
 
 ### F5 — `apps/marketing` declares Tailwind and imports no stylesheet
 

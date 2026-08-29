@@ -76,7 +76,11 @@ if [ ! -f "$MANIFEST" ]; then
 fi
 
 mapfile -t REQUIRED < <(
-  grep -vE '^\s*#|^\s*$' "$MANIFEST" | awk '$2 != "local" { print $1 }' | sort -u
+  # Neither local nor optional. `local` never reaches Doppler at all; `optional`
+  # reaches it when somebody has a value and is legitimately absent otherwise,
+  # so demanding it would refuse a deployment over a setting the code is built
+  # to do without.
+  grep -vE '^\s*#|^\s*$' "$MANIFEST" | awk '$2 != "local" && $2 != "optional" { print $1 }' | sort -u
 )
 
 # The contract and the manifest must describe the same set. A setting added to

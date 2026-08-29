@@ -178,6 +178,13 @@ for environment in "${ENVIRONMENTS[@]}"; do
       read -rs value < /dev/tty
       echo ""
       if [ -z "$value" ]; then
+        # An optional setting is allowed to have no value, and calling one
+        # "still missing" trains somebody to ignore the word on the ones that
+        # are. This is what F5a asked for: a way to answer "there is none".
+        if [ "$class" = "optional" ]; then
+          echo "        left unset"
+          break
+        fi
         echo "        skipped, still missing"
         failed=1
         break
