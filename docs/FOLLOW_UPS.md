@@ -186,9 +186,10 @@ Neither is in `PRODUCT_REGISTRATION_CONTRACT.md` §6, which enumerates `200`,
 `201` and the machine-identity rule and stops there. Both are refusals rather
 than new behaviour a caller must invoke, so a Control Plane that has not been
 updated is not broken by them — it will report a failed step, which is what
-should happen in both cases. But `tests/contract/reference_product.py` over
-there mirrors this router, and mirroring it as it now stands is what would make
-the second bullet's question concrete.
+should happen in both cases. But
+`koras-control-plane/tests/contract/reference_product.py` mirrors this router,
+and mirroring it as it now stands is what would make the second bullet's
+question concrete.
 
 **Why not done here:** the reference product and the retry policy are the
 Control Plane's. The 409 in particular is a product decision this repository
