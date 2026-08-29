@@ -461,6 +461,57 @@ needed for that half of the question.
 
 The rest of this stage is what makes an *organization* and a *tenant* appear.
 
+### 4.1a The object model, and why the order is forced
+
+Six objects, and each step exists because the next one cannot be expressed
+without it. Nothing here is ceremony.
+
+```text
+product          registered by the generator          Stage 3
+  |
+  +-- entitlement          a capability that can be granted     PUT /entitlements
+  |     |                  product_code optional: omit it and the
+  |     |                  entitlement applies to every product
+  |     |
+  +-- plan                 a named bundle, belongs to a product PUT /plans
+        |
+        +-- plan entitlement   what this plan grants, and how much
+                               PUT /products/<code>/plans/<plan>/entitlements
+
+organization     the customer                          POST /organizations
+  |
+  +-- subscription         organization + product + plan
+  |                        created by the provisioning run, or PUT /subscriptions
+  |
+  +-- subscription entitlement    an override for this customer alone
+                                  PUT /subscriptions/<id>/entitlements
+```
+
+**Nothing resolves without a subscription.** The Entitlements page joins
+subscriptions to organizations and products; with no subscription there is no
+row to resolve, which is what *"This organization holds no subscription for
+&lt;product&gt;, so nothing resolves"* is telling you. Creating an organization
+does not create one.
+
+### 4.1b How a value is decided
+
+Three tiers, resolved **per field** rather than per entitlement:
+
+```text
+subscription override   >   plan   >   catalogue default
+```
+
+Each field takes the value from the highest tier with an opinion about it.
+`null` means *no opinion*, not *off* — so a plan row that sets only a limit
+leaves `enabled` to the catalogue rather than silently disabling the feature.
+The `source` reported beside each entitlement is the highest tier contributing
+anything, which is what someone asking "why does this customer have this value"
+needs to see first.
+
+That is why a plan entitlement can set `limit_value` alone and still behave, and
+why an override for one customer does not require restating the whole
+entitlement.
+
 ### 4.2 Create a plan — the blocker
 
 No console form exists for any of this. Needs `platform_billing` or above.
