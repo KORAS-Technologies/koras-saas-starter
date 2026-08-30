@@ -90,7 +90,10 @@ describe('resolving where the Control Plane is', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.config.baseUrl).toBe('https://control-plane.koras.io')
-    expect(result.config.token).toBe(TOKEN)
+    // A stored token is carried as a credential *source*, unspent. It becomes
+    // the bearer in `resolveBearer`, which is also where a key would be
+    // exchanged for one — so both credentials reach the client the same way.
+    expect(result.config.credential).toEqual({ kind: 'token', token: TOKEN })
   })
 
   it('lets the flag override the estate default', () => {

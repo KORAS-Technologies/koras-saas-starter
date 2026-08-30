@@ -3,6 +3,7 @@ import type { ProvisionOutputs } from '../terraform/outputs.js'
 import { buildRegistration } from './contract.js'
 import { decideRegistration, registrationEndpoint, type SkipReason } from './guard.js'
 import { resolveRegistrationConfig } from './config.js'
+import { resolveBearer } from './token.js'
 import { registerProduct, type RegisterOptions } from './client.js'
 
 /**
@@ -109,7 +110,16 @@ export async function runRegistration(
     }
   }
 
-  const outcome = await registerProduct(resolution.config, buildRegistration(ctx, outputs), options)
+  // The credential becomes a bearer here rather than in `config.ts`, because
+  // minting is a network call and configuration resolution is not. A key that
+  // cannot be exchanged fails the same way an unreachable Control Plane does —
+  // it is reported, and it never unwinds the estate that has just been built.
+  const bearer = await resolveBearer(resolution.config, options)
+  if (!bearer.ok) {
+    return { kind: 'failed', retryable: bearer.retryable, detail: bearer.detail }
+  }
+
+  const outcome = await registerProduct(bearer.config, buildRegistration(ctx, outputs), options)
 
   switch (outcome.status) {
     case 'registered':
@@ -133,5 +143,13 @@ export async function runRegistration(
 
 export { buildRegistration } from './contract.js'
 export { decideRegistration, registrationEndpoint } from './guard.js'
-export { resolveRegistrationConfig, BASE_URL_VAR, TOKEN_VAR } from './config.js'
+export {
+  resolveRegistrationConfig,
+  deriveInstance,
+  BASE_URL_VAR,
+  TOKEN_VAR,
+  KEY_VAR,
+  PROJECT_ID_VAR,
+} from './config.js'
+export { mintToken, parseServiceAccountKey, resolveBearer } from './token.js'
 export { registerProduct } from './client.js'
