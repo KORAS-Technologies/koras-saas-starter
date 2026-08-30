@@ -353,11 +353,17 @@ rather than an implementation. A customer can go from a product's `/signup` page
 to a provisioned tenant with a welcome email, choosing from the plans that
 product actually sells, without a member of staff touching anything.
 
-One setting decides whether that works in a given environment, and it has no
-value yet: without `SMTP_HOST` the sender records instead of sending. It is
-`optional` in the Control Plane's manifest, so a deployment does not demand it,
-which makes that failure silent — deliberately, since a product without a mail
-transport is a product still being set up.
+One setting decides whether that works in a given environment: without
+`SMTP_HOST` the sender records instead of sending. It is `optional` in the
+Control Plane's manifest, so a deployment does not demand it, which makes that
+failure silent — deliberately, since a product without a mail transport is a
+product still being set up. It holds a value in all four environments as of
+2026-08-29.
+
+An earlier version of this paragraph said neither setting had a value yet. Both
+did, in all four configs, and the sentence was carried forward through an edit
+without being checked — which is the *why* half of R-042 doing exactly what that
+entry says it does.
 
 There were two. `SIGNUP_VERIFY_BASE_URL` was the second, and it was the wrong
 shape: one value on a platform that runs many products. Two products meant
@@ -371,11 +377,22 @@ has already told the platform this. A product without one is an error rather
 than a fallback: a platform default would send a plausible link to somewhere the
 customer never visited.
 
-That derivation makes the Control Plane depend on two shapes owned here — the
-`web` application is served at `app.`, and the signup page is at
-`/signup/verify`. Both are asserted in `tests/docs/signup-verify-contract.test.ts`,
-because the symptom of changing either is a customer who cannot finish signing
-up and has no way to report why.
+That derivation makes the Control Plane depend on three shapes owned here: the
+`web` application is served at the `app` label, every environment but prod
+suffixes it as `app-<env>`, and the signup page is at `/signup/verify`. All
+three are asserted in `tests/docs/signup-verify-contract.test.ts`, because the
+symptom of changing any of them is a customer who cannot finish signing up and
+has no way to report why.
+
+**The values it replaces were already wrong**, which is the argument for
+deriving rather than setting. Read on 2026-08-29, `SIGNUP_VERIFY_BASE_URL` held
+`https://web-dev.koras-e2e-atlas.korastechnologies.com/signup` and the three
+matching hosts, while the DNS records for that estate are `app-dev.…`,
+`app-test.…`, `app-stg.…` and `app.…`. Every verification link those four
+environments would have sent pointed at a host that does not resolve. Nothing
+reported it: the setting had a value, the task found one, and the mail was
+built. A derived host cannot be wrong in that way without the derivation being
+wrong for everyone at once, which is the kind of wrong that gets noticed.
 
 **This is forward scope and belonged in a roadmap**; it was written here because
 the pieces began as "identified and deliberately not started", which is what

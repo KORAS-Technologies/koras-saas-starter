@@ -12,11 +12,18 @@ import { join } from 'node:path'
  *
  * Deriving it means the Control Plane assembles
  *
- *     https://app.<primary_domain>/signup/verify?token=...
+ *     https://app.<primary_domain>/signup/verify?token=...          (prod)
+ *     https://app-<env>.<primary_domain>/signup/verify?token=...     (all others)
  *
- * and both halves of that path belong to *this* repository. The `app.` label is
- * the vercel module's mapping of the `web` application; `/signup/verify` is the
- * route the product template ships. Change either here and the Control Plane
+ * and every part of that belongs to *this* repository. The `app` label is the
+ * vercel module's mapping of the `web` application; the `-<env>` suffix on
+ * everything but prod is that module's domain rule; `/signup/verify` is the
+ * route the product template ships.
+ *
+ * The environment half is asserted because leaving it out is a mistake already
+ * made. A first draft of the derivation built `app.<domain>` unconditionally,
+ * which is right for prod and wrong for the three environments a customer is
+ * most likely to be signing up in while the thing is being tested. Change either here and the Control Plane
  * keeps sending links to a page that no longer exists -- with nothing failing,
  * because the only symptom is a customer who cannot finish signing up and has
  * no way to report why.
@@ -41,6 +48,29 @@ describe('the shape the Control Plane builds a verification link from', () => {
       'application_hostnames no longer maps web -> app. The Control Plane builds ' +
         'https://app.<primary_domain>/signup/verify from this; change it there in ' +
         'the same breath, or verification emails point at a host that does not exist.',
+    ).toBe(true)
+  })
+
+  it('suffixes every environment but prod', () => {
+    // `app.<domain>` for prod and `app-<env>.<domain>` otherwise. A derivation
+    // that ignores this sends three of four environments to a host that does
+    // not resolve -- which is what the setting it replaces actually did: it
+    // held web-dev.<domain> while DNS held app-dev.<domain>.
+    const main = readFileSync(
+      join(ROOT, 'infrastructure', 'terraform', 'modules', 'vercel', 'main.tf'),
+      'utf8',
+    )
+
+    expect(
+      /environment == "prod"/.test(main),
+      'the vercel module no longer special-cases prod when building a domain. ' +
+        'The Control Plane derives app-<env>.<primary_domain> from this rule for ' +
+        'every environment but prod; change it there too.',
+    ).toBe(true)
+
+    expect(
+      /}-\$\{environment\}\.\$\{var\.primary_domain}/.test(main),
+      'the non-prod domain is no longer <label>-<environment>.<primary_domain>.',
     ).toBe(true)
   })
 
