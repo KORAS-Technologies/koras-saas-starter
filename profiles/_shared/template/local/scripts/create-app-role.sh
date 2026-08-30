@@ -121,13 +121,37 @@ proto="${URL%%://*}"
 rest="${URL#*://}"
 hostpart="${rest#*@}"
 
+# The username is not only the role, and replacing the whole of it was a bug.
+#
+# A managed pooler routes to a tenant by the suffix on the username: Supabase's
+# Supavisor takes `postgres.abcdefghijklmnop` to mean the role `postgres` on
+# project `abcdefghijklmnop`. Swapping in the bare role dropped the suffix with
+# it, and the pooler then had nothing to route by:
+#
+#     FATAL: (ENOIDENTIFIER) no tenant identifier provided
+#
+# which arrives at connect time, so a product provisioned correctly and
+# deployed correctly failed at startup with an error naming neither the URL nor
+# this script. Observed on koras-e2e-shop, 2026-08-30, and corrected by hand --
+# after which re-running this put the broken value straight back.
+#
+# A direct host has no suffix and needs none. `${userpart#*.}` returns the whole
+# string unchanged when there is no dot, which is what distinguishes the two.
+userpart="${rest%%:*}"
+suffix="${userpart#*.}"
+if [ "$suffix" = "$userpart" ]; then
+  qualified="${ROLE}"
+else
+  qualified="${ROLE}.${suffix}"
+fi
+
 cat <<MSG
 
 / ${ROLE} created, and row-level security applies to it.
 
   Put this in Doppler as DATABASE_URL for this environment:
 
-    ${proto}://${ROLE}:${GENERATED}@${hostpart}
+    ${proto}://${qualified}:${GENERATED}@${hostpart}
 
   Keep the privileged URL you passed here as DATABASE_ADMIN_URL. That is what
   runs migrations, and it is the only place it is still needed.
