@@ -598,6 +598,35 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    # OFF UNLESS EXPLICITLY SWITCHED ON. Set the repository variable
+    # KORAS_DEPLOY_REGISTRATION to "true" to enable it.
+    #
+    # Not caution, and not an unfinished feature -- the job below is complete
+    # and tested. The credential is the problem. The only identity that can
+    # register a product today is the estate-wide `registrar` service account,
+    # and a token minted from its key can rewrite *any* product's registry
+    # entry. Switching this on means putting that in one product's CI, which
+    # turns that product's deployment credentials into estate-wide registry
+    # write access: one compromised product repository could then repoint every
+    # other product's references.
+    #
+    # `CONTROL_PLANE_API_KEY` is declared in this template's environment
+    # contract and described in PROVISIONING_RUNBOOK.md as "issued by the
+    # Control Plane when the product registers". It is not. The registration
+    # response carries an id, a code, a name, a slug, a profile, a status and a
+    # list of environments; no endpoint mints a credential. When a per-product
+    # one exists, this default flips and this comment goes with it.
+    #
+    # Until then the registry is refreshed by running `--register-only` from
+    # the factory, which holds the estate-wide credential legitimately because
+    # it is the thing that provisions the estate. That is a person running a
+    # command, not a product holding a key.
+    #
+    # Tracked as F2b and F3 in the starter's docs/FOLLOW_UPS.md. F3 is the same
+    # question from the other side: whether a product may hold a token that can
+    # rewrite its own registry entry is the Control Plane's decision to make,
+    # not this workflow's to assume.
+    if: vars.KORAS_DEPLOY_REGISTRATION == 'true'
     # Last, and after `verify`, because the registry should record what is
     # serving rather than what was attempted -- `platform_api_base_url` is a URL
     # the previous job has just proved answers, and answers for this
