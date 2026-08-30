@@ -61,11 +61,6 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   // above: it is the Control Plane's, and a product that had one would be
   // deciding its own entitlements.
   plan_entitlements: 'a Control Plane catalogue table; no product repository has one',
-  // A Control Plane worker setting, named in FOLLOW_UPS because whether it has a
-  // value decides whether self-serve signup completes. It points *at* a
-  // generated product's signup page and is read by the platform, so this
-  // repository declares it nowhere and should not.
-  SIGNUP_VERIFY_BASE_URL: 'a Control Plane setting; the product it names never reads it',
 }
 
 function tracked(): string[] {

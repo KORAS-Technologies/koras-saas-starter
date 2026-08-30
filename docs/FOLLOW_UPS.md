@@ -353,12 +353,29 @@ rather than an implementation. A customer can go from a product's `/signup` page
 to a provisioned tenant with a welcome email, choosing from the plans that
 product actually sells, without a member of staff touching anything.
 
-Two settings decide whether that works in a given environment, and neither has a
-value yet: without `SMTP_HOST` the sender records instead of sending, and
-without `SIGNUP_VERIFY_BASE_URL` the verification task refuses rather than mail
-a link to nowhere. Both are `optional` in the Control Plane's manifest, so a
-deployment does not demand them -- which means the failure is silent in the
-first case and loud in the second, deliberately.
+One setting decides whether that works in a given environment, and it has no
+value yet: without `SMTP_HOST` the sender records instead of sending. It is
+`optional` in the Control Plane's manifest, so a deployment does not demand it,
+which makes that failure silent — deliberately, since a product without a mail
+transport is a product still being set up.
+
+There were two. `SIGNUP_VERIFY_BASE_URL` was the second, and it was the wrong
+shape: one value on a platform that runs many products. Two products meant
+either a wrong domain in half the emails or a per-product setting added by hand
+at every launch, and a verification link on the wrong domain is one a customer
+is right not to trust.
+
+The link is derived from `products.primary_domain` instead, which registration
+already carries and upserts on every pass — a product that can be signed up for
+has already told the platform this. A product without one is an error rather
+than a fallback: a platform default would send a plausible link to somewhere the
+customer never visited.
+
+That derivation makes the Control Plane depend on two shapes owned here — the
+`web` application is served at `app.`, and the signup page is at
+`/signup/verify`. Both are asserted in `tests/docs/signup-verify-contract.test.ts`,
+because the symptom of changing either is a customer who cannot finish signing
+up and has no way to report why.
 
 **This is forward scope and belonged in a roadmap**; it was written here because
 the pieces began as "identified and deliberately not started", which is what
