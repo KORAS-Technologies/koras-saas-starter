@@ -1039,7 +1039,16 @@ close this one.
 
 The second box is what is actually reachable, and it is the more useful test
 anyway: generation-time registration is the path every product takes, it is on
-by default, and it has never run in this estate either. It needs a product to
+by default, and it has never run in this estate either.
+
+**And a second blocker arrived on 2026-08-30, unrelated to either.**
+`koras-e2e-shop` was pushed and both its workflows failed in six seconds with no
+job started: Actions billing. A product repository is private by design, private
+repositories consume paid minutes, and this account's payment is failing. The
+`register` job is listed in run `33325368170` and was never started. So the
+first box is blocked twice over now — once by F2b's deliberate default, once by
+something no code in this repository can reach. See R-030, reopened for
+products. It needs a product to
 exist — and as of 2026-08-30 none does (F2c).
 
 **Why not done here:** deploying and provisioning are out of scope for this

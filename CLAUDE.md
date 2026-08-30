@@ -181,11 +181,14 @@ external skills, and bring an existing project back into alignment.
 |-------|-------|------|
 | 13 — End-to-End Acceptance Tests | Live variant run, one gap found | A product estate of 82 resources was provisioned and torn down on 2026-08-27. Seven providers deleted cleanly; **Cloudflare was not in the inventory at all**, so eight DNS records survived a run reporting nothing retained. Now the eighth provider — R-036 reopened for a second live run |
 
-**Open risks:** R-036 (a second live teardown, now that Cloudflare is in the
-inventory) and R-042 (documentation and comments are the one part of the
-repository that can be wrong without anything going red — claims about *where*
-are checked now, claims about *why* are not). R-031 stands accepted with
-mitigation.
+**Open risks:** R-030 (**reopened for products** on 2026-08-30 — a generated
+product's repository is private by design, private repositories consume paid
+Actions minutes, and this account's billing is failing, so no generated product
+has working CI or deployment; nothing in the factory can fix it), R-036 (a
+second live teardown, now that Cloudflare is in the inventory) and R-042
+(documentation and comments are the one part of the repository that can be wrong
+without anything going red — claims about *where* are checked now, claims about
+*why* are not). R-031 stands accepted with mitigation.
 
 `output/sample-product` no longer exists. It was deleted on 2026-08-30 —
 41 resources across eight providers — because the credentials a committed plan

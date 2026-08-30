@@ -232,7 +232,7 @@ branding" there.
 | R-013 | Profile manifest schema changes              | 6        | Accepted                 |
 | R-014 | Control Plane not available at registration  | 4        | Accepted                 |
 | R-015 | Terraform plan committed by the generator    | 25       | Resolved                 |
-| R-030 | Every CI gate had never run                  | 20       | Resolved                 |
+| R-030 | Every CI gate had never run                  | 20       | **Reopened for products** — a generated product's CI cannot run |
 | R-032 | RLS enforced against nobody (owner + superuser) | 20     | Resolved                 |
 | R-033 | Token checks loosest on external input       | 9        | Resolved                 |
 | R-034 | No rate limiting in the generated API        | 12       | Resolved                 |
@@ -895,6 +895,51 @@ longer applies. Observed rather than inferred — CI run `32805340999` on
 
 Security and Generator Integration are green on the same commit, and
 Generator Integration ran both profiles.
+
+### Reopened 2026-08-30 — for generated products, which cannot be made public
+
+The resolution above is intact and still true **for this repository**. It does
+not extend to the products the factory builds, and that difference had never
+been stated because until 2026-08-30 no generated product had ever contained
+code to run CI against.
+
+`koras-e2e-shop` was pushed that day. Both workflows failed within six seconds,
+with no job starting and the same annotation as before:
+
+> The job was not started because recent account payments have failed or your
+> spending limit needs to be increased.
+
+| Run | Jobs | Outcome |
+|-----|------|---------|
+| CI `33325368199` | Lint & Typecheck, Test (Node), Test (Python), Secret scan | none started; Build skipped |
+| Deploy — DEV `33325368170` | Components, Preflight | none started; the remaining seven skipped |
+
+**Why this is a new entry rather than the old one recurring.** R-030 was
+resolved by making the starter public, and the mitigation offered "keeping the
+repository public" as a standing alternative. A product cannot take it. The
+GitHub module defaults `visibility = "private"`, which is correct — a commercial
+product's source is not published to fix a billing problem — so every repository
+the generator creates is private **by design**, and private repositories consume
+paid minutes.
+
+That makes this permanent for products rather than a state to wait out. No
+generated product will have working CI or deployment in this account until
+Actions billing is resolved. Nothing in the factory can fix it: the workflows,
+the code and the credentials are all fine, and the jobs are refused before any
+of them is read.
+
+**It also puts a ceiling on what can be verified from here.** `FOLLOW_UPS.md` F7
+wants the deploy-time `register` job observed in a real pipeline; it is listed
+in run `33325368170` and was never started. Any future criterion phrased as "the
+generated project's CI passes" is unmeasurable on a private product for the same
+reason Phase 11's was on a private starter — and that is the specific failure
+R-030 exists to name.
+
+**Mitigation, in preference order.** Resolve Actions billing — Settings, then
+Billing & plans; the symptom is a failed payment or a spending limit at zero.
+Failing that, a self-hosted runner consumes no minutes and costs setup instead,
+and is the only option that preserves both a private product and working CI.
+Making a product public is not an option.
 
 **The trade this rests on is unchanged.** Free minutes come from the repository
 being public, which is the licensing position on the vendored third-party
