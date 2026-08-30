@@ -9,7 +9,24 @@ import { hasAnyRole } from '@{{projectSlug}}/permissions'
  * Gating happens here rather than per page so that a new page is protected by
  * default: forgetting to add a check is the failure this shape prevents.
  */
-const PUBLIC_PATHS = ['/login', '/api/auth']
+/*
+ * `/signup` covers `/signup/verify` too, and both have to be reachable without
+ * a session -- which is the whole point of self-serve signup, and was not true
+ * until 2026-08-30. This application shipped a complete signup surface behind
+ * a gate that redirected to `/login?next=/signup`: you had to have an account
+ * to make one.
+ *
+ * The verify page is the sharper half. It is where the link in the
+ * confirmation email lands, so its visitor has by definition never signed in.
+ * A signup that could somehow be reached would still have died at the step
+ * that proves the address is real.
+ *
+ * Only this application. `apps/admin` serves no signup route, and naming a
+ * public path an application does not have describes an exemption that cannot
+ * be exercised -- which is how a real one gets added later without anyone
+ * noticing.
+ */
+const PUBLIC_PATHS = ['/login', '/signup', '/api/auth']
 
 /**
  * A per-request nonce, and the policy that makes it worth having.
