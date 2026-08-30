@@ -43,11 +43,11 @@ otherwise stops at F6, and why there is no F0.
 | F5 | `apps/marketing` declares Tailwind and imports no stylesheet | closed 2026-08-30 | Decisions |
 | F5a | `doppler-bootstrap` cannot express a legitimately empty setting | closed 2026-08-29 | Decisions |
 | F6 | the two references deploy-time registration cannot carry | **open** | Decisions |
-| F7 | nothing has exercised the register job in a real pipeline | **open** — payload sent 2026-08-30, registry read outstanding | Verification |
+| F7 | nothing has exercised the register job in a real pipeline | **open** — a product deployed 2026-08-30 and found seven defects | Verification |
 | F8 | the `--with` / `--without` generation paths remain untested | closed — *the entry was wrong* | Verification |
 | F9 | the plan catalogue could not be authored | closed 2026-08-29 | Onboarding |
 | F10 | the tenant store was in memory | closed 2026-08-29 | Onboarding |
-| F11 | there is no way for a customer to start signing up | closed 2026-08-29 | Onboarding |
+| F11 | there is no way for a customer to start signing up | reopened and re-closed 2026-08-30 | Onboarding |
 | F12 | a provisioning run finished and told nobody | closed 2026-08-29 | Onboarding |
 | F13 | nothing bills anyone, and that is not an oversight | **open** | Onboarding |
 | F14 | two names for the Control Plane, and neither side noticed | closed 2026-08-29 | Decisions |
@@ -853,13 +853,47 @@ with the forms.
 defect on its first CI run — an `on conflict` naming an arbiter needs the
 table's select policies, and `tenant_members` had been given insert alone.
 
-### F11 — there is no way for a customer to start signing up — closed 2026-08-29
+### F11 — there is no way for a customer to start signing up — reopened 2026-08-30, and closed again the same day
 
 - [x] An unauthenticated signup endpoint on the Control Plane
 - [x] Rate limiting, and address verification before a job is created
 - [x] A column on a plan saying it may be bought unattended, defaulting to false
 - [x] A signup surface in the product template
 - [x] An anonymous way to learn which plans are on sale
+- [x] **Any of it actually working** — added 2026-08-30, when the first person
+      tried to use it
+
+**Every box above was ticked on 2026-08-29 and not one customer could have
+signed up.** The pieces were all present and the path between them was broken
+in five places, each hidden by the one in front of it. Found on 2026-08-30 by
+opening the page on a deployed product and trying:
+
+| Where | What | Fixed by |
+|---|---|---|
+| product `middleware.ts` | `/signup` redirected to `/login?next=/signup` — you needed an account to make one, and `/signup/verify` is where an *email link* lands | starter `0d29fa1` |
+| Control Plane `signup.py` | all three anonymous endpoints opened transactions without declaring a caller, so `GET /plans` had answered **500 to every request it ever received** | control-plane `d00e0de` |
+| Control Plane `plans` | `self_serve` was read by two queries and written by nothing — no request model, no endpoint, no form. Every plan was created `false` and could not be changed except by editing the database | control-plane `cfb871b` |
+| product `signup/page.tsx` | prerendered at build time with the empty list the 500 produced, so a plan created later never appeared — `X-Nextjs-Prerender: 1` | starter `7cf5d6a` |
+| Control Plane `tasks/` | `send_signup_verification` had the same undeclared-caller fault, so the email was never sent — while the page said "check your email" and the API logged `202` | control-plane `3f1f697` |
+
+**What each entry teaches is the same thing.** Every one of them passed its own
+tests. The Control Plane's integration suite inserts plans with raw SQL, so the
+write path was never exercised; it builds its own engine without `install_rls`,
+so the listener that fails in production is absent from the only place those
+repositories are tested. Nothing was wrong with those tests — they test what
+they say they test. The gap is that no test ran the *sequence*.
+
+**The last two are the ones worth remembering.** The prerendered page and the
+unsent email both **reported success**. A visitor was told to check their email
+by a page that was right to say so, and the API logged `202 Accepted`, correctly,
+because the send is asynchronous. A failure that announces itself gets fixed;
+these needed somebody to notice an email that never arrived.
+
+**Closed again 2026-08-30**, with the form rendering and a live plan in it. Not
+end to end: nobody has yet clicked a link in a delivered email and had a tenant
+provisioned. Until that happens this entry is closed on the same kind of
+evidence it was closed on the first time.
+
 
 `PROVISIONING_DESIGN.md` §1 begins "customer opens product → branded signup",
 and no endpoint serves that. `POST /organizations` and
@@ -1048,8 +1082,49 @@ repositories consume paid minutes, and this account's payment is failing. The
 `register` job is listed in run `33325368170` and was never started. So the
 first box is blocked twice over now — once by F2b's deliberate default, once by
 something no code in this repository can reach. See R-030, reopened for
-products. It needs a product to
-exist — and as of 2026-08-30 none does (F2c).
+products.
+
+---
+
+**What the first real deployment found, later that same day.** Billing was
+resolved that evening and `koras-e2e-shop` deployed. This is the entry that
+argued only a real run would find certain defects, so what it found belongs
+here. **Seven, each hidden behind the one in front of it:**
+
+1. `create_async_engine` was handed a driverless `postgresql://`, which
+   SQLAlchemy maps to psycopg2 — a dependency of neither service — so the API
+   died at import. Both templates lacked a validator the *running* Control Plane
+   had carried since it was deployed (`4d3508f`).
+2. `create-app-role.sh` dropped the pooler's tenant suffix when swapping the
+   role into the URL, refusing every connection with `ENOIDENTIFIER`. Correcting
+   it by hand worked; **re-running the script put the broken value straight
+   back**, which is how it was found twice (`9d93e18`).
+3. A worker image missing a manifest its root `pyproject` names (`4c81e5f`).
+4. `/signup` was gated behind the session check — you needed an account to make
+   one (`0d29fa1`).
+5. Every anonymous Control Plane endpoint opened a transaction with no declared
+   caller, so `GET /plans` had answered 500 to every request it ever received
+   (`d00e0de`).
+6. `plans.self_serve` was readable and unwritable, so no plan could be put on
+   sale by any supported means (`cfb871b`).
+7. The signup page was prerendered with the empty answer from when it was
+   broken (`7cf5d6a`), and the verification email was never sent — the same
+   undeclared-caller fault as (5), one layer down (`3f1f697`).
+
+**Not one was reachable without deploying a real product**, and every one passed
+the tests that existed. That is this entry's argument, demonstrated rather than
+predicted.
+
+**The pattern worth carrying forward is in the last two.** Both *reported
+success*. A page told a visitor to check their email and was right to; an API
+logged `202 Accepted` correctly, because the send is asynchronous. The only
+evidence was a traceback in a worker log nobody reads when the thing in front of
+them says it worked. A defect that announces itself is cheap; these are not.
+
+**Also observed, and worth recording as a pass rather than a finding:** the
+whole pipeline ran — Components, Preflight, Settings present, Migrate, Deploy ×4
+and Verify green — and `Register with the Control Plane` was **skipped**, by
+F2b's condition, visibly. That is what the change was for.
 
 **Why not done here:** deploying and provisioning are out of scope for this
 session by instruction.

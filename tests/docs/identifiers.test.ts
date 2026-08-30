@@ -48,6 +48,15 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   // and a name like this appearing in the code would mean somebody had started
   // storing a staff token.
   STAFF_TOKEN: "a shell variable in a worked example; the platform has no such setting",
+  // Three names from koras-control-plane, cited by FOLLOW_UPS F7 and F11 as
+  // the record of what the first deployment of a generated product found. They
+  // must stay absent here: `install_rls` and `send_signup_verification` belong
+  // to the Control Plane's engine and worker, and `self_serve` is a column on
+  // its `plans` table -- the commercial catalogue is the platform's, and a
+  // product repository holding any of them would mean a boundary had moved.
+  install_rls: 'a Control Plane engine hook; named in F7/F11, absent here by design',
+  send_signup_verification: 'a Control Plane worker task; named in F7/F11, absent here by design',
+  self_serve: 'a column on the Control Plane plans table; no product repository has one',
   // The Control Plane's registry tables. REGISTRATION_LIFECYCLE names them
   // because the safety of a single-environment re-registration rests on which
   // of them prune and which do not -- read out of that repository rather than
