@@ -28,6 +28,20 @@ export interface ParsedArgs {
    * fill in two columns.
    */
   registerOnly: boolean
+  /**
+   * Initialise git and push an already-provisioned project to its repository.
+   *
+   * `--provision` does this itself, as the last step of generating and building
+   * an estate in one go. `--provision-only` deliberately does not: it operates
+   * on a tree the operator owns, and writing files and committing during what
+   * was asked to be an infrastructure operation is the wrong thing.
+   *
+   * That left the two-step flow -- generate, then `--provision-only` -- with a
+   * provisioned estate, a GitHub repository holding one auto-init commit, and no
+   * supported way to put the code in it. Found by noticing, which is how it
+   * would have kept being found.
+   */
+  push: boolean
   refreshModules: boolean
   /** Template-owned paths to overwrite from the generator's rendering. */
   refresh: string[]
@@ -83,6 +97,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     without: [],
     provisionOnly: false,
     registerOnly: false,
+    push: false,
     refreshModules: false,
     refresh: [],
     checkDrift: false,
@@ -109,6 +124,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
         // Implies --provision: there is nothing else this flag could mean.
         result.provisionOnly = true
         result.provision = true
+        break
+      case '--push':
+        // Like --register-only, this operates on an existing project and
+        // changes no infrastructure. It reads Terraform outputs for the
+        // repository name rather than guessing it: pushing a product's source
+        // to the wrong repository is not a mistake a retry undoes.
+        result.push = true
         break
       case '--register-only':
         // Deliberately does NOT imply --provision. It reads Terraform outputs

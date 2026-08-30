@@ -27,7 +27,7 @@ comments, `SYNC_BACKLOG.md`, `TEMPLATE_SYNC.md`, the walkthrough. A dated
 passage that says F2b is not made truer by renaming F2b, which is the same rule
 `tests/docs/file-references.test.ts` applies to moved paths: record the change,
 do not rewrite the record. It is why F14 sits at the end of a section that
-otherwise stops at F6, and why there is no F0 and no F15.
+otherwise stops at F6, and why there is no F0.
 
 | # | Entry | State | Section |
 |---|-------|-------|---------|
@@ -51,6 +51,7 @@ otherwise stops at F6, and why there is no F0 and no F15.
 | F12 | a provisioning run finished and told nobody | closed 2026-08-29 | Onboarding |
 | F13 | nothing bills anyone, and that is not an oversight | **open** | Onboarding |
 | F14 | two names for the Control Plane, and neither side noticed | closed 2026-08-29 | Decisions |
+| F15 | a project generated then provisioned had no way into its own repository | closed 2026-08-30 | Decisions |
 
 **Six are open**: F2b, F2c, F3, F6, F7, F13. Four of those six are not this
 repository's to close — F2b and F3 are Control Plane authorization decisions,
@@ -706,6 +707,55 @@ and the control-plane profile does not read it, so a fact about one profile was
 being stated in a file both share. It is `PROVIDED_BY_THE_PLATFORM` instead,
 which is what it is -- a credential injected at deploy time that cannot live in
 Doppler.
+
+### F15 — a project generated then provisioned had no way into its own repository — closed 2026-08-30
+
+- [x] A `--push` flag
+- [x] The `--provision-only` path says how, instead of only what did not happen
+
+**Found by noticing**, which is the point. `koras-e2e-shop` was provisioned with
+`--provision-only`, and its GitHub repository held one auto-init commit and a
+README while the whole project sat on disk, untracked. Nothing was wrong with
+either half; there was no supported way to connect them.
+
+`--provision` pushes as its last step, via `initAndPushToDevelop`.
+`--provision-only` deliberately does not, and that is right: it operates on a
+tree the operator owns, and writing files and committing during what was asked
+to be an infrastructure operation would be the opposite of what this CLI
+promises. But there was no third option.
+
+**The silence was the worse half.** The seven manual steps existed — and printed
+only when an *attempted* push failed. The path that never attempts one showed
+nothing, so `--provision-only` reported `nothing was committed`: the fact,
+without the remedy. A defect whose symptom is an accurate message is one nobody
+reports.
+
+`--push` reads the repository name from **Terraform outputs**, not from
+`.koras/project.yaml` — which does not record it — and not from a guess at
+`<org>/<slug>`. Pushing a product's source into the wrong repository is not a
+mistake a retry undoes. It changes no infrastructure: `readOutputs` runs `init`
+and `output -json` and has no path to a plan or an apply.
+
+Both refusals were exercised against real projects rather than asserted:
+
+```
+--push on a project that is already a repository
+  -> "Git repository already initialised — nothing pushed."
+--push on a project never provisioned
+  -> "f15-check has no Terraform state, so no repository has been created for it."
+```
+
+The guards it inherits are the ones that matter. `initAndPushToDevelop` asks
+before pushing, refuses a directory that is already a repository, and checks for
+Terraform state artifacts **before** `git add` rather than after — the commit is
+pushed moments later, and a credential that reaches a remote is published
+whether or not a later commit removes it. That is F1's whole lesson.
+
+**`koras-e2e-shop` was pushed by hand before the flag existed**, following the
+same sequence. 384 files, verified in a copy first: no plan file, no state, no
+`.env`, and `terraform.tfvars` carrying non-secret inputs only. The `update-ref`
+graft onto `origin/develop` made it a plain fast-forward, which is what branch
+protection requires — a force push is declined with GH006.
 
 ---
 

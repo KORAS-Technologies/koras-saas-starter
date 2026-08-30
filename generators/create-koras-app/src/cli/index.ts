@@ -51,6 +51,11 @@ OPTIONS:
   --without <components>     Disable optional components (comma-separated)
   --provision                Provision infrastructure via Terraform
   --provision-only           Provision an existing project; skips generation
+  --push                     Initialise git in an already-provisioned project and
+                             push it to the repository Terraform created. What
+                             --provision does automatically, for the two-step
+                             flow where generation and provisioning were
+                             separate. Changes no infrastructure.
   --register-only            Re-send an existing project's references to the
                              Control Plane. Reads Terraform outputs; never
                              plans and never applies, so it cannot change
@@ -195,6 +200,7 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   const existingProject =
     args.provisionOnly ||
     args.registerOnly ||
+    args.push ||
     args.refreshModules ||
     args.checkDrift ||
     args.refresh.length > 0
@@ -212,7 +218,9 @@ export async function run(argv: string[] = process.argv): Promise<void> {
         ? '--provision-only'
         : args.registerOnly
           ? '--register-only'
-          : args.checkDrift
+          : args.push
+            ? '--push'
+            : args.checkDrift
           ? '--check-drift'
           : args.refreshModules
             ? '--refresh-modules'
@@ -247,7 +255,7 @@ export async function run(argv: string[] = process.argv): Promise<void> {
 
   if (
     shouldReexecUnderDoppler({
-      required: args.provision || args.provisionOnly || args.registerOnly,
+      required: args.provision || args.provisionOnly || args.registerOnly || args.push,
       satisfied: preflightInputs().ok,
     })
   ) {
@@ -340,6 +348,11 @@ export async function run(argv: string[] = process.argv): Promise<void> {
 
   if ((args.refreshModules || args.refresh.length > 0) && !args.provisionOnly) return
 
+  if (args.push) {
+    await runPush(ctx, projectRoot, projectSlug)
+    return
+  }
+
   if (args.registerOnly) {
     await runRegisterOnly(ctx, projectRoot, projectSlug, args)
     return
@@ -408,6 +421,83 @@ Provisioning the existing project in ${projectSlug}/ — nothing regenerated.`)
   // ── Provision infrastructure ───────────────────────────────────────────────
 
   await runProvision(ctx, projectRoot, projectSlug, true, args)
+}
+
+/**
+ * Put an already-provisioned project into the repository Terraform made for it.
+ *
+ * `--provision` does this as its last step. `--provision-only` deliberately does
+ * not, and that is right: it operates on a tree the operator owns, and writing
+ * files and committing during what was asked to be an infrastructure operation
+ * would be the opposite of what this CLI promises.
+ *
+ * But there was no third option, so generating and provisioning as two steps
+ * left a full estate, a repository holding one auto-init commit, and no
+ * supported way to connect them. The operator was told only that "nothing was
+ * committed" -- the fact, without the remedy. The seven manual steps existed,
+ * printed solely when the automatic push *failed*, so the path that never
+ * attempted one showed nothing at all.
+ *
+ * The repository name comes from Terraform outputs rather than from
+ * `.koras/project.yaml`, which does not record it, and rather than from a guess
+ * at `<org>/<slug>`. Pushing a product's source into the wrong repository is not
+ * a mistake a retry undoes.
+ *
+ * Changes no infrastructure: `readOutputs` runs `init` and `output -json` and
+ * has no path to a plan or an apply. `initAndPushToDevelop` asks before it
+ * pushes, refuses to touch a directory that is already a repository, and checks
+ * for Terraform state artifacts before `git add` rather than after -- the commit
+ * is pushed moments later, and a credential that reaches a remote is published
+ * whether or not a later commit removes it.
+ */
+async function runPush(
+  ctx: import('../generation/context.js').GenerationContext,
+  projectRoot: string,
+  projectSlug: string,
+): Promise<void> {
+  console.log(`
+Pushing ${projectSlug} to its repository — reading Terraform outputs, changing no infrastructure.`)
+
+  const outcome = await readOutputs(ctx, { dryRun: false, projectRoot })
+
+  switch (outcome.status) {
+    case 'no-terraform':
+      fail(
+        `No Terraform configuration in ${projectSlug}/.\n` +
+          '  --push operates on a project whose repository Terraform has created.',
+      )
+      return
+    case 'init-failed':
+      fail('terraform init failed, so the repository name could not be read. Nothing was pushed.')
+      return
+    case 'output-failed':
+    case 'empty-state':
+      fail(
+        `${projectSlug} has no Terraform state, so no repository has been created for it.\n` +
+          '  Provision it first: --provision-only. Nothing was pushed.',
+      )
+      return
+    case 'read':
+      break
+  }
+
+  const repositoryFullName = outcome.outputs.githubRepository
+  if (!repositoryFullName) {
+    fail(
+      'The Terraform outputs name no GitHub repository, so there is nowhere to push.\n' +
+        '  Nothing was pushed.',
+    )
+    return
+  }
+
+  try {
+    await initAndPushToDevelop({ projectRoot, repositoryFullName })
+  } catch (err) {
+    fail(
+      `${err instanceof Error ? err.message : String(err)}\n` +
+        '  The project on disk and its infrastructure are both unaffected.',
+    )
+  }
 }
 
 /**
@@ -520,6 +610,20 @@ async function runProvision(
         console.log(`
   Repository: https://github.com/${repoFullName}`)
         console.log('  --provision-only touches infrastructure only; nothing was committed.')
+        // The remedy, not just the fact. This path never attempts a push, so
+        // the manual steps -- which print only when an *attempted* push fails --
+        // never appeared, and an operator was left with a provisioned estate,
+        // a repository holding one auto-init commit, and nothing saying how to
+        // connect them.
+        if (!existsSync(join(projectRoot, '.git'))) {
+          console.log('')
+          console.log('  The repository holds only its initial commit; this project is not in it yet.')
+          console.log('  To put it there:')
+          console.log(
+            `    pnpm create-koras-app ${projectSlug} --profile ${ctx.profile} --push` +
+              ` --output-dir <dir>`,
+          )
+        }
       }
       if (repoFullName && generated) {
         try {

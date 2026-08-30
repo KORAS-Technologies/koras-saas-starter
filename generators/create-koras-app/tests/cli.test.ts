@@ -79,6 +79,31 @@ describe('parseArgs', () => {
   })
 })
 
+describe('--push', () => {
+  /**
+   * The gap it closes: `--provision` pushes as its last step, `--provision-only`
+   * deliberately does not, and there was no third option -- so generating and
+   * provisioning as two steps left a full estate, a repository holding one
+   * auto-init commit, and no supported way to connect them.
+   */
+  it('operates on an existing project without provisioning anything', () => {
+    const args = parseArgs(['node', 'cli', 'app', '--profile', 'product', '--push'])
+    expect(args.push).toBe(true)
+    expect(args.provision).toBe(false)
+    expect(args.provisionOnly).toBe(false)
+  })
+
+  it('does not imply registration, which is a different operation', () => {
+    expect(parseArgs(['node', 'cli', 'app', '--profile', 'product', '--push']).registerOnly).toBe(
+      false,
+    )
+  })
+
+  it('is off unless asked for', () => {
+    expect(parseArgs(['node', 'cli', 'app', '--profile', 'product']).push).toBe(false)
+  })
+})
+
 describe('--register-only', () => {
   /**
    * The whole point of the flag. `--provision-only` implies `--provision`
