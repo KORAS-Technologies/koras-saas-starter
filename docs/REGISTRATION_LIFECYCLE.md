@@ -201,9 +201,10 @@ bash local/scripts/register-with-control-plane.sh prod
   deliberately. Giving a product the *key* would be strictly worse than the
   token — a key does not expire — so the credential form was not "fixed" here
   until the authority question is answered.
-- **The generated `packages/control-plane-client`.** It is not what performs
-  either pass, and its types do not match the contract. See `SYNC_BACKLOG.md`,
-  A4.
+- **The generated `packages/control-plane-client`** — deleted 2026-08-30, and
+  listed here so nobody goes looking for it. It performed neither pass and its
+  types could not produce a request the Control Plane accepts. `SYNC_BACKLOG.md`
+  A4 and `FOLLOW_UPS.md` F4.
 - **`--with` / `--without` generation paths**, which remain untested (R-037).
   The register job is emitted from the shared template and is therefore present
   regardless of component selection, but nothing has generated a product with

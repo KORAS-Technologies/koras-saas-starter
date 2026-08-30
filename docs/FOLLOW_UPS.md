@@ -38,7 +38,7 @@ otherwise stops at F6, and why there is no F0 and no F15.
 | F2c | every product registered before 2026-08-28 has a null callback address | **open** — no product left to re-register | Blocked here |
 | F3 | which credential should authorise a product's own re-registration | **open** | Blocked here |
 | F3a | the tenant endpoints answer 422 and 409, and the Control Plane was not told | closed 2026-08-30 | Blocked here |
-| F4 | what `packages/control-plane-client` is for | **open** | Decisions |
+| F4 | what `packages/control-plane-client` is for | closed 2026-08-30 | Decisions |
 | F4a | the plan catalogue was empty and had no user interface | closed 2026-08-29 | Decisions |
 | F5 | `apps/marketing` declares Tailwind and imports no stylesheet | closed 2026-08-30 | Decisions |
 | F5a | `doppler-bootstrap` cannot express a legitimately empty setting | closed 2026-08-29 | Decisions |
@@ -52,11 +52,12 @@ otherwise stops at F6, and why there is no F0 and no F15.
 | F13 | nothing bills anyone, and that is not an oversight | **open** | Onboarding |
 | F14 | two names for the Control Plane, and neither side noticed | closed 2026-08-29 | Decisions |
 
-**Seven are open**: F2b, F2c, F3, F4, F6, F7, F13. Four of those seven are not
-this repository's to close — F2b and F3 are Control Plane authorization
-decisions, F2c and F7 need an operator against a live estate. The three this
-repository can act on alone are **F4**, **F6** and **F13**, and all three are
-decisions rather than implementations.
+**Six are open**: F2b, F2c, F3, F6, F7, F13. Four of those six are not this
+repository's to close — F2b and F3 are Control Plane authorization decisions,
+F2c and F7 need a live estate and a staff read. The two this repository can act
+on alone are **F6** and **F13**, and both are decisions rather than
+implementations: F6's own entry says both references already survive, and F13
+says outright that nothing forces it now.
 
 ---
 
@@ -500,21 +501,55 @@ F3 — which identity may register at all — is untouched.
 
 ## Decisions this repository can make, and has not
 
-### F4 — what `packages/control-plane-client` is for
+### F4 — what `packages/control-plane-client` is for — closed 2026-08-30
 
-- [ ] Decide whether the package should exist
-- [ ] If it should: rewrite its types against the contract
-- [ ] If it should not: remove it and the `control_plane_client` capability
+- [x] Decide whether the package should exist
+- [x] It should not: removed, with the `control_plane_client` capability
 
-Tracked as `SYNC_BACKLOG.md` A4. Its `ProductRegistration` type cannot produce a
-request the Control Plane accepts — every field is either missing from the schema
-or rejected by `extra="forbid"` — and nothing imports it, which is why no one has
-noticed.
+Tracked as `SYNC_BACKLOG.md` A4. Its `ProductRegistration` type could not produce
+a request the Control Plane accepts — every field either missing from the schema
+or rejected by `extra="forbid"` — and nothing imported it, which is why no one
+had noticed.
 
-**Why not done here:** rewriting the types is an hour. Doing that without
-deciding the first question leaves a *third* correct implementation of the same
-contract that nothing calls, next to the two that everything calls. The right
-order is the other way round.
+**Deleted.** Three things settled it, and the third is the one that made the
+decision safe rather than merely tidy.
+
+*Nothing imported it*, checked on `koras-e2e-shop` — a real provisioned product,
+not just the templates — where not even a `package.json` dependency edge pointed
+at it.
+
+*Both working implementations live outside the product by nature.* Registration
+is performed by `src/registration/` in the generator and by
+`register-with-control-plane.sh` from CI. One is in the factory and the other is
+bash; neither could import a workspace package even in principle. Registration
+is something done *to* a product by the machinery that builds it, not something
+the product's application code performs — which is the actual reason this package
+never had a caller, rather than an oversight anyone could have corrected.
+
+*No second caller was coming.* `PRODUCT_REGISTRATION_CONTRACT.md` has exactly two
+directions: registration outbound, and the tenant endpoints inbound. There is no
+entitlement pull or any other product-initiated call, so a runtime outbound
+client had nothing to be for.
+
+**The delicate part was the capability, not the package.** `control_plane_client`
+gated the package *and* the `KORAS_CONTROL_PLANE_URL` / `KORAS_CONTROL_PLANE_TOKEN`
+declarations in `secrets.manifest` and `.env.local.example` — one flag doing two
+unrelated jobs. Removing it without ungating those would have left every product
+unable to declare the two settings its own deploy-time registration reads, which
+is a worse defect than the one being fixed. They are unconditional now: a product
+does not optionally register.
+
+**Verified by generating**, not by the tests passing. Package absent, both
+settings present, and the generated product builds, typechecks and lints — 21,
+30 and 30 tasks green. The absence is asserted in three suites rather than left
+to be noticed, because a package that quietly reappears is how the outbound and
+inbound halves get conflated again — which has already happened once.
+
+**One behaviour change:** `--without control_plane_client` is no longer a valid
+component name. Nothing in CI passes it.
+
+`PROFILE_ARCHITECTURE.md` keeps the outbound/inbound explanation and says why the
+package went, rather than losing the reasoning along with the code.
 
 ### F4a — the plan catalogue was empty and had no user interface — closed 2026-08-29
 

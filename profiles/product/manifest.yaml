@@ -41,7 +41,6 @@ capabilities:
   customer_branding: true
   custom_domains: true
   white_label: true
-  control_plane_client: true
   billing: true
   storage: true
   email: true
@@ -84,7 +83,6 @@ template_map:
     ai_gateway: services/ai-gateway
   capabilities:
     billing: packages/billing
-    control_plane_client: packages/control-plane-client
     custom_domains: packages/domains
     feature_flags: packages/feature-flags
 

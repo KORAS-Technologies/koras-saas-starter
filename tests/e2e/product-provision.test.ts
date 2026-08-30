@@ -136,8 +136,10 @@ describe('a product is generated and validated', () => {
     )
   })
 
-  it('ships the runtime Control Plane client the product profile enables', () => {
-    expect(fileList.some((f) => f.startsWith('packages/control-plane-client/'))).toBe(true)
+  it('ships no runtime Control Plane client, because nothing ever called one', () => {
+    // Removed 2026-08-30 (F4): generated into every product and imported by
+    // none, with a payload type the Control Plane refuses outright.
+    expect(fileList.some((f) => f.startsWith('packages/control-plane-client/'))).toBe(false)
   })
 
   it('leaves no template placeholder unrendered', () => {

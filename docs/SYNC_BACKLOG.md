@@ -147,9 +147,10 @@ configuration."* `local/config/.env.local.example.hbs` never sets it, so
 
 ---
 
-### A4 — the generated `control-plane-client` cannot produce a request the Control Plane accepts
+### A4 — the generated `control-plane-client` cannot produce a request the Control Plane accepts — closed 2026-08-30
 
-- [ ] `ProductRegistration` in the template matches `ProductRegistrationRequest`
+- [x] `ProductRegistration` in the template matches `ProductRegistrationRequest`
+      — **closed by deleting the package**, not by fixing the type
 - [x] The template header says so, and points at the contract
 - [x] `PROFILE_ARCHITECTURE.md` distinguishes the outbound half from the inbound one
 
@@ -185,9 +186,32 @@ half — the `/internal/platform/v1/tenants` endpoints the Control Plane calls b
 into, contract §6 — is served by `services/api` and is a different thing that has
 already been conflated with this one once.
 
-**Not fixed here.** Rewriting the types is easy; deciding whether the package
-should exist at all is not, and doing the first without the second leaves a
-correct implementation that nothing calls, next to two that everything calls.
+**Closed by deletion, 2026-08-30.** Rewriting the types was always easy;
+deciding whether the package should exist was the question, and doing the first
+without the second would have left a correct implementation that nothing calls
+next to two that everything calls.
+
+It should not exist. Three things settled it. Nothing imported it — checked in
+`koras-e2e-shop`, a real provisioned product, where not even a `package.json`
+dependency edge pointed at it. Both working implementations live outside the
+product by nature: one is in the factory, the other is bash, and neither could
+import a workspace package even if it wanted to. And
+`PRODUCT_REGISTRATION_CONTRACT.md` has exactly one outbound direction, so there
+was no second caller coming.
+
+The `control_plane_client` capability went with it, which turned out to be the
+delicate part: it gated the package *and* the `KORAS_CONTROL_PLANE_URL` /
+`KORAS_CONTROL_PLANE_TOKEN` declarations in `secrets.manifest` and
+`.env.local.example`. One flag doing two unrelated jobs. Removing it without
+ungating those would have left every product unable to declare the two settings
+its own deploy-time registration reads. They are unconditional now, which is
+honest: a product does not optionally register.
+
+Verified by generating: package absent, both settings present, and the product
+builds, typechecks and lints — 21, 30 and 30 tasks. The absence is asserted in
+`generation.test.ts`, `profile-loader.test.ts` and the e2e suite rather than
+left to be noticed, because a package that quietly reappears is how the outbound
+and inbound halves get conflated again.
 
 ### A5 — registration happened once, at generation, and never again
 

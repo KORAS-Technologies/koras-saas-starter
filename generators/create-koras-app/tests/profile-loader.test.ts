@@ -36,7 +36,11 @@ describe('loadProfile("product")', () => {
   it('makes ai_gateway optional', () => expect(manifest.services.ai_gateway.required).toBe(false))
 
   it('enables tenancy', () => expect(manifest.capabilities.tenancy).toBe(true))
-  it('enables control_plane_client', () => expect(manifest.capabilities.control_plane_client).toBe(true))
+  // control_plane_client was removed on 2026-08-30 (F4): it generated a package
+  // nothing imported and could not build an accepted request. Asserted absent so
+  // a re-added capability is a deliberate act rather than a merge artefact.
+  it('declares no control_plane_client capability', () =>
+    expect(manifest.capabilities.control_plane_client).toBeUndefined())
 
   it('registers as product', () => expect(manifest.registration.registers_as_product).toBe(true))
   it('has registration endpoint', () => expect(manifest.registration.endpoint).toBeDefined())

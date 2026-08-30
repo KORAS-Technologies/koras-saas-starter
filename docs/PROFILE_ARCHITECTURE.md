@@ -137,7 +137,6 @@ capabilities:
   customer_branding: true
   custom_domains: true
   white_label: true
-  control_plane_client: true
 
 registration:
   registers_as_product: true
@@ -223,7 +222,6 @@ template_map:
     ai_gateway: services/ai-gateway
   capabilities:
     billing: packages/billing
-    control_plane_client: packages/control-plane-client
 ```
 
 Rules:
@@ -509,8 +507,8 @@ both directions: the payload a product sends when it registers, and the Product
 Platform API a product must serve so the Control Plane can call back into it.
 This repository implements the client half of it, in
 `generators/create-koras-app/src/registration/` and in
-`profiles/product/template/packages/control-plane-client/`. Where this document
-and that one disagree, that one is right.
+`profiles/_shared/template/local/scripts/register-with-control-plane.sh`. Where
+this document and that one disagree, that one is right.
 
 The link is here because its absence had a cost: a second document describing
 the same contract was written in the Control Plane repository, contradicting the
@@ -596,14 +594,36 @@ such as API keys, connection strings, or tokens. Enforced twice: the generator
 builds it from Terraform outputs that were not marked sensitive, and the Control
 Plane rejects secret-shaped field names outright rather than dropping them.
 
-### The two halves are different packages
+### The two halves are different things, and only one is in the product
 
-`packages/control-plane-client` in a generated product is the **outbound** half
-— the client for calling the Control Plane. The **inbound** half, the
-`/internal/platform/v1/tenants` endpoints the Control Plane calls back into
-(contract §6), is served by `services/api` and is a separate thing that is easy
-to conflate with it. The `control_plane_client` capability generates the
-outbound half only.
+The distinction is kept here because losing it is how the deleted package gets
+rebuilt.
+
+The **outbound** half is the client that calls the Control Plane, and it is not
+in the generated product at all. It is `src/registration/` in the generator,
+which runs after `terraform apply`, and
+`local/scripts/register-with-control-plane.sh`, which runs from CI. Both live
+outside the product's own code, because registration is something done *to* a
+product by the machinery that builds and deploys it, not something the product's
+application code performs.
+
+The **inbound** half is the `/internal/platform/v1/tenants` endpoints the
+Control Plane calls back into (contract §6), served by `services/api`. That one
+is genuinely part of the product, and it is the only half a product implements.
+
+A `packages/control-plane-client` used to be generated into every product as a
+third outbound implementation. It was removed on 2026-08-30 (`FOLLOW_UPS.md`
+F4): nothing imported it -- confirmed on a real generated estate -- and its
+payload type could not produce a request the Control Plane accepts, so the first
+caller to trust it would have received a 422 that reads like an authentication
+failure. The contract has exactly one outbound direction, so no second caller
+was coming.
+
+The `control_plane_client` capability went with it. It had been doing two
+unrelated jobs under one name: generating that package, and declaring
+`KORAS_CONTROL_PLANE_URL` and `KORAS_CONTROL_PLANE_TOKEN` in the product's
+secrets manifest. The second job survives, ungated -- a product does not
+optionally register.
 
 ### How the inbound half stores a tenant
 

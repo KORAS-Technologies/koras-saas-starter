@@ -99,15 +99,37 @@ describe('generate product', () => {
     expect(gen.has('apps/portal')).toBe(false)
   })
 
-  it('includes the Control Plane client package', () => {
-    expect(gen.has('packages/control-plane-client')).toBe(true)
+  /**
+   * Removed 2026-08-30, F4. `packages/control-plane-client` was generated into
+   * every product, compiled, shipped, and imported by nothing -- confirmed on a
+   * real generated estate, not just the templates. Its payload type could not
+   * produce a request the Control Plane accepts: every field was either missing
+   * from `ProductRegistrationRequest` or rejected by `extra="forbid"`, so the
+   * first caller to trust it would have got a 422 reading like an auth failure.
+   *
+   * Registration is performed by the generator's own `src/registration/` and by
+   * `register-with-control-plane.sh`. Neither could have imported this package:
+   * one lives in the factory, the other is bash. And the contract has exactly
+   * one outbound direction, so there was no second caller coming.
+   *
+   * Asserted as absent rather than deleted silently, because a package that
+   * reappears is how the outbound and inbound halves get conflated again.
+   */
+  it('generates no Control Plane client package', () => {
+    expect(gen.has('packages/control-plane-client')).toBe(false)
   })
 
-  it('generates the product registration contract', () => {
-    const contract = gen.read('packages/control-plane-client/src/index.ts')
-    expect(contract).toContain("REGISTRATION_ENDPOINT = '/api/platform/v1/products'")
-    expect(contract).toContain('sampleapp-dev')
-    expect(contract).toContain('sampleapp-prod')
+  /**
+   * What the package's removal must not take with it. The capability gated the
+   * package *and* these two settings -- one flag doing two unrelated jobs -- so
+   * dropping it without ungating them would have left every product unable to
+   * declare what its own deploy-time registration reads.
+   */
+  it('still declares the two Control Plane settings registration reads', () => {
+    const manifest = gen.read('local/config/secrets.manifest')
+    expect(manifest).toContain('KORAS_CONTROL_PLANE_URL optional')
+    expect(manifest).toContain('KORAS_CONTROL_PLANE_TOKEN optional')
+    expect(gen.read('local/config/.env.local.example')).toContain('KORAS_CONTROL_PLANE_URL=')
   })
 
   it('renders the slug into package.json', () => {
