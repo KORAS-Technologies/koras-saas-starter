@@ -41,6 +41,17 @@ export interface PublicPlan {
  * Failures answer empty too. A visitor cannot act on "the platform is
  * unreachable" any differently from "nothing is on sale", and the page says the
  * same thing for both.
+ *
+ * They are not the same to whoever runs this, though, and for a while nothing
+ * said so. On 2026-08-30 the Control Plane answered 500 to every request this
+ * ever made -- its anonymous endpoints opened database transactions without
+ * declaring a caller -- and the signup page reported it as "signing up online
+ * is not available yet". Correct for the visitor, and indistinguishable from a
+ * catalogue nobody has filled in, which is the state a new product is
+ * legitimately in. So it looked configured while it was broken.
+ *
+ * The log line below is the whole difference. The visitor still sees one
+ * message for both causes; the operator no longer does.
  */
 export async function availablePlans(): Promise<PublicPlan[]> {
   const base = controlPlane()
@@ -51,9 +62,20 @@ export async function availablePlans(): Promise<PublicPlan[]> {
       `${base}/api/signup/v1/plans?product_code={{projectSlug}}`,
       { cache: 'no-store' },
     )
-    if (!response.ok) return []
+    if (!response.ok) {
+      // Server-side only: this runs when the page renders, so it reaches the
+      // service log and never the browser. The status is the diagnosis -- 500
+      // is the platform, 422 is this request, 404 is the product code.
+      console.error(
+        `[signup] the plan catalogue answered ${response.status}; ` +
+          'the page will say signup is unavailable, which is indistinguishable ' +
+          'from an empty catalogue to a visitor but not to you.',
+      )
+      return []
+    }
     return (await response.json()) as PublicPlan[]
-  } catch {
+  } catch (error) {
+    console.error('[signup] the plan catalogue could not be reached:', error)
     return []
   }
 }
