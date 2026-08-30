@@ -7,9 +7,21 @@ lands in four places and does not always land in all of them:
 
 ```
 koras-saas-starter                    the factory, and its own CI
-  profiles/product/template           →  output/sample-product
+  profiles/product/template           →  (no product repository today)
   profiles/control-plane/template     →  koras-control-plane
 ```
+
+`output/sample-product` filled the first row until 2026-08-30, when the estate
+was deleted to close C4 and FOLLOW_UPS F1. Entries below that name it are dated
+records of what was true then; the divergence they describe was real and is now
+moot rather than fixed.
+
+**The product row being empty is a gap, not a tidy state.** Every entry in this
+document exists because a fix landed in one place and not another, and the
+control-plane row is the only one left that can prove it. Until a product
+repository exists again, product-side drift is caught by
+`generator-integration.yml` generating one and building it — which is D1, and is
+why D1 mattered more than this document estimated.
 
 A fix applied downstream — in `koras-control-plane`, by hand, at the moment it
 was needed — is invisible to the factory. A fix applied to one profile template
@@ -553,8 +565,20 @@ four workflows are the only files left on v4/v4/v3.
 - [x] `initAndPushToDevelop` refuses to commit one, checked before `git add`
 - [x] Generated projects carry `tests/security/test_no_state_artifacts.py`
 - [x] Both templates' `ci.yml` passes `--max-archive-depth 3`, and says what it still cannot catch
-- [ ] The eight exposed credentials are rotated
-- [ ] `output/sample-product`'s published history is dealt with
+- [x] The eight exposed credentials — the estate they reach was deleted 2026-08-30
+- [x] `output/sample-product`'s published history — see below
+
+**Closed 2026-08-30 by deleting the estate.** The blob stays in history and
+always will — untracking a file does not unpublish it, and rewriting a pushed
+branch does not un-distribute what was already fetched. What changed is that the
+credentials in it now authenticate to nothing: 41 resources across eight
+providers removed, each confirmed absent by asking the provider rather than by
+reading a delete response.
+
+Rotation was the alternative and was worse here. A rotated secret protects a
+resource that still exists, and there is no way to know who holds the old value;
+a deleted resource is unreachable with any credential. FOLLOW_UPS F1 records
+what was removed and two things found while removing it.
 
 **Applies to:** the starter, both templates, and `output/sample-product`
 
@@ -746,12 +770,21 @@ refreshable with one flag, byte-identical by contract — the headline was
 actively misleading. Consider moving `infrastructure/terraform/modules/` from
 the advisory set into `OWNED_PATHS` (`src/generation/drift.ts`).
 
-### D4 — `output/sample-product` is behind the templates
+### D4 — `output/sample-product` is behind the templates — moot 2026-08-30
 
 - [x] `Makefile` — `BUILD_CONCURRENCY`, and the `doppler-bootstrap-prod` target
-- [ ] Everything the templates gained on 2026-08-25
+- [x] Everything the templates gained on 2026-08-25 — the project no longer exists
 
-**Applies to:** `output/sample-product`
+**Closed by deletion rather than by catching up.** The estate was destroyed to
+close C4 and FOLLOW_UPS F1, so there is nothing left to bring forward. A
+replacement demo is generated from the current templates and starts level.
+
+Worth keeping the reason this entry existed: a generated project drifts from the
+starter the moment either changes, and the only thing that closed the gap here
+was the project ceasing to exist. That is not a fix for a project somebody uses
+— `--check-drift` and `--refresh` are, and D3 covers them.
+
+**Applies to:** `output/sample-product`, which is gone
 
 Current as of `27f2949` and no longer. The templates changed substantially on
 2026-08-25 and none of it has been propagated — deliberately, since that

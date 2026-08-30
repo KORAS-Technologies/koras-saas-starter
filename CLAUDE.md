@@ -186,6 +186,13 @@ inventory) and R-042 (documentation and comments are the one part of the
 repository that can be wrong without anything going red — claims about *where*
 are checked now, claims about *why* are not). R-031 stands accepted with
 mitigation.
+
+`output/sample-product` no longer exists. It was deleted on 2026-08-30 —
+41 resources across eight providers — because the credentials a committed plan
+file published in it could not be un-published, and destroying what they reach
+is the only remedy that works after disclosure. FOLLOW_UPS F1 records what was
+removed. There is no product repository today, which means product-side drift is
+caught only by Generator Integration building one from the templates.
 R-031 stands accepted with mitigation.
 
 **Next step:** the register job has never run in a real pipeline (`FOLLOW_UPS.md`

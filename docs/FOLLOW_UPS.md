@@ -18,28 +18,58 @@ promotion and added deploy-time registration.
 
 ## Blocked here — another repository or a person has to act
 
-### F1 — the eight credentials from control-plane R-65 are still live
+### F1 — the eight credentials from control-plane R-65 — closed 2026-08-30
 
-- [ ] Rotate four Supabase database passwords (dev, test, stg, prod)
-- [ ] Rotate four ZITADEL OIDC client secrets
-- [ ] Decide what to do about `output/sample-product`'s published history
+- [x] Four Supabase database passwords
+- [x] Four ZITADEL OIDC client secrets
+- [x] `output/sample-product`'s published history
 
-**Severity: highest thing on this page.** Everything else here is tidiness by
-comparison.
+**Closed by destroying the estate rather than by rotating anything.**
 
 The generator committed a Terraform plan file holding a full state snapshot, and
 pushed it. The factory-side defect is closed at four layers and the record is
-now `SYNC_BACKLOG.md` C4 — but deleting a file does not unpublish it, and
-nothing in this repository can rotate a credential.
+`SYNC_BACKLOG.md` C4 — but deleting a file does not unpublish it. Commit
+`af81b9b` is reachable from `develop`, the repository has a GitHub remote, and
+the blob is still in history. It always will be.
 
-`output/sample-product` was checked rather than assumed: the file is untracked
-today and `.gitignore` names it, but commit `af81b9b` is reachable from
-`develop` and the repository has a GitHub remote. The blob is still there.
-Untracking a file does not remove it from history.
+So the credentials were not rotated. The resources they authenticate to were
+deleted, which is R-041's own conclusion about what works after disclosure: a
+rotated secret protects a resource that still exists, and every clone taken
+before the rotation still names it. A deleted resource cannot be reached with
+any credential, published or not.
 
-**Why not done here:** rotation touches Supabase and ZITADEL, and rewriting
-published history is a decision with consequences for every clone. Neither is a
-change to this repository.
+`sample-product` is gone as of 2026-08-30 — 41 resources across eight
+providers, each confirmed absent by asking the provider rather than by reading
+the delete responses:
+
+| Provider | Removed |
+|----------|---------|
+| Supabase | 4 projects |
+| Upstash | 4 databases |
+| Fly.io | 8 apps |
+| Vercel | 8 projects, **and two more** |
+| Cloudflare | 8 DNS records |
+| GitHub | the repository |
+| Doppler | the project |
+| HCP Terraform | the workspace |
+
+**Two of the Vercel projects were not in Terraform state.**
+`sample-product-web` and `sample-product-admin`, with no environment suffix,
+left from the one-project-per-application model that ENVIRONMENT_STRATEGY
+described until 2026-08-28 and that nothing has built since. No teardown could
+have found them: the inventory is built from state, and state never knew. They
+turned up only because the providers were asked afterwards.
+
+That is a class worth naming — a resource from a superseded design is invisible
+to every check that starts from the current one, and the only thing that finds
+it is looking at the provider.
+
+**One thing nearly went wrong.** The first ZITADEL delete answered `301`, not
+`200`. `ZITADEL_<ENV>_DOMAIN` in the bootstrap project holds a bare hostname
+with no scheme, so the request went out as `http://` and was redirected. Read as
+success, four ZITADEL projects would have survived. `koras teardown` is not
+exposed to this: it takes the instance URL from the `zitadel_domains` output,
+which carries the scheme deliberately, for exactly this reason.
 
 ### F2 — delete the promotion queue entries now that they are applied
 
