@@ -31,12 +31,29 @@ calls because they are what a scripted or repeated run wants, and because the
 request bodies below are the contract the forms post: if a form and a curl
 disagree, one of them is wrong and this is where you can see both.
 
-**2. Neither Control Plane setting exists in the bootstrap config**, so
-registration has never actually run in this estate — checked, not assumed. And
-`KORAS_CONTROL_PLANE_TOKEN` is not issued by the Control Plane, whatever
-`PROVISIONING_RUNBOOK.md` used to say: it is a ZITADEL token for the `registrar`
-service account, it lasts 12 hours, and §A.2 is the only description of it that
-exists.
+**2. The Control Plane settings exist now — all four, as of 2026-08-30.**
+`KORAS_CONTROL_PLANE_URL`, `KORAS_CONTROL_PLANE_KEY_JSON`,
+`KORAS_CONTROL_PLANE_PROJECT_ID` and `KORAS_CONTROL_PLANE_TOKEN` are in
+`koras-platform-bootstrap` / `prod`. Until that day none of them were, which is
+why generation-time registration had never run in this estate: every product was
+skipped as not-configured, correctly and silently.
+
+What authorises the call is not issued by the Control Plane, whatever
+`PROVISIONING_RUNBOOK.md` used to say: it is a ZITADEL credential for the
+`registrar` service account, and §A.2 is the only description of it that exists.
+The thing to store is the **key** — the generator mints from it per call, so
+nothing expires in twelve hours any more.
+
+**Both paths are observed as of 2026-08-30.** `pnpm koras:token` returned a JWT
+valid for twelve hours and a `422` from the Control Plane on an empty body — the
+identity passing. The generator's own resolution and minting were then run under
+the same config and returned the same result, choosing the **key** over the
+`KORAS_CONTROL_PLANE_TOKEN` that had just been stored, and deriving the ZITADEL
+instance from the Control Plane URL rather than from a setting.
+
+What remains unobserved is a *registration with a payload in it*: every run so
+far has probed with an empty body. There is no product estate to send one from —
+see F2c.
 
 **3. `doppler-bootstrap` never asks for the two Control Plane settings.** They
 are deliberately absent from the environment contract so that
@@ -52,11 +69,17 @@ Measured against the live dev estate on 2026-08-28, not described from the
 shape of the code. Where a value is given below it was read from Doppler or
 from ZITADEL; where a result is given it was observed.
 
-**Neither name exists in `koras-platform-bootstrap` / `prod` today.** Listed by
-name on 2026-08-28: Cloudflare, Doppler, Fly, GitHub, Supabase, Terraform,
-Vercel and four ZITADEL instances' worth of settings, and neither of these
-among them. So generation-time registration has never run in this estate —
-every product so far was skipped as not-configured, correctly and silently.
+**Neither name existed in `koras-platform-bootstrap` / `prod` on 2026-08-28.**
+Listed by name that day: Cloudflare, Doppler, Fly, GitHub, Supabase, Terraform,
+Vercel and four ZITADEL instances' worth of settings, and neither of these among
+them. So generation-time registration had never run in this estate — every
+product so far was skipped as not-configured, correctly and silently.
+
+**All four exist as of 2026-08-30**, alongside `KORAS_CONTROL_PLANE_KEY_JSON`
+and `KORAS_CONTROL_PLANE_PROJECT_ID`, so the skip no longer applies. The
+paragraph above is kept because the two `2026-08-28` measurements below were
+taken while it was true, and because it is the reason no product in the registry
+carries a `platform_api_base_url` (F2c).
 
 ## A.1 `KORAS_CONTROL_PLANE_URL`
 
@@ -214,15 +237,17 @@ token from a merely well-formed one. The script fails with the cause named
 instead: `401` points at the audience or the instance, `403` at the identity,
 and an opaque token is caught before it is ever sent.
 
-### It expires in twelve hours
+### It expires in twelve hours — which is why the key is what you store
 
-**Measured:** the exchange returns a lifetime of 43,199 seconds.
-`KORAS_CONTROL_PLANE_TOKEN` is read from Doppler as a finished string, so a
-value stored today stops working tomorrow. It fails as a *misconfiguration* —
-provisioning succeeds, registration fails, loudly — which is the right failure
-and a daily one.
+**Measured:** the exchange returns a lifetime of 43,199 seconds. A token stored
+in Doppler as a finished string therefore stops working the next day, failing as
+a *misconfiguration* — provisioning succeeds, registration fails, loudly — which
+is the right failure arriving daily.
 
-So mint it when you are about to use it rather than in advance.
+Store `KORAS_CONTROL_PLANE_KEY_JSON` and the generator mints inside that window
+every time, so nothing goes stale. `KORAS_CONTROL_PLANE_TOKEN` still works and
+still expires; it is the fallback for an estate that has one and no key. See
+below.
 
 ### The whole configuration, and where it belongs
 
@@ -269,16 +294,43 @@ command line is a token in shell history, in the process table, and in whatever
 CI log echoes the command. `--control-plane-url` overrides the URL for one run;
 nothing overrides the token.
 
-### Why this arrangement is temporary
+### The generator mints its own now — F2a, closed 2026-08-30
 
-Storing a twelve-hour credential as standing configuration is wrong, and the fix
-is a code change rather than a different secret name: the generator should hold
-the *key* and mint a token per call, which is what the ZITADEL Terraform
-provider already does with the `ZITADEL_DEV_SERVICE_ACCOUNT_KEY_JSON` family.
-Registration is the one caller that never adopted that pattern.
+Storing a twelve-hour credential as standing configuration was wrong, and the
+fix was a code change rather than a different secret name. **The generator holds
+the key and mints a token per call**, which is what the ZITADEL Terraform
+provider already does with the `ZITADEL_DEV_SERVICE_ACCOUNT_KEY_JSON` family;
+registration was the one caller that had never adopted it.
 
-Tracked as `F2a` in `docs/FOLLOW_UPS.md`. Until it lands, the two names above are
-the complete and only configuration.
+So the table above has changed. `KORAS_CONTROL_PLANE_KEY_JSON` and
+`KORAS_CONTROL_PLANE_PROJECT_ID` are read by the generator as well as by
+`pnpm koras:token`, and **`KORAS_CONTROL_PLANE_TOKEN` is no longer needed**:
+
+| Name | Read by | Purpose |
+|---|---|---|
+| `KORAS_CONTROL_PLANE_URL` | generator, `pnpm koras:token` | where to register |
+| `KORAS_CONTROL_PLANE_KEY_JSON` | **generator**, `pnpm koras:token` | what the token is minted from |
+| `KORAS_CONTROL_PLANE_PROJECT_ID` | **generator**, `pnpm koras:token` | the audience to ask for |
+| `KORAS_CONTROL_PLANE_TOKEN` | generator, only if no key is set | a finished bearer; still twelve hours |
+
+The ZITADEL instance is still not a setting. The generator derives it exactly as
+the script does — the environment out of the Control Plane URL, then the
+`ZITADEL_<ENV>_DOMAIN` already in that config — for the same reason: a
+separately-answered instance can disagree with the Control Plane it belongs to,
+and that mismatch is a `401` indistinguishable from an expired token.
+`ZITADEL_DOMAIN_OVERRIDE` covers a Control Plane on a custom hostname.
+
+**The key wins when both are set.** Preferring a stored token would mean an
+estate that had done the right thing still failing twelve hours later. A
+*malformed* key is refused outright rather than falling back to the token: an
+operator who stored a key and then damaged it should find out now, not tomorrow
+from a different error.
+
+`pnpm koras:token` is now a diagnostic rather than a step. It still probes the
+Control Plane and names the cause of a refusal — `401` the audience or the
+instance, `403` the identity, opaque before it is ever sent — which is worth
+having when something is wrong. It is no longer something to run before
+provisioning.
 
 ## A.3 `STAFF_TOKEN` — the one in the `curl` examples
 
@@ -423,11 +475,17 @@ curl -s -H "authorization: Bearer $STAFF_TOKEN" \
 
 A read, so any platform role will do.
 
-### 3.3 Deploy-time re-registration — leave it off for now
+### 3.3 Deploy-time re-registration — off by default since 2026-08-30
 
-**Recommendation: do not set these in the product's Doppler configs yet.** The
-`register` job will report that no Control Plane is configured and exit 0, which
-is correct, and the references will be those of generation day.
+**This is no longer a recommendation you have to follow; it is the default.**
+The `register` job in the shared `deploy.yml` carries
+`if: vars.KORAS_DEPLOY_REGISTRATION == 'true'`, so it does not run unless a
+repository variable explicitly switches it on. It shows as a skipped job rather
+than a silent absence.
+
+Leave it off. The reasoning below is why, and it has not changed — only its
+enforcement has, from a paragraph in this document to a condition in the
+workflow.
 
 The reason is not that the job does not work. It is what switching it on would
 require you to put in a product's CI.
@@ -449,9 +507,22 @@ credential this job should authenticate with was designed, written into the
 environment contract, and never built.
 
 Until it is, generation-time registration is the whole story, and a product's
-references are refreshed by re-running `--provision-only`. Tracked as `F2b` in
-`docs/FOLLOW_UPS.md`; `docs/REGISTRATION_LIFECYCLE.md` covers what each pass can
-and cannot carry.
+references are refreshed with **`--register-only`** — which since 2026-08-30 is
+a real flag rather than a comment describing one:
+
+```bash
+pnpm create-koras-app <project> --profile product --register-only --output-dir <dir>
+```
+
+It runs `terraform init` and `terraform output -json` and sends what it reads.
+It never plans and never applies, so the heaviest thing it can do on a live
+estate is fail an HTTP request. That matters because the previous answer was
+`--provision-only` — a full plan across eight providers, an approval prompt and
+an apply — which is not an operation anyone performs to refresh two columns, and
+is why F2c's stale rows are still stale.
+
+Tracked as `F2b` in `docs/FOLLOW_UPS.md`; `docs/REGISTRATION_LIFECYCLE.md`
+covers what each pass can and cannot carry.
 
 ## Stage 4 — make it visible to a platform user
 

@@ -14,6 +14,50 @@
 **Opened 2026-08-28**, from the session that applied the Control Plane's staged
 promotion and added deploy-time registration.
 
+## The index, in number order
+
+Entries are grouped below by *why they are undone*, and numbered by *when they
+were opened*. Those two orders cannot both run in sequence, so this is the
+numeric one; the sections are the useful one. Within each section entries are in
+number order.
+
+**Identifiers are never renumbered or reused.** Seventeen files cite them —
+fourteen here and three in `koras-control-plane`: workflow comments, source
+comments, `SYNC_BACKLOG.md`, `TEMPLATE_SYNC.md`, the walkthrough. A dated
+passage that says F2b is not made truer by renaming F2b, which is the same rule
+`tests/docs/file-references.test.ts` applies to moved paths: record the change,
+do not rewrite the record. It is why F14 sits at the end of a section that
+otherwise stops at F6, and why there is no F0 and no F15.
+
+| # | Entry | State | Section |
+|---|-------|-------|---------|
+| F1 | the eight credentials from control-plane R-65 | closed 2026-08-30 | Blocked here |
+| F2 | delete the promotion queue entries now that they are applied | closed 2026-08-30 | Blocked here |
+| F2a | registration stores a token that expires in twelve hours | closed 2026-08-30 | Blocked here |
+| F2b | the per-product registration credential was designed and never built | **open** — one half enforced | Blocked here |
+| F2c | every product registered before 2026-08-28 has a null callback address | **open** — no product left to re-register | Blocked here |
+| F3 | which credential should authorise a product's own re-registration | **open** | Blocked here |
+| F3a | the tenant endpoints answer 422 and 409, and the Control Plane was not told | closed 2026-08-30 | Blocked here |
+| F4 | what `packages/control-plane-client` is for | **open** | Decisions |
+| F4a | the plan catalogue was empty and had no user interface | closed 2026-08-29 | Decisions |
+| F5 | `apps/marketing` declares Tailwind and imports no stylesheet | closed 2026-08-30 | Decisions |
+| F5a | `doppler-bootstrap` cannot express a legitimately empty setting | closed 2026-08-29 | Decisions |
+| F6 | the two references deploy-time registration cannot carry | **open** | Decisions |
+| F7 | nothing has exercised the register job in a real pipeline | **open** — identity proven, no payload yet | Verification |
+| F8 | the `--with` / `--without` generation paths remain untested | closed — *the entry was wrong* | Verification |
+| F9 | the plan catalogue could not be authored | closed 2026-08-29 | Onboarding |
+| F10 | the tenant store was in memory | closed 2026-08-29 | Onboarding |
+| F11 | there is no way for a customer to start signing up | closed 2026-08-29 | Onboarding |
+| F12 | a provisioning run finished and told nobody | closed 2026-08-29 | Onboarding |
+| F13 | nothing bills anyone, and that is not an oversight | **open** | Onboarding |
+| F14 | two names for the Control Plane, and neither side noticed | closed 2026-08-29 | Decisions |
+
+**Seven are open**: F2b, F2c, F3, F4, F6, F7, F13. Four of those seven are not
+this repository's to close — F2b and F3 are Control Plane authorization
+decisions, F2c and F7 need an operator against a live estate. The three this
+repository can act on alone are **F4**, **F6** and **F13**, and all three are
+decisions rather than implementations.
+
 ---
 
 ## Blocked here — another repository or a person has to act
@@ -71,26 +115,117 @@ success, four ZITADEL projects would have survived. `koras teardown` is not
 exposed to this: it takes the instance URL from the `zitadel_domains` output,
 which carries the scheme deliberately, for exactly this reason.
 
-### F2 — delete the promotion queue entries now that they are applied
+### F2 — delete the promotion queue entries now that they are applied — closed 2026-08-30
 
-- [ ] Remove `starter-promotion.patch`, its `README.md`, and `SYNC_BACKLOG_ENTRIES.md`
-      from `koras-control-plane/docs/starter-promotion/`
+- [x] Remove `starter-promotion.patch` and `SYNC_BACKLOG_ENTRIES.md` from
+      `koras-control-plane/docs/starter-promotion/`
+- [x] Remove `HANDOVER_PROMPT.md` — the same queue entry in session form
+- [x] Rewrite that folder's `README.md` rather than delete it
+- [x] Close TS-10 in `koras-control-plane/docs/TEMPLATE_SYNC.md`
 
-All three are applied here: the patch as `SYNC_BACKLOG.md` A6, the three written
-entries as A4, A5 and E3.
+All three were applied here: the patch as `SYNC_BACKLOG.md` A6, the three
+written entries as A4, A5 and E3. Each was checked against this repository's
+tree before anything was deleted upstream, rather than taken from the queue's
+own account of itself.
 
 That repository's `OWNERSHIP.md` is explicit that the folder is *"a queue, not an
 archive"* and that an applied entry moves upstream and is deleted — *"a promotion
 folder that only ever grows is a record of things nobody did."*
 
-**Why not done here:** `koras-control-plane` is read-only from this session.
+**Two departures from the item as written**, both because the item was written
+before the folder's contents were re-read.
 
-### F2a — registration stores a token that expires in twelve hours
+`HANDOVER_PROMPT.md` was not on the list and went anyway. It is the session
+brief that carried this same queue into the starter, and all four of its work
+items are closed — A5, E3, A6, and R-65, which closed on the same day as F1 by
+destroying the estate the leaked credentials reached. It also directs a reader
+to `output/sample-product`, which no longer exists. A spent brief left in a
+queue is the archive the rule forbids, and this one now points at a deleted
+directory.
 
-- [ ] Store the `registrar` service-account key instead of a finished token
-- [ ] Mint the token at call time, in the generator and in
-      `local/scripts/register-with-control-plane.sh`
-- [ ] Decide whether the service account should be a Terraform resource
+`README.md` was rewritten, not deleted. `PROMOTION_CANDIDATES.md` stays —
+TS-11 through TS-15 are open and it is their per-file reasoning — and deleting
+the folder's only explanation would have left it there unexplained. The rewrite
+keeps the queue rule, describes what remains, and records what was drained in a
+few lines that point at `SYNC_BACKLOG.md` rather than restating it.
+
+**What is not closed by this.** A6 keeps one box open — `product/apps/marketing`
+declares Tailwind and imports no stylesheet — which the patch's README listed
+under "Not included" as a design decision rather than a fix. It is F5 below, and
+it stays open.
+
+Nothing was committed in either repository.
+
+### F2a — registration stores a token that expires in twelve hours — closed 2026-08-30
+
+- [x] Store the `registrar` service-account key instead of a finished token
+- [x] Mint the token at call time in the generator
+- [~] ...and in `local/scripts/register-with-control-plane.sh` — **deliberately not
+      done**, see below
+- [ ] Decide whether the service account should be a Terraform resource — still open,
+      and still the Control Plane's to decide
+
+**Closed by `KORAS_CONTROL_PLANE_KEY_JSON`.** The generator holds the key and
+mints per call, in `generators/create-koras-app/src/registration/token.ts`. The exchange is the one
+`scripts/mint-control-plane-token.mjs` already performed, moved where the
+generator can reach it, so there is one implementation of it rather than two.
+That script stays as a diagnostic — it probes the Control Plane and names the
+cause of a refusal — but it is no longer the only thing that can mint, which is
+what made a twelve-hour credential into standing configuration.
+
+The key is preferred over a stored token when both are set, because preferring
+the token would mean an estate that had done the right thing still failed a day
+later. A *malformed* key is refused outright rather than falling back: an
+operator who stored a key and then damaged it should learn that now, not
+tomorrow from an unrelated 401.
+
+The ZITADEL instance is derived from the Control Plane URL rather than
+separately configured, exactly as the script does it. A separately-answered
+instance can disagree with the Control Plane it belongs to, and that mismatch is
+a 401 indistinguishable from an expired token.
+
+**Why the shell script was left alone, against this entry's own checklist.**
+Writing it here as "the generator *and* the script" predates F2b's analysis, and
+F2b supersedes it. Minting in the product's deploy script means storing the
+`registrar` *key* in each product's Doppler configs — which is strictly worse
+than the token it would replace, because a key does not expire. F2b's whole
+argument is that a product must not hold estate-wide registry write access at
+all; handing it the more durable form of that access to fix an expiry problem
+would be solving the smaller problem by enlarging the larger one. The script
+still reads a token, and the job that runs it is now off by default (F2b).
+
+**33 tests**, against a generated key pair and an injected fetch — no network
+call and no credential in the repository. They cover the assertion verifying
+against its public half, the audience being ZITADEL rather than the Control
+Plane, the opaque-token refusal from A.2, and that a malformed key never has its
+material repeated back in an error message.
+
+**And observed against the real estate on 2026-08-30**, which the tests above
+could not establish: they prove the assertion is well-formed and every refusal
+is handled, not that ZITADEL accepts it. The generator's own resolution and
+minting were run under `koras-platform-bootstrap` / `prod`, storing nothing:
+
+```
+credential kind: key (the key won over the stored token)
+instance       : https://auth-dev.korastechnologies.com  (derived from the URL)
+minted         : true | JWT: true | valid for 12 hours
+control plane  : HTTP 422 on an empty body — the identity passed
+```
+
+Three things that were design decisions rather than facts until that run. The
+**key beat a stored token that was present** — `KORAS_CONTROL_PLANE_TOKEN` had
+been set minutes earlier, so this was the contested case rather than the easy
+one. The **instance was derived** from the Control Plane URL rather than read
+from a setting. And the token came back a **JWT rather than opaque**, which is
+the A.2 finding that costs the most to diagnose when it goes the other way.
+
+This is a `pnpm koras:token` result for the generator's code path rather than
+the script's. The two now share a proven exchange; before this they shared only
+an intended one.
+
+`docs/NEW_PRODUCT_WALKTHROUGH.md` §A.2 is updated: its configuration table, its
+"expires in twelve hours" section, and the section that used to explain why the
+arrangement was temporary.
 
 **This one is a design defect, not a missing document**, and it was found by
 running the thing rather than reading it.
@@ -126,37 +261,19 @@ token anywhere.
 `docs/NEW_PRODUCT_WALKTHROUGH.md` §A.2 carries the whole of this, with the
 values and the observed results.
 
-**Why not done here:** minting a token at call time is a change to the
-generator's configuration resolution and to the shell script, with tests for
-both, and it should be decided together with F3 — a product minting its own
-registration credential is the same trust question one layer down.
-
-### F2c — every product registered before 2026-08-28 has a null callback address
-
-- [ ] Re-register the products already in the registry
-
-Generation-time registration never sent `platform_api_base_url`, so
-`product_environments.platform_api_base_url` is NULL for every product
-registered up to that date, including `koras-e2e-atlas`. It also never sent
-`cloudflare_zone_id`, which the contract has always accepted and the Terraform
-outputs have always carried.
-
-Both are sent now. Nothing had broken, because the Control Plane's product
-platform client does not exist yet — `ProductPlatformAdapter` is a Protocol whose
-only implementation is `MockProductPlatformAdapter`. It would have broken the
-moment that client was wired, and it would have read as a Control Plane defect
-rather than a registration one: the tenant endpoints exist in every generated
-product, and the registry simply had no address for them.
-
-**Why not done here:** re-registering means re-running `--provision-only`
-against a live estate, which is an operator action rather than a change to this
-repository. References are upserted and never pruned, so a re-run fills the two
-missing fields and disturbs nothing else.
+**What this did not settle.** F3 is untouched: *which* identity may register a
+product is still the Control Plane's decision, and this only changed the form
+the credential is stored in. The two were filed together because a product
+minting its own registration credential looked like the same question one layer
+down — it is not. Credential *form* and credential *authority* are separable,
+and separating them is what let this close while F3 stays open.
 
 ### F2b — the per-product registration credential was designed and never built
 
-- [ ] Have registration issue a per-product credential, or decide it should not
-- [ ] Until then, keep deploy-time re-registration switched off
+- [ ] Have registration issue a per-product credential, or decide it should not —
+      the Control Plane's decision, untouched
+- [x] Until then, keep deploy-time re-registration switched off — **enforced
+      rather than recommended, 2026-08-30**
 
 `CONTROL_PLANE_API_KEY` is declared in the product template's environment
 contract and in its `secrets.manifest` as *supplied*, and
@@ -173,12 +290,102 @@ turns a product's deployment credentials into estate-wide registry write access.
 
 So the job added on 2026-08-28 is correct and should stay **off** until the
 credential it deserves exists. That is a qualification of that work rather than
-a defect in it: generation-time registration is unaffected, and re-running
-`--provision-only` refreshes a product's references in the meantime.
+a defect in it.
+
+**It is off now, in the workflow rather than in this document.** The `register`
+job in the shared `deploy.yml` carries
+`if: vars.KORAS_DEPLOY_REGISTRATION == 'true'`, so it does not run unless a
+repository variable explicitly enables it, and it shows as a skipped job rather
+than as a silent absence. Until 2026-08-30 it ran unconditionally and the only
+thing keeping it harmless was that no product had the two settings — which is
+not a control, it is a coincidence that a single `doppler secrets set` would
+have ended.
+
+A job-level condition is the right place for it. `deploy.yml` is copied into a
+generated project verbatim and never rendered, so there is no generation-time
+conditional available; and a gate inside the script would hide the decision from
+anyone reading the workflow to find out what deployment does.
+
+Generation-time registration is unaffected, and a product's references are
+refreshed with `--register-only` in the meantime (F2c).
 
 **Why not done here:** what the Control Plane issues, and to whom, is the
 Control Plane's decision. It is the same question as F3, arriving from the other
 side.
+
+### F2c — every product registered before 2026-08-28 has a null callback address
+
+- [x] Make re-registering something an operator can actually do — `--register-only`
+- [ ] Re-register the products already in the registry — **still owed, and still
+      an operator action against a live estate**
+
+Generation-time registration never sent `platform_api_base_url`, so
+`product_environments.platform_api_base_url` is NULL for every product
+registered up to that date, including `koras-e2e-atlas`. It also never sent
+`cloudflare_zone_id`, which the contract has always accepted and the Terraform
+outputs have always carried.
+
+Both are sent now. Nothing had broken, because the Control Plane's product
+platform client does not exist yet — `ProductPlatformAdapter` is a Protocol whose
+only implementation is `MockProductPlatformAdapter`. It would have broken the
+moment that client was wired, and it would have read as a Control Plane defect
+rather than a registration one: the tenant endpoints exist in every generated
+product, and the registry simply had no address for them.
+
+**The blocker was the cost of the fix, and that is removed.** Re-registering
+meant re-running `--provision-only`: a full plan across eight providers, an
+approval prompt, and an apply, all to re-send references that were already
+correct. Nobody performs that to fill in two columns, which is why these rows
+have stayed stale.
+
+`--register-only` now exists (2026-08-30):
+
+```bash
+pnpm create-koras-app <project> --profile product --register-only --output-dir <dir>
+```
+
+It runs `terraform init` and `terraform output -json`, and sends what it reads.
+It has no code path to a plan or an apply — asserted structurally, because a
+regression that reintroduced one would fail no other test and would quietly make
+this flag capable of changing infrastructure. The heaviest thing it can do
+against a live estate is fail an HTTP request.
+
+The flag is not new as an idea. `client.ts` has described "the operator's
+`--register-only`" since it was written; it simply did not exist, which is its
+own small instance of R-042 — a comment naming a flag nobody had built.
+
+**Why the last box is still open, and why it may never close as written.**
+Running it is an operator action against a live estate. But as of 2026-08-30
+there is no estate to run it against: `koras-e2e-atlas` was torn down that day,
+and `output/sample-product` was destroyed earlier the same day (F1). **No
+product infrastructure exists.**
+
+So this entry's remaining work has no subject. The two null columns are on
+registry rows whose infrastructure is gone, and `--register-only` now refuses an
+empty Terraform workspace rather than re-asserting a product nothing backs — see
+below. The realistic close is the *next* product generated with the four Control
+Plane settings in place, which registers correctly on its first pass and never
+has the gap.
+
+**What the teardown left behind, which is a different entry's problem.** Nothing
+deregisters a product when its infrastructure is destroyed —
+`REGISTRATION_LIFECYCLE.md` lists deregistration under what is not covered. So
+the registry still holds `koras-e2e-atlas` with references to resources that no
+longer exist, and reconciliation compares the registry against reality. The
+first reconciliation run over it will report drift for a product that is
+*deliberately* gone. That is worth knowing before somebody reads it as a bug.
+
+**One defect this scenario found, fixed the same day.** `--register-only` read
+`terraform output -json` and sent whatever came back. A destroyed workspace
+answers `{}`, which parses into a valid all-empty result rather than an error,
+and the payload built from it is *accepted*: identity comes from the manifest
+rather than from state, so the Control Plane answers 200 and the operator is
+told a torn-down product was registered. Nothing was destroyed by it — references
+upsert per entry, so empty maps write nothing and prune nothing — but the claim
+was false, from the one command whose purpose is making the registry match
+reality. It refuses an empty workspace now. A state of nothing but sensitive
+outputs still counts as real, because the parser withholds those values and a
+check that read only what it could see would refuse a legitimate estate.
 
 ### F3 — which credential should authorise a product's own re-registration
 
@@ -197,10 +404,62 @@ and that the narrower role does not exist yet.
 to decide, not the factory's. Recorded in `REGISTRATION_LIFECYCLE.md` under what
 is not covered.
 
-### F3a — the tenant endpoints now answer 422 and 409, and the Control Plane has not been told
+### F3a — the tenant endpoints now answer 422 and 409, and the Control Plane has not been told — closed 2026-08-30
 
-- [ ] Teach the Control Plane's reference product the two refusals
-- [ ] Decide whether a `409` on the tenant step should roll a job back or hold it
+- [x] Teach the Control Plane's reference product the two refusals
+- [x] Decide whether a `409` on the tenant step should roll a job back or hold it
+- [x] Declare both refusals in the shared contract, so they can be asserted
+- [x] Fix the live defect that reading this turned up
+
+**This was filed as a documentation gap and was not one.**
+
+`ProductPlatformClient._request` mapped **every** 409 to `AlreadyExistsError`.
+That class means "the resource I wanted is already there, so adopt it and carry
+on" — `failures.decide` returns `should_retry=False` with the reason *"the
+resource already exists and has been adopted"*, and the run proceeds to READY.
+
+No route on that API can return an adoptable 409. A repeat of the same
+`tenant_key` is answered `200` with that tenant, which is what makes the call
+retryable and is required by the contract's `create_is_idempotent` rule.
+Activate and suspend are assignments and never conflict. So the only 409 the API
+produces is the product's slug conflict — a *second* organization asking for a
+name the first one holds, where the tenant in the way **belongs to somebody
+else**.
+
+Adopting it handed one customer another customer's tenant and reported the
+provisioning run as successful. That is the exact failure the contract exists to
+prevent, arriving through its error handling. It is mapped to `InvalidError`
+now.
+
+**The decision, then: neither adopt nor roll back — hold.** Invalid rather than
+transient because nothing on either side can resolve it; a person has to choose
+a different name. Not a rollback because the organization and its identity
+resources are already correct, and destroying them because a name collided would
+punish the customer for the collision. The tenant step is idempotent, so a retry
+after somebody picks another slug succeeds.
+
+**Both refusals are in the contract now**, as
+`environment_must_match` (422) and `slug_conflict_is_not_adoptable` (409), each
+carrying its status code — a rule with no status is a rule no test can assert,
+which is how these came to be implemented in the product and written down in
+neither half of the contract. `contracts/product-platform.v1.json` ships
+identically to both profiles and to `koras-control-plane`, and the starter's
+parity test holds the two copies in step.
+
+**Verified by mutation, not by the tests merely passing.** Reverting the 409
+mapping to `AlreadyExistsError` fails two of the new contract tests; the product
+side was mutated too, and that found a weakness in my own first attempt — an
+assertion that the router "mentions `settings.environment`" passed with the
+branch disabled, because the value is also interpolated into the message. It
+asserts the comparison itself now.
+
+Control Plane: 672 passed. Starter: 873 in the generator, 12 in a freshly
+generated product's contract suite.
+
+**One stale claim fixed while in there.** `reference_product.py` said it mirrors
+`services/api/src/routers/platform.py`; the router has been at
+`services/api/koras_api/routers/platform.py` for some time. The file whose whole
+purpose is to mirror another named the wrong path to it.
 
 `services/api` used to keep tenants in a dict and could refuse almost nothing.
 It persists them now, and two refusals came with that:
@@ -221,9 +480,12 @@ should happen in both cases. But
 and mirroring it as it now stands is what would make the second bullet's
 question concrete.
 
-**Why not done here:** the reference product and the retry policy are the
-Control Plane's. The 409 in particular is a product decision this repository
-can state and a platform decision only that repository can make.
+**What is still the Control Plane's alone.** `ProductPlatformAdapter` has one
+implementation and it is `MockProductPlatformAdapter`, so the real HTTP adapter
+that a live provisioning run would use does not exist yet. What is fixed here is
+the client the contract tests exercise; whether the engine surfaces a held job
+to an operator usefully is a question that arrives when that adapter is wired.
+F3 — which identity may register at all — is untouched.
 
 ---
 
@@ -245,7 +507,7 @@ deciding the first question leaves a *third* correct implementation of the same
 contract that nothing calls, next to the two that everything calls. The right
 order is the other way round.
 
-### F4a — the plan catalogue was empty and had no user interface
+### F4a — the plan catalogue was empty and had no user interface — closed 2026-08-29
 
 - [x] Build the plan, entitlement and subscription forms the console is missing
 
@@ -256,7 +518,41 @@ What it needed beyond the five forms: `GET /entitlements`, which had never
 existed. A form for what a plan grants has to name an entitlement, and nothing
 could tell it which exist.
 
-### F5a — `doppler-bootstrap` cannot express a legitimately empty setting
+### F5 — `apps/marketing` declares Tailwind and imports no stylesheet — closed 2026-08-30
+
+- [x] Give it a `globals.css`, or drop `tailwindcss` from its `package.json`
+
+Noted in the promotion patch's own "not included" section and carried into
+`SYNC_BACKLOG.md` A6, which this closes — it was that entry's last open box.
+
+**Decided: it gets a `globals.css`.** The design question was real, and one fact
+settled it. `apps/marketing` already depends on `@koras/ui` and names it in
+`transpilePackages`. That package is a stub today (`export {}`), and
+`koras-control-plane` TS-11 is the queued promotion of thirty Tailwind-classed
+components into it. Dropping the dependency would leave the one application whose
+entire purpose is styled pages unable to render the shared components it is
+already wired to — and the failure would arrive as A6's own symptom one
+application later, an element rendering unstyled with its class name as the
+obvious suspect rather than the build.
+
+Three files, matching `apps/web` exactly: `postcss.config.mjs`, a `globals.css`
+of one `@import`, and the import in `layout.tsx.hbs`. `package.json.hbs` is
+unchanged, because `tailwindcss` and `@tailwindcss/postcss` were already
+declared there. That is what made this a defect rather than an absence: the
+dependency was paid for and did nothing.
+
+**Verified by generating rather than by reading**, which is the failure mode
+this repository has had repeatedly. `--with marketing` into a scratch directory,
+installed, `turbo run build` green across all 23 tasks. The built stylesheet
+contains no literal `@tailwind utilities`. Adding six utility classes to the
+generated page and rebuilding compiled all six and took the sheet from 4,039 to
+4,896 bytes — only the classes used, which is precisely the behaviour that was
+missing.
+
+No manifest change was needed: `template_map` maps `marketing: apps/marketing`
+as a subtree, so new files under it are emitted with the component.
+
+### F5a — `doppler-bootstrap` cannot express a legitimately empty setting — closed 2026-08-29
 
 - [x] Promote the `optional` class from `koras-control-plane` into both templates
 
@@ -299,13 +595,39 @@ F2b is untouched by this. Whether that credential belongs in the contract at all
 is still open; `optional` only means the bootstrap no longer demands a value
 nothing can produce.
 
-### F14 — two names for the Control Plane, and neither side noticed
+### F6 — the two references deploy-time registration cannot carry
+
+- [ ] Decide whether a newly added application should reach the registry before
+      the next `--provision`
+
+`supabase_project_ref` is only reachable through `DATABASE_URL`, which is a
+credential and is not read. `vercel_projects` holds per-application repository
+secrets that would have to be aggregated into one job to be sent.
+
+Both are upserted and never pruned by the Control Plane, so omitting them ages
+them rather than losing them. The single real gap is a **newly added
+application**, and it is visible rather than silent — the registry goes on
+listing the applications it already knew.
+
+**Why not done here:** closing it means either reading a credential or copying
+per-application secrets into a place they are not today, both for a reference
+that already survives. Stated in `REGISTRATION_LIFECYCLE.md` rather than fixed
+quietly.
+
+### F14 — two names for the Control Plane, and neither side noticed — closed 2026-08-29
 
 - [x] Declare the settings under the names Doppler actually holds
 - [x] Correct the runbook an operator follows
 - [x] Extend `test_settings_are_declared.py` here to the Python services
 
-**Closed 2026-08-29 apart from the last box.**
+**Closed 2026-08-29.**
+
+An earlier version of this line read *"closed apart from the last box"* while
+all three boxes were ticked. The boxes were right: the shared test is
+`profiles/_shared/template/tests/security/test_settings_are_declared.py` and it
+reads pydantic `Settings` fields, as the paragraph below has always said. The
+sentence was left over from a plan and contradicted the entry containing it —
+R-042 exactly, in the register that names it.
 
 `register-with-control-plane.sh`, the generator's registration client and
 `CLAUDE.md` all use `KORAS_CONTROL_PLANE_URL` and `KORAS_CONTROL_PLANE_TOKEN`.
@@ -340,36 +662,6 @@ and the control-plane profile does not read it, so a fact about one profile was
 being stated in a file both share. It is `PROVIDED_BY_THE_PLATFORM` instead,
 which is what it is -- a credential injected at deploy time that cannot live in
 Doppler.
-
-### F5 — `apps/marketing` declares Tailwind and imports no stylesheet
-
-- [ ] Give it a `globals.css`, or drop `tailwindcss` from its `package.json`
-
-Noted in the promotion patch's own "not included" section and carried into
-`SYNC_BACKLOG.md` A6. A PostCSS config there would compile nothing, because
-there is no stylesheet for it to compile.
-
-**Why not done here:** it is a design decision about what that application is,
-not a defect with one correct fix.
-
-### F6 — the two references deploy-time registration cannot carry
-
-- [ ] Decide whether a newly added application should reach the registry before
-      the next `--provision`
-
-`supabase_project_ref` is only reachable through `DATABASE_URL`, which is a
-credential and is not read. `vercel_projects` holds per-application repository
-secrets that would have to be aggregated into one job to be sent.
-
-Both are upserted and never pruned by the Control Plane, so omitting them ages
-them rather than losing them. The single real gap is a **newly added
-application**, and it is visible rather than silent — the registry goes on
-listing the applications it already knew.
-
-**Why not done here:** closing it means either reading a credential or copying
-per-application secrets into a place they are not today, both for a reference
-that already survives. Stated in `REGISTRATION_LIFECYCLE.md` rather than fixed
-quietly.
 
 ---
 
@@ -443,7 +735,7 @@ owns exactly one — `POST /internal/platform/v1/tenants`. So the answer to "doe
 each product need an onboarding form" is no: one shared acquisition form, and a
 first-run setup wizard per product for the part that genuinely differs.
 
-### F9 — the plan catalogue could not be authored
+### F9 — the plan catalogue could not be authored — closed 2026-08-29
 
 - [x] Five client methods and a form per page, per `COMMERCIAL_CATALOGUE.md`
 - [x] The read that was missing, so a form can name a capability
@@ -456,7 +748,7 @@ since the entitlement work with nothing reading it back, so a form for what a
 plan grants had no way to name an entitlement. `GET /entitlements` was added
 with the forms.
 
-### F10 — the tenant store was in memory
+### F10 — the tenant store was in memory — closed 2026-08-29
 
 - [x] Persist tenants rather than holding them in a module-level dict
 - [x] Keep the lookup by `tenant_key` first, and 200 apart from 201
@@ -467,7 +759,7 @@ with the forms.
 defect on its first CI run — an `on conflict` naming an arbiter needs the
 table's select policies, and `tenant_members` had been given insert alone.
 
-### F11 — there is no way for a customer to start signing up
+### F11 — there is no way for a customer to start signing up — closed 2026-08-29
 
 - [x] An unauthenticated signup endpoint on the Control Plane
 - [x] Rate limiting, and address verification before a job is created
@@ -515,7 +807,7 @@ generated without it would have had no way to sign anybody up -- and the
 verification link has to land in the application that has a session to send
 somebody into anyway.
 
-### F12 — a provisioning run finished and told nobody
+### F12 — a provisioning run finished and told nobody — closed 2026-08-29
 
 - [x] A `notify` step after `verify` in the state machine
 - [x] Something that actually sends, in the Control Plane
@@ -584,7 +876,9 @@ implementation, and it is the one item here with no dependency forcing it now.
 > entry below still stands -- that was found by a test in another repository,
 > not by running this.
 
-- [ ] Observe the `register` job run in a generated project's deployment
+- [~] Observe the `register` job run in a generated project's deployment —
+      **cannot be closed as written**, see below
+- [ ] Observe *generation-time* registration send a real payload
 - [ ] Confirm the Control Plane's stored references change as a result
 
 What has been checked: the payload validates against the Control Plane's real
@@ -592,13 +886,32 @@ request model; the script refuses on a generated control-plane project with a
 URL and token configured; every failure and skip path is asserted by
 `registration-lifecycle.test.ts`.
 
-What has not: a run against a live Control Plane, with a real Doppler config and
-a real deployment.
+**What has been observed since, on 2026-08-30.** The *identity* half is proven
+against the live dev estate, twice — by `pnpm koras:token` and by the
+generator's own resolution and minting path. Both returned a JWT and a `422`
+from the Control Plane on an empty body, which is the identity passing. See F2a.
+
+That is not this entry. Every run so far probed with an **empty body**: no
+payload has ever been sent, and no stored reference has ever changed.
+
+**The first box contradicts F2b, and F2b wins.** F2b turned the deploy-time
+`register` job off by default on the same day, because the only credential that
+can register today is estate-wide and putting it in a product's CI gives that
+product write access to every other product's registry entry. So "observe the
+job run in a deployment" now requires deliberately enabling the thing F2b says
+must stay disabled. Two entries written days apart, each right on its own, and
+together unsatisfiable — worth stating rather than leaving for whoever tries to
+close this one.
+
+The second box is what is actually reachable, and it is the more useful test
+anyway: generation-time registration is the path every product takes, it is on
+by default, and it has never run in this estate either. It needs a product to
+exist — and as of 2026-08-30 none does (F2c).
 
 **Why not done here:** deploying and provisioning are out of scope for this
 session by instruction.
 
-### F8 — the `--with` / `--without` generation paths remain untested
+### F8 — the `--with` / `--without` generation paths remain untested — closed 2026-08-29, the entry was wrong
 
 - [x] Generate with optional components and read the output
 
@@ -623,3 +936,4 @@ selection, and no run exercises it. That is F7, where it already lives -- so
 this entry was one real gap filed under another one's name.
 
 Corrected 2026-08-29, by reading the workflow rather than the entry.
+

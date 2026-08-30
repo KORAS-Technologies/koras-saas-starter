@@ -156,7 +156,9 @@ configuration."* `local/config/.env.local.example.hbs` never sets it, so
 **Applies to:** `profiles/product/template/packages/control-plane-client`
 
 Promoted from `koras-control-plane/docs/starter-promotion/SYNC_BACKLOG_ENTRIES.md`,
-where it was recorded as an accuracy note. It is worse than that.
+where it was recorded as an accuracy note. It is worse than that. That file no longer exists —
+the promotion queue was drained on 2026-08-30 once every entry in it was
+applied here (`FOLLOW_UPS.md` F2).
 
 `capabilities.control_plane_client` generates a package whose payload type is:
 
@@ -195,7 +197,9 @@ correct implementation that nothing calls, next to two that everything calls.
 - [x] `starter_version` and `profile_version` actually sent
 
 **Closed.** Promoted from
-`koras-control-plane/docs/starter-promotion/SYNC_BACKLOG_ENTRIES.md`.
+`koras-control-plane/docs/starter-promotion/SYNC_BACKLOG_ENTRIES.md`. That file no longer exists —
+the promotion queue was drained on 2026-08-30 once every entry in it was
+applied here (`FOLLOW_UPS.md` F2).
 
 **Applies to:** `profiles/_shared/template`
 
@@ -236,18 +240,20 @@ registered so far reads as generated from nothing in particular — the two fiel
 the contract provides precisely so the Control Plane can identify products
 needing an upgrade. Both are sent now.
 
-### A6 — Tailwind never compiled, and the CSP nonce never reached the renderer
+### A6 — Tailwind never compiled, and the CSP nonce never reached the renderer — closed 2026-08-30
 
 - [x] `postcss.config.mjs` in `_shared/apps/admin`
 - [x] `postcss.config.mjs` in `control-plane/apps/portal`
 - [x] `postcss.config.mjs` in `product/apps/web`
 - [x] All four `middleware.ts.hbs` set the policy on the forwarded request
-- [ ] `product/apps/marketing` either gets a stylesheet or drops the dependency
+- [x] `product/apps/marketing` either gets a stylesheet or drops the dependency
 
 **Closed** by applying `koras-control-plane/docs/starter-promotion/starter-promotion.patch`,
 which was staged there on 2026-08-25 and never applied. `git apply --check`
 passed against the current templates before it was used, so it was applied
-rather than regenerated.
+rather than regenerated. The patch has since been deleted from that
+folder, which is what its own rule required once it was applied
+(`FOLLOW_UPS.md` F2).
 
 **Applies to:** both templates
 
@@ -286,10 +292,29 @@ is pure and the nonce is the same — but if one gained a `connect-src` source a
 the other did not, the policy the browser enforces would stop naming the nonce
 the renderer used. That is this same bug one level up.
 
-**Left open deliberately.** `product/apps/marketing` declares `tailwindcss` and
-has no CSS file at all, so a PostCSS config there would do nothing. Either it
-gets a `globals.css` or it drops the dependency; that is a design decision
-rather than a fix.
+**The marketing decision, closed 2026-08-30.** It declared `tailwindcss` and had
+no CSS file at all, so a PostCSS config there would have compiled nothing. It
+gets a `globals.css`, rather than dropping the dependency, for one reason that
+outweighs the others: it already depends on `@{{projectSlug}}/ui` and lists it
+in `transpilePackages`. `packages/ui` is a stub today — `export {}` — and
+`koras-control-plane` TS-11 is the promotion of thirty Tailwind-classed
+components into exactly it. Dropping Tailwind here would leave the one
+application whose whole purpose is styled pages unable to render the shared
+components it is already wired to, and the failure would arrive as the A6
+symptom one application later: a component that renders unstyled, blamed on its
+class names rather than on the build.
+
+It is now the same three files as `apps/web` — `postcss.config.mjs`, a
+`globals.css` of one `@import`, and the import in `layout.tsx.hbs`. No
+`package.json` change: `tailwindcss` and `@tailwindcss/postcss` were already
+declared, which is what made this a defect rather than an absence.
+
+**Verified by generating, not by reading.** `--with marketing` into a scratch
+directory, installed, and `turbo run build` green across all 23 tasks. The built
+stylesheet carries no literal `@tailwind utilities` directive. Adding six
+utility classes to the generated page and rebuilding compiled all six and grew
+the sheet from 4,039 to 4,896 bytes — only what was used, which is the
+behaviour that was absent.
 
 ### A7 — two role resolvers that disagree, so the console shows authority the API refuses
 
@@ -941,7 +966,9 @@ control-plane moved the equivalent set into `docs/`. Both templates ship
 - [x] The generated `control-plane-client` names it in its header
 
 **Closed.** Promoted from
-`koras-control-plane/docs/starter-promotion/SYNC_BACKLOG_ENTRIES.md`.
+`koras-control-plane/docs/starter-promotion/SYNC_BACKLOG_ENTRIES.md`. That file no longer exists —
+the promotion queue was drained on 2026-08-30 once every entry in it was
+applied here (`FOLLOW_UPS.md` F2).
 
 **Applies to:** the starter's documentation and two source headers
 

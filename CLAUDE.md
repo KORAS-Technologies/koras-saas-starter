@@ -215,11 +215,22 @@ cached results across template edits until the same day (R-035).
 
 **Registration, in one paragraph.** A product registers itself with the Control
 Plane after `terraform apply`, from `generators/create-koras-app/src/registration/`,
-and again after every deployment of an environment, from
-`local/scripts/register-with-control-plane.sh` in the shared template. The
-address and bearer token come from Doppler as `KORAS_CONTROL_PLANE_URL` and
-`KORAS_CONTROL_PLANE_TOKEN`; `--control-plane-url` overrides the former and
-nothing overrides the latter. An unconfigured Control Plane is a skip, not a
+and — where a repository variable explicitly enables it — again after every
+deployment of an environment, from
+`local/scripts/register-with-control-plane.sh` in the shared template. That
+deploy-time job is **off by default** (F2b): the only identity that can register
+today is the estate-wide `registrar`, and putting it in one product's CI gives
+that product write access to every other product's registry entry. Refreshing a
+product's references is `--register-only` from the factory instead — read
+Terraform outputs and send them, never plan, never apply.
+
+The address comes from Doppler as `KORAS_CONTROL_PLANE_URL`. What authorises the
+call is `KORAS_CONTROL_PLANE_KEY_JSON`, the `registrar` service-account key, from
+which the generator mints a token per call; `KORAS_CONTROL_PLANE_PROJECT_ID`
+names the audience, and the ZITADEL instance is derived from the URL rather than
+answered separately. `KORAS_CONTROL_PLANE_TOKEN` is a finished bearer and still
+accepted, but it lasts twelve hours, so the key wins when both are set.
+`--control-plane-url` overrides the address; nothing overrides the credential. An unconfigured Control Plane is a skip, not a
 failure — that is the documented bootstrap order (R-001) — while a
 *misconfigured* one is a failure, because a misconfiguration reported as
 nothing-to-do is one nobody fixes. A failure never unwinds infrastructure. The

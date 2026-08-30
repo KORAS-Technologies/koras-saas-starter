@@ -148,7 +148,9 @@ rather than two that drift.
 | Situation | Result |
 |---|---|
 | `KORAS_CONTROL_PLANE_URL` unset | **skip**, exit 0 |
-| URL set, `KORAS_CONTROL_PLANE_TOKEN` unset | **fail** |
+| URL set, neither `KORAS_CONTROL_PLANE_KEY_JSON` nor `KORAS_CONTROL_PLANE_TOKEN` set | **fail** |
+| Key set but malformed, or with no `KORAS_CONTROL_PLANE_PROJECT_ID` | **fail** — never a fallback to the token |
+| Key set and the ZITADEL exchange refuses it | **fail** |
 | URL not https (and not loopback) | **fail** |
 | Control Plane unreachable | **skip**, exit 0 |
 | `422` from the Control Plane | **fail**, and say it is a contract mismatch |
@@ -183,15 +185,22 @@ bash local/scripts/register-with-control-plane.sh prod
 - **Deregistration.** Nothing removes a product from the registry when its
   repository is deleted. The Control Plane's teardown owns that question; see
   R-036 and the provisioning runbook.
-- **Which credential should authorise a product's own re-registration.** This
-  uses `KORAS_CONTROL_PLANE_TOKEN`, the same token the generator uses, kept in
-  that environment's Doppler config. It is a ZITADEL token for a service user;
-  nothing issues or provisions it, and NEW_PRODUCT_WALKTHROUGH.md §A.2 is the
-  only description of it that exists. The contract (§2)
-  says registration should require a role narrower than the human admin one, and
-  that the narrower role does not exist yet. Whether a *product* should hold a
-  token that can rewrite its own registry entry is a Control Plane authorization
-  decision rather than a factory one, and it is open.
+- **Which credential should authorise a product's own re-registration.** Still
+  open, and the reason the deploy-time job is off by default since 2026-08-30.
+  The script uses `KORAS_CONTROL_PLANE_TOKEN` from that environment's Doppler
+  config — a ZITADEL token for the estate-wide `registrar` service user, which
+  nothing issues or provisions, and NEW_PRODUCT_WALKTHROUGH.md §A.2 is the only
+  description of it that exists. The contract (§2) says registration should
+  require a role narrower than the human admin one, and that the narrower role
+  does not exist yet. Whether a *product* should hold a credential that can
+  rewrite any product's registry entry is a Control Plane authorization decision
+  rather than a factory one.
+
+  The generator's half of this changed and this did not: the generator mints
+  from a key per call (F2a), while the script still reads a stored token
+  deliberately. Giving a product the *key* would be strictly worse than the
+  token — a key does not expire — so the credential form was not "fixed" here
+  until the authority question is answered.
 - **The generated `packages/control-plane-client`.** It is not what performs
   either pass, and its types do not match the contract. See `SYNC_BACKLOG.md`,
   A4.

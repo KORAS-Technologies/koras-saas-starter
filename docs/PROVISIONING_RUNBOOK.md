@@ -184,7 +184,7 @@ derived and 8 asked.
 | `OTEL_EXPORTER_OTLP_HEADERS` | Empty unless a hosted collector needs auth, then `authorization=Basic <base64>` |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` for a managed collector, `grpc` otherwise. Not inferable — the local collector is an `http://` URL that speaks gRPC |
 | `OTEL_SERVICE_NAME` | the product slug |
-| `KORAS_CONTROL_PLANE_TOKEN` | issued by the Control Plane when the product registers. Empty if there is none yet — that is the documented bootstrap order (R-001) |
+| `KORAS_CONTROL_PLANE_TOKEN` | **not** issued by the Control Plane, whatever this row said before 2026-08-30: nothing mints a per-product credential (F2b). It is a ZITADEL token for the estate-wide `registrar` service user, and it lasts twelve hours. The generator prefers `KORAS_CONTROL_PLANE_KEY_JSON` and mints per call (F2a). Empty is correct here: the deploy-time job that would read it is off by default |
 | `KORAS_CONTROL_PLANE_URL` | the Control Plane's address. Empty if there is none. It cannot be derived: the Control Plane is a separate estate with its own state |
 | `STORAGE_BUCKET` | a name you pick. The storage module provisions no buckets, so there is nothing to derive it from |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | only when `ai_gateway` is enabled |

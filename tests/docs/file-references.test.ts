@@ -67,6 +67,12 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
 const MOVED: Record<string, string> = {
   'helpers/teardown.ts': 'tooling/koras-cli/src/teardown/guards.ts',
   'tests/e2e/helpers/teardown.ts': 'tooling/koras-cli/src/teardown/guards.ts',
+  // Named by FOLLOW_UPS F3a, which records that `koras-control-plane`'s
+  // reference product claimed to mirror the router at this path after it had
+  // moved. Quoting the wrong path is the finding; rewriting it here would erase
+  // what the entry is about.
+  'services/api/src/routers/platform.py':
+    'profiles/product/template/services/api/koras_api/routers/platform.py',
 }
 
 function tracked(): string[] {
