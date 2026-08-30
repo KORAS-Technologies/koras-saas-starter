@@ -300,6 +300,29 @@ describe('the delete calls', () => {
     expect(calls, 'it fell back to another instance token').toEqual([])
   })
 
+  it('guards a DNS record by its project, not by its hostname prefix', () => {
+    // Found on a real estate: every record came back "not an acceptance-run
+    // resource (no koras-e2e- prefix)". A hostname carries the project in the
+    // middle -- app-dev.koras-e2e-atlas.example.com -- and the guard tests a
+    // prefix, so the deleter written to stop records outliving an estate
+    // retained all eight of them.
+    const inventory = qualify(inventoryFromOutputs(OUTPUTS), 'koras-e2e-shop')
+    const record = inventory.find((r) => r.kind === 'cloudflare-record')
+
+    expect(record?.name.startsWith('koras-e2e-shop-'), 'the guard would retain it').toBe(true)
+    // And the id survives the rewrite: the record is guarded by hostname and
+    // deleted by id, so clobbering providerId would send the API a hostname.
+    expect(record?.providerId).toBe('rec-dev')
+    expect(plan(inventory).retained).toEqual([])
+  })
+
+  it('still refuses a real project’s DNS records', () => {
+    const real = qualify(inventoryFromOutputs(REAL_OUTPUTS), 'docoris')
+    const record = real.find((r) => r.kind === 'cloudflare-record')
+    expect(record?.name.startsWith('koras-e2e-')).toBe(false)
+    expect(plan(real).deletable).toEqual([])
+  })
+
   it('deletes a Cloudflare DNS record by id, in its zone', async () => {
     // Absent from the inventory entirely until 2026-08-27. Eight records
     // outlived an estate whose teardown reported nothing retained, because a

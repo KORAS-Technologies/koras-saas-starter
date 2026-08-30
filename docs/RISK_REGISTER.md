@@ -1517,6 +1517,27 @@ reports a dry run and issues nothing.
    `UNIMPLEMENTED_KINDS` is now empty and kept: it is the mechanism by which a
    future gap is visible rather than silent.
 
+   **The Cloudflare deleter did not work, 2026-08-29.** Found by running the dry
+   run against a second estate: `31 deletable, 8 retained`, every DNS record
+   refused as *"not an acceptance-run resource (no koras-e2e- prefix)"*.
+
+   The guard tests a prefix. A record's name is a hostname —
+   `app-dev.koras-e2e-atlas.korastechnologies.com` — which carries the project in
+   the middle. So the deleter written to stop records outliving an estate
+   retained all eight of them, and said why on every line.
+
+   The same problem the opaque ids have, and the same answer: `qualify` rewrites
+   the guarded name to `<slug>-<kind>-<hostname>` so the guard tests the project
+   it belongs to. One extra care — a record is guarded by hostname and deleted by
+   id, so `qualify` now keeps a `providerId` the inventory already set rather
+   than overwriting it with the name.
+
+   Worth noting how close this came to shipping unnoticed. Eight unit tests
+   covered the deleter, the inventory and the guards, and all of them passed: the
+   fixture's hostname happened to be checked only for the *delete call*, never
+   through `plan`. The dry run against a real estate was the first thing to put
+   the two together.
+
    **And a correction to the correction, 2026-08-27.** "The blocker was
    fiction" was itself too fast. A bearer token does work, and the deleter
    built on that is right — but it needs a *personal access token on a machine

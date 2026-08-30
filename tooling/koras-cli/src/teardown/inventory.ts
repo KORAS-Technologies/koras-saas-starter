@@ -163,11 +163,25 @@ export function qualify(resources: Resource[], projectSlug: string): Resource[] 
     'vercel-project',
     'upstash-database',
     'zitadel-project',
+    // A DNS record's name is a hostname -- app-dev.koras-e2e-atlas.example.com
+    // -- which carries the project in the *middle*. The guard tests a prefix,
+    // so every record was retained on a real estate as "not an acceptance-run
+    // resource", by the deleter written to stop records outliving one. The
+    // hostname is not opaque, but it is equally unable to satisfy a prefix
+    // test, and the answer is the same: guard on the project it belongs to.
+    'cloudflare-record',
   ]
 
   return resources.map((resource) =>
     opaque.includes(resource.kind)
-      ? { ...resource, name: `${projectSlug}-${resource.kind}-${resource.name}`, providerId: resource.name }
+      ? {
+          ...resource,
+          name: `${projectSlug}-${resource.kind}-${resource.name}`,
+          // Kept when the inventory already set one. A Cloudflare record is
+          // deleted by id and guarded by hostname, so the two genuinely differ;
+          // overwriting here would send the API a hostname where it wants an id.
+          providerId: resource.providerId ?? resource.name,
+        }
       : resource,
   )
 }
