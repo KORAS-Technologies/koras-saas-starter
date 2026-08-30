@@ -31,6 +31,34 @@ RUN cd services/api && uv sync --no-dev
 
 COPY services/api/koras_api/ ./services/api/koras_api/
 
+# The workspace members again, now that their sources are here.
+#
+# The sync above runs before any source is copied, so it installs third-party
+# dependencies and leaves every local member -- this service and the shared
+# python-packages -- installed from a manifest with nothing behind it. This
+# second sync completes them, in the image, where the cost is paid once.
+RUN cd services/api && uv sync --no-dev
+
 WORKDIR /app/services/api
 
-CMD ["uv", "run", "uvicorn", "koras_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# The venv directly, so `uv` is not on the runtime path at all.
+#
+# On Fly on 2026-08-30 a machine spent two minutes on `Building koras-audit ...
+# Built koras-database` for eleven packages *after* `Preparing to run` and
+# before the server process existed -- longer than the deploy pipeline's
+# health-check budget, so a service that would have come up was reported as one
+# that never became healthy.
+#
+# What triggered the resync there is not established: the same image built and
+# run locally, from this Dockerfile and from the previous one, rebuilt nothing.
+# So this is not a fix for a reproduced trigger. It removes the mechanism --
+# `uv run` synchronises the environment before it execs, and nothing else in
+# the container can rebuild anything. A cause that cannot be reached does not
+# need to be understood first.
+#
+# It also puts the process at PID 1 rather than under a `uv` parent, which is
+# what receives Fly's signals on shutdown. Measured: PID 10 before, PID 1 now.
+#
+# /app/.venv/bin is already on PATH for the reason given at the top of this
+# file, so the bare command resolves there.
+CMD ["uvicorn", "koras_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
