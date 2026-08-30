@@ -24,6 +24,13 @@ COPY pyproject.toml uv.lock* ./
 COPY python-packages/ ./python-packages/
 COPY services/worker/pyproject.toml ./services/worker/
 
+# The root pyproject names the API in its dev group and points that dependency
+# at the workspace, so uv refuses to read the root manifest at all unless
+# services/api resolves to a member it can find -- `--no-dev` skips installing
+# the group, not parsing it. The API's manifest alone satisfies that; no API
+# source is copied and nothing from it is installed into this image.
+COPY services/api/pyproject.toml ./services/api/
+
 # Ahead of the source copy, so editing the service does not resync every
 # dependency. Run from the member directory: uv finds the workspace root
 # above it and syncs this member against it.
