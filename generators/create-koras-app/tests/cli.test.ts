@@ -79,6 +79,34 @@ describe('parseArgs', () => {
   })
 })
 
+describe('--register-only', () => {
+  /**
+   * The whole point of the flag. `--provision-only` implies `--provision`
+   * because there is nothing else it could mean; this one must not, because
+   * re-sending a reference and rebuilding an estate are different operations
+   * and only one of them is safe to run casually against production.
+   */
+  it('never implies provisioning', () => {
+    const args = parseArgs(['node', 'cli', 'app', '--profile', 'product', '--register-only'])
+    expect(args.registerOnly).toBe(true)
+    expect(args.provision).toBe(false)
+    expect(args.provisionOnly).toBe(false)
+  })
+
+  it('accepts a Control Plane override, for re-registering against a different registry', () => {
+    const args = parseArgs([
+      'node', 'cli', 'app', '--profile', 'product', '--register-only',
+      '--control-plane-url', 'https://cp.example',
+    ])
+    expect(args.registerOnly).toBe(true)
+    expect(args.controlPlaneUrl).toBe('https://cp.example')
+  })
+
+  it('is off unless asked for', () => {
+    expect(parseArgs(['node', 'cli', 'app', '--profile', 'product']).registerOnly).toBe(false)
+  })
+})
+
 describe('--refresh-modules', () => {
   it('operates on an existing project without implying provisioning', () => {
     const args = parseArgs(['node', 'cli', 'app', '--profile', 'product', '--refresh-modules'])

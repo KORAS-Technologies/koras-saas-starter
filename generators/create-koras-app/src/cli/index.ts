@@ -25,7 +25,7 @@ import {
 } from '../generation/refresh.js'
 import { checkDrift, formatDriftReport } from '../generation/drift.js'
 import { PROJECT_MANIFEST_PATH, parseProjectManifest } from '../generation/project-manifest.js'
-import { provision } from '../terraform/runner.js'
+import { provision, readOutputs } from '../terraform/runner.js'
 import { runRegistration, type RegistrationReport } from '../registration/index.js'
 import { preflightInputs } from '../terraform/inputs.js'
 import {
@@ -51,6 +51,11 @@ OPTIONS:
   --without <components>     Disable optional components (comma-separated)
   --provision                Provision infrastructure via Terraform
   --provision-only           Provision an existing project; skips generation
+  --register-only            Re-send an existing project's references to the
+                             Control Plane. Reads Terraform outputs; never
+                             plans and never applies, so it cannot change
+                             infrastructure. Use this to refresh a stale
+                             registry entry.
   --check-drift              Report where an existing project no longer matches
                              the generator. Read-only; exits 1 on differences.
   --all                      With --check-drift, also list every other
@@ -188,7 +193,11 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   // default output directory is wherever you happen to be standing.
   const outputCheck = checkOutputDirectory(args.outputDir, args.outputDirExplicit)
   const existingProject =
-    args.provisionOnly || args.refreshModules || args.checkDrift || args.refresh.length > 0
+    args.provisionOnly ||
+    args.registerOnly ||
+    args.refreshModules ||
+    args.checkDrift ||
+    args.refresh.length > 0
   if (outputCheck.refused && !existingProject) {
     fail(outputCheck.message!)
   }
@@ -201,7 +210,9 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     if (!existsSync(projectRoot)) {
       const flag = args.provisionOnly
         ? '--provision-only'
-        : args.checkDrift
+        : args.registerOnly
+          ? '--register-only'
+          : args.checkDrift
           ? '--check-drift'
           : args.refreshModules
             ? '--refresh-modules'
@@ -236,7 +247,7 @@ export async function run(argv: string[] = process.argv): Promise<void> {
 
   if (
     shouldReexecUnderDoppler({
-      required: args.provision || args.provisionOnly,
+      required: args.provision || args.provisionOnly || args.registerOnly,
       satisfied: preflightInputs().ok,
     })
   ) {
@@ -329,6 +340,11 @@ export async function run(argv: string[] = process.argv): Promise<void> {
 
   if ((args.refreshModules || args.refresh.length > 0) && !args.provisionOnly) return
 
+  if (args.registerOnly) {
+    await runRegisterOnly(ctx, projectRoot, projectSlug, args)
+    return
+  }
+
   if (args.provisionOnly) {
     console.log(`
 Provisioning the existing project in ${projectSlug}/ — nothing regenerated.`)
@@ -392,6 +408,90 @@ Provisioning the existing project in ${projectSlug}/ — nothing regenerated.`)
   // ── Provision infrastructure ───────────────────────────────────────────────
 
   await runProvision(ctx, projectRoot, projectSlug, true, args)
+}
+
+/**
+ * Re-send an existing project's references, changing nothing.
+ *
+ * Separate from `runProvision` rather than a flag on it, because the two differ in
+ * what they are allowed to do rather than in what they happen to do. This path
+ * reaches `readOutputs`, which runs `init` and `output -json` and has no code
+ * path to a plan or an apply. An operator running this against a live estate is
+ * risking a failed HTTP request, and nothing else.
+ *
+ * This is what F2c needed. Every product registered before 2026-08-28 has a
+ * null `platform_api_base_url` and no `cloudflare_zone_id`, because
+ * generation-time registration never sent either. Both are sent now, but the
+ * only way to re-send them was `--provision-only` — a full plan across eight
+ * providers and an apply — which is not a thing anyone does to fill in two
+ * columns. References are upserted and never pruned, so this fills the gaps and
+ * disturbs nothing else.
+ */
+async function runRegisterOnly(
+  ctx: import('../generation/context.js').GenerationContext,
+  projectRoot: string,
+  projectSlug: string,
+  args: import('./args.js').ParsedArgs,
+): Promise<void> {
+  console.log(`
+Re-registering ${projectSlug} — reading Terraform outputs, changing nothing.`)
+
+  const outcome = await readOutputs(ctx, { dryRun: false, projectRoot })
+
+  switch (outcome.status) {
+    case 'no-terraform':
+      fail(
+        `No Terraform configuration in ${projectSlug}/.\n` +
+          '  --register-only re-sends the references of a provisioned project.',
+      )
+      return
+    case 'init-failed':
+      fail(
+        'terraform init failed, so the outputs could not be read.\n' +
+          '  Nothing was registered, and no infrastructure was touched.',
+      )
+      return
+    case 'output-failed':
+      fail(
+        'terraform output failed, so there are no references to send.\n' +
+          '  If this project has never been applied, provision it first with --provision-only.',
+      )
+      return
+    case 'empty-state':
+      // What a workspace looks like after a teardown, and also before the first
+      // apply. The payload built from it is *accepted* rather than refused --
+      // identity comes from the manifest, not from state -- so the Control Plane
+      // would answer 200 and this would report success for a product nothing
+      // backs. Refusing is the same judgement the deploy script already makes
+      // about an empty service list.
+      fail(
+        `The Terraform workspace for ${projectSlug} is empty, so there is no infrastructure\n` +
+          '  to register. That is what state looks like after a teardown, and also before\n' +
+          '  the first apply.\n' +
+          '  Registering from it would tell the Control Plane this product is current when\n' +
+          '  nothing backs it, so nothing was sent.\n' +
+          '  To register a newly provisioned estate, run --provision-only first.',
+      )
+      return
+    case 'read':
+      break
+  }
+
+  // `provisioned: true` states what the guard needs to know — that these
+  // references describe infrastructure that exists — which is exactly what
+  // having read them out of applied state proves.
+  const report = await runRegistration(ctx, outcome.outputs, {
+    skipRequested: args.skipRegistration,
+    provisioned: true,
+    urlOverride: args.controlPlaneUrl,
+  })
+  printRegistrationReport(report, ctx, projectSlug)
+
+  // The exit code is the outcome. Unlike registration after an apply — where a
+  // failure must not overshadow an estate that was successfully built — there
+  // is nothing else this command did, so reporting success would be reporting
+  // nothing at all.
+  if (report.kind === 'failed') process.exit(1)
 }
 
 async function runProvision(

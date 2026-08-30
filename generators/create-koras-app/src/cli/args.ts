@@ -13,6 +13,21 @@ export interface ParsedArgs {
   without: string[]
   /** Provision an already-generated project; skips generation entirely. */
   provisionOnly: boolean
+  /**
+   * Re-register an already-provisioned project, changing no infrastructure.
+   *
+   * Reads Terraform outputs and sends them. It never plans and never applies,
+   * which is what makes it usable on a live estate: the heaviest thing it can
+   * do is fail to reach the Control Plane.
+   *
+   * The client's own comment has always described this as "the operator's
+   * `--register-only`" — it just did not exist, so the only way to re-send a
+   * reference was a full `--provision-only`. That is why every product
+   * registered before 2026-08-28 still has a null `platform_api_base_url`
+   * (F2c): the fix was a re-provision, and nobody re-provisions an estate to
+   * fill in two columns.
+   */
+  registerOnly: boolean
   refreshModules: boolean
   /** Template-owned paths to overwrite from the generator's rendering. */
   refresh: string[]
@@ -67,6 +82,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     with: [],
     without: [],
     provisionOnly: false,
+    registerOnly: false,
     refreshModules: false,
     refresh: [],
     checkDrift: false,
@@ -93,6 +109,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
         // Implies --provision: there is nothing else this flag could mean.
         result.provisionOnly = true
         result.provision = true
+        break
+      case '--register-only':
+        // Deliberately does NOT imply --provision. It reads Terraform outputs
+        // and sends them; it never plans and never applies. Turning a
+        // re-registration into an infrastructure run would be the opposite of
+        // what this flag is for, and it is the reason re-registration has been
+        // avoided rather than done.
+        result.registerOnly = true
         break
       case '--all':
         // Widens --check-drift to every generator-owned file. Informational

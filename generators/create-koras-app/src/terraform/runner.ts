@@ -12,7 +12,12 @@ import {
   readProjectTfvars,
   resolveTerraformEnv,
 } from './inputs.js'
-import { formatOutputs, parseTerraformOutputs, type ProvisionOutputs } from './outputs.js'
+import {
+  describesInfrastructure,
+  formatOutputs,
+  parseTerraformOutputs,
+  type ProvisionOutputs,
+} from './outputs.js'
 import { checkExecutionMode, readBackendConfig, type FetchLike } from './backend.js'
 
 export interface CommandResult {
@@ -289,6 +294,73 @@ export async function provision(
   console.log(formatOutputs(outputs))
 
   return { status: 'applied', outputs }
+}
+
+export type ReadOutputsResult =
+  | { status: 'read'; outputs: ProvisionOutputs }
+  | { status: 'no-terraform' }
+  | { status: 'init-failed' }
+  | { status: 'output-failed' }
+  /** The workspace answered, and has nothing in it: never applied, or destroyed. */
+  | { status: 'empty-state' }
+
+/**
+ * Read an existing estate's Terraform outputs without touching it.
+ *
+ * `init` then `output -json`, and nothing else. No plan, no approval prompt, no
+ * apply — this cannot create, change or destroy a resource, which is the whole
+ * reason it exists separately from `provision` rather than as a flag on it.
+ *
+ * It backs `--register-only`. Re-registering a product used to mean re-running
+ * `--provision-only`: a full plan across eight providers, an approval prompt,
+ * and an apply, all to re-send references that were already correct. That is a
+ * heavy and slightly frightening operation to ask of somebody whose actual goal
+ * is to fill in two null columns (F2c), and the weight of it is why it kept not
+ * happening.
+ *
+ * `init` is still required — outputs come from the remote backend, and without
+ * init there is no backend configured to read them from.
+ */
+export async function readOutputs(
+  ctx: GenerationContext,
+  options: ProvisionOptions,
+): Promise<ReadOutputsResult> {
+  const env = options.env ?? process.env
+  const exec = options.exec ?? defaultExecutor
+  const cwd = terraformDirectory(options.projectRoot)
+
+  if (!existsSync(cwd)) return { status: 'no-terraform' }
+
+  const preflight = preflightInputs(env)
+  const dopplerConfigured = options.useDoppler ?? shouldUseDoppler(env)
+  const useDoppler = options.useDoppler ?? (dopplerConfigured && !preflight.ok)
+  const terraformEnv = resolveTerraformEnv(env)
+
+  const run = async (args: string[], capture = false) => {
+    const { command, args: full } = wrap(useDoppler, args)
+    return exec(command, full, { cwd, capture, env: terraformEnv, stream: false })
+  }
+
+  console.log('\n==> terraform init')
+  const init = await run(['init', '-input=false'])
+  if (init.exitCode !== 0) return { status: 'init-failed' }
+
+  const output = await run(['output', '-json'], true)
+  if (output.exitCode !== 0) return { status: 'output-failed' }
+
+  const outputs = parseTerraformOutputs(output.stdout)
+
+  // An empty state is not a small estate. `terraform output -json` answers `{}`
+  // both for a workspace never applied and for one destroyed, and the payload
+  // built from that is accepted rather than refused -- identity comes from the
+  // manifest, so the Control Plane would answer 200 and the operator would be
+  // told a torn-down product had been registered. Refused here instead, which
+  // is the same judgement the deploy script already makes about an empty
+  // service list: a registration that misinforms is worse than one that did
+  // not run.
+  if (!describesInfrastructure(outputs)) return { status: 'empty-state' }
+
+  return { status: 'read', outputs }
 }
 
 /**

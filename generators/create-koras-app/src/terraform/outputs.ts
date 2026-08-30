@@ -110,6 +110,52 @@ export function parseTerraformOutputs(json: string): ProvisionOutputs {
   }
 }
 
+/**
+ * Whether these outputs describe any infrastructure at all.
+ *
+ * `terraform output -json` answers `{}` for a workspace that has never been
+ * applied *and* for one that has been destroyed, and `parseTerraformOutputs`
+ * turns that into a perfectly valid all-empty result rather than an error. So
+ * "read the outputs and send them" cannot, on its own, tell an estate from an
+ * absence.
+ *
+ * It matters because the payload built from an empty set is not obviously
+ * wrong. Identity survives — code, name, slug, profile, primary domain and both
+ * versions come from the manifest rather than from state — so the Control Plane
+ * would accept it and answer 200, and the operator would be told the product
+ * was registered. Nothing is destroyed by it: references are upserted per entry,
+ * so empty maps write nothing and prune nothing. What is wrong is the claim.
+ * The registry would be told a torn-down product is current, by a command whose
+ * whole purpose is to make the registry match reality.
+ *
+ * Sensitive outputs are withheld by the parser, so `withheld` is checked too: a
+ * state consisting entirely of secrets is a real estate, and reporting it as
+ * empty would refuse a legitimate re-registration.
+ */
+export function describesInfrastructure(outputs: ProvisionOutputs): boolean {
+  const strings = [
+    outputs.githubRepository,
+    outputs.githubRepositoryUrl,
+    outputs.dopplerProject,
+    outputs.cloudflareZoneId,
+  ]
+  const maps = [
+    outputs.supabaseProjectRefs,
+    outputs.zitadelProjectIds,
+    outputs.zitadelOrgIds,
+    outputs.zitadelDomains,
+    outputs.cloudflareRecordIds,
+    outputs.vercelProjectIds,
+    outputs.redisDatabaseIds,
+  ]
+  return (
+    strings.some((value) => value !== '') ||
+    maps.some((map) => Object.keys(map).length > 0) ||
+    outputs.flyApps.length > 0 ||
+    outputs.withheld.length > 0
+  )
+}
+
 /** Groups references by environment for the Phase 10 registration payload. */
 export function groupByEnvironment(
   outputs: ProvisionOutputs,

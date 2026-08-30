@@ -8,6 +8,7 @@ import { resolveSelections } from '../src/profiles/validator.js'
 import { buildContext } from '../src/generation/context.js'
 import {
   provision,
+  readOutputs,
   shouldUseDoppler,
   stateLockRecovery,
   summarisePlan,
@@ -769,5 +770,112 @@ describe('stateLockRecovery', () => {
     expect(stateLockRecovery('Error: Invalid provider configuration')).toBeUndefined()
     expect(stateLockRecovery('')).toBeUndefined()
     expect(stateLockRecovery(undefined)).toBeUndefined()
+  })
+})
+
+// ── reading outputs without touching the estate ──────────────────────────────
+
+describe('readOutputs, which backs --register-only', () => {
+  /**
+   * The property that makes this usable on a live estate, and the only one
+   * worth guarding structurally: there is no path from here to a plan or an
+   * apply. A regression that reintroduced one would not fail any other test —
+   * it would simply make `--register-only` capable of changing infrastructure,
+   * quietly, which is the failure this whole flag exists to avoid.
+   */
+  it('runs init and output, and never plan or apply', async () => {
+    const calls: Call[] = []
+    const result = await readOutputs(ctxFor(), {
+      dryRun: false,
+      projectRoot: PROJECT_ROOT,
+      env: completeEnv(),
+      exec: recordingExec(calls, { output: { stdout: APPLY_OUTPUTS } }),
+    })
+
+    expect(result.status).toBe('read')
+    const subcommands = calls.map((c) => c.args[0])
+    expect(subcommands).toEqual(['init', 'output'])
+    expect(subcommands).not.toContain('plan')
+    expect(subcommands).not.toContain('apply')
+  })
+
+  /**
+   * The teardown case, and the reason this check exists at all.
+   *
+   * `terraform output -json` answers `{}` for a destroyed workspace exactly as
+   * it does for one never applied, and the parser turns that into a valid
+   * all-empty result rather than an error. The payload built from it is then
+   * *accepted*: identity comes from the manifest, so the Control Plane answers
+   * 200 and the operator is told a torn-down product was registered.
+   */
+  it('refuses an empty workspace rather than registering a torn-down product', async () => {
+    const result = await readOutputs(ctxFor(), {
+      dryRun: false,
+      projectRoot: PROJECT_ROOT,
+      env: completeEnv(),
+      exec: recordingExec([], { output: { stdout: '{}' } }),
+    })
+    expect(result.status).toBe('empty-state')
+  })
+
+  /**
+   * A state consisting entirely of sensitive outputs is a real estate. The
+   * parser withholds those values, so a check that looked only at what it could
+   * read would call it empty and refuse a legitimate re-registration.
+   */
+  it('treats a state of nothing but withheld secrets as real infrastructure', async () => {
+    const result = await readOutputs(ctxFor(), {
+      dryRun: false,
+      projectRoot: PROJECT_ROOT,
+      env: completeEnv(),
+      exec: recordingExec([], {
+        output: { stdout: JSON.stringify({ some_secret: { value: 'x', sensitive: true } }) },
+      }),
+    })
+    expect(result.status).toBe('read')
+  })
+
+  it('parses the references registration will send', async () => {
+    const result = await readOutputs(ctxFor(), {
+      dryRun: false,
+      projectRoot: PROJECT_ROOT,
+      env: completeEnv(),
+      exec: recordingExec([], { output: { stdout: APPLY_OUTPUTS } }),
+    })
+    expect(result.status).toBe('read')
+    if (result.status !== 'read') return
+    expect(result.outputs.githubRepository).toBe('koras-technologies/sampleapp')
+  })
+
+  it('reports a failed init without pretending it read anything', async () => {
+    const result = await readOutputs(ctxFor(), {
+      dryRun: false,
+      projectRoot: PROJECT_ROOT,
+      env: completeEnv(),
+      exec: recordingExec([], { init: { exitCode: 1 } }),
+    })
+    expect(result.status).toBe('init-failed')
+  })
+
+  it('reports a project that was never provisioned rather than sending nothing', async () => {
+    const result = await readOutputs(ctxFor(), {
+      dryRun: false,
+      projectRoot: PROJECT_ROOT,
+      env: completeEnv(),
+      exec: recordingExec([], { output: { exitCode: 1 } }),
+    })
+    expect(result.status).toBe('output-failed')
+  })
+
+  it('refuses a directory holding no Terraform configuration', async () => {
+    const calls: Call[] = []
+    const result = await readOutputs(ctxFor(), {
+      dryRun: false,
+      projectRoot: join(ROOT, 'never-generated'),
+      env: completeEnv(),
+      exec: recordingExec(calls),
+    })
+    expect(result.status).toBe('no-terraform')
+    expect(calls).toHaveLength(0)
   })
 })
