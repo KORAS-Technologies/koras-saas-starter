@@ -43,7 +43,7 @@ otherwise stops at F6, and why there is no F0 and no F15.
 | F5 | `apps/marketing` declares Tailwind and imports no stylesheet | closed 2026-08-30 | Decisions |
 | F5a | `doppler-bootstrap` cannot express a legitimately empty setting | closed 2026-08-29 | Decisions |
 | F6 | the two references deploy-time registration cannot carry | **open** | Decisions |
-| F7 | nothing has exercised the register job in a real pipeline | **open** — identity proven, no payload yet | Verification |
+| F7 | nothing has exercised the register job in a real pipeline | **open** — payload sent 2026-08-30, registry read outstanding | Verification |
 | F8 | the `--with` / `--without` generation paths remain untested | closed — *the entry was wrong* | Verification |
 | F9 | the plan catalogue could not be authored | closed 2026-08-29 | Onboarding |
 | F10 | the tenant store was in memory | closed 2026-08-29 | Onboarding |
@@ -363,9 +363,18 @@ product infrastructure exists.**
 So this entry's remaining work has no subject. The two null columns are on
 registry rows whose infrastructure is gone, and `--register-only` now refuses an
 empty Terraform workspace rather than re-asserting a product nothing backs — see
-below. The realistic close is the *next* product generated with the four Control
-Plane settings in place, which registers correctly on its first pass and never
-has the gap.
+below.
+
+**That next product exists as of 2026-08-30.** `koras-e2e-shop` was provisioned
+and registered, and its payload carries `platform_api_base_url` and
+`cloudflare_zone_id` — the two fields whose absence opened this entry. So the
+gap is closed for everything generated from here, by the fix rather than by a
+migration.
+
+Stated precisely: the *payload* carries them, which `registration.test.ts`
+asserts and `buildRegistration` shows. What the registry now *stores* has not
+been read back, because that needs a staff identity the registrar does not have
+— the same open box as F7.
 
 **What the teardown left behind, which is a different entry's problem.** Nothing
 deregisters a product when its infrastructure is destroyed —
@@ -878,8 +887,9 @@ implementation, and it is the one item here with no dependency forcing it now.
 
 - [~] Observe the `register` job run in a generated project's deployment —
       **cannot be closed as written**, see below
-- [ ] Observe *generation-time* registration send a real payload
-- [ ] Confirm the Control Plane's stored references change as a result
+- [x] Observe *generation-time* registration send a real payload — 2026-08-30
+- [ ] Confirm the Control Plane's stored references change as a result — needs a
+      staff read, which the registrar identity cannot perform
 
 What has been checked: the payload validates against the Control Plane's real
 request model; the script refuses on a generated control-plane project with a
@@ -891,8 +901,47 @@ against the live dev estate, twice — by `pnpm koras:token` and by the
 generator's own resolution and minting path. Both returned a JWT and a `422`
 from the Control Plane on an empty body, which is the identity passing. See F2a.
 
-That is not this entry. Every run so far probed with an **empty body**: no
-payload has ever been sent, and no stored reference has ever changed.
+**A real payload was sent on 2026-08-30**, and this is what it found.
+
+`koras-e2e-shop` was provisioned — 8 providers, 4 Supabase projects, 4 ZITADEL
+instances, 8 Vercel projects, 8 Fly apps — and its registration **timed out
+twice** at the 15,000ms default. The estate was intact and nothing was rolled
+back, which is the behaviour R-001 asks for.
+
+The cause was not an unreachable Control Plane. Timed with the budget raised:
+
+```
+readOutputs   : 4,190ms
+registration  : registered in 14,749ms
+```
+
+**It was failing by about 250 milliseconds.** The default is 60s now, with the
+measurement in the comment.
+
+What hid this is worth recording, because every check before it was green.
+Every earlier probe used an **empty body** and came back in 203-621ms — but a
+`422` is refused at validation *before the request touches the database*, so a
+fast answer proved the identity and nothing whatever about the cost. A real
+payload writes a product row, four environments, their references and their
+services. The Control Plane also runs on Fly and stops when idle: 4.6s to
+cold-start, ~0.5s warm, measured the same day. Registration is the last step of
+a long provisioning run, so it is reliably the first request after an idle
+period.
+
+This is exactly the defect class this entry exists to catch, and nothing but a
+real payload against a real registry could have found it. The identity probes,
+the 33 unit tests and the contract tests were all green throughout.
+
+**A second finding, from the same run.** The failure message told the operator
+to retry with `--provision-only` — a full plan across eight providers and an
+apply — to recover from one failed HTTP request. `--register-only` had been
+added that morning and the recovery guidance was never pointed at it. Fixed.
+
+**Why the last box is still open.** Confirming the *stored* references means
+reading the registry, and `GET /api/platform/v1/products` answers `403 This
+endpoint is restricted to platform staff` to the registrar. That is correct —
+the registrar is a machine identity that registers and cannot read — so this
+needs the console or a `STAFF_TOKEN`, neither of which a session can obtain.
 
 **The first box contradicts F2b, and F2b wins.** F2b turned the deploy-time
 `register` job off by default on the same day, because the only credential that

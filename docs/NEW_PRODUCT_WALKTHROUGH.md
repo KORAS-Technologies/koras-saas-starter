@@ -51,9 +51,12 @@ the same config and returned the same result, choosing the **key** over the
 `KORAS_CONTROL_PLANE_TOKEN` that had just been stored, and deriving the ZITADEL
 instance from the Control Plane URL rather than from a setting.
 
-What remains unobserved is a *registration with a payload in it*: every run so
-far has probed with an empty body. There is no product estate to send one from —
-see F2c.
+**A registration with a payload in it followed the same day**, and it found what
+the probes could not. `koras-e2e-shop` registered in **14,749ms** against a
+15,000ms default, having failed twice on that margin first. An empty-body probe
+answers in 203-621ms because a `422` is refused at validation before the request
+reaches the database; a real payload writes a product row, four environments,
+their references and their services. The default is 60s now. See F7.
 
 **3. `doppler-bootstrap` never asks for the two Control Plane settings.** They
 are deliberately absent from the environment contract so that

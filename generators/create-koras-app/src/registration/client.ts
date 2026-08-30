@@ -33,7 +33,32 @@ export type FetchLike = (
   init?: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal },
 ) => Promise<HttpResponseLike>
 
-export const DEFAULT_TIMEOUT_MS = 15_000
+/**
+ * How long registration waits for the Control Plane.
+ *
+ * 60 seconds, and the number is measured rather than chosen. The first real
+ * registration this estate ever performed -- `koras-e2e-shop`, 2026-08-30 --
+ * took **14,749ms** against the previous budget of 15,000. It failed twice by
+ * roughly 250 milliseconds, and reported a timeout, which reads as an
+ * unreachable Control Plane rather than a slow one.
+ *
+ * What made that hard to see: every earlier check probed with an empty body and
+ * came back in 203-621ms. A `422` is refused at validation before the request
+ * touches the database, so the fast answer proved the identity and nothing
+ * about the cost. A real payload writes a product row, four environments, their
+ * references and their services.
+ *
+ * The Control Plane also runs on Fly and stops when idle -- measured at 4.6s to
+ * cold-start, then ~0.5s warm -- and registration is the last step of a long
+ * provisioning run, so it is usually the first request after an idle period.
+ * The budget has to cover a cold boot plus the write.
+ *
+ * Generous on purpose. This runs after `terraform apply` has created real
+ * infrastructure, so the cost of waiting too long is a slow command, and the
+ * cost of not waiting long enough is an operator told their estate did not
+ * register when it very nearly did.
+ */
+export const DEFAULT_TIMEOUT_MS = 60_000
 
 export type RegistrationOutcome =
   /** The Control Plane accepted the product. */

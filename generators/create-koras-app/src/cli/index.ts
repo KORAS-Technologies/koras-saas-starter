@@ -625,8 +625,13 @@ function printRegistrationReport(
           ? '  Retry once the Control Plane is reachable:'
           : '  Fix the cause, then retry:',
       )
+      // --register-only, not --provision-only. Registration is the only thing
+      // that failed, and re-sending it needs no plan and no apply. Suggesting a
+      // full provisioning run to recover from a failed HTTP request is how an
+      // operator ends up re-planning eight providers to fix a timeout.
       console.warn(
-        `    pnpm create-koras-app ${projectSlug} --profile ${ctx.profile} --provision-only`,
+        `    pnpm create-koras-app ${projectSlug} --profile ${ctx.profile} --register-only` +
+          ` --output-dir <dir>`,
       )
       process.exitCode = 1
       break
