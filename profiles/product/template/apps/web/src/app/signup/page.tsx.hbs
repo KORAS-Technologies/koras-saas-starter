@@ -13,6 +13,29 @@ import { SignupForm } from './SignupForm'
  * writes one pending row and sends one email; an account exists only after the
  * link in it is opened.
  */
+/**
+ * Rendered per request, never prerendered.
+ *
+ * The plan catalogue is not a property of the build. It is empty when a product
+ * is generated and fills in whenever somebody marks a plan self-serve, which is
+ * usually long after the last deploy.
+ *
+ * `availablePlans` fetches with `cache: 'no-store'`, which would normally opt
+ * this route into dynamic rendering on its own -- except that it also catches
+ * its own failures, so the signal never reaches Next and the route prerenders
+ * with whatever the fetch returned at build time. Observed on 2026-08-30: the
+ * Control Plane was answering 500, the catch turned that into an empty list,
+ * and "signing up online is not available yet" was baked into static HTML.
+ * Creating a plan afterwards changed nothing, because the page had stopped
+ * asking -- `X-Nextjs-Prerender: 1`, served from cache with an `Age` of ten
+ * minutes.
+ *
+ * That is the trap in a friendly catch: it made the page reassuring and
+ * permanently wrong at the same time. Declaring the route dynamic is what makes
+ * the reassurance temporary.
+ */
+export const dynamic = 'force-dynamic'
+
 export default async function SignupPage() {
   const plans = await availablePlans()
 

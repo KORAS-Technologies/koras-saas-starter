@@ -73,3 +73,53 @@ describe('the signup surface', () => {
     ).toBe(true)
   })
 })
+
+describe('the signup page is rendered per request', () => {
+  const page = readFileSync(
+    join(PROFILES, 'product', 'template', 'apps', 'web', 'src', 'app', 'signup', 'page.tsx.hbs'),
+    'utf8',
+  )
+
+  /**
+   * The catalogue is not a property of the build. It is empty when a product is
+   * generated and fills in whenever somebody marks a plan self-serve, which is
+   * normally long after the last deploy.
+   *
+   * `availablePlans` fetches with `cache: 'no-store'`, which would opt the
+   * route into dynamic rendering by itself -- except that it also catches its
+   * own failures, so the signal never reaches Next and the route prerenders
+   * with whatever the fetch returned at build time. On 2026-08-30 that was an
+   * empty list produced by a catch swallowing a 500, and "signing up online is
+   * not available yet" went into static HTML. Creating a plan afterwards
+   * changed nothing: `X-Nextjs-Prerender: 1`, served from cache.
+   */
+  it('declares itself dynamic, which the catch would otherwise hide', () => {
+    expect(page).toContain("export const dynamic = 'force-dynamic'")
+  })
+
+  /**
+   * The reason the declaration is needed rather than redundant. If the fetch
+   * ever stops catching, `cache: 'no-store'` carries the route on its own and
+   * this becomes belt and braces -- but while the catch is there, it does not.
+   */
+  it('still fetches the catalogue without caching it', () => {
+    const actions = readFileSync(
+      join(PROFILES, 'product', 'template', 'apps', 'web', 'src', 'app', 'signup', 'actions.ts.hbs'),
+      'utf8',
+    )
+    expect(actions).toContain("cache: 'no-store'")
+  })
+
+  /**
+   * The verify page needs no declaration: it reads `searchParams`, which makes
+   * the route dynamic in its own right. Asserted so that a refactor removing
+   * that does not silently make an email link land on a prerendered page.
+   */
+  it('leaves verify dynamic by its use of searchParams', () => {
+    const verify = readFileSync(
+      join(PROFILES, 'product', 'template', 'apps', 'web', 'src', 'app', 'signup', 'verify', 'page.tsx.hbs'),
+      'utf8',
+    )
+    expect(verify).toContain('searchParams')
+  })
+})
