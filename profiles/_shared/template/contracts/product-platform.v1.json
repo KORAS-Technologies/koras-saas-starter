@@ -35,6 +35,16 @@
     "no_direct_writes": {
       "requirement": "The Control Plane never writes to product business tables. Every interaction goes through these routes.",
       "reason": "A second writer is a second schema owner, and neither side would know when the other changed."
+    },
+    "environment_must_match": {
+      "requirement": "A create naming an environment other than the one this service serves is refused with 422.",
+      "reason": "A misconfigured caller -- a dev Control Plane holding a prod address, or the reverse. Writing the row anyway would put a customer's prod tenant in a dev database, which is the boundary the whole estate is arranged around. 422 and not a retryable code: the request will not become valid by being sent again.",
+      "status": 422
+    },
+    "slug_conflict_is_not_adoptable": {
+      "requirement": "A create whose organization slug is already held by a DIFFERENT organization is refused with 409, and the caller must not adopt the existing tenant.",
+      "reason": "Distinct from create_is_idempotent, and the distinction is the whole point. A repeat of the same tenant_key is answered 200 with that tenant. This 409 is two different customers asking for one name, so the tenant in the way belongs to somebody else -- adopting it would hand one customer another customer's tenant. Nothing on either side can resolve it without a person choosing a different name, so the provisioning job holds rather than rolling back: the organization and its identity resources are already correct, and destroying them because a name collided punishes the customer for the collision.",
+      "status": 409
     }
   }
 }

@@ -72,6 +72,58 @@ def test_a_repeat_is_not_answered_with_a_conflict() -> None:
     assert "HTTP_201_CREATED" in source, "the create route never signals a newly created tenant"
 
 
+def test_a_foreign_environment_is_refused() -> None:
+    """422, and deliberately not a retryable code.
+
+    This service serves one environment. A request naming another is a
+    misconfigured caller -- a dev Control Plane holding a prod address, or the
+    reverse -- and writing the row anyway would put a customer's prod tenant in
+    a dev database, which is the boundary the whole estate is arranged around.
+    """
+    source = _router_source()
+    rule = CONTRACT["rules"]["environment_must_match"]
+    assert rule["status"] == 422
+    # The comparison itself, not merely the names in it. Asserting that the
+    # source mentions `settings.environment` passes even when the branch has
+    # been disabled, because the value is also interpolated into the message --
+    # which is exactly what a mutation of this check proved on 2026-08-30.
+    assert "body.environment != settings.environment.value" in source, (
+        "the create route does not compare the requested environment to its own"
+    )
+    assert "HTTP_422_UNPROCESSABLE_ENTITY" in source
+
+
+def test_a_slug_held_by_another_organization_is_refused() -> None:
+    """409, and the caller must not adopt what is in the way.
+
+    Distinct from the repeat case, and the distinction is the whole point. A
+    repeat of the same tenant_key is the same customer retrying and is answered
+    200. This is two different customers asking for one name, so the tenant in
+    the way belongs to somebody else; adopting it would hand one customer
+    another customer's tenant.
+    """
+    source = _router_source()
+    rule = CONTRACT["rules"]["slug_conflict_is_not_adoptable"]
+    assert rule["status"] == 409
+    assert "SlugTaken" in source, "the create route never distinguishes a taken slug"
+    assert "HTTP_409_CONFLICT" in source
+
+
+def test_every_rule_the_contract_states_names_the_status_it_is_checked_by() -> None:
+    """Guards the two tests above.
+
+    Both read their status out of the contract and compare it to the router. A
+    rule that lost its `status` would make them assert nothing in particular,
+    which is how the 422 and the 409 came to be implemented here and written
+    down in neither half of the contract.
+    """
+    refusals = ("environment_must_match", "slug_conflict_is_not_adoptable")
+    for name in refusals:
+        assert isinstance(CONTRACT["rules"][name].get("status"), int), (
+            f"the {name} rule states no status code"
+        )
+
+
 def test_the_contract_offers_no_delete() -> None:
     """Rollback suspends. The customer may already have data behind the tenant."""
     assert "@router.delete" not in _router_source()
