@@ -551,6 +551,60 @@ One of the two is wrong. The manifest is what the generator reads and what
 
 ---
 
+### B-ASYNCPG — the API cannot start against the URL every provider emits
+
+- [x] `product` normalises `database_url` to the async driver
+- [x] `control-plane` does too
+- [x] Asserted for both profiles, so the next divergence fails here
+
+**Applies to:** both templates
+
+`create_async_engine(settings.database_url, ...)` was handed the URL verbatim.
+SQLAlchemy maps a driverless `postgresql://` to **psycopg2** — synchronous, and
+not a dependency of either service — so the API died at import with
+
+```
+ModuleNotFoundError: No module named 'psycopg2'
+```
+
+eleven frames below anything recognisable, with the URL mentioned nowhere.
+
+**The running `koras-control-plane` has carried the fix since it was deployed.
+Neither template ever received it.** A `field_validator` on `database_url`,
+with a docstring describing precisely this failure, sits in that repository's
+`services/api/koras_api/core/settings.py` and in no profile. Fixed downstream,
+never promoted — the Tier B shape exactly, and the reason `TEMPLATE_SYNC.md`
+exists.
+
+**What it cost to rediscover.** The first deployment of a generated product,
+2026-08-30. Everything that could pass, passed: Components, Preflight, Settings
+present and Migrate were all green, the image built and pushed at 145 MB, the
+machine launched. Then eleven minutes of health-check timeout, ten restarts, and
+one line of diagnosis:
+
+```
+WARNING The app is not listening on the expected address
+  - 0.0.0.0:8000
+Found these processes inside the machine with open listening sockets:
+  /.fly/hallpass │ [fdaa:...]:22
+```
+
+Nothing in the workflow output named the database, the URL, or the driver. The
+cause was only in the machine's own logs, which needs `flyctl` and a token to
+read. A deployment failure that reports the symptom of a crash rather than the
+crash is expensive out of all proportion to the fix.
+
+Normalising in settings keeps the driver an implementation detail. The
+alternative — requiring `+asyncpg` in every Doppler config, in the local
+bootstrap and in whatever an operator pastes from Supabase — is a rule four
+places have to remember and one will not.
+
+**Verified by generating**, then checking the validator is in the emitted file
+and rewrites both `postgresql://` and the `postgres://` alias. Eight assertions
+across both profiles, including that `psycopg2` is absent from the
+dependencies: were it present, this would have been a silent synchronous engine
+inside an async application instead of a loud import error, which is worse.
+
 ## Tier C — security controls that never reached the factory
 
 ### C1 — secret scanning exists in one repository out of five

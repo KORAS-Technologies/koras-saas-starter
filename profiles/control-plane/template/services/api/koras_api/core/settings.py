@@ -1,5 +1,5 @@
 from koras_platform import Environment
-from pydantic import AnyHttpUrl
+from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,6 +40,34 @@ class Settings(BaseSettings):
     trust_forwarded_for: bool = False
 
     otel_exporter_otlp_endpoint: str = "http://localhost:4317"
+
+
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def _use_the_async_driver(cls, value: str) -> str:
+        """Point the URL at asyncpg.
+
+        Everything that hands us a connection string -- Doppler, the local
+        bootstrap, psql, Supabase -- writes the driverless ``postgresql://``
+        form. SQLAlchemy maps that to psycopg2, which is synchronous and is not
+        a dependency of this service, so ``create_async_engine`` fails at import
+        with a bare ModuleNotFoundError that says nothing about the actual
+        problem. Normalising here keeps the driver an implementation detail
+        rather than something every caller and every environment has to
+        remember.
+
+        The running Control Plane has carried this since it was first deployed;
+        neither template did, so it was rediscovered on 2026-08-30 by the first
+        deployment of a generated product. The image built, the machine
+        launched, nothing bound to 0.0.0.0:8000, and Fly reported only that the
+        app was not listening -- the cause was eleven frames down a traceback in
+        the machine's own logs.
+        """
+        if value.startswith("postgresql://"):
+            return value.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if value.startswith("postgres://"):
+            return value.replace("postgres://", "postgresql+asyncpg://", 1)
+        return value
 
 
 settings = Settings()  # type: ignore[call-arg]
