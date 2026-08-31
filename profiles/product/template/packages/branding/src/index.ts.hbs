@@ -1,0 +1,624 @@
+/**
+ * Everything this product says about itself.
+ *
+ * One authoritative source, deliberately. The frontend reads its name, its
+ * colours, its navigation and its homepage copy from `productConfig` and from
+ * nowhere else, so customising a generated product is editing this file rather
+ * than hunting for hardcoded strings across three applications.
+ *
+ * Kept free of JSX and of React on purpose: `packages/ui` imports this, so this
+ * has to be the leaf. That is also why `IconName` is a union of names declared
+ * here rather than a component -- the configuration says *which* icon, and
+ * `packages/ui` owns what that icon looks like.
+ */
+
+/* -------------------------------------------------------------------------- */
+/* Brand tokens                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The design tokens the whole frontend is drawn from.
+ *
+ * These are the values behind the CSS custom properties in `globals.css`.
+ * `brandStyle()` in `packages/ui` turns this object into those properties, so
+ * changing a colour here changes every component that uses the token -- there
+ * is no second place where a brand colour is written down.
+ */
+export interface BrandingTokens {
+  /** Primary action colour: buttons, links, the active navigation state. */
+  primaryColor: string
+  /** Deep ink used for the hero, the footer and headline text. */
+  secondaryColor: string
+  /** Used sparingly, for structural marks such as section numerals. */
+  accentColor: string
+  /** Page background. */
+  backgroundColor: string
+  /** Body text on the page background. */
+  foregroundColor: string
+  /** Raised surfaces: cards, the header, the auth card. */
+  surfaceColor: string
+  /** Quiet bands that separate sections. */
+  surfaceMutedColor: string
+  /** Hairline borders and dividers. */
+  borderColor: string
+  /** Secondary text on a surface. */
+  mutedForegroundColor: string
+  /**
+   * A product's own logo, served from an application's `public` directory.
+   *
+   * Empty is the normal state of a freshly generated product and is not a
+   * defect: `ProductLogo` draws a neutral mark beside the product name
+   * instead. See `docs/PRODUCT_FRONTEND.md`.
+   */
+  logoUrl: string
+  /** Optional variant for dark surfaces. Falls back to `logoUrl`. */
+  logoDarkUrl: string
+  /** Browser tab icon, served from an application's `public` directory. */
+  faviconUrl: string
+  /**
+   * Body and display font stacks.
+   *
+   * System stacks by default, and not for want of ambition: the application's
+   * Content-Security-Policy sets `font-src 'self'`, so a webfont has to be
+   * self-hosted, and `next/font` fetches at build time -- which turns every
+   * build into a network call. `docs/PRODUCT_FRONTEND.md` records how to swap
+   * one in when a product wants its own face.
+   */
+  fontFamily: string
+  displayFontFamily: string
+  /** Corner radius of cards and buttons, as a CSS length. */
+  radius: string
+}
+
+export const defaultBranding: BrandingTokens = {
+  primaryColor: '#2563eb',
+  secondaryColor: '#0f172a',
+  accentColor: '#7c3aed',
+  backgroundColor: '#ffffff',
+  foregroundColor: '#0f172a',
+  surfaceColor: '#ffffff',
+  surfaceMutedColor: '#f8fafc',
+  borderColor: '#e2e8f0',
+  mutedForegroundColor: '#475569',
+  logoUrl: '',
+  logoDarkUrl: '',
+  faviconUrl: '/icon.svg',
+  fontFamily:
+    'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  displayFontFamily:
+    'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  radius: '0.75rem',
+}
+
+export function mergeBranding(
+  base: BrandingTokens,
+  overrides: Partial<BrandingTokens>,
+): BrandingTokens {
+  return { ...base, ...overrides }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Customer branding                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The tokens a customer may set for their own tenant.
+ *
+ * A deliberately short list. Colours, corner radius and the two images are what
+ * "make it look like ours" means; the font stacks and the semantic text colours
+ * are not on it, because a customer who picks an unreadable pair of them breaks
+ * the product for their own staff and calls it a bug.
+ *
+ * White-labelling adds the name and the tagline, which is why they are here and
+ * not only in `ProductIdentity`.
+ */
+export const TENANT_OVERRIDABLE = [
+  'primaryColor',
+  'secondaryColor',
+  'accentColor',
+  'surfaceMutedColor',
+  'borderColor',
+  'radius',
+  'logoUrl',
+  'logoDarkUrl',
+] as const
+
+export type TenantBrandingKey = (typeof TENANT_OVERRIDABLE)[number]
+
+export interface TenantBranding {
+  tokens: Partial<Pick<BrandingTokens, TenantBrandingKey>>
+  /** White-label display name. Empty means "use the product's own name". */
+  name: string
+}
+
+/** Nothing configured. Returned rather than null so callers need no branch. */
+export const NO_TENANT_BRANDING: TenantBranding = { tokens: {}, name: '' }
+
+/**
+ * A CSS colour this application is willing to write into a style attribute.
+ *
+ * Hex only. The brand tokens become CSS custom property values, and a custom
+ * property value is not escaped by the browser the way text content is: a
+ * tenant that stores `red; } html { display: none` for `primaryColor` is
+ * writing CSS into every page their staff load, and one that stores something
+ * ending in `url(...)` is making requests from them.
+ *
+ * This runs on tenant-authored data read from the database. It is the same
+ * category as browser input -- a value the product stored is not a value the
+ * product chose -- and it is validated at the point of use rather than trusted
+ * because it survived a round trip through Postgres.
+ */
+const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
+
+/** A length, in the three units a radius is ever written in. */
+const LENGTH = /^(?:0|[0-9]{1,3}(?:\.[0-9]{1,3})?(?:rem|px|em))$/
+
+/**
+ * An image path this application is willing to put in `src`.
+ *
+ * Same-origin absolute paths, and nothing else. `data:` is excluded because an
+ * SVG data URL is a document with script in it; `http:` and `//` are excluded
+ * because a logo fetched from somewhere a tenant controls is a beacon on every
+ * page of the product, and because the Content-Security-Policy sets
+ * `img-src 'self'` and would refuse it anyway -- silently, as a broken image.
+ *
+ * The negative lookahead is what excludes `//evil.example/logo.svg`, which is a
+ * cross-origin URL that begins with a slash and would otherwise read as a path.
+ */
+const ASSET_PATH = /^\/(?!\/)[A-Za-z0-9._~\-/]*$/
+
+function isColour(value: unknown): value is string {
+  return typeof value === 'string' && HEX.test(value)
+}
+
+/**
+ * Turn whatever is in `tenant_settings.branding` into tokens, or into nothing.
+ *
+ * Unknown keys are dropped, invalid values are dropped individually, and a
+ * malformed record as a whole degrades to the product's own branding rather
+ * than to an error page. That order matters: a customer with one bad colour
+ * should lose that colour, not their product.
+ *
+ * The product API is what reads the row; this is what decides whether the
+ * result may reach a stylesheet. See `docs/PRODUCT_FRONTEND.md`.
+ */
+export function parseTenantBranding(raw: unknown): TenantBranding {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return NO_TENANT_BRANDING
+
+  const record = raw as Record<string, unknown>
+  const tokens: Partial<Pick<BrandingTokens, TenantBrandingKey>> = {}
+
+  for (const key of TENANT_OVERRIDABLE) {
+    const value = record[key]
+    if (key === 'radius') {
+      if (typeof value === 'string' && LENGTH.test(value)) tokens.radius = value
+      continue
+    }
+    if (key === 'logoUrl' || key === 'logoDarkUrl') {
+      if (typeof value === 'string' && ASSET_PATH.test(value)) tokens[key] = value
+      continue
+    }
+    if (isColour(value)) tokens[key] = value
+  }
+
+  // A white-label name is text, so it is escaped by React wherever it is
+  // rendered. Length is still bounded: a 4,000-character "name" is not a brand,
+  // it is a way to break every header in the product.
+  const name = typeof record.name === 'string' ? record.name.trim().slice(0, 60) : ''
+
+  return { tokens, name }
+}
+
+/** The tokens a page should actually render with, for this customer. */
+export function brandingFor(base: BrandingTokens, tenant: TenantBranding): BrandingTokens {
+  return mergeBranding(base, tenant.tokens)
+}
+
+/* -------------------------------------------------------------------------- */
+/* Product identity                                                           */
+/* -------------------------------------------------------------------------- */
+
+export interface ProductIdentity {
+  /** Display name. Written by the generator from the project name. */
+  name: string
+  /** Machine name. Written by the generator; matches the Control Plane product code. */
+  slug: string
+  /** One line, used under the logo in the footer and on the auth panel. */
+  tagline: string
+  /** One or two sentences. Used as the page description and for OpenGraph. */
+  description: string
+  /**
+   * Where a visitor who cannot sign up should write.
+   *
+   * Empty by default and rendered only when set, because a mailto pointing at
+   * an address nobody reads is worse than no link at all -- it looks like a
+   * route in and is a dead end.
+   */
+  contactEmail: string
+  /** Public origin, for canonical URLs and OpenGraph. */
+  url: string
+  /**
+   * Where the web application lives, when it is somewhere else.
+   *
+   * Empty means "here", which is right for `apps/web`: `/login` and `/signup`
+   * are its own routes. `apps/marketing` is a separate deployment on a separate
+   * hostname and serves neither, so with this empty its sign-in link 404s.
+   *
+   * Set it to the web application's origin -- `https://app.example.com` -- as
+   * soon as the marketing site is generated. `appHref()` in `@<slug>/ui`
+   * resolves every account link through it, so one value fixes both
+   * applications, and setting it in a product without a marketing site is
+   * harmless rather than wrong.
+   */
+  appUrl: string
+}
+
+/* -------------------------------------------------------------------------- */
+/* Marketing content                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Icons `packages/ui` can draw.
+ *
+ * A closed union rather than a free string: a name with no drawing behind it
+ * should fail to compile, not render a hole in the feature grid.
+ */
+export type IconName =
+  | 'shield'
+  | 'users'
+  | 'key'
+  | 'workflow'
+  | 'plug'
+  | 'chart'
+  | 'layers'
+  | 'clock'
+  | 'eye'
+  | 'check'
+
+export interface NavLink {
+  label: string
+  href: string
+}
+
+export interface Cta {
+  label: string
+  href: string
+}
+
+export interface ValueItem {
+  title: string
+  description: string
+}
+
+export interface FeatureItem {
+  icon: IconName
+  title: string
+  description: string
+}
+
+export interface OutcomeItem {
+  title: string
+  description: string
+}
+
+/** A genuine sequence. The numerals in the UI mean order, not decoration. */
+export interface ProcessStep {
+  title: string
+  description: string
+}
+
+export interface TrustItem {
+  icon: IconName
+  title: string
+  description: string
+}
+
+export interface FooterGroup {
+  title: string
+  links: NavLink[]
+}
+
+/** An optional screenshot for the hero and the preview section. */
+export interface ProductImage {
+  src: string
+  alt: string
+  width: number
+  height: number
+}
+
+/**
+ * How somebody without an account gets one.
+ *
+ * `auto` follows the platform rather than this file: the signup page asks the
+ * Control Plane which plans are self-serve, shows the form when there are any
+ * and the request-access card when there are none. `invitation` is a statement
+ * about this product that no catalogue can answer, so it is configured.
+ */
+export type AccessMode = 'auto' | 'invitation'
+
+export interface MarketingConfig {
+  /** Header and mobile navigation. Every entry must resolve to something real. */
+  nav: NavLink[]
+  headerCta: Cta | null
+
+  eyebrow: string
+  heroTitle: string
+  heroDescription: string
+  /** A short reassurance under the hero buttons. Omitted when empty. */
+  heroNote: string
+  primaryCta: Cta
+  secondaryCta: Cta | null
+  /** A real screenshot. When null the hero draws the built-in product frame. */
+  heroImage: ProductImage | null
+
+  values: ValueItem[]
+
+  featuresEyebrow: string
+  featuresTitle: string
+  features: FeatureItem[]
+
+  outcomesEyebrow: string
+  outcomesTitle: string
+  outcomes: OutcomeItem[]
+
+  processEyebrow: string
+  processTitle: string
+  steps: ProcessStep[]
+
+  previewTitle: string
+  previewDescription: string
+  /** A real screenshot. When null the preview draws the built-in product frame. */
+  previewImage: ProductImage | null
+
+  trustEyebrow: string
+  trustTitle: string
+  trust: TrustItem[]
+  /**
+   * Sits under the trust grid.
+   *
+   * Says what this product does *not* claim. A generated product has no
+   * certification, and a trust section that lets a reader assume otherwise is
+   * the one part of a marketing page that can cost somebody a contract.
+   */
+  trustNote: string
+
+  ctaTitle: string
+  ctaDescription: string
+  ctaPrimary: Cta
+  ctaSecondary: Cta | null
+
+  footerGroups: FooterGroup[]
+  /** Rendered in the footer bottom bar. Omitted when empty. */
+  footerNote: string
+  /** Whether the footer credits the platform this product was built on. */
+  showPlatformCredit: boolean
+
+  access: { mode: AccessMode }
+}
+
+export interface ProductConfig {
+  product: ProductIdentity
+  brand: BrandingTokens
+  marketing: MarketingConfig
+}
+
+/**
+ * The configuration a generated product starts with.
+ *
+ * The copy is deliberately plain. It describes what this repository actually
+ * ships -- an OIDC sign-in, roles, row-level tenant isolation, a background
+ * worker, an API -- and claims nothing beyond it. A default homepage that
+ * promises a revolutionary AI platform is a homepage every product has to
+ * rewrite before it can be shown to anyone; this one is publishable as it
+ * stands, and improves when somebody who knows the product edits it.
+ */
+export const productConfig: ProductConfig = {
+  product: {
+    name: '{{projectName}}',
+    slug: '{{projectSlug}}',
+    tagline: 'Operations, in one place',
+    description:
+      '{{projectName}} brings the people, records and decisions behind your day-to-day operations into a single workspace, with the access control and tenant isolation an enterprise rollout needs.',
+    contactEmail: '',
+    url: '{{#if primaryDomain}}https://{{primaryDomain}}{{/if}}',
+    appUrl: '',
+  },
+
+  brand: defaultBranding,
+
+  marketing: {
+    // In-page anchors, because they are the links this page can honour today.
+    // Point them at real routes as the product grows them; a header entry that
+    // leads nowhere costs more trust than a short header does.
+    nav: [
+      { label: 'Features', href: '/#features' },
+      { label: 'Outcomes', href: '/#outcomes' },
+      { label: 'How it works', href: '/#how-it-works' },
+      { label: 'Security', href: '/#security' },
+    ],
+    headerCta: { label: 'Get started', href: '/signup' },
+
+    eyebrow: 'Multi-tenant · Single sign-on · Role-based access',
+    heroTitle: 'One workspace for the work {{projectName}} runs.',
+    heroDescription:
+      'Bring your teams, their records and the decisions between them into a single place, with the access control, tenant isolation and traceability an enterprise rollout is going to ask you about.',
+    heroNote: 'Sign in with your organisation account. No separate password to manage.',
+    primaryCta: { label: 'Get started', href: '/signup' },
+    secondaryCta: { label: 'Sign in', href: '/login' },
+    heroImage: null,
+
+    values: [
+      {
+        title: 'Closed by default',
+        description:
+          'Every route requires a signed-in account holding a role. New pages inherit that.',
+      },
+      {
+        title: 'Separated by tenant',
+        description: 'Each organisation is isolated in the database itself, not only in the query.',
+      },
+      {
+        title: 'Your identity provider',
+        description:
+          'OpenID Connect single sign-on, with multi-factor enforced where you require it.',
+      },
+      {
+        title: 'Built to extend',
+        description: 'A typed API, a background worker and shared packages you own outright.',
+      },
+    ],
+
+    featuresEyebrow: 'What you get',
+    featuresTitle: 'The parts every serious deployment needs, already wired together',
+    features: [
+      {
+        icon: 'layers',
+        title: 'Organisations and workspaces',
+        description:
+          'Each customer gets their own tenant, their own data and their own members, with nothing shared by accident.',
+      },
+      {
+        icon: 'key',
+        title: 'Roles and permissions',
+        description:
+          'Access is granted by role and checked on the server for every protected operation, never in the browser alone.',
+      },
+      {
+        icon: 'shield',
+        title: 'Single sign-on',
+        description:
+          'People sign in through your identity provider and land straight in {{projectName}}, never on a provider screen.',
+      },
+      {
+        icon: 'workflow',
+        title: 'Background work',
+        description:
+          'Long-running jobs, imports and scheduled tasks run off the request path, so the interface stays responsive.',
+      },
+      {
+        icon: 'plug',
+        title: 'A typed API',
+        description:
+          'The same API the interface uses is available to your own systems, with consistent errors and request IDs.',
+      },
+      {
+        icon: 'chart',
+        title: 'Operational visibility',
+        description:
+          'Structured logs and traces carry the acting account and organisation, so activity can be attributed.',
+      },
+    ],
+
+    outcomesEyebrow: 'Why teams move',
+    outcomesTitle: 'What changes once {{projectName}} is in place',
+    outcomes: [
+      {
+        title: 'Less manual work',
+        description: 'Routine steps run themselves instead of waiting on someone to remember them.',
+      },
+      {
+        title: 'Clearer visibility',
+        description: 'The current state of the work is one place, not reconstructed from inboxes.',
+      },
+      {
+        title: 'Consistent operations',
+        description: 'The same process runs the same way across teams, sites and time zones.',
+      },
+      {
+        title: 'Faster onboarding',
+        description: 'New members get exactly the access their role allows, on their first day.',
+      },
+    ],
+
+    processEyebrow: 'How it works',
+    processTitle: 'Three steps, in this order',
+    steps: [
+      {
+        title: 'Configure',
+        description:
+          'Connect your identity provider, create your organisations, and decide what each role may do.',
+      },
+      {
+        title: 'Operate',
+        description:
+          'Your teams work in {{projectName}} day to day, with automation handling what does not need a person.',
+      },
+      {
+        title: 'Measure',
+        description:
+          'Watch throughput, exceptions and activity, and adjust the configuration on what you actually see.',
+      },
+    ],
+
+    previewTitle: 'A workspace people can find their way around',
+    previewDescription:
+      'Dense where the work is and quiet everywhere else, so the current task stays in front of the person doing it.',
+    previewImage: null,
+
+    trustEyebrow: 'Security',
+    trustTitle: 'Built for the review your security team will run',
+    trust: [
+      {
+        icon: 'shield',
+        title: 'Secure authentication',
+        description:
+          'OpenID Connect with PKCE, a signed session cookie, and multi-factor enforced when your policy requires it.',
+      },
+      {
+        icon: 'layers',
+        title: 'Tenant isolation',
+        description:
+          'Row-level security in the database, so a query that forgets the tenant returns nothing rather than everything.',
+      },
+      {
+        icon: 'key',
+        title: 'Role-based access',
+        description:
+          'Every protected operation verifies the principal and the required permission on the server.',
+      },
+      {
+        icon: 'eye',
+        title: 'Accessibility',
+        description:
+          'Built against WCAG 2.2 AA: semantic structure, keyboard operability, visible focus and reduced motion.',
+      },
+      {
+        icon: 'clock',
+        title: 'Traceability',
+        description:
+          'Requests carry the acting account and organisation through the API and into the logs.',
+      },
+    ],
+    trustNote:
+      '{{projectName}} makes no certification claim. Add one here only once it has been audited and issued.',
+
+    ctaTitle: 'Ready to get started with {{projectName}}?',
+    ctaDescription:
+      'Create an account in a couple of minutes, or sign in if your organisation is already set up.',
+    ctaPrimary: { label: 'Get started', href: '/signup' },
+    ctaSecondary: { label: 'Sign in', href: '/login' },
+
+    footerGroups: [
+      {
+        title: 'Product',
+        links: [
+          { label: 'Features', href: '/#features' },
+          { label: 'Outcomes', href: '/#outcomes' },
+          { label: 'How it works', href: '/#how-it-works' },
+          { label: 'Security', href: '/#security' },
+        ],
+      },
+      {
+        title: 'Account',
+        links: [
+          { label: 'Sign in', href: '/login' },
+          { label: 'Get started', href: '/signup' },
+        ],
+      },
+    ],
+    footerNote: '',
+    showPlatformCredit: true,
+
+    access: { mode: 'auto' },
+  },
+}
