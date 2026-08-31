@@ -18,3 +18,23 @@ export interface SignupState {
 }
 
 export const IDLE: SignupState = { status: 'idle' }
+
+/**
+ * How far the provisioning run started by a verification has got.
+ *
+ * Here rather than in `actions.ts` for the same reason `SignupState` is: that
+ * file carries `'use server'`, and everything exported from one becomes a
+ * callable server endpoint, so it may export only async functions.
+ *
+ * Three booleans-worth of information and no error text. What broke in
+ * provisioning is an operational fact the Control Plane deliberately does not
+ * hand to an unauthenticated page, and a visitor could do nothing with it.
+ */
+export interface SignupStatus {
+  /** The run's state, for display. `pending` covers everything not yet known. */
+  state: string
+  /** The account exists. This is the only field the page acts on. */
+  ready: boolean
+  /** The run finished and did not succeed, so waiting longer will not help. */
+  failed: boolean
+}

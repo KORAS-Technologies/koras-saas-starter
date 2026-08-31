@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
-import { productConfig } from '@{{projectSlug}}/branding'
 import { AuthCard, AuthLayout, ButtonLink } from '@{{projectSlug}}/ui'
 import { verifySignup } from '../actions'
+import { ProvisioningStatus } from '../ProvisioningStatus'
 
 export const metadata: Metadata = { title: 'Confirm your email' }
 
@@ -27,7 +27,6 @@ export default async function VerifyPage({
   searchParams: Promise<{ token?: string }>
 }) {
   const { token } = await searchParams
-  const { product } = productConfig
 
   if (!token) {
     return (
@@ -80,17 +79,21 @@ export default async function VerifyPage({
     )
   }
 
+  // The address is proved and the run has started. From here the page waits
+  // with them rather than telling them to watch their inbox: provisioning takes
+  // minutes, and a signup that ends on "we will email you" is a dead end in the
+  // browser at the exact moment somebody has finished committing to the
+  // product. `ProvisioningStatus` polls the run and sends them to sign in.
+  //
+  // The welcome email is still sent, by the run itself, so closing this tab
+  // costs nothing.
   return (
     <AuthLayout>
       <div data-testid="verify-ok">
-        <AuthCard
-          title="You are all set"
-          description={`We are setting up ${product.name} for you now. This takes a few minutes; we will email you when it is ready.`}
-        >
-          <ButtonLink href="/login" size="lg" className="w-full">
-            Sign in
-          </ButtonLink>
-        </AuthCard>
+        <ProvisioningStatus
+          jobId={outcome.jobId}
+          organizationSlug={outcome.organizationSlug}
+        />
       </div>
     </AuthLayout>
   )

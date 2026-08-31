@@ -18,7 +18,7 @@
 
 // Types only. A `'use server'` module may export nothing but async functions,
 // so `SignupState` and `IDLE` live in `./state` and are imported here.
-import type { SignupState } from './state'
+import type { SignupState, SignupStatus } from './state'
 
 function controlPlane(): string | null {
   const base = process.env.KORAS_CONTROL_PLANE_URL
@@ -168,8 +168,15 @@ export async function startSignup(
 }
 
 export type VerifyOutcome =
-  /** The token was spent and provisioning has begun. */
-  | { status: 'verified' }
+  /**
+   * The token was spent and provisioning has begun.
+   *
+   * `jobId` is what the page polls; `organizationSlug` is what it can show
+   * while waiting. The customer never typed the slug -- the Control Plane
+   * derives it from the organisation name and the address -- so this response
+   * is the only place the product can learn what their workspace is called.
+   */
+  | { status: 'verified'; jobId: string; organizationSlug: string }
   /** Unknown, expired or already used. Deliberately one outcome, not three. */
   | { status: 'invalid' }
   /** Nothing to do with the token: the caller is over the platform's budget. */
@@ -201,10 +208,70 @@ export async function verifySignup(token: string): Promise<VerifyOutcome> {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ token }),
     })
-    if (response.ok) return { status: 'verified' }
+    if (response.ok) {
+      const body = (await response.json()) as {
+        job_id?: string
+        organization_slug?: string
+      }
+      return {
+        status: 'verified',
+        jobId: body.job_id ?? '',
+        organizationSlug: body.organization_slug ?? '',
+      }
+    }
     if (response.status === 429) return { status: 'rate-limited' }
     return { status: 'invalid' }
   } catch {
     return { status: 'invalid' }
+  }
+}
+
+/**
+ * How far the provisioning run has got.
+ *
+ * Verification starts a run that takes minutes, so the page that spent the
+ * token has to be able to ask. Without this the signup ends on a promise of an
+ * email, which is a dead end in the browser and the most common place for
+ * somebody to give up.
+ *
+ * On the server, like everything else in this file: `KORAS_CONTROL_PLANE_URL`
+ * and the shape of that API are not the browser's business, and a page polling
+ * the platform directly would put its address in every visitor's network tab.
+ *
+ * Every failure answers `pending`. A page that stops polling because one
+ * request timed out is worse than one that keeps waiting: the run is almost
+ * certainly still going, and the customer has no way to restart it. `failed` is
+ * reserved for the platform actually saying the run is over and did not
+ * succeed -- an unknown job answers that too, because a job the Control Plane
+ * has never heard of is not going to start existing.
+ */
+export async function signupStatus(jobId: string): Promise<SignupStatus> {
+  const base = controlPlane()
+  if (!base || !jobId) return { state: 'pending', ready: false, failed: false }
+
+  try {
+    const response = await fetch(
+      `${base}/api/signup/v1/registrations/status?job_id=${encodeURIComponent(jobId)}`,
+      { cache: 'no-store' },
+    )
+    if (response.status === 404) {
+      return { state: 'unknown', ready: false, failed: true }
+    }
+    if (!response.ok) {
+      return { state: 'pending', ready: false, failed: false }
+    }
+    const body = (await response.json()) as {
+      state?: string
+      ready?: boolean
+      failed?: boolean
+    }
+    return {
+      state: body.state ?? 'pending',
+      ready: body.ready === true,
+      failed: body.failed === true,
+    }
+  } catch (error) {
+    console.error('[signup] the provisioning status could not be read:', error)
+    return { state: 'pending', ready: false, failed: false }
   }
 }

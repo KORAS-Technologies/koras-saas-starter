@@ -1,0 +1,182 @@
+'use client'
+
+import { useEffect, useRef, useState } from 'react'
+import { AuthCard, ButtonLink } from '@{{projectSlug}}/ui'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { signupStatus } from './actions'
+
+/**
+ * The wait between confirming an address and having an account.
+ *
+ * Provisioning takes minutes: a ZITADEL organisation, an owner, two project
+ * grants, a tenant in the product, a subscription. The page that spent the
+ * verification token used to say "we will email you when it is ready" and stop
+ * there, which is a dead end in the browser and the most common place for
+ * somebody to give up on a signup they had already completed.
+ *
+ * So it waits with them, and sends them on when the account exists.
+ *
+ * **Where it sends them, and why it is not straight to the dashboard.** The
+ * customer has a ZITADEL account by then and no session with this application
+ * -- nothing has signed them in, and nothing here can. `/login?next=/dashboard`
+ * is the honest destination: it starts the OAuth flow they have to complete
+ * anyway, and lands them on their dashboard at the end of it. Redirecting
+ * straight to `/dashboard` would bounce off the session gate to the same place,
+ * one confusing flash later.
+ *
+ * The tenant is resolved from the organisation in their token, not from the
+ * URL, so the slug is shown rather than routed on. A product that gives each
+ * customer its own hostname changes the destination here and nothing else.
+ */
+
+/** How often to ask. */
+const POLL_MS = 3000
+
+/**
+ * When to stop asking and hand over to the email.
+ *
+ * Five minutes is longer than a healthy run and shorter than somebody's
+ * patience. Stopping matters: a page that polls forever holds a connection open
+ * on a tab nobody is watching, and the welcome email is the real fallback --
+ * it is sent by the run itself, so it arrives whether or not this tab is still
+ * open.
+ */
+const GIVE_UP_MS = 5 * 60 * 1000
+
+export function ProvisioningStatus({
+  jobId,
+  organizationSlug,
+}: {
+  jobId: string
+  organizationSlug: string
+}) {
+  const { product } = productConfig
+  const [state, setState] = useState<'waiting' | 'ready' | 'failed' | 'slow'>('waiting')
+  const startedAt = useRef(Date.now())
+
+  useEffect(() => {
+    if (!jobId) {
+      // Nothing to poll: an older Control Plane that does not return a job id.
+      // The run is still happening and the email still arrives.
+      setState('slow')
+      return
+    }
+
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const ask = async () => {
+      const status = await signupStatus(jobId)
+      if (cancelled) return
+
+      if (status.ready) {
+        setState('ready')
+        // A beat, so the "ready" line is seen rather than flashed past on a
+        // fast run. Long enough to read, short enough not to feel stuck.
+        timer = setTimeout(() => {
+          window.location.assign('/login?next=%2Fdashboard')
+        }, 1200)
+        return
+      }
+      if (status.failed) {
+        setState('failed')
+        return
+      }
+      if (Date.now() - startedAt.current > GIVE_UP_MS) {
+        setState('slow')
+        return
+      }
+      timer = setTimeout(ask, POLL_MS)
+    }
+
+    void ask()
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [jobId])
+
+  if (state === 'ready') {
+    return (
+      <AuthCard
+        title="Your workspace is ready"
+        description={`Taking you to ${product.name} to sign in.`}
+      >
+        {/* Announced, because the redirect is the only other signal and a
+            screen reader user should not learn about it by arriving. */}
+        <p role="status" className="text-sm leading-6 text-ink-muted">
+          Redirecting…
+        </p>
+        <ButtonLink href="/login?next=%2Fdashboard" size="lg" className="mt-4 w-full">
+          Continue to sign in
+        </ButtonLink>
+      </AuthCard>
+    )
+  }
+
+  if (state === 'failed') {
+    return (
+      <AuthCard
+        title="We could not finish setting up your workspace"
+        description={
+          <>
+            Your email is confirmed and nothing is lost. Someone needs to look at this before
+            you can sign in{product.contactEmail ? ', and we would like to hear from you' : ''}.
+          </>
+        }
+      >
+        {product.contactEmail ? (
+          <ButtonLink
+            href={`mailto:${product.contactEmail}?subject=${encodeURIComponent(
+              `Setting up ${product.name}`,
+            )}`}
+            size="lg"
+            className="w-full"
+          >
+            Get in touch
+          </ButtonLink>
+        ) : null}
+      </AuthCard>
+    )
+  }
+
+  if (state === 'slow') {
+    return (
+      <AuthCard
+        title="This is taking longer than usual"
+        description="Your account is still being set up. We will email you the moment it is ready — you can close this page."
+      >
+        <ButtonLink href="/login" variant="secondary" size="lg" className="w-full">
+          Sign in
+        </ButtonLink>
+      </AuthCard>
+    )
+  }
+
+  return (
+    <AuthCard
+      title="Setting up your workspace"
+      description={
+        organizationSlug ? (
+          <>
+            We are creating <span className="font-semibold text-ink">{organizationSlug}</span> in{' '}
+            {product.name}. This usually takes a minute or two.
+          </>
+        ) : (
+          <>We are creating your workspace in {product.name}. This usually takes a minute or two.</>
+        )
+      }
+    >
+      <p role="status" className="flex items-center gap-3 text-sm leading-6 text-ink-muted">
+        <span
+          aria-hidden="true"
+          className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-line border-t-brand"
+        />
+        Setting up your organisation, your account and your workspace.
+      </p>
+      <p className="mt-6 text-sm leading-6 text-ink-muted">
+        You can close this page — we will email you when it is ready.
+      </p>
+    </AuthCard>
+  )
+}
