@@ -28,9 +28,25 @@ export default async function VerifyPage({
     )
   }
 
-  const { ok } = await verifySignup(token)
+  const outcome = await verifySignup(token)
 
-  if (!ok) {
+  if (outcome.status === 'rate-limited') {
+    // Not a fact about the link. Telling somebody to sign up again here is the
+    // one instruction guaranteed to make it worse, and it is what this page
+    // used to do -- a 429 was reported as an invalid link on 2026-08-31, while
+    // the token sat unspent.
+    return (
+      <main data-testid="verify-rate-limited">
+        <h1>Too many attempts</h1>
+        <p>
+          Your link is still good. Wait a few minutes and open it again — do not start over,
+          that will not help.
+        </p>
+      </main>
+    )
+  }
+
+  if (outcome.status !== 'verified') {
     return (
       <main data-testid="verify-failed">
         <h1>That link is not valid</h1>

@@ -167,9 +167,33 @@ export async function startSignup(
   }
 }
 
-export async function verifySignup(token: string): Promise<{ ok: boolean }> {
+export type VerifyOutcome =
+  /** The token was spent and provisioning has begun. */
+  | { status: 'verified' }
+  /** Unknown, expired or already used. Deliberately one outcome, not three. */
+  | { status: 'invalid' }
+  /** Nothing to do with the token: the caller is over the platform's budget. */
+  | { status: 'rate-limited' }
+
+/**
+ * Spend the token in the link.
+ *
+ * Unknown, expired and already-used answer identically on purpose: telling
+ * somebody their link "has expired" tells whoever is holding a guessed token
+ * that it was once real. That is the Control Plane's rule and this preserves it.
+ *
+ * `429` is not in that set, and conflating it was a real cost. On 2026-08-31 a
+ * signup budget of five an hour -- shared with the page load -- was exhausted
+ * by one person signing up, and their verification link answered 429. This page
+ * told them the link was invalid and to sign up again, which would have spent
+ * more budget. The token was never spent and is still valid.
+ *
+ * Saying "too many attempts, wait" leaks nothing: it is a fact about the caller,
+ * not about whether a token exists. The signup form already distinguishes it.
+ */
+export async function verifySignup(token: string): Promise<VerifyOutcome> {
   const base = controlPlane()
-  if (!base) return { ok: false }
+  if (!base) return { status: 'invalid' }
 
   try {
     const response = await fetch(`${base}/api/signup/v1/registrations/verify`, {
@@ -177,8 +201,10 @@ export async function verifySignup(token: string): Promise<{ ok: boolean }> {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ token }),
     })
-    return { ok: response.ok }
+    if (response.ok) return { status: 'verified' }
+    if (response.status === 429) return { status: 'rate-limited' }
+    return { status: 'invalid' }
   } catch {
-    return { ok: false }
+    return { status: 'invalid' }
   }
 }
