@@ -52,13 +52,15 @@ otherwise stops at F6, and why there is no F0.
 | F13 | nothing bills anyone, and that is not an oversight | **open** | Onboarding |
 | F14 | two names for the Control Plane, and neither side noticed | closed 2026-08-29 | Decisions |
 | F15 | a project generated then provisioned had no way into its own repository | closed 2026-08-30 | Decisions |
+| F16 | a customer's own branding has nowhere to be read from | **open** | Decisions |
 
-**Six are open**: F2b, F2c, F3, F6, F7, F13. Four of those six are not this
-repository's to close — F2b and F3 are Control Plane authorization decisions,
-F2c and F7 need a live estate and a staff read. The two this repository can act
-on alone are **F6** and **F13**, and both are decisions rather than
-implementations: F6's own entry says both references already survive, and F13
-says outright that nothing forces it now.
+**Seven are open**: F2b, F2c, F3, F6, F7, F13, F16. Four of those seven are not
+this repository's to close — F2b and F3 are Control Plane authorization
+decisions, F2c and F7 need a live estate and a staff read. The three this
+repository can act on alone are **F6**, **F13** and **F16**. Two of them are
+decisions rather than implementations: F6's own entry says both references
+already survive, and F13 says outright that nothing forces it now. F16 is an
+implementation, and it is the only open entry whose whole cost is one route.
 
 ---
 
@@ -758,6 +760,41 @@ graft onto `origin/develop` made it a plain fast-forward, which is what branch
 protection requires — a force push is declined with GH006.
 
 ---
+
+---
+
+### F16 — a customer's own branding has nowhere to be read from — opened 2026-08-31
+
+- [ ] Add a customer-facing route to `services/api` returning the calling
+      tenant's `tenant_settings.branding`
+- [ ] Call it from `apps/web/src/lib/tenant-branding.ts`
+
+`customer_branding` and `white_label` are declared capabilities of the product
+profile, `public.tenant_settings.branding` has been a `jsonb` column since the
+first migration, and until 2026-08-31 nothing read it or wrote it. The frontend
+half is now built: `BrandScope` re-declares the brand tokens for the signed-in
+subtree, so a customer's palette reaches every component below it without any of
+them knowing a tenant exists; `ProductLogo` takes their mark; and
+`parseTenantBranding` decides which of the stored values may reach a stylesheet.
+Twelve tests in the generated project argue that last part, because the column
+is customer-controlled data on its way into a CSS custom property and a custom
+property value is not escaped the way text content is.
+
+What is missing is the read, and it is deliberately missing rather than
+forgotten. `services/api` serves `health` and the private `platform` router.
+Adding a customer-facing route is a decision about the API's surface —
+authentication, tenant context from the caller's token rather than from the
+browser, caching, rate limiting — and none of those follow from a frontend
+change. Making them silently, inside a piece of work about a homepage, is how an
+API acquires a shape nobody chose.
+
+`apps/web/src/lib/tenant-branding.ts` is a single named seam holding the reason
+and the three steps. Until it is filled in, a signed-in customer sees the
+product's own branding, which is the correct fallback rather than a broken
+state — so this is unfinished capability, not a defect in what shipped.
+
+**Not blocked on anything.** Whoever owns the first real product's API writes the
+route; the frontend already accepts its answer.
 
 ## The customer-onboarding sequence
 
