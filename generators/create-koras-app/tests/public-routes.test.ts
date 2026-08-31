@@ -54,6 +54,64 @@ describe.each(APPS)('%s/%s middleware', (profile, app) => {
     expect(publicPaths).not.toContain("'/'")
     expect(source).toContain('PUBLIC_PATHS.some((path) => pathname.startsWith(path))')
   })
+
+  /**
+   * The second list, and why it has to be a second list.
+   *
+   * `apps/web` serves a public homepage at `/`, so one path has to be exempt
+   * that the prefix list above cannot express: `'/'` is a prefix of everything.
+   * It is matched with `includes` on the whole pathname instead, which cannot
+   * widen -- `/dashboard` does not equal `/`.
+   *
+   * Asserted per application rather than in one place, because the value of the
+   * exemption is that only one application has it. `apps/admin` has no public
+   * surface and must not acquire one by copying this file.
+   */
+  it('exempts the root exactly when the application serves a public homepage', () => {
+    const exact = /const PUBLIC_EXACT_PATHS = \[([^\]]*)\]/.exec(source)?.[1]
+    const servesPublicHome = profile === 'product' && app === 'web'
+
+    if (!servesPublicHome) {
+      expect(exact ?? '', `${profile}/${app} exempts a path it should not`).toBe('')
+      return
+    }
+
+    expect(exact, 'no PUBLIC_EXACT_PATHS found').toBeTruthy()
+    // Exactly one, and exactly the root. A second entry here is a route that
+    // stopped being gated without anybody deciding it should.
+    expect((exact ?? '').match(/'[^']*'/g)).toEqual(["'/'"])
+    expect(source).toContain('PUBLIC_EXACT_PATHS.includes(pathname)')
+  })
+
+  /**
+   * The authenticated landing page moved when `/` became public.
+   *
+   * If `/dashboard` ever disappears, the exemption above stops being a trade --
+   * the root would be public and there would be nothing behind the gate for a
+   * signed-in person to land on, which is the shape a bad merge leaves behind.
+   */
+  it('keeps a gated landing page for the application that opened its root', () => {
+    if (profile !== 'product' || app !== 'web') return
+    expect(
+      existsSync(join(PROFILES, 'product', 'template', 'apps', 'web', 'src', 'app', 'dashboard')),
+    ).toBe(true)
+  })
+
+  /**
+   * Static files are not pages.
+   *
+   * The favicon and the product logo are served from `app/` and `public/`. Left
+   * inside the matcher, an anonymous browser asking for either is answered with
+   * a redirect to the sign-in page -- so the tab has no icon and a configured
+   * logo renders broken on the public homepage. Neither path can ever be a
+   * route, because those files occupy them.
+   */
+  it('excludes the brand assets the public pages need', () => {
+    if (profile !== 'product' || app !== 'web') return
+    const matcher = /matcher: \[([^\]]*)\]/.exec(source)?.[1] ?? ''
+    expect(matcher).toContain('icon.svg')
+    expect(matcher).toContain('brand/')
+  })
 })
 
 describe('the signup surface', () => {

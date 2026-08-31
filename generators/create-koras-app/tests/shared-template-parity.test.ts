@@ -87,9 +87,53 @@ describe('the two profiles do not drift apart', () => {
 })
 
 describe('the shared template layer is single-sourced', () => {
-  it.each(sharedFiles)('%s exists only in _shared', (file) => {
-    expect(existsSync(join(PROFILES, 'product', 'template', file))).toBe(false)
-    expect(existsSync(join(PROFILES, 'control-plane', 'template', file))).toBe(false)
+  /**
+   * A shared path may be overridden by one profile, and never by both.
+   *
+   * This used to assert that a shared path existed in neither profile, which
+   * was stricter than the invariant above it and stricter than the paragraph at
+   * the top of this file describing it -- that paragraph has always said
+   * divergence stays available, with the file existing "in `_shared` and in one
+   * profile, never in both".
+   *
+   * The stricter reading forbade the override the engine is built to support:
+   * `renderTemplate` walks `_shared` first and the profile second, keyed by
+   * output path, precisely so a profile can ship its own version of a shared
+   * file. `packages/ui` is the case that exposed it. The product profile turns
+   * that package into a real design system -- React components, a Tailwind
+   * theme, a JSX tsconfig -- while the Control Plane keeps the two-line stub,
+   * and there is no single version for both.
+   *
+   * What must not happen is *two* overrides, which is the shared layer being
+   * bypassed rather than extended.
+   */
+  it.each(sharedFiles)('%s is overridden by at most one profile', (file) => {
+    const overriding = ['product', 'control-plane'].filter((profile) =>
+      existsSync(join(PROFILES, profile, 'template', file)),
+    )
+    expect(
+      overriding,
+      `${file} is overridden by both profiles, so the shared copy reaches nobody`,
+    ).not.toEqual(['product', 'control-plane'])
+  })
+
+  /**
+   * An override that is identical to what it overrides is a duplicate wearing a
+   * different hat: two files to keep in step, and nothing to say which is
+   * authoritative.
+   */
+  it.each(sharedFiles)('%s is not overridden by an identical copy', (file) => {
+    const shared = readFileSync(join(SHARED_LAYER, file), 'utf8')
+      .split(String.fromCharCode(13))
+      .join('')
+      .replace(/\s+$/gm, '')
+      .trim()
+    for (const profile of ['product', 'control-plane']) {
+      if (!existsSync(join(PROFILES, profile, 'template', file))) continue
+      expect(read(profile, file), `${profile} overrides ${file} with the same content`).not.toBe(
+        shared,
+      )
+    }
   })
 
   it('carries what the duplicated list used to', () => {
