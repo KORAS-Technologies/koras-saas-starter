@@ -392,8 +392,32 @@ jobs:
         # From the repository root: the service Dockerfiles copy the workspace
         # root and python-packages/ alongside their own directory, because the
         # services depend on those shared packages as uv workspace members.
+        #
+        # Remote by default, local when KORAS_FLY_LOCAL_BUILD is "true".
+        #
+        # Fly builds remotely on Depot, and when Depot is unreachable the
+        # deploy fails before reading a single line of the Dockerfile:
+        #
+        #     Waiting for depot builder...
+        #     error releasing builder: deadline_exceeded
+        #     failed to list workers: transport: authentication handshake failed
+        #
+        # Ten minutes per attempt, twice, and nothing in the repository is
+        # involved. That happened for over an hour on 2026-08-31 while the same
+        # images built locally in under two minutes, so the outage was in the
+        # builder and there was no way through it without editing this file --
+        # which is a poor thing to be doing during an incident.
+        #
+        # The runner has Docker, so a local build is slower and always
+        # available. The variable is the switch: set it when Depot is down,
+        # unset it afterwards.
         run: |
-          flyctl deploy --app "${{ github.event.repository.name }}-${{ matrix.service }}-${{ inputs.environment }}" --config "services/${{ matrix.service }}/fly.toml" --dockerfile "services/${{ matrix.service }}/Dockerfile" --remote-only --ha=false --wait-timeout 600
+          build="--remote-only"
+          if [ "${{ vars.KORAS_FLY_LOCAL_BUILD }}" = "true" ]; then
+            build="--local-only"
+            echo "KORAS_FLY_LOCAL_BUILD is set: building on the runner, not on Depot."
+          fi
+          flyctl deploy --app "${{ github.event.repository.name }}-${{ matrix.service }}-${{ inputs.environment }}" --config "services/${{ matrix.service }}/fly.toml" --dockerfile "services/${{ matrix.service }}/Dockerfile" $build --ha=false --wait-timeout 600
 
       - name: Make sure the machines are actually running
         # A green deploy means the machines were updated, not that they are
