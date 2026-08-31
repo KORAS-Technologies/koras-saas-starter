@@ -40,6 +40,20 @@ export interface ProvisionOutputs {
   /** The zone those records live in; a record id is not addressable without it. */
   cloudflareZoneId: string
   vercelProjectIds: Record<string, string>
+  /**
+   * Environment -> the URL a customer of this product signs in at.
+   *
+   * Read from the apply rather than rebuilt here, though the two would agree
+   * today: the Terraform computes `app-<env>.<primary domain>` and this could
+   * too. Rebuilding it would put the same convention in two repositories, and
+   * the copy that drifts is always the one further from the resource -- a
+   * product that moves to a brand domain changes its Terraform, not this file.
+   *
+   * The Control Plane needs it because the welcome email has nowhere to point
+   * without it. Absent for an estate applied before the output existed, which
+   * is a missing link in an email rather than a failure.
+   */
+  appUrls: Record<string, string>
   flyApps: string[]
   /**
    * Upstash database ids, keyed by environment.
@@ -104,6 +118,7 @@ export function parseTerraformOutputs(json: string): ProvisionOutputs {
     cloudflareRecordIds: asStringMap('cloudflare_record_ids'),
     cloudflareZoneId: asString('cloudflare_zone_id'),
     vercelProjectIds: asStringMap('vercel_project_ids'),
+    appUrls: asStringMap('app_urls'),
     flyApps: Object.values(flyAppNames).sort(),
     redisDatabaseIds: asStringMap('redis_database_ids'),
     withheld,

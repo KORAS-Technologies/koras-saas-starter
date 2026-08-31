@@ -23,6 +23,26 @@ import { join } from 'node:path'
 const ROOT = join(__dirname, '..', '..', '..')
 const PROFILES = ['product', 'control-plane'] as const
 
+/**
+ * Outputs one profile emits and the other has no equivalent for.
+ *
+ * The rule below is that a name nobody emits parses as empty and looks
+ * identical to a typo. That still holds -- each entry here is asserted to be
+ * emitted by *some* profile, so a misspelling fails as loudly as before. What
+ * is relaxed is the demand that both emit it, which is wrong for a value only
+ * one profile has.
+ *
+ * `app_urls` is where a customer of a product signs in. The Control Plane has
+ * no such thing: its customer surface is the portal, emitted as `portal_urls`,
+ * and it registers itself as a product nowhere -- refused four independent
+ * ways. Emitting `app_urls` there to satisfy a test would put two spellings of
+ * one hostname in the estate, which is precisely how a redirect URI stops
+ * matching the domain it was issued for.
+ */
+const PROFILE_SPECIFIC: Record<string, readonly string[]> = {
+  'control-plane': ['app_urls'],
+}
+
 function parserReads(): string[] {
   const source = readFileSync(join(__dirname, '..', 'src', 'terraform', 'outputs.ts'), 'utf8')
   // asStringMap('x'), asStringList('x'), read('x') -- whatever the helper, the
@@ -55,13 +75,29 @@ describe('the Terraform outputs the parser reads', () => {
 
   it.each(PROFILES)('is emitted by the %s template', (profile) => {
     const emitted = new Set(templateEmits(profile))
-    const missing = parserReads().filter((name) => !emitted.has(name))
+    const exempt = new Set(PROFILE_SPECIFIC[profile] ?? [])
+    const missing = parserReads().filter((name) => !emitted.has(name) && !exempt.has(name))
 
     expect(
       missing,
       `parseTerraformOutputs reads these, and the ${profile} root emits none of them, ` +
         'so each one silently parses as empty',
     ).toEqual([])
+  })
+
+  it('exempts nothing that no profile emits', () => {
+    // The guard on the exemption. A typo added to PROFILE_SPECIFIC would
+    // otherwise be excused everywhere and parse as empty in silence, which is
+    // the exact failure this file exists to catch.
+    const anywhere = new Set(PROFILES.flatMap((profile) => templateEmits(profile)))
+    for (const [profile, names] of Object.entries(PROFILE_SPECIFIC)) {
+      for (const name of names) {
+        expect(
+          anywhere.has(name),
+          `${name} is exempted for ${profile} but no profile emits it at all`,
+        ).toBe(true)
+      }
+    }
   })
 
   it('reads the organization alongside every project id', () => {

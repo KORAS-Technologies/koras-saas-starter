@@ -45,6 +45,16 @@ export interface InfrastructureReferences {
   fly_apps?: Record<string, string>
   cloudflare_zone_id?: string
   platform_api_base_url?: string
+  /**
+   * Where a customer signs in, as opposed to where the Control Plane calls.
+   *
+   * `platform_api_base_url` above is this product's private API. This is the
+   * address a person visits, and the Control Plane cannot derive it: it would
+   * have to copy `app-<env>.<primary domain>` out of this repository's
+   * Terraform, and a product with a brand domain would then be handed a
+   * confidently wrong link in its own welcome email.
+   */
+  application_base_url?: string
 }
 
 /** Matches the Control Plane's `ProductEnvironmentSpec`. */
@@ -169,6 +179,7 @@ export function buildRegistration(
         // Control Plane has always accepted.
         cloudflare_zone_id: outputs.cloudflareZoneId || undefined,
         platform_api_base_url: platformApiBaseUrl(flyApps),
+        application_base_url: outputs.appUrls[environment],
       }),
       services,
     }
