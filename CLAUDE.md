@@ -37,6 +37,7 @@ All planning and reference documents live in `docs/`, matching
 | `docs/REGISTRATION_LIFECYCLE.md` | When a product registers, and what each pass carries |
 | `docs/FOLLOW_UPS.md`             | Work identified and deliberately left undone, with the reason |
 | `docs/NEW_PRODUCT_WALKTHROUGH.md` | A worked example: new product to visible in the console |
+| `docs/PRODUCT_FRONTEND.md`       | The generated product's frontend: tokens, branding, pages |
 
 ## Repository layout (target state)
 
