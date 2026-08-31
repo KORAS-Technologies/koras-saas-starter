@@ -24,8 +24,23 @@ function walk(dir: string): string[] {
   })
 }
 
+/**
+ * Read a template, with line endings normalised to LF.
+ *
+ * A checkout on Windows carries CRLF, so a pattern spanning two lines --
+ * `
+
+` for a blank line, say -- matches on the machine that wrote the file
+ * and stops matching the moment anybody checks it out. That is not
+ * hypothetical: the icon assertion below passed on the working copy that
+ * created it and failed on the next checkout, reporting "no IconName union
+ * found" about a union sitting in the file.
+ *
+ * `shared-template-parity.test.ts` learned the same lesson and says so at
+ * length; this is the same rule applied at the point of reading.
+ */
 function read(...segments: string[]): string {
-  return readFileSync(join(...segments), 'utf8')
+  return readFileSync(join(...segments), 'utf8').split(String.fromCharCode(13)).join('')
 }
 
 describe('the design system is reachable', () => {

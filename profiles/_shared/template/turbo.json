@@ -9,7 +9,25 @@
     },
     "lint": { "dependsOn": ["^build"] },
     "typecheck": { "dependsOn": ["^build"] },
-    "test": { "dependsOn": ["^build"], "outputs": ["coverage/**"] },
+    // `build` as well as `^build`, and the second one is the load-bearing half.
+    //
+    // A package's tests run against what its build produced -- `packages/auth`
+    // literally runs `node --test dist/*.test.js`. With only `^build`, turbo
+    // orders a package's test after its *dependencies* build and leaves it
+    // unordered against its own, so `auth:build` and `auth:test` are siblings
+    // and both run `tsc` into the same `dist/`.
+    //
+    // Observed on koras-e2e-shop's CI, 2026-08-31: `auth:build` began at
+    // :23.474, `auth:test` at :23.970, and node loaded a half-written
+    // `dist/index.js` -- "The requested module './index.js' does not provide an
+    // export named 'jwksUrl'", from a file that exports it. Green on the run
+    // before and green locally; adding one package to the graph was enough to
+    // move the two into the same half-second.
+    //
+    // That is the shape of this defect: it is a race, so it passes far more
+    // often than it fails, and every time it fails it looks like a broken
+    // export rather than a scheduling problem.
+    "test": { "dependsOn": ["^build", "build"], "outputs": ["coverage/**"] },
     "dev": { "cache": false, "persistent": true },
     "clean": { "cache": false }
   }
