@@ -139,3 +139,65 @@ def test_the_contract_is_not_empty() -> None:
     """
     assert len(REQUIRED_ROUTES) >= 4
     assert CONTRACT["prefix"].startswith("/internal/platform/")
+
+
+# --- who the machine identity must be ------------------------------------
+
+PLATFORM_AUTH = REPO_ROOT / "services" / "api" / "koras_api" / "core" / "platform_auth.py"
+
+
+def _platform_auth_source() -> str:
+    assert PLATFORM_AUTH.is_file(), "the platform authentication dependency is missing"
+    return PLATFORM_AUTH.read_text(encoding="utf-8")
+
+
+def test_the_gate_names_the_caller_it_admits() -> None:
+    """A machine identity is not enough; it must be *the* machine identity.
+
+    "Valid signature, no email" describes every service account in the ZITADEL
+    instance, including one belonging to another product and one created by
+    anybody who can make a service account. That was the entire gate until
+    2026-08-31 while its docstring claimed to admit only the Control Plane, and
+    it was verified against the live instance: a token from an account with no
+    grant on this project was admitted. The project grant cannot close it -- a
+    grant reaches neither the audience nor the roles claim -- so `sub` is the
+    only field in the token that identifies the caller. R-87.
+    """
+    source = _platform_auth_source()
+    assert "claims.sub != expected" in source, (
+        "the platform gate does not compare the token's subject to the configured caller"
+    )
+    assert "zitadel_platform_caller_sub" in source
+
+
+def test_an_unconfigured_gate_refuses_rather_than_admits() -> None:
+    """Unset must mean refuse.
+
+    The tempting alternative is to skip the check when nothing is configured, so
+    that an existing product keeps working. That produces a security check which
+    is present in the source, absent at runtime, and indistinguishable from a
+    working one from the outside -- which is the shape of this exact defect, and
+    of three others found the same week.
+
+    503 rather than 403 because the caller is not at fault: the product is
+    unconfigured, and an operator reading 403 would go looking at the wrong end.
+    """
+    source = _platform_auth_source()
+    assert "if not expected:" in source, "the gate does not handle an unset caller at all"
+    assert "HTTP_503_SERVICE_UNAVAILABLE" in source, (
+        "an unconfigured gate does not refuse; if it falls through it admits every machine"
+    )
+
+
+def test_the_setting_is_declared_so_a_deployment_asks_for_it() -> None:
+    """Optional in code, mandatory in the manifest.
+
+    The service still starts without it -- health and every customer-facing
+    route are unaffected -- but a deploy is refused, so the 503 above is a state
+    a product passes through during bootstrap rather than one it ships in.
+    """
+    manifest = (REPO_ROOT / "local" / "config" / "secrets.manifest").read_text(encoding="utf-8")
+    assert "ZITADEL_PLATFORM_CALLER_SUB supplied" in manifest, (
+        "the platform caller is not declared as supplied, so nothing prompts for it "
+        "and nothing refuses a deployment that omits it"
+    )

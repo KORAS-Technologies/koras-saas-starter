@@ -26,12 +26,30 @@ _jwks = JWKSCache(settings.zitadel_domain)
 async def require_platform_machine(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
 ) -> JWTClaims:
-    """Admit only the Control Plane service account.
+    """Admit only the estate's platform caller.
 
-    A ZITADEL service user presents a token with no email and no interactive
-    authentication, which is what distinguishes it from a person. That check is
-    the whole gate here: an email means a human, and a human does not belong on
-    this API.
+    Two checks, and the second is the one that makes the docstring true.
+
+    The first is that the token belongs to a machine: a ZITADEL service user
+    presents no email and no interactive authentication, and a human token
+    reaching an internal provisioning endpoint is a mistake or an attack.
+
+    That alone was the whole gate until 2026-08-31, while this docstring already
+    claimed to admit only the Control Plane. It did not. Every machine account in
+    the instance passed it -- a valid signature and an absent email are properties
+    of *any* service user, including one belonging to another product or created
+    by anyone who can make a service account. Verified against the live instance:
+    a token minted by an account with no grant on this project was admitted, and
+    a token minted by one *with* a grant was indistinguishable from it, because
+    the grant reaches neither the audience nor the roles claim. Recorded as R-87.
+
+    So the second check names the caller. `sub` is the only field in the token
+    that identifies the account, and comparing it is authorisation layered on
+    top of ZITADEL's authentication rather than a substitute for it: the
+    signature still has to verify, and the audience still has to be this project.
+
+    Unset means refuse. A security check that no-ops when unconfigured looks
+    present and does nothing, which is the defect this whole gate just was.
     """
     try:
         claims = await verify_token(
@@ -50,6 +68,26 @@ async def require_platform_machine(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This endpoint requires a machine identity",
+        )
+
+    expected = settings.zitadel_platform_caller_sub
+    if not expected:
+        # 503 rather than 403: nothing is wrong with the caller, and telling
+        # them they are forbidden would send an operator looking at the wrong
+        # side. This is the product being unconfigured, which is a condition
+        # that can be fixed by setting ZITADEL_PLATFORM_CALLER_SUB.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The platform caller is not configured for this environment",
+        )
+
+    if claims.sub != expected:
+        # The subject presented is deliberately not echoed. It is not secret,
+        # but this response goes to whoever asked, and confirming which account
+        # was seen turns a refusal into an oracle for enumerating the instance.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This endpoint requires the platform caller",
         )
 
     return claims

@@ -19,6 +19,17 @@ class Settings(BaseSettings):
     # The OIDC client id, which is the audience of an ID token. Without it the
     # API rejects every token the applications hold.
     zitadel_client_id: str | None = None
+    # Which machine identity may call the private platform API.
+    #
+    # The `sub` of the estate's `product-caller` service account. An identifier
+    # rather than a credential: it authorises nothing on its own, and knowing it
+    # gets a caller no closer to minting a token ZITADEL will sign.
+    #
+    # Empty is allowed here so the service still starts -- health, and every
+    # customer-facing route, are unaffected by it. It is *not* allowed at the
+    # gate: `require_platform_machine` refuses while it is unset rather than
+    # falling back to admitting any machine account. See platform_auth.py.
+    zitadel_platform_caller_sub: str = ""
 
     cors_origins: list[AnyHttpUrl] = []
 
