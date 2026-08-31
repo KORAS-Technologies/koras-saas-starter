@@ -1,0 +1,51 @@
+import type { ReactNode } from 'react'
+import type { TenantBranding } from '@{{projectSlug}}/branding'
+import { brandingFor, productConfig } from '@{{projectSlug}}/branding'
+import { brandStyle } from './brand-style'
+
+/**
+ * Re-brand everything inside, for one customer.
+ *
+ * The mechanism is the whole reason the Tailwind theme is declared `inline`.
+ * `bg-brand` compiles to `background-color: var(--brand-primary)`, and a custom
+ * property redeclared on an element applies to that element's subtree -- so
+ * wrapping the signed-in area in this makes every button, border, card and
+ * heading inside it the customer's colours, with no component knowing a tenant
+ * exists and no per-tenant fork of anything.
+ *
+ * That is what `koras-profile-product` means by "tenant branding is applied
+ * through design tokens, not by forking components per tenant".
+ *
+ * Two things it deliberately does not do:
+ *
+ * It does not go in the root layout. The public homepage, the sign-in page and
+ * the signup page belong to the product rather than to any one customer, and
+ * they are also served to people with no tenant at all. This wraps the
+ * authenticated area only.
+ *
+ * It does not carry the logo. Colours cascade; an image does not, so
+ * `ProductLogo` takes the tenant's `brand` and `name` explicitly wherever a
+ * customer's mark should appear. That seam is visible on purpose -- rendering
+ * a customer's logo is a decision each surface makes, not something that
+ * happens to a page.
+ *
+ * The values reaching this component must already have been through
+ * `parseTenantBranding`. They are tenant-authored strings on their way into a
+ * style attribute.
+ */
+export function BrandScope({
+  tenant,
+  className,
+  children,
+}: {
+  tenant: TenantBranding
+  className?: string
+  children: ReactNode
+}) {
+  const brand = brandingFor(productConfig.brand, tenant)
+  return (
+    <div style={brandStyle(brand)} className={className}>
+      {children}
+    </div>
+  )
+}

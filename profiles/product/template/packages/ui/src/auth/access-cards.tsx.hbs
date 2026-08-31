@@ -1,0 +1,122 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+import { ButtonLink } from '../primitives/button'
+import { AuthCard } from './auth-card'
+
+/**
+ * The two states a signup page can be in that are not a form.
+ *
+ * Both of them are real business states, and the job here is to render them
+ * well rather than to soften them. Neither card pretends a request will be
+ * processed automatically, and neither offers an action the product cannot
+ * actually perform -- a "Request access" button posting to an endpoint that
+ * does not exist would be a better-looking page and a worse product.
+ *
+ * What each card can offer therefore depends on `product.contactEmail`. Set it
+ * and there is a way in; leave it empty and the card says plainly that access
+ * is arranged by the product's administrator. That is the honest rendering of
+ * an unconfigured product, and it is the first thing worth configuring.
+ */
+
+function mailto(subject: string): string | null {
+  const { contactEmail } = productConfig.product
+  if (!contactEmail) return null
+  return `mailto:${contactEmail}?subject=${encodeURIComponent(subject)}`
+}
+
+/**
+ * Shown when signing up is not self-serve.
+ *
+ * This replaces a page that used to read, in its entirety, "Signing up online
+ * is not available yet. Please get in touch and we will set you up." -- which
+ * was true, gave no way to get in touch, and was the first thing a prospective
+ * customer saw.
+ */
+export function RequestAccessCard() {
+  const { product } = productConfig
+  const href = mailto(`Access to ${product.name}`)
+
+  // Two genuinely different cards, not one card with a hidden button. With a
+  // contact address there is a way in and the page leads with it; without one
+  // the honest thing to say is who arranges access, and the only action left is
+  // signing in. Rendering both shapes from one description produced a card that
+  // invited somebody to tell us about their organisation and then offered them
+  // Sign in twice.
+  if (!href) {
+    return (
+      <AuthCard
+        title={`Get started with ${product.name}`}
+        description={
+          <>
+            Access to {product.name} is arranged by your organisation&rsquo;s administrator rather
+            than online. If you are the administrator, get in touch with whoever runs{' '}
+            {product.name} for your organisation.
+          </>
+        }
+      >
+        <ButtonLink href="/login" size="lg" className="w-full">
+          Sign in
+        </ButtonLink>
+      </AuthCard>
+    )
+  }
+
+  return (
+    <AuthCard
+      title={`Get started with ${product.name}`}
+      description={
+        <>
+          Accounts for {product.name} are set up with you rather than on your own. Tell us a
+          little about your organisation and we will get you running.
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <ButtonLink href={href} size="lg">
+          Request access
+        </ButtonLink>
+        <ButtonLink href="/login" variant="secondary" size="lg">
+          Sign in
+        </ButtonLink>
+      </div>
+    </AuthCard>
+  )
+}
+
+/**
+ * Shown when the product is invitation-only.
+ *
+ * Configured, not detected: no plan catalogue can tell you that a product is
+ * closed on purpose rather than closed by accident. Set
+ * `marketing.access.mode` to `invitation` to say so.
+ */
+export function InvitationOnlyCard() {
+  const { product } = productConfig
+  const href = mailto(`Invitation to ${product.name}`)
+
+  return (
+    <AuthCard
+      title={`${product.name} is invitation only`}
+      description={
+        <>
+          New organisations join {product.name} by invitation. If somebody has invited you, the
+          link in your email is the way in — this page cannot create the account for you.
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <ButtonLink href="/login" size="lg">
+          Sign in
+        </ButtonLink>
+        {href ? (
+          <ButtonLink href={href} variant="secondary" size="lg">
+            Ask about an invitation
+          </ButtonLink>
+        ) : (
+          <p className="text-sm leading-6 text-ink-muted">
+            Invitations are issued by your organisation&rsquo;s administrator.
+          </p>
+        )}
+      </div>
+    </AuthCard>
+  )
+}

@@ -1,0 +1,47 @@
+import type { ProductImage } from '@{{projectSlug}}/branding'
+import { cn } from '../lib/cn'
+import { AppFrame } from './app-frame'
+
+/**
+ * A screenshot when the product has one, the drawn frame when it does not.
+ *
+ * One decision, made once, used by both the hero and the preview section --
+ * which is what keeps "supply a screenshot" a single configuration change
+ * rather than an edit to two pages.
+ *
+ * A configured image is real content and gets a real alt text, which the
+ * configuration is required to supply. The drawn frame is decorative and is
+ * hidden from assistive technology instead; the difference is not cosmetic,
+ * because a screenshot of the product carries information the surrounding
+ * paragraph does not.
+ */
+export function ProductVisual({
+  image,
+  className,
+  priority = false,
+}: {
+  image: ProductImage | null
+  className?: string
+  /** Set on the hero: it is the largest paint above the fold. */
+  priority?: boolean
+}) {
+  if (!image) return <AppFrame className={className} />
+
+  return (
+    // A plain <img>: a product-supplied asset of declared size. `next/image`
+    // would add remote-host configuration to every product for one picture, and
+    // the Next rule that would object is scoped to `apps/**`.
+    <img
+      src={image.src}
+      alt={image.alt}
+      width={image.width}
+      height={image.height}
+      loading={priority ? 'eager' : 'lazy'}
+      fetchPriority={priority ? 'high' : undefined}
+      className={cn(
+        'w-full rounded-xl border border-white/10 object-cover shadow-lifted',
+        className,
+      )}
+    />
+  )
+}

@@ -1,0 +1,45 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+import type { FeatureItem } from '@{{projectSlug}}/branding'
+import { Card } from '../primitives/card'
+import { Icon } from '../primitives/icon'
+import { Section } from '../primitives/section'
+
+/**
+ * What the product does, as a grid of cards.
+ *
+ * Three columns, then two, then one. The list is a list in the markup as well
+ * as on the screen, so a screen reader announces how many features there are
+ * before reading them -- which is most of the value of a grid, and is lost the
+ * moment it is built out of bare divs.
+ */
+export function FeatureGrid() {
+  const { marketing } = productConfig
+  if (marketing.features.length === 0) return null
+
+  return (
+    <Section
+      id="features"
+      eyebrow={marketing.featuresEyebrow}
+      title={marketing.featuresTitle}
+      headingClassName="max-w-3xl"
+    >
+      <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {marketing.features.map((feature) => (
+          <FeatureCard key={feature.title} feature={feature} />
+        ))}
+      </ul>
+    </Section>
+  )
+}
+
+export function FeatureCard({ feature }: { feature: FeatureItem }) {
+  return (
+    <Card as="li" className="h-full">
+      <span className="inline-flex rounded-lg bg-brand/10 p-2.5 text-brand">
+        <Icon name={feature.icon} />
+      </span>
+      <h3 className="mt-5 font-display text-lg font-bold text-ink">{feature.title}</h3>
+      <p className="mt-2.5 leading-7 text-ink-muted">{feature.description}</p>
+    </Card>
+  )
+}

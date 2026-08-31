@@ -1,0 +1,40 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+import { Icon } from '../primitives/icon'
+import { Section } from '../primitives/section'
+
+/**
+ * What changes for the customer.
+ *
+ * Deliberately not cards. The features above already use that shape, and
+ * repeating it here makes two sections that say different things look like the
+ * same section twice. This is a checked list on a quiet band: same rhythm,
+ * different weight.
+ */
+export function OutcomeSection() {
+  const { marketing } = productConfig
+  if (marketing.outcomes.length === 0) return null
+
+  return (
+    <Section
+      id="outcomes"
+      tone="muted"
+      eyebrow={marketing.outcomesEyebrow}
+      title={marketing.outcomesTitle}
+      headingClassName="max-w-3xl"
+    >
+      <ul className="grid gap-x-10 gap-y-8 sm:grid-cols-2">
+        {marketing.outcomes.map((outcome) => (
+          <li key={outcome.title} className="flex gap-4">
+            <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/10 text-brand">
+              <Icon name="check" className="h-4 w-4" />
+            </span>
+            <span>
+              <h3 className="font-display text-lg font-bold text-ink">{outcome.title}</h3>
+              <p className="mt-1.5 leading-7 text-ink-muted">{outcome.description}</p>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  )
+}

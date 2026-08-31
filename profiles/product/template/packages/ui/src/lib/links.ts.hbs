@@ -1,0 +1,25 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+
+/**
+ * Resolve a link that belongs to the web application.
+ *
+ * `/login`, `/signup` and `/dashboard` are routes of `apps/web`. The marketing
+ * site renders the same header, the same footer and the same call to action
+ * from this package, and it does not serve any of them -- it is a separate
+ * deployment on a separate hostname, so a relative `/login` there is a 404 at
+ * the end of the most important link on the page.
+ *
+ * `product.appUrl` names where those routes actually live. Empty means "this
+ * application", which is correct for `apps/web` and is the default; set it and
+ * both applications point at the same place.
+ *
+ * In-page anchors are left alone. `/#features` is a link to the page the reader
+ * is already on, in both applications, and sending it to another origin would
+ * turn a scroll into a navigation.
+ */
+export function appHref(href: string): string {
+  const base = productConfig.product.appUrl.replace(/\/$/, '')
+  if (!base) return href
+  if (!href.startsWith('/') || href.startsWith('/#')) return href
+  return `${base}${href}`
+}

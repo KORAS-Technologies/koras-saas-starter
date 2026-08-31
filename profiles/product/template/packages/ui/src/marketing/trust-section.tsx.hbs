@@ -1,0 +1,48 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+import { Icon } from '../primitives/icon'
+import { Section } from '../primitives/section'
+
+/**
+ * What a security review will ask about.
+ *
+ * Every item here describes something this repository actually implements --
+ * OIDC with PKCE, row-level security, server-side permission checks, WCAG 2.2
+ * AA, request attribution. None of them is a certification, and `trustNote`
+ * says so in the page rather than in a comment, because the reader is the
+ * person who needs to know.
+ *
+ * Adding SOC 2, ISO 27001, HIPAA or FedRAMP here before the audit exists is the
+ * one edit to this page that can cost somebody a contract. Configure it after
+ * the certificate is issued, not before.
+ */
+export function TrustSection() {
+  const { marketing } = productConfig
+  if (marketing.trust.length === 0) return null
+
+  return (
+    <Section
+      id="security"
+      eyebrow={marketing.trustEyebrow}
+      title={marketing.trustTitle}
+      headingClassName="max-w-3xl"
+    >
+      <ul className="grid gap-x-10 gap-y-9 sm:grid-cols-2 lg:grid-cols-3">
+        {marketing.trust.map((item) => (
+          <li key={item.title}>
+            <span className="inline-flex rounded-lg bg-brand-ink/5 p-2.5 text-brand-ink">
+              <Icon name={item.icon} />
+            </span>
+            <h3 className="mt-4 font-display text-lg font-bold text-ink">{item.title}</h3>
+            <p className="mt-2 leading-7 text-ink-muted">{item.description}</p>
+          </li>
+        ))}
+      </ul>
+
+      {marketing.trustNote && (
+        <p className="mt-12 border-t border-line pt-6 text-sm leading-6 text-ink-muted">
+          {marketing.trustNote}
+        </p>
+      )}
+    </Section>
+  )
+}

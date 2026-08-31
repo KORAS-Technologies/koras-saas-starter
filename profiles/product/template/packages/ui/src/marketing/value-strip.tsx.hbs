@@ -1,0 +1,33 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+import { Container } from '../primitives/container'
+
+/**
+ * The band directly under the hero.
+ *
+ * Four short claims, each one sentence, no icons. The restraint is the point:
+ * this sits between the two loudest parts of the page, and giving it a card, an
+ * icon and a shadow apiece turns the top of the homepage into three competing
+ * grids. A dividing rule and good type does the job.
+ *
+ * Not a sequence, so it carries no numerals -- unlike the process section,
+ * where the order is the information.
+ */
+export function ValueStrip() {
+  const { marketing } = productConfig
+  if (marketing.values.length === 0) return null
+
+  return (
+    <section className="border-b border-line bg-surface">
+      <Container>
+        <ul className="grid gap-x-10 gap-y-8 py-12 sm:grid-cols-2 sm:py-14 lg:grid-cols-4">
+          {marketing.values.map((value) => (
+            <li key={value.title}>
+              <p className="font-display text-base font-bold text-ink">{value.title}</p>
+              <p className="mt-2 text-sm leading-6 text-ink-muted">{value.description}</p>
+            </li>
+          ))}
+        </ul>
+      </Container>
+    </section>
+  )
+}

@@ -1,0 +1,37 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+import { Container } from '../primitives/container'
+import { ProductVisual } from './product-visual'
+
+/**
+ * A second, larger look at the product.
+ *
+ * On its own ink band rather than on the page background, so the frame has
+ * something to sit against instead of floating in white -- and so the page has
+ * a second dark beat between the hero and the footer rather than one long pale
+ * middle.
+ *
+ * When a product supplies `previewImage` this becomes a real screenshot in the
+ * same frame. When it does not, it draws the same interface the hero does; the
+ * repetition is deliberate, because it is the same product.
+ */
+export function ProductPreview() {
+  const { marketing } = productConfig
+
+  return (
+    <section className="bg-brand-ink py-20 text-white sm:py-24">
+      <Container>
+        <div className="mx-auto max-w-2xl text-center">
+          <h2 className="font-display text-3xl font-bold tracking-tight text-balance sm:text-4xl">
+            {marketing.previewTitle}
+          </h2>
+          <p className="mt-4 text-lg leading-8 text-white/70 text-pretty">
+            {marketing.previewDescription}
+          </p>
+        </div>
+        <div className="mx-auto mt-12 max-w-4xl">
+          <ProductVisual image={marketing.previewImage} />
+        </div>
+      </Container>
+    </section>
+  )
+}

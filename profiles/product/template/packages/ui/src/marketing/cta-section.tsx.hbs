@@ -1,0 +1,46 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+import { ButtonLink } from '../primitives/button'
+import { Container } from '../primitives/container'
+import { appHref } from '../lib/links'
+
+/**
+ * The closing call to action.
+ *
+ * A solid ink panel with a single hairline rule in the brand colour, rather
+ * than the blue-to-purple gradient the Koras corporate site closes on. The
+ * difference is deliberate: a gradient CTA is the most-copied block on the web,
+ * and a product page that ends on one ends on the least distinctive thing it
+ * contains. The rule carries the brand instead, and it is the only place the
+ * primary colour appears at full strength on ink.
+ */
+export function CtaSection() {
+  const { marketing } = productConfig
+
+  return (
+    <section className="py-20 sm:py-24">
+      <Container>
+        <div className="relative overflow-hidden rounded-2xl bg-brand-ink px-7 py-14 text-white sm:px-12 sm:py-16">
+          <span aria-hidden="true" className="absolute inset-x-0 top-0 h-1 bg-brand" />
+          <div className="max-w-2xl">
+            <h2 className="font-display text-3xl font-bold tracking-tight text-balance sm:text-4xl">
+              {marketing.ctaTitle}
+            </h2>
+            <p className="mt-4 text-lg leading-8 text-white/70 text-pretty">
+              {marketing.ctaDescription}
+            </p>
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+              <ButtonLink href={appHref(marketing.ctaPrimary.href)} variant="inverse" size="lg">
+                {marketing.ctaPrimary.label}
+              </ButtonLink>
+              {marketing.ctaSecondary && (
+                <ButtonLink href={appHref(marketing.ctaSecondary.href)} variant="outline" size="lg">
+                  {marketing.ctaSecondary.label}
+                </ButtonLink>
+              )}
+            </div>
+          </div>
+        </div>
+      </Container>
+    </section>
+  )
+}

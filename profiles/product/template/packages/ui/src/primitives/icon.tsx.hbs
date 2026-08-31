@@ -1,0 +1,111 @@
+import type { ReactNode } from 'react'
+import type { IconName } from '@{{projectSlug}}/branding'
+import { cn } from '../lib/cn'
+
+/**
+ * One icon set, drawn here.
+ *
+ * Inline SVG rather than an icon library, for three reasons that all point the
+ * same way. It adds no dependency to every generated product; it inherits
+ * `currentColor` and the brand tokens without configuration; and a closed set
+ * drawn on one grid, at one stroke weight, cannot drift into the mismatched
+ * icons that make an interface look assembled rather than designed.
+ *
+ * The names come from `@{{projectSlug}}/branding`, so configuration and drawing stay in
+ * step: a feature naming an icon that does not exist fails to compile.
+ */
+
+const PATHS: Record<IconName, ReactNode> = {
+  shield: <path d="M12 3.25 19 6v5c0 4.4-2.9 8.1-7 9.75C7.9 19.1 5 15.4 5 11V6l7-2.75Z" />,
+  users: (
+    <>
+      <circle cx="9" cy="8" r="3.25" />
+      <path d="M3.25 19.25c0-3.2 2.6-4.9 5.75-4.9s5.75 1.7 5.75 4.9" />
+      <path d="M16.25 5.4a3.25 3.25 0 0 1 0 5.2" />
+      <path d="M17.5 14.6c2.2.6 3.25 2.1 3.25 4.65" />
+    </>
+  ),
+  key: (
+    <>
+      <circle cx="7.75" cy="12" r="3.75" />
+      <path d="M11.5 12h9.25" />
+      <path d="M17.5 12v3.25" />
+      <path d="M20.75 12v2.25" />
+    </>
+  ),
+  workflow: (
+    <>
+      <rect x="3.25" y="3.75" width="6.5" height="5.5" rx="1.5" />
+      <rect x="14.25" y="14.75" width="6.5" height="5.5" rx="1.5" />
+      <path d="M6.5 9.25v6a2 2 0 0 0 2 2h5.75" />
+    </>
+  ),
+  plug: (
+    <>
+      <path d="M9 3.25v4.5" />
+      <path d="M15 3.25v4.5" />
+      <path d="M6.25 7.75h11.5v3.5a5.75 5.75 0 0 1-11.5 0v-3.5Z" />
+      <path d="M12 17v3.75" />
+    </>
+  ),
+  chart: (
+    <>
+      <path d="M3.75 19.75h16.5" />
+      <path d="M7.25 16.25V10" />
+      <path d="M12 16.25V4.75" />
+      <path d="M16.75 16.25v-4.5" />
+    </>
+  ),
+  layers: (
+    <>
+      <path d="m12 3.25 8.75 4.75L12 12.75 3.25 8Z" />
+      <path d="m3.75 13 8.25 4.5 8.25-4.5" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="8.75" />
+      <path d="M12 6.75V12l3.5 2.1" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M2.75 12S6.25 5.75 12 5.75 21.25 12 21.25 12 17.75 18.25 12 18.25 2.75 12 2.75 12Z" />
+      <circle cx="12" cy="12" r="2.75" />
+    </>
+  ),
+  check: <path d="m20 6.5-10.5 11L4 12" />,
+}
+
+export function Icon({
+  name,
+  className,
+  title,
+}: {
+  name: IconName
+  className?: string
+  /**
+   * An accessible name. Omit it wherever the icon repeats adjacent text, which
+   * is every use in this package -- an icon announced beside the heading it
+   * decorates is noise to a screen reader, not information.
+   */
+  title?: string
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={cn('h-5 w-5', className)}
+      role={title ? 'img' : undefined}
+      aria-hidden={title ? undefined : true}
+      aria-label={title}
+      focusable="false"
+    >
+      {PATHS[name]}
+    </svg>
+  )
+}

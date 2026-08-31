@@ -1,0 +1,31 @@
+import type { CSSProperties } from 'react'
+import type { BrandingTokens } from '@{{projectSlug}}/branding'
+
+/**
+ * Turn the configured brand tokens into the CSS custom properties the
+ * stylesheet reads.
+ *
+ * Applied once, on <body> in each application's root layout. Everything below
+ * it -- Tailwind utilities included, because the theme is declared `inline` --
+ * resolves through these properties, so a product changes its entire palette by
+ * editing `productConfig.brand` and nothing else.
+ *
+ * The cast is unavoidable: `CSSProperties` has no index signature for custom
+ * properties, and React has passed them through since 16 regardless.
+ */
+export function brandStyle(brand: BrandingTokens): CSSProperties {
+  return {
+    '--brand-primary': brand.primaryColor,
+    '--brand-secondary': brand.secondaryColor,
+    '--brand-accent': brand.accentColor,
+    '--brand-background': brand.backgroundColor,
+    '--brand-foreground': brand.foregroundColor,
+    '--brand-surface': brand.surfaceColor,
+    '--brand-surface-muted': brand.surfaceMutedColor,
+    '--brand-border': brand.borderColor,
+    '--brand-muted-foreground': brand.mutedForegroundColor,
+    '--brand-font-sans': brand.fontFamily,
+    '--brand-font-display': brand.displayFontFamily,
+    '--brand-radius': brand.radius,
+  } as CSSProperties
+}

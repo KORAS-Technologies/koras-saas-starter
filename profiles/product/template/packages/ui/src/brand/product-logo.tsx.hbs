@@ -1,0 +1,171 @@
+import Link from 'next/link'
+import type { TenantBranding } from '@{{projectSlug}}/branding'
+import { brandingFor, productConfig } from '@{{projectSlug}}/branding'
+import { cn } from '../lib/cn'
+
+/**
+ * The product's identity, in one component.
+ *
+ * Resolution order, and the reason for each step:
+ *
+ *   1. `brand.logoDarkUrl` on a dark surface, when the product has supplied one
+ *   2. `brand.logoUrl`
+ *   3. the built-in mark, drawn from the brand tokens
+ *
+ * Step 3 is the normal state of a freshly generated product, and it is a
+ * finished state rather than a placeholder to be embarrassed about: a neutral
+ * geometric mark in the product's own primary colour, beside the product's own
+ * name. Nothing renders broken, nothing invents a brand for somebody, and
+ * supplying `logoUrl` later replaces the mark without touching a component.
+ *
+ * The mark is drawn rather than fetched, so it needs no asset, no image
+ * request, and no exemption from the session gate in middleware. A configured
+ * `logoUrl` is a real file and does need one -- `apps/*\/public` is served from
+ * paths the matcher excludes; see the middleware comment.
+ *
+ * This is the only place a logo is chosen. A page that reaches for an image
+ * path directly is a page that will keep the old logo after a rebrand.
+ *
+ * `tenant` is how a customer's own mark reaches a signed-in surface. Colours
+ * cascade through `BrandScope` and need no plumbing; an image cannot, so it is
+ * passed. Public pages pass nothing: the homepage and the sign-in page belong
+ * to the product, and they are shown to people who have no tenant.
+ */
+export function ProductLogo({
+  tone = 'light',
+  showName = true,
+  href,
+  size = 'md',
+  tenant,
+  className,
+}: {
+  /** `dark` is for the hero, the footer and the auth panel. */
+  tone?: 'light' | 'dark'
+  showName?: boolean
+  /** Wraps the logo in a link. Give it `/` in a header, omit it in a footer. */
+  href?: string
+  size?: 'sm' | 'md'
+  /**
+   * A customer's branding, already through `parseTenantBranding`.
+   *
+   * Supplies their logo and, where the product is white-labelled, their name.
+   * Omit it on anything a stranger can reach.
+   */
+  tenant?: TenantBranding
+  className?: string
+}) {
+  const brand = tenant ? brandingFor(productConfig.brand, tenant) : productConfig.brand
+  const product = tenant?.name
+    ? { ...productConfig.product, name: tenant.name }
+    : productConfig.product
+  const source = tone === 'dark' && brand.logoDarkUrl ? brand.logoDarkUrl : brand.logoUrl
+  const box = size === 'sm' ? 'h-8 w-8' : 'h-9 w-9'
+  const text = size === 'sm' ? 'text-base' : 'text-lg'
+
+  const content = (
+    <span className={cn('inline-flex items-center gap-2.5', className)}>
+      {source ? (
+        // A plain <img>, not `next/image`: a brand asset of known size, needing
+        // no optimisation pipeline and no remote-host configuration. The Next
+        // rule that would object applies to `apps/**` only, so there is no
+        // disable comment here -- and a disable for a rule this config does not
+        // load is itself an ESLint error.
+        <img
+          src={source}
+          alt=""
+          className={cn(box, 'object-contain')}
+          width={size === 'sm' ? 32 : 36}
+          height={size === 'sm' ? 32 : 36}
+        />
+      ) : (
+        <BuiltInMark className={box} tone={tone} />
+      )}
+      {showName && (
+        <span
+          className={cn(
+            'font-display font-bold tracking-tight',
+            text,
+            tone === 'dark' ? 'text-white' : 'text-ink',
+          )}
+        >
+          {product.name}
+        </span>
+      )}
+    </span>
+  )
+
+  if (!href) return content
+
+  return (
+    <Link
+      href={href}
+      className="inline-flex rounded-sm"
+      aria-label={showName ? undefined : product.name}
+    >
+      {content}
+    </Link>
+  )
+}
+
+/**
+ * The neutral mark.
+ *
+ * Two offset planes on a filled tile: the same "layers" idea the product uses
+ * for tenancy, at logo scale. It reads as a mark rather than as a missing
+ * image, and it is entirely brand tokens -- so it is already the product's
+ * colour before anybody opens a design tool.
+ */
+function BuiltInMark({ className, tone }: { className?: string; tone: 'light' | 'dark' }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        'inline-flex shrink-0 items-center justify-center rounded-[0.5rem]',
+        tone === 'dark' ? 'bg-white/12 ring-1 ring-white/20' : 'bg-brand',
+        className,
+      )}
+    >
+      <svg viewBox="0 0 24 24" fill="none" className="h-[62%] w-[62%]" focusable="false">
+        <path d="m12 4 8 4.25L12 12.5 4 8.25 12 4Z" fill="white" fillOpacity="0.95" />
+        <path
+          d="m4.5 12.75 7.5 4 7.5-4"
+          stroke="white"
+          strokeOpacity="0.7"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </span>
+  )
+}
+
+/**
+ * The platform credit in the footer.
+ *
+ * Koras Technologies has no logo file -- its identity in
+ * `korastech-enterprise` is a wordmark, set in the display face with the second
+ * word in the brand colour. This reproduces that treatment rather than
+ * importing an asset, which is also why a generated product carries no
+ * dependency on that repository.
+ */
+export function KorasWordmark({
+  tone = 'light',
+  className,
+}: {
+  tone?: 'light' | 'dark'
+  className?: string
+}) {
+  return (
+    <span className={cn('font-display text-sm font-extrabold tracking-tight', className)}>
+      KORAS{' '}
+      {/*
+        Koras' own accent, not the product's, because this credits the platform
+        rather than the product -- and it is the one place in the frontend where
+        a fixed colour is the correct answer. Two values, because the violet
+        that clears 4.5:1 on ink fails badly on white.
+      */}
+      <span className={tone === 'dark' ? 'text-[#a78bfa]' : 'text-[#6d28d9]'}>TECHNOLOGIES</span>
+    </span>
+  )
+}

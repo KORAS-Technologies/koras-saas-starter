@@ -1,0 +1,170 @@
+'use client'
+
+import { useEffect, useId, useRef, useState } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { ButtonLink } from '../primitives/button'
+import { Container } from '../primitives/container'
+import { ProductLogo } from '../brand/product-logo'
+import { cn } from '../lib/cn'
+import { appHref } from '../lib/links'
+
+/**
+ * The public header.
+ *
+ * A client component, and only for the two things that genuinely need the
+ * browser: which navigation entry is current, and whether the small-screen menu
+ * is open. Everything else it renders is static.
+ *
+ * Its links come from `productConfig.marketing.nav`. Nothing is hardcoded here,
+ * and nothing is rendered for a link a product has removed -- an empty `nav`
+ * gives a header with a logo and the account actions, which is a legitimate
+ * shape rather than a broken one.
+ *
+ * The small-screen menu is a disclosure, not a dialog: it pushes the page down
+ * rather than covering it, so there is nothing to trap focus inside and nothing
+ * to restore when it closes. Escape still closes it, because a person who
+ * opened it with a key expects to close it with one.
+ */
+export function PublicHeader({
+  /** Rendered instead of the sign-in link once a session exists. */
+  signedIn = false,
+}: {
+  signedIn?: boolean
+}) {
+  const { marketing } = productConfig
+  const [open, setOpen] = useState(false)
+  const pathname = usePathname()
+  const panelId = useId()
+  const toggleRef = useRef<HTMLButtonElement>(null)
+
+  // A route change while the menu is open leaves it open over the new page.
+  useEffect(() => setOpen(false), [pathname])
+
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setOpen(false)
+      // Focus goes back to the control that opened the panel; without this it
+      // falls to <body> and the next Tab starts the page over.
+      toggleRef.current?.focus()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [open])
+
+  // Both routes belong to the web application; on the marketing site they are
+  // on another origin, which is what `appHref` resolves.
+  const accountHref = appHref(signedIn ? '/dashboard' : '/login')
+  const accountLabel = signedIn ? 'Go to dashboard' : 'Sign in'
+
+  return (
+    <header className="sticky top-0 z-50 border-b border-line bg-surface/90 backdrop-blur-sm">
+      <Container className="flex h-18 items-center justify-between gap-6">
+        <ProductLogo href="/" />
+
+        <nav aria-label="Primary" className="hidden lg:block">
+          <ul className="flex items-center gap-8">
+            {marketing.nav.map((link) => {
+              const current = link.href === pathname
+              return (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    aria-current={current ? 'page' : undefined}
+                    className={cn(
+                      'text-sm font-medium transition-colors hover:text-brand',
+                      current ? 'text-brand' : 'text-ink-muted',
+                    )}
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </nav>
+
+        <div className="hidden items-center gap-3 lg:flex">
+          <Link
+            href={accountHref}
+            className="rounded-brand px-2 py-2 text-sm font-semibold text-ink hover:text-brand"
+          >
+            {accountLabel}
+          </Link>
+          {marketing.headerCta && (
+            <ButtonLink href={appHref(marketing.headerCta.href)}>
+              {marketing.headerCta.label}
+            </ButtonLink>
+          )}
+        </div>
+
+        <button
+          ref={toggleRef}
+          type="button"
+          onClick={() => setOpen((wasOpen) => !wasOpen)}
+          aria-expanded={open}
+          aria-controls={panelId}
+          className="inline-flex h-11 w-11 items-center justify-center rounded-brand border border-line text-ink lg:hidden"
+        >
+          {/* The accessible name changes with the state; the bars do not need
+              announcing twice. */}
+          <span className="sr-only">{open ? 'Close menu' : 'Open menu'}</span>
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            className="h-5 w-5"
+            aria-hidden="true"
+            focusable="false"
+          >
+            {open ? (
+              <path d="m6 6 12 12M18 6 6 18" />
+            ) : (
+              <path d="M4 7h16M4 12h16M4 17h16" />
+            )}
+          </svg>
+        </button>
+      </Container>
+
+      {/*
+        Rendered always and hidden with `hidden`, rather than mounted on open.
+        The panel keeps its id, so `aria-controls` on the toggle points at an
+        element that exists in both states -- which is what a screen reader
+        needs to describe the control before it is used.
+      */}
+      <div id={panelId} hidden={!open} className="border-t border-line bg-surface lg:hidden">
+        <Container className="py-4">
+          <nav aria-label="Primary, small screen">
+            <ul className="flex flex-col">
+              {marketing.nav.map((link) => (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    className="flex min-h-12 items-center text-base font-medium text-ink"
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <div className="mt-4 flex flex-col gap-3 border-t border-line pt-4">
+            <ButtonLink href={accountHref} variant="secondary" size="lg">
+              {accountLabel}
+            </ButtonLink>
+            {marketing.headerCta && (
+              <ButtonLink href={appHref(marketing.headerCta.href)} size="lg">
+                {marketing.headerCta.label}
+              </ButtonLink>
+            )}
+          </div>
+        </Container>
+      </div>
+    </header>
+  )
+}

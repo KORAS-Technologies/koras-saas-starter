@@ -1,0 +1,162 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+import { cn } from '../lib/cn'
+
+/**
+ * The product, previewing itself.
+ *
+ * This is the one piece of the page that is not borrowed from anywhere: rather
+ * than the gradient rectangle or the stock photograph that stands in for a
+ * product on most SaaS homepages, the hero shows an abstraction of the
+ * application's own interface -- a window, a navigation rail, a workspace
+ * header carrying this product's name, a row of measures and a queue of work.
+ *
+ * It earns its place three times over. It is drawn in the product's brand
+ * tokens, so every generated product's hero looks like that product rather than
+ * like this template. It needs no asset, so a freshly generated repository has
+ * a complete hero with nothing to commission and no broken image. And it is the
+ * honest shape of what the product is -- a workspace with a queue in it --
+ * rather than a photograph of people at a table.
+ *
+ * Entirely decorative to assistive technology: everything it says is said in
+ * the heading and the copy beside it, so announcing the same thing again as a
+ * pile of unlabelled boxes would be noise. `aria-hidden` is deliberate.
+ *
+ * Replaced wholesale the moment a product configures `heroImage` or
+ * `previewImage`. This is the floor, not the ceiling.
+ */
+
+const ROWS = [
+  { label: 'Onboarding · Northwind', meta: 'Due today', state: 'active' as const },
+  { label: 'Renewal review · Contoso', meta: 'In progress', state: 'progress' as const },
+  { label: 'Access request · Fabrikam', meta: 'Waiting', state: 'waiting' as const },
+  { label: 'Quarterly export', meta: 'Scheduled', state: 'waiting' as const },
+]
+
+/**
+ * Bar heights, as a percentage of the row, in a style object built outside JSX.
+ *
+ * A percentage rather than a pixel height so the row keeps its proportions when
+ * the frame is scaled -- it appears at two sizes, small in the hero and large
+ * in the preview section, and fixed pixels made it a strip of tiles in one and
+ * a chart in the other.
+ *
+ * Not an inline object literal, because this file is a Handlebars template and
+ * an inline `style` object literal opens a Handlebars expression, because its
+ * two braces are the delimiter Handlebars looks for. The generator would fail to
+ * parse the file rather than render it.
+ */
+function barStyle(percent: number) {
+  return { height: `${percent}%` }
+}
+
+const STATE_STYLES = {
+  active: 'bg-brand/10 text-brand',
+  progress: 'bg-slate-100 text-slate-600',
+  waiting: 'bg-slate-100 text-slate-500',
+}
+
+export function AppFrame({ className }: { className?: string }) {
+  const { product } = productConfig
+
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        'overflow-hidden rounded-xl border border-white/10 bg-white shadow-lifted',
+        className,
+      )}
+    >
+      {/* Window chrome. Establishes "this is an application" in one strip. */}
+      <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5">
+        <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
+        <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
+        <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
+        <span className="ml-2 truncate rounded-full bg-white px-3 py-1 text-[11px] font-medium text-slate-400 ring-1 ring-slate-200">
+          {product.slug} / workspace
+        </span>
+      </div>
+
+      <div className="flex">
+        {/* Navigation rail. Collapsed on narrow screens, where it would only
+            steal width from the content that carries the meaning. */}
+        <div className="hidden w-14 shrink-0 flex-col items-center gap-3 border-r border-slate-200 bg-slate-50/70 py-4 sm:flex">
+          <span className="h-7 w-7 rounded-lg bg-brand" />
+          <span className="h-7 w-7 rounded-lg bg-slate-200" />
+          <span className="h-7 w-7 rounded-lg bg-slate-200" />
+          <span className="h-7 w-7 rounded-lg bg-slate-200" />
+        </div>
+
+        <div className="min-w-0 flex-1 p-4 sm:p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-semibold text-slate-900">{product.name}</p>
+              <p className="truncate text-[11px] text-slate-400">Operations overview</p>
+            </div>
+            <span className="h-7 w-7 shrink-0 rounded-full bg-slate-200" />
+          </div>
+
+          {/* Three measures. Numbers are illustrative and stay unlabelled by
+              unit, so nothing here reads as a claim about a real deployment. */}
+          <div className="mt-4 grid grid-cols-3 gap-2.5">
+            {[
+              ['Open', '128'],
+              ['Due today', '24'],
+              ['Blocked', '3'],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-slate-200 px-2.5 py-2">
+                <p className="text-[10px] font-medium tracking-wide text-slate-400 uppercase">
+                  {label}
+                </p>
+                <p className="mt-0.5 text-base font-bold text-slate-900">{value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 space-y-2">
+            {ROWS.map((row) => (
+              <div
+                key={row.label}
+                className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2.5"
+              >
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <span
+                    className={cn(
+                      'h-1.5 w-1.5 shrink-0 rounded-full',
+                      row.state === 'active' ? 'bg-brand' : 'bg-slate-300',
+                    )}
+                  />
+                  <span className="truncate text-[12px] font-medium text-slate-700">
+                    {row.label}
+                  </span>
+                </span>
+                <span
+                  className={cn(
+                    'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                    STATE_STYLES[row.state],
+                  )}
+                >
+                  {row.meta}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* A single sparkline-height bar row: enough to say "there is
+              reporting" without pretending to be a chart. */}
+          <div className="mt-4 flex h-16 items-end gap-1.5">
+            {[34, 52, 41, 68, 58, 79, 71, 100].map((height, index) => (
+              <span
+                key={height}
+                className={cn(
+                  'flex-1 rounded-t-[3px]',
+                  index === 7 ? 'bg-brand' : 'bg-slate-200',
+                )}
+                style={barStyle(height)}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "rootDir": "src",
+    "allowImportingTsExtensions": false,
+    "moduleResolution": "bundler"
+  },
+  "include": ["src"]
+}

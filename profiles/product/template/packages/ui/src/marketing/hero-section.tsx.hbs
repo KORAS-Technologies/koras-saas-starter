@@ -1,0 +1,59 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+import { ButtonLink } from '../primitives/button'
+import { Container } from '../primitives/container'
+import { appHref } from '../lib/links'
+import { ProductVisual } from './product-visual'
+
+/**
+ * The hero.
+ *
+ * Ink ground with a hairline 32px grid over it -- the one structural cue this
+ * design keeps from the Koras corporate site, because it is what makes a
+ * product page recognisably part of the same family without borrowing its
+ * content or its colours.
+ *
+ * Two columns on a wide screen and one on a narrow one, with the visual second
+ * in the source order. That ordering is the accessible one as well as the
+ * responsive one: the proposition is read before the picture of the product,
+ * whichever way the page is being consumed.
+ */
+export function HeroSection() {
+  const { marketing } = productConfig
+
+  return (
+    <section className="brand-grid bg-brand-ink text-white">
+      <Container className="grid items-center gap-14 py-20 sm:py-24 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-16 lg:py-28">
+        <div>
+          {marketing.eyebrow && (
+            <p className="text-sm font-semibold tracking-wide text-white/70">{marketing.eyebrow}</p>
+          )}
+          <h1 className="mt-5 font-display text-4xl font-bold tracking-tight text-balance sm:text-5xl lg:text-[3.25rem] lg:leading-[1.08]">
+            {marketing.heroTitle}
+          </h1>
+          <p className="mt-6 max-w-xl text-lg leading-8 text-white/75 text-pretty">
+            {marketing.heroDescription}
+          </p>
+
+          <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <ButtonLink href={appHref(marketing.primaryCta.href)} variant="inverse" size="lg">
+              {marketing.primaryCta.label}
+            </ButtonLink>
+            {marketing.secondaryCta && (
+              <ButtonLink href={appHref(marketing.secondaryCta.href)} variant="outline" size="lg">
+                {marketing.secondaryCta.label}
+              </ButtonLink>
+            )}
+          </div>
+
+          {marketing.heroNote && (
+            <p className="mt-6 text-sm text-white/55">{marketing.heroNote}</p>
+          )}
+        </div>
+
+        <div className="lg:pl-4">
+          <ProductVisual image={marketing.heroImage} priority />
+        </div>
+      </Container>
+    </section>
+  )
+}

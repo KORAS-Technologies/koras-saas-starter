@@ -1,0 +1,42 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+import { Section } from '../primitives/section'
+
+/**
+ * Configure, operate, measure.
+ *
+ * The numerals are here because this is genuinely ordered -- you cannot operate
+ * before you configure -- and they are the only place in the page that numbers
+ * anything. Elsewhere a numbered marker would be decoration pretending to be
+ * structure.
+ *
+ * An ordered list in the markup, so the order survives being read aloud rather
+ * than living only in a styled digit.
+ */
+export function HowItWorks() {
+  const { marketing } = productConfig
+  if (marketing.steps.length === 0) return null
+
+  return (
+    <Section
+      id="how-it-works"
+      eyebrow={marketing.processEyebrow}
+      title={marketing.processTitle}
+      headingClassName="max-w-3xl"
+    >
+      <ol className="grid gap-10 sm:grid-cols-3 sm:gap-8">
+        {marketing.steps.map((step, index) => (
+          <li key={step.title} className="border-t-2 border-line pt-6">
+            <span
+              aria-hidden="true"
+              className="font-display text-sm font-bold tracking-widest text-brand-accent"
+            >
+              {String(index + 1).padStart(2, '0')}
+            </span>
+            <h3 className="mt-4 font-display text-xl font-bold text-ink">{step.title}</h3>
+            <p className="mt-2.5 leading-7 text-ink-muted">{step.description}</p>
+          </li>
+        ))}
+      </ol>
+    </Section>
+  )
+}

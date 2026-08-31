@@ -1,0 +1,12 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // This package ships TypeScript sources, so `build` only typechecks and
+    // emits nothing. Without an empty outputs list, turbo warns "no output
+    // files found for task ui#build" on every build of every application.
+    "build": {
+      "outputs": []
+    }
+  }
+}
