@@ -1,4 +1,9 @@
+import type { Metadata } from 'next'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { AuthCard, AuthLayout, ButtonLink } from '@{{projectSlug}}/ui'
 import { verifySignup } from '../actions'
+
+export const metadata: Metadata = { title: 'Confirm your email' }
 
 /**
  * Where the link in the email lands.
@@ -11,6 +16,10 @@ import { verifySignup } from '../actions'
  * expired and already-used identically on purpose, and a page that guessed
  * between them would undo that: telling somebody their link "has expired" tells
  * whoever is holding a guessed token that it was once real.
+ *
+ * The wording of every outcome below is unchanged from before this page was
+ * given a layout. It was chosen for what it does and does not disclose, and it
+ * is not copy to be improved for tone.
  */
 export default async function VerifyPage({
   searchParams,
@@ -18,13 +27,20 @@ export default async function VerifyPage({
   searchParams: Promise<{ token?: string }>
 }) {
   const { token } = await searchParams
+  const { product } = productConfig
 
   if (!token) {
     return (
-      <main>
-        <h1>That link is incomplete</h1>
-        <p>Open the link from your email again, or start over.</p>
-      </main>
+      <AuthLayout>
+        <AuthCard
+          title="That link is incomplete"
+          description="Open the link from your email again, or start over."
+        >
+          <ButtonLink href="/signup" size="lg" className="w-full">
+            Start over
+          </ButtonLink>
+        </AuthCard>
+      </AuthLayout>
     )
   }
 
@@ -36,33 +52,46 @@ export default async function VerifyPage({
     // used to do -- a 429 was reported as an invalid link on 2026-08-31, while
     // the token sat unspent.
     return (
-      <main data-testid="verify-rate-limited">
-        <h1>Too many attempts</h1>
-        <p>
-          Your link is still good. Wait a few minutes and open it again — do not start over,
-          that will not help.
-        </p>
-      </main>
+      <AuthLayout>
+        <div data-testid="verify-rate-limited">
+          <AuthCard
+            title="Too many attempts"
+            description="Your link is still good. Wait a few minutes and open it again — do not start over, that will not help."
+          />
+        </div>
+      </AuthLayout>
     )
   }
 
   if (outcome.status !== 'verified') {
     return (
-      <main data-testid="verify-failed">
-        <h1>That link is not valid</h1>
-        <p>It may have been used already, or it may have expired. Sign up again to get a new one.</p>
-      </main>
+      <AuthLayout>
+        <div data-testid="verify-failed">
+          <AuthCard
+            title="That link is not valid"
+            description="It may have been used already, or it may have expired. Sign up again to get a new one."
+          >
+            <ButtonLink href="/signup" size="lg" className="w-full">
+              Sign up again
+            </ButtonLink>
+          </AuthCard>
+        </div>
+      </AuthLayout>
     )
   }
 
   return (
-    <main data-testid="verify-ok">
-      <h1>You are all set</h1>
-      <p>
-        We are setting up {{projectName}} for you now. This takes a few minutes; we will email you
-        when it is ready.
-      </p>
-      <a href="/login">Sign in</a>
-    </main>
+    <AuthLayout>
+      <div data-testid="verify-ok">
+        <AuthCard
+          title="You are all set"
+          description={`We are setting up ${product.name} for you now. This takes a few minutes; we will email you when it is ready.`}
+        >
+          <ButtonLink href="/login" size="lg" className="w-full">
+            Sign in
+          </ButtonLink>
+        </AuthCard>
+      </div>
+    </AuthLayout>
   )
 }

@@ -1,5 +1,15 @@
+import type { Metadata } from 'next'
+import { productConfig } from '@{{projectSlug}}/branding'
+import {
+  AuthCard,
+  AuthLayout,
+  InvitationOnlyCard,
+  RequestAccessCard,
+} from '@{{projectSlug}}/ui'
 import { availablePlans } from './actions'
 import { SignupForm } from './SignupForm'
+
+export const metadata: Metadata = { title: 'Get started' }
 
 /**
  * Where a customer starts, before they have anything to sign in to.
@@ -12,6 +22,17 @@ import { SignupForm } from './SignupForm'
  * Nothing is created by loading or submitting this page. The Control Plane
  * writes one pending row and sends one email; an account exists only after the
  * link in it is opened.
+ *
+ * Three states, and every one of them is a real business state rather than a
+ * variant somebody invented for the design:
+ *
+ *   invitation   the product says so, in `marketing.access.mode`
+ *   request      the platform offers no self-serve plan
+ *   self-serve   the platform offers at least one
+ *
+ * The business rules did not change when this page was redesigned. What changed
+ * is that the second state is now a card with something to do in it instead of
+ * one unstyled sentence saying to get in touch, with no way to.
  */
 /**
  * Rendered per request, never prerendered.
@@ -37,6 +58,20 @@ import { SignupForm } from './SignupForm'
 export const dynamic = 'force-dynamic'
 
 export default async function SignupPage() {
+  const { product, marketing } = productConfig
+
+  // Configured, and therefore asked first: a product that is invitation-only is
+  // invitation-only whatever the catalogue happens to contain today.
+  if (marketing.access.mode === 'invitation') {
+    return (
+      <AuthLayout>
+        <div data-testid="signup-invitation-only">
+          <InvitationOnlyCard />
+        </div>
+      </AuthLayout>
+    )
+  }
+
   const plans = await availablePlans()
 
   // No plan is self-serve until somebody marks one, so this is the state a new
@@ -44,18 +79,30 @@ export default async function SignupPage() {
   // address and is refused after it is sent.
   if (plans.length === 0) {
     return (
-      <main data-testid="signup-closed">
-        <h1>Start with {{projectName}}</h1>
-        <p>Signing up online is not available yet. Please get in touch and we will set you up.</p>
-      </main>
+      <AuthLayout>
+        <div data-testid="signup-closed">
+          <RequestAccessCard />
+        </div>
+      </AuthLayout>
     )
   }
 
   return (
-    <main>
-      <h1>Start with {{projectName}}</h1>
-      <p>Tell us where to send your confirmation link.</p>
-      <SignupForm plans={plans} />
-    </main>
+    <AuthLayout>
+      <AuthCard
+        title={`Start with ${product.name}`}
+        description="Tell us where to send your confirmation link. Nothing is created until you open it."
+        footer={
+          <>
+            Already have an account?{' '}
+            <a href="/login" className="font-semibold text-brand hover:underline">
+              Sign in
+            </a>
+          </>
+        }
+      >
+        <SignupForm plans={plans} />
+      </AuthCard>
+    </AuthLayout>
   )
 }

@@ -1,0 +1,30 @@
+import { AuthCard, AuthLayout, ButtonLink } from '@{{projectSlug}}/ui'
+
+/**
+ * A page that does not exist.
+ *
+ * Reached by a signed-in caller following a stale link, and by any page that
+ * calls `notFound()`. An anonymous caller does not get here: the middleware
+ * gates every path it does not recognise, so an unknown URL is answered with a
+ * redirect to the sign-in page before Next ever decides the route is missing.
+ * That is the session gate working as intended and is not worth relaxing -- an
+ * exemption wide enough to serve this page to strangers is an exemption wide
+ * enough to serve every page.
+ *
+ * The auth frame rather than the marketing frame, deliberately: this is a dead
+ * end with one thing to do next, which is exactly the shape those screens have.
+ */
+export default function NotFound() {
+  return (
+    <AuthLayout>
+      <AuthCard
+        title="We cannot find that page"
+        description="The link may be out of date, or the page may have moved."
+      >
+        <ButtonLink href="/" size="lg" className="w-full">
+          Go to the homepage
+        </ButtonLink>
+      </AuthCard>
+    </AuthLayout>
+  )
+}

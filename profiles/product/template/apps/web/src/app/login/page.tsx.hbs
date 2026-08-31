@@ -1,11 +1,25 @@
+import type { Metadata } from 'next'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { AuthCard, AuthLayout, ButtonLink } from '@{{projectSlug}}/ui'
+
+export const metadata: Metadata = { title: 'Sign in' }
 
 /**
  * The sign-in page.
  *
- * A KORAS page with a KORAS button. The button starts an OAuth redirect through
- * ZITADEL and the browser lands back here; staff never see a ZITADEL-hosted
- * screen, which invariant 4 requires of customers and which there is no reason
- * to relax for staff.
+ * The authentication behaviour here is unchanged and deliberately so. The link
+ * still points at `/api/auth/start` rather than at ZITADEL, because the flow
+ * has to store a CSRF token and a PKCE verifier first and only a route handler
+ * can set cookies; the `next` parameter still round-trips through that handler;
+ * customers still never see a ZITADEL-hosted screen, which is invariant 4.
+ *
+ * What changed is everything around it. Nothing on this page may be altered to
+ * suit a layout: `href`, `data-testid="sign-in"` and the redirect it starts are
+ * the contract the smoke checks and the deployed sign-in depend on.
+ *
+ * `next` defaults to `/dashboard` rather than `/`, because `/` is now the
+ * public homepage -- a completed sign-in that lands on the marketing page looks
+ * exactly like one that failed.
  */
 export default async function LoginPage({
   searchParams,
@@ -13,18 +27,31 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string }>
 }) {
   const { next } = await searchParams
-  // The link points at a route handler rather than straight at ZITADEL: the
-  // flow needs to store a CSRF token and a PKCE verifier first, and only a
-  // handler can set cookies.
-  const href = `/api/auth/start?next=${encodeURIComponent(next ?? '/')}`
+  const href = `/api/auth/start?next=${encodeURIComponent(next ?? '/dashboard')}`
+  const { product } = productConfig
 
   return (
-    <main className="login">
-      <h1>{{projectName}}</h1>
-      <p>Sign in with your organization account.</p>
-      <a className="button" href={href} data-testid="sign-in">
-        Sign in
-      </a>
-    </main>
+    <AuthLayout>
+      <AuthCard
+        title={`Sign in to ${product.name}`}
+        description="You will be taken to your organisation's sign-in and brought straight back."
+        footer={
+          <>
+            No account yet?{' '}
+            <a href="/signup" className="font-semibold text-brand hover:underline">
+              Get started
+            </a>
+          </>
+        }
+      >
+        <ButtonLink href={href} size="lg" className="w-full" testId="sign-in">
+          Sign in
+        </ButtonLink>
+        <p className="mt-4 text-sm leading-6 text-ink-muted">
+          Signing in uses your organisation account. There is no separate {product.name} password
+          to remember or reset.
+        </p>
+      </AuthCard>
+    </AuthLayout>
   )
 }
