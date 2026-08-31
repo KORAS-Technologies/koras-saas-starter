@@ -1,15 +1,62 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { brandStyle } from '@{{projectSlug}}/ui'
 import './globals.css'
 
+const { product, brand } = productConfig
+
+/**
+ * Every piece of page metadata comes from `productConfig`.
+ *
+ * Nothing here names KORAS or hardcodes a title, which is the difference
+ * between a generated product and a template with somebody else's name in the
+ * browser tab. `metadataBase` is set only when the product knows its own
+ * origin -- Next warns and falls back to localhost otherwise, and a wrong
+ * absolute URL in an OpenGraph tag is worse than an absent one.
+ */
 export const metadata: Metadata = {
-  title: '{{projectName}}',
-  description: '{{projectName}} application',
+  ...(product.url ? { metadataBase: new URL(product.url) } : {}),
+  title: {
+    default: `${product.name} — ${product.tagline}`,
+    template: `%s · ${product.name}`,
+  },
+  description: product.description,
+  applicationName: product.name,
+  icons: { icon: brand.faviconUrl },
+  openGraph: {
+    type: 'website',
+    siteName: product.name,
+    title: `${product.name} — ${product.tagline}`,
+    description: product.description,
+  },
+  twitter: { card: 'summary_large_image', title: product.name, description: product.description },
+}
+
+/**
+ * `themeColor` belongs to the viewport export in the App Router, not to
+ * `metadata`; Next warns about it on every build when it is put in the wrong
+ * one, and the tag is silently dropped.
+ */
+export const viewport: Viewport = {
+  themeColor: brand.secondaryColor,
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      {/*
+        The brand tokens are applied once, here, as CSS custom properties. The
+        Tailwind theme is declared `inline`, so every utility in every component
+        resolves through these -- which is what makes a product's palette a
+        configuration change rather than a search and replace.
+      */}
+      <body style={brandStyle(brand)} className="flex min-h-screen flex-col font-sans">
+        {/* First in the tab order, visible only when focused. */}
+        <a href="#main-content" className="skip-link">
+          Skip to main content
+        </a>
+        {children}
+      </body>
     </html>
   )
 }

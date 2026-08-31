@@ -90,12 +90,33 @@ const member = await mint({
   mfa: true,
 })
 
+/*
+ * The path this check treats as "inside the application".
+ *
+ * `apps/web` serves a public homepage at `/` and keeps its signed-in landing
+ * page at `/dashboard`; `apps/admin` has no public surface and its root is
+ * still gated. Aiming every assertion below at a literal `/` would, against
+ * web, test the marketing page and report the session gate as broken -- or,
+ * worse, report it as working while never touching it.
+ */
+const IS_ADMIN = (BASE ?? '').includes('admin')
+const GATED = IS_ADMIN ? '/' : '/dashboard'
+
+// 0. The public homepage really is public. Only `apps/web` has one, and it is
+// the single exemption in PUBLIC_EXACT_PATHS -- so it is worth proving that it
+// opens to a stranger, next to every check proving nothing else does.
+let r
+if (!IS_ADMIN) {
+  r = await get('/')
+  check('the public homepage opens without a session', r.status === 200, String(r.status))
+}
+
 // 1. No cookie at all.
-let r = await get('/')
+r = await get(GATED)
 check('anonymous is sent to the login page', r.status === 307 && (r.location ?? '').includes('/login'), `${r.status} ${r.location ?? ''}`)
 
 // 2. A signed-in member.
-r = await get('/', member)
+r = await get(GATED, member)
 check('a member reaches the application', r.status === 200, String(r.status))
 
 // The landing page is not enough on its own: it renders without calling this
@@ -105,7 +126,7 @@ check('a member reaches the application', r.status === 200, String(r.status))
 // as a pass, because a check that cannot run is not a check that succeeded.
 const errorPanel = /data-testid="error-(panel|forbidden)"/
 if (providerToken) {
-  r = await get('/', member)
+  r = await get(GATED, member)
   check('the page loads its data', !errorPanel.test(r.body), errorPanel.test(r.body) ? 'an error panel is rendered' : '')
 } else {
   console.log('SKIP  the page loads its data  -- set PROVIDER_TOKEN to the id_token cookie from a real sign-in')
@@ -117,34 +138,34 @@ const forged = await new SignJWT({ roles: ['organization_admin'], mfa: true })
   .setProtectedHeader({ alg: 'HS256' }).setIssuer('{{projectSlug}}').setSubject(USER)
   .setIssuedAt().setExpirationTime('1h')
   .sign(new TextEncoder().encode('x'.repeat(48)))
-r = await get('/', forged)
+r = await get(GATED, forged)
 check('a cookie signed with another key is refused', r.status === 307, String(r.status))
 
 // 4. Signed in, carrying nothing this build recognises. A platform role lands
 // here too: this profile does not define those names, so one arriving in a
 // product token grants exactly as much as a typo.
 const noRole = await mint({ email: 'nobody@example.com', mfa: true })
-r = await get('/', noRole)
+r = await get(GATED, noRole)
 check('no recognised role is refused with 403', r.status === 403, String(r.status))
 const staffRole = await mint({ roles: ['platform_super_admin'], mfa: true })
-r = await get('/', staffRole)
+r = await get(GATED, staffRole)
 check('a platform role grants nothing here', r.status === 403, String(r.status))
 
 // 5. An expired session.
 const expired = await mint({ roles: ['organization_admin'], mfa: true }, -60)
-r = await get('/', expired)
+r = await get(GATED, expired)
 check('an expired session is not a session', r.status === 307, String(r.status))
 
 // 6. The two applications admit different people, which is the point of having
 // two. Run against admin-*: a plain member is refused, and so is an owner who
 // has not presented a second factor.
-if ((BASE ?? '').includes('admin')) {
+if (IS_ADMIN) {
   const plain = await mint({ roles: ['member'], mfa: true })
-  r = await get('/', plain)
+  r = await get(GATED, plain)
   check('a plain member may not open the operations app', r.status === 403, String(r.status))
 
   const noMfa = await mint({ roles: ['organization_owner'], mfa: false })
-  r = await get('/', noMfa)
+  r = await get(GATED, noMfa)
   check('an owner without MFA is told to enrol', r.status === 403 && r.body.includes('Multi-factor'),
         `${r.status} ${r.body.slice(0, 60)}`)
 } else {
@@ -152,7 +173,7 @@ if ((BASE ?? '').includes('admin')) {
 }
 
 // 8. The sign-in route still redirects to ZITADEL.
-r = await get('/api/auth/start?next=%2F')
+r = await get(`/api/auth/start?next=${encodeURIComponent(GATED)}`)
 check('sign-in redirects to the identity provider',
       r.status === 307 && (r.location ?? '').includes('/oauth/v2/authorize'), String(r.status))
 

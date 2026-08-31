@@ -1,7 +1,47 @@
+import {
+  CtaSection,
+  FeatureGrid,
+  HeroSection,
+  HowItWorks,
+  OutcomeSection,
+  ProductPreview,
+  PublicFooter,
+  PublicHeader,
+  TrustSection,
+  ValueStrip,
+} from '@{{projectSlug}}/ui'
+
+/**
+ * The marketing homepage.
+ *
+ * The same sections, from the same package, driven by the same configuration as
+ * the public homepage in `apps/web`. Two applications, one page -- because a
+ * product that says one thing on its marketing site and another on its front
+ * door has two things to keep in step, and will not.
+ *
+ * The difference is what it can know. There is no session here, so the header
+ * always offers sign-in; `apps/web` reads its cookie and offers the dashboard
+ * instead to somebody already signed in.
+ *
+ * Static, unlike the web application's copy. Nothing on this page varies per
+ * request, which is the whole advantage of serving it from a separate
+ * application: it can be a cached document.
+ */
 export default function MarketingPage() {
   return (
-    <main>
-      <h1>{{projectName}}</h1>
-    </main>
+    <>
+      <PublicHeader />
+      <main id="main-content" className="flex-1">
+        <HeroSection />
+        <ValueStrip />
+        <FeatureGrid />
+        <OutcomeSection />
+        <HowItWorks />
+        <ProductPreview />
+        <TrustSection />
+        <CtaSection />
+      </main>
+      <PublicFooter />
+    </>
   )
 }

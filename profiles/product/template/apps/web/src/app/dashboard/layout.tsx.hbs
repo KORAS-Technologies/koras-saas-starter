@@ -1,0 +1,67 @@
+import type { ReactNode } from 'react'
+import { cookies } from 'next/headers'
+import { readSessionToken } from '@{{projectSlug}}/auth'
+import { BrandScope, Container, ProductLogo } from '@{{projectSlug}}/ui'
+import { tenantBranding } from '../../lib/tenant-branding'
+
+/**
+ * The signed-in area, in the customer's colours.
+ *
+ * Everything under `/dashboard` is rendered inside a `BrandScope`, so a
+ * customer's palette reaches every button, border and card below it without a
+ * single component knowing a tenant exists. Add new authenticated routes here
+ * and they inherit it; that is the whole point of doing it in a layout rather
+ * than per page.
+ *
+ * The tenant comes from the session cookie's organization, never from the URL
+ * or a header. Branding is only decoration, so getting it from an untrusted
+ * source would not leak data -- but a page that renders one customer's mark
+ * because a query parameter said so is a page that looks like their tenant, and
+ * that is worth refusing for its own sake.
+ *
+ * The public pages -- `/`, `/login`, `/signup` -- are deliberately outside
+ * this. They belong to the product and are served to people who have no tenant.
+ *
+ * The application header lives here rather than on the page for the same
+ * reason: it is the one surface that shows the customer's mark, and resolving
+ * the tenant once per navigation beats every page doing it again.
+ */
+export default async function DashboardLayout({ children }: { children: ReactNode }) {
+  const store = await cookies()
+  const outcome = await readSessionToken(store.get('session')?.value, {
+    secret: process.env.SESSION_SECRET ?? '',
+  })
+  const tenant = await tenantBranding(
+    outcome.status === 'ok' ? outcome.session.organizationId : undefined,
+  )
+
+  const person = outcome.status === 'ok' ? (outcome.session.name ?? outcome.session.email) : undefined
+
+  return (
+    <BrandScope tenant={tenant} className="flex min-h-screen flex-col">
+      <header className="border-b border-line bg-surface">
+        <Container className="flex h-18 items-center justify-between gap-6">
+          <ProductLogo href="/dashboard" tenant={tenant} />
+          <div className="flex items-center gap-4">
+            {person && <span className="hidden text-sm text-ink-muted sm:inline">{person}</span>}
+            {/*
+              A form, because the sign-out route is POST-only -- deliberately,
+              so that any page able to make this browser load a URL cannot sign
+              somebody out. A link here would render a control that always
+              returns 405.
+            */}
+            <form action="/api/auth/signout" method="post">
+              <button
+                type="submit"
+                className="min-h-11 rounded-brand px-2 text-sm font-semibold text-ink hover:text-brand"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
+        </Container>
+      </header>
+      {children}
+    </BrandScope>
+  )
+}

@@ -1,8 +1,78 @@
-export default function HomePage() {
+import {
+  CtaSection,
+  FeatureGrid,
+  HeroSection,
+  HowItWorks,
+  OutcomeSection,
+  ProductPreview,
+  PublicFooter,
+  PublicHeader,
+  TrustSection,
+  ValueStrip,
+} from '@{{projectSlug}}/ui'
+import { readSessionToken } from '@{{projectSlug}}/auth'
+import { cookies } from 'next/headers'
+
+/**
+ * The public front door.
+ *
+ * The only page in this application a stranger can reach, and the reason
+ * `/` is named in `PUBLIC_EXACT_PATHS` in the middleware. Everything else stays
+ * behind the session gate; the authenticated landing page moved to
+ * `/dashboard` when this page took the root.
+ *
+ * Every section is a component from `@{{projectSlug}}/ui` driven by
+ * `productConfig`. There is no copy in this file on purpose: a product
+ * customises its homepage by editing its configuration, which is one file, and
+ * not by editing a page, which is the thing that makes the next upgrade a merge
+ * conflict.
+ *
+ * Rendered per request rather than prerendered, because the header changes with
+ * the session: somebody already signed in should be offered their dashboard,
+ * not a sign-in link. That is the only thing the session is read for here.
+ */
+export const dynamic = 'force-dynamic'
+
+export default async function HomePage() {
+  const signedIn = await hasSession()
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24">
-      <h1 className="text-4xl font-bold">{{projectName}}</h1>
-      <p className="mt-4 text-lg text-muted-foreground">Welcome to your KORAS product.</p>
-    </main>
+    <>
+      <PublicHeader signedIn={signedIn} />
+      <main id="main-content" className="flex-1">
+        <HeroSection />
+        <ValueStrip />
+        <FeatureGrid />
+        <OutcomeSection />
+        <HowItWorks />
+        <ProductPreview />
+        <TrustSection />
+        <CtaSection />
+      </main>
+      <PublicFooter />
+    </>
   )
+}
+
+/**
+ * Whether this browser already has a session with this application.
+ *
+ * Read from the cookie, exactly as the middleware does, and used for one
+ * cosmetic decision. It authorises nothing: this page is public, and every
+ * protected route is gated in middleware regardless of what is decided here.
+ *
+ * A failure is treated as "signed out" rather than propagated. The homepage
+ * must render for a stranger, and a stranger is precisely the caller whose
+ * cookie will not verify.
+ */
+async function hasSession(): Promise<boolean> {
+  try {
+    const store = await cookies()
+    const outcome = await readSessionToken(store.get('session')?.value, {
+      secret: process.env.SESSION_SECRET ?? '',
+    })
+    return outcome.status === 'ok'
+  } catch {
+    return false
+  }
 }

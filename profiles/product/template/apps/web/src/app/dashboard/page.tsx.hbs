@@ -1,0 +1,60 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+import { Card, Container } from '@{{projectSlug}}/ui'
+
+/**
+ * Where a signed-in person lands.
+ *
+ * This used to be `/`. It moved when the public homepage took the root, and the
+ * move is the whole reason the middleware needed an exact-match exemption
+ * rather than a prefix one -- `/` as a prefix would have opened every route in
+ * the application.
+ *
+ * The header, the session read and the customer's branding are all in
+ * `layout.tsx`, so this page is only its own content and so is every page added
+ * beside it.
+ *
+ * Deliberately close to empty. It is the first screen of a product nobody has
+ * built yet, so it establishes the frame -- container, card, brand tokens --
+ * and then says plainly that this is where the product goes. An invented
+ * dashboard of fake charts would have to be deleted before the real one could
+ * be written.
+ */
+export const dynamic = 'force-dynamic'
+
+export default function DashboardPage() {
+  const { product } = productConfig
+
+  return (
+    <main id="main-content" className="flex-1 bg-surface-muted py-12">
+      <Container>
+        <h1 className="font-display text-3xl font-bold tracking-tight text-ink">
+          Welcome to {product.name}
+        </h1>
+        <p className="mt-3 max-w-2xl leading-7 text-ink-muted">
+          You are signed in. This is the starting point for {product.name}; the first screen your
+          team builds replaces this one.
+        </p>
+
+        <Card className="mt-8 max-w-2xl">
+          <h2 className="font-display text-lg font-bold text-ink">Where to start</h2>
+          <ul className="mt-4 space-y-3 leading-7 text-ink-muted">
+            <li>
+              Build this page in <code className="text-ink">apps/web/src/app/dashboard</code>.
+              Everything you add beside it is protected by default and inherits this
+              customer&rsquo;s branding.
+            </li>
+            <li>
+              The public site, its content and this product&rsquo;s own colours are configured in{' '}
+              <code className="text-ink">packages/branding/src/index.ts</code>.
+            </li>
+            <li>
+              A customer&rsquo;s own colours and logo arrive through{' '}
+              <code className="text-ink">apps/web/src/lib/tenant-branding.ts</code>, which names
+              the one read still to be wired up.
+            </li>
+          </ul>
+        </Card>
+      </Container>
+    </main>
+  )
+}

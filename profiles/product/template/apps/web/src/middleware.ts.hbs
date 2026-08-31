@@ -26,7 +26,24 @@ import { hasAnyRole } from '@{{projectSlug}}/permissions'
  * be exercised -- which is how a real one gets added later without anyone
  * noticing.
  */
-const PUBLIC_PATHS = ['/login', '/signup', '/api/auth']
+const PUBLIC_PATHS = ['/login', '/signin', '/signup', '/api/auth']
+
+/**
+ * Paths that are public *exactly*, matched with `===` rather than by prefix.
+ *
+ * There is one, and it needs its own list because of how the other one works.
+ * `PUBLIC_PATHS` is a prefix match, so putting `/` in it would exempt every
+ * route in the application -- the session gate would still be there, still be
+ * tested, and admit everybody. That is not a hypothetical: the test guarding
+ * this file asserts `PUBLIC_PATHS` never contains `'/'`, precisely so the
+ * mistake cannot be made quietly.
+ *
+ * `/` is the public homepage. It is the product's front door and has to open
+ * for somebody with no account; the signed-in landing page moved to
+ * `/dashboard` to make room for it, and `/dashboard` is gated like everything
+ * else. An exact match cannot widen: `/dashboard` does not equal `/`.
+ */
+const PUBLIC_EXACT_PATHS = ['/']
 
 /**
  * A per-request nonce, and the policy that makes it worth having.
@@ -79,7 +96,10 @@ async function authorize(
   policy: string,
 ): Promise<NextResponse> {
   const { pathname } = request.nextUrl
-  if (PUBLIC_PATHS.some((path) => pathname.startsWith(path))) {
+  if (
+    PUBLIC_EXACT_PATHS.includes(pathname) ||
+    PUBLIC_PATHS.some((path) => pathname.startsWith(path))
+  ) {
     return withNonce(request, nonce, policy)
   }
 
@@ -143,6 +163,16 @@ function withNonce(request: NextRequest, nonce: string, policy: string): NextRes
   return NextResponse.next({ request: { headers } })
 }
 
+/*
+ * `icon.svg` and `brand/` join the exclusions the framework's own assets have.
+ *
+ * They are static files served from `app/` and `public/`, and a request for one
+ * is not a request for a page: gated, an anonymous browser asking for the
+ * favicon is answered with a redirect to the login page, so the tab shows no
+ * icon and a product logo configured in `brand/` renders as a broken image on
+ * the public homepage. Excluding them exempts no route -- neither path can ever
+ * be a page, because `app/icon.svg` and `public/brand/` occupy them.
+ */
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon.svg|brand/).*)'],
 }

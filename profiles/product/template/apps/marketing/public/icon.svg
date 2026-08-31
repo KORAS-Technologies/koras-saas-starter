@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Product mark">
+  <!--
+    The default browser-tab icon.
+
+    The same mark ProductLogo draws when a product has supplied no logo, at
+    favicon scale. A static file cannot read the brand tokens, so the fill is
+    the default primary; a product that changes `brand.primaryColor` should
+    replace this file and point `brand.faviconUrl` at the new one.
+  -->
+  <rect width="64" height="64" rx="14" fill="#2563eb"/>
+  <path d="M32 17 48 25.5 32 34 16 25.5 32 17Z" fill="#ffffff" fill-opacity="0.95"/>
+  <path d="M17.5 34.5 32 42.5 46.5 34.5" fill="none" stroke="#ffffff" stroke-opacity="0.7" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

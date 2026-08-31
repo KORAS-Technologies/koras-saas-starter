@@ -1,0 +1,49 @@
+import { NO_TENANT_BRANDING, parseTenantBranding } from '@{{projectSlug}}/branding'
+import type { TenantBranding } from '@{{projectSlug}}/branding'
+
+/**
+ * The customer's own branding, for the signed-in area.
+ *
+ * One seam, on purpose. Everything downstream of this function is finished:
+ * `BrandScope` re-skins the whole subtree from the tokens, `ProductLogo` takes
+ * the customer's mark, and `parseTenantBranding` decides which of the values
+ * stored against the tenant are safe to put in a stylesheet. What is missing is
+ * the read, and the read is the product's to write, because the product owns
+ * the endpoint and the tenant context it needs.
+ *
+ * The row already exists: `public.tenant_settings.branding`, a `jsonb` column
+ * created in the first migration, isolated per tenant by row-level security.
+ * What does not exist is a customer-facing route on `services/api` that returns
+ * it. `services/api` currently serves `health` and the private `platform`
+ * router, and adding a customer-facing one is a decision about the API's
+ * surface -- authentication, tenant context, caching, rate limits -- rather
+ * than a frontend change, so this template does not make it.
+ *
+ * To finish it:
+ *
+ *   1. Add a route to `services/api` that returns the calling tenant's
+ *      `tenant_settings.branding`, scoped by the RLS context the caller's token
+ *      establishes. Never accept a tenant id from the browser.
+ *   2. Call it here through `@{{projectSlug}}/api-client`, forwarding the
+ *      caller's credentials.
+ *   3. Pass the response through `parseTenantBranding` -- which is already what
+ *      the last line of this function does.
+ *
+ * Until then a signed-in customer sees the product's own branding, which is the
+ * correct fallback and not a broken state.
+ *
+ * Never throws. Branding is decoration: a customer whose settings cannot be
+ * read should see the product's colours, not an error page. Failing closed here
+ * would take the whole application down for a cosmetic lookup.
+ */
+export async function tenantBranding(organizationId: string | undefined): Promise<TenantBranding> {
+  if (!organizationId) return NO_TENANT_BRANDING
+
+  try {
+    const stored: unknown = null // ← the read described above goes here
+    return parseTenantBranding(stored)
+  } catch (error) {
+    console.error('[branding] the tenant settings could not be read:', error)
+    return NO_TENANT_BRANDING
+  }
+}

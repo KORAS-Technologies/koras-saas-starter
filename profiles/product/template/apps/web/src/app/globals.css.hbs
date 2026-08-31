@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+/*
+ * The product design tokens and the Tailwind theme built on them.
+ *
+ * Single-sourced in `packages/ui` so this application and `apps/marketing`
+ * cannot drift apart: one file defines the brand tokens, one file maps them to
+ * utilities, and both applications import it.
+ */
+@import "@{{projectSlug}}/ui/styles.css";
+
+/*
+ * Tell Tailwind where the class names are.
+ *
+ * Automatic detection starts at this application's root and skips
+ * `node_modules` -- and `packages/ui` reaches this application through a
+ * workspace symlink inside `node_modules`, so every class used by a shared
+ * component is invisible to it. Without this line the pages compile, render,
+ * and arrive with no styling whatsoever, which looks like a broken import
+ * rather than a missing source path.
+ */
+@source "../../../../packages/ui/src";
