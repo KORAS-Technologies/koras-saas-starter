@@ -1,0 +1,58 @@
+import type { BrowserContext } from '@playwright/test'
+import { mintSession } from '@{{projectSlug}}/auth'
+import type { OrganizationRole } from '@{{projectSlug}}/permissions'
+
+/**
+ * Sign a browser in, using the application's own minting function.
+ *
+ * Imported rather than reimplemented. A helper that built the cookie by hand
+ * would keep passing after the cookie's shape changed, and the suite would go
+ * on testing a session the application no longer issues — which is exactly what
+ * happened to the Control Plane's e2e suite when the ID token stopped being the
+ * cookie.
+ *
+ * Nothing is bypassed. The middleware verifies this signature on every request,
+ * so a test signs in the way a person does and is refused the same way.
+ */
+const SESSION_SECRET =
+  process.env.SESSION_SECRET ?? 'e2e-session-secret-at-least-32-characters-long'
+
+export async function signInAs(
+  context: BrowserContext,
+  options: {
+    roles?: OrganizationRole[]
+    email?: string
+    organizationId?: string
+    /** Defaults true. A caller without a second factor is bounced to enrolment,
+     *  so a suite that omitted it would be testing a route nobody reaches. */
+    withMfa?: boolean
+  } = {},
+): Promise<void> {
+  const cookie = await mintSession(
+    {
+      userId: 'e2e-subject',
+      email: options.email ?? 'member@example.com',
+      name: 'E2E Member',
+      organizationRoles: options.roles ?? ['organization_admin'],
+      organizationId: options.organizationId ?? 'e2e-organization',
+      usedMfa: options.withMfa !== false,
+    },
+    SESSION_SECRET,
+    Math.floor(Date.now() / 1000) + 3600,
+  )
+
+  await context.addCookies([
+    {
+      name: 'session',
+      value: cookie,
+      domain: 'localhost',
+      path: '/',
+      httpOnly: true,
+      sameSite: 'Lax',
+    },
+  ])
+  // Deliberately no `id_token`. That cookie is forwarded to this product's API,
+  // which is not running here, and sending a fake one would test a path the
+  // suite cannot follow. Its absence is the documented degraded state: the
+  // shell paints itself from the product's own branding.
+}

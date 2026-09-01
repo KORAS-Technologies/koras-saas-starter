@@ -219,8 +219,10 @@ outlived the work by four days, in the one file every session reads first.
 **What is verified, and how.** CI, Security and Generator Integration all run on
 `develop` and are green. Generator Integration generates both profiles and
 lints, builds, typechecks and tests each, runs the row-level security suite
-against a real Postgres, and mutation-tests that suite by removing `force` and
-requiring it to fail. Local `pnpm lint`, `typecheck` and `test` cover Python as
+against a real Postgres, mutation-tests that suite by removing `force` and
+requiring it to fail, and — since 2026-09-01 — **opens a browser**: the product
+template ships a Playwright suite and the job runs it against the project it
+just generated, at 375 and 1440 (FOLLOW_UPS F18). Local `pnpm lint`, `typecheck` and `test` cover Python as
 well as JavaScript; they did not until 2026-08-25, and `turbo` was replaying
 cached results across template edits until the same day (R-035).
 

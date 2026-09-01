@@ -1,0 +1,64 @@
+import { defineConfig, devices } from '@playwright/test'
+
+/**
+ * The one suite in this repository that opens a browser.
+ *
+ * Everything else asserts structure: `node --test` over pure functions, and a
+ * server-side probe of the rendered markup. That covers what a caller is
+ * *allowed* to see, which is the claim that matters, and it cannot cover the
+ * interaction — a focus trap, Escape returning focus, a drawer closing on
+ * navigation, an icon-only link keeping its accessible name. Those are the
+ * things a text search reads as present and a keyboard finds missing.
+ *
+ * **One server, built and started by Playwright**, so the suite owns its
+ * lifecycle and a failed run cannot leave a port held. It runs the production
+ * build rather than `next dev`: the shell's client boundaries, the middleware
+ * and the CSP nonce all behave differently there, and the build is what ships.
+ *
+ * **No API, deliberately.** `NEXT_PUBLIC_API_URL` is unset, so the tenant read
+ * fails and the shell falls back to this product's own branding and no optional
+ * features — which is a supported state, not a broken one, and it is the state
+ * a new customer is in. A suite that needed a database to check a focus trap
+ * would be a suite nobody runs.
+ */
+
+const PORT = Number(process.env.E2E_PORT ?? 3210)
+
+export default defineConfig({
+  testDir: './e2e',
+  timeout: 30_000,
+  // Serial. The suite is small, the server is one process, and a flaky
+  // parallel run costs more to read than the seconds it saves.
+  fullyParallel: false,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 1 : 0,
+  workers: 1,
+  // `github` annotates the failing line in a pull request; `html` writes the
+  // trace that explains it. The Control Plane's suite uploaded a report
+  // directory that was never produced, because only the first was configured.
+  reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : [['list']],
+  use: {
+    baseURL: `http://localhost:${PORT}`,
+    trace: 'retain-on-failure',
+  },
+  projects: [
+    // Two viewports, because the shell is two different components below and
+    // above `lg` — a drawer and a sidebar — and testing one of them would test
+    // half the navigation.
+    { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } },
+    { name: 'mobile', use: { ...devices['Desktop Chrome'], viewport: { width: 375, height: 812 } } },
+  ],
+  webServer: {
+    command: `pnpm --filter @{{projectSlug}}/web exec next start -p ${PORT}`,
+    url: `http://localhost:${PORT}/login`,
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+    env: {
+      // The application refuses a signing key shorter than 32 characters, so a
+      // test value has to be a real one. The suite signs its cookies with this
+      // and the application verifies them: nothing is bypassed, and a test that
+      // skipped verification would pass however broken authorisation became.
+      SESSION_SECRET: process.env.SESSION_SECRET ?? 'e2e-session-secret-at-least-32-characters-long',
+    },
+  },
+})

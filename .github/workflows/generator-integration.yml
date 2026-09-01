@@ -158,6 +158,45 @@ jobs:
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
         run: pnpm turbo run test
 
+      # The one step in this workflow that opens a browser.
+      #
+      # Everything above asserts structure, which is the right shape for what a
+      # caller is *allowed* to see and cannot say anything about a focus trap,
+      # Escape returning focus, or an icon-only link keeping its accessible
+      # name. Those are claims the product shell makes about itself, and until
+      # this step existed nothing in any KORAS repository had ever checked one.
+      #
+      # The suite is authored in the product template and runs here, in the
+      # factory, against a project generated moments ago — which is FOLLOW_UPS
+      # F18's decision: a browser test needs a running application, so it lives
+      # with the application and the factory runs the generated copy. A harness
+      # kept in the starter would have to generate a project first to have
+      # anything to open, at the cost this job already pays.
+      #
+      # `--without admin,worker` is excluded: it removes packages the shell does
+      # not use but changes the workspace the suite installs into, and the point
+      # of that row is that removing a component still builds.
+      - name: Install a browser
+        if: matrix.profile == 'product' && matrix.slug != 'integration-product-minimal'
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: pnpm e2e:install
+
+      - name: End-to-end (browser)
+        if: matrix.profile == 'product' && matrix.slug != 'integration-product-minimal'
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: pnpm e2e
+
+      # The trace that explains a failure, which is the half the Control Plane's
+      # own workflow was missing: it uploaded a report directory its reporter
+      # never produced, so every failure was read from a text log.
+      - name: Keep the trace when it fails
+        if: failure() && matrix.profile == 'product' && matrix.slug != 'integration-product-minimal'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ matrix.slug }}
+          path: ${{ runner.temp }}/generated/${{ matrix.slug }}/playwright-report/
+          retention-days: 7
+
 
       # The row-level security suite, executed rather than shipped.
       #

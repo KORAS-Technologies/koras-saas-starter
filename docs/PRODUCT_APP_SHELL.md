@@ -569,9 +569,26 @@ generator, behavioural tests inside the generated product.
 - `packages/branding/src/branding.test.ts` — unchanged, still the branding
   parser
 
-**Not attempted:** browser-driven tests. The starter has no Playwright harness
-and building one is larger than this work; the follow-ups record it honestly
-rather than pretending it was done.
+**Added 2026-09-01:** `e2e/shell.spec.ts`, driven by Playwright at 375 and 1440.
+It covers the claims this document makes that no text search can check — the
+drawer's focus trap, Escape closing it and returning focus to the toggle, the
+drawer closing on navigation, the collapsed sidebar keeping every link's
+accessible name across a navigation, and a caller with no session reaching the
+sign-in page rather than the shell.
+
+The suite is authored in the product template and runs in the factory's
+Generator Integration against a freshly generated project, which is FOLLOW_UPS
+F18's decision: a browser test needs a running application, so it ships with the
+application.
+
+It found something on its first run, which is the argument for having it. The
+shell renders the navigation **twice** — once in the sidebar and once inside the
+drawer, which stays in the DOM while closed so the toggle's `aria-controls`
+points at a real element. Two nodes carry `aria-current="page"` at every
+viewport, and at most one is ever reachable. A DOM count says two; the
+accessibility tree says one, or at 375 says none until the drawer is opened.
+Only a browser can tell those apart, and this document had asserted the
+single-`aria-current` rule without one.
 
 ## 26. koras-e2e-shop validation strategy
 

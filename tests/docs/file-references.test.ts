@@ -53,6 +53,11 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   'local/certs/README.md': 'IMPLEMENTATION_ROADMAP records it as absent; generate.sh explains itself',
   'environments/dev.tfvars': 'named in ENVIRONMENT_STRATEGY and R-042 to say it has never existed',
   'terraform.tfvars.json': 'named in INFRASTRUCTURE_PLAN and R-042 to say it has never existed',
+  // Not absent on purpose in the design; named on purpose in the document. The
+  // control-plane profile ships a Playwright helper that reads this file and
+  // the template does not contain it, which is the whole of SYNC_BACKLOG B6.
+  // The exemption goes when B6 does, and this test will say so.
+  'e2e/support/key.json': 'SYNC_BACKLOG B6 names it to record that the template lacks it',
 }
 
 /**

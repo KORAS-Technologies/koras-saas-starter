@@ -63,9 +63,11 @@ Tiers are ordered by what breaks if the item is left alone:
 **Last full survey:** 2026-08-22, against starter `535cd58`,
 control-plane `9546623`, sample-product `27f2949`.
 
-**Closed since:** A1–A7, B1–B5, C1–C4, D1, D3, D4, D5, E1, E2, E3. **D6 is the
-only entry still open**, and it is the oldest kind: `koras-control-plane` has
-never been re-synced against any of this.
+**Closed since:** A1–A7, B1–B5, C1–C4, D1, D3, D4, D5, E1, E2, E3. **Two are
+open: B6 and D6.** B6 was found on 2026-09-01 and is this document's own subject
+arriving somewhere new — a browser harness promoted one file at a time that
+stopped after the first. D6 is the oldest kind: `koras-control-plane` has never
+been re-synced against any of this.
 
 A7 closed 2026-09-01. This summary listed A4 as open for two days after A4's own
 heading said it closed on 2026-08-30 — the index at the top of a document about
@@ -654,6 +656,43 @@ and rewrites both `postgresql://` and the `postgres://` alias. Eight assertions
 across both profiles, including that `psycopg2` is absent from the
 dependencies: were it present, this would have been a silent synchronous engine
 inside an async application instead of a loud import error, which is worse.
+
+### B6 — the control-plane profile ships half a browser harness
+
+- [ ] A `playwright.config.ts`, an `@playwright/test` dependency and one spec,
+      or the support file goes
+- [ ] `e2e/` is typechecked by something
+
+**Applies to:** `profiles/control-plane/template`
+
+Found on 2026-09-01 while closing FOLLOW_UPS F18, which built the same thing for
+the product profile.
+
+`e2e/support/session.ts.hbs` ships to every generated Control Plane. It imports
+`@playwright/test`, which no `package.json` in that profile declares. It reads
+`e2e/support/key.json`, which the template does not contain. There is no
+`playwright.config.ts`, no spec, and no script that would run one. And nothing
+compiles it: `e2e/` belongs to no workspace package, so `turbo run typecheck`
+never looks at it and a generated Control Plane typechecks green with a file in
+it that cannot resolve its own imports.
+
+So this is not a gap where a capability is missing. It is a capability promoted
+one file at a time that stopped after the first — the failure mode this whole
+document is about, arriving in a directory nothing checks.
+
+The working harness lives in `koras-control-plane`: a config, four specs, the
+support server that publishes real JWKS, and the scripts to run them. Promoting
+it is real work, and the reason this is filed rather than fixed the same day is
+that the pieces it needs — an RS256 key fixture and a JWKS server — cannot be
+verified from the factory without building them, and shipping a second
+unverified half would be this entry again.
+
+The product profile's equivalent is complete and runs in CI, so the shape to
+copy exists: `profiles/product/template/playwright.config.ts`, its `e2e/`
+directory, the two scripts, and `tsconfig.e2e.json` — that last being what stops
+the directory rotting the way this one did.
+
+---
 
 ## Tier C — security controls that never reached the factory
 

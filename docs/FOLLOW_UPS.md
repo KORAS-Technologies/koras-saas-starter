@@ -54,15 +54,18 @@ otherwise stops at F6, and why there is no F0.
 | F15 | a project generated then provisioned had no way into its own repository | closed 2026-08-30 | Decisions |
 | F16 | a customer's own branding has nowhere to be read from | closed 2026-09-01 | Decisions |
 | F17 | a product cannot read its customers' entitlements | closed 2026-09-01 | Decisions |
-| F18 | no test in this repository opens a browser | **open** | Decisions |
+| F18 | no test in this repository opens a browser | closed 2026-09-01 | Decisions |
 
-**Seven are open**: F2b, F2c, F3, F6, F7, F13, F18. Four of those seven are not
-this repository's to close — F2b and F3 are Control Plane authorization
-decisions, F2c and F7 need a live estate and a staff read. The three this
-repository can act on alone are **F6**, **F13** and **F18**, and all three are
-decisions rather than implementations: F6's own entry says both references
-already survive, F13 says outright that nothing forces it now, and F18 is a
-question of where a browser harness lives.
+**Six are open**: F2b, F2c, F3, F6, F7, F13. Four of those six are not this
+repository's to close — F2b and F3 are Control Plane authorization decisions,
+F2c and F7 need a live estate and a staff read. The two this repository can act
+on alone are **F6** and **F13**, and both are decisions rather than
+implementations: F6's own entry says both references already survive, and F13
+says outright that nothing forces it now.
+
+F18 closed on 2026-09-01. The decision was where a browser harness lives, and
+the answer is the generated project, with the factory running the generated
+copy.
 
 F16 and F17 both closed on 2026-09-01. F17 had been filed here as blocked on a
 Control Plane authorization decision and was not blocked at all: the customer-
@@ -896,34 +899,62 @@ the second is a misconfigured deployment, and reporting it as "your plan grants
 nothing" is how it would go unfixed. The log line says which is suspected; the
 customer sees one message for both.
 
-### F18 — no test in this repository opens a browser — opened 2026-08-31
+### F18 — no test in this repository opens a browser — opened 2026-08-31, closed 2026-09-01
 
-- [ ] Decide whether a browser harness belongs in the starter or in a product
+- [x] Decide whether a browser harness belongs in the starter or in a product
 
-The starter has no Playwright and no browser-driven test of any kind. The
-`webapp-testing` skill is vendored and unused. Everything the frontend asserts
-is structural — the generator reads the templates, and the generated project
-runs `node --test` over pure functions.
+**It belongs in the generated project, and the factory runs the generated copy.**
 
-That was proportionate while the signed-in area was one page. The product shell
-adds behaviour a text search cannot check: the drawer's focus trap, Escape
-returning focus to the toggle, the drawer closing on navigation, the collapsed
-sidebar keeping accessible names, and layout at 375 through 1440.
+A browser test needs a running application. The starter has none — it is a
+factory, and a harness kept here would have to generate a project first to have
+anything to open. That cost is already paid: `generator-integration.yml`
+generates both profiles every run and builds them. So the suite is authored in
+`profiles/product/template/e2e/`, ships to every product, and the factory runs
+it against a project generated moments earlier. One harness, authored once,
+exercised in the factory and available to every product that ships.
 
-What *was* verified on 2026-08-31, without a browser, is more than it sounds.
-The built application was started and probed with real signed session cookies,
-one per organisation role: the sidebar a plain member receives contains Home and
-nothing else, an administrator's contains the Administration group, and the two
-settings routes answer 403 to the member, 200 to the administrator and 404 for a
-path no module claims. The rendered markup carries one `#main-content`, the
-labelled navigation landmarks, `aria-current="page"`, and both disclosure
-toggles pointing at elements that exist unopened. That covers the security
-claim, which is the one that matters; it does not cover the interaction.
+The alternative — a starter-side harness driving a scratch project — puts the
+test furthest from the code it tests and gives a real product nothing.
 
-**Not blocked.** It is a question of where the harness lives. A browser test in
-the starter tests a project the starter does not have, so it would have to
-generate one first — which is what `generated-builds.test.ts` already does, at a
-cost of three minutes a run.
+`playwright.config.ts` builds and starts `apps/web` itself, at 375 and 1440,
+because below `lg` the navigation is a drawer and above it a sidebar; testing
+one would leave half the navigation unexercised. No API runs: `NEXT_PUBLIC_API_URL`
+is unset, the tenant read fails closed, and the shell falls back to the
+product's own branding — a supported state, and the one a new customer is in. A
+suite needing a database to check a focus trap is a suite nobody runs.
+
+Nothing is bypassed. `e2e/support/session.ts` signs its cookie with the
+application's own `mintSession` rather than a hand-built copy, and the
+middleware verifies it on every request. The Control Plane's suite is the reason
+that matters: its helper built the old ID-token cookie by hand, the cookie
+changed shape, and every test failed — which was the suite working, and would
+have been silence had the helper been the thing that changed.
+
+**Eleven tests pass and five are viewport-skipped.** They cover the focus trap,
+Escape restoring focus to the toggle, the drawer closing on navigation, the
+collapsed sidebar keeping every link's accessible name, the preference surviving
+a navigation, the skip link pointing at a target that exists, and an anonymous
+caller reaching sign-in rather than the shell.
+
+**It found something on its first run.** The shell renders the navigation twice
+— sidebar and drawer, the drawer staying in the DOM while closed so its toggle's
+`aria-controls` names a real element. Two nodes carry `aria-current="page"` at
+every viewport, and at most one is reachable; at 375 none is, until the drawer
+is opened. `PRODUCT_APP_SHELL.md` asserted the single-`aria-current` rule and
+the server-side probe confirmed it by counting DOM nodes. Both were describing
+the markup. Only a browser reads the accessibility tree.
+
+**The e2e directory is typechecked**, by `tsc -p tsconfig.e2e.json` inside the
+`e2e` script, and that is not incidental. Nothing else in a generated project
+compiles that directory: it belongs to no workspace package, so `turbo run
+typecheck` never sees it. Which is exactly how the Control Plane's half of this
+rotted — see SYNC_BACKLOG B6.
+
+What was already true without a browser, on 2026-08-31, remains the more
+important half: the built application was probed with real signed session
+cookies, one per organisation role, and the sidebar, the 403s and the 404 were
+all asserted server-side. That covers the security claim. This covers the
+interaction, which is the part that was only ever claimed.
 
 ## The customer-onboarding sequence
 
