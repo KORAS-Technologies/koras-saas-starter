@@ -1,0 +1,44 @@
+import { isEntitled } from '@{{projectSlug}}/branding'
+import { AccessDenied, Card, Container } from '@{{projectSlug}}/ui'
+import { signedInContext } from '../../../lib/access'
+
+/**
+ * The same plan gate, hidden rather than locked.
+ *
+ * `Reports` sets `lockedBehavior: 'lock'` and appears greyed with an upgrade
+ * hint. This module leaves the default, so it is **absent** from the sidebar
+ * when the plan does not include it — no lock, no hint, nothing.
+ *
+ * Two behaviours for one kind of gate, and the choice is commercial. Lock what
+ * a customer could plausibly buy today; hide what would only confuse them. The
+ * page still refuses either way, because hiding a link is not a boundary.
+ */
+export const dynamic = 'force-dynamic'
+
+export default async function InsightsPage() {
+  const context = await signedInContext()
+  if (context === null) return <AccessDenied />
+
+  if (!isEntitled(context.access.entitlements, 'insights')) {
+    return (
+      <div className="py-12">
+        <Container>
+          <h1 className="font-display text-2xl font-bold text-ink">Insights</h1>
+          <Card className="mt-6 max-w-3xl">
+            <p className="text-sm leading-6 text-ink-muted">
+              Insights is not part of your plan. Speak to us about adding it.
+            </p>
+          </Card>
+        </Container>
+      </div>
+    )
+  }
+
+  return (
+    <div className="py-12">
+      <Container>
+        <h1 className="font-display text-2xl font-bold text-ink">Insights</h1>
+      </Container>
+    </div>
+  )
+}

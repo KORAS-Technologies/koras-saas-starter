@@ -30,6 +30,9 @@ export function ProductNavigation({
   label: string
 }) {
   const pathname = usePathname()
+  // Resolved once for the whole sidebar rather than per item: "which entry owns
+  // this URL" is a question about the list, and an item cannot answer it alone.
+  const active = owningHref(groups, pathname)
 
   return (
     <nav aria-label={label} className="px-3">
@@ -51,7 +54,7 @@ export function ProductNavigation({
           <ul className="flex flex-col gap-0.5">
             {group.items.map((item) => (
               <li key={item.id}>
-                <NavigationItem item={item} collapsed={collapsed} pathname={pathname} />
+                <NavigationItem item={item} collapsed={collapsed} active={active} />
               </li>
             ))}
           </ul>
@@ -62,33 +65,58 @@ export function ProductNavigation({
 }
 
 /**
- * Whether this entry is the page the reader is on.
+ * Whether a module's route contains the page the reader is on.
  *
- * Prefix matching on a whole path segment, so a module at `/dashboard/settings`
- * stays marked current while the reader is on `/dashboard/settings/team` --
- * except that the deeper module is also present and also matches, which is
- * exactly what `moduleForPath` handles for the route gate. Here both are
- * highlighted, which is the ordinary behaviour of a nested navigation and is
- * what a reader expects from a breadcrumbing sidebar.
- *
- * `aria-current="page"` goes only on the exact match. Announcing two entries as
- * the current page is worse than announcing none.
+ * Whole path segments only: `/dashboard/settings` contains
+ * `/dashboard/settings/team` and does not contain `/dashboard/settings-v2`.
  */
 function isWithin(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(href + '/')
 }
 
+/**
+ * Which single module owns the page the reader is on.
+ *
+ * The longest match, which is the same rule `moduleForPath` uses for the route
+ * gate -- so the entry the sidebar highlights is the entry whose permissions
+ * the middleware checked for this URL. Two rules for one question is how a
+ * sidebar starts disagreeing with the thing it describes.
+ *
+ * **This used to highlight every ancestor.** On `/dashboard/settings/team` both
+ * *Team & Access* and *Settings* lit up, and the comment here called that a
+ * breadcrumb. It is a breadcrumb only where the nesting is visible; these are
+ * rendered as siblings in one flat list under one heading, so two highlights
+ * read as two selected pages. It also disagreed with `aria-current`, which was
+ * on the exact match alone -- the sidebar said one thing to the eye and another
+ * to a screen reader, from the same component.
+ *
+ * Returns undefined for a page no module claims, which is an ordinary thing:
+ * the registry describes navigation, not the whole route table.
+ */
+function owningHref(groups: ResolvedGroup[], pathname: string): string | undefined {
+  let owner: string | undefined
+  for (const group of groups) {
+    for (const item of group.items) {
+      if (!isWithin(pathname, item.href)) continue
+      if (owner === undefined || item.href.length > owner.length) owner = item.href
+    }
+  }
+  return owner
+}
+
 function NavigationItem({
   item,
   collapsed,
-  pathname,
+  active,
 }: {
   item: ResolvedModule
   collapsed: boolean
-  pathname: string
+  /** The href of the module that owns the current URL, if any. */
+  active: string | undefined
 }) {
-  const current = pathname === item.href
-  const within = isWithin(pathname, item.href)
+  // One value, used for both the highlight and the announcement, so the two can
+  // never disagree again.
+  const current = item.href === active
 
   const shared = cn(
     'flex min-h-11 items-center gap-3 rounded-brand px-3 text-sm font-medium transition-colors',
@@ -125,7 +153,7 @@ function NavigationItem({
       aria-current={current ? 'page' : undefined}
       className={cn(
         shared,
-        within
+        current
           ? 'bg-brand/10 text-brand'
           : 'text-ink-muted hover:bg-surface-muted hover:text-ink',
       )}

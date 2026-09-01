@@ -710,6 +710,36 @@ export const productConfig: ProductConfig = {
         group: 'primary',
         order: 0,
       },
+      // Two plan gates, one of each behaviour, so both are visible in a running
+      // product before anybody has to design one.
+      //
+      // `Reports` locks: the customer sees it greyed with a lock, because it is
+      // something they could buy. `Insights` hides: absent entirely, no hint.
+      // The choice is commercial, and it is the only difference between them.
+      //
+      // Both pages refuse on their own as well. Hiding a link is navigation,
+      // not a boundary -- the middleware passes `NO_ENTITLEMENTS` deliberately
+      // and does not gate routes on the plan, so either URL is reachable by
+      // typing it and the page is what actually decides.
+      {
+        id: 'reports',
+        label: 'Reports',
+        icon: 'chart',
+        href: '/dashboard/reports',
+        group: 'primary',
+        order: 10,
+        requiredEntitlements: ['advanced_reporting'],
+        lockedBehavior: 'lock',
+      },
+      {
+        id: 'insights',
+        label: 'Insights',
+        icon: 'eye',
+        href: '/dashboard/insights',
+        group: 'primary',
+        order: 20,
+        requiredEntitlements: ['insights'],
+      },
       {
         id: 'team',
         label: 'Team & Access',

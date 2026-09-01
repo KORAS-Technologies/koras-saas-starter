@@ -1,0 +1,72 @@
+import { isEntitled } from '@{{projectSlug}}/branding'
+import { AccessDenied, Card, Container } from '@{{projectSlug}}/ui'
+import { signedInContext } from '../../../lib/access'
+
+/**
+ * A plan-gated page, and the second half of what gates it.
+ *
+ * The sidebar hides or locks this module when the plan does not include
+ * `advanced_reporting`. That is navigation, not a boundary: the middleware
+ * passes `NO_ENTITLEMENTS` deliberately and does not gate routes on the plan,
+ * so this URL is reachable by typing it. The check below is what actually
+ * decides, and every plan-gated page needs its own.
+ *
+ * It reads through `signedInContext`, which React's `cache` has already
+ * resolved once for the layout — so the gate costs no extra call.
+ *
+ * **A refusal here is a sales conversation, not a security one.** It says what
+ * the plan does not include and where to change that, rather than the flat
+ * "you do not have access" an authorization failure gets. Telling a customer
+ * that a feature they could buy exists is fine; telling them an area they may
+ * never enter exists is not, which is why only plan and feature gates are ever
+ * rendered this way.
+ */
+export const dynamic = 'force-dynamic'
+
+export default async function ReportsPage() {
+  const context = await signedInContext()
+  if (context === null) return <AccessDenied />
+
+  const { entitlements } = context.access
+
+  if (!isEntitled(entitlements, 'advanced_reporting')) {
+    return (
+      <div className="py-12">
+        <Container>
+          <h1 className="font-display text-2xl font-bold text-ink">Reports</h1>
+          <Card className="mt-6 max-w-3xl">
+            <h2 className="font-display text-lg font-bold text-ink">
+              Not included in your plan
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-ink-muted">
+              Advanced reporting is part of a higher plan. Your current plan is{' '}
+              <span className="font-medium text-ink">{entitlements.plan ?? 'not recorded'}</span>.
+            </p>
+            {!entitlements.resolved && (
+              // The honest version of the same screen. An unresolved plan and a
+              // plan that genuinely excludes this produce the same refusal, and
+              // only one of them is something to fix -- so the page says which
+              // it is rather than leaving the customer to guess.
+              <p className="mt-3 text-sm leading-6 text-ink-muted">
+                Your plan could not be read from the KORAS platform just now, so this may be
+                available to you. The reason is in this deployment&rsquo;s server log.
+              </p>
+            )}
+          </Card>
+        </Container>
+      </div>
+    )
+  }
+
+  return (
+    <div className="py-12">
+      <Container>
+        <h1 className="font-display text-2xl font-bold text-ink">Reports</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
+          Included in your plan. Build the real thing here — this page exists so the plan gate
+          has somewhere to lead, and so the pattern is visible before anyone needs it.
+        </p>
+      </Container>
+    </div>
+  )
+}

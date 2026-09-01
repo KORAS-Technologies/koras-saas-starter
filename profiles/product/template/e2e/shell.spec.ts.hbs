@@ -57,6 +57,50 @@ test('the current page is announced exactly once, wherever the navigation is', a
   await expect(current).toContainText('Home')
 })
 
+test('a nested page highlights one entry, not its whole ancestry', async ({
+  page,
+}, testInfo) => {
+  await page.goto('/dashboard/settings/team')
+  const nav = page.locator('[aria-current="page"]:visible')
+
+  if (testInfo.project.name === MOBILE) {
+    await page.getByRole('button', { name: 'Open navigation' }).click()
+  }
+
+  // `Team & Access` and `Settings` are siblings in one flat list, and
+  // `/dashboard/settings` is a prefix of `/dashboard/settings/team`. The
+  // sidebar used to light up both and call it a breadcrumb: two highlights in a
+  // list with no visible nesting read as two selected pages, and the highlight
+  // disagreed with `aria-current`, which was on the exact match alone.
+  //
+  // One rule now decides both, and it is the rule the route gate uses: the
+  // longest match owns the URL.
+  await expect(nav).toHaveCount(1)
+  await expect(nav).toContainText('Team & Access')
+})
+
+test('a plan-gated module is offered, not merely missing', async ({ page }, testInfo) => {
+  await page.goto('/dashboard')
+  if (testInfo.project.name === MOBILE) {
+    await page.getByRole('button', { name: 'Open navigation' }).click()
+  }
+
+  // No entitlements resolve in this suite -- no Control Plane runs -- so both
+  // plan gates are closed, and the two behaviours are visible side by side.
+  //
+  // `Reports` locks: present, disabled, and its accessible name carries the
+  // reason, because collapsed that name is the only thing distinguishing it
+  // from an available icon.
+  const reports = page.getByRole('button', { name: /Reports/ })
+  await expect(reports).toBeVisible()
+  await expect(reports).toBeDisabled()
+
+  // `Insights` hides: absent entirely. Asserting the absence is the point --
+  // "hidden" and "never added to the registry" look identical on a screenshot.
+  await expect(page.getByRole('link', { name: 'Insights' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Insights/ })).toHaveCount(0)
+})
+
 test.describe('the drawer', () => {
   // Skipped per test rather than per describe: the condition is the project's
   // viewport, and the boolean form is the one the runner types. A callback

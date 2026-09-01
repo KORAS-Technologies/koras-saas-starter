@@ -569,6 +569,23 @@ generator, behavioural tests inside the generated product.
 - `packages/branding/src/branding.test.ts` — unchanged, still the branding
   parser
 
+**The sidebar highlights one entry, not an ancestry.** The module that owns the
+URL is the longest match, which is the rule `moduleForPath` already uses for the
+route gate — so the entry the sidebar marks is the entry whose permissions the
+middleware checked. It highlighted every ancestor until 2026-09-01 and called it
+a breadcrumb; it is a breadcrumb only where the nesting is visible, and these
+render as siblings in one flat list, so `/dashboard/settings/team` lit up both
+*Team & Access* and *Settings*. The highlight also disagreed with
+`aria-current`, which was on the exact match alone: one component saying one
+thing to the eye and another to a screen reader.
+
+**Two plan gates ship in the default registry**, one of each behaviour, so both
+are visible in a running product before anyone designs one. `Reports` locks —
+greyed, with a lock and a reason in its accessible name. `Insights` hides —
+absent entirely. The choice between them is commercial: lock what a customer
+could buy, hide what would only confuse them. Both pages refuse on their own as
+well, because hiding a link is navigation and not a boundary.
+
 **Added 2026-09-01:** `e2e/shell.spec.ts`, driven by Playwright at 375 and 1440.
 It covers the claims this document makes that no text search can check — the
 drawer's focus trap, Escape closing it and returning focus to the toggle, the
