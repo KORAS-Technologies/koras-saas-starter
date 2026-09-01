@@ -444,6 +444,12 @@ repositories consume paid Actions minutes, and this account's billing is
 failing. `koras-e2e-shop` therefore has no working CI. Any verification of the
 synced product has to be local.
 
+> **Corrected 2026-09-01.** Billing was resolved on the evening this was
+> written, and `koras-e2e-shop` has run CI and deployed to dev on every push
+> since. Local verification is still the faster loop; it is no longer the only
+> one. The risk is stated as it stood, because the mitigation it argues for is
+> what a re-block would need again.
+
 **R-G — drift between the starter and `koras-e2e-shop`.** The product was
 generated before several template changes and is missing files the template now
 has. The refresh flag is per path by design, so a shell spanning a dozen new

@@ -594,8 +594,14 @@ single-`aria-current` rule without one.
 
 `koras-e2e-shop` is the one generated product. It is synced with the named
 refresh paths above, its diff reviewed for anything beyond the shell, and then
-validated locally with its own scripts — lint, typecheck, test and build. Local,
-because R-030 means its private repository has no working CI.
+validated locally with its own scripts — lint, typecheck, test and build, and
+then by its own CI, which runs on every push and deploys to dev.
+
+This said *local, because R-030 means its private repository has no working CI*.
+That stopped being true on the evening of 2026-08-30 and the sentence outlived
+it by two days. Local validation is still worth doing — it is faster than a push
+and it is what catches a template defect before it reaches a product — but it is
+no longer the only thing available.
 
 What the diff must show: new shell files, the new registry, the rewritten
 dashboard layout, the extended middleware, and nothing else. What it must not

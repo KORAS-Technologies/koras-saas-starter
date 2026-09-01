@@ -232,7 +232,7 @@ branding" there.
 | R-013 | Profile manifest schema changes              | 6        | Accepted                 |
 | R-014 | Control Plane not available at registration  | 4        | Accepted                 |
 | R-015 | Terraform plan committed by the generator    | 25       | Resolved                 |
-| R-030 | Every CI gate had never run                  | 20       | **Reopened for products** — a generated product's CI cannot run |
+| R-030 | Every CI gate had never run                  | 20       | Resolved — reopened for products 2026-08-30, re-closed the same evening; recorded 2026-09-01 |
 | R-032 | RLS enforced against nobody (owner + superuser) | 20     | Resolved                 |
 | R-033 | Token checks loosest on external input       | 9        | Resolved                 |
 | R-034 | No rate limiting in the generated API        | 12       | Resolved                 |
@@ -922,18 +922,47 @@ product's source is not published to fix a billing problem — so every reposito
 the generator creates is private **by design**, and private repositories consume
 paid minutes.
 
-That makes this permanent for products rather than a state to wait out. No
-generated product will have working CI or deployment in this account until
-Actions billing is resolved. Nothing in the factory can fix it: the workflows,
-the code and the credentials are all fine, and the jobs are refused before any
-of them is read.
+That made this permanent for products rather than a state to wait out. No
+generated product would have working CI or deployment in this account until
+Actions billing was resolved, and nothing in the factory could fix it: the
+workflows, the code and the credentials were all fine, and the jobs were refused
+before any of them was read.
 
-**It also puts a ceiling on what can be verified from here.** `FOLLOW_UPS.md` F7
-wants the deploy-time `register` job observed in a real pipeline; it is listed
-in run `33325368170` and was never started. Any future criterion phrased as "the
-generated project's CI passes" is unmeasurable on a private product for the same
-reason Phase 11's was on a private starter — and that is the specific failure
-R-030 exists to name.
+### Re-closed the same evening — and the register said otherwise for two days
+
+**Actions billing was resolved on 2026-08-30, between 17:56 and 19:15 UTC** —
+roughly ninety minutes after the paragraphs above were written. Nothing came
+back to change them.
+
+| Run | | |
+|-----|---|---|
+| `33325368199` CI | 17:28 | failed in six seconds, no job started |
+| `33326661088` Deploy | 17:56 | same |
+| `33330340245` CI | 19:15 | **first success** |
+| `33334495127` Deploy — DEV | 20:44 | **first success** |
+
+Every run since has executed, including the ordinary failures — which is the
+better evidence, because a refused run and a failing run look nothing alike and
+only one of them means CI works. On 2026-09-01 at 06:00, `koras-e2e-shop` ran CI
+in 2m20s and deployed to DEV in 7m38s on a sync commit.
+
+**So the ceiling was lifted and three documents went on describing it.** This
+entry, `CLAUDE.md`'s open-risks line, and `PRODUCT_APP_SHELL.md` §26 — which
+said a synced product must be validated locally *because R-030 means its private
+repository has no working CI*. `FOLLOW_UPS.md` F7 recorded the resolution the
+same evening, in prose, and no reader of the risk register would have seen it.
+
+**What actually changes, now that it is corrected.** F7's first box —
+observe the deploy-time `register` job in a real pipeline — was blocked twice
+over: by this, and by F2b turning that job off by default. Only the second
+blocker is real, and it is a deliberate default rather than an impossibility. A
+criterion phrased as "the generated project's CI passes" is measurable again.
+
+**What does not change.** The trade below is intact: products are private by
+design, private repositories consume paid minutes, and an Actions billing
+failure re-blocks every run. This reopens rather than being rediscovered — which
+is what it did, and the lesson is that it also has to be *re-closed* in writing.
+Recorded 2026-09-01, from run history rather than from anybody's recollection.
 
 **Mitigation, in preference order.** Resolve Actions billing — Settings, then
 Billing & plans; the symptom is a failed payment or a spending limit at zero.

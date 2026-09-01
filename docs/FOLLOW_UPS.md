@@ -1277,9 +1277,14 @@ by default, and it has never run in this estate either.
 job started: Actions billing. A product repository is private by design, private
 repositories consume paid minutes, and this account's payment is failing. The
 `register` job is listed in run `33325368170` and was never started. So the
-first box is blocked twice over now — once by F2b's deliberate default, once by
+first box was blocked twice over — once by F2b's deliberate default, once by
 something no code in this repository can reach. See R-030, reopened for
 products.
+
+**Only the first blocker survives.** Billing was resolved that evening — first
+successful CI at 19:15, first successful deploy at 20:44 — and R-030 said
+otherwise until 2026-09-01. The register job is off by F2b's deliberate default,
+which is a decision somebody can take, not an impossibility.
 
 ---
 
