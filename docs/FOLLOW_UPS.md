@@ -53,19 +53,23 @@ otherwise stops at F6, and why there is no F0.
 | F14 | two names for the Control Plane, and neither side noticed | closed 2026-08-29 | Decisions |
 | F15 | a project generated then provisioned had no way into its own repository | closed 2026-08-30 | Decisions |
 | F16 | a customer's own branding has nowhere to be read from | closed 2026-09-01 | Decisions |
-| F17 | a product cannot read its customers' entitlements | **open** | Decisions |
+| F17 | a product cannot read its customers' entitlements | closed 2026-09-01 | Decisions |
 | F18 | no test in this repository opens a browser | **open** | Decisions |
 
-**Eight are open**: F2b, F2c, F3, F6, F7, F13, F17, F18. Five of those eight are
-not this repository's to close — F2b, F3 and F17 are Control Plane authorization
+**Seven are open**: F2b, F2c, F3, F6, F7, F13, F18. Four of those seven are not
+this repository's to close — F2b and F3 are Control Plane authorization
 decisions, F2c and F7 need a live estate and a staff read. The three this
 repository can act on alone are **F6**, **F13** and **F18**, and all three are
 decisions rather than implementations: F6's own entry says both references
 already survive, F13 says outright that nothing forces it now, and F18 is a
 question of where a browser harness lives.
 
-F16 closed on 2026-09-01 and was the last open entry whose cost was code this
-repository could simply write.
+F16 and F17 both closed on 2026-09-01. F17 had been filed here as blocked on a
+Control Plane authorization decision and was not blocked at all: the customer-
+facing route it was waiting for already existed, and what was missing was an
+audience rather than a credential. The lesson is the entry's, not the code's —
+an item recorded as *somebody else's decision* is the kind nobody re-reads, and
+this one sat behind a door that was open.
 
 ---
 
@@ -823,46 +827,74 @@ rendering nothing, because it no longer has only a uuid to offer.
 where the timeout, the credential and the error shape now live, so the next
 call to this API is not a fifth opinion about all three.
 
-**What is still not read from anywhere is the plan.** That is F17, and it is a
-different blocker: a Control Plane authorization decision rather than a route
-this repository can write.
+**What was still not read from anywhere is the plan.** That was F17, filed as a
+different kind of blocker — a Control Plane authorization decision rather than a
+route this repository can write. It closed the same day, and the filing was
+wrong: see below.
 
-### F17 — a product cannot read its customers' entitlements — opened 2026-08-31
+### F17 — a product cannot read its customers' entitlements — opened 2026-08-31, closed 2026-09-01
 
-- [ ] Decide which credential authorises a product reading its own entitlements
-- [ ] Call the Control Plane from `apps/web/src/lib/entitlements.ts`
+- [x] Decide which credential authorises a product reading its own entitlements
+- [x] Call the Control Plane from `apps/web/src/lib/entitlements.ts`
 
 The authenticated product shell resolves navigation against four gates:
 capabilities, permissions, tenant features and **plan entitlements**. Three of
-them work. The fourth cannot, because a product has no way to ask.
+them worked. The fourth could not, because a product had no way to ask.
 
-The Control Plane resolves a plan code and a list of effective entitlements per
-organisation and product, and the route that answers is part of its *platform*
-API — the private surface authorised by the estate-wide `registrar` service
-account. A product must not hold that credential at runtime: it authorises
-writes to every other product's registry entry, which is exactly the argument
-that keeps the deploy-time registration job off by default (F2b).
+**The credential is the customer's own token, and no new one exists.**
 
-So this needs one of two things, and both are decisions about the platform's API
-surface rather than product work:
+The route this entry assumed a product would call is the *platform* API's
+`GET /organizations/{id}/products/{code}/entitlements`, which takes an
+organization id as a parameter and is authorised by the estate-wide `registrar`
+service account. A product must not hold that at runtime — it authorises writes
+to every other product's registry entry, which is the argument that keeps
+deploy-time registration off by default (F2b). The two ways out this entry
+listed were a customer-facing route, or a per-product service account that would
+close with F3.
 
-1. a customer-facing entitlements route, authorised by the caller's own token
-   the way the signup plan catalogue is anonymous; or
-2. a per-product service-account credential scoped to reading that product's own
-   entitlements — which is F3 by another name, and would close with it.
+The first already existed. `GET /api/portal/v1/products/{product_code}/entitlements`
+has been on the Control Plane's **portal** surface — its customer API — and it
+takes no organization id at all: the organization is resolved from the caller's
+token, so the call can only ever reach the plan of the person making it. That is
+a stronger property than a scoped machine credential would have had, because
+there is no identity anywhere that can read a customer other than the one signed
+in, and nothing to rotate or leak.
 
-`apps/web/src/lib/entitlements.ts` holds the seam, the mapping and the reason.
-The parser is written; only the call is missing.
+**What was actually missing was an audience.** A resource server verifies `aud`
+against its own project and never widens it, so a product's token is refused by
+the platform — correctly. ZITADEL's reserved scope
+`urn:zitadel:iam:org:project:id:<project>:aud` is the supported way to say at
+sign-in that the token is meant for a named second project too, and
+`api/auth/start` now asks for it when `KORAS_CONTROL_PLANE_PROJECT_ID` is set. A
+project id is an identifier, not a credential: it grants nothing on its own, and
+the token still carries only that one caller's identity and roles.
 
-**The failure direction is already correct.** An unresolved entitlement set
-counts as *not entitled*, so a plan-gated module is hidden or shown locked and
-the rest of the product is untouched. The opposite convention would make an
-unreachable Control Plane the way to obtain a paid feature. Nothing is hidden
-today because the shipped registry gates nothing on a plan — the moment a
-product writes `requiredEntitlements` on a module, that module goes dark until
-this is closed, which is the safe direction and worth knowing about in advance.
+So the answer was neither of the two this entry proposed, and it needed no
+change to the Control Plane. **Filing something as another repository's decision
+is what kept it closed for a day** — the entry was re-read only because the work
+above it finished, and the route it was waiting for was already shipped.
 
-**Blocked on the Control Plane**, like F2b and F3.
+**One defect came out of wiring it.** `parseEntitlements` was written against an
+imagined response and read each row's `feature` field. The wire field is `code`.
+Nothing would have failed: every row would have been skipped, every customer
+would have resolved to a plan granting nothing, and the sidebar would have
+looked exactly like a customer who had bought nothing. A parser written before
+its producer exists is a parser nobody has compared to anything.
+
+It has six tests now, and it moved to `packages/branding` to get them —
+`apps/web` has no test runner, which is why the parser that decides what a
+customer may open had none. Both the field name and the enabled-means-`true`
+rule are mutation-checked: restoring either earlier reading fails four tests.
+
+**The failure direction is unchanged.** An unresolved entitlement set counts as
+*not entitled*, so a plan-gated module is hidden or shown locked and the rest of
+the product is untouched. The opposite convention would make an unreachable
+Control Plane the way to obtain a paid feature. `404` is treated as unresolved
+rather than as an empty plan, because the portal answers it both for a customer
+with no subscription and for a product code the platform has never heard of —
+the second is a misconfigured deployment, and reporting it as "your plan grants
+nothing" is how it would go unfixed. The log line says which is suspected; the
+customer sees one message for both.
 
 ### F18 — no test in this repository opens a browser — opened 2026-08-31
 

@@ -225,6 +225,13 @@ status and period) and entitlements (subscription, feature, limit value,
 enabled). It exposes the resolved pair — a plan code and a list of effective
 entitlements — on an organization-and-product route of its platform API.
 
+> **Corrected 2026-09-01.** It exposes them on a *second* route as well, on the
+> portal API, where the organization comes from the caller's token instead of
+> the path. This audit named only the platform one, and FOLLOW_UPS F17 was filed
+> on the strength of that as blocked on a Control Plane decision. It was not:
+> the route a product needed already existed. Recorded here because a survey
+> that misses a surface is more expensive than one that says nothing about it.
+
 A generated **product** has no client for that endpoint. `packages/billing`,
 `packages/domains`, `packages/feature-flags`, `packages/api-client` and
 `packages/types` are all empty stubs. `koras-e2e-shop` went further and removed

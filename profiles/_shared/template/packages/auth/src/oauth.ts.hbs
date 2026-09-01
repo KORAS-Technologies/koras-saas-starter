@@ -131,6 +131,38 @@ function requireSettings(options: {
   }
 }
 
+/**
+ * What a KORAS sign-in asks for.
+ *
+ * `openid email profile` is the person; the roles scope is what makes ZITADEL
+ * put this project's role claim in the token, which is what every authorisation
+ * decision downstream reads.
+ */
+export const SIGN_IN_SCOPE = 'openid email profile urn:zitadel:iam:org:project:roles'
+
+/**
+ * Ask ZITADEL to address the token to a second project as well.
+ *
+ * A resource server verifies `aud` against its own project and never widens
+ * that, so a token minted for one application is refused by another — correctly.
+ * This reserved scope is the supported way to say, at sign-in, that the token
+ * this application receives is also meant for a named second project.
+ *
+ * It is how one application may call another's API **as the person signed in**,
+ * rather than by holding a machine credential that can act for everybody. The
+ * audience is a project identifier, not a secret: it grants nothing on its own,
+ * and the token still carries only this caller's identity and roles.
+ *
+ * An empty or absent project id leaves the scope alone rather than emitting a
+ * malformed one, because a scope ZITADEL cannot parse fails the whole sign-in
+ * and not just the call that wanted it.
+ */
+export function withProjectAudience(scope: string, projectId: string | undefined): string {
+  const trimmed = (projectId ?? '').trim()
+  if (trimmed === '') return scope
+  return `${scope} urn:zitadel:iam:org:project:id:${trimmed}:aud`
+}
+
 export async function beginAuthorization(options: {
   zitadelDomain: string
   clientId: string
@@ -146,7 +178,7 @@ export async function beginAuthorization(options: {
     client_id: options.clientId,
     redirect_uri: options.redirectUri,
     response_type: 'code',
-    scope: options.scope ?? 'openid email profile urn:zitadel:iam:org:project:roles',
+    scope: options.scope ?? SIGN_IN_SCOPE,
     state,
     code_challenge: await challengeFor(codeVerifier),
     code_challenge_method: 'S256',

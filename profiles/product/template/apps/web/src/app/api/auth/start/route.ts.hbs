@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { OAUTH_COOKIES, beginAuthorization, cookieOptions } from '@{{projectSlug}}/auth'
+import {
+  OAUTH_COOKIES,
+  SIGN_IN_SCOPE,
+  beginAuthorization,
+  cookieOptions,
+  withProjectAudience,
+} from '@{{projectSlug}}/auth'
 
 /**
  * Start the sign-in.
@@ -9,6 +15,14 @@ import { OAUTH_COOKIES, beginAuthorization, cookieOptions } from '@{{projectSlug
  * needs to remember two secrets across the redirect and only a handler may set
  * cookies. Putting them in the URL instead -- which is what carrying the
  * destination in `state` amounted to -- is the thing this exists to avoid.
+ *
+ * The scope carries one addition: when this product knows the Control Plane's
+ * project id, sign-in asks ZITADEL to name that project in the token's audience
+ * too. That is what lets the server read this customer's own plan from the
+ * platform's portal API later, presenting the customer's token rather than a
+ * machine credential -- see `src/lib/entitlements.ts` for why the alternative
+ * was refused. Unset means the extra audience is not requested and the plan is
+ * simply not read; nothing else about the sign-in changes.
  */
 export async function GET(request: NextRequest) {
   const start = await beginAuthorization({
@@ -16,6 +30,7 @@ export async function GET(request: NextRequest) {
     clientId: process.env.ZITADEL_CLIENT_ID ?? '',
     redirectUri: process.env.ZITADEL_REDIRECT_URI ?? '',
     returnTo: request.nextUrl.searchParams.get('next'),
+    scope: withProjectAudience(SIGN_IN_SCOPE, process.env.KORAS_CONTROL_PLANE_PROJECT_ID),
   })
 
   const response = NextResponse.redirect(start.url)

@@ -1,102 +1,82 @@
-import { NO_ENTITLEMENTS } from '@{{projectSlug}}/branding'
+import { cache } from 'react'
+import { NO_ENTITLEMENTS, parseEntitlements } from '@{{projectSlug}}/branding'
 import type { EntitlementSet } from '@{{projectSlug}}/branding'
+import { ApiError, fetchEntitlements } from '@{{projectSlug}}/api-client'
+import { providerToken } from './session'
 
 /**
- * What this customer's plan includes.
+ * What this customer's plan includes, from the Control Plane.
  *
- * One seam, on purpose, and the same shape `tenant-branding.ts` uses. Everything
- * downstream is finished: `resolveNavigation` gates modules on entitlements,
- * `isEntitled` is the predicate a server action calls before it acts, and an
- * unresolved set already degrades correctly. What is missing is the read, and
- * the read is blocked on something outside this application.
+ * Read once per render, like `tenantSettings`: the sidebar resolves against it
+ * and so does every plan-gated page, and two reads on one navigation can
+ * disagree about what the customer has bought.
  *
- * **Why it is not wired.** The Control Plane resolves entitlements per
- * organization and product, and the route that answers is part of its
- * *platform* API — the private surface authorised by the estate-wide
- * `registrar` service account. A product does not hold that credential at
- * runtime and must not: it authorises writes to every other product's registry
- * entry, which is the same argument that keeps the deploy-time registration job
- * off by default (`docs/REGISTRATION_LIFECYCLE.md`, FOLLOW_UPS F2b).
+ * **Which credential authorises this, and why it took a decision.** The obvious
+ * route -- the platform API's effective-entitlements endpoint -- takes an
+ * organization id as a parameter and is authorised by an estate-wide machine
+ * identity. A product must not hold that credential at runtime: it authorises
+ * writes to every other product's registry entry, which is the same argument
+ * that keeps the deploy-time registration job off by default
+ * (`docs/REGISTRATION_LIFECYCLE.md`, FOLLOW_UPS F2b). A per-product service
+ * account was the other candidate, and it is a credential to issue, rotate and
+ * store for every product in the estate.
  *
- * So this needs one of two things, and both are decisions about the platform's
- * API surface rather than frontend changes:
+ * Neither was needed. The Control Plane's **portal** API is the customer's own
+ * surface, and its entitlements route has no organization parameter at all --
+ * the organization is resolved from the caller's token, so this call can only
+ * ever reach the plan of the person making it. So the credential is the one
+ * this application already holds on their behalf: their own ZITADEL token, the
+ * same one every call to this product's API carries.
  *
- *   1. a customer-facing entitlements route on the Control Plane, authorised by
- *      the caller's own token the way the signup plan catalogue is anonymous;
- *      or
- *   2. a per-product service-account credential, scoped to reading that
- *      product's own entitlements and nothing else.
+ * What that needed was an audience, not a secret. A resource server verifies
+ * `aud` against its own project and never widens it, so sign-in asks ZITADEL to
+ * name the platform's project in the token too -- `KORAS_CONTROL_PLANE_PROJECT_ID`,
+ * an identifier rather than a credential, applied in `api/auth/start`. Nothing
+ * is stored, nothing is rotated, and no identity exists that can read a
+ * customer other than the one signed in.
  *
- * To finish it, once one exists: read `KORAS_CONTROL_PLANE_URL`, call the route
- * with the organization id from the **verified session** and this product's own
- * slug — never an organization id from the browser — and map the response into
- * the shape below. Everything after that already works.
- *
- * **Until then a product is ungated by plan**, which is the correct state for a
- * product whose registry declares no entitlement requirements: no module names
- * one, so nothing is hidden. The moment a product adds
- * `requiredEntitlements: [...]` to a module, that module is hidden until this
- * function returns something — which is the safe direction, and is why
- * `resolved: false` counts as not entitled rather than as entitled.
- *
- * Never throws. An unreachable platform must cost a customer their plan-gated
- * modules, not their product.
+ * **Never throws, and an unresolved set counts as not entitled.** A plan-gated
+ * module is hidden or shown locked and the rest of the product is untouched.
+ * The opposite convention would make an unreachable Control Plane the way to
+ * obtain a paid feature.
  */
-export async function tenantEntitlements(
-  organizationId: string | undefined,
-): Promise<EntitlementSet> {
-  const base = process.env.KORAS_CONTROL_PLANE_URL
-  if (!organizationId || !base) return NO_ENTITLEMENTS
+export const tenantEntitlements = cache(async (): Promise<EntitlementSet> => {
+  const baseUrl = process.env.KORAS_CONTROL_PLANE_URL
+  const token = await providerToken()
+  if (!baseUrl || !token) return NO_ENTITLEMENTS
 
   try {
-    // ← the read described above goes here. It must send the organization id
-    //   from the session, never one supplied by the browser, and it must be a
-    //   server-side call: the platform's address is not the browser's business,
-    //   which is the same reason `signup/actions.ts` posts from the server.
-    const answered: unknown = null
+    const answered = await fetchEntitlements({
+      baseUrl,
+      token,
+      productCode: '{{projectSlug}}',
+    })
     return parseEntitlements(answered)
   } catch (error) {
     // Server-side only, so this reaches the service log and never a customer.
-    // Worth saying out loud: an unreachable Control Plane and a genuinely empty
-    // plan produce the same sidebar, and only one of them is something to fix.
-    console.error('[entitlements] the plan could not be read:', error)
+    //
+    // A 404 is called out because it is the one status that looks like an
+    // answer: the portal returns it both for a customer holding no subscription
+    // to this product and for a product code the platform has never heard of.
+    // The second is a misconfiguration of this deployment, and reporting it as
+    // "your plan grants nothing" is how it would go unfixed. A 401 is worth the
+    // same attention -- it is what an unrequested audience looks like from
+    // here, not an expired session.
+    if (error instanceof ApiError && error.status === 404) {
+      console.error(
+        '[entitlements] the platform has no subscription for this caller in ' +
+          "product '{{projectSlug}}'. If that product code is not the one it is " +
+          'registered under, every customer sees this and none is entitled to anything.',
+      )
+    } else if (error instanceof ApiError && error.status === 401) {
+      console.error(
+        '[entitlements] the platform refused this caller. The usual cause is ' +
+          'KORAS_CONTROL_PLANE_PROJECT_ID being unset or wrong when the customer ' +
+          'signed in, which leaves their token addressed to this product alone.',
+      )
+    } else {
+      console.error('[entitlements] the plan could not be read:', error)
+    }
     return NO_ENTITLEMENTS
   }
-}
-
-/**
- * Turn the Control Plane's answer into the set the resolver understands.
- *
- * Exported because it is the part worth testing without a network, and because
- * whoever wires the read above should not have to invent the mapping.
- *
- * Anything malformed degrades to unresolved rather than to a half-populated set
- * — a plan that is missing three of its features is more dangerous than one
- * that is missing all of them, because the first looks like an answer.
- */
-export function parseEntitlements(raw: unknown): EntitlementSet {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return NO_ENTITLEMENTS
-
-  const record = raw as Record<string, unknown>
-  const entries = record.entitlements
-  if (!Array.isArray(entries)) return NO_ENTITLEMENTS
-
-  const features: Record<string, { enabled: boolean; limit: number | null }> = {}
-  for (const entry of entries) {
-    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue
-    const row = entry as Record<string, unknown>
-    if (typeof row.feature !== 'string' || row.feature === '') continue
-    features[row.feature] = {
-      // Absent means enabled: the Control Plane stores `enabled` with a default
-      // of true, and a row that exists at all is a granted entitlement.
-      enabled: row.enabled !== false,
-      limit: typeof row.limit_value === 'number' ? row.limit_value : null,
-    }
-  }
-
-  return {
-    resolved: true,
-    plan: typeof record.plan_code === 'string' ? record.plan_code : null,
-    features,
-  }
-}
+})

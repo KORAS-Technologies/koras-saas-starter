@@ -22,9 +22,12 @@ import { tenantSettings } from './tenant-settings'
  * already gives about branding: resolving it once per navigation beats every
  * page doing it again, and a page that forgets is a page with no gate.
  *
- * The organization is read from the session and from nowhere else. It is not a
- * URL segment, not a header and not a query parameter — those are requests, not
- * evidence, and this value decides which customer's plan and features apply.
+ * The organization is never read from the request. Neither call below carries
+ * one: the product's API resolves the tenant from the caller's token and the
+ * platform's portal API resolves the organization from the same token, so a URL
+ * segment, a header or a query parameter has nowhere to reach. Those are
+ * requests rather than evidence, and this is the value deciding which
+ * customer's plan and features apply.
  */
 export interface SignedInContext {
   member: MemberSession
@@ -40,14 +43,20 @@ export async function signedInContext(): Promise<SignedInContext | null> {
   if (member === null) return null
 
   // Four awaits, two requests. The first three all resolve through
-  // `tenantSettings`, which React's `cache` de-duplicates within one render
-  // pass — so the product's API is called once and the Control Plane once,
-  // concurrently, however many readers there are.
+  // `tenantSettings`, and the fourth is cached the same way — React's `cache`
+  // de-duplicates each within one render pass, so the product's API is called
+  // once and the Control Plane once, concurrently, however many readers there
+  // are.
+  //
+  // `tenantEntitlements` is given nothing, and that is the point rather than an
+  // omission: the platform's portal API resolves the organization from the
+  // caller's own token and has nowhere to put one, so this application cannot
+  // ask about a customer other than the one signed in even by mistake.
   const [settings, tenant, features, entitlements] = await Promise.all([
     tenantSettings(),
     tenantBranding(),
     tenantFeatures(),
-    tenantEntitlements(member.organizationId),
+    tenantEntitlements(),
   ])
 
   return {

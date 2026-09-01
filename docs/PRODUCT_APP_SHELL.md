@@ -276,6 +276,22 @@ signup plan catalogue: the platform's address is not the browser's business, a
 failure and an empty answer look the same to the customer, and the log
 distinguishes them for whoever is on call.
 
+**Authorised by the customer's own token, and by nothing else.** The route is
+`GET /api/portal/v1/products/{product_code}/entitlements` on the Control Plane's
+customer surface, and it takes no organization id — the organization comes from
+the token, so this product cannot ask about a customer other than the one signed
+in even by mistake. What that needs is an audience rather than a credential:
+sign-in asks ZITADEL to name the platform's project in the token as well, via
+`KORAS_CONTROL_PLANE_PROJECT_ID` in `api/auth/start`. Unset means the plan is
+simply not read, which is the unresolved case below. A product holds no machine
+credential for the platform at runtime, and FOLLOW_UPS F17 records why the two
+that were proposed were both worse than the route that already existed.
+
+The wire shape is the portal API's: `plan_code`, and rows of `code`, `enabled`
+and `limit_value`. `parseEntitlements` in `packages/branding` maps it, and lives
+there rather than beside the fetch because that is where the product's tests
+run.
+
 ```ts
 interface EntitlementSet {
   resolved: boolean          // false when unread, unconfigured or failed
@@ -621,7 +637,7 @@ no data is written, and nothing in the Control Plane knows this work happened.
 ### Phase D — application wiring
 
 - [ ] `apps/web/src/lib/access.ts.hbs` — `signedInContext()`, `can()`, `roleLabel()`
-- [ ] `apps/web/src/lib/entitlements.ts.hbs` — the Control Plane seam (F17)
+- [ ] `apps/web/src/lib/entitlements.ts.hbs` — the Control Plane read, as the signed-in customer
 - [ ] `apps/web/src/lib/tenant-settings.ts.hbs` — the tenant read, cached per render
 - [ ] `apps/web/src/lib/tenant-features.ts.hbs` — the feature reader
 - [ ] `apps/web/src/app/dashboard/layout.tsx.hbs` — render the shell

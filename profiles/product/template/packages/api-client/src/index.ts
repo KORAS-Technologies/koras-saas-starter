@@ -1,11 +1,17 @@
 /**
- * The typed client for this product's own API.
+ * The typed client for the JSON APIs this product reads on a caller's behalf.
  *
- * One place that knows how a call to `services/api` is made: where the base URL
- * comes from, how the caller's credentials are attached, how long to wait, and
- * what a failure looks like. The alternative — a `fetch` in whichever component
- * needed the data — is how five call sites end up with four opinions about
- * timeouts and none about errors.
+ * One place that knows how such a call is made: where the base URL comes from,
+ * how the caller's credentials are attached, how long to wait, and what a
+ * failure looks like. The alternative — a `fetch` in whichever component needed
+ * the data — is how five call sites end up with four opinions about timeouts
+ * and none about errors.
+ *
+ * Two APIs are read this way and each function names which: `services/api`,
+ * which is this product's own, and the Control Plane's **portal** surface,
+ * which is the customer's. Neither takes an organization identifier, and that
+ * is the property that makes one client safe for both — every call resolves the
+ * caller's own tenant from the caller's own token.
  *
  * Deliberately free of React, of `next/*` and of the branding package. It is
  * called from server components and from server actions, and a client that
@@ -46,7 +52,7 @@ export interface TenantSettings {
 }
 
 export interface RequestOptions {
-  /** Origin of this product's API. */
+  /** Origin of the API being called. Named by each function below. */
   baseUrl: string
   /**
    * The caller's own provider token.
@@ -105,4 +111,31 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
  */
 export function fetchTenantSettings(options: RequestOptions): Promise<TenantSettings> {
   return request<TenantSettings>('/api/v1/tenant/settings', options)
+}
+
+/**
+ * What this caller's organization may do in this product, from the Control Plane.
+ *
+ * `baseUrl` is the platform's, not this product's, and the token is the same
+ * one every other call here carries: the customer's own, verified by the
+ * platform against ZITADEL. Sign-in asks for the platform's project in the
+ * token's audience so that verification can succeed — without that scope the
+ * token is addressed to this product alone and the platform answers 401.
+ *
+ * `productCode` is in the path and the organization is not, which is the whole
+ * of the authorisation argument. A customer can only ever resolve their own
+ * plan, because there is nowhere in the request to name somebody else's.
+ *
+ * A `404` means this organization holds no subscription to the product — and
+ * means exactly the same thing when the product code is wrong, which is why the
+ * caller treats it as unresolved and says so in the log rather than reporting a
+ * plan of nothing.
+ */
+export function fetchEntitlements(
+  options: RequestOptions & { productCode: string },
+): Promise<unknown> {
+  return request<unknown>(
+    `/api/portal/v1/products/${encodeURIComponent(options.productCode)}/entitlements`,
+    options,
+  )
 }

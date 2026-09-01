@@ -14,6 +14,7 @@
 import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose'
 import type { NextRequest } from 'next/server'
 import { isOrganizationRole, type OrganizationRole } from '@{{projectSlug}}/permissions'
+import { SIGN_IN_SCOPE } from './oauth.js'
 
 /** ZITADEL emits project roles as an object keyed by role name, not a list. */
 const ROLES_CLAIM = 'urn:zitadel:iam:org:project:roles'
@@ -476,7 +477,7 @@ export function authorizeUrl(options: {
     client_id: options.clientId,
     redirect_uri: options.redirectUri,
     response_type: 'code',
-    scope: 'openid email profile urn:zitadel:iam:org:project:roles',
+    scope: SIGN_IN_SCOPE,
     state: options.state,
   })
   return `${options.zitadelDomain.replace(/\/$/, '')}/oauth/v2/authorize?${params.toString()}`
@@ -489,6 +490,8 @@ export {
   exchangeCode,
   OAUTH_COOKIES,
   safeReturnPath,
+  SIGN_IN_SCOPE,
   tokensMatch,
+  withProjectAudience,
 } from './oauth.js'
 export type { AuthorizationStart, TokenSet } from './oauth.js'

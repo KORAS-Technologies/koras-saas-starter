@@ -101,10 +101,9 @@ export default async function SettingsPage() {
             </>
           ) : (
             <p className="mt-2 text-sm leading-6 text-ink-muted">
-              Not available. This product is not reading plan entitlements yet &mdash;{' '}
-              <code className="text-ink">apps/web/src/lib/entitlements.ts</code> records what is
-              still required and why. Nothing is gated by plan until it is, so no part of the
-              product is hidden for this reason.
+              Not available. Your plan could not be read from the KORAS platform just now, so
+              anything gated by plan is unavailable until it can be. Nothing else about the
+              product is affected, and the reason is in this deployment&rsquo;s server log.
             </p>
           )}
           {product.accountUrl === '' ? (

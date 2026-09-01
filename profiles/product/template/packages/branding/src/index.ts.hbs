@@ -833,6 +833,52 @@ export interface EntitlementSet {
 
 export const NO_ENTITLEMENTS: EntitlementSet = { resolved: false, plan: null, features: {} }
 
+/**
+ * Turn the Control Plane's answer into the set the resolver understands.
+ *
+ * The wire shape is the portal API's `EntitlementView`: a `plan_code`, and an
+ * `entitlements` array of rows carrying `code`, `enabled` and `limit_value`.
+ * Named for the platform's fields rather than this package's, because the
+ * mapping between the two is the only thing this function is.
+ *
+ * It lives here rather than beside the fetch in `apps/web` for the reason
+ * `parseTenantBranding` does: this is the half worth testing without a network,
+ * and `apps/web` has no test runner. A parser nobody can run tests against is
+ * a parser whose edge cases are decided by whoever reads it next.
+ *
+ * Anything malformed degrades to unresolved rather than to a half-populated set
+ * -- a plan missing three of its features is more dangerous than one missing
+ * all of them, because the first looks like an answer.
+ */
+export function parseEntitlements(raw: unknown): EntitlementSet {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return NO_ENTITLEMENTS
+
+  const record = raw as Record<string, unknown>
+  const entries = record.entitlements
+  if (!Array.isArray(entries)) return NO_ENTITLEMENTS
+
+  const features: Record<string, { enabled: boolean; limit: number | null }> = {}
+  for (const entry of entries) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const row = entry as Record<string, unknown>
+    if (typeof row.code !== 'string' || row.code === '') continue
+    features[row.code] = {
+      // `enabled` is resolved across the catalogue, the plan and any negotiated
+      // override before it reaches the wire, so it is always present and always
+      // a boolean. Absent is read as off rather than on: a row this parser
+      // cannot understand must not be the way a paid feature is obtained.
+      enabled: row.enabled === true,
+      limit: typeof row.limit_value === 'number' ? row.limit_value : null,
+    }
+  }
+
+  return {
+    resolved: true,
+    plan: typeof record.plan_code === 'string' ? record.plan_code : null,
+    features,
+  }
+}
+
 /** Tenant-configured feature switches, from the tenant settings row. */
 export type TenantFeatures = Readonly<Record<string, boolean>>
 
