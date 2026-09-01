@@ -209,9 +209,17 @@ breakage is still caught independently by Generator Integration building a
 product from the templates.
 R-031 stands accepted with mitigation.
 
-**Next step:** the register job has never run in a real pipeline (`FOLLOW_UPS.md`
-F7), and a second live teardown is owed now that Cloudflare is in the inventory
-(R-036).
+**Next step:** three open follow-ups, and `FOLLOW_UPS.md` now opens with the
+order rather than leaving it to be re-derived. F13 first — a commercial decision
+that gates every payment hour after it and needs no estate. Then one live
+sitting: F7's staff read, R-036's second teardown now that Cloudflare is in the
+inventory, and the F17 token audience, which have never been exercised together
+and need the same credentials.
+
+F7 gained a constraint on 2026-09-01 worth knowing before attempting it: the
+registration response returns environment *names*, not stored references, so the
+identity that registers cannot confirm what the registry holds — a payload
+stored wrongly and one stored correctly are indistinguishable to the caller.
 
 This said the `--with` / `--without` paths were untested. They have been tested
 since 2026-08-25: `generator-integration.yml` carries an

@@ -14,6 +14,31 @@
 **Opened 2026-08-28**, from the session that applied the Control Plane's staged
 promotion and added deploy-time registration.
 
+## What to do first
+
+The index below is ordered by when an entry was opened, which is the one order
+that says nothing about what to do next. This says it, and it is a
+recommendation rather than a record — revise it, do not preserve it.
+
+| Order | Entry | Why here | Rough cost |
+|-------|-------|----------|------------|
+| 1 | **F13** | A decision, not an implementation, and it gates every payment hour after it. Needs no estate, so it can be written while waiting for one. | 1–2h |
+| 2 | **F7** | The last unverified link before anything is sold. Its remaining box needs a staff read — or the smaller Control Plane change described in F2c, which would make every registration verify itself. | ~1h with a staff identity |
+| 3 | **F3 + F2b** | One question from two sides. Not urgent while there is one product — the risk it names is one product's CI holding write access to *other* products' registry entries, and the blast radius is currently itself. | ½ day to decide, more to build |
+
+F2c and F6 were 1 and 5 on this list until 2026-09-01. F2c closed by being run;
+F6 closed as a decision. What that leaves is a list with no cheap items on it,
+which is a truer picture than the one above it was.
+
+**Do the live work in one sitting.** F7's read, R-036's second teardown and the
+F17 token audience all need the same estate and the same credentials, and run
+separately they pay the setup cost three times.
+
+Adjacent work competing for the same hours lives elsewhere on purpose:
+`SYNC_BACKLOG.md` D6 is the last open sync gap, and R-036 and R-042 are in
+`RISK_REGISTER.md`. This document does not rank them; it only notes that they
+exist and that the hours are the same hours.
+
 ## The index, in number order
 
 Entries are grouped below by *why they are undone*, and numbered by *when they
@@ -35,14 +60,14 @@ otherwise stops at F6, and why there is no F0.
 | F2 | delete the promotion queue entries now that they are applied | closed 2026-08-30 | Blocked here |
 | F2a | registration stores a token that expires in twelve hours | closed 2026-08-30 | Blocked here |
 | F2b | the per-product registration credential was designed and never built | **open** — one half enforced | Blocked here |
-| F2c | every product registered before 2026-08-28 has a null callback address | **open** — no product left to re-register | Blocked here |
+| F2c | every product registered before 2026-08-28 has a null callback address | closed 2026-09-01 — fixed forward, not migrated | Blocked here |
 | F3 | which credential should authorise a product's own re-registration | **open** | Blocked here |
 | F3a | the tenant endpoints answer 422 and 409, and the Control Plane was not told | closed 2026-08-30 | Blocked here |
 | F4 | what `packages/control-plane-client` is for | closed 2026-08-30 | Decisions |
 | F4a | the plan catalogue was empty and had no user interface | closed 2026-08-29 | Decisions |
 | F5 | `apps/marketing` declares Tailwind and imports no stylesheet | closed 2026-08-30 | Decisions |
 | F5a | `doppler-bootstrap` cannot express a legitimately empty setting | closed 2026-08-29 | Decisions |
-| F6 | the two references deploy-time registration cannot carry | **open** | Decisions |
+| F6 | the two references deploy-time registration cannot carry | decided 2026-09-01 — no, with a stated trigger | Decisions |
 | F7 | nothing has exercised the register job in a real pipeline | **open** — a product deployed 2026-08-30 and found seven defects | Verification |
 | F8 | the `--with` / `--without` generation paths remain untested | closed — *the entry was wrong* | Verification |
 | F9 | the plan catalogue could not be authored | closed 2026-08-29 | Onboarding |
@@ -56,16 +81,22 @@ otherwise stops at F6, and why there is no F0.
 | F17 | a product cannot read its customers' entitlements | closed 2026-09-01 | Decisions |
 | F18 | no test in this repository opens a browser | closed 2026-09-01 | Decisions |
 
-**Six are open**: F2b, F2c, F3, F6, F7, F13. Four of those six are not this
-repository's to close — F2b and F3 are Control Plane authorization decisions,
-F2c and F7 need a live estate and a staff read. The two this repository can act
-on alone are **F6** and **F13**, and both are decisions rather than
-implementations: F6's own entry says both references already survive, and F13
-says outright that nothing forces it now.
+**Three are open**: F2b, F3 and F7 — and none of the three is this repository's
+to close alone. F2b and F3 are one Control Plane authorization decision arriving
+from two sides. F7 needs a staff read, and as of 2026-09-01 it is known that the
+registering identity cannot perform it *even in principle*: the registration
+response returns environment names rather than stored references, so a payload
+stored wrongly and one stored correctly are indistinguishable to the caller.
 
-F18 closed on 2026-09-01. The decision was where a browser harness lives, and
-the answer is the generated project, with the factory running the generated
-copy.
+**F13 is open as a question and closed as a blocker.** Nothing forces it, and
+its own entry says so; it is listed under Onboarding rather than here.
+
+Closed on 2026-09-01: F16, F17, F18, F2c and F6. F2c closed by being run —
+`--register-only` executed against the live Control Plane for the first time —
+and by the finding that its backfill has no subject, the stale rows belonging to
+a product that was deliberately destroyed. F6 closed as a **decision**: no, a
+newly added application does not need to reach the registry before the next
+provision, with a stated condition that would reverse it.
 
 F16 and F17 both closed on 2026-09-01. F17 had been filed here as blocked on a
 Control Plane authorization decision and was not blocked at all: the customer-
@@ -329,11 +360,11 @@ refreshed with `--register-only` in the meantime (F2c).
 Control Plane's decision. It is the same question as F3, arriving from the other
 side.
 
-### F2c — every product registered before 2026-08-28 has a null callback address
+### F2c — every product registered before 2026-08-28 has a null callback address — closed 2026-09-01
 
 - [x] Make re-registering something an operator can actually do — `--register-only`
-- [ ] Re-register the products already in the registry — **still owed, and still
-      an operator action against a live estate**
+- [x] Re-register the products already in the registry — run 2026-09-01, and the
+      answer is smaller than the box implied
 
 Generation-time registration never sent `platform_api_base_url`, so
 `product_environments.platform_api_base_url` is NULL for every product
@@ -399,6 +430,47 @@ the registry still holds `koras-e2e-atlas` with references to resources that no
 longer exist, and reconciliation compares the registry against reality. The
 first reconciliation run over it will report drift for a product that is
 *deliberately* gone. That is worth knowing before somebody reads it as a bug.
+
+**Closed 2026-09-01, by running it.**
+
+```
+create-koras-app koras-e2e-shop --profile product --register-only
+  --> terraform init, terraform output -json
+  ✓ Registered with the Control Plane.
+    Correlation id: 1bece788-0bfc-411f-a8bb-43a33dbb7da2
+```
+
+**What that is worth, stated exactly.** It is the first execution of
+`--register-only` against a live Control Plane, and it worked end to end: the
+credential resolved, Terraform outputs were read, the payload was accepted. It
+is *not* the backfill this entry was opened for.
+
+The backfill has no subject and now demonstrably will not get one. The stale
+rows belong to `koras-e2e-atlas`, whose infrastructure was destroyed on
+2026-08-30 — so there is no Terraform workspace to read outputs from, and
+`--register-only` refuses an empty one by design. `koras-e2e-shop`, the one live
+product, registered on 2026-08-30 with both fields already in its payload. There
+is no third product.
+
+So this closes as **fixed forward rather than migrated**, which is what the
+entry above already predicted. The two null columns survive on rows for a
+product that is deliberately gone; deregistration is
+`REGISTRATION_LIFECYCLE.md`'s gap, not this one's.
+
+**And the read-back still cannot be done by the caller — for a reason worth
+recording.** `POST /api/platform/v1/products` answers `ProductResponse`, whose
+`environments` field is `list[Environment]`: environment *names*, not the stored
+references. So a successful registration tells the caller the payload was
+accepted and nothing at all about what the registry now holds. That is not an
+oversight in this run; it is the shape of the response, and it means F7's last
+box cannot be closed by the identity that registers even in principle.
+
+Two ways out, both the Control Plane's: widen `ProductResponse` to echo the
+stored `infrastructure_references`, which would make every registration
+self-verifying; or accept that confirming the registry needs a staff read. The
+first is the smaller change and removes a class of silent failure — a payload
+accepted and stored wrongly is indistinguishable from one stored correctly,
+today.
 
 **One defect this scenario found, fixed the same day.** `--register-only` read
 `terraform output -json` and sent whatever came back. A destroyed workspace
@@ -654,10 +726,10 @@ F2b is untouched by this. Whether that credential belongs in the contract at all
 is still open; `optional` only means the bootstrap no longer demands a value
 nothing can produce.
 
-### F6 — the two references deploy-time registration cannot carry
+### F6 — the two references deploy-time registration cannot carry — decided 2026-09-01
 
-- [ ] Decide whether a newly added application should reach the registry before
-      the next `--provision`
+- [x] Decide whether a newly added application should reach the registry before
+      the next `--provision` — **no**, and the reason has a trigger to reverse it
 
 `supabase_project_ref` is only reachable through `DATABASE_URL`, which is a
 credential and is not read. `vercel_projects` holds per-application repository
@@ -672,6 +744,45 @@ listing the applications it already knew.
 per-application secrets into a place they are not today, both for a reference
 that already survives. Stated in `REGISTRATION_LIFECYCLE.md` rather than fixed
 quietly.
+
+**Decided 2026-09-01: no.** A newly added application does not need to reach the
+registry before the next `--provision` or `--register-only`.
+
+Four things settle it, and the fourth is the one that makes the other three
+sufficient rather than merely comfortable.
+
+1. **Omission ages a reference; it does not lose one.** Both are upserted and
+   never pruned, so the registry keeps what it knew. The gap is a newly added
+   application, and it is visible — the registry lists the applications it has,
+   not a truncated set that looks complete.
+
+2. **The cost is a widening, not a line of code.** `supabase_project_ref` is
+   reachable only through `DATABASE_URL`, so carrying it means the deploy job
+   reads a credential to extract a non-credential. `vercel_projects` means
+   aggregating per-application repository secrets into one job. Both enlarge
+   what a deployment touches, permanently, for a reference that already
+   survives.
+
+3. **There is already a complete answer, and it was executed today.**
+   `--register-only` reads Terraform outputs and carries both references
+   correctly — run against the live Control Plane for `koras-e2e-shop` on
+   2026-09-01. It is operator-initiated rather than automatic, which is the
+   whole of the difference, and it changes no infrastructure.
+
+4. **Deploy-time registration is switched off.** F2b turned it off by default on
+   2026-08-30, in `deploy.yml`, because the only credential that can register is
+   estate-wide. So these are two references that a job which does not run cannot
+   carry. Building either mechanism now optimises a path nothing takes, and the
+   design it would be built against is the one F3 has not made yet.
+
+**What would reverse this.** If F2b and F3 resolve into a per-product credential
+and deploy-time registration is switched on by default, a newly added
+application's references go stale between provisions rather than being refreshed
+by the operator who added it — and the same decision that makes the job safe
+also makes reading a project reference inside it less objectionable, because the
+identity doing the reading is that product's own. Revisit then, and not before.
+Recorded here rather than closed silently, so the reversal has a stated
+condition instead of somebody's memory.
 
 ### F14 — two names for the Control Plane, and neither side noticed — closed 2026-08-29
 
@@ -1258,6 +1369,25 @@ reading the registry, and `GET /api/platform/v1/products` answers `403 This
 endpoint is restricted to platform staff` to the registrar. That is correct —
 the registrar is a machine identity that registers and cannot read — so this
 needs the console or a `STAFF_TOKEN`, neither of which a session can obtain.
+
+**And it cannot be closed by the caller even in principle**, which was not known
+when this was written. `POST /api/platform/v1/products` answers
+`ProductResponse`, whose `environments` is `list[Environment]` — environment
+names, not stored references. A successful registration therefore reports that
+the payload was *accepted* and says nothing about what the registry holds. A
+payload stored wrongly and one stored correctly produce identical output, which
+is the same indistinguishability F7's own findings keep turning up.
+
+The cheaper fix is the Control Plane's: echo the stored
+`infrastructure_references` in the response and every registration verifies
+itself. Recorded in F2c with the alternative.
+
+**A second real send, 2026-09-01.** `--register-only` was run against the live
+dev Control Plane for `koras-e2e-shop` and accepted — correlation id
+`1bece788-0bfc-411f-a8bb-43a33dbb7da2`. That is the operator refresh path
+executed end to end for the first time: credential resolved, Terraform outputs
+read, payload accepted, no infrastructure touched. It closes F2c. It does not
+close this box, for the reason above.
 
 **The first box contradicts F2b, and F2b wins.** F2b turned the deploy-time
 `register` job off by default on the same day, because the only credential that
