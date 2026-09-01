@@ -210,13 +210,16 @@ product from the templates.
 R-031 stands accepted with mitigation.
 
 **Next step:** `FOLLOW_UPS.md` opens with the order rather than leaving it to be
-re-derived, and the first item on it is **not this repository's**. Deciding F13
-on 2026-09-01 found that `koras-control-plane`'s entitlement resolver ignores
-`subscriptions.status` entirely — a cancelled customer resolves the same
-entitlements as a paying one, and a trial that expires stays granted, because
-nothing expires it either. A `where` clause and a scheduler job, and the field a
-billing webhook would later drive. Nothing is gated on a plan today, so the
-blast radius is zero until a product declares `requiredEntitlements`.
+re-derived. Two entries are left, F7 and the F3/F2b pair, and neither is this
+repository's to close alone.
+
+F13 was decided on 2026-09-01 — trial-only, which was already the behaviour —
+and deciding it found that `koras-control-plane`'s entitlement resolver ignored
+`subscriptions.status` entirely: a cancelled customer resolved the same
+entitlements as a paying one, and a trial could not expire because nothing
+expired it either. Fixed there as R-93, awaiting review on PR #2. Nothing was
+wrongly ungated, because no product gates on a plan yet — which is exactly why
+it had survived since the resolver was written.
 
 Then one live sitting: F7's staff read, R-036's second teardown now that
 Cloudflare is in the inventory, and the F17 token audience, which have never

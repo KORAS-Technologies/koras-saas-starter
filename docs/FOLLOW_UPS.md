@@ -22,9 +22,15 @@ recommendation rather than a record — revise it, do not preserve it.
 
 | Order | Entry | Why here | Rough cost |
 |-------|-------|----------|------------|
-| 1 | **F13's prerequisite**, in `koras-control-plane` | Not this repository's, and first anyway. Deciding F13 found that entitlement resolution ignores `subscriptions.status` entirely, so a cancelled customer keeps everything and an expired trial never expires. A `where` clause and a scheduler job. Every later billing webhook lands on that field. | under a day |
-| 2 | **F7** | The last unverified link before anything is sold. Its remaining box needs a staff read — or the smaller Control Plane change described in F2c, which would make every registration verify itself. | ~1h with a staff identity |
-| 3 | **F3 + F2b** | One question from two sides. Not urgent while there is one product — the risk it names is one product's CI holding write access to *other* products' registry entries, and the blast radius is currently itself. | ½ day to decide, more to build |
+| 1 | **F7** | The last unverified link before anything is sold. Its remaining box needs a staff read — or the smaller Control Plane change described in F2c, which would make every registration verify itself. | ~1h with a staff identity |
+| 2 | **F3 + F2b** | One question from two sides. Not urgent while there is one product — the risk it names is one product's CI holding write access to *other* products' registry entries, and the blast radius is currently itself. | ½ day to decide, more to build |
+
+F13's prerequisite sat at the top of this table for part of one day and is
+built: `koras-control-plane` R-93, which made `subscriptions.status` mean
+something before anything drives it. It is mentioned here rather than deleted
+because the shape is worth keeping — the first item on a list of *this*
+repository's follow-ups belonged to another repository, and was found by reading
+an entry rather than by working one.
 
 F2c, F6 and F13 were 1, 5 and 3 on this list until 2026-09-01. All three closed
 the same day, and two of them closed by being *checked* rather than built: F2c's
@@ -1368,8 +1374,18 @@ a flow nobody has executed — the mistake this entry already refuses.
 | `cancelled` | no | cancelling that leaves access is not a cancellation |
 
 Only the `past_due` row is a business decision; the rest follow from what the
-words mean. **Raised for `koras-control-plane`**, whose resolver and scheduler
-both are — this repository can neither make the change nor test it.
+words mean.
+
+**Built in `koras-control-plane` the same day**, as R-93 —
+[PR #2](https://github.com/KORAS-Technologies/koras-control-plane/pull/2).
+Seven days of grace, measured from `current_period_end`. Both halves are
+mutation-checked and its 870 tests pass. The two mechanisms are deliberate and
+only one is authorisation: the resolver denies by date, so access stops on time
+whether or not the nightly sweep ran, and the sweep exists to make the record
+reportable rather than to enforce anything.
+
+So F13's prerequisite is met and the payment work has a field that means
+something to land on.
 
 ---
 
