@@ -22,13 +22,16 @@ recommendation rather than a record — revise it, do not preserve it.
 
 | Order | Entry | Why here | Rough cost |
 |-------|-------|----------|------------|
-| 1 | **F13** | A decision, not an implementation, and it gates every payment hour after it. Needs no estate, so it can be written while waiting for one. | 1–2h |
+| 1 | **F13's prerequisite**, in `koras-control-plane` | Not this repository's, and first anyway. Deciding F13 found that entitlement resolution ignores `subscriptions.status` entirely, so a cancelled customer keeps everything and an expired trial never expires. A `where` clause and a scheduler job. Every later billing webhook lands on that field. | under a day |
 | 2 | **F7** | The last unverified link before anything is sold. Its remaining box needs a staff read — or the smaller Control Plane change described in F2c, which would make every registration verify itself. | ~1h with a staff identity |
 | 3 | **F3 + F2b** | One question from two sides. Not urgent while there is one product — the risk it names is one product's CI holding write access to *other* products' registry entries, and the blast radius is currently itself. | ½ day to decide, more to build |
 
-F2c and F6 were 1 and 5 on this list until 2026-09-01. F2c closed by being run;
-F6 closed as a decision. What that leaves is a list with no cheap items on it,
-which is a truer picture than the one above it was.
+F2c, F6 and F13 were 1, 5 and 3 on this list until 2026-09-01. All three closed
+the same day, and two of them closed by being *checked* rather than built: F2c's
+backfill had no subject, and F13's recommendation was already shipped. What each
+left behind was a finding worth more than the entry — which is the argument for
+reading an entry before working it, and the reason the top row of this table now
+belongs to another repository.
 
 **Do the live work in one sitting.** F7's read, R-036's second teardown and the
 F17 token audience all need the same estate and the same credentials, and run
@@ -74,24 +77,29 @@ otherwise stops at F6, and why there is no F0.
 | F10 | the tenant store was in memory | closed 2026-08-29 | Onboarding |
 | F11 | there is no way for a customer to start signing up | reopened and re-closed 2026-08-30 | Onboarding |
 | F12 | a provisioning run finished and told nobody | closed 2026-08-29 | Onboarding |
-| F13 | nothing bills anyone, and that is not an oversight | **open** | Onboarding |
+| F13 | nothing bills anyone, and that is not an oversight | decided 2026-09-01 — trial-only, and the trial never ends | Onboarding |
 | F14 | two names for the Control Plane, and neither side noticed | closed 2026-08-29 | Decisions |
 | F15 | a project generated then provisioned had no way into its own repository | closed 2026-08-30 | Decisions |
 | F16 | a customer's own branding has nowhere to be read from | closed 2026-09-01 | Decisions |
 | F17 | a product cannot read its customers' entitlements | closed 2026-09-01 | Decisions |
 | F18 | no test in this repository opens a browser | closed 2026-09-01 | Decisions |
 
-**Three are open**: F2b, F3 and F7 — and none of the three is this repository's
-to close alone. F2b and F3 are one Control Plane authorization decision arriving
+**Two are open**: F2b and F3 — one Control Plane authorization decision arriving
+from two sides — plus **F7**, which is open in a different sense: its remaining
+box cannot be closed by the identity that registers, for a reason recorded
+below. None of the three is this repository's to close alone. F2b and F3 are one Control Plane authorization decision arriving
 from two sides. F7 needs a staff read, and as of 2026-09-01 it is known that the
 registering identity cannot perform it *even in principle*: the registration
 response returns environment names rather than stored references, so a payload
 stored wrongly and one stored correctly are indistinguishable to the caller.
 
-**F13 is open as a question and closed as a blocker.** Nothing forces it, and
-its own entry says so; it is listed under Onboarding rather than here.
+**F13 was decided on 2026-09-01**: trial-only, which is already what the code
+does. Checking that found the useful half — nothing expires a trial, and
+entitlement resolution ignores `subscriptions.status` altogether, so a cancelled
+customer resolves the same entitlements as a paying one. That is
+`koras-control-plane`'s to fix and it is now the first thing on the list above.
 
-Closed on 2026-09-01: F16, F17, F18, F2c and F6. F2c closed by being run —
+Closed on 2026-09-01: F16, F17, F18, F2c, F6 and F13. F2c closed by being run —
 `--register-only` executed against the live Control Plane for the first time —
 and by the finding that its backfill has no subject, the stale rows belonging to
 a product that was deliberately destroyed. F6 closed as a **decision**: no, a
@@ -1280,9 +1288,10 @@ documents for the API: a workspace member nothing depends on is buildable and
 **not installed**, so its own tests could not import it and collected nothing. It
 is in the dev group for that reason alone.
 
-### F13 — nothing bills anyone, and that is not an oversight
+### F13 — nothing bills anyone, and that is not an oversight — decided 2026-09-01
 
-- [ ] Decide whether self-serve ships trial-only first
+- [x] Decide whether self-serve ships trial-only first — **yes, and it already
+      does; what the decision actually turned on is somewhere else**
 
 No table holds an amount. `COMMERCIAL_CATALOGUE.md` says so directly: plans are
 entitlement bundles, not price points. The portal's Billing section is an honest
@@ -1299,6 +1308,68 @@ thing a webhook drives, and no product ever holds a processor credential.
 
 **Why not done here:** it is a commercial decision before it is an
 implementation, and it is the one item here with no dependency forcing it now.
+
+---
+
+**Decided 2026-09-01: yes, trial-only. It is already what the code does, and
+that is not the useful half of this entry.**
+
+`koras-control-plane/services/worker/koras_worker/provisioning/repository.py` creates every
+self-serve subscription as `status='trialing'` with
+`trial_ends_at = now() + 14 days`, and reasons about it in place: *"a
+subscription with no `trial_ends_at` cannot be reported on, chased, or expired,
+so 'trialing' would mean the same thing forever."* So the recommendation this
+entry made was already shipped, and confirming it is a paragraph.
+
+**What checking it found is that the trial never ends, twice over.**
+
+1. **Nothing expires it.** `subscription_renewal_check` runs nightly in the
+   scheduler and returns `None`, deliberately, with the comment *"Implemented in
+   Phase 19 with the rest of billing."* No subscription has ever changed status
+   because a date passed.
+
+2. **Status would not matter if it did.** `_RESOLVE`, the entitlement resolver
+   in `koras-control-plane/services/api/koras_api/repositories/entitlements.py`,
+   filters on
+   `s.organization_id` and `p.code` and nothing else. It does not read
+   `s.status`, `s.trial_ends_at` or `s.cancelled_at`. So `cancelled`,
+   `suspended`, `past_due` and a `trialing` subscription three months past its
+   end date all resolve **the same full entitlement set**.
+
+The second is the one that matters. Cancelling a customer does not remove their
+access; expiring a trial would not either. `subscriptions.status` is the field
+this entry already names as *"the thing a webhook drives"* — and it drives
+nothing today, so a webhook wired to it would move a value nothing reads.
+
+**Blast radius today is zero, and that is precisely why it is worth writing
+down.** No module in the shipped navigation registry declares
+`requiredEntitlements`, so nothing is gated on a plan and nothing is therefore
+wrongly ungated. F17 records the same thing from the other side: the moment a
+product writes `requiredEntitlements` on a module, the gate goes live — and as
+of 2026-09-01 a product actually reads entitlements, so the inert half is the
+Control Plane's, not the product's.
+
+**So the decision has a prerequisite, and it is not payment.** Before a card is
+taken, `subscriptions.status` has to mean something. That is a `where` clause
+and a scheduler job, it is worth strictly less than a day, and it is the seam
+every later billing webhook lands on. Building dunning, proration or invoices
+against a resolver that ignores status would be designing reconciliation against
+a flow nobody has executed — the mistake this entry already refuses.
+
+**The grant policy is the one genuinely commercial choice in it.** Recommended:
+
+| Status | Grants | Why |
+|---|---|---|
+| `trialing`, `trial_ends_at` in the future | yes | the trial is the product |
+| `trialing`, `trial_ends_at` passed | **no** | this is what makes a trial a trial |
+| `active` | yes | |
+| `past_due` | yes, for a stated grace window | revoking on a failed card loses a customer to an expired card; dunning belongs before revocation, and a grace window is a number somebody chooses rather than a default |
+| `suspended` | no | |
+| `cancelled` | no | cancelling that leaves access is not a cancellation |
+
+Only the `past_due` row is a business decision; the rest follow from what the
+words mean. **Raised for `koras-control-plane`**, whose resolver and scheduler
+both are — this repository can neither make the change nor test it.
 
 ---
 

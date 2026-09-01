@@ -209,12 +209,18 @@ breakage is still caught independently by Generator Integration building a
 product from the templates.
 R-031 stands accepted with mitigation.
 
-**Next step:** three open follow-ups, and `FOLLOW_UPS.md` now opens with the
-order rather than leaving it to be re-derived. F13 first — a commercial decision
-that gates every payment hour after it and needs no estate. Then one live
-sitting: F7's staff read, R-036's second teardown now that Cloudflare is in the
-inventory, and the F17 token audience, which have never been exercised together
-and need the same credentials.
+**Next step:** `FOLLOW_UPS.md` opens with the order rather than leaving it to be
+re-derived, and the first item on it is **not this repository's**. Deciding F13
+on 2026-09-01 found that `koras-control-plane`'s entitlement resolver ignores
+`subscriptions.status` entirely — a cancelled customer resolves the same
+entitlements as a paying one, and a trial that expires stays granted, because
+nothing expires it either. A `where` clause and a scheduler job, and the field a
+billing webhook would later drive. Nothing is gated on a plan today, so the
+blast radius is zero until a product declares `requiredEntitlements`.
+
+Then one live sitting: F7's staff read, R-036's second teardown now that
+Cloudflare is in the inventory, and the F17 token audience, which have never
+been exercised together and need the same credentials.
 
 F7 gained a constraint on 2026-09-01 worth knowing before attempting it: the
 registration response returns environment *names*, not stored references, so the
