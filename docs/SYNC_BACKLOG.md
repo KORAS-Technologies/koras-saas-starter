@@ -63,11 +63,17 @@ Tiers are ordered by what breaks if the item is left alone:
 **Last full survey:** 2026-08-22, against starter `535cd58`,
 control-plane `9546623`, sample-product `27f2949`.
 
-**Closed since:** A1, A2, A3, A5, A6, B1, B2, B3, B4, B5, C1, C2, C3, D1, D3, D4,
-E1, E2, E3. A4, A7 and C4 are open; C4 carries two actions no change to this
-repository can close.
-D2 is guarded rather than fixed; see its entry. `koras-control-plane` has not been
-re-synced against any of it, and `output/sample-product` carries B4 but not B1.
+**Closed since:** A1–A7, B1–B5, C1–C4, D1, D3, D4, D5, E1, E2, E3. **D6 is the
+only entry still open**, and it is the oldest kind: `koras-control-plane` has
+never been re-synced against any of this.
+
+A7 closed 2026-09-01. This summary listed A4 as open for two days after A4's own
+heading said it closed on 2026-08-30 — the index at the top of a document about
+things being true in one place and not another, disagreeing with the document.
+
+D2 is guarded rather than fixed; see its entry. `output/sample-product` is gone
+(D4). `koras-e2e-shop` is level with the starter as of 2026-09-01 and is kept
+that way by hand, which is the gap this document's opening now states plainly.
 
 ---
 
@@ -350,10 +356,10 @@ utility classes to the generated page and rebuilding compiled all six and grew
 the sheet from 4,039 to 4,896 bytes — only what was used, which is the
 behaviour that was absent.
 
-### A7 — two role resolvers that disagree, so the console shows authority the API refuses
+### A7 — two role resolvers that disagree, so the console shows authority the API refuses — closed 2026-09-01
 
-- [ ] One resolution rule, shared or tested against the other
-- [ ] A test asserting the two agree for every combination of platform roles
+- [x] One resolution rule, shared or tested against the other
+- [x] A test asserting the two agree for every combination of platform roles
 
 **Applies to:** `profiles/control-plane/template`
 
@@ -396,6 +402,40 @@ session is minted in TypeScript and verified in Python. Neither is wrong on its
 own terms; there is simply no test that they answer the same question the same
 way, and a shared table of role precedence would make the divergence impossible
 rather than merely detectable.
+
+**Closed 2026-09-01**, and the shared table is what closed it.
+
+`leastPrivilegedPlatformRole` lives in `packages/permissions`, beside the
+`PLATFORM_ROLES` ordering it resolves against, and `parseRole` in
+`packages/auth` calls it instead of sorting strings. The Python side already
+resolved by enum position and is unchanged — it was never the wrong half.
+
+Two rules cannot be merged across two runtimes, so what makes them one rule is
+that both resolve to the entry furthest down their own ordered list, and the two
+lists are asserted identical **in order**:
+`tests/unit/test_role_resolution.py` reads `PLATFORM_ROLES` out of the
+TypeScript source and compares it to the `PlatformRole` enum. Set equality would
+have called a reordered list a match, which is the exact divergence this entry
+describes.
+
+Both halves then fix the rule over all 31 non-empty combinations rather than a
+chosen few — `packages/auth/src/platform-role.test.ts` on one side, the
+parametrised Python test on the other. Choosing a few is why this survived: the
+two implementations agreed on most combinations.
+
+Verified by mutation, three ways. Restoring `platform.sort()[0]` fails two
+TypeScript tests. Reordering the TypeScript list alone fails the parity test.
+Dropping `reverse=True` from the Python sort fails 28. A fourth check is in each
+suite by name — the `platform_admin` + `platform_readonly` pair observed on dev,
+so a revert cannot pass quietly.
+
+**One claim was wrong and is corrected in place.** `packages/permissions` named
+a role test and said it asserted these values against the Python enums and the
+SQL. That test is `koras-control-plane/tests/unit/test_roles.py` — the only
+place it exists, so no generated Control Plane carried it at all — and it
+asserts the Python enum against the SQL, never reading the TypeScript file. So
+the half nothing verified was the half that drifted, and the comment said
+otherwise.
 
 ## Tier B — capability present in one profile, absent in the other
 

@@ -1,0 +1,100 @@
+import { strict as assert } from 'node:assert'
+import { test } from 'node:test'
+
+import { PLATFORM_ROLES, leastPrivilegedPlatformRole } from '@{{projectSlug}}/permissions'
+import type { PlatformRole } from '@{{projectSlug}}/permissions'
+
+/**
+ * Which staff role a caller holding several actually gets.
+ *
+ * This is written twice by necessity — the session is minted here and verified
+ * in `koras_auth` — and for a while the two answered differently. This side
+ * sorted the role strings alphabetically; the API sorted by position in the
+ * privilege enum. Both resolved *downward*, so neither ever granted authority
+ * nobody held; they simply disagreed about which of two roles was lower, and a
+ * caller was `platform_admin` in the header and `platform_readonly` at the API.
+ *
+ * The rule now lives beside the ordering, in the permissions package. These
+ * tests cover **every** combination of platform roles rather than a chosen few,
+ * because the two implementations agreed on most of them and that is exactly
+ * why nobody noticed. `tests/unit/test_role_resolution.py` asserts the Python
+ * half against the same list, in the same order.
+ */
+
+/** Every non-empty subset of the five roles: 31 of them. */
+function combinations(): PlatformRole[][] {
+  const all: PlatformRole[][] = []
+  for (let mask = 1; mask < 1 << PLATFORM_ROLES.length; mask += 1) {
+    all.push(PLATFORM_ROLES.filter((_, index) => (mask & (1 << index)) !== 0))
+  }
+  return all
+}
+
+test('the role list is in privilege order, most privileged first', () => {
+  // Asserted rather than assumed. The resolution rule is `indexOf` on this
+  // list, so reordering it silently changes who a caller is — and the list
+  // reads like presentation, which is how it would be reordered.
+  assert.deepEqual(
+    [...PLATFORM_ROLES],
+    [
+      'platform_super_admin',
+      'platform_admin',
+      'platform_support',
+      'platform_billing',
+      'platform_readonly',
+    ],
+  )
+})
+
+test('one role resolves to itself', () => {
+  for (const role of PLATFORM_ROLES) {
+    assert.equal(leastPrivilegedPlatformRole([role]), role)
+  }
+})
+
+test('every combination resolves to the least privileged role in it', () => {
+  for (const held of combinations()) {
+    const expected = held[held.length - 1]
+    assert.equal(
+      leastPrivilegedPlatformRole(held),
+      expected,
+      `holding ${held.join(' + ')} should resolve to ${expected}`,
+    )
+  }
+})
+
+test('the answer does not depend on the order the claim happens to list them', () => {
+  // ZITADEL emits the roles claim as an object, and object key order is not a
+  // guarantee anyone should lean on. An implementation that took the first
+  // recognised name would pass every test above and fail here.
+  for (const held of combinations()) {
+    const forwards = leastPrivilegedPlatformRole(held)
+    assert.equal(leastPrivilegedPlatformRole([...held].reverse()), forwards)
+    assert.equal(leastPrivilegedPlatformRole([...held].sort()), forwards)
+  }
+})
+
+test('the pair that started this resolves downward, not alphabetically', () => {
+  // `platform_admin` sorts before `platform_readonly`, so the alphabetical rule
+  // returned the *more* privileged of the two. This is the case observed on dev
+  // on 2026-08-28, and it is here by name so a revert cannot pass quietly.
+  assert.equal(
+    leastPrivilegedPlatformRole(['platform_admin', 'platform_readonly']),
+    'platform_readonly',
+  )
+  assert.equal(
+    leastPrivilegedPlatformRole(['platform_admin', 'platform_billing', 'platform_super_admin']),
+    'platform_billing',
+  )
+})
+
+test('unknown names grant nothing and do not disturb the ones that do', () => {
+  assert.equal(leastPrivilegedPlatformRole([]), undefined)
+  assert.equal(leastPrivilegedPlatformRole(['platform_administrator', 'admin', '']), undefined)
+  // A customer role is not staff authority, and its presence must not change
+  // which staff role is resolved.
+  assert.equal(
+    leastPrivilegedPlatformRole(['organization_owner', 'platform_admin', 'member']),
+    'platform_admin',
+  )
+})

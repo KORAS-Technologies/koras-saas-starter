@@ -5,10 +5,23 @@
  * `koras_platform`. They are duplicated rather than shared because the two
  * runtimes cannot import each other, which makes drift the risk: a role added
  * on one side and forgotten on the other is a silent authorisation gap.
- * `tests/unit/test_roles.py` asserts these values against the Python enums and
- * the SQL, so the duplication is checked rather than trusted.
+ *
+ * `tests/unit/test_role_resolution.py` reads the platform list below and
+ * asserts it against the Python enum, in order — so the duplication is checked
+ * rather than trusted. An earlier version of this comment credited a test that
+ * checks the Python enum against the SQL and never reads this file at all: the
+ * TypeScript half was the one nothing verified, which is precisely the half
+ * that drifted.
  */
 
+/**
+ * KORAS staff roles, **most privileged first**.
+ *
+ * The order is load-bearing, not presentational: it is the privilege ordering
+ * `leastPrivilegedPlatformRole` resolves against, and the same order the Python
+ * `PlatformRole` enum declares. Reordering this list changes who the platform
+ * thinks a caller is.
+ */
 export const PLATFORM_ROLES = [
   'platform_super_admin',
   'platform_admin',
@@ -35,6 +48,46 @@ export function isPlatformRole(value: string): value is PlatformRole {
 
 export function isOrganizationRole(value: string): value is OrganizationRole {
   return (ORGANIZATION_ROLES as readonly string[]).includes(value)
+}
+
+/**
+ * Which single staff role a caller holding several actually gets.
+ *
+ * A token carrying two platform roles is a provisioning mistake, and both
+ * runtimes resolve it **downward** — the least privileged of them — rather than
+ * guessing upward. That much was never in question.
+ *
+ * What was in question is which role is lower. This was `platform.sort()[0]`,
+ * alphabetical on the role string, while the Python side sorted by position in
+ * the `PlatformRole` enum. Alphabetical order is not privilege order and the
+ * two coincide only by accident: a caller holding `platform_admin` and
+ * `platform_readonly` was `platform_admin` to the console and
+ * `platform_readonly` to the API. Observed on dev 2026-08-28 as a header naming
+ * a role the Plans page then refused, with nothing anywhere naming the second
+ * role that caused it. Safe in both directions — neither side granted authority
+ * nobody was given — and unexplainable from either side alone.
+ *
+ * So the rule lives here, beside the ordering it depends on, rather than in the
+ * caller. `PLATFORM_ROLES` is declared most-privileged-first, so the least
+ * privileged role a caller holds is the one furthest down it.
+ *
+ * Unknown names grant nothing and are dropped rather than carried forward: a
+ * typo must never become authority.
+ */
+export function leastPrivilegedPlatformRole(
+  names: readonly string[],
+): PlatformRole | undefined {
+  let resolved: PlatformRole | undefined
+  let rank = -1
+  for (const name of names) {
+    if (!isPlatformRole(name)) continue
+    const position = PLATFORM_ROLES.indexOf(name)
+    if (position > rank) {
+      rank = position
+      resolved = name
+    }
+  }
+  return resolved
 }
 
 /**

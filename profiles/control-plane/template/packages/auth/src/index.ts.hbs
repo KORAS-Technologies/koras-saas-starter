@@ -13,7 +13,11 @@
 
 import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose'
 import type { NextRequest } from 'next/server'
-import { isPlatformRole, type PlatformRole } from '@{{projectSlug}}/permissions'
+import {
+  isPlatformRole,
+  leastPrivilegedPlatformRole,
+  type PlatformRole,
+} from '@{{projectSlug}}/permissions'
 
 /** ZITADEL emits project roles as an object keyed by role name, not a list. */
 const ROLES_CLAIM = 'urn:zitadel:iam:org:project:roles'
@@ -117,12 +121,13 @@ function parseRole(claims: Record<string, unknown>): PlatformRole | undefined {
         ? raw.map(String)
         : []
 
-  // An unrecognised name grants nothing. Carrying it forward as authority is
-  // how a typo becomes access.
-  const platform = names.filter(isPlatformRole)
-  if (platform.length === 0) return undefined
-  // Two staff roles on one token is a provisioning mistake. Resolve downward.
-  return platform.sort()[0]
+  // Two staff roles on one token is a provisioning mistake, resolved downward;
+  // an unrecognised name grants nothing. Both rules live in the permissions
+  // package, beside the privilege ordering they depend on, because this file
+  // and `koras_auth` have to answer the question identically and a rule written
+  // twice is a rule that will eventually be written two ways. It was: this read
+  // `platform.sort()[0]`, alphabetically, while the API sorted by privilege.
+  return leastPrivilegedPlatformRole(names)
 }
 
 /**
