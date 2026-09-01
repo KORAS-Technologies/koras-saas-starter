@@ -53,14 +53,17 @@ otherwise stops at F6, and why there is no F0.
 | F14 | two names for the Control Plane, and neither side noticed | closed 2026-08-29 | Decisions |
 | F15 | a project generated then provisioned had no way into its own repository | closed 2026-08-30 | Decisions |
 | F16 | a customer's own branding has nowhere to be read from | **open** | Decisions |
+| F17 | a product cannot read its customers' entitlements | **open** | Decisions |
+| F18 | no test in this repository opens a browser | **open** | Decisions |
 
-**Seven are open**: F2b, F2c, F3, F6, F7, F13, F16. Four of those seven are not
-this repository's to close — F2b and F3 are Control Plane authorization
-decisions, F2c and F7 need a live estate and a staff read. The three this
-repository can act on alone are **F6**, **F13** and **F16**. Two of them are
-decisions rather than implementations: F6's own entry says both references
-already survive, and F13 says outright that nothing forces it now. F16 is an
-implementation, and it is the only open entry whose whole cost is one route.
+**Nine are open**: F2b, F2c, F3, F6, F7, F13, F16, F17, F18. Five of those nine
+are not this repository's to close — F2b, F3 and F17 are Control Plane
+authorization decisions, F2c and F7 need a live estate and a staff read. The
+four this repository can act on alone are **F6**, **F13**, **F16** and **F18**.
+Two of them are decisions rather than implementations: F6's own entry says both
+references already survive, and F13 says outright that nothing forces it now.
+F16 is an implementation, and it is the only open entry whose whole cost is one
+route — a route two seams are now waiting on, not one.
 
 ---
 
@@ -795,6 +798,85 @@ state — so this is unfinished capability, not a defect in what shipped.
 
 **Not blocked on anything.** Whoever owns the first real product's API writes the
 route; the frontend already accepts its answer.
+
+**Widened 2026-08-31 by the product shell.** The same missing route is now
+holding back a second reader. `tenant_settings` carries `features` in the same
+row as `branding`, and `apps/web/src/lib/tenant-features.ts` is a second seam
+waiting on the same endpoint — the shell's navigation registry gates modules on
+tenant features, so every one of them is off until the row can be read. Whoever
+adds the route should return the whole settings row and let the two seams split
+the answer; reading it twice would be two round trips for one row.
+
+The organisation's own display name is the third thing behind it. The session
+carries a ZITADEL organisation *id*, which is a UUID, so the shell's workspace
+badge renders nothing rather than an identifier until the same read supplies a
+name.
+
+### F17 — a product cannot read its customers' entitlements — opened 2026-08-31
+
+- [ ] Decide which credential authorises a product reading its own entitlements
+- [ ] Call the Control Plane from `apps/web/src/lib/entitlements.ts`
+
+The authenticated product shell resolves navigation against four gates:
+capabilities, permissions, tenant features and **plan entitlements**. Three of
+them work. The fourth cannot, because a product has no way to ask.
+
+The Control Plane resolves a plan code and a list of effective entitlements per
+organisation and product, and the route that answers is part of its *platform*
+API — the private surface authorised by the estate-wide `registrar` service
+account. A product must not hold that credential at runtime: it authorises
+writes to every other product's registry entry, which is exactly the argument
+that keeps the deploy-time registration job off by default (F2b).
+
+So this needs one of two things, and both are decisions about the platform's API
+surface rather than product work:
+
+1. a customer-facing entitlements route, authorised by the caller's own token
+   the way the signup plan catalogue is anonymous; or
+2. a per-product service-account credential scoped to reading that product's own
+   entitlements — which is F3 by another name, and would close with it.
+
+`apps/web/src/lib/entitlements.ts` holds the seam, the mapping and the reason.
+The parser is written; only the call is missing.
+
+**The failure direction is already correct.** An unresolved entitlement set
+counts as *not entitled*, so a plan-gated module is hidden or shown locked and
+the rest of the product is untouched. The opposite convention would make an
+unreachable Control Plane the way to obtain a paid feature. Nothing is hidden
+today because the shipped registry gates nothing on a plan — the moment a
+product writes `requiredEntitlements` on a module, that module goes dark until
+this is closed, which is the safe direction and worth knowing about in advance.
+
+**Blocked on the Control Plane**, like F2b and F3.
+
+### F18 — no test in this repository opens a browser — opened 2026-08-31
+
+- [ ] Decide whether a browser harness belongs in the starter or in a product
+
+The starter has no Playwright and no browser-driven test of any kind. The
+`webapp-testing` skill is vendored and unused. Everything the frontend asserts
+is structural — the generator reads the templates, and the generated project
+runs `node --test` over pure functions.
+
+That was proportionate while the signed-in area was one page. The product shell
+adds behaviour a text search cannot check: the drawer's focus trap, Escape
+returning focus to the toggle, the drawer closing on navigation, the collapsed
+sidebar keeping accessible names, and layout at 375 through 1440.
+
+What *was* verified on 2026-08-31, without a browser, is more than it sounds.
+The built application was started and probed with real signed session cookies,
+one per organisation role: the sidebar a plain member receives contains Home and
+nothing else, an administrator's contains the Administration group, and the two
+settings routes answer 403 to the member, 200 to the administrator and 404 for a
+path no module claims. The rendered markup carries one `#main-content`, the
+labelled navigation landmarks, `aria-current="page"`, and both disclosure
+toggles pointing at elements that exist unopened. That covers the security
+claim, which is the one that matters; it does not cover the interaction.
+
+**Not blocked.** It is a question of where the harness lives. A browser test in
+the starter tests a project the starter does not have, so it would have to
+generate one first — which is what `generated-builds.test.ts` already does, at a
+cost of three minutes a run.
 
 ## The customer-onboarding sequence
 

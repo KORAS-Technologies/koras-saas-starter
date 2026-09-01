@@ -19,8 +19,18 @@ two-line stub, deliberately.
 /signup           get started          self-serve form, request access,
                                        or invitation only
 /signup/verify    confirm an address   three outcomes, unchanged wording
-/dashboard        signed-in landing    behind the session gate
+/dashboard        signed-in landing    behind the session gate, inside the shell
+/dashboard/settings       product settings   general; requires settings.read
+/dashboard/settings/team  Team & Access      product roles; requires team.read
 ```
+
+Everything from `/dashboard` down renders inside the **authenticated product
+shell** — header, sidebar, profile menu, workspace badge — and its navigation is
+resolved from a registry rather than written into a component. That half of the
+frontend has its own document: `docs/PRODUCT_APP_SHELL.md`, which is
+authoritative for the navigation registry, the permission and entitlement model,
+product settings and the route gate. This document stays authoritative for the
+public surface and for the design tokens both surfaces share.
 
 `apps/marketing`, when generated, serves the same homepage from the same
 components. It is a separate deployment with no session.
@@ -192,8 +202,13 @@ every component below it, unchanged
 
 `apps/web/src/app/dashboard/layout.tsx` wraps the whole signed-in area. Any
 route added beside `dashboard/page.tsx` inherits the customer's palette with no
-plumbing. Colours cascade; an image cannot, so `<ProductLogo tenant={...} />`
-takes the customer's mark explicitly.
+plumbing. Colours cascade; an image cannot, so `ProductLogo` takes the
+customer's mark explicitly.
+
+Since the authenticated shell renders inside that scope, the header, the
+sidebar, the active navigation state and the profile menu are all the customer's
+colours without a single shell component knowing a tenant exists. That is the
+same mechanism doing more work, not a second one.
 
 The public pages are deliberately **outside** the scope. `/`, `/login` and
 `/signup` belong to the product and are served to people who have no tenant.
@@ -438,7 +453,11 @@ profiles/product/template/
     auth/           AuthLayout, AuthBrandPanel, AuthCard, RequestAccessCard,
                     InvitationOnlyCard
     styles/tokens.css
-  apps/web/src/app/     page, dashboard, login, signin, signup, not-found
+    shell/          AuthenticatedProductShell, ProductHeader,
+                    ProductNavigation, ProductProfileMenu, WorkspaceBadge,
+                    AccessDenied  -- see docs/PRODUCT_APP_SHELL.md
+  apps/web/src/app/     page, dashboard, dashboard/settings, login, signin,
+                        signup, not-found
   apps/marketing/src/app/
 ```
 

@@ -4,20 +4,18 @@ import { Card, Container } from '@{{projectSlug}}/ui'
 /**
  * Where a signed-in person lands.
  *
- * This used to be `/`. It moved when the public homepage took the root, and the
- * move is the whole reason the middleware needed an exact-match exemption
- * rather than a prefix one -- `/` as a prefix would have opened every route in
- * the application.
- *
- * The header, the session read and the customer's branding are all in
- * `layout.tsx`, so this page is only its own content and so is every page added
- * beside it.
+ * The header, the sidebar, the session read and the customer's branding are all
+ * in `layout.tsx`, so this page is only its own content -- and so is every page
+ * added beside it. It renders no `<main>` and no navigation: the shell owns
+ * both, and a page that rendered a second `main#main-content` would give the
+ * skip link two targets.
  *
  * Deliberately close to empty. It is the first screen of a product nobody has
  * built yet, so it establishes the frame -- container, card, brand tokens --
  * and then says plainly that this is where the product goes. An invented
  * dashboard of fake charts would have to be deleted before the real one could
- * be written.
+ * be written, and the same is true of invented navigation, which is why the
+ * registry ships with the two modules this repository can actually honour.
  */
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +23,7 @@ export default function DashboardPage() {
   const { product } = productConfig
 
   return (
-    <main id="main-content" className="flex-1 bg-surface-muted py-12">
+    <div className="py-12">
       <Container>
         <h1 className="font-display text-3xl font-bold tracking-tight text-ink">
           Welcome to {product.name}
@@ -40,12 +38,18 @@ export default function DashboardPage() {
           <ul className="mt-4 space-y-3 leading-7 text-ink-muted">
             <li>
               Build this page in <code className="text-ink">apps/web/src/app/dashboard</code>.
-              Everything you add beside it is protected by default and inherits this
-              customer&rsquo;s branding.
+              Everything you add beside it is protected by default, sits inside the product
+              shell, and inherits this customer&rsquo;s branding.
             </li>
             <li>
-              The public site, its content and this product&rsquo;s own colours are configured in{' '}
-              <code className="text-ink">packages/branding/src/index.ts</code>.
+              Give a new area a place in the sidebar by adding a module to{' '}
+              <code className="text-ink">navigation</code> in{' '}
+              <code className="text-ink">packages/branding/src/index.ts</code>. Nothing in the
+              shell changes; the same entry is what guards the route.
+            </li>
+            <li>
+              The public site, its content and this product&rsquo;s own colours are configured in
+              the same file.
             </li>
             <li>
               A customer&rsquo;s own colours and logo arrive through{' '}
@@ -55,6 +59,6 @@ export default function DashboardPage() {
           </ul>
         </Card>
       </Container>
-    </main>
+    </div>
   )
 }

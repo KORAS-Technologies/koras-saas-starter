@@ -1,0 +1,95 @@
+import { NO_TENANT_BRANDING, productConfig } from '@{{projectSlug}}/branding'
+import type { AccessContext, TenantBranding } from '@{{projectSlug}}/branding'
+import { productAccessFromOrganizationRoles } from '@{{projectSlug}}/permissions'
+import type { ProductPermission } from '@{{projectSlug}}/permissions'
+import { currentMember, type MemberSession } from './session'
+import { tenantBranding } from './tenant-branding'
+import { tenantEntitlements } from './entitlements'
+import { tenantFeatures } from './tenant-features'
+
+/**
+ * Everything the signed-in area needs to know about its caller, assembled once.
+ *
+ * Four questions, and each has exactly one source:
+ *
+ *   who is calling        the verified session cookie
+ *   what may they do      their organization roles, through the permissions package
+ *   what does this build have   the capabilities the generator compiled in
+ *   what has the customer bought or enabled   the Control Plane and the tenant row
+ *
+ * Assembled here rather than in each page, for the reason the dashboard layout
+ * already gives about branding: resolving it once per navigation beats every
+ * page doing it again, and a page that forgets is a page with no gate.
+ *
+ * The organization is read from the session and from nowhere else. It is not a
+ * URL segment, not a header and not a query parameter — those are requests, not
+ * evidence, and this value decides which customer's plan and features apply.
+ */
+export interface SignedInContext {
+  member: MemberSession
+  access: AccessContext
+  /** The customer's branding, already validated. Ready for `BrandScope`. */
+  tenant: TenantBranding
+}
+
+export async function signedInContext(): Promise<SignedInContext | null> {
+  const member = await currentMember()
+  if (member === null) return null
+
+  // Three independent reads, so they run together. Sequentially they would put
+  // three round trips in front of every navigation in the product; the branding
+  // one alone is enough to be felt.
+  const [tenant, entitlements, features] = await Promise.all([
+    tenantBranding(member.organizationId),
+    tenantEntitlements(member.organizationId),
+    tenantFeatures(member.organizationId),
+  ])
+
+  return {
+    member,
+    tenant,
+    access: {
+      access: productAccessFromOrganizationRoles(member.organizationRoles),
+      capabilities: productConfig.product.capabilities,
+      entitlements,
+      features,
+      organizationRoles: member.organizationRoles,
+    },
+  }
+}
+
+/**
+ * Whether this caller holds a permission.
+ *
+ * The check a page makes for itself, after the middleware has already made the
+ * same one for the route. Two checks of one rule is not duplication here: the
+ * middleware guards the URL, and this guards the render — a page reachable
+ * another way, a page whose module is not in the registry, a server action
+ * invoked directly. Client navigation being hidden is neither of them.
+ */
+export function can(context: AccessContext, permission: ProductPermission): boolean {
+  return context.access.granted && context.access.permissions.includes(permission)
+}
+
+/**
+ * What to call this caller in the interface.
+ *
+ * Their product role, not their organization role. A person may be an
+ * administrator of the customer's account and a plain member of this product
+ * once per-product assignment exists, and the header should say what they are
+ * here.
+ */
+export function roleLabel(context: AccessContext): string | undefined {
+  if (context.access.role === 'product_admin') return 'Administrator'
+  if (context.access.role === 'product_member') return 'Member'
+  return undefined
+}
+
+/**
+ * The branding a caller with no session should see.
+ *
+ * Exported so a refusal rendered outside `signedInContext` still has something
+ * to pass to `BrandScope` — the product's own brand, which is the right answer
+ * for somebody whose tenant is not known.
+ */
+export const NO_TENANT: TenantBranding = NO_TENANT_BRANDING

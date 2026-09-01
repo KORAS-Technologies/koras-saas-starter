@@ -1,17 +1,16 @@
 import type { ReactNode } from 'react'
-import { cookies } from 'next/headers'
-import { readSessionToken } from '@{{projectSlug}}/auth'
-import { BrandScope, Container, ProductLogo } from '@{{projectSlug}}/ui'
-import { tenantBranding } from '../../lib/tenant-branding'
+import { productConfig, resolveNavigation } from '@{{projectSlug}}/branding'
+import { AuthenticatedProductShell, BrandScope } from '@{{projectSlug}}/ui'
+import { NO_TENANT, roleLabel, signedInContext } from '../../lib/access'
 
 /**
- * The signed-in area, in the customer's colours.
+ * The signed-in area, in the customer's colours and behind the product's shell.
  *
  * Everything under `/dashboard` is rendered inside a `BrandScope`, so a
- * customer's palette reaches every button, border and card below it without a
- * single component knowing a tenant exists. Add new authenticated routes here
- * and they inherit it; that is the whole point of doing it in a layout rather
- * than per page.
+ * customer's palette reaches every button, border, card and navigation state
+ * below it without a single component knowing a tenant exists. Add new
+ * authenticated routes here and they inherit it; that is the whole point of
+ * doing it in a layout rather than per page.
  *
  * The tenant comes from the session cookie's organization, never from the URL
  * or a header. Branding is only decoration, so getting it from an untrusted
@@ -22,46 +21,77 @@ import { tenantBranding } from '../../lib/tenant-branding'
  * The public pages -- `/`, `/login`, `/signup` -- are deliberately outside
  * this. They belong to the product and are served to people who have no tenant.
  *
- * The application header lives here rather than on the page for the same
- * reason: it is the one surface that shows the customer's mark, and resolving
- * the tenant once per navigation beats every page doing it again.
+ * **Navigation is resolved here, on the server, and rendered in the browser.**
+ * `resolveNavigation` is given the caller's permissions, this build's
+ * capabilities, the customer's plan and their feature switches, and returns the
+ * modules that survive all four. The shell receives that answer as plain data
+ * and never re-decides it -- a component that could decide access is one
+ * somebody will eventually rely on to, and this one runs on a machine the
+ * caller owns.
+ *
+ * The same registry refuses the URL in `src/middleware.ts`. Hiding a link and
+ * refusing the route are the same data, which is what stops them drifting.
  */
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
-  const store = await cookies()
-  const outcome = await readSessionToken(store.get('session')?.value, {
-    secret: process.env.SESSION_SECRET ?? '',
-  })
-  const tenant = await tenantBranding(
-    outcome.status === 'ok' ? outcome.session.organizationId : undefined,
-  )
+  const context = await signedInContext()
 
-  const person = outcome.status === 'ok' ? (outcome.session.name ?? outcome.session.email) : undefined
+  // The middleware admits nobody without a session, so this is defence rather
+  // than a path a browser reaches. Rendering the frame with the product's own
+  // branding and no navigation is the right failure: a caller who somehow gets
+  // here sees a product, not a stack trace, and sees nothing they may not have.
+  if (context === null) {
+    return (
+      <BrandScope tenant={NO_TENANT} className="flex min-h-screen flex-col">
+        {children}
+      </BrandScope>
+    )
+  }
+
+  const { member, access, tenant } = context
+  const navigation = resolveNavigation(productConfig.navigation, access)
+
+  /*
+   * Built here rather than inline in the JSX below, and not for tidiness.
+   *
+   * This file is a Handlebars template, and a JSX prop given an object literal
+   * inline opens with two braces -- which the generator reads as an expression
+   * and refuses to parse. The refusal stops generation of the entire project,
+   * not just this file, so any prop taking an object literal is assembled in a
+   * variable first. `docs/PRODUCT_FRONTEND.md` records the rule and
+   * `product-frontend.test.ts` enforces it.
+   */
+  const identity = {
+    name: member.name,
+    email: member.email,
+    // The customer's own name for themselves, when they have set one. The
+    // session carries a ZITADEL organization *id*, which is a UUID: showing it
+    // would put an identifier where a name belongs. The real name arrives with
+    // the same tenant-settings read that `lib/tenant-branding.ts` is waiting
+    // on, and until then the badge renders nothing rather than something
+    // meaningless.
+    organizationName: tenant.name === '' ? undefined : tenant.name,
+    roleLabel: roleLabel(access),
+  }
+
+  // One outbound link, and only for somebody who could act on it.
+  // Subscriptions, billing, domains and organization membership belong to the
+  // Customer Portal; this product links out and reimplements none of it. An
+  // empty `accountUrl` renders no link at all.
+  const accountUrl =
+    access.access.role === 'product_admin' && productConfig.product.accountUrl !== ''
+      ? productConfig.product.accountUrl
+      : undefined
 
   return (
     <BrandScope tenant={tenant} className="flex min-h-screen flex-col">
-      <header className="border-b border-line bg-surface">
-        <Container className="flex h-18 items-center justify-between gap-6">
-          <ProductLogo href="/dashboard" tenant={tenant} />
-          <div className="flex items-center gap-4">
-            {person && <span className="hidden text-sm text-ink-muted sm:inline">{person}</span>}
-            {/*
-              A form, because the sign-out route is POST-only -- deliberately,
-              so that any page able to make this browser load a URL cannot sign
-              somebody out. A link here would render a control that always
-              returns 405.
-            */}
-            <form action="/api/auth/signout" method="post">
-              <button
-                type="submit"
-                className="min-h-11 rounded-brand px-2 text-sm font-semibold text-ink hover:text-brand"
-              >
-                Sign out
-              </button>
-            </form>
-          </div>
-        </Container>
-      </header>
-      {children}
+      <AuthenticatedProductShell
+        navigation={navigation}
+        tenant={tenant}
+        identity={identity}
+        accountUrl={accountUrl}
+      >
+        {children}
+      </AuthenticatedProductShell>
     </BrandScope>
   )
 }

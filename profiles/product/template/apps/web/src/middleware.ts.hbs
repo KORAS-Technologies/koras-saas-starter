@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { readSession } from '@{{projectSlug}}/auth'
-import { hasAnyRole } from '@{{projectSlug}}/permissions'
+import { hasAnyRole, productAccessFromOrganizationRoles } from '@{{projectSlug}}/permissions'
+import {
+  NO_ENTITLEMENTS,
+  NO_TENANT_FEATURES,
+  canOpenModule,
+  moduleForPath,
+  productConfig,
+} from '@{{projectSlug}}/branding'
 
 /**
  * Every route requires a signed-in caller holding a role in their organization.
@@ -134,6 +141,50 @@ async function authorize(
   // deliberately does not define.
   if (!hasAnyRole(outcome.session.organizationRoles)) {
     return new NextResponse('Your account has no access to this application.', { status: 403 })
+  }
+
+  /*
+   * The route gate, from the same registry that draws the sidebar.
+   *
+   * This is what makes "navigation hiding is not authorization" true rather
+   * than aspirational. `resolveNavigation` decides which modules a caller sees;
+   * `canOpenModule` -- the same function, on the same module -- decides whether
+   * the URL opens. Typing the address of a hidden module is not a way in.
+   *
+   * Only the dimensions decidable from the verified session cookie are checked
+   * here: product access, the two role gates, the caller's permissions, and the
+   * capabilities compiled into this build. Entitlements and tenant features are
+   * deliberately excluded, because both need a network read, and a middleware
+   * that talks to a remote service on every request is what put a permanent
+   * redirect loop in front of the Control Plane. A page performing a
+   * plan-gated operation checks the entitlement server-side itself, where the
+   * read already happens once per render.
+   *
+   * Passing the empty entitlement and feature sets is therefore not a weakened
+   * check -- `canOpenModule` reads neither. They are here because the type says
+   * a context has them.
+   *
+   * A path no module claims returns undefined and is admitted. The registry
+   * describes navigation, not the whole route table: a page with no sidebar
+   * entry is an ordinary thing, the session gate above still applies to it, and
+   * a page needing more than a session checks for itself.
+   */
+  const requested = moduleForPath(productConfig.navigation, pathname)
+  if (
+    requested !== undefined &&
+    !canOpenModule(requested, {
+      access: productAccessFromOrganizationRoles(outcome.session.organizationRoles),
+      capabilities: productConfig.product.capabilities,
+      entitlements: NO_ENTITLEMENTS,
+      features: NO_TENANT_FEATURES,
+      organizationRoles: outcome.session.organizationRoles,
+    })
+  ) {
+    // Says nothing about which permission is missing. Naming it tells somebody
+    // probing the application which permissions exist and which are worth
+    // acquiring, and tells the person who is legitimately stuck nothing they
+    // can act on that this does not.
+    return new NextResponse('You do not have access to this area.', { status: 403 })
   }
 
   return withNonce(request, nonce, policy)

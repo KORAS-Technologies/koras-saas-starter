@@ -1,0 +1,158 @@
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import type { ResolvedGroup, ResolvedModule } from '@{{projectSlug}}/branding'
+import { Icon } from '../primitives/icon'
+import { cn } from '../lib/cn'
+
+/**
+ * The sidebar's contents, from one resolved registry.
+ *
+ * There is no branch on role in this file, and there must never be one. The
+ * shape it replaces -- `if (role === 'admin') <AdminSidebar/>` -- is the shape
+ * that stops matching the server's rules the first time somebody adds a role,
+ * and it fails in the direction that shows people things rather than the one
+ * that hides them. Everything here has already been decided; this renders it.
+ *
+ * A group with no surviving items never reaches this component: the resolver
+ * drops it, because a heading with nothing under it reads as a section that
+ * failed to load.
+ */
+export function ProductNavigation({
+  groups,
+  collapsed,
+  label,
+}: {
+  groups: ResolvedGroup[]
+  collapsed: boolean
+  /** Distinguishes the desktop landmark from the drawer's copy of it. */
+  label: string
+}) {
+  const pathname = usePathname()
+
+  return (
+    <nav aria-label={label} className="px-3">
+      {groups.map((group) => (
+        <div key={group.id} className="mb-6 last:mb-0">
+          {group.label !== '' && (
+            <h2
+              className={cn(
+                'px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-ink-muted',
+                // Collapsed, the heading has no room and no purpose -- the
+                // icons carry their own names. Hidden rather than removed, so
+                // a screen reader still hears the grouping.
+                collapsed && 'sr-only',
+              )}
+            >
+              {group.label}
+            </h2>
+          )}
+          <ul className="flex flex-col gap-0.5">
+            {group.items.map((item) => (
+              <li key={item.id}>
+                <NavigationItem item={item} collapsed={collapsed} pathname={pathname} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </nav>
+  )
+}
+
+/**
+ * Whether this entry is the page the reader is on.
+ *
+ * Prefix matching on a whole path segment, so a module at `/dashboard/settings`
+ * stays marked current while the reader is on `/dashboard/settings/team` --
+ * except that the deeper module is also present and also matches, which is
+ * exactly what `moduleForPath` handles for the route gate. Here both are
+ * highlighted, which is the ordinary behaviour of a nested navigation and is
+ * what a reader expects from a breadcrumbing sidebar.
+ *
+ * `aria-current="page"` goes only on the exact match. Announcing two entries as
+ * the current page is worse than announcing none.
+ */
+function isWithin(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(href + '/')
+}
+
+function NavigationItem({
+  item,
+  collapsed,
+  pathname,
+}: {
+  item: ResolvedModule
+  collapsed: boolean
+  pathname: string
+}) {
+  const current = pathname === item.href
+  const within = isWithin(pathname, item.href)
+
+  const shared = cn(
+    'flex min-h-11 items-center gap-3 rounded-brand px-3 text-sm font-medium transition-colors',
+    collapsed && 'justify-center px-0',
+  )
+
+  if (item.state === 'locked') {
+    // A button, not an anchor. A disabled link is not a thing the platform has:
+    // `aria-disabled` on an <a href> still navigates, and removing the href
+    // takes it out of the tab order entirely. A button that does nothing is at
+    // least honestly a control that is unavailable.
+    return (
+      <button
+        type="button"
+        disabled
+        className={cn(shared, 'w-full cursor-not-allowed text-ink-muted opacity-60')}
+      >
+        <Icon name={item.icon} className="h-5 w-5 shrink-0" />
+        <span className={cn('flex-1 text-left', collapsed && 'sr-only')}>{item.label}</span>
+        {/* The reason is part of the accessible name in both states. Collapsed,
+            it is the only thing distinguishing this icon from an available
+            one. */}
+        <span className="sr-only">
+          {item.label}. {item.lockedReason}
+        </span>
+        {!collapsed && <LockGlyph />}
+      </button>
+    )
+  }
+
+  return (
+    <Link
+      href={item.href}
+      aria-current={current ? 'page' : undefined}
+      className={cn(
+        shared,
+        within
+          ? 'bg-brand/10 text-brand'
+          : 'text-ink-muted hover:bg-surface-muted hover:text-ink',
+      )}
+    >
+      <Icon name={item.icon} className="h-5 w-5 shrink-0" />
+      {/* Visually hidden rather than absent when collapsed: an icon-only link
+          with no accessible name is a link that announces its own URL. */}
+      <span className={collapsed ? 'sr-only' : undefined}>{item.label}</span>
+    </Link>
+  )
+}
+
+function LockGlyph() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-4 w-4 shrink-0"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <rect x="4.75" y="10.25" width="14.5" height="9.5" rx="1.75" />
+      <path d="M8.25 10.25V7.5a3.75 3.75 0 0 1 7.5 0v2.75" />
+    </svg>
+  )
+}

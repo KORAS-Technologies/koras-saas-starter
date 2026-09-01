@@ -12,6 +12,8 @@
  * `packages/ui` owns what that icon looks like.
  */
 
+import type { ProductAccess, ProductPermission } from '@{{projectSlug}}/permissions'
+
 /* -------------------------------------------------------------------------- */
 /* Brand tokens                                                               */
 /* -------------------------------------------------------------------------- */
@@ -238,6 +240,19 @@ export interface ProductIdentity {
   /** Public origin, for canonical URLs and OpenGraph. */
   url: string
   /**
+   * The components this product was generated with.
+   *
+   * Written by the generator from the same selections `.koras/project.yaml`
+   * records, so the two cannot disagree. A navigation module naming a
+   * capability that is not in this list is hidden rather than broken -- which
+   * is what lets one registry be carried between products generated with
+   * different `--with` sets.
+   *
+   * Not a runtime switch. A capability is fixed for the life of the repository:
+   * a product generated without the worker has no worker directory to enable.
+   */
+  capabilities: readonly string[]
+  /**
    * Where the web application lives, when it is somewhere else.
    *
    * Empty means "here", which is right for `apps/web`: `/login` and `/signup`
@@ -251,6 +266,18 @@ export interface ProductIdentity {
    * harmless rather than wrong.
    */
   appUrl: string
+  /**
+   * Where this customer manages their account, when they have somewhere.
+   *
+   * The KORAS Customer Portal: subscriptions, billing, domains, single sign-on
+   * and organization membership. Empty by default, because a generated product
+   * cannot know the address, and a link to a guess is worse than no link.
+   *
+   * Set it and the profile menu grows one outbound entry for callers who
+   * administer the product. That is the whole integration, deliberately: a
+   * product that reimplements billing has two places to change a price.
+   */
+  accountUrl: string
 }
 
 /* -------------------------------------------------------------------------- */
@@ -274,6 +301,10 @@ export type IconName =
   | 'clock'
   | 'eye'
   | 'check'
+  | 'home'
+  | 'settings'
+  | 'folder'
+  | 'bell'
 
 export interface NavLink {
   label: string
@@ -400,6 +431,8 @@ export interface ProductConfig {
   product: ProductIdentity
   brand: BrandingTokens
   marketing: MarketingConfig
+  /** The authenticated shell's modules. See the navigation section below. */
+  navigation: NavigationConfig
 }
 
 /**
@@ -422,6 +455,12 @@ export const productConfig: ProductConfig = {
     contactEmail: '',
     url: '{{#if primaryDomain}}https://{{primaryDomain}}{{/if}}',
     appUrl: '',
+    accountUrl: '',
+    // Written by the generator from the selected components. Edit the
+    // selections, not this line: a list that disagrees with what the
+    // repository actually contains hides working modules and shows missing
+    // ones.
+    capabilities: [{{#each enabledCapabilities}}'{{this}}', {{/each}}],
   },
 
   brand: defaultBranding,
@@ -621,4 +660,376 @@ export const productConfig: ProductConfig = {
 
     access: { mode: 'auto' },
   },
+
+  /* ---------------------------------------------------------------------- */
+  /* The authenticated shell                                                */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * What the signed-in sidebar offers.
+   *
+   * Three modules, and every one of them resolves to a route this repository
+   * really serves. That is the whole default: a starter that shipped Documents,
+   * Matters or Agents would be shipping somebody else's product, and every
+   * generated repository would begin by deleting them.
+   *
+   * Adding a module is an entry in `modules` and, if it needs a heading of its
+   * own, one in `groups`. Nothing in `packages/ui` changes -- the shell renders
+   * whatever survives resolution, in group and then module order.
+   *
+   * A worked example, for a product that has a documents area behind a plan:
+   *
+   *   a group   -- id "documents", label "Documents", order 20
+   *   a module  -- id "requests", label "Requests", icon "workflow",
+   *                href "/dashboard/requests", group "documents", order 10,
+   *                requiredPermissions ["requests.read"],
+   *                requiredEntitlements ["document_requests"],
+   *                lockedBehavior "lock"
+   *
+   * Written without the object syntax on purpose: a starter test resolves every
+   * `href:` in this file to a real route directory, and an example that used the
+   * real key would have to invent a route to satisfy it.
+   *
+   * `requests.read` has to be added to `PRODUCT_PERMISSIONS` first, or it will
+   * not compile -- which is the point: a permission nothing grants would hide
+   * the module forever and look like a bug in the shell.
+   */
+  navigation: {
+    groups: [
+      // An empty label renders no heading, which is what puts Home above the
+      // first section title rather than under one.
+      { id: 'primary', label: '', order: 0 },
+      { id: 'administration', label: 'Administration', order: 900 },
+    ],
+    modules: [
+      {
+        id: 'home',
+        label: 'Home',
+        icon: 'home',
+        href: '/dashboard',
+        group: 'primary',
+        order: 0,
+      },
+      {
+        id: 'team',
+        label: 'Team & Access',
+        icon: 'users',
+        href: '/dashboard/settings/team',
+        group: 'administration',
+        order: 10,
+        requiredPermissions: ['team.read'],
+      },
+      {
+        id: 'settings',
+        label: 'Settings',
+        icon: 'settings',
+        href: '/dashboard/settings',
+        group: 'administration',
+        order: 20,
+        requiredPermissions: ['settings.read'],
+      },
+    ],
+  },
+}
+
+/* -------------------------------------------------------------------------- */
+/* The authenticated shell: navigation registry and resolution                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A heading in the sidebar, or the absence of one.
+ *
+ * An empty `label` renders the group's modules with no heading above them,
+ * which is what the primary group uses. Groups are ordered by `order`, and a
+ * group whose modules all resolve away is not rendered at all -- an empty
+ * heading looks like a section that failed to load.
+ */
+export interface NavigationGroup {
+  id: string
+  label: string
+  order: number
+}
+
+/**
+ * One entry in the authenticated sidebar.
+ *
+ * The fields divide into three kinds, and the division is the design.
+ *
+ * *What it is* -- id, label, icon, href, group, order. Presentation.
+ *
+ * *Whether the caller may have it* -- `requiredPermissions`,
+ * `productAdminOnly`, `ownerOnly`, and product access itself. These are
+ * authorization, they are all decidable from the verified session with no
+ * network call, and failing any of them **hides** the module. The middleware
+ * checks exactly this set for the route, from this same registry, so hiding a
+ * link and refusing the URL cannot drift apart.
+ *
+ * *Whether this deployment or this customer has it* --
+ * `requiredCapabilities` (was the code generated at all),
+ * `requiredEntitlements` (does the plan include it),
+ * `requiredFeatures` (has the tenant turned it on). A capability failure hides,
+ * because there is nothing to link to. The other two follow `lockedBehavior`.
+ */
+export interface ProductModule {
+  id: string
+  label: string
+  icon: IconName
+  /** A real route under `apps/web/src/app`. A starter test resolves every one. */
+  href: string
+  /** The id of a group declared in the same configuration. */
+  group: string
+  order: number
+
+  /** Every one must be held. Omitted means "any caller with product access". */
+  requiredPermissions?: readonly ProductPermission[]
+  /** Plan features, resolved from the Control Plane. */
+  requiredEntitlements?: readonly string[]
+  /** Tenant-configured features. */
+  requiredFeatures?: readonly string[]
+  /** Components this product was generated with. */
+  requiredCapabilities?: readonly string[]
+
+  productAdminOnly?: boolean
+  ownerOnly?: boolean
+
+  /**
+   * What a failed plan or feature gate does. `hide` by default.
+   *
+   * `lock` renders the module greyed with an upgrade hint instead of removing
+   * it, which is the right treatment for something the customer could buy and
+   * the wrong treatment for something they are not allowed to see. Only ever
+   * applied to entitlements and features -- an authorization failure is never
+   * locked, because a locked entry tells a caller that an area they may not
+   * enter exists.
+   */
+  lockedBehavior?: 'hide' | 'lock'
+}
+
+export interface NavigationConfig {
+  groups: readonly NavigationGroup[]
+  modules: readonly ProductModule[]
+}
+
+/* -------------------------------------------------------------------------- */
+/* What the resolver is given                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The plan, as the Control Plane resolved it for this organization.
+ *
+ * `resolved` is the field that matters. It is false when the Control Plane is
+ * not configured, could not be reached, or answered something unusable -- and
+ * an unresolved set counts as **not entitled**, so a plan-gated module is
+ * hidden or locked and everything else keeps working.
+ *
+ * The opposite convention -- unknown means entitled -- would make an outage the
+ * way to obtain a paid feature, and would do it silently.
+ */
+export interface EntitlementSet {
+  resolved: boolean
+  plan: string | null
+  features: Readonly<Record<string, { enabled: boolean; limit: number | null }>>
+}
+
+export const NO_ENTITLEMENTS: EntitlementSet = { resolved: false, plan: null, features: {} }
+
+/** Tenant-configured feature switches, from the tenant settings row. */
+export type TenantFeatures = Readonly<Record<string, boolean>>
+
+export const NO_TENANT_FEATURES: TenantFeatures = {}
+
+/**
+ * Everything a navigation decision depends on, assembled once per render.
+ *
+ * Built on the server in `apps/web/src/lib/access.ts`. Nothing in
+ * `packages/ui` builds one, and nothing in the browser does: the shell renders
+ * a decision, it does not make one.
+ */
+export interface AccessContext {
+  access: ProductAccess
+  /** From the product's own capability list. */
+  capabilities: readonly string[]
+  entitlements: EntitlementSet
+  features: TenantFeatures
+  /**
+   * The verified session's organization roles.
+   *
+   * Carried separately from `access` because `ownerOnly` is a statement about
+   * the organization -- the person who owns the account -- rather than about
+   * product authority, and collapsing the two would make an owner and an
+   * administrator indistinguishable.
+   */
+  organizationRoles: readonly string[]
+}
+
+/* -------------------------------------------------------------------------- */
+/* What the resolver produces                                                 */
+/* -------------------------------------------------------------------------- */
+
+export type ModuleState = 'available' | 'locked'
+
+export interface ResolvedModule {
+  id: string
+  label: string
+  icon: IconName
+  href: string
+  order: number
+  state: ModuleState
+  /** Set on a locked module, and rendered in its accessible name. */
+  lockedReason?: string
+}
+
+export interface ResolvedGroup {
+  id: string
+  label: string
+  order: number
+  items: ResolvedModule[]
+}
+
+/* -------------------------------------------------------------------------- */
+/* Resolution                                                                 */
+/* -------------------------------------------------------------------------- */
+
+function holdsEveryPermission(
+  access: ProductAccess,
+  required: readonly ProductPermission[] | undefined,
+): boolean {
+  if (!access.granted) return false
+  if (required === undefined || required.length === 0) return true
+  return required.every((permission) => access.permissions.includes(permission))
+}
+
+/**
+ * The authorization half of the decision, and the only half the edge can make.
+ *
+ * Capability, product access, the two role gates and the permissions -- every
+ * one of them decidable from the verified session cookie and the compiled-in
+ * capability list, with no network call. That property is why the middleware
+ * can call this: verifying anything against a remote service on every request
+ * is what put a redirect loop in front of the whole Control Plane, and the
+ * session design exists to keep it out of the hot path.
+ *
+ * A module this returns false for is hidden from the sidebar **and** refused at
+ * the URL, from this one function. That is what makes "navigation hiding is not
+ * authorization" a property of the code rather than a note in a document.
+ */
+export function canOpenModule(module: ProductModule, context: AccessContext): boolean {
+  if (!context.access.granted) return false
+
+  const capabilities = module.requiredCapabilities ?? []
+  if (!capabilities.every((name) => context.capabilities.includes(name))) return false
+
+  if (module.ownerOnly === true && !context.organizationRoles.includes('organization_owner')) {
+    return false
+  }
+  if (module.productAdminOnly === true && context.access.role !== 'product_admin') return false
+
+  return holdsEveryPermission(context.access, module.requiredPermissions)
+}
+
+/** Whether the plan includes a feature. An unresolved set includes nothing. */
+export function isEntitled(entitlements: EntitlementSet, feature: string): boolean {
+  if (!entitlements.resolved) return false
+  return entitlements.features[feature]?.enabled === true
+}
+
+/** Whether the tenant has switched a feature on. Absent means off. */
+export function isFeatureEnabled(features: TenantFeatures, name: string): boolean {
+  return features[name] === true
+}
+
+/**
+ * Turn the registry into the sidebar this caller should see.
+ *
+ * One registry, resolved once. There is no branch on role anywhere in this
+ * function or in any component that renders its output -- the alternative, a
+ * sidebar per role, is the shape that quietly stops matching the server's rules
+ * the first time somebody adds a role.
+ *
+ * Ordering is by group order and then module order, both explicit. Ties fall
+ * back to the label so the result is stable rather than dependent on the order
+ * somebody happened to type the modules in.
+ */
+export function resolveNavigation(
+  config: NavigationConfig,
+  context: AccessContext,
+): ResolvedGroup[] {
+  const byGroup = new Map<string, ResolvedModule[]>()
+
+  for (const module of config.modules) {
+    if (!canOpenModule(module, context)) continue
+
+    const missingEntitlement = (module.requiredEntitlements ?? []).find(
+      (feature) => !isEntitled(context.entitlements, feature),
+    )
+    const missingFeature = (module.requiredFeatures ?? []).find(
+      (name) => !isFeatureEnabled(context.features, name),
+    )
+
+    let state: ModuleState = 'available'
+    let lockedReason: string | undefined
+
+    if (missingEntitlement !== undefined || missingFeature !== undefined) {
+      // Hidden unless the product asked for the upgrade affordance. A locked
+      // entry is an advertisement, and advertising is a decision a product
+      // makes per module rather than something the shell does on its behalf.
+      if ((module.lockedBehavior ?? 'hide') === 'hide') continue
+      state = 'locked'
+      lockedReason =
+        missingEntitlement !== undefined
+          ? 'Not included in your plan'
+          : 'Not enabled for your organisation'
+    }
+
+    const items = byGroup.get(module.group) ?? []
+    items.push({
+      id: module.id,
+      label: module.label,
+      icon: module.icon,
+      href: module.href,
+      order: module.order,
+      state,
+      ...(lockedReason === undefined ? {} : { lockedReason }),
+    })
+    byGroup.set(module.group, items)
+  }
+
+  return [...config.groups]
+    .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label))
+    .map((group) => ({
+      id: group.id,
+      label: group.label,
+      order: group.order,
+      items: (byGroup.get(group.id) ?? []).sort(
+        (a, b) => a.order - b.order || a.label.localeCompare(b.label),
+      ),
+    }))
+    // A heading with nothing under it reads as a section that failed to load.
+    .filter((group) => group.items.length > 0)
+}
+
+/**
+ * Which module owns a pathname, for the route gate.
+ *
+ * Longest match wins, so the team route is the team module rather than the
+ * settings module that is also a prefix of it. Matching is exact or on a full
+ * path segment, so a route named like a longer word is not admitted by the
+ * shorter module registered above it.
+ *
+ * A pathname no module claims returns undefined, and the middleware admits it.
+ * That is deliberate: the registry describes navigation, not the whole route
+ * table, and a product page with no sidebar entry is a normal thing. The
+ * session gate above it still applies, and a page needing more than a session
+ * checks for itself.
+ */
+export function moduleForPath(
+  config: NavigationConfig,
+  pathname: string,
+): ProductModule | undefined {
+  let best: ProductModule | undefined
+  for (const module of config.modules) {
+    if (pathname !== module.href && !pathname.startsWith(module.href + '/')) continue
+    if (best === undefined || module.href.length > best.href.length) best = module
+  }
+  return best
 }

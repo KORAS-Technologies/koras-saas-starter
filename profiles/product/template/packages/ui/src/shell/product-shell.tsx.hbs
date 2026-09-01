@@ -1,0 +1,256 @@
+'use client'
+
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import { usePathname } from 'next/navigation'
+import type { ResolvedGroup, TenantBranding } from '@{{projectSlug}}/branding'
+import { cn } from '../lib/cn'
+import { ProductHeader } from './product-header'
+import { ProductNavigation } from './product-navigation'
+
+/**
+ * The signed-in frame every page of this product renders inside.
+ *
+ * It renders a decision; it does not make one. The navigation arriving here has
+ * already been resolved on the server against the caller's permissions, the
+ * product's capabilities, the tenant's features and the organization's plan, so
+ * there is nothing in this file that reads a cookie, calls an API, or knows
+ * what a role is. A component that could decide access is a component somebody
+ * will eventually rely on to decide it -- and this one runs in the browser,
+ * where the caller owns the machine.
+ *
+ * That is also why every prop is plain data. It crosses the server/client
+ * boundary, so it has to serialise.
+ *
+ * The two pieces of state it does own are genuinely the browser's: whether the
+ * small-screen drawer is open, and whether the desktop sidebar is collapsed.
+ * Neither is worth a round trip and neither is worth a database column.
+ */
+
+export interface ShellIdentity {
+  /** The person's display name, falling back to their address. */
+  name?: string
+  email?: string
+  /** The organization this session acts for. Shown beside the product name. */
+  organizationName?: string
+  /** "Administrator" or "Member" -- what the caller is *in this product*. */
+  roleLabel?: string
+}
+
+const COLLAPSED_KEY = '{{projectSlug}}:sidebar-collapsed'
+
+export function AuthenticatedProductShell({
+  navigation,
+  tenant,
+  identity,
+  headerActions,
+  accountUrl,
+  children,
+}: {
+  navigation: ResolvedGroup[]
+  /** The customer's branding, already through `parseTenantBranding`. */
+  tenant: TenantBranding
+  identity: ShellIdentity
+  /**
+   * Search, a command palette, notifications -- whatever this product actually
+   * has.
+   *
+   * A slot rather than a set of built-in buttons. An icon that opens nothing is
+   * worse than an absent icon: it is a promise the product does not keep, and
+   * every generated product would ship three of them.
+   */
+  headerActions?: ReactNode
+  /**
+   * Where the Customer Portal lives, when this caller may manage the
+   * subscription there.
+   *
+   * Rendered as one outbound link in the profile menu and nothing more.
+   * Billing, plans, domains and organization membership belong to the portal;
+   * a product that reimplements them has two places to change a price.
+   */
+  accountUrl?: string
+  children: ReactNode
+}) {
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const pathname = usePathname()
+  const drawerId = useId()
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  const drawerRef = useRef<HTMLDivElement>(null)
+
+  // Read after mount rather than during render. The server has no local
+  // storage, so consulting it while rendering would produce different markup on
+  // the two sides and React would discard the whole tree with a hydration
+  // error -- for a preference about how wide a column is.
+  useEffect(() => {
+    try {
+      setCollapsed(window.localStorage.getItem(COLLAPSED_KEY) === 'true')
+    } catch {
+      // Private browsing, a blocked origin, a quota. A sidebar preference is
+      // not worth an error boundary; the default is a perfectly good sidebar.
+    }
+  }, [])
+
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((wasCollapsed) => {
+      const next = !wasCollapsed
+      try {
+        window.localStorage.setItem(COLLAPSED_KEY, String(next))
+      } catch {
+        // As above. The preference simply does not survive the session.
+      }
+      return next
+    })
+  }, [])
+
+  const closeDrawer = useCallback(() => {
+    setDrawerOpen(false)
+    // Focus goes back to the control that opened the panel. Without this it
+    // falls to the document body and the next Tab starts the page over.
+    toggleRef.current?.focus()
+  }, [])
+
+  // A navigation while the drawer is open leaves it open over the new page.
+  useEffect(() => setDrawerOpen(false), [pathname])
+
+  useEffect(() => {
+    if (!drawerOpen) return
+
+    const panel = drawerRef.current
+    // The drawer covers the page, so it is a dialog rather than a disclosure --
+    // and a dialog that lets Tab walk out into the content behind it is a
+    // dialog only for people using a pointer. Two rules, and no library: wrap
+    // at the ends, and start inside.
+    const focusable = () =>
+      [
+        ...(panel?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? []),
+      ].filter((element) => element.offsetParent !== null)
+
+    focusable()[0]?.focus()
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeDrawer()
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const elements = focusable()
+      if (elements.length === 0) return
+      const first = elements[0] as HTMLElement
+      const last = elements[elements.length - 1] as HTMLElement
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [drawerOpen, closeDrawer])
+
+  return (
+    <div className="flex min-h-screen flex-col bg-surface-muted">
+      <ProductHeader
+        tenant={tenant}
+        identity={identity}
+        accountUrl={accountUrl}
+        actions={headerActions}
+        drawerOpen={drawerOpen}
+        drawerId={drawerId}
+        onToggleDrawer={() => (drawerOpen ? closeDrawer() : setDrawerOpen(true))}
+        toggleRef={toggleRef}
+        collapsed={collapsed}
+        onToggleCollapsed={toggleCollapsed}
+      />
+
+      <div className="flex flex-1">
+        {/*
+          The desktop sidebar. Hidden below `lg`, where the same navigation is
+          rendered inside the drawer instead -- two placements of one component,
+          not two navigations.
+        */}
+        <aside
+          className={cn(
+            'hidden shrink-0 border-r border-line bg-surface lg:block',
+            collapsed ? 'w-18' : 'w-64',
+          )}
+        >
+          <div className="sticky top-0 py-4">
+            <ProductNavigation groups={navigation} collapsed={collapsed} label="Product" />
+          </div>
+        </aside>
+
+        {/*
+          Rendered in both states, hidden with `hidden`, so the toggle's
+          `aria-controls` points at an element that exists before it is used --
+          which is what lets a screen reader describe the control rather than
+          announcing a reference to nothing.
+        */}
+        <div
+          id={drawerId}
+          hidden={!drawerOpen}
+          className="fixed inset-0 z-50 lg:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Product navigation"
+        >
+          {/* Dismisses on a tap outside, like every drawer. Not the only way
+              out: Escape closes it, and so does the button inside. */}
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-hidden="true"
+            onClick={closeDrawer}
+            className="absolute inset-0 h-full w-full bg-black/40"
+          />
+          <div
+            ref={drawerRef}
+            className="relative flex h-full w-72 max-w-[85%] flex-col border-r border-line bg-surface"
+          >
+            <div className="flex items-center justify-end border-b border-line px-3 py-2">
+              <button
+                type="button"
+                onClick={closeDrawer}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-brand text-ink hover:bg-surface-muted"
+              >
+                <span className="sr-only">Close navigation</span>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  className="h-5 w-5"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path d="m6 6 12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto py-4">
+              <ProductNavigation groups={navigation} collapsed={false} label="Product, drawer" />
+            </div>
+          </div>
+        </div>
+
+        {/*
+          The skip link in the root layout targets `#main-content`, and this is
+          the only element in the signed-in area that answers to it. Pages
+          render their own heading; the shell renders none, so the document
+          outline stays the page's to own.
+        */}
+        <main id="main-content" className="min-w-0 flex-1">
+          {children}
+        </main>
+      </div>
+    </div>
+  )
+}

@@ -1,0 +1,60 @@
+import { NO_TENANT_FEATURES } from '@{{projectSlug}}/branding'
+import type { TenantFeatures } from '@{{projectSlug}}/branding'
+
+/**
+ * Which optional features this customer has switched on.
+ *
+ * The third of the three gates, and the only one that belongs entirely to the
+ * customer. A capability is what this repository was generated with, an
+ * entitlement is what the plan sold them, and a feature is what they chose to
+ * turn on out of what they already have.
+ *
+ * The column exists and always has: `tenant_settings.features`, a `jsonb`
+ * created in the first migration and isolated per tenant by row-level security.
+ * It has never had a reader. This is the reader's seam, and it is blocked on
+ * exactly the same missing piece as `tenant-branding.ts` — a customer-facing
+ * route on `services/api` that returns the calling tenant's settings, scoped by
+ * the RLS context the caller's token establishes.
+ *
+ * Both should be one route and one call. `tenant_settings` holds branding and
+ * features in the same row, so reading it twice would be two round trips for
+ * one row; whoever adds the endpoint should return both and split the answer
+ * here.
+ *
+ * To finish it: add the route, call it through `@{{projectSlug}}/api-client`
+ * forwarding the caller's credentials, and pass the `features` object through
+ * `parseTenantFeatures` — which is already what the last line does.
+ *
+ * Never throws. An unreadable settings row means a customer's optional features
+ * are off, not that their product is down.
+ */
+export async function tenantFeatures(
+  organizationId: string | undefined,
+): Promise<TenantFeatures> {
+  if (!organizationId) return NO_TENANT_FEATURES
+
+  try {
+    const stored: unknown = null // ← the read described above goes here
+    return parseTenantFeatures(stored)
+  } catch (error) {
+    console.error('[features] the tenant settings could not be read:', error)
+    return NO_TENANT_FEATURES
+  }
+}
+
+/**
+ * Keep the booleans and drop everything else.
+ *
+ * The column is customer-writable `jsonb`, so it can hold anything. A feature
+ * whose value is the string "false", or a number, or an object, is not a switch
+ * that is on — and coercing it would make `{"beta": "no"}` enable the beta.
+ */
+export function parseTenantFeatures(raw: unknown): TenantFeatures {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return NO_TENANT_FEATURES
+
+  const features: Record<string, boolean> = {}
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === 'boolean') features[name] = value
+  }
+  return features
+}

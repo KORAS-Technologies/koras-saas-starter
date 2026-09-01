@@ -1,0 +1,112 @@
+'use client'
+
+import type { ReactNode, RefObject } from 'react'
+import type { TenantBranding } from '@{{projectSlug}}/branding'
+import { ProductLogo } from '../brand/product-logo'
+import { ProductProfileMenu } from './profile-menu'
+import { WorkspaceBadge } from './workspace-badge'
+import type { ShellIdentity } from './product-shell'
+
+/**
+ * The authenticated header.
+ *
+ * Left: the way into the navigation, the product's mark, and which workspace
+ * this is. Right: who you are signed in as. That is the whole list, and it is
+ * short on purpose -- a header carrying search, notifications, help, a command
+ * palette and a switcher is a header nobody reads, and in a freshly generated
+ * product four of those five would open nothing.
+ *
+ * Primary navigation is never duplicated here. The sidebar is where modules
+ * live; a header that also lists them gives a reader two answers to "where am
+ * I" and a maintainer two places to add a page.
+ *
+ * The logo takes the tenant, because an image cannot cascade the way the colour
+ * tokens do. It is the one place in the shell a customer's mark appears, and
+ * `ProductLogo` decides which mark that is.
+ */
+export function ProductHeader({
+  tenant,
+  identity,
+  accountUrl,
+  actions,
+  drawerOpen,
+  drawerId,
+  onToggleDrawer,
+  toggleRef,
+  collapsed,
+  onToggleCollapsed,
+}: {
+  tenant: TenantBranding
+  identity: ShellIdentity
+  accountUrl?: string
+  actions?: ReactNode
+  drawerOpen: boolean
+  drawerId: string
+  onToggleDrawer: () => void
+  toggleRef: RefObject<HTMLButtonElement | null>
+  collapsed: boolean
+  onToggleCollapsed: () => void
+}) {
+  return (
+    <header className="sticky top-0 z-40 border-b border-line bg-surface">
+      <div className="flex h-18 items-center gap-3 px-4 sm:px-6">
+        {/*
+          Two controls, not one, because they do different things and only one
+          of them is ever visible. Below `lg` the sidebar is a drawer and this
+          opens it; at `lg` and above the sidebar is always there and the
+          control narrows it. Sharing one button would mean one accessible name
+          for two behaviours.
+        */}
+        <button
+          ref={toggleRef}
+          type="button"
+          onClick={onToggleDrawer}
+          aria-expanded={drawerOpen}
+          aria-controls={drawerId}
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-brand border border-line text-ink hover:bg-surface-muted lg:hidden"
+        >
+          <span className="sr-only">{drawerOpen ? 'Close navigation' : 'Open navigation'}</span>
+          <MenuGlyph open={drawerOpen} />
+        </button>
+
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          aria-pressed={collapsed}
+          className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-brand border border-line text-ink hover:bg-surface-muted lg:inline-flex"
+        >
+          <span className="sr-only">
+            {collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
+          </span>
+          <MenuGlyph open={false} />
+        </button>
+
+        <ProductLogo href="/dashboard" tenant={tenant} size="sm" />
+
+        <WorkspaceBadge name={identity.organizationName} />
+
+        <div className="ml-auto flex items-center gap-2">
+          {actions}
+          <ProductProfileMenu identity={identity} accountUrl={accountUrl} />
+        </div>
+      </div>
+    </header>
+  )
+}
+
+function MenuGlyph({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      className="h-5 w-5"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {open ? <path d="m6 6 12 12M18 6 6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
+    </svg>
+  )
+}

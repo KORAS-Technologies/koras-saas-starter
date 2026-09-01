@@ -38,6 +38,8 @@ All planning and reference documents live in `docs/`, matching
 | `docs/FOLLOW_UPS.md`             | Work identified and deliberately left undone, with the reason |
 | `docs/NEW_PRODUCT_WALKTHROUGH.md` | A worked example: new product to visible in the console |
 | `docs/PRODUCT_FRONTEND.md`       | The generated product's frontend: tokens, branding, pages |
+| `docs/PRODUCT_APP_SHELL.md`      | The authenticated product shell: navigation registry, access model, product settings |
+| `docs/PRODUCT_SHELL_AUDIT.md`    | What the signed-in surface was before that shell, and the gaps it closes |
 
 ## Repository layout (target state)
 

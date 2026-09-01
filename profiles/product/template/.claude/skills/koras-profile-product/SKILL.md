@@ -73,6 +73,46 @@ it consumes the KORAS Control Plane, it does not administer it.
 - Cover loading, empty, success, error, unauthorized and forbidden states.
   "Forbidden" is a real state in a multi-tenant product, not an edge case.
 
+## The authenticated product shell
+
+Every signed-in page renders inside one shell, and its sidebar comes from one
+registry. Both are inherited from the starter; neither is a component to fork.
+
+- **Add a module, do not edit the shell.** A new area is an entry in
+  `navigation` in `packages/branding/src/index.ts` — id, label, icon, href,
+  group, order, and whatever gates it needs. Nothing in `packages/ui/src/shell`
+  changes for a new page, and a change there is a change to every product.
+- **Never branch on a role to choose a sidebar.** `resolveNavigation` takes the
+  whole registry and the caller's access and returns what survives. A sidebar
+  per role stops matching the server's rules the first time a role is added,
+  and it fails in the direction that shows people things.
+- **The registry is also the route gate.** `src/middleware.ts` looks the
+  pathname up with `moduleForPath` and refuses with `canOpenModule` — the same
+  function the sidebar uses. A module hidden for an authorization reason must
+  therefore also be refused at its URL; if you find yourself wanting one without
+  the other, the design has drifted.
+- **Hiding is not authorization, still.** The middleware gate covers
+  permissions, product access and the two role gates. It deliberately does not
+  cover entitlements or tenant features, because those need a network read that
+  must stay out of the edge runtime — a page performing a plan-gated operation
+  checks the entitlement server-side itself.
+- **Four gates, and they fail differently.** A missing capability or permission
+  hides a module. A missing entitlement or feature hides it by default and can
+  be shown locked, with an upgrade hint, when the product asks. An
+  authorization failure is never locked: a locked entry advertises that an area
+  exists.
+- **Permissions are a closed set** in `packages/permissions/src/index.ts`, with
+  the role-to-permission map beside them. Add both halves or the module is
+  hidden from everybody and looks like a bug in the shell.
+- **Product access is one function.** `productAccessFromOrganizationRoles` is
+  the seam a per-product assignment store replaces. Do not scatter a second
+  derivation beside it.
+- **Team & Access is not the portal's Users page.** Organization membership,
+  invitations, billing, subscriptions, domains and single sign-on belong to the
+  KORAS Customer Portal. A product links out to it and reimplements none of it.
+
+See `docs/PRODUCT_APP_SHELL.md` in the starter for the full standard.
+
 ## Testing
 
 Alongside the common expectations in `koras-testing`, a product change is not

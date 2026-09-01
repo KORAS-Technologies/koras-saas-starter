@@ -1,0 +1,137 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+import { AccessDenied, Card, Container } from '@{{projectSlug}}/ui'
+import { can, signedInContext } from '../../../lib/access'
+
+/**
+ * Product settings, general.
+ *
+ * What this product is, what this build contains, and what this customer's plan
+ * resolved to -- with the file that decides each one named beside it. That is a
+ * real page rather than a placeholder: it is the answer to "why can I not see
+ * X", which in a product with four independent gates is the question somebody
+ * asks every week.
+ *
+ * It deliberately does not offer controls. Renaming the product, changing its
+ * colours and adding a module are edits to `packages/branding/src/index.ts` --
+ * one file, in the product's own repository, reviewed like any other change --
+ * and a settings screen that wrote them at runtime would put a second authority
+ * beside the one the whole frontend already reads from.
+ *
+ * Subscriptions, billing, domains, single sign-on and organization membership
+ * are **not** here and never will be. They belong to the KORAS Customer Portal.
+ */
+export const dynamic = 'force-dynamic'
+
+export default async function SettingsPage() {
+  const context = await signedInContext()
+
+  // Checked here as well as in the middleware, which is not duplication: the
+  // middleware guards the URL, and this guards the render. A page is reachable
+  // by more than one route, and a check that lives only at the edge is a check
+  // the next rewrite can lose.
+  if (context === null || !can(context.access, 'settings.read')) {
+    return <AccessDenied />
+  }
+
+  const { product } = productConfig
+  const { entitlements, capabilities } = context.access
+
+  return (
+    <div className="py-12">
+      <Container>
+        <h1 className="font-display text-3xl font-bold tracking-tight text-ink">Settings</h1>
+        <p className="mt-3 max-w-2xl leading-7 text-ink-muted">
+          What {product.name} is, what this deployment contains, and what your organisation&rsquo;s
+          plan includes.
+        </p>
+
+        <Card className="mt-8 max-w-3xl">
+          <h2 className="font-display text-lg font-bold text-ink">Product</h2>
+          <dl className="mt-4 space-y-3 text-sm leading-6">
+            <Row label="Name" value={product.name} />
+            <Row label="Identifier" value={product.slug} />
+            <Row label="Tagline" value={product.tagline} />
+          </dl>
+          <p className="mt-4 text-sm text-ink-muted">
+            Configured in <code className="text-ink">packages/branding/src/index.ts</code>, which
+            is also where this product&rsquo;s colours, logo and sidebar modules are declared.
+          </p>
+        </Card>
+
+        <Card className="mt-6 max-w-3xl">
+          <h2 className="font-display text-lg font-bold text-ink">This deployment</h2>
+          <p className="mt-2 text-sm leading-6 text-ink-muted">
+            The components this repository was generated with. A sidebar module requiring one
+            that is absent is hidden rather than broken, and the list is fixed for the life of
+            the repository &mdash; adding one means generating with it.
+          </p>
+          <ul className="mt-4 flex flex-wrap gap-2">
+            {capabilities.map((capability) => (
+              <li
+                key={capability}
+                className="rounded-brand bg-surface-muted px-2.5 py-1 text-sm text-ink-muted"
+              >
+                {capability}
+              </li>
+            ))}
+          </ul>
+        </Card>
+
+        <Card className="mt-6 max-w-3xl">
+          <h2 className="font-display text-lg font-bold text-ink">Plan</h2>
+          {entitlements.resolved ? (
+            <>
+              <p className="mt-2 text-sm leading-6 text-ink-muted">
+                Resolved from the KORAS platform for your organisation.
+              </p>
+              <dl className="mt-4 space-y-3 text-sm leading-6">
+                <Row label="Plan" value={entitlements.plan ?? 'None recorded'} />
+                <Row
+                  label="Included features"
+                  value={
+                    Object.keys(entitlements.features).length === 0
+                      ? 'None'
+                      : Object.entries(entitlements.features)
+                          .filter(([, value]) => value.enabled)
+                          .map(([name]) => name)
+                          .join(', ')
+                  }
+                />
+              </dl>
+            </>
+          ) : (
+            <p className="mt-2 text-sm leading-6 text-ink-muted">
+              Not available. This product is not reading plan entitlements yet &mdash;{' '}
+              <code className="text-ink">apps/web/src/lib/entitlements.ts</code> records what is
+              still required and why. Nothing is gated by plan until it is, so no part of the
+              product is hidden for this reason.
+            </p>
+          )}
+          {product.accountUrl === '' ? (
+            <p className="mt-4 text-sm text-ink-muted">
+              Subscriptions and billing are managed in the KORAS account portal. Set{' '}
+              <code className="text-ink">product.accountUrl</code> to link to it from here and
+              from the profile menu.
+            </p>
+          ) : (
+            <p className="mt-4 text-sm text-ink-muted">
+              <a href={product.accountUrl} className="font-semibold text-brand underline">
+                Manage your subscription
+              </a>{' '}
+              in the KORAS account portal.
+            </p>
+          )}
+        </Card>
+      </Container>
+    </div>
+  )
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1 border-b border-line pb-3 last:border-0 last:pb-0 sm:flex-row sm:gap-6">
+      <dt className="w-48 shrink-0 font-medium text-ink-muted">{label}</dt>
+      <dd className="text-ink">{value === '' ? '—' : value}</dd>
+    </div>
+  )
+}

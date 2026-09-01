@@ -1,0 +1,124 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+import { ROLE_PERMISSIONS } from '@{{projectSlug}}/permissions'
+import { AccessDenied, Card, Container } from '@{{projectSlug}}/ui'
+import { can, roleLabel, signedInContext } from '../../../../lib/access'
+
+/**
+ * Team & Access: who in this organisation may use this product, and as what.
+ *
+ * **This is not the Customer Portal's Users page**, and the difference is the
+ * point. Inviting somebody, removing them, and changing their organisation role
+ * are account operations and belong to the portal, which owns the identity.
+ * This page answers a narrower question -- of the people who already exist,
+ * which may open this product, and with which product role -- and creates no
+ * identity records of its own. One person can be an administrator here and a
+ * viewer in another KORAS product; that is the model working, not a bug.
+ *
+ * What it shows today is the derivation, honestly. There is no per-product
+ * assignment store yet: `productAccessFromOrganizationRoles` derives product
+ * access from the organisation role the verified session carries, and inventing
+ * a store would mean new tables, a new API and an authority the Control Plane
+ * does not know about. So the page states the mapping, shows the caller their
+ * own access, and does not render an empty member table above buttons that
+ * cannot act.
+ *
+ * When the assignment store arrives, this is where its table goes, and
+ * `team.manage` is the permission that gates writing to it. The read gate is
+ * already real, and is already exercised on every load.
+ */
+export const dynamic = 'force-dynamic'
+
+export default async function TeamAccessPage() {
+  const context = await signedInContext()
+  if (context === null || !can(context.access, 'team.read')) {
+    return <AccessDenied />
+  }
+
+  const { access } = context.access
+  const manages = can(context.access, 'team.manage')
+
+  return (
+    <div className="py-12">
+      <Container>
+        <h1 className="font-display text-3xl font-bold tracking-tight text-ink">Team &amp; Access</h1>
+        <p className="mt-3 max-w-3xl leading-7 text-ink-muted">
+          Who in your organisation may use {productConfig.product.name}, and what they may do here.
+          Adding and removing people from the organisation itself is done in the KORAS account
+          portal; this page governs access to this product only.
+        </p>
+
+        <Card className="mt-8 max-w-3xl">
+          <h2 className="font-display text-lg font-bold text-ink">Your access</h2>
+          <dl className="mt-4 space-y-3 text-sm leading-6">
+            <Row label="Signed in as" value={context.member.email ?? context.member.userId} />
+            <Row label="Role in this product" value={roleLabel(context.access) ?? 'None'} />
+            <Row label="Organisation roles" value={context.member.organizationRoles.join(', ')} />
+            <Row label="Permissions" value={access.permissions.join(', ')} />
+          </dl>
+        </Card>
+
+        <Card className="mt-6 max-w-3xl">
+          <h2 className="font-display text-lg font-bold text-ink">How access is decided</h2>
+          <p className="mt-2 text-sm leading-6 text-ink-muted">
+            Each organisation role carries a set of permissions in this product. The mapping lives
+            in <code className="text-ink">packages/permissions/src/index.ts</code> and is the same
+            one the sidebar and every route check read &mdash; a module hidden from the navigation
+            is refused at its URL by the same rule, not merely left out of the menu.
+          </p>
+          <table className="mt-4 w-full border-collapse text-left text-sm">
+            <caption className="sr-only">
+              Organisation roles and the product permissions each carries
+            </caption>
+            <thead>
+              <tr className="border-b border-line">
+                <th scope="col" className="py-2 pr-4 font-semibold text-ink">
+                  Organisation role
+                </th>
+                <th scope="col" className="py-2 font-semibold text-ink">
+                  Permissions in this product
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(ROLE_PERMISSIONS).map(([role, permissions]) => (
+                <tr key={role} className="border-b border-line last:border-0 align-top">
+                  <th scope="row" className="py-2 pr-4 font-medium text-ink-muted">
+                    {role}
+                  </th>
+                  <td className="py-2 text-ink-muted">{permissions.join(', ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+
+        <Card className="mt-6 max-w-3xl">
+          <h2 className="font-display text-lg font-bold text-ink">Per-person assignment</h2>
+          <p className="mt-2 text-sm leading-6 text-ink-muted">
+            Not available yet. Access to this product is currently derived from each person&rsquo;s
+            organisation role, so everyone with a role in your organisation can open{' '}
+            {productConfig.product.name}. Granting or revoking one person&rsquo;s access to this
+            product independently needs an assignment store this repository does not have;{' '}
+            <code className="text-ink">packages/permissions/src/index.ts</code> names the single
+            function that changes when it arrives.
+          </p>
+          {manages && (
+            <p className="mt-3 text-sm leading-6 text-ink-muted">
+              You hold <code className="text-ink">team.manage</code>, so the controls for it will
+              appear here for you once they exist.
+            </p>
+          )}
+        </Card>
+      </Container>
+    </div>
+  )
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1 border-b border-line pb-3 last:border-0 last:pb-0 sm:flex-row sm:gap-6">
+      <dt className="w-48 shrink-0 font-medium text-ink-muted">{label}</dt>
+      <dd className="break-words text-ink">{value === '' ? '—' : value}</dd>
+    </div>
+  )
+}
