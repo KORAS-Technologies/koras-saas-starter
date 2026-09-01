@@ -8,6 +8,7 @@ import {
   isEntitled,
   isFeatureEnabled,
   moduleForPath,
+  parseTenantFeatures,
   productConfig,
   resolveNavigation,
 } from './index.js'
@@ -355,4 +356,37 @@ test('an administrator sees the administration group', () => {
     context({ access: ADMIN, capabilities: productConfig.product.capabilities }),
   )
   assert.deepEqual(ids(resolved), ['home', 'team', 'settings'])
+})
+
+/* -------------------------------------------------------------------------- */
+/* The feature parser                                                         */
+/* -------------------------------------------------------------------------- */
+
+test('a feature switch must be a boolean, not something boolean-ish', () => {
+  // `tenant_settings.features` is customer-writable jsonb. Coercing would make
+  // every one of these enable the feature, and "no" enabling the beta is the
+  // kind of bug nobody looks for.
+  const parsed = parseTenantFeatures({
+    real: true,
+    off: false,
+    stringy: 'true',
+    no: 'no',
+    numeric: 1,
+    nested: { enabled: true },
+    listy: ['true'],
+    nulled: null,
+  })
+  assert.deepEqual(parsed, { real: true, off: false })
+  assert.equal(isFeatureEnabled(parsed, 'stringy'), false)
+  assert.equal(isFeatureEnabled(parsed, 'numeric'), false)
+})
+
+test('a malformed features column is no features rather than a crash', () => {
+  for (const raw of [null, undefined, 'features', 42, ['beta'], true]) {
+    assert.deepEqual(parseTenantFeatures(raw), NO_TENANT_FEATURES)
+  }
+})
+
+test('an empty features object is a valid answer', () => {
+  assert.deepEqual(parseTenantFeatures({}), {})
 })

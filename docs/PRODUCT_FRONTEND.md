@@ -246,23 +246,60 @@ costs one token rather than the whole brand.
 `packages/branding/src/branding.test.ts` is that argument, in twelve tests that
 run as part of the generated project's own `pnpm test`.
 
-### The one piece still to wire up
+### How it is read
 
-`apps/web/src/lib/tenant-branding.ts` returns nothing today, and says exactly
-why. The column exists and the whole frontend downstream of it is finished; what
-does not exist is a customer-facing route on `services/api` returning the
-calling tenant's settings. `services/api` currently serves `health` and the
-private `platform` router, and adding a customer-facing route is a decision
-about the API's surface — authentication, tenant context, caching, rate limits —
-rather than a frontend change.
+`GET /api/v1/tenant/settings` on `services/api`, added 2026-09-01 and the first
+route in this API a browser reaches. It answers with the tenant's name, its
+slug, its stored branding and its feature switches — one row, one call, because
+the shell paints itself from the branding and resolves its navigation from the
+features on the same page load, and two endpoints could disagree about which
+version of that row a page was rendered from.
 
-To finish it: add the route, scoped by the RLS context the caller's token
-establishes and **never** by a tenant id from the browser; call it from that
-file; pass the response through `parseTenantBranding`, which is already what the
-last line does.
+```
+apps/web/src/lib/tenant-settings.ts    the read, cached per render
+        |
+tenant-branding.ts     parseTenantBranding   -> BrandScope
+tenant-features.ts     parseTenantFeatures   -> resolveNavigation
+        |
+the organisation's name                      -> the workspace badge
+```
 
-Until then a signed-in customer sees the product's own branding, which is the
-correct fallback and not a broken state.
+`tenant-settings.ts` wraps the call in React's `cache`, so the three readers
+stay separate functions with separate reasons while the API sees one request per
+render. Without it the shell would make three identical authenticated calls per
+navigation.
+
+**There is no tenant identifier anywhere in that path.** The route takes no
+parameter for one; `require_tenant` resolves the tenant from a token the API
+verified against ZITADEL, and row-level security scopes the read to it. A client
+that could name a tenant would be a client somebody could point at another one.
+
+### What resolving a tenant needed first
+
+Worth knowing, because it is the reason this route did not exist for so long.
+
+Every policy in `00002_rls_policies.sql` is written as
+`<column> = public.current_tenant_id()`, and that setting is a tenant's primary
+key. A request from a customer's browser has no such thing: a verified token
+names a ZITADEL *organization*, and the mapping from organization to tenant row
+lives in the very table the policies protect. So the first read of any customer
+request was the one read no policy admitted — and `resolve_tenant` papered over
+it by fabricating a context from the organization id, which would have tried to
+cast a numeric organization id to a `uuid` the moment any route used it.
+
+`00004_tenant_settings_read.sql` gives the policies a second key the request
+genuinely has. `public.current_organization_id()` reads a transaction-local
+setting, and one permissive select policy on `tenants` admits the single row
+whose `zitadel_org_id` matches. Nothing new is trusted: that value comes from
+the same verified token the tenant id already did, and it is set by one
+function, in one place, for one query.
+
+The alternative was a `security definer` function that looks the tenant up with
+the policies suspended. It would have worked, and it is a privilege escalation
+kept narrow by convention — nothing stops the next function added beside it from
+returning more. `supabase/tests/040_organization_lookup.sql` is what makes the
+narrowness of the chosen route checkable: the lookup opens for exactly one row,
+reaches no settings without tenant context, and grants no write.
 
 ---
 

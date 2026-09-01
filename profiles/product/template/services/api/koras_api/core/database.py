@@ -1,8 +1,12 @@
-"""The database engine and the startup check, for a product.
+"""The request sessions and the startup check, for a product.
 
 Per profile rather than shared: the two profiles differ in exactly the part
 that matters here, and a `_shared` template may not also exist in a profile.
 The logic both need lives in `koras_database`; this file is the wiring.
+
+The pool itself moved to `core/engine.py` when the tenant lookup became a real
+query: this module depends on a resolved tenant, resolving one needs a session,
+and a module cannot import what imports it.
 """
 
 from collections.abc import AsyncGenerator
@@ -14,13 +18,11 @@ from koras_database import (
     set_rls_context,
     verify_connection_enforces_rls,
 )
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from .engine import SessionLocal
 from .settings import settings
 from .tenant import TenantDep
-
-engine = create_async_engine(settings.database_url, pool_size=settings.database_pool_size)
-SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
 async def get_db(tenant: TenantDep) -> AsyncGenerator[AsyncSession, None]:
@@ -54,10 +56,16 @@ async def get_platform_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-# An alias rather than `Depends(...)` in each signature, because the contract
+# Aliases rather than `Depends(...)` in each signature, because the contract
 # test reads the router's handler signatures and a parenthesis inside one puts
 # the whole route beyond its regex -- silently, as a route it stops checking
 # rather than as a failure.
+#
+# The two are not interchangeable and the names say so. `DbSession` is scoped to
+# one tenant and is what every customer-facing route takes; `PlatformSession`
+# can read and write every tenant row and is reachable from one router, which
+# admits a machine identity alone.
+DbSession = Annotated[AsyncSession, Depends(get_db)]
 PlatformSession = Annotated[AsyncSession, Depends(get_platform_session)]
 
 

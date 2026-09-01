@@ -839,6 +839,33 @@ export type TenantFeatures = Readonly<Record<string, boolean>>
 export const NO_TENANT_FEATURES: TenantFeatures = {}
 
 /**
+ * Keep the booleans and drop everything else.
+ *
+ * `tenant_settings.features` is customer-writable `jsonb`, so it can hold
+ * anything. A feature whose value is the string "false", or a number, or an
+ * object, is not a switch that is on -- and coercing it would make
+ * `{ "beta": "no" }` enable the beta.
+ *
+ * The same argument as `parseTenantBranding`, with a smaller blast radius: a
+ * feature name never reaches a stylesheet, so the risk here is a wrong gate
+ * rather than injected CSS. A wrong gate is still a customer seeing an area
+ * they did not enable, which is worth one `typeof`.
+ *
+ * Lives here rather than in the application for the same reason the branding
+ * parser does: it is the boundary between what a customer stored and what this
+ * product acts on, and a boundary in a package can be tested.
+ */
+export function parseTenantFeatures(raw: unknown): TenantFeatures {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return NO_TENANT_FEATURES
+
+  const features: Record<string, boolean> = {}
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === 'boolean') features[name] = value
+  }
+  return features
+}
+
+/**
  * Everything a navigation decision depends on, assembled once per render.
  *
  * Built on the server in `apps/web/src/lib/access.ts`. Nothing in

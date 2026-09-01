@@ -6,6 +6,7 @@ import { currentMember, type MemberSession } from './session'
 import { tenantBranding } from './tenant-branding'
 import { tenantEntitlements } from './entitlements'
 import { tenantFeatures } from './tenant-features'
+import { tenantSettings } from './tenant-settings'
 
 /**
  * Everything the signed-in area needs to know about its caller, assembled once.
@@ -30,24 +31,32 @@ export interface SignedInContext {
   access: AccessContext
   /** The customer's branding, already validated. Ready for `BrandScope`. */
   tenant: TenantBranding
+  /** What the customer calls themselves, for the workspace badge. */
+  organizationName?: string
 }
 
 export async function signedInContext(): Promise<SignedInContext | null> {
   const member = await currentMember()
   if (member === null) return null
 
-  // Three independent reads, so they run together. Sequentially they would put
-  // three round trips in front of every navigation in the product; the branding
-  // one alone is enough to be felt.
-  const [tenant, entitlements, features] = await Promise.all([
-    tenantBranding(member.organizationId),
+  // Four awaits, two requests. The first three all resolve through
+  // `tenantSettings`, which React's `cache` de-duplicates within one render
+  // pass — so the product's API is called once and the Control Plane once,
+  // concurrently, however many readers there are.
+  const [settings, tenant, features, entitlements] = await Promise.all([
+    tenantSettings(),
+    tenantBranding(),
+    tenantFeatures(),
     tenantEntitlements(member.organizationId),
-    tenantFeatures(member.organizationId),
   ])
 
   return {
     member,
     tenant,
+    // The organisation's own name, when the read succeeded. Never the
+    // organization id: that is a uuid, and a uuid where a name belongs reads as
+    // a bug rather than as a workspace.
+    ...(settings === null || settings.name === '' ? {} : { organizationName: settings.name }),
     access: {
       access: productAccessFromOrganizationRoles(member.organizationRoles),
       capabilities: productConfig.product.capabilities,

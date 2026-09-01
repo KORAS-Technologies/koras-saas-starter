@@ -10,6 +10,15 @@ rests on. `docs/PRODUCT_FRONTEND.md` remains authoritative for the **public**
 surface — homepage, sign-in, sign-up — and for the design-token rules that both
 surfaces share.
 
+**This is a dated survey, written 2026-08-31, and it is not kept current.** Its
+value is the record of what the signed-in surface was before the shell, so it is
+not rewritten as the gaps close — the same rule
+`tests/docs/file-references.test.ts` applies to moved paths. Two of its findings
+have since changed: G6 and G7 closed on 2026-09-01 when
+`GET /api/v1/tenant/settings` was added, so the tenant settings row now has a
+reader and customer branding resolves at runtime. `docs/PRODUCT_APP_SHELL.md` is
+the current standard; `docs/FOLLOW_UPS.md` F16 records the close.
+
 **Scope, stated once and enforced throughout.** This covers the `product`
 profile of `koras-saas-starter` only. The KORAS Control Plane repository is
 **out of scope and must not be modified**; so are the Control Plane admin UI and

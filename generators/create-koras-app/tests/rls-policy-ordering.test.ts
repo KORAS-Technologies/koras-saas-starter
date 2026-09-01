@@ -125,8 +125,55 @@ describe('the product ships its policies as a migration', () => {
       // necessity, and what keeps them narrow is that one transaction-local
       // flag, set by one dependency, reachable from one machine-only router.
       // Nothing derives it from a request.
+      //
+      // `current_organization_id()` is the customer's own first read, added by
+      // 00004. It is a third predicate rather than a loophole, and the
+      // difference is that it *is* a scope: it matches the single tenant whose
+      // `zitadel_org_id` equals a transaction-local setting taken from a token
+      // the API verified against ZITADEL -- the same provenance
+      // `current_tenant_id()` has, and unique on the table, so it can never
+      // admit two rows.
+      //
+      // It exists because the alternative is worse. Resolving a tenant is the
+      // one read that cannot be scoped by tenant, since finding the tenant is
+      // what establishes the scope; the usual answer is a `security definer`
+      // function with the policies suspended, which is a privilege escalation
+      // kept narrow by convention rather than by the database.
+      //
+      // Two properties keep it honest, and both are asserted below and in
+      // `supabase/tests/040_organization_lookup.sql`: it appears on `select`
+      // only, and it appears on `tenants` only. A write admitted by it, or a
+      // settings row reachable through it, would make it the loophole this
+      // comment says it is not.
       expect(statement, 'a policy with no tenant predicate admits every tenant').toMatch(
-        /current_tenant_id\(\)|is_provisioning\(\)/,
+        /current_tenant_id\(\)|is_provisioning\(\)|current_organization_id\(\)/,
+      )
+    }
+  })
+
+  it('lets the organization lookup select one table, and never write', () => {
+    // The narrowness the predicate above is allowed on the strength of.
+    //
+    // `current_organization_id()` is a lookup key, not a session: a caller
+    // holding one has proved which organization they belong to and nothing
+    // else. Admitting an update on it would let that fact rename somebody's
+    // tenant; admitting it on `tenant_settings` would let it read a row that
+    // resolving the tenant is the precondition for.
+    const sql = migrationSql(files)
+
+    for (const chunk of sql.split('create policy').slice(1)) {
+      // Bounded at the statement terminator. Splitting on the keyword leaves
+      // the following file's header comment attached to the last policy of the
+      // previous one, and 00004's header names the very function this is
+      // looking for -- so an unbounded chunk matched a policy that has nothing
+      // to do with it.
+      const statement = chunk.slice(0, chunk.indexOf(';'))
+      if (!/current_organization_id\(\)/.test(statement)) continue
+
+      const head = statement.slice(0, statement.indexOf('using'))
+      expect(head, 'the organization lookup must be select-only').toMatch(/for\s+select/)
+      expect(head, 'the organization lookup belongs on tenants alone').toMatch(
+        /on\s+public\.tenants/,
       )
     }
   })

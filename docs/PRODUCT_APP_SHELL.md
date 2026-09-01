@@ -256,10 +256,13 @@ generated with different component sets.
 ## 11. Feature model
 
 Tenant configuration, from the tenant settings features column — a `jsonb`
-column that has existed since the first migration and has never had a reader.
-This standard gives it one, through the same server-side read as branding, and
-defines the shape as a flat map of feature name to boolean. Unknown or
-unreadable means absent, which means the feature is off.
+column that existed from the first migration and had no reader until
+2026-09-01. It has one now: `GET /api/v1/tenant/settings` returns the branding
+and the features from the same row, `apps/web/src/lib/tenant-settings.ts` reads
+it once per render, and `parseTenantFeatures` keeps the booleans and drops
+everything else — a value of `"false"` or `1` is not a switch that is on, and
+coercing would let `{ "beta": "no" }` enable the beta. Unknown or unreadable
+means absent, which means the feature is off.
 
 ## 12. Entitlement model
 
@@ -389,10 +392,16 @@ Koras / product default   defaultBranding
         |
 Product brand             productConfig.brand
         |
-Tenant override           parseTenantBranding(stored branding)
+Tenant override           GET /api/v1/tenant/settings -> parseTenantBranding
         |
 Resolved theme            brandingFor, brandStyle, custom properties on BrandScope
 ```
+
+The read is live as of 2026-09-01 and closed F16. It takes no tenant
+identifier: the API resolves the tenant from the caller's verified token and
+row-level security scopes the row. `docs/PRODUCT_FRONTEND.md` records what
+resolving a tenant needed first, which is the reason the route did not exist
+sooner.
 
 The shell renders inside `BrandScope`, so the header, the sidebar, the active
 navigation state, primary actions and focus rings are the customer's colours
@@ -612,8 +621,9 @@ no data is written, and nothing in the Control Plane knows this work happened.
 ### Phase D — application wiring
 
 - [ ] `apps/web/src/lib/access.ts.hbs` — `signedInContext()`, `can()`, `roleLabel()`
-- [ ] `apps/web/src/lib/entitlements.ts.hbs` — the Control Plane seam
-- [ ] `apps/web/src/lib/tenant-features.ts.hbs` — the feature seam
+- [ ] `apps/web/src/lib/entitlements.ts.hbs` — the Control Plane seam (F17)
+- [ ] `apps/web/src/lib/tenant-settings.ts.hbs` — the tenant read, cached per render
+- [ ] `apps/web/src/lib/tenant-features.ts.hbs` — the feature reader
 - [ ] `apps/web/src/app/dashboard/layout.tsx.hbs` — render the shell
 - [ ] `apps/web/src/app/dashboard/settings/page.tsx.hbs`
 - [ ] `apps/web/src/app/dashboard/settings/team/page.tsx.hbs`

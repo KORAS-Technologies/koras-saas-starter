@@ -33,6 +33,7 @@ const nextConfig: NextConfig = {
   // Workspace packages ship TypeScript sources rather than built output, so
   // Next has to compile them itself.
   transpilePackages: [
+    '@{{projectSlug}}/api-client',
     '@{{projectSlug}}/auth',
     '@{{projectSlug}}/branding',
     '@{{projectSlug}}/config',

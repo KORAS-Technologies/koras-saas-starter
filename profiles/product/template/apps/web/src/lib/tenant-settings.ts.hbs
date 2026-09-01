@@ -1,0 +1,47 @@
+import { cache } from 'react'
+import { fetchTenantSettings } from '@{{projectSlug}}/api-client'
+import type { TenantSettings } from '@{{projectSlug}}/api-client'
+import { apiBaseUrl, providerToken } from './session'
+
+/**
+ * The customer's own tenant row, read once per render.
+ *
+ * Three things need it — the branding, the feature switches and the
+ * organisation's display name — and they are needed on the same page load by
+ * the same layout. `cache` from React de-duplicates within a single render
+ * pass, so the three readers below stay separate functions with separate
+ * reasons while the API sees one call.
+ *
+ * Wrapping it is not an optimisation to be cleaned up later. Without it the
+ * shell makes three identical authenticated requests per navigation, and the
+ * three answers can disagree: a customer who saves their branding mid-render
+ * gets a page painted from one version of the row and navigated from another.
+ *
+ * Server-side only. It reads the caller's provider token from a cookie, which
+ * a browser bundle has no business holding, and it talks to an origin the
+ * browser is not told about.
+ *
+ * **Never throws.** A tenant whose settings cannot be read sees the product's
+ * own branding and no optional features — the correct fallback, and the same
+ * state a customer who has configured nothing is in. Failing closed here would
+ * take the whole signed-in area down for a cosmetic lookup.
+ */
+export const tenantSettings = cache(async (): Promise<TenantSettings | null> => {
+  const token = await providerToken()
+  const baseUrl = apiBaseUrl()
+  if (!token || !baseUrl) return null
+
+  try {
+    return await fetchTenantSettings({ baseUrl, token })
+  } catch (error) {
+    // Server-side, so this reaches the service log and never the browser.
+    //
+    // Worth logging rather than swallowing: an unreachable API and a customer
+    // who has configured nothing produce exactly the same page, and only one of
+    // them is something to fix. That indistinguishability is the defect the
+    // signup plan catalogue had for a day, reported as "signup is unavailable"
+    // while the platform was answering 500 to every request.
+    console.error('[tenant] the tenant settings could not be read:', error)
+    return null
+  }
+})

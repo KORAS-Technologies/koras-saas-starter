@@ -7,9 +7,9 @@ from redis.asyncio import Redis
 
 from .core.database import verify_rls_enforcement
 from .core.observability import setup_telemetry
-from .core.ratelimit import limit_anonymous
+from .core.ratelimit import limit_anonymous, limit_authenticated
 from .core.settings import settings
-from .routers import health, platform
+from .routers import health, platform, tenant
 
 
 @asynccontextmanager
@@ -76,6 +76,15 @@ async def rate_limit_headers(
 setup_telemetry(app, service_name="{{projectSlug}}-api")
 
 app.include_router(health.router, prefix="/api/v1")
+# The customer-facing surface. Tier 2 limiting: keyed on the organization and
+# subject a verified token proved, rather than on an address a caller asserts.
+# A tenant sharing one office address is not one caller, and a verified caller
+# can still be abusive.
+app.include_router(
+    tenant.router,
+    prefix="/api/v1",
+    dependencies=[Depends(limit_authenticated)],
+)
 # The private contract the Control Plane calls. Not part of the public API
 # and never exposed to a browser; see src/core/platform_auth.py.
 app.include_router(

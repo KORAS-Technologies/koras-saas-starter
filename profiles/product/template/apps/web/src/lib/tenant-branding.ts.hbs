@@ -1,49 +1,44 @@
 import { NO_TENANT_BRANDING, parseTenantBranding } from '@{{projectSlug}}/branding'
 import type { TenantBranding } from '@{{projectSlug}}/branding'
+import { tenantSettings } from './tenant-settings'
 
 /**
  * The customer's own branding, for the signed-in area.
  *
- * One seam, on purpose. Everything downstream of this function is finished:
- * `BrandScope` re-skins the whole subtree from the tokens, `ProductLogo` takes
- * the customer's mark, and `parseTenantBranding` decides which of the values
- * stored against the tenant are safe to put in a stylesheet. What is missing is
- * the read, and the read is the product's to write, because the product owns
- * the endpoint and the tenant context it needs.
+ * The read is `tenant-settings.ts`; this is the boundary that decides which of
+ * the values stored against a tenant are safe to put in a stylesheet.
  *
- * The row already exists: `public.tenant_settings.branding`, a `jsonb` column
- * created in the first migration, isolated per tenant by row-level security.
- * What does not exist is a customer-facing route on `services/api` that returns
- * it. `services/api` currently serves `health` and the private `platform`
- * router, and adding a customer-facing one is a decision about the API's
- * surface -- authentication, tenant context, caching, rate limits -- rather
- * than a frontend change, so this template does not make it.
+ * That split is the whole point. `tenant_settings.branding` is a `jsonb` column
+ * a customer controls, and its contents end up as CSS custom property values in
+ * a `style` attribute on every page their staff load. A custom property value
+ * is not escaped the way text content is: a tenant storing
  *
- * To finish it:
+ *     red; } html { display: none } :root { --x: 1
  *
- *   1. Add a route to `services/api` that returns the calling tenant's
- *      `tenant_settings.branding`, scoped by the RLS context the caller's token
- *      establishes. Never accept a tenant id from the browser.
- *   2. Call it here through `@{{projectSlug}}/api-client`, forwarding the
- *      caller's credentials.
- *   3. Pass the response through `parseTenantBranding` -- which is already what
- *      the last line of this function does.
+ * as `primaryColor` would be writing CSS into every one of those pages. This is
+ * the same category as browser input — a value the product stored is not a
+ * value the product chose — and it is validated at the point of use rather than
+ * trusted because it survived a round trip through Postgres.
  *
- * Until then a signed-in customer sees the product's own branding, which is the
- * correct fallback and not a broken state.
+ * `parseTenantBranding` accepts hex colours only, three length units for the
+ * radius, and same-origin absolute paths for images. Unknown keys are dropped
+ * and one bad value costs one token rather than the whole brand.
+ *
+ * The tenant is never named by the caller. The API resolves it from the token
+ * and scopes the read with row-level security, so there is no organisation id
+ * to pass and none to pass wrongly.
  *
  * Never throws. Branding is decoration: a customer whose settings cannot be
- * read should see the product's colours, not an error page. Failing closed here
- * would take the whole application down for a cosmetic lookup.
+ * read should see the product's colours, not an error page.
  */
-export async function tenantBranding(organizationId: string | undefined): Promise<TenantBranding> {
-  if (!organizationId) return NO_TENANT_BRANDING
+export async function tenantBranding(): Promise<TenantBranding> {
+  const settings = await tenantSettings()
+  if (settings === null) return NO_TENANT_BRANDING
 
   try {
-    const stored: unknown = null // ← the read described above goes here
-    return parseTenantBranding(stored)
+    return parseTenantBranding(settings.branding)
   } catch (error) {
-    console.error('[branding] the tenant settings could not be read:', error)
+    console.error('[branding] the tenant branding could not be parsed:', error)
     return NO_TENANT_BRANDING
   }
 }

@@ -47,7 +47,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     )
   }
 
-  const { member, access, tenant } = context
+  const { member, access, tenant, organizationName } = context
   const navigation = resolveNavigation(productConfig.navigation, access)
 
   /*
@@ -63,13 +63,16 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const identity = {
     name: member.name,
     email: member.email,
-    // The customer's own name for themselves, when they have set one. The
-    // session carries a ZITADEL organization *id*, which is a UUID: showing it
-    // would put an identifier where a name belongs. The real name arrives with
-    // the same tenant-settings read that `lib/tenant-branding.ts` is waiting
-    // on, and until then the badge renders nothing rather than something
-    // meaningless.
-    organizationName: tenant.name === '' ? undefined : tenant.name,
+    // The customer's own name for themselves. A white-label name overrides it
+    // where one is set, because a tenant that has renamed the product has
+    // renamed the workspace it appears beside; otherwise it is the
+    // organisation's name from its own tenant row.
+    //
+    // Never the organization id. The session carries a ZITADEL organization
+    // *id*, which is a uuid, and a uuid where a name belongs reads as a bug
+    // rather than as a workspace -- so the badge renders nothing at all when
+    // the settings read found no name.
+    organizationName: tenant.name !== '' ? tenant.name : organizationName,
     roleLabel: roleLabel(access),
   }
 

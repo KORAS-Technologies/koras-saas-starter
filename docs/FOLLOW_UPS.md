@@ -52,18 +52,20 @@ otherwise stops at F6, and why there is no F0.
 | F13 | nothing bills anyone, and that is not an oversight | **open** | Onboarding |
 | F14 | two names for the Control Plane, and neither side noticed | closed 2026-08-29 | Decisions |
 | F15 | a project generated then provisioned had no way into its own repository | closed 2026-08-30 | Decisions |
-| F16 | a customer's own branding has nowhere to be read from | **open** | Decisions |
+| F16 | a customer's own branding has nowhere to be read from | closed 2026-09-01 | Decisions |
 | F17 | a product cannot read its customers' entitlements | **open** | Decisions |
 | F18 | no test in this repository opens a browser | **open** | Decisions |
 
-**Nine are open**: F2b, F2c, F3, F6, F7, F13, F16, F17, F18. Five of those nine
-are not this repository's to close — F2b, F3 and F17 are Control Plane
-authorization decisions, F2c and F7 need a live estate and a staff read. The
-four this repository can act on alone are **F6**, **F13**, **F16** and **F18**.
-Two of them are decisions rather than implementations: F6's own entry says both
-references already survive, and F13 says outright that nothing forces it now.
-F16 is an implementation, and it is the only open entry whose whole cost is one
-route — a route two seams are now waiting on, not one.
+**Eight are open**: F2b, F2c, F3, F6, F7, F13, F17, F18. Five of those eight are
+not this repository's to close — F2b, F3 and F17 are Control Plane authorization
+decisions, F2c and F7 need a live estate and a staff read. The three this
+repository can act on alone are **F6**, **F13** and **F18**, and all three are
+decisions rather than implementations: F6's own entry says both references
+already survive, F13 says outright that nothing forces it now, and F18 is a
+question of where a browser harness lives.
+
+F16 closed on 2026-09-01 and was the last open entry whose cost was code this
+repository could simply write.
 
 ---
 
@@ -766,51 +768,64 @@ protection requires — a force push is declined with GH006.
 
 ---
 
-### F16 — a customer's own branding has nowhere to be read from — opened 2026-08-31
+### F16 — a customer's own branding has nowhere to be read from — opened 2026-08-31, closed 2026-09-01
 
-- [ ] Add a customer-facing route to `services/api` returning the calling
+- [x] Add a customer-facing route to `services/api` returning the calling
       tenant's `tenant_settings.branding`
-- [ ] Call it from `apps/web/src/lib/tenant-branding.ts`
+- [x] Call it from `apps/web/src/lib/tenant-branding.ts`
 
 `customer_branding` and `white_label` are declared capabilities of the product
 profile, `public.tenant_settings.branding` has been a `jsonb` column since the
 first migration, and until 2026-08-31 nothing read it or wrote it. The frontend
-half is now built: `BrandScope` re-declares the brand tokens for the signed-in
-subtree, so a customer's palette reaches every component below it without any of
-them knowing a tenant exists; `ProductLogo` takes their mark; and
-`parseTenantBranding` decides which of the stored values may reach a stylesheet.
-Twelve tests in the generated project argue that last part, because the column
-is customer-controlled data on its way into a CSS custom property and a custom
-property value is not escaped the way text content is.
+half was built first: `BrandScope` re-declares the brand tokens for the signed-in
+subtree, `ProductLogo` takes the customer's mark, and `parseTenantBranding`
+decides which of the stored values may reach a stylesheet. Twelve tests in the
+generated project argue that last part, because the column is customer-controlled
+data on its way into a CSS custom property and a custom property value is not
+escaped the way text content is.
 
-What is missing is the read, and it is deliberately missing rather than
-forgotten. `services/api` serves `health` and the private `platform` router.
-Adding a customer-facing route is a decision about the API's surface —
-authentication, tenant context from the caller's token rather than from the
-browser, caching, rate limiting — and none of those follow from a frontend
-change. Making them silently, inside a piece of work about a homepage, is how an
-API acquires a shape nobody chose.
+**Closed 2026-09-01**, and the route was the smaller half of the work.
 
-`apps/web/src/lib/tenant-branding.ts` is a single named seam holding the reason
-and the three steps. Until it is filled in, a signed-in customer sees the
-product's own branding, which is the correct fallback rather than a broken
-state — so this is unfinished capability, not a defect in what shipped.
+`GET /api/v1/tenant/settings` returns the tenant's name, slug, branding and
+features — one row, one call, because the shell paints itself from the branding
+and resolves its navigation from the features on the same page load, and two
+endpoints could disagree about which version of that row a page came from.
+`apps/web/src/lib/tenant-settings.ts` wraps it in React's `cache`, so three
+readers make one request per render.
 
-**Not blocked on anything.** Whoever owns the first real product's API writes the
-route; the frontend already accepts its answer.
+**What actually blocked it was resolving a tenant at all.** Every policy in
+`00002_rls_policies.sql` is keyed on `current_tenant_id()`, which is a tenant's
+primary key. A customer's request carries no such thing — a verified token names
+a ZITADEL *organization*, and the organization-to-tenant mapping lives in the
+table the policies protect. So the first read of any customer request was the
+one read no policy admitted, and nothing had noticed because no customer-facing
+route existed: `resolve_tenant` fabricated a `TenantContext` out of the
+organization id, and had anything called `get_db`, `current_tenant_id()` would
+have tried to cast a numeric organization id to a `uuid` and failed.
 
-**Widened 2026-08-31 by the product shell.** The same missing route is now
-holding back a second reader. `tenant_settings` carries `features` in the same
-row as `branding`, and `apps/web/src/lib/tenant-features.ts` is a second seam
-waiting on the same endpoint — the shell's navigation registry gates modules on
-tenant features, so every one of them is off until the row can be read. Whoever
-adds the route should return the whole settings row and let the two seams split
-the answer; reading it twice would be two round trips for one row.
+`00004_tenant_settings_read.sql` gives the policies a second key the request
+genuinely has: `public.current_organization_id()`, and one permissive select
+policy admitting the single tenant whose `zitadel_org_id` matches. Nothing new
+is trusted — that value comes from the same verified token the tenant id did,
+and it is set transaction-locally by one function for one query. The
+alternative, a `security definer` lookup with the policies suspended, would have
+been a privilege escalation kept narrow by convention rather than by the
+database. `supabase/tests/040_organization_lookup.sql` makes the narrowness
+checkable: the lookup opens for exactly one row, opens for none with no context
+set, reaches no settings row without tenant context, and grants no write.
 
-The organisation's own display name is the third thing behind it. The session
-carries a ZITADEL organisation *id*, which is a UUID, so the shell's workspace
-badge renders nothing rather than an identifier until the same read supplies a
-name.
+**Three things came unblocked, not one.** The features column has its first
+reader, so the shell's tenant-feature gate works rather than being permanently
+off; and the workspace badge shows the organisation's own name instead of
+rendering nothing, because it no longer has only a uuid to offer.
+
+`packages/api-client` stopped being a two-line stub in the same change. It is
+where the timeout, the credential and the error shape now live, so the next
+call to this API is not a fifth opinion about all three.
+
+**What is still not read from anywhere is the plan.** That is F17, and it is a
+different blocker: a Control Plane authorization decision rather than a route
+this repository can write.
 
 ### F17 — a product cannot read its customers' entitlements — opened 2026-08-31
 
