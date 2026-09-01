@@ -63,8 +63,16 @@ WORKDIR /app/services/worker
 # the container can rebuild anything. A cause that cannot be reached does not
 # need to be understood first.
 #
-# It also puts the process at PID 1 rather than under a `uv` parent, which is
-# what receives Fly's signals on shutdown. Measured: PID 10 before, PID 1 now.
+# It also removes the `uv` parent from the process tree, so the server is a
+# direct child of Fly's init and receives Fly's signals on shutdown rather than
+# depending on `uv` to forward them.
+#
+# This said "puts the process at PID 1 ... Measured: PID 10 before, PID 1 now",
+# and PID 1 is not what a Fly machine shows. `/fly/init` is PID 1 there, always;
+# the server is its child. Checked on a deployed machine on 2026-09-01, where
+# `/proc` lists `/app/.venv/bin/python /app/.venv/bin/uvicorn ...` and no `uv`
+# anywhere. The benefit is real and the number was wrong -- corrected rather
+# than deleted, because a measurement nobody can reproduce is worse than none.
 #
 # /app/.venv/bin is already on PATH for the reason given at the top of this
 # file, so the bare command resolves there.
