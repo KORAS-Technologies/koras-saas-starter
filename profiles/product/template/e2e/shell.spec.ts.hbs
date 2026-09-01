@@ -101,6 +101,36 @@ test('a plan-gated module is offered, not merely missing', async ({ page }, test
   await expect(page.getByRole('button', { name: /Insights/ })).toHaveCount(0)
 })
 
+test('the appearance switch repaints the page and survives a navigation', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name === MOBILE, 'the control is hidden below sm')
+
+  await page.goto('/dashboard')
+  const background = () =>
+    page.evaluate(() => getComputedStyle(document.body).backgroundColor)
+
+  const light = await background()
+
+  await page.getByRole('radio', { name: 'Dark' }).click()
+  const dark = await background()
+  // Asserted as a repaint rather than as a specific colour: the palette is a
+  // product's to change, and a test naming #0b1220 would fail for every product
+  // that picks its own dark surfaces while nothing was wrong.
+  expect(dark).not.toBe(light)
+  await expect(page.getByRole('radio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true')
+
+  // A fresh document, not a client navigation: this is what the pre-paint
+  // script in the layout exists for, and a client-side-only implementation
+  // passes every assertion above and fails this one.
+  await page.goto('/dashboard/settings')
+  expect(await background()).toBe(dark)
+
+  // System releases the override and hands the page back to the machine.
+  await page.getByRole('radio', { name: 'System' }).click()
+  expect(await page.evaluate(() => document.documentElement.style.colorScheme)).toBe('')
+})
+
 test.describe('the drawer', () => {
   // Skipped per test rather than per describe: the condition is the project's
   // viewport, and the boolean form is the one the runner types. A callback

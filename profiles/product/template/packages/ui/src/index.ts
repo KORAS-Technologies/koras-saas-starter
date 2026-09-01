@@ -53,6 +53,8 @@ export { ProductHeader } from './shell/product-header'
 export { ProductNavigation } from './shell/product-navigation'
 export { ProductProfileMenu } from './shell/profile-menu'
 export { WorkspaceBadge } from './shell/workspace-badge'
+export { ThemeToggle, THEME_SCRIPT, THEME_STORAGE_KEY } from './shell/theme-toggle'
+export type { ThemeChoice } from './shell/theme-toggle'
 
 export { AuthBrandPanel, AuthLayout } from './auth/auth-layout'
 export { AuthCard } from './auth/auth-card'

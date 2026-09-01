@@ -18,18 +18,40 @@
  */
 
 :root {
+  /*
+   * Both appearances are supported, and the browser picks.
+   *
+   * This is what makes `light-dark()` in `brandStyle()` resolve: without it the
+   * document is light-only and every pair collapses to its first value. The
+   * theme switch sets `color-scheme` on <html> to force one; unset, it follows
+   * the operating system, which is the right default for somebody who has never
+   * touched the control.
+   *
+   * It also fixes the parts of a page the product does not draw -- form
+   * controls, scrollbars, the canvas behind an overscroll -- which are the
+   * things that stay white in a hand-rolled dark mode and give it away.
+   */
+  color-scheme: light dark;
+
   /* Brand. Overridden per product by brandStyle(). */
   --brand-primary: #2563eb;
   --brand-secondary: #0f172a;
   --brand-accent: #7c3aed;
 
-  /* Page and surfaces. */
-  --brand-background: #ffffff;
-  --brand-foreground: #0f172a;
-  --brand-surface: #ffffff;
-  --brand-surface-muted: #f8fafc;
-  --brand-border: #e2e8f0;
-  --brand-muted-foreground: #475569;
+  /*
+   * Page and surfaces, as pairs.
+   *
+   * `brandStyle()` overrides each of these with the product's own pair. They
+   * are written the same way here so that the fallback -- an old browser, or a
+   * page that never reaches a layout -- is a working dark mode rather than
+   * black text on a black ground.
+   */
+  --brand-background: light-dark(#ffffff, #0b1220);
+  --brand-foreground: light-dark(#0f172a, #e2e8f0);
+  --brand-surface: light-dark(#ffffff, #111a2e);
+  --brand-surface-muted: light-dark(#f8fafc, #0f172a);
+  --brand-border: light-dark(#e2e8f0, #1e293b);
+  --brand-muted-foreground: light-dark(#475569, #94a3b8);
 
   /* Type and shape. */
   --brand-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,

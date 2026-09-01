@@ -4,6 +4,7 @@ import type { ReactNode, RefObject } from 'react'
 import type { TenantBranding } from '@{{projectSlug}}/branding'
 import { ProductLogo } from '../brand/product-logo'
 import { ProductProfileMenu } from './profile-menu'
+import { ThemeToggle } from './theme-toggle'
 import { WorkspaceBadge } from './workspace-badge'
 import type { ShellIdentity } from './product-shell'
 
@@ -87,6 +88,12 @@ export function ProductHeader({
 
         <div className="ml-auto flex items-center gap-2">
           {actions}
+          {/* Hidden below `sm`, where the header has three controls competing
+              for the width already. The choice still applies -- it is a
+              document-level property, not a header feature -- and a phone is
+              also the device most likely to have an operating-system preference
+              worth following rather than overriding. */}
+          <ThemeToggle className="hidden sm:inline-flex" />
           <ProductProfileMenu identity={identity} accountUrl={accountUrl} />
         </div>
       </div>

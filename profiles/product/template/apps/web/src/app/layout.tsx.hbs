@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
+import { headers } from 'next/headers'
 import { productConfig } from '@{{projectSlug}}/branding'
-import { brandStyle } from '@{{projectSlug}}/ui'
+import { THEME_SCRIPT, brandStyle } from '@{{projectSlug}}/ui'
 import './globals.css'
 
 const { product, brand } = productConfig
@@ -41,9 +42,35 @@ export const viewport: Viewport = {
   themeColor: brand.secondaryColor,
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+/**
+ * Hoisted out of the JSX, and not for style.
+ *
+ * This file is a Handlebars template. Writing the prop inline the idiomatic way
+ * puts a doubled opening brace in it, which the generator reads as an
+ * expression and refuses with `Missing helper: "__html:"` -- and a comment
+ * demonstrating the mistake fails the same way, which is how this sentence came
+ * to be phrased without one. A named constant has no doubled brace and the same
+ * value.
+ */
+const themeScript = { __html: THEME_SCRIPT }
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // The nonce the middleware minted for this request. The theme script is
+  // inline and the policy is nonce-based, so without it the script is refused
+  // and a reader who chose dark gets a light flash on every fresh document.
+  const nonce = (await headers()).get('x-nonce') ?? undefined
+
   return (
     <html lang="en">
+      {/*
+        Applied before the first paint, ahead of React and ahead of hydration.
+        It reads one key and sets one property; anybody who has not chosen an
+        appearance is already correct, because the stylesheet declares
+        `color-scheme: light dark` and the browser follows the machine.
+      */}
+      <head>
+        <script nonce={nonce} dangerouslySetInnerHTML={themeScript} />
+      </head>
       {/*
         The brand tokens are applied once, here, as CSS custom properties. The
         Tailwind theme is declared `inline`, so every utility in every component

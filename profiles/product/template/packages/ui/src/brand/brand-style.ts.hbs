@@ -13,17 +13,40 @@ import type { BrandingTokens } from '@{{projectSlug}}/branding'
  * The cast is unavoidable: `CSSProperties` has no index signature for custom
  * properties, and React has passed them through since 16 regardless.
  */
+function pair(light: string, dark: string): string {
+  return `light-dark(${light}, ${dark})`
+}
+
 export function brandStyle(brand: BrandingTokens): CSSProperties {
   return {
     '--brand-primary': brand.primaryColor,
     '--brand-secondary': brand.secondaryColor,
     '--brand-accent': brand.accentColor,
-    '--brand-background': brand.backgroundColor,
-    '--brand-foreground': brand.foregroundColor,
-    '--brand-surface': brand.surfaceColor,
-    '--brand-surface-muted': brand.surfaceMutedColor,
-    '--brand-border': brand.borderColor,
-    '--brand-muted-foreground': brand.mutedForegroundColor,
+    // The six surfaces are pairs, resolved by the browser from `color-scheme`
+    // rather than by this application from a cookie.
+    //
+    // `light-dark()` is what makes the appearance switch a CSS concern. The
+    // alternative -- deciding the palette on the server -- means the answer is
+    // wrong for the first paint of every visitor whose preference the server
+    // has not been told, and means a second render to correct it.
+    //
+    // It also survives `BrandScope`. A customer's tokens are re-declared on a
+    // nested element, and because each declaration is itself a pair, the
+    // subtree keeps both appearances instead of pinning one.
+    //
+    // In a browser without `light-dark()` these declarations are invalid at
+    // computed-value time, so the property inherits the default from
+    // `tokens.css` — the stock palette rather than this product's, and a
+    // readable page either way.
+    '--brand-background': pair(brand.backgroundColor, brand.darkBackgroundColor),
+    '--brand-foreground': pair(brand.foregroundColor, brand.darkForegroundColor),
+    '--brand-surface': pair(brand.surfaceColor, brand.darkSurfaceColor),
+    '--brand-surface-muted': pair(brand.surfaceMutedColor, brand.darkSurfaceMutedColor),
+    '--brand-border': pair(brand.borderColor, brand.darkBorderColor),
+    '--brand-muted-foreground': pair(
+      brand.mutedForegroundColor,
+      brand.darkMutedForegroundColor,
+    ),
     '--brand-font-sans': brand.fontFamily,
     '--brand-font-display': brand.displayFontFamily,
     '--brand-radius': brand.radius,

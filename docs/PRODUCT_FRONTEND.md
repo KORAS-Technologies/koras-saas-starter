@@ -53,7 +53,7 @@ sections:
 | Section     | What it holds                                                    |
 |-------------|------------------------------------------------------------------|
 | `product`   | name, slug, tagline, description, contact address, origins        |
-| `brand`     | colours, radius, logos, favicon, font stacks, social accounts     |
+| `brand`     | colours light and dark, radius, logos, favicon, fonts, social     |
 | `marketing` | navigation, every homepage section's copy, footer, access mode    |
 
 `name` and `slug` are written by the generator from the project name. Everything
@@ -212,6 +212,38 @@ same mechanism doing more work, not a second one.
 
 The public pages are deliberately **outside** the scope. `/`, `/login` and
 `/signup` belong to the product and are served to people who have no tenant.
+
+### Light and dark
+
+Every surface is a pair. `brandStyle` emits `light-dark(light, dark)` for the
+six semantic colours — background, foreground, surface, muted surface, border,
+muted foreground — and the browser resolves them from `color-scheme`. The three
+brand colours are **not** duplicated: a customer's brand colour is their brand
+colour in both appearances, and a second one invites a pair whose contrast
+nobody checks.
+
+That choice of mechanism is what keeps the feature small. The switch sets one
+property on `<html>` and the whole product repaints, including a customer's own
+tokens under `BrandScope` — because each of those is a pair too. Nothing has a
+class to toggle, no component knows an appearance exists, and the controls the
+product does not draw (form fields, scrollbars, the overscroll canvas) follow
+`color-scheme` on their own, which is exactly what gives a hand-rolled dark mode
+away.
+
+The control has three positions, and the third is the default: **System**. A
+two-state toggle has to guess on first load and guesses wrong for everybody
+whose machine is already set the other way.
+
+A small script in the root layout applies a stored choice before the first
+paint, carrying the request nonce because the policy is nonce-based. Without it
+a reader who chose dark gets a light flash on every fresh document — the one bug
+every dark mode ships with, and the reason the browser test navigates to a
+second page rather than only clicking the control.
+
+The dark values are chosen and checked rather than derived: `#e2e8f0` on
+`#0b1220` is 15.1:1 and the muted pair is 7.4:1. Inverting the light palette
+produces muddy greys and destroys ratios somebody picked deliberately — it looks
+automatic because it is.
 
 ### What a customer may set
 

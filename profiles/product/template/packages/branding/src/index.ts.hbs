@@ -68,6 +68,26 @@ export interface BrandingTokens {
    */
   fontFamily: string
   displayFontFamily: string
+  /**
+   * The same six surfaces again, for a dark appearance.
+   *
+   * Only the surfaces and the text on them. The three brand colours are not
+   * duplicated: a customer's brand colour is their brand colour in both
+   * appearances, and offering a second one invites a pair nobody checks the
+   * contrast of.
+   *
+   * These are real values rather than a filter over the light ones. Deriving a
+   * dark palette by inverting lightness produces muddy greys and destroys the
+   * contrast ratios somebody chose deliberately -- it looks automatic because
+   * it is.
+   */
+  darkBackgroundColor: string
+  darkForegroundColor: string
+  darkSurfaceColor: string
+  darkSurfaceMutedColor: string
+  darkBorderColor: string
+  darkMutedForegroundColor: string
+
   /** Corner radius of cards and buttons, as a CSS length. */
   radius: string
 
@@ -102,6 +122,15 @@ export const defaultBranding: BrandingTokens = {
   surfaceMutedColor: '#f8fafc',
   borderColor: '#e2e8f0',
   mutedForegroundColor: '#475569',
+  // Slate, and checked rather than picked: #e2e8f0 on #0b1220 is 15.1:1, and
+  // the muted foreground #94a3b8 on the same ground is 7.4:1 -- both past AA
+  // for body text, which the light palette also clears.
+  darkBackgroundColor: '#0b1220',
+  darkForegroundColor: '#e2e8f0',
+  darkSurfaceColor: '#111a2e',
+  darkSurfaceMutedColor: '#0f172a',
+  darkBorderColor: '#1e293b',
+  darkMutedForegroundColor: '#94a3b8',
   logoUrl: '',
   logoDarkUrl: '',
   faviconUrl: '/icon.svg',
