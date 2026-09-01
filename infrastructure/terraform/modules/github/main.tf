@@ -101,6 +101,7 @@ resource "github_branch_protection" "protections" {
         "Lint & Typecheck",
         "Test (Node)",
         "Test (Python)",
+        "End-to-end (browser)",
         "Build",
       ]
     }
