@@ -1,0 +1,55 @@
+import { defineConfig, devices } from '@playwright/test'
+
+/**
+ * The one suite here that opens a browser.
+ *
+ * It exists because the admin application's authorisation lives in middleware,
+ * and middleware is the one layer a unit test cannot reach: it runs before
+ * routing, on a request that has not become a page yet. `canAccess` is tested
+ * as a function; whether the application actually calls it on the URL a browser
+ * asks for is a different claim, and it was an untested one.
+ *
+ * **One server, built and started here**, so the suite owns its lifecycle. The
+ * production build, not `next dev`: the middleware, the CSP nonce and the
+ * client boundaries all behave differently there, and the build is what ships.
+ *
+ * **No API and no ZITADEL.** Every assertion below is about a request this
+ * application refuses or admits by itself, from a cookie it signed. A suite
+ * that needed the platform running to check a 403 would be a suite nobody runs
+ * — and the sign-in exchange, which does need ZITADEL, is deliberately out of
+ * scope rather than faked.
+ */
+
+const PORT = Number(process.env.E2E_PORT ?? 3220)
+
+export default defineConfig({
+  testDir: './e2e',
+  timeout: 30_000,
+  fullyParallel: false,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 1 : 0,
+  workers: 1,
+  // `github` annotates the failing line in a pull request; `html` writes the
+  // trace that explains it. This repository's downstream suite configured only
+  // the first and uploaded a report directory that was never produced, so every
+  // failure was read from a text log.
+  reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : [['list']],
+  use: {
+    baseURL: `http://localhost:${PORT}`,
+    trace: 'retain-on-failure',
+  },
+  projects: [{ name: 'admin', use: { ...devices['Desktop Chrome'] } }],
+  webServer: {
+    command: `pnpm --filter @{{projectSlug}}/admin exec next start -p ${PORT}`,
+    url: `http://localhost:${PORT}/login`,
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+    env: {
+      // The application refuses a signing key shorter than 32 characters, so a
+      // test value has to be a real one. The suite signs cookies with this and
+      // the middleware verifies them: nothing is bypassed, and a suite that
+      // skipped verification would pass however broken authorisation became.
+      SESSION_SECRET: process.env.SESSION_SECRET ?? 'e2e-session-secret-at-least-32-characters-long',
+    },
+  },
+})

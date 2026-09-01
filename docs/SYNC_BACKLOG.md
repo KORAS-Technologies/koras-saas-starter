@@ -63,11 +63,14 @@ Tiers are ordered by what breaks if the item is left alone:
 **Last full survey:** 2026-08-22, against starter `535cd58`,
 control-plane `9546623`, sample-product `27f2949`.
 
-**Closed since:** A1–A7, B1–B5, C1–C4, D1, D3, D4, D5, E1, E2, E3. **Two are
-open: B6 and D6.** B6 was found on 2026-09-01 and is this document's own subject
+**Closed since:** A1–A7, B1–B6, C1–C4, D1, D3, D4, D5, E1, E2, E3. **D6 is the
+only entry still open**, and it is the oldest kind: `koras-control-plane` has
+never been re-synced against any of this.
+
+B6 was found and closed on 2026-09-01. It is this document's own subject
 arriving somewhere new — a browser harness promoted one file at a time that
-stopped after the first. D6 is the oldest kind: `koras-control-plane` has never
-been re-synced against any of this.
+stopped after the first, in a directory no typecheck compiled. Both profiles
+carry a complete one now, and both run in CI.
 
 A7 closed 2026-09-01. This summary listed A4 as open for two days after A4's own
 heading said it closed on 2026-08-30 — the index at the top of a document about
@@ -657,11 +660,11 @@ across both profiles, including that `psycopg2` is absent from the
 dependencies: were it present, this would have been a silent synchronous engine
 inside an async application instead of a loud import error, which is worse.
 
-### B6 — the control-plane profile ships half a browser harness
+### B6 — the control-plane profile ships half a browser harness — closed 2026-09-01
 
-- [ ] A `playwright.config.ts`, an `@playwright/test` dependency and one spec,
+- [x] A `playwright.config.ts`, an `@playwright/test` dependency and one spec,
       or the support file goes
-- [ ] `e2e/` is typechecked by something
+- [x] `e2e/` is typechecked by something
 
 **Applies to:** `profiles/control-plane/template`
 
@@ -691,6 +694,46 @@ The product profile's equivalent is complete and runs in CI, so the shape to
 copy exists: `profiles/product/template/playwright.config.ts`, its `e2e/`
 directory, the two scripts, and `tsconfig.e2e.json` — that last being what stops
 the directory rotting the way this one did.
+
+**Closed the same day, and the estimate above was wrong.**
+
+The key fixture and the JWKS server are not needed. They belong to the provider
+token, which is forwarded to the platform API — and the API does not run in this
+suite, so sending a fake one would test a path the suite cannot follow. The
+middleware never reads that cookie. Dropping the half that needed a key left a
+helper that signs with the application's own `mintSession` and a suite that runs
+against nothing but the built admin application.
+
+`e2e/admin.spec.ts` asserts what no unit test can: the middleware runs before
+routing, on a request that has not become a page yet. `canAccess` is tested as a
+function in `packages/permissions`; that the application calls it on the URL a
+browser asks for is a different claim.
+
+Six tests, and the four refusals are four different kinds on purpose — no
+session is a redirect, no second factor is a refusal, not-staff is a refusal,
+wrong-role is a refusal naming the area. Collapsing any two produced a loop the
+last time it happened: a browser sent back through a sign-in it had already
+completed, which cannot add a second factor and so never terminates.
+
+The sixth is the one worth having. `/plans` has no page in a generated Control
+Plane, so `platform_admin` gets a 404 there and `platform_readonly` gets a 403 —
+and the difference between those two answers *is* the claim that authorisation
+is decided before routing. Asserting only the 403 would pass on an application
+that refused everybody.
+
+Mutation-checked twice: widening `canAccess` to admit any staff role fails the
+restricted-area test, and turning the MFA refusal back into a redirect fails the
+second-factor test. Both are defects this repository has actually had.
+
+Running in `generator-integration.yml` for both profiles now, so the directory
+that nothing compiled is compiled and executed on every push that touches
+`profiles/`.
+
+`tsconfig.e2e.json` is single-sourced in `profiles/_shared/template/`, and it
+did not start there — it was written twice, byte-identical, and
+`shared-template-parity.test.ts` refused it on the next run. Which is D2's
+guard doing exactly what D2 says it is for: this document's own subject was
+about to acquire another entry, in the commit closing one.
 
 ---
 

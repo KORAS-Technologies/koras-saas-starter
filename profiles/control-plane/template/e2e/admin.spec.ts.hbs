@@ -1,0 +1,80 @@
+import { expect, test } from '@playwright/test'
+import { signInAs } from './support/session'
+
+/**
+ * What the admin application refuses, and to whom.
+ *
+ * Every assertion here is about the middleware, which is the one authorisation
+ * layer no unit test can reach: it runs before routing, on a request that has
+ * not become a page yet. `canAccess` is tested as a function in
+ * `packages/permissions`; that the application calls it on the URL a browser
+ * actually asks for is a separate claim, and it is this file.
+ *
+ * Four refusals, each a different kind, and the design turns on telling them
+ * apart: no session is a redirect, no second factor is a refusal, not-staff is
+ * a refusal, and wrong-role is a refusal that names the area. Collapsing any
+ * two produced a loop the last time it happened — a browser sent back through
+ * a sign-in it had already completed, which cannot add a second factor and so
+ * never terminates.
+ */
+
+test('no session is a redirect to sign in, carrying where it was going', async ({ page }) => {
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/login\?next=%2F$/)
+})
+
+test('signed in without a second factor is refused, not redirected', async ({ context, page }) => {
+  // The distinction that matters. A redirect here is an infinite loop: signing
+  // in again cannot add a factor, so the browser arrives back at the same
+  // refusal forever, looking exactly like a broken session.
+  await signInAs(context, { role: 'platform_admin', withMfa: false })
+  const response = await page.goto('/')
+  expect(response?.status()).toBe(403)
+  await expect(page.getByText('Multi-factor authentication is required')).toBeVisible()
+})
+
+test('signed in and not staff is refused, not sent to a login it already passed', async ({
+  context,
+  page,
+}) => {
+  await signInAs(context, { role: undefined })
+  const response = await page.goto('/')
+  expect(response?.status()).toBe(403)
+  await expect(page.getByText('This application is for KORAS staff.')).toBeVisible()
+})
+
+test('every platform role reaches the dashboard', async ({ context, page }) => {
+  // `dashboard` admits all five, so this is the check that the gate is a gate
+  // and not a wall: a refusal for a role that should pass is as much a defect
+  // as an admission for one that should not.
+  for (const role of ['platform_super_admin', 'platform_admin', 'platform_support'] as const) {
+    await context.clearCookies()
+    await signInAs(context, { role })
+    const response = await page.goto('/')
+    expect(response?.status(), `${role} should reach the dashboard`).toBe(200)
+  }
+})
+
+test('a restricted area is refused by role, and the refusal names the area', async ({
+  context,
+  page,
+}) => {
+  await signInAs(context, { role: 'platform_readonly' })
+  const response = await page.goto('/plans')
+  expect(response?.status()).toBe(403)
+  await expect(page.getByText('does not have access to plans')).toBeVisible()
+})
+
+test('the gate is on the URL, not on the page behind it', async ({ context, page }) => {
+  // `/plans` has no page in a freshly generated Control Plane. `platform_admin`
+  // therefore gets a 404 — and the difference between that 404 and the 403 the
+  // test above receives is the whole claim: authorisation is decided before
+  // routing, so a page added later is already gated and a page that does not
+  // exist is still refused to the wrong role.
+  //
+  // Asserting only "403 for readonly" would pass on an application that refused
+  // everybody, which is why both halves are here.
+  await signInAs(context, { role: 'platform_admin' })
+  const response = await page.goto('/plans')
+  expect(response?.status()).toBe(404)
+})

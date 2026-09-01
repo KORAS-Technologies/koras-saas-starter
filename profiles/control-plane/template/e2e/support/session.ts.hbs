@@ -1,92 +1,62 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { importPKCS8, SignJWT } from 'jose'
 import type { BrowserContext } from '@playwright/test'
+import { mintSession } from '@{{projectSlug}}/auth'
+import type { PlatformRole } from '@{{projectSlug}}/permissions'
 
 /**
- * Mint a session the applications will actually verify.
+ * Sign a browser in, using the application's own minting function.
  *
- * This used to sign a ZITADEL-shaped ID token against a local JWKS, because
- * the ID token was the cookie. It is not any more: the provider's token is
- * verified once at sign-in, in the Node runtime, and what it establishes is
- * minted into a cookie the application signs itself -- so middleware needs no
- * network call, which matters because the edge runtime could not always reach
- * the provider that the Node runtime could.
+ * Imported rather than reimplemented, and that is the whole history of this
+ * file. It used to build a ZITADEL-shaped ID token by hand, because the ID
+ * token was the cookie. It is not any more — the provider's token is verified
+ * once at sign-in and what it establishes is minted into a cookie the
+ * application signs itself — and the hand-built copy went on producing the old
+ * shape until every test failed at once. That was the suite working. Had the
+ * helper been the thing that changed, it would have been silence.
  *
- * The signature here is the one the application checks. Nothing is bypassed:
- * a test that skipped verification would pass however broken authorisation
- * became.
+ * Nothing is bypassed. The middleware verifies this signature on every request,
+ * so a test signs in the way a person does and is refused the same way.
+ *
+ * **No provider token.** That second cookie is forwarded to the platform API,
+ * which does not run here; sending a fake one would test a path this suite
+ * cannot follow. Its absence is a supported state — the middleware never reads
+ * it.
  */
-const SESSION_SECRET = new TextEncoder().encode(
-  process.env.SESSION_SECRET ?? 'e2e-session-secret-at-least-32-characters-long',
-)
-
-/** Matches SESSION_ISSUER in packages/auth. */
-const ISSUER = '{{projectSlug}}'
-
-export async function signSession(options: {
-  role?: string
-  email?: string
-  /** Defaults true: staff without a second factor are refused, and a test that
-   *  quietly omitted it would be testing a configuration nobody runs. */
-  withMfa?: boolean
-  expiresIn?: string
-  organizationId?: string
-}): Promise<string> {
-  return new SignJWT({
-    email: options.email ?? 'staff@korastech.com',
-    name: 'Test Staff',
-    role: options.role,
-    org: options.organizationId,
-    mfa: options.withMfa !== false,
-  })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuer(ISSUER)
-    .setSubject('staff-subject')
-    .setIssuedAt()
-    .setExpirationTime(options.expiresIn ?? '1h')
-    .sign(SESSION_SECRET)
-}
-
-/**
- * The provider's token, which the applications forward to the platform API.
- *
- * A second cookie because the API verifies against ZITADEL itself and does
- * not trust a session this application signed. The e2e API fixture does not
- * check it, but sending nothing is not the same shape as production: without
- * a token the client is never built and every page renders an error, which
- * is what a deployment did while every access check passed.
- */
-const KEY_FILE = resolve(process.cwd(), 'e2e', 'support', 'key.json')
-
-async function signProviderToken(options: { role?: string; email?: string }): Promise<string> {
-  const { pkcs8 } = JSON.parse(readFileSync(KEY_FILE, 'utf8')) as { pkcs8: string }
-  const key = await importPKCS8(pkcs8, 'RS256')
-  return new SignJWT({
-    'urn:zitadel:iam:org:project:roles': options.role ? { [options.role]: { org: 'koras' } } : {},
-    email: options.email ?? 'staff@korastech.com',
-    amr: ['pwd', 'otp'],
-  })
-    .setProtectedHeader({ alg: 'RS256', kid: 'e2e-key' })
-    .setSubject('staff-subject')
-    .setAudience('e2e-project')
-    .setIssuedAt()
-    .setExpirationTime('1h')
-    .sign(key)
-}
+const SESSION_SECRET =
+  process.env.SESSION_SECRET ?? 'e2e-session-secret-at-least-32-characters-long'
 
 export async function signInAs(
   context: BrowserContext,
   options: {
-    role?: string
+    /** Omitted means signed in and not staff, which is a refusal worth testing. */
+    role?: PlatformRole
     email?: string
-    withMfa?: boolean
     organizationId?: string
+    /** Defaults true: staff without a second factor are refused, and a suite
+     *  that quietly omitted it would be testing a configuration nobody runs. */
+    withMfa?: boolean
   } = {},
 ): Promise<void> {
-  const shared = { domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' as const }
+  const cookie = await mintSession(
+    {
+      userId: 'e2e-subject',
+      email: options.email ?? 'staff@korastech.com',
+      name: 'Test Staff',
+      platformRole: options.role,
+      organizationId: options.organizationId,
+      usedMfa: options.withMfa !== false,
+    },
+    SESSION_SECRET,
+    Math.floor(Date.now() / 1000) + 3600,
+  )
+
   await context.addCookies([
-    { ...shared, name: 'session', value: await signSession(options) },
-    { ...shared, name: 'id_token', value: await signProviderToken(options) },
+    {
+      name: 'session',
+      value: cookie,
+      domain: 'localhost',
+      path: '/',
+      httpOnly: true,
+      sameSite: 'Lax',
+    },
   ])
 }
