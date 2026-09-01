@@ -53,7 +53,7 @@ sections:
 | Section     | What it holds                                                    |
 |-------------|------------------------------------------------------------------|
 | `product`   | name, slug, tagline, description, contact address, origins        |
-| `brand`     | colours, radius, logos, favicon, font stacks                      |
+| `brand`     | colours, radius, logos, favicon, font stacks, social accounts     |
 | `marketing` | navigation, every homepage section's copy, footer, access mode    |
 
 `name` and `slug` are written by the generator from the project name. Everything
@@ -216,10 +216,20 @@ The public pages are deliberately **outside** the scope. `/`, `/login` and
 ### What a customer may set
 
 `TENANT_OVERRIDABLE` is a short list on purpose: the three brand colours, the
-muted surface, the border, the radius, and the two logos — plus a white-label
-`name`. The semantic text colours and the font stacks are **not** on it, because
-a customer who picks an unreadable pair of them breaks the product for their own
-staff and calls it a bug.
+muted surface, the border, and the two logos — plus a white-label `name` and a
+**corner style**. The semantic text colours and the font stacks are **not** on
+it, because a customer who picks an unreadable pair of them breaks the product
+for their own staff and calls it a bug.
+
+The corner style is a choice of two names, `flat` or `rounded`, and not a
+length. It was a length until 2026-09-01, guarded by a regular expression that
+had to be right about `9999vmax; }`. A customer choosing a *look* is both the
+kinder question and the smaller attack surface: two names cannot be malformed,
+so the guard is the type rather than a pattern. `CORNER_RADIUS` is where a look
+becomes a length, and `brandingFor` applies it after the merge — nothing
+downstream of that knows the choice existed. The product still sets any length
+it likes in `productConfig.brand.radius`; this is deliberately coarser than what
+the product author controls.
 
 The tenant is read from the session cookie's organization, never from a URL or a
 header.
@@ -236,8 +246,8 @@ red; } html { display: none } :root { --x: 1
 
 as `primaryColor` would be writing CSS into every page their staff load.
 
-`parseTenantBranding` accepts hex colours only, lengths only for the radius, and
-same-origin absolute paths only for images — no `data:` (an SVG data URL is a
+`parseTenantBranding` accepts hex colours only, one of two names for the corner
+style, and same-origin absolute paths only for images — no `data:` (an SVG data URL is a
 document with script in it), no `//host` (a protocol-relative URL that begins
 with a slash), no remote origins (a logo fetched from somewhere a tenant
 controls is a beacon on every page). Unknown keys are dropped, and one bad value

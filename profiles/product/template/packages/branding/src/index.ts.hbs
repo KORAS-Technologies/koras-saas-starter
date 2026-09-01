@@ -128,8 +128,8 @@ export function mergeBranding(
 /**
  * The tokens a customer may set for their own tenant.
  *
- * A deliberately short list. Colours, corner radius and the two images are what
- * "make it look like ours" means; the font stacks and the semantic text colours
+ * A deliberately short list. Colours, the two images and a corner style are
+ * what "make it look like ours" means; the font stacks and the semantic text colours
  * are not on it, because a customer who picks an unreadable pair of them breaks
  * the product for their own staff and calls it a bug.
  *
@@ -142,21 +142,46 @@ export const TENANT_OVERRIDABLE = [
   'accentColor',
   'surfaceMutedColor',
   'borderColor',
-  'radius',
   'logoUrl',
   'logoDarkUrl',
 ] as const
 
 export type TenantBrandingKey = (typeof TENANT_OVERRIDABLE)[number]
 
+/**
+ * How square the corners are, as a choice rather than a measurement.
+ *
+ * A customer picks one of two looks. They do not pick a CSS length, and that is
+ * both a kinder question and a smaller attack surface: `radius` used to be a
+ * tenant-writable string on its way into a custom property, guarded by a
+ * regular expression that had to be right. Two names cannot be malformed.
+ *
+ * The product still sets any length it likes in `productConfig.brand.radius` --
+ * this is what a *customer* may change, and it is deliberately coarser than
+ * what the product author controls.
+ */
+export type CornerStyle = 'flat' | 'rounded'
+
+/** What each choice actually means, in one place. */
+export const CORNER_RADIUS: Record<CornerStyle, string> = {
+  flat: '0',
+  rounded: '0.75rem',
+}
+
+export function isCornerStyle(value: unknown): value is CornerStyle {
+  return value === 'flat' || value === 'rounded'
+}
+
 export interface TenantBranding {
   tokens: Partial<Pick<BrandingTokens, TenantBrandingKey>>
   /** White-label display name. Empty means "use the product's own name". */
   name: string
+  /** Unset means the product's own radius stands. */
+  cornerStyle: CornerStyle | null
 }
 
 /** Nothing configured. Returned rather than null so callers need no branch. */
-export const NO_TENANT_BRANDING: TenantBranding = { tokens: {}, name: '' }
+export const NO_TENANT_BRANDING: TenantBranding = { tokens: {}, name: '', cornerStyle: null }
 
 /**
  * A CSS colour this application is willing to write into a style attribute.
@@ -173,9 +198,6 @@ export const NO_TENANT_BRANDING: TenantBranding = { tokens: {}, name: '' }
  * because it survived a round trip through Postgres.
  */
 const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
-
-/** A length, in the three units a radius is ever written in. */
-const LENGTH = /^(?:0|[0-9]{1,3}(?:\.[0-9]{1,3})?(?:rem|px|em))$/
 
 /**
  * An image path this application is willing to put in `src`.
@@ -214,10 +236,6 @@ export function parseTenantBranding(raw: unknown): TenantBranding {
 
   for (const key of TENANT_OVERRIDABLE) {
     const value = record[key]
-    if (key === 'radius') {
-      if (typeof value === 'string' && LENGTH.test(value)) tokens.radius = value
-      continue
-    }
     if (key === 'logoUrl' || key === 'logoDarkUrl') {
       if (typeof value === 'string' && ASSET_PATH.test(value)) tokens[key] = value
       continue
@@ -230,12 +248,22 @@ export function parseTenantBranding(raw: unknown): TenantBranding {
   // it is a way to break every header in the product.
   const name = typeof record.name === 'string' ? record.name.trim().slice(0, 60) : ''
 
-  return { tokens, name }
+  // One of two names, or nothing. Anything else -- including the CSS lengths
+  // this column used to accept -- leaves the product's own radius in place.
+  const cornerStyle = isCornerStyle(record.cornerStyle) ? record.cornerStyle : null
+
+  return { tokens, name, cornerStyle }
 }
 
 /** The tokens a page should actually render with, for this customer. */
 export function brandingFor(base: BrandingTokens, tenant: TenantBranding): BrandingTokens {
-  return mergeBranding(base, tenant.tokens)
+  const merged = mergeBranding(base, tenant.tokens)
+  // Applied after the merge rather than as a token, because the customer chose
+  // a look and this is where a look becomes a length. Nothing downstream knows
+  // the choice existed.
+  return tenant.cornerStyle === null
+    ? merged
+    : { ...merged, radius: CORNER_RADIUS[tenant.cornerStyle] }
 }
 
 /* -------------------------------------------------------------------------- */

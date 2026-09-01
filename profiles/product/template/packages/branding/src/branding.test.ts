@@ -70,11 +70,37 @@ test('a logo must be a same-origin path', () => {
   }
 })
 
-test('a radius must be a length', () => {
-  assert.equal(parseTenantBranding({ radius: '0.5rem' }).tokens.radius, '0.5rem')
-  assert.equal(parseTenantBranding({ radius: '4px' }).tokens.radius, '4px')
-  assert.equal(parseTenantBranding({ radius: '0' }).tokens.radius, '0')
-  assert.equal(parseTenantBranding({ radius: '9999vmax; }' }).tokens.radius, undefined)
+test('a corner style is one of two names, and nothing else is', () => {
+  assert.equal(parseTenantBranding({ cornerStyle: 'flat' }).cornerStyle, 'flat')
+  assert.equal(parseTenantBranding({ cornerStyle: 'rounded' }).cornerStyle, 'rounded')
+
+  // This column used to accept a CSS length, guarded by a regular expression
+  // that had to be right about `9999vmax; }`. Two names cannot be malformed, so
+  // the guard is the type rather than a pattern -- and every one of these,
+  // including the lengths that used to be valid, now leaves the product's own
+  // radius standing.
+  for (const attack of ['0.5rem', '4px', '0', '9999vmax; }', 'Rounded', '', null, 7, {}]) {
+    assert.equal(parseTenantBranding({ cornerStyle: attack }).cornerStyle, null, String(attack))
+  }
+})
+
+test('a corner style becomes a radius, and only at the end', () => {
+  // The customer picks a look; `brandingFor` is where a look becomes a length.
+  // Nothing downstream of it knows the choice existed, which is what keeps the
+  // token pipeline unaware of tenants.
+  const flat = brandingFor(productConfig.brand, {
+    tokens: {},
+    name: '',
+    cornerStyle: 'flat',
+  })
+  assert.equal(flat.radius, '0')
+
+  const rounded = brandingFor(productConfig.brand, {
+    tokens: {},
+    name: '',
+    cornerStyle: 'rounded',
+  })
+  assert.equal(rounded.radius, '0.75rem')
 })
 
 test('a key nobody offered is not a token', () => {
