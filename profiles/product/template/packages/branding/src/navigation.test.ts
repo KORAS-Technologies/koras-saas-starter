@@ -347,7 +347,11 @@ test('a plain member sees the product but not its administration', () => {
     productConfig.navigation,
     context({ access: MEMBER, capabilities: productConfig.product.capabilities }),
   )
-  assert.deepEqual(ids(resolved), ['home'])
+  // `reports` is here and `insights` is not, with no entitlements resolved:
+  // that is the two lock behaviours, in the shipped registry rather than in a
+  // fixture. A member is refused the administration group by permission, which
+  // is a different gate and hides regardless of behaviour.
+  assert.deepEqual(ids(resolved), ['home', 'reports'])
 })
 
 test('an administrator sees the administration group', () => {
@@ -355,7 +359,34 @@ test('an administrator sees the administration group', () => {
     productConfig.navigation,
     context({ access: ADMIN, capabilities: productConfig.product.capabilities }),
   )
-  assert.deepEqual(ids(resolved), ['home', 'team', 'settings'])
+  assert.deepEqual(ids(resolved), ['home', 'reports', 'team', 'settings'])
+})
+
+test('the two shipped plan gates demonstrate one behaviour each', () => {
+  // The registry ships one locking module and one hiding module so both states
+  // are visible in a running product before anybody designs one. Asserted here
+  // because "hidden" and "never registered" are indistinguishable by eye, and a
+  // product that deleted `insights` while keeping this test passing would be
+  // telling itself the hide gate still works.
+  const resolved = resolveNavigation(
+    productConfig.navigation,
+    context({ access: ADMIN, capabilities: productConfig.product.capabilities }),
+  )
+  const modules = resolved.flatMap((group) => group.items)
+
+  const reports = modules.find((module) => module.id === 'reports')
+  assert.ok(reports, 'reports should still be listed when the plan excludes it')
+  assert.equal(reports.state, 'locked')
+  assert.ok(
+    (reports.lockedReason ?? '') !== '',
+    'a locked module needs a reason: collapsed, it is the whole accessible name',
+  )
+
+  assert.equal(
+    modules.find((module) => module.id === 'insights'),
+    undefined,
+    'insights hides rather than locks, so it must be absent entirely',
+  )
 })
 
 /* -------------------------------------------------------------------------- */
