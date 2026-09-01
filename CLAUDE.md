@@ -197,8 +197,13 @@ without anything going red — claims about *where* are checked now, claims abou
 41 resources across eight providers — because the credentials a committed plan
 file published in it could not be un-published, and destroying what they reach
 is the only remedy that works after disclosure. FOLLOW_UPS F1 records what was
-removed. There is no product repository today, which means product-side drift is
-caught only by Generator Integration building one from the templates.
+removed. The product repository today is `koras-e2e-shop`, provisioned and
+pushed the same day (F15). **Nothing syncs it** — a generated project has no
+upstream and the factory pushes to nothing, so it is kept level by a hand-
+carried `chore: sync … from the starter` commit per change, and `--check-drift`
+sees only files it never received, not content drift in files it has. Template
+breakage is still caught independently by Generator Integration building a
+product from the templates.
 R-031 stands accepted with mitigation.
 
 **Next step:** the register job has never run in a real pipeline (`FOLLOW_UPS.md`

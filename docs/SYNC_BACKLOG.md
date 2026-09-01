@@ -7,21 +7,31 @@ lands in four places and does not always land in all of them:
 
 ```
 koras-saas-starter                    the factory, and its own CI
-  profiles/product/template           →  (no product repository today)
+  profiles/product/template           →  koras-e2e-shop
   profiles/control-plane/template     →  koras-control-plane
 ```
 
-`output/sample-product` filled the first row until 2026-08-30, when the estate
-was deleted to close C4 and FOLLOW_UPS F1. Entries below that name it are dated
-records of what was true then; the divergence they describe was real and is now
-moot rather than fixed.
+**Corrected 2026-09-01.** The product row read *(no product repository today)*
+and had been wrong since 2026-08-30. `output/sample-product` filled it until
+that day, when the estate was deleted to close C4 and FOLLOW_UPS F1 — entries
+below that name it are dated records of what was true then — but
+`koras-e2e-shop` was provisioned and pushed the same day (F15), and has been
+receiving hand-carried `chore: sync … from the starter` commits ever since. So
+this document described a gap that had already closed while the syncing it
+exists to track was happening in commits it did not mention.
 
-**The product row being empty is a gap, not a tidy state.** Every entry in this
-document exists because a fix landed in one place and not another, and the
-control-plane row is the only one left that can prove it. Until a product
-repository exists again, product-side drift is caught by
-`generator-integration.yml` generating one and building it — which is D1, and is
-why D1 mattered more than this document estimated.
+**Nothing syncs it, though, and that is the standing gap.** A generated project
+has no upstream to pull from and the factory pushes to nothing. What keeps
+`koras-e2e-shop` level is somebody carrying each change across by hand, one
+commit per starter change, and `--check-drift` reports only files a project
+never received plus generator-owned config — not content drift in rendered files
+it already has. It called the project three files behind on 2026-09-01 while
+`apps/web/src/lib/entitlements.ts` there was a version of the file the starter
+had replaced. D3 owns that.
+
+`generator-integration.yml` still generates a product and builds it, which is
+what catches template-side breakage independently of whether anyone synced —
+that is D1, and it matters for the same reason it always did.
 
 A fix applied downstream — in `koras-control-plane`, by hand, at the moment it
 was needed — is invisible to the factory. A fix applied to one profile template
