@@ -33,7 +33,18 @@ import {
  * be exercised -- which is how a real one gets added later without anyone
  * noticing.
  */
-const PUBLIC_PATHS = ['/login', '/signin', '/signup', '/api/auth']
+const PUBLIC_PATHS = [
+  '/login',
+  '/signin',
+  '/signup',
+  '/api/auth',
+  // The three the public footer links to. A privacy policy behind a sign-in is
+  // a privacy policy nobody can read before deciding whether to sign up, which
+  // is the one moment it exists for.
+  '/privacy',
+  '/terms',
+  '/faq',
+]
 
 /**
  * Paths that are public *exactly*, matched with `===` rather than by prefix.

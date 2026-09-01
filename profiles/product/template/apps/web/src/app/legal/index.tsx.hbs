@@ -1,0 +1,65 @@
+import type { ReactNode } from 'react'
+import { Container } from '@{{projectSlug}}/ui'
+
+/**
+ * The shell the three public text pages share.
+ *
+ * One layout, one banner, one typography scale — so Privacy, Terms and FAQ
+ * cannot drift into three slightly different pages, and so replacing the words
+ * on one of them is an edit to that file alone.
+ *
+ * Local to `apps/web` rather than in `packages/ui`, deliberately: it is page
+ * furniture for three routes in one application, and a component in the shared
+ * package is a component `apps/marketing` and `apps/admin` also have to justify
+ * not using.
+ */
+export function LegalPage({
+  title,
+  summary,
+  reviewed = false,
+  children,
+}: {
+  title: string
+  summary: string
+  /**
+   * Set to true once a person has replaced this text with a reviewed document.
+   *
+   * Until then the page says outright that it is a description of the software
+   * rather than a legal instrument. A generated policy that reads as though a
+   * lawyer approved it is a published commitment nobody made — and the reader
+   * it misleads is the customer deciding whether to trust the product.
+   */
+  reviewed?: boolean
+  children: ReactNode
+}) {
+  return (
+    <div className="py-16">
+      <Container className="max-w-3xl">
+        <h1 className="font-display text-3xl font-bold text-ink sm:text-4xl">{title}</h1>
+        <p className="mt-3 text-base leading-7 text-ink-muted">{summary}</p>
+
+        {!reviewed && (
+          <div className="mt-8 rounded-brand border border-line bg-surface-muted px-5 py-4">
+            <p className="text-sm leading-6 text-ink-muted">
+              <span className="font-semibold text-ink">Not yet reviewed.</span> This page
+              describes what the software does. It is not a legal document and has not been
+              checked by anyone qualified to write one. Replace it before this product is sold,
+              and pass <code className="text-ink">reviewed</code> to remove this notice.
+            </p>
+          </div>
+        )}
+
+        <div className="mt-10 space-y-10">{children}</div>
+      </Container>
+    </div>
+  )
+}
+
+export function LegalSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section>
+      <h2 className="font-display text-xl font-bold text-ink">{title}</h2>
+      <div className="mt-3 space-y-3 text-sm leading-6 text-ink-muted">{children}</div>
+    </section>
+  )
+}

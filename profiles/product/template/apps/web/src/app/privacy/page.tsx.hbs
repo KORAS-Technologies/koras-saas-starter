@@ -1,0 +1,98 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+import { PublicFooter, PublicHeader } from '@{{projectSlug}}/ui'
+import { LegalPage, LegalSection } from '../legal'
+
+/**
+ * The privacy notice.
+ *
+ * **This is a description of what the generated software does, not a legal
+ * document.** It is accurate about the mechanics — what is stored, where, who
+ * can reach it — because those are facts about this repository and a reader can
+ * check them. It says nothing about lawful basis, retention periods,
+ * international transfers or a data controller, because those are decisions
+ * about *your* business that no generator can know, and a policy that invents
+ * them is worse than no policy: it is a published commitment nobody made.
+ *
+ * The banner at the top says so plainly rather than burying it, and it is meant
+ * to be removed by whoever replaces this text with a reviewed notice.
+ */
+export const metadata = {
+  title: `Privacy · ${productConfig.product.name}`,
+  description: `How ${productConfig.product.name} handles personal data.`,
+}
+
+export default function PrivacyPage() {
+  const { product } = productConfig
+
+  return (
+    <>
+      <PublicHeader />
+      <main id="main-content">
+        <LegalPage
+          title="Privacy"
+          summary={`What ${product.name} stores about the people who use it, and why.`}
+        >
+          <LegalSection title="What is stored about you">
+            <p>
+              When you sign in, {product.name} records the identifier your organisation&rsquo;s
+              sign-in provider gives us, your email address and your display name. It records
+              which organisation you belong to and what role you hold there, because those two
+              facts decide what you are allowed to open.
+            </p>
+            <p>
+              Anything else in {product.name} is data your own organisation put there. It
+              belongs to them, not to us.
+            </p>
+          </LegalSection>
+
+          <LegalSection title="Who can see it">
+            <p>
+              Your organisation&rsquo;s data is separated from every other organisation&rsquo;s
+              in the database itself, by row-level security, rather than by a filter in the
+              application. A query that forgets to scope itself returns nothing rather than
+              somebody else&rsquo;s records.
+            </p>
+            <p>
+              People who administer {product.name} can reach data in the course of running and
+              supporting it. What they do is recorded.
+            </p>
+          </LegalSection>
+
+          <LegalSection title="Sign-in">
+            <p>
+              {product.name} never sees your password. Sign-in happens at your
+              organisation&rsquo;s identity provider, which tells us only who you are and what
+              you may do. Your session is a cookie this application signs, readable by nobody
+              else and sent only to this site.
+            </p>
+          </LegalSection>
+
+          <LegalSection title="Cookies">
+            <p>
+              Two, and both are necessary: one holds your session, one carries the token this
+              application forwards to its own API. There is no advertising or analytics cookie
+              in {product.name} as it is shipped.
+            </p>
+          </LegalSection>
+
+          <LegalSection title="Asking us about your data">
+            <p>
+              {product.contactEmail === '' ? (
+                <>Contact whoever administers {product.name} in your organisation.</>
+              ) : (
+                <>
+                  Write to{' '}
+                  <a className="text-brand hover:underline" href={`mailto:${product.contactEmail}`}>
+                    {product.contactEmail}
+                  </a>
+                  .
+                </>
+              )}
+            </p>
+          </LegalSection>
+        </LegalPage>
+      </main>
+      <PublicFooter />
+    </>
+  )
+}

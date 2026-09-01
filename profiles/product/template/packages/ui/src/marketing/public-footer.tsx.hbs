@@ -16,6 +16,65 @@ import { appHref } from '../lib/links'
  * product turns it off, and the Koras wordmark is the only Koras branding
  * anywhere in a generated product's frontend.
  */
+/**
+ * The product's own accounts, where it has any.
+ *
+ * Rendered only for the entries that are set, and not rendered at all when
+ * neither is — the same rule the contact address follows. An icon linking to an
+ * account nobody runs looks like a channel and is not.
+ *
+ * The marks are inline paths rather than an icon font or a package: two SVGs is
+ * less code than a dependency, and a brand mark that arrives over the network
+ * is a request from every page of the product.
+ *
+ * The addresses come from `productConfig.brand`, beside the logo and the
+ * favicon, because an account is part of what the product is rather than copy
+ * on one page.
+ */
+function SocialLinks() {
+  const { brand } = productConfig
+  const accounts = [
+    {
+      href: brand.linkedinUrl,
+      label: 'LinkedIn',
+      path: 'M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5ZM3 9h4v12H3V9Zm7 0h3.8v1.7h.05c.53-.95 1.83-1.95 3.76-1.95C21.4 8.75 22 11.1 22 14.16V21h-4v-6.06c0-1.45-.03-3.3-2.02-3.3-2.02 0-2.33 1.57-2.33 3.2V21h-4V9Z',
+    },
+    {
+      href: brand.xUrl,
+      label: 'X',
+      path: 'M17.53 3h3.16l-6.9 7.89L22 21h-6.36l-4.98-6.51L4.96 21H1.8l7.38-8.44L2 3h6.52l4.5 5.95L17.53 3Zm-1.11 16.06h1.75L7.66 4.84H5.78l10.64 14.22Z',
+    },
+  ].filter((account) => account.href !== '')
+
+  if (accounts.length === 0) return null
+
+  return (
+    <ul className="mt-6 flex items-center gap-3">
+      {accounts.map((account) => (
+        <li key={account.label}>
+          <a
+            href={account.href}
+            // An outbound link to somewhere this product does not control.
+            // `noopener` is the one that matters: without it the opened page
+            // can navigate this one through `window.opener`.
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-brand border border-white/15 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            {/* The name is the accessible name. An icon-only link with none
+                announces its own URL, which is how a screen reader reads out a
+                tracking parameter. */}
+            <span className="sr-only">{productConfig.product.name} on {account.label}</span>
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="h-5 w-5">
+              <path d={account.path} />
+            </svg>
+          </a>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 export function PublicFooter() {
   const { product, marketing } = productConfig
   const groups = marketing.footerGroups.filter((group) => group.links.length > 0)
@@ -34,6 +93,7 @@ export function PublicFooter() {
               {product.contactEmail}
             </a>
           )}
+          <SocialLinks />
         </div>
 
         {groups.length > 0 && (

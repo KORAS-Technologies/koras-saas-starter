@@ -1,0 +1,84 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+import { PublicFooter, PublicHeader } from '@{{projectSlug}}/ui'
+import { LegalPage, LegalSection } from '../legal'
+
+/**
+ * The terms of use.
+ *
+ * The same rule as the privacy page: accurate about the software, silent about
+ * everything a contract decides. Liability, warranty, governing law, notice
+ * periods and what happens on termination are the substance of terms of
+ * service, and every one of them is a commercial decision. Inventing them here
+ * would put words in the mouth of whoever ships this product.
+ *
+ * What is left is real and worth saying: what an account is, what a plan
+ * grants, whose data it is, and what ends access.
+ */
+export const metadata = {
+  title: `Terms · ${productConfig.product.name}`,
+  description: `The terms on which ${productConfig.product.name} is provided.`,
+}
+
+export default function TermsPage() {
+  const { product } = productConfig
+
+  return (
+    <>
+      <PublicHeader />
+      <main id="main-content">
+        <LegalPage
+          title="Terms"
+          summary={`What you can expect from ${product.name}, and what it expects from you.`}
+        >
+          <LegalSection title="Accounts">
+            <p>
+              Access to {product.name} belongs to an organisation, not to a person. Your
+              organisation decides who may sign in and what each person may do; removing
+              somebody from the organisation removes their access.
+            </p>
+            <p>
+              You are responsible for what happens under your sign-in. Tell your administrator
+              promptly if you think somebody else is using it.
+            </p>
+          </LegalSection>
+
+          <LegalSection title="Plans">
+            <p>
+              What your organisation may use is decided by its plan. Features outside it are
+              either hidden or shown as unavailable — never silently degraded, and never
+              charged for without being bought.
+            </p>
+            <p>
+              A trial ends on its date. When it does, access to plan-gated features stops and
+              the account itself stays open, so somebody can still sign in and choose a plan.
+            </p>
+          </LegalSection>
+
+          <LegalSection title="Your data">
+            <p>
+              The data your organisation puts into {product.name} remains your
+              organisation&rsquo;s. It is stored separately from every other
+              organisation&rsquo;s, and it is not used to train anything or sold to anybody.
+            </p>
+          </LegalSection>
+
+          <LegalSection title="Acceptable use">
+            <p>
+              Do not attempt to reach another organisation&rsquo;s data, disrupt the service
+              for others, or use {product.name} to break the law. Access can be suspended where
+              any of those is happening.
+            </p>
+          </LegalSection>
+
+          <LegalSection title="Changes">
+            <p>
+              These terms can change. Material changes are announced before they take effect,
+              not applied quietly.
+            </p>
+          </LegalSection>
+        </LegalPage>
+      </main>
+      <PublicFooter />
+    </>
+  )
+}

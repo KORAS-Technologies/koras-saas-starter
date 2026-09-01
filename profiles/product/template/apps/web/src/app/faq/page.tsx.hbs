@@ -1,0 +1,95 @@
+import { productConfig } from '@{{projectSlug}}/branding'
+import { PublicFooter, PublicHeader } from '@{{projectSlug}}/ui'
+import { LegalPage, LegalSection } from '../legal'
+
+/**
+ * Frequently asked questions.
+ *
+ * Answers to things this repository genuinely knows: how sign-in works, why a
+ * menu entry is missing, who can add people, what a trial ending does. Those
+ * are the questions a product with four independent gates actually receives,
+ * and every answer here is checkable against the code rather than aspirational.
+ *
+ * `reviewed` is set: unlike the privacy and terms pages, nothing here is a legal
+ * commitment, so there is no unreviewed claim to warn about.
+ */
+export const metadata = {
+  title: `FAQ · ${productConfig.product.name}`,
+  description: `Common questions about ${productConfig.product.name}.`,
+}
+
+export default function FaqPage() {
+  const { product } = productConfig
+
+  return (
+    <>
+      <PublicHeader />
+      <main id="main-content">
+        <LegalPage
+          title="FAQ"
+          summary={`The questions ${product.name} is asked most often.`}
+          reviewed
+        >
+          <LegalSection title="How do I sign in?">
+            <p>
+              Through your organisation&rsquo;s identity provider. {product.name} never asks for
+              or stores a password — you are sent to sign in, and you come back here. If your
+              organisation requires a second factor, you will be asked for it and refused
+              without it rather than looped back to the sign-in page.
+            </p>
+          </LegalSection>
+
+          <LegalSection title="Why can I not see a section other people can?">
+            <p>Four things decide it, and they fail differently on purpose.</p>
+            <p>
+              Your <strong>role</strong> decides what you may do; a section you have no
+              permission for is hidden, and its address is refused as well. Your
+              organisation&rsquo;s <strong>plan</strong> decides what it has bought; those
+              sections either do not appear or appear locked, depending on whether it is
+              something you could add. Your organisation&rsquo;s own{' '}
+              <strong>feature switches</strong> work the same way. And some sections only exist
+              in builds that were generated with them.
+            </p>
+            <p>
+              Settings &rarr; General names the file behind each of the four, which is the
+              fastest way to find out which one you have hit.
+            </p>
+          </LegalSection>
+
+          <LegalSection title="Who can add or remove people?">
+            <p>
+              Owners and administrators of your organisation, in the KORAS account portal.
+              Team &amp; Access in {product.name} shows who has access here and what each role
+              carries; adding somebody to the organisation itself happens in the portal.
+            </p>
+          </LegalSection>
+
+          <LegalSection title="What happens when a trial ends?">
+            <p>
+              Features that need a plan stop being available, and everything else keeps
+              working. The account stays open and you can still sign in — an account that
+              disappeared with the trial would be one nobody could upgrade.
+            </p>
+          </LegalSection>
+
+          <LegalSection title="Can we use our own colours and logo?">
+            <p>
+              Yes. An administrator sets them for your organisation and every signed-in page
+              picks them up — colours, corner radius, and a logo for light and dark
+              backgrounds. The product&rsquo;s own branding is what you see until then.
+            </p>
+          </LegalSection>
+
+          <LegalSection title="Is my organisation&rsquo;s data separate from everyone else&rsquo;s?">
+            <p>
+              Yes, and it is separated in the database rather than by the application
+              remembering to ask. A query that does not name your organisation returns nothing
+              at all.
+            </p>
+          </LegalSection>
+        </LegalPage>
+      </main>
+      <PublicFooter />
+    </>
+  )
+}

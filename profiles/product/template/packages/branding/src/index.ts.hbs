@@ -70,6 +70,26 @@ export interface BrandingTokens {
   displayFontFamily: string
   /** Corner radius of cards and buttons, as a CSS length. */
   radius: string
+
+  /**
+   * Where this product exists elsewhere.
+   *
+   * Brand rather than marketing copy, which is why they are here beside the
+   * logo and the favicon rather than in `MarketingConfig`: an account is part
+   * of what the product *is*, and the footer is only one of the places it will
+   * eventually be shown.
+   *
+   * Empty by default and rendered only when set, for the same reason
+   * `contactEmail` is — an icon linking to an account nobody runs looks like a
+   * channel and is not. Absolute `https://` addresses.
+   *
+   * Not in `TENANT_OVERRIDABLE`. These are the product's own accounts, and the
+   * footer that shows them is public: there is no tenant in scope on that page,
+   * and a customer setting them would be publishing links on somebody else's
+   * front door.
+   */
+  linkedinUrl: string
+  xUrl: string
 }
 
 export const defaultBranding: BrandingTokens = {
@@ -90,6 +110,8 @@ export const defaultBranding: BrandingTokens = {
   displayFontFamily:
     'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   radius: '0.75rem',
+  linkedinUrl: '',
+  xUrl: '',
 }
 
 export function mergeBranding(
@@ -652,6 +674,14 @@ export const productConfig: ProductConfig = {
         links: [
           { label: 'Sign in', href: '/login' },
           { label: 'Get started', href: '/signup' },
+        ],
+      },
+      {
+        title: 'Legal',
+        links: [
+          { label: 'Privacy', href: '/privacy' },
+          { label: 'Terms', href: '/terms' },
+          { label: 'FAQ', href: '/faq' },
         ],
       },
     ],

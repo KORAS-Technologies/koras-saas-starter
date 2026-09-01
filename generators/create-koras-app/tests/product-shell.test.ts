@@ -261,14 +261,35 @@ describe('the route gate', () => {
   /**
    * The two lists that decide what is reachable without a session. Widening
    * either is how a gate stays present, stays tested and admits everybody --
-   * `public-routes.test.ts` owns the general rule; this says the shell work did
-   * not touch them.
+   * `public-routes.test.ts` owns the general rule; this pins the membership.
+   *
+   * It used to compare the declaration against one literal string, which
+   * caught a widening and nothing else: a path exempted for a route that does
+   * not exist would have passed, and so would a `/privacy` exemption serving
+   * nothing. Every entry is now checked to lead somewhere, so an exemption
+   * cannot outlive the page it was added for.
    */
-  it('leaves the public paths exactly as they were', () => {
-    expect(middleware).toContain(
-      "const PUBLIC_PATHS = ['/login', '/signin', '/signup', '/api/auth']",
-    )
+  it('exempts only paths that serve something public', () => {
+    const declaration = /const PUBLIC_PATHS = \[([^\]]*)\]/.exec(middleware)?.[1] ?? ''
+    const paths = [...declaration.matchAll(/'([^']+)'/g)].map((match) => match[1] as string)
+
+    expect(paths).toEqual([
+      '/login',
+      '/signin',
+      '/signup',
+      '/api/auth',
+      '/privacy',
+      '/terms',
+      '/faq',
+    ])
     expect(middleware).toContain("const PUBLIC_EXACT_PATHS = ['/']")
+
+    for (const path of paths) {
+      // `/api/auth` is a directory of route handlers rather than a page, and
+      // resolves the same way.
+      const route = join(PRODUCT, 'apps', 'web', 'src', 'app', path.slice(1))
+      expect(existsSync(route), `${path} is public and has no route`).toBe(true)
+    }
   })
 
   /**
