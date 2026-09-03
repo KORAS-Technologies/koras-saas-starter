@@ -4,6 +4,10 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115.0",
+  # Imported directly by core/security.py for BaseHTTPMiddleware. It resolves
+  # anyway -- fastapi brings it -- which is exactly how an undeclared import
+  # survives until the day the transitive dependency stops providing it.
+  "starlette>=0.40.0",
   "uvicorn[standard]>=0.30.0",
   "sqlalchemy>=2.0.0",
   "alembic>=1.13.0",
