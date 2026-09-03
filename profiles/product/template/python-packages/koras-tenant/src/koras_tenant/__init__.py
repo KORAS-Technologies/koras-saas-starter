@@ -10,8 +10,10 @@ uuid the moment any route actually used it.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
+from koras_database import declare
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,22 +28,74 @@ class TenantContext:
     organization_id: str
 
 
-async def set_organization_context(session: AsyncSession, organization_id: str) -> None:
-    """Name the caller's organization for the lookup that follows.
+# ── What a transaction may be for, in this profile's vocabulary ──────────────
+#
+# `koras_database` carries the guard, the event and the refusal; it deliberately
+# carries no setting names. These are the product's. The Control Plane's are its
+# own and mean nothing here.
+#
+# Every one is transaction-local -- the `true` third argument to `set_config`.
+# A session-scoped setting would outlive the work and reach whichever client is
+# handed that server connection next, which is a cross-tenant leak created by
+# pooling rather than prevented by it.
 
-    Transaction-local, exactly as `set_rls_context` is, so it cannot outlive the
-    request on a pooled connection and be inherited by whoever gets that
-    connection next.
 
-    `set_config` rather than `SET LOCAL`, for the same reason the tenant context
-    uses it: `SET` takes no bind parameters, so the value would have to be
-    interpolated into the statement -- turning a token claim into an injection
-    vector in the one function the tenant boundary is about to depend on.
+@dataclass(frozen=True)
+class Tenant:
+    """One tenant's rows, and nothing else. What a customer request runs as."""
+
+    tenant_id: str
+
+    def settings(self) -> Mapping[str, str]:
+        # `app.provisioning` is cleared as well as `app.tenant_id` being set.
+        # It is transaction-local too, so on any path reachable from here it is
+        # already empty -- but "already empty" is a property of how the sessions
+        # happen to be opened today. A tenant request that ran with the
+        # provisioning flag still set would read every tenant's rows, and the
+        # cost of not relying on that is one entry in a dictionary.
+        return {"app.tenant_id": self.tenant_id, "app.provisioning": "off"}
+
+
+@dataclass(frozen=True)
+class Provisioning:
+    """The platform creating a tenant, before there is a tenant to scope to.
+
+    Creating the tenant is the point, so the policies keyed to
+    `current_tenant_id()` match no row and an insert against them is refused
+    rather than merely returning nothing. The schema therefore carries a second,
+    narrow set of policies gated on this flag, and this is the only declaration
+    that sets it.
+
+    What it grants is real and worth stating plainly: within such a transaction
+    the connection reads and writes every tenant row. Three properties are what
+    make that safe rather than an escape hatch -- it is transaction-local, it is
+    derived from no request input so a caller cannot ask for it, and the one
+    dependency that uses it serves the private platform router, which admits a
+    machine identity alone.
     """
-    await session.execute(
-        text("select set_config('app.zitadel_org_id', :organization_id, true)"),
-        {"organization_id": organization_id},
-    )
+
+    def settings(self) -> Mapping[str, str]:
+        return {"app.provisioning": "on"}
+
+
+@dataclass(frozen=True)
+class OrganizationLookup:
+    """Resolving which tenant an organization owns, before either is known.
+
+    The declaration that a guard makes necessary and a pair of helpers did not.
+    `resolve_tenant` runs on a session with no tenant context -- finding the
+    tenant is what it is for -- so under `install_rls` it must still say what it
+    is, or the transaction refuses to open.
+
+    That is the mechanism working rather than a wrinkle in it: the lookup reads
+    a table scoped by organization, and naming the organization is exactly what
+    scopes it.
+    """
+
+    organization_id: str
+
+    def settings(self) -> Mapping[str, str]:
+        return {"app.zitadel_org_id": self.organization_id}
 
 
 async def resolve_tenant(
@@ -67,7 +121,7 @@ async def resolve_tenant(
     if not organization_id:
         return None
 
-    await set_organization_context(session, organization_id)
+    declare(OrganizationLookup(organization_id=organization_id))
     result = await session.execute(
         text(
             "select id::text, slug, name from public.tenants "

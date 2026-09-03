@@ -188,8 +188,22 @@ describe('the product ships its policies as a migration', () => {
     expect(sql).toMatch(/current_setting\('app\.provisioning', true\)/)
 
     // And exactly one place sets it, on a session that carries no tenant.
+    //
+    // `Provisioning` replaced `set_provisioning_context` when the helpers
+    // became declarations. The property is unchanged and is stronger for it:
+    // the flag is now carried by a frozen dataclass that takes no argument, so
+    // there is nothing about it a request could influence even by mistake.
+    const declarations =
+      files.get('python-packages/koras-tenant/src/koras_tenant/__init__.py') ?? ''
+    expect(declarations, 'the provisioning declaration is not rendered').toMatch(
+      /class Provisioning:/,
+    )
+    expect(declarations, 'Provisioning must derive nothing from a request').toMatch(
+      /class Provisioning:[\s\S]*?def settings\(self\)[\s\S]*?["']app\.provisioning["']:\s*["']on["']/,
+    )
+
     const helper = files.get('services/api/koras_api/core/database.py') ?? ''
-    expect(helper).toContain('set_provisioning_context')
+    expect(helper).toContain('declare(Provisioning())')
     expect(helper, 'the provisioning session must not also resolve a tenant').toMatch(
       /async def get_platform_session\(\) -> AsyncGenerator/,
     )

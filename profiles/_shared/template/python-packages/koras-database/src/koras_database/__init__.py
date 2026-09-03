@@ -1,7 +1,13 @@
 from __future__ import annotations
 
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from dataclasses import dataclass
+from contextvars import ContextVar
+from typing import Protocol
+
+from sqlalchemy import Connection, event, text
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -9,55 +15,158 @@ class Base(DeclarativeBase):
     pass
 
 
-async def set_rls_context(session: AsyncSession, tenant_id: str) -> None:
-    """Set the tenant context that row-level security policies filter on.
+class UndeclaredCaller(RuntimeError):
+    """A transaction was opened without saying who it is for.
 
-    Uses ``set_config`` rather than ``SET LOCAL`` because ``SET`` does not accept
-    bind parameters. Without them the value has to be interpolated into the
-    statement, which turns a caller-supplied tenant id into an injection vector
-    in the one function the whole tenant boundary depends on. The third argument
-    scopes the setting to the current transaction, matching what ``LOCAL`` would
-    have given, so nothing leaks to the next request on a pooled connection.
-
-    ``app.provisioning`` is cleared here as well. It is transaction-local too,
-    so on any path either function is reachable from it is already empty -- but
-    "already empty" is a property of how the sessions happen to be opened today,
-    and the cost of not relying on that is one statement. A tenant request that
-    ran with the provisioning flag still set would read every tenant's rows.
+    Raised rather than allowed to proceed. An undeclared caller sees zero rows,
+    and zero rows is indistinguishable from a customer who genuinely has none --
+    which is how a policy set comes to be inert for months without anybody
+    noticing. A missing declaration is a programming error and should look like
+    one.
     """
-    await session.execute(
-        text(
-            "select set_config('app.tenant_id', :tenant_id, true), "
-            "set_config('app.provisioning', 'off', true)"
-        ),
-        {"tenant_id": tenant_id},
-    )
 
 
-async def set_provisioning_context(session: AsyncSession) -> None:
-    """Mark this transaction as the Control Plane provisioning a tenant.
+class Declaration(Protocol):
+    """Who a transaction is for, in whichever vocabulary the schema uses.
 
-    There is no tenant to scope to yet -- creating the tenant is the point --
-    so the policies keyed to ``current_tenant_id()`` match no row, and an insert
-    against them is refused rather than merely returning nothing.
-
-    So the product's schema carries a second, narrow set of policies gated on
-    this flag, and this is the only function that sets it. Three properties are
-    what make that safe rather than an escape hatch:
-
-    - It is transaction-local, exactly as the tenant context is, so it cannot
-      outlive the request on a pooled connection.
-    - Nothing derives it from a request. No header, body field or claim reaches
-      it -- a caller cannot ask for it, and there is no value to tamper with.
-    - The only dependency that calls it serves the private platform router,
-      which admits a machine identity alone.
-
-    What it grants is real and worth stating plainly: within such a transaction
-    the connection can read and write every tenant row, because a lookup by
-    ``tenant_key`` has no tenant context to be scoped by. That is why the
-    dependency granting it is separate from ``get_db`` rather than a flag on it.
+    The seam between what is shared and what is not. The guard, the event, the
+    context variable and the refusal are the same for every profile; the
+    settings are not. A product scopes rows by tenant; the Control Plane scopes
+    them by actor and organization. Neither vocabulary belongs in this package.
     """
-    await session.execute(text("select set_config('app.provisioning', 'on', true)"))
+
+    def settings(self) -> Mapping[str, str]:
+        """The transaction-local settings this declaration sets.
+
+        Bound as parameters, never interpolated: `SET` takes no bind parameters,
+        so a `SET LOCAL` here would mean building a statement out of a value
+        that arrived in a token -- an injection vector in the one function the
+        whole tenant boundary depends on.
+        """
+        ...
+
+
+_current: ContextVar[Declaration | None] = ContextVar("koras_rls_declaration", default=None)
+
+
+@contextmanager
+def acting_as(declaration: Declaration) -> Iterator[None]:
+    """Declare, for everything done inside this block."""
+    token = _current.set(declaration)
+    try:
+        yield
+    finally:
+        _current.reset(token)
+
+
+def declare(declaration: Declaration) -> None:
+    """Declare, for the rest of this task.
+
+    The scoped `acting_as` cannot be combined with `async with` in one
+    statement -- a synchronous context manager and an asynchronous one do not
+    mix -- and wrapping a whole request body in an extra block to satisfy that
+    is indentation in service of syntax.
+
+    Safe because a context variable set inside an asyncio Task is confined to
+    it: each request and each background job runs as its own Task with its own
+    copied context, so one cannot observe another's declaration, and there is
+    nothing to reset because the context ends with the task.
+
+    Use `acting_as` where the caller changes part-way through a scope; use this
+    where a whole task has one.
+    """
+    _current.set(declaration)
+
+
+def current_declaration() -> Declaration | None:
+    return _current.get()
+
+
+def install_rls(engine: AsyncEngine) -> None:
+    """Refuse to open a transaction that has not said who it is for.
+
+    This replaces a pair of helpers a caller had to remember to call, and the
+    direction the two designs fail in is the whole argument. A missed call
+    yields a query that succeeds and returns **more** than it should, which
+    looks exactly like a working feature. A missed declaration refuses to open
+    the transaction. Only one of those is survivable.
+
+    Not hypothetical: a helper of that shape shipped, nothing ever called it,
+    the services connected as the table owner so RLS never applied, and the
+    policies sat inert while everyone believed they were load bearing. It was
+    found by connecting as the restricted role and counting rows, not by
+    anything failing.
+
+    On the **engine** rather than a session class, because the engine is the
+    narrower waist: it covers sessions built directly, connections taken outside
+    a session, and anything added later, none of which a session-level listener
+    would see.
+
+    On `begin` rather than once per session, because the settings are
+    transaction-local and repositories commit part-way through their work. After
+    a commit SQLAlchemy opens a new transaction, and a context established at
+    session open is gone for every statement following the first commit.
+    `begin` fires for each of them.
+    """
+
+    @event.listens_for(engine.sync_engine, "begin")
+    def _declare(connection: Connection) -> None:
+        declaration = _current.get()
+        if declaration is None:
+            raise UndeclaredCaller(
+                "A database transaction was opened without declaring who it is "
+                "for. Wrap the work in koras_database.acting_as(...), or "
+                "declare(...) for a whole task."
+            )
+
+        settings = declaration.settings()
+        if not settings:
+            # Not an error. A declaration that sets nothing says "this
+            # transaction reads nothing a policy scopes" -- see
+            # `SystemTransaction` -- and that is a statement rather than an
+            # omission. The failure this guard exists to catch is the absence of
+            # any declaration at all, which is the branch above.
+            return
+
+        # One statement, bound. Built from the declaration's own keys rather
+        # than from a fixed list, which is what lets a profile carry its own
+        # vocabulary without this function knowing it.
+        bound = {_bind(name): value for name, value in settings.items()}
+        assignments = []
+        for name in settings:
+            parameter = _bind(name)
+            assignments.append(f"set_config('{name}', :{parameter}, true)")
+
+        connection.execute(text("select " + ", ".join(assignments)), bound)
+
+
+def _bind(setting_name: str) -> str:
+    """A bind-parameter name for a setting name.
+
+    `app.tenant_id` is not a legal parameter name, and the setting names are
+    ours rather than a caller's -- so this maps rather than validates.
+    """
+    return setting_name.replace(".", "_")
+
+
+@dataclass(frozen=True)
+class SystemTransaction:
+    """Work that no policy scopes, declared as such.
+
+    The startup check reads `pg_roles` to find out whether this connection can
+    be restrained by row-level security at all. There is no tenant, no
+    organization and no actor involved, and no policy applies to the row it
+    reads.
+
+    It still declares. Under `install_rls` the alternative is not "runs without
+    context" but "refuses to open", and a service that cannot complete its own
+    startup check is a service that will not start. Naming the case is also the
+    point: an exemption that has to be written down is one a reader can find,
+    where a special case inside the guard would not be.
+    """
+
+    def settings(self) -> Mapping[str, str]:
+        return {}
 
 
 class RlsNotEnforced(RuntimeError):
@@ -132,5 +241,10 @@ async def verify_connection_enforces_rls(
     if not required:
         return
 
-    async with session_factory() as session:
-        await assert_rls_enforced(session)
+    # Declared here rather than by every caller: this function owns the
+    # transaction it opens, and a startup check that made each service remember
+    # to wrap it would be the kind of call people forget -- which is the shape
+    # `install_rls` exists to make impossible.
+    with acting_as(SystemTransaction()):
+        async with session_factory() as session:
+            await assert_rls_enforced(session)
