@@ -29,4 +29,16 @@ export const SKIP_ENTRIES: ReadonlySet<string> = new Set([
   '.turbo',
   '.next',
   'dist',
+  // Python's caches, for the same reason and by the same route. Running pytest
+  // or mypy inside `python-packages/` leaves `__pycache__` and `.coverage`
+  // behind, and a walk then ships them into every generated project: nine of
+  // them reached `profiles/`, where a drift check reported each one as a file
+  // the project "never received". Six of twenty-four findings were bytecode.
+  '__pycache__',
+  '.pytest_cache',
+  '.mypy_cache',
+  '.ruff_cache',
+  // Present in git.ts's own skip set and absent here, which is the divergence
+  // the note above warns about rather than a new decision.
+  '.venv',
 ])

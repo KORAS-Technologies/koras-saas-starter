@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import type { GenerationContext } from './context.js'
@@ -37,34 +38,100 @@ const OWNED_PATHS = [
 ]
 
 /**
- * The wider set, compared only when asked for (`--all`) and never counted as a
- * failure.
+ * Everything else the template ships, compared only when asked for (`--all`)
+ * and never counted as a failure.
  *
- * These files are generator-owned in the sense that the template ships them,
- * but a healthy project edits them: workflows grow real deploy steps where the
- * template has a stub, terraform.tfvars holds values where the template holds
- * placeholders, the Makefile gains project targets. Measured against a working
- * project, comparing them flags eighteen files, and most of those are the
- * project being ahead rather than behind -- which no content comparison can
- * distinguish, since a replaced stub and a missing fix look identical.
+ * This was a three-prefix allowlist -- `infrastructure/`, `local/`, `.github/`
+ * plus seven root files -- on the reasoning that a healthy project edits the
+ * rest, so comparing it says nothing. That reasoning is sound and the scope
+ * drawn from it was still wrong: it excluded `services/`, `packages/`,
+ * `python-packages/`, `apps/`, `tests/` and `supabase/`, which is where a
+ * hand survey of `koras-control-plane` found forty of its forty-seven real
+ * differences. The check reported fourteen files and there were nearly fifty.
  *
- * So this is a "show me what has moved" tool for when drift is already
- * suspected, not a gate. Treating it as one would train people to ignore the
- * findings that do matter.
+ * The noise the allowlist was avoiding is real, but it has a shape, and the
+ * shape is nameable: the template ships a scaffold, the project replaces it
+ * with the actual implementation. `packages/config/src/index.ts` is
+ * `// config -- implement as needed`; the project's is the real module.
+ * Reporting that as drift is what trains people to ignore the check.
+ *
+ * So the scope is now everything, and scaffolds are classified out instead of
+ * being excluded by the directory they happen to live in. A replaced scaffold
+ * is counted and not listed; anything the generator would *add* is listed,
+ * because that is the direction that means the project is behind.
  */
-const REVIEWABLE_PREFIXES = ['infrastructure/', 'local/', '.github/']
-const REVIEWABLE_FILES = [
-  'Makefile',
-  'turbo.json',
-  'pnpm-workspace.yaml',
-  'tsconfig.base.json',
-  'eslint.config.mjs',
-  '.gitignore',
-  '.gitattributes',
-]
+function isScaffold(templateContent: string): boolean {
+  const body = templateContent
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l !== '')
 
-function isReviewable(path: string): boolean {
-  return REVIEWABLE_PREFIXES.some((p) => path.startsWith(p)) || REVIEWABLE_FILES.includes(path)
+  if (body.length === 0) return true
+  if (body.some((l) => /implement as needed/i.test(l))) return true
+
+  // One or two lines that are only a comment, an `export {}`, or a single
+  // directive: `apps/admin/src/app/globals.css` is one `@import "tailwindcss"`.
+  if (body.length <= 2) return true
+
+  return false
+}
+
+/**
+ * Files the project has that no template produces.
+ *
+ * The third of the three lists, and the one that did not exist. Nothing in the
+ * generator could answer "what is here that upstream has never seen", which is
+ * the question the promotion backlog is made of: `koras-control-plane` has
+ * roughly 291 such files, and every one of that count was produced by hand
+ * from shell pipelines, which is why the survey happened once.
+ *
+ * Tracked files only, via `git ls-files`. A filesystem walk would have to
+ * re-implement `.gitignore` to avoid reporting `.venv`, `.next` and every
+ * build output as a promotion candidate, and the project is a git repository
+ * by construction -- the generator runs `git init` in it. Where git is absent
+ * or the directory is not a repository, the list is skipped and said to be
+ * skipped, rather than being silently empty and read as "nothing to promote".
+ */
+function repoOnlyFiles(projectRoot: string, rendered: Set<string>): string[] | undefined {
+  let tracked: string
+  try {
+    tracked = execFileSync('git', ['ls-files', '-z'], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      maxBuffer: 64 * 1024 * 1024,
+    })
+  } catch {
+    return undefined
+  }
+
+  return tracked
+    .split('\0')
+    .filter((path) => path !== '' && !rendered.has(path))
+    .sort()
+}
+
+/**
+ * A directory rollup, because 291 paths is not a list anybody reads.
+ *
+ * Grouped two segments deep where there are two -- `services/api`,
+ * `packages/ui` -- so the answer to "what has this project grown" is legible
+ * at a glance and the per-file detail stays available behind `--verbose`.
+ */
+function rollUp(paths: string[]): Array<{ scope: string; count: number }> {
+  const counts = new Map<string, number>()
+  for (const path of paths) {
+    const segments = path.split('/')
+    const scope =
+      segments.length === 1
+        ? '(root)'
+        : segments.slice(0, segments.length > 2 ? 2 : 1).join('/')
+    counts.set(scope, (counts.get(scope) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .map(([scope, count]) => ({ scope, count }))
+    .sort((a, b) => b.count - a.count || a.scope.localeCompare(b.scope))
 }
 
 /**
@@ -169,6 +236,25 @@ export interface DriftReport {
   selectionsUnknown: boolean
   /** Populated only with `--all`. Informational: never affects the exit code. */
   reviewable: DriftFinding[]
+  /**
+   * Files the project has that no template produces — the promotion queue.
+   * `undefined` means it could not be established (not a git repository, or no
+   * git on PATH), which is not the same as empty and is reported differently.
+   */
+  repoOnly?: string[]
+  /**
+   * Whether the repo-only list was attempted at all. Distinct from `repoOnly`
+   * being `undefined`, which means it was attempted and could not be
+   * established -- a difference the report has to keep, or "not a git
+   * repository" renders as silence and reads as "nothing to promote".
+   */
+  repoOnlyChecked: boolean
+  /**
+   * Template scaffolds the project has replaced with a real implementation.
+   * Counted rather than listed: this is the healthy case, and naming forty of
+   * them is how the findings that matter get buried.
+   */
+  scaffoldsReplaced: number
 }
 
 /**
@@ -300,18 +386,39 @@ export function checkDrift(
     }
   }
 
+  let scaffoldsReplaced = 0
+
   if (options.all) {
     for (const [path, expected] of rendered) {
-      if (OWNED_PATHS.includes(path) || !isReviewable(path)) continue
+      if (OWNED_PATHS.includes(path)) continue
       const actualPath = join(projectRoot, path)
       // Missing files are a finding, not a review note; see missingRenderedFiles.
       if (!existsSync(actualPath)) continue
-      const difference = describeDifference(readFileSync(actualPath, 'utf8'), expected.toString())
-      if (difference) reviewable.push({ subject: path, detail: difference })
+
+      const template = expected.toString()
+      const difference = describeDifference(readFileSync(actualPath, 'utf8'), template)
+      if (!difference) continue
+
+      // The project filling in a placeholder is the system working. Counted so
+      // the number is visible, not listed so it drowns the rest.
+      if (isScaffold(template)) {
+        scaffoldsReplaced += 1
+        continue
+      }
+      reviewable.push({ subject: path, detail: difference })
     }
   }
 
-  return { findings, selectionsUnknown, reviewable }
+  const repoOnly = options.all ? repoOnlyFiles(projectRoot, new Set(rendered.keys())) : undefined
+
+  return {
+    findings,
+    selectionsUnknown,
+    reviewable,
+    repoOnly,
+    repoOnlyChecked: options.all ?? false,
+    scaffoldsReplaced,
+  }
 }
 
 /**
@@ -352,38 +459,112 @@ function compareSelections(
 }
 
 /**
- * The `--all` section, kept visually separate and never counted as a failure.
+ * The `--all` sections, kept visually separate and never counted as a failure.
  *
  * A replaced stub and a missing fix look identical to a content comparison, so
  * these are for a human to read when drift is already suspected.
+ *
+ * Ordered by how many lines the generator would add, descending. That is the
+ * direction that means the project is behind, and it is the only ordering that
+ * puts the file worth opening at the top: a hand survey ranked by total diff
+ * size instead and led with `koras-auth/__init__.py` at "312 lines changed",
+ * where the real difference was one line of indentation and the rest was CRLF.
  */
+function templateAddedCount(detail: string): number {
+  const match = /^(\d+) line\(s\) the generator would add/.exec(detail)
+  return match ? Number(match[1]) : 0
+}
+
 function formatReviewable(report: DriftReport): string[] {
   if (report.reviewable.length === 0) return []
 
+  const ordered = [...report.reviewable].sort(
+    (a, b) => templateAddedCount(b.detail) - templateAddedCount(a.detail),
+  )
+  const behind = ordered.filter((f) => templateAddedCount(f.detail) > 0).length
+
   const lines = [
     '',
-    `${report.reviewable.length} generator-owned file(s) differ — for review, not failure:`,
+    `DRIFTED — ${report.reviewable.length} file(s) the template also ships differ` +
+      `${behind > 0 ? `, ${behind} with lines the generator would add` : ''}` +
+      ' — for review, not failure:',
     '',
   ]
-  for (const finding of report.reviewable) {
+  for (const finding of ordered) {
     lines.push(`  ${finding.subject}`)
     lines.push(`    ${finding.detail}`)
   }
   lines.push('')
   lines.push('A healthy project edits most of these: a workflow replaces a stub with a real')
   lines.push('pipeline, terraform.tfvars holds values where the template holds placeholders.')
-  lines.push('Read them; do not gate on them.')
+  lines.push('Read them; do not gate on them. Those listed first are the ones where the')
+  lines.push('generator has lines the project does not, which is the direction worth reading.')
   return lines
 }
 
-export function formatDriftReport(report: DriftReport, projectSlug: string): string {
+/**
+ * The promotion queue, as a rollup.
+ *
+ * Deliberately not a file list. The number this replaces was 291, produced by
+ * hand once, and a 291-line block appended to every nightly run is a block
+ * nobody reads twice.
+ */
+function formatRepoOnly(report: DriftReport, verbose: boolean): string[] {
+  if (report.repoOnly === undefined) {
+    return [
+      '',
+      'REPO-ONLY — not established. The project is not a git repository, or git is',
+      'not on PATH. That is not the same as having nothing to promote.',
+    ]
+  }
+  if (report.repoOnly.length === 0) {
+    return ['', 'REPO-ONLY — none. Every tracked file in the project comes from a template.']
+  }
+
+  const lines = [
+    '',
+    `REPO-ONLY — ${report.repoOnly.length} tracked file(s) exist here and in no template:`,
+    '',
+  ]
+  for (const { scope, count } of rollUp(report.repoOnly)) {
+    lines.push(`  ${String(count).padStart(4)}  ${scope}`)
+  }
+  lines.push('')
+  if (verbose) {
+    for (const path of report.repoOnly) lines.push(`    ${path}`)
+  } else {
+    lines.push('  (--verbose lists them individually)')
+  }
+  lines.push('')
+  lines.push('Most of this is correct and belongs only here — a profile ships a starting')
+  lines.push('point, not a finished product. The question this list exists to make cheap is')
+  lines.push('which of it is profile-agnostic and should have gone upstream.')
+  return lines
+}
+
+function formatScaffolds(report: DriftReport): string[] {
+  if (report.scaffoldsReplaced === 0) return []
+  return [
+    '',
+    `${report.scaffoldsReplaced} template scaffold(s) replaced by real implementations — not drift.`,
+  ]
+}
+
+export function formatDriftReport(
+  report: DriftReport,
+  projectSlug: string,
+  options: { verbose?: boolean } = {},
+): string {
   const lines: string[] = []
 
   if (report.findings.length === 0) {
     lines.push(`\n✓ ${projectSlug} matches what the generator would produce for it.`)
   } else {
     lines.push('')
-    lines.push(`${report.findings.length} difference(s) between ${projectSlug}/ and the starter:`)
+    lines.push(
+      `TEMPLATE-ONLY / MANIFEST — ${report.findings.length} difference(s) between ` +
+        `${projectSlug}/ and the starter:`,
+    )
     lines.push('')
     for (const finding of report.findings) {
       lines.push(`  ${finding.subject}`)
@@ -397,5 +578,9 @@ export function formatDriftReport(report: DriftReport, projectSlug: string): str
   }
 
   lines.push(...formatReviewable(report))
+  lines.push(...formatScaffolds(report))
+  if (report.repoOnlyChecked) {
+    lines.push(...formatRepoOnly(report, options.verbose ?? false))
+  }
   return lines.join('\n')
 }

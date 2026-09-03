@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs'
 import { loadProfile } from '../src/profiles/index.js'
 import type { ProfileName } from '../src/profiles/loader.js'
@@ -169,5 +170,102 @@ describe('the wider --all scope', () => {
 
     expect(report.findings.some((f) => f.subject.endsWith('main.tf'))).toBe(true)
     expect(report.reviewable.some((f) => f.subject.endsWith('main.tf'))).toBe(false)
+  })
+})
+
+/**
+ * The three lists TS-16 asks for: template-only, drifted, repo-only.
+ *
+ * The first two existed. `repoOnly` did not, and its absence is why the
+ * promotion backlog was counted by hand once and never again.
+ */
+describe('the three lists', () => {
+  it('finds nothing repo-only in a project that is only what the generator wrote', () => {
+    const { ctx, projectRoot } = generate('control-plane', 'three-lists-clean')
+    execFileSync('git', ['init', '-q'], { cwd: projectRoot })
+    execFileSync('git', ['add', '-A'], { cwd: projectRoot })
+
+    const report = checkDrift(ctx, projectRoot, { all: true })
+    expect(report.repoOnly).toEqual([])
+    expect(formatDriftReport(report, 'three-lists-clean', {})).toContain('REPO-ONLY — none')
+  })
+
+  it('reports a file the project added and no template produces', () => {
+    const { ctx, projectRoot } = generate('control-plane', 'three-lists-added')
+    mkdirSync(join(projectRoot, 'services/api/koras_api/routers'), { recursive: true })
+    writeFileSync(join(projectRoot, 'services/api/koras_api/routers/entitlements.py'), 'x = 1\n')
+    execFileSync('git', ['init', '-q'], { cwd: projectRoot })
+    execFileSync('git', ['add', '-A'], { cwd: projectRoot })
+
+    const report = checkDrift(ctx, projectRoot, { all: true })
+    expect(report.repoOnly).toContain('services/api/koras_api/routers/entitlements.py')
+
+    // Rolled up by directory, not listed, unless asked.
+    const rolled = formatDriftReport(report, 'three-lists-added', {})
+    expect(rolled).toContain('services/api')
+    expect(rolled).not.toContain('routers/entitlements.py')
+    expect(formatDriftReport(report, 'three-lists-added', { verbose: true })).toContain(
+      'services/api/koras_api/routers/entitlements.py',
+    )
+  })
+
+  /**
+   * An untracked file is a build output, not a promotion candidate. Reporting
+   * `.next/` and `.venv/` as things to send upstream is how a list of 291
+   * becomes a list nobody opens.
+   */
+  it('ignores untracked files', () => {
+    const { ctx, projectRoot } = generate('control-plane', 'three-lists-untracked')
+    execFileSync('git', ['init', '-q'], { cwd: projectRoot })
+    execFileSync('git', ['add', '-A'], { cwd: projectRoot })
+    writeFileSync(join(projectRoot, 'not-committed.txt'), 'build output\n')
+
+    const report = checkDrift(ctx, projectRoot, { all: true })
+    expect(report.repoOnly).not.toContain('not-committed.txt')
+  })
+
+  /**
+   * Not a git repository is not the same as nothing to promote, and the
+   * difference has to survive into the report or an empty list reads as a
+   * clean bill of health.
+   */
+  it('says so when the repo-only list cannot be established', () => {
+    const { ctx, projectRoot } = generate('control-plane', 'three-lists-nogit')
+    const report = checkDrift(ctx, projectRoot, { all: true })
+
+    expect(report.repoOnly).toBeUndefined()
+    expect(formatDriftReport(report, 'three-lists-nogit', {})).toContain('not established')
+  })
+
+  /**
+   * The scope widening. A file under `services/` was invisible to the old
+   * three-prefix allowlist, which is where forty of forty-seven real
+   * differences in `koras-control-plane` were living.
+   */
+  it('compares files outside infrastructure/, local/ and .github/', () => {
+    const { ctx, projectRoot } = generate('control-plane', 'three-lists-scope')
+    const target = join(projectRoot, 'services/api/koras_api/core/settings.py')
+    writeFileSync(target, `${readFileSync(target, 'utf8')}\n# edited by the project\n`)
+
+    const report = checkDrift(ctx, projectRoot, { all: true })
+    expect(report.reviewable.map((f) => f.subject)).toContain(
+      'services/api/koras_api/core/settings.py',
+    )
+  })
+
+  /**
+   * The noise the old allowlist was avoiding, classified out by shape rather
+   * than by directory: the template ships `// implement as needed`, the
+   * project ships the real module, and that is the system working.
+   */
+  it('counts a replaced scaffold rather than listing it as drift', () => {
+    const { ctx, projectRoot } = generate('control-plane', 'three-lists-scaffold')
+    const scaffold = join(projectRoot, 'packages/config/src/index.ts')
+    expect(readFileSync(scaffold, 'utf8')).toContain('implement as needed')
+    writeFileSync(scaffold, 'export const config = { real: true }\n')
+
+    const report = checkDrift(ctx, projectRoot, { all: true })
+    expect(report.reviewable.map((f) => f.subject)).not.toContain('packages/config/src/index.ts')
+    expect(report.scaffoldsReplaced).toBeGreaterThan(0)
   })
 })

@@ -10,8 +10,11 @@
 import type {
   Domain,
   PlatformHealth,
+  PortalBranding,
+  PortalBrandingChange,
   PortalDomain,
   PortalMember,
+  PortalMemberInvite,
   PortalOrganization,
   PortalProduct,
   PortalSecurity,
@@ -174,6 +177,12 @@ export class PortalApiClient {
       )
     }
 
+    // A 204 has no body, and `response.json()` on an empty one throws a
+    // SyntaxError -- which reaches a person as "the service could not be
+    // reached" rather than as the success it actually is. Latent while this
+    // client only reads; live the moment anybody adds a delete. The platform
+    // client above has carried this guard since its first one.
+    if (response.status === 204) return undefined as T
     return (await response.json()) as T
   }
 
@@ -183,6 +192,28 @@ export class PortalApiClient {
 
   members(): Promise<PortalMember[]> {
     return this.request('/members')
+  }
+
+  /**
+   * Invite somebody into this organization.
+   *
+   * Returns the member as `invited`. The access itself is created by a
+   * background job: the API holds no identity-provider credential, so the row
+   * and the grant are written by different processes and the row comes first.
+   */
+  inviteMember(member: PortalMemberInvite): Promise<PortalMember> {
+    return this.request('/members', { method: 'PUT', body: JSON.stringify(member) })
+  }
+
+  /**
+   * Remove a member, and revoke what they hold.
+   *
+   * Refused for your own address, and for the last owner of an organization --
+   * an organization with no owner has nobody who can appoint one, because the
+   * promotion to owner is offered to owners alone.
+   */
+  async removeMember(email: string): Promise<void> {
+    await this.request(`/members/${encodeURIComponent(email)}`, { method: 'DELETE' })
   }
 
   products(): Promise<PortalProduct[]> {
@@ -199,5 +230,45 @@ export class PortalApiClient {
 
   security(): Promise<PortalSecurity> {
     return this.request('/security')
+  }
+
+  /**
+   * Decide whether everybody in this organization needs a second factor.
+   *
+   * Returns `mfa_applied: false` for a change that has not reached the identity
+   * provider yet -- writing the row protects nobody until a worker has written
+   * the policy, and the two are reported separately so a surface cannot claim
+   * otherwise.
+   */
+  setSecurity(security: { mfa_required: boolean }): Promise<PortalSecurity> {
+    return this.request('/security', { method: 'PUT', body: JSON.stringify(security) })
+  }
+
+  /**
+   * How this customer's surfaces in one product look.
+   *
+   * An empty record is the ordinary answer for a customer who has set nothing;
+   * a product they do not hold answers 404, which is the same answer a product
+   * that does not exist gives.
+   */
+  branding(productCode: string): Promise<PortalBranding> {
+    return this.request(`/products/${encodeURIComponent(productCode)}/branding`)
+  }
+
+  /**
+   * Replace it. A PUT rather than a patch, because branding is edited as a
+   * whole in a form and a patch cannot tell "clear the logo" from "leave the
+   * logo alone".
+   *
+   * `hide_product_branding` is neither sent nor accepted -- it is a commercial
+   * concession rather than a customer preference, and the server carries the
+   * stored value forward so saving colours cannot revoke a white-label
+   * agreement. See PortalBranding.
+   */
+  setBranding(productCode: string, branding: PortalBrandingChange): Promise<PortalBranding> {
+    return this.request(`/products/${encodeURIComponent(productCode)}/branding`, {
+      method: 'PUT',
+      body: JSON.stringify(branding),
+    })
   }
 }

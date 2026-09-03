@@ -1,0 +1,136 @@
+name: Template drift
+
+# What a real repository has done since it was generated.
+#
+# `generator-integration.yml` already proves both profiles generate, build and
+# match the generator a moment later. That is determinism, and it is a different
+# question from this one: it cannot see that a repository generated in June has
+# moved, or that the templates have moved underneath it. Every number in
+# `koras-control-plane`'s TEMPLATE_SYNC.md was produced by hand from shell
+# pipelines in a single session, which is why the survey happened once and why
+# three of its conclusions had to be corrected afterwards.
+#
+# Never blocking. Drift is the standing condition of a healthy generated
+# project, not a regression introduced by whichever commit happened to trigger
+# the run, and a scheduled job that goes red and stays red is one people mute.
+
+on:
+  schedule:
+    - cron: "0 5 * * *" # nightly 05:00 UTC, after the weekly security scan's slot
+  workflow_dispatch:
+    inputs:
+      verbose:
+        description: "List repo-only files individually instead of rolling them up"
+        type: boolean
+        default: false
+
+# The report is the artifact. Nothing here writes to any repository.
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: ${{ matrix.repository }}
+    runs-on: ubuntu-latest
+    strategy:
+      # One repository failing to check out must not hide the other's report.
+      fail-fast: false
+      matrix:
+        include:
+          - repository: KORAS-Technologies/koras-control-plane
+            slug: koras-control-plane
+            profile: control-plane
+            ref: develop
+          - repository: KORAS-Technologies/sample-product
+            slug: sample-product
+            profile: product
+            ref: develop
+    steps:
+      - name: Check out the starter
+        uses: actions/checkout@v5
+        with:
+          path: starter
+
+      # `git ls-files` in the checked-out project is what produces the
+      # repo-only list, so the project needs its history rather than an export.
+      # Depth 1 is enough: the list is of tracked paths at the tip, not of
+      # anything historical.
+      - name: Check out ${{ matrix.repository }}
+        id: checkout-project
+        continue-on-error: true
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.ref }}
+          path: projects/${{ matrix.slug }}
+          token: ${{ secrets.DRIFT_CHECKOUT_TOKEN || github.token }}
+          fetch-depth: 1
+
+      # Said out loud rather than left as an empty report. A drift run that
+      # silently checked out nothing looks identical to one that found nothing.
+      - name: Report a repository that could not be read
+        if: steps.checkout-project.outcome != 'success'
+        run: |
+          echo "### ${{ matrix.repository }} — not checked" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Checkout failed. Usually DRIFT_CHECKOUT_TOKEN is absent or lacks" >> "$GITHUB_STEP_SUMMARY"
+          echo "read access to this repository. No drift conclusion should be" >> "$GITHUB_STEP_SUMMARY"
+          echo "drawn from this run." >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: pnpm/action-setup@v4
+        if: steps.checkout-project.outcome == 'success'
+      - uses: actions/setup-node@v5
+        if: steps.checkout-project.outcome == 'success'
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: starter/pnpm-lock.yaml
+
+      - name: Install starter dependencies
+        if: steps.checkout-project.outcome == 'success'
+        working-directory: starter
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the generator
+        if: steps.checkout-project.outcome == 'success'
+        working-directory: starter
+        run: pnpm turbo run build --filter=create-koras-app
+
+      # --never-fail because this is a report, and --all because the two lists
+      # worth reading -- what the template ships that this repository never
+      # took, and what this repository has that no template does -- both live
+      # behind it. The profile comes from the flag rather than the project's
+      # manifest so that a corrupted manifest is reported instead of obeyed.
+      - name: Measure drift
+        if: steps.checkout-project.outcome == 'success'
+        working-directory: starter
+        run: |
+          pnpm create-koras-app "${{ matrix.slug }}" \
+            --profile "${{ matrix.profile }}" \
+            --no-interactive \
+            --check-drift --all --never-fail \
+            ${{ inputs.verbose && '--verbose' || '' }} \
+            --output-dir "$GITHUB_WORKSPACE/projects" \
+            | tee "$RUNNER_TEMP/drift-${{ matrix.slug }}.txt"
+
+      # Where a person reads it. The step summary is on the run itself, so
+      # nobody has to know the job exists to find its output -- and the artifact
+      # is what a survey diffs against last month's.
+      - name: Publish the report
+        if: steps.checkout-project.outcome == 'success'
+        run: |
+          {
+            echo "### ${{ matrix.slug }} — drift against the ${{ matrix.profile }} profile"
+            echo ""
+            echo '```'
+            cat "$RUNNER_TEMP/drift-${{ matrix.slug }}.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the report
+        if: steps.checkout-project.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-${{ matrix.slug }}
+          path: ${{ runner.temp }}/drift-${{ matrix.slug }}.txt
+          retention-days: 90
