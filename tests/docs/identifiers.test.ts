@@ -48,13 +48,24 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   // and a name like this appearing in the code would mean somebody had started
   // storing a staff token.
   STAFF_TOKEN: "a shell variable in a worked example; the platform has no such setting",
-  // Three names from koras-control-plane, cited by FOLLOW_UPS F7 and F11 as
-  // the record of what the first deployment of a generated product found. They
-  // must stay absent here: `install_rls` and `send_signup_verification` belong
-  // to the Control Plane's engine and worker, and `self_serve` is a column on
-  // its `plans` table -- the commercial catalogue is the platform's, and a
-  // product repository holding any of them would mean a boundary had moved.
-  install_rls: 'a Control Plane engine hook; named in F7/F11, absent here by design',
+  // Two names from koras-control-plane, cited by FOLLOW_UPS F7 and F11 as the
+  // record of what the first deployment of a generated product found. They must
+  // stay absent here: `send_signup_verification` is a Control Plane worker
+  // task, and `self_serve` is a column on its `plans` table -- the commercial
+  // catalogue is the platform's, and a product repository holding either would
+  // mean a boundary had moved.
+  //
+  // `install_rls` was the third and is no longer exempt. It was described here
+  // as a Control Plane engine hook, which it was: the boundary moved on
+  // purpose. TS-14 promoted the mechanism -- a `begin` listener that refuses a
+  // transaction declaring nothing -- because a product needs it more than the
+  // Control Plane does, being the profile with customer tenant tables. The
+  // vocabulary did not move with it; `koras_database` carries the guard and the
+  // profiles carry their own settings.
+  //
+  // This test is what noticed. An exemption that stops matching is a line
+  // nobody deletes, and the next reader takes it as a description of the
+  // system.
   send_signup_verification: 'a Control Plane worker task; named in F7/F11, absent here by design',
   self_serve: 'a column on the Control Plane plans table; no product repository has one',
   // A value of the Control Plane's `subscriptions.status` check constraint,

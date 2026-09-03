@@ -5,7 +5,7 @@ as: the four routes, their status codes, and the identity they require. What
 persistence looks like is allowed to change; the contract is not.
 
 Everything here runs on the provisioning session from `core.database`, which
-carries no tenant context. See `koras_database.set_provisioning_context` for
+carries no tenant context. See `koras_tenant.Provisioning` for
 what that grants and why it is confined to this path.
 
 Written as SQL text rather than ORM models on purpose. The product template

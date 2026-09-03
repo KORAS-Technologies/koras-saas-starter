@@ -233,14 +233,22 @@ describe.each(PROFILES)('%s: RLS applies to the connecting role', (profile) => {
     expect(runner).toMatch(/RLS_APP_ROLE/)
   })
 
-  it('sets the tenant context transaction-locally, not per session', () => {
+  it('sets whatever context it sets transaction-locally, not per session', () => {
     // A session-scoped context outlives the request on a pooled connection and
     // is inherited by whoever gets that connection next.
+    //
+    // The setting names moved out of this package when the helpers became a
+    // guard: `install_rls` builds the statement from whatever the profile's
+    // declaration returns, and the names are the profile's vocabulary. What
+    // stays here, and is what this test was always really about, is the third
+    // argument.
     const helper = files.get('python-packages/koras-database/src/koras_database/__init__.py')
     expect(helper, 'the RLS context helper is not rendered').toBeDefined()
-    expect(helper).toMatch(/set_config\(\s*'app\.tenant_id'/)
     expect(helper, 'the third argument to set_config must be true (transaction-local)').toMatch(
-      /set_config\([^)]*:tenant_id[^)]*,\s*true\s*\)/,
+      /set_config\([^)]*,\s*true\s*\)/,
     )
+    // And the guard that makes the context impossible to forget.
+    expect(helper).toContain('UndeclaredCaller')
+    expect(helper).toMatch(/@event\.listens_for\([^)]*["']begin["']\)/)
   })
 })

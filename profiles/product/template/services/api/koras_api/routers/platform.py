@@ -18,7 +18,7 @@ token is refused even when the human is an administrator.
 Tenants are persisted through `core.tenant_store`, on the provisioning session
 from `core.database` -- which has no tenant context, because creating the tenant
 is what these routes are for. What that grants, and why it is confined here, is
-in `koras_database.set_provisioning_context`.
+on `koras_tenant.Provisioning`.
 """
 
 from __future__ import annotations

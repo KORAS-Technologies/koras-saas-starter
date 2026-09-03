@@ -13,11 +13,8 @@ from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import Depends
-from koras_database import (
-    set_provisioning_context,
-    set_rls_context,
-    verify_connection_enforces_rls,
-)
+from koras_database import declare, verify_connection_enforces_rls
+from koras_tenant import Provisioning, Tenant
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .engine import SessionLocal
@@ -32,7 +29,7 @@ async def get_db(tenant: TenantDep) -> AsyncGenerator[AsyncSession, None]:
     pooled connection and be inherited by whoever gets that connection next.
     """
     async with SessionLocal() as session:
-        await set_rls_context(session, tenant_id=tenant.id)
+        declare(Tenant(tenant_id=tenant.id))
         yield session
 
 
@@ -46,13 +43,13 @@ async def get_platform_session() -> AsyncGenerator[AsyncSession, None]:
     tenant optional, and an optional tenant context is one that is missing on
     the path nobody tested.
 
-    What this grants instead is stated in `set_provisioning_context`, and it is
+    What this grants instead is stated on `Provisioning`, and it is
     broad: within this transaction the connection reads and writes every tenant
     row. That is why it is reachable from exactly one router, which admits a
     machine identity alone.
     """
     async with SessionLocal() as session:
-        await set_provisioning_context(session)
+        declare(Provisioning())
         yield session
 
 

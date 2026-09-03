@@ -11,10 +11,20 @@ and there are exactly three of those -- the tenant one, the organization
 lookup, and the provisioning one -- each in a file that says what it grants.
 """
 
+from koras_database import install_rls
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from .settings import settings
 
 engine = create_async_engine(settings.database_url, pool_size=settings.database_pool_size)
+
+# Every transaction opened on this engine declares what it is for, or refuses to
+# open. Installed here rather than in the dependencies below it because the
+# engine is the narrower waist: it covers sessions built directly, connections
+# taken outside a session, and anything added later.
+#
+# This file still has no policy in it. It does not decide what a session may
+# see -- it makes a session that decided nothing impossible.
+install_rls(engine)
 
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
