@@ -77,8 +77,15 @@ jobs:
           echo "read access to this repository. No drift conclusion should be" >> "$GITHUB_STEP_SUMMARY"
           echo "drawn from this run." >> "$GITHUB_STEP_SUMMARY"
 
+      # `package_json_file` because this job checks out two repositories side by
+      # side and neither is at the workspace root. Without it the action looks
+      # for `packageManager` in a package.json that is not there and fails
+      # before anything is measured -- which is what it did on the first real
+      # run, after the checkout it depends on had already succeeded.
       - uses: pnpm/action-setup@v4
         if: steps.checkout-project.outcome == 'success'
+        with:
+          package_json_file: starter/package.json
       - uses: actions/setup-node@v5
         if: steps.checkout-project.outcome == 'success'
         with:
