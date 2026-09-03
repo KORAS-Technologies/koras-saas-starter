@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
 from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Protocol
 
 from sqlalchemy import Connection, event, text
