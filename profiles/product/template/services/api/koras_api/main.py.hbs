@@ -8,6 +8,7 @@ from redis.asyncio import Redis
 from .core.database import verify_rls_enforcement
 from .core.observability import setup_telemetry
 from .core.ratelimit import limit_anonymous, limit_authenticated
+from .core.security import SecurityHeadersMiddleware
 from .core.settings import settings
 from .routers import health, platform, tenant
 
@@ -41,6 +42,11 @@ app = FastAPI(
     redoc_url=None,
     lifespan=lifespan,
 )
+
+# Registered before CORS, so it runs *after* it. Starlette applies middleware
+# in reverse registration order, and the headers must reach every response
+# including a CORS preflight and anything an earlier layer refused.
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
