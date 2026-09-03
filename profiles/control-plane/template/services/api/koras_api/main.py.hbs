@@ -44,10 +44,25 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[str(origin) for origin in settings.cors_origins],
+    # `rstrip("/")` because pydantic's URL types normalise a bare origin to a
+    # trailing slash and a browser's `Origin` header never carries one. Without
+    # it a configured origin simply never matches, and it fails as a CORS error
+    # with nothing saying a slash caused it.
+    allow_origins=[str(origin).rstrip("/") for origin in settings.cors_origins],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # Named rather than "*". With credentials allowed, a wildcard is the
+    # difference between "any page may read this" and "the pages we built may".
+    # Starlette echoes a configured wildcard back as the concrete origin, so the
+    # browser honours it and the mistake is invisible in a normal response.
+    #
+    # `allow_origins` is named too, so this was never an open door -- it was a
+    # wider one than anything needs, shipped to every generated project.
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    # `X-Request-Id` is deliberately absent. koras-control-plane names it because
+    # it propagates a correlation id; no template does, and a profile should not
+    # inherit permission for a header it never reads. Add it where it is used.
+    allow_headers=["Authorization", "Content-Type"],
+    max_age=600,
 )
 
 

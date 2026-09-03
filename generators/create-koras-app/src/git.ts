@@ -29,9 +29,23 @@ const FORBIDDEN_NAMES = new Set([
   'plan.out',
   'terraform.tfstate',
   'terraform.tfstate.backup',
+  // A coverage database is a disposable intermediate for the same reason a plan
+  // is. One reached `profiles/_shared/template/python-packages/koras-email/`
+  // and was rendered into every generated project.
+  '.coverage',
 ])
 
-const FORBIDDEN_SUFFIXES = ['.tfplan', '.tfstate', '.tfstate.backup']
+const FORBIDDEN_SUFFIXES = [
+  '.tfplan',
+  '.tfstate',
+  '.tfstate.backup',
+  // Compiled bytecode. `SKIP_ENTRIES` now skips `__pycache__`, which is where
+  // these live; the suffix is the backstop for one written somewhere else,
+  // because skipping a directory does nothing about a file outside it -- the
+  // same gap `.terraform.lock.hcl` fell through.
+  '.pyc',
+  '.pyo',
+]
 
 /**
  * Directories with nothing worth walking, and a great deal of it.

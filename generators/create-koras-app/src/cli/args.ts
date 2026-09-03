@@ -46,6 +46,8 @@ export interface ParsedArgs {
   /** Template-owned paths to overwrite from the generator's rendering. */
   refresh: string[]
   checkDrift: boolean
+  verbose: boolean
+  neverFail: boolean
   all: boolean
   /** True when --output-dir was passed, as opposed to defaulting to cwd. */
   outputDirExplicit: boolean
@@ -101,6 +103,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
     refreshModules: false,
     refresh: [],
     checkDrift: false,
+    verbose: false,
+    neverFail: false,
     all: false,
     outputDirExplicit: false,
     skipRegistration: false,
@@ -150,6 +154,19 @@ export function parseArgs(argv: string[]): ParsedArgs {
         // Read-only. Reports where a project no longer matches the
         // generator; never writes and never provisions.
         result.checkDrift = true
+        break
+      case '--verbose':
+        // With --check-drift --all, lists the repo-only files individually
+        // instead of rolling them up by directory. There are ~291 of them in
+        // koras-control-plane, which is a report and not a summary.
+        result.verbose = true
+        break
+      case '--never-fail':
+        // Exit 0 whatever is found. For the scheduled run: drift is a standing
+        // condition of a healthy project, not a regression introduced by the
+        // commit that happened to trigger the job, and a nightly job that goes
+        // red and stays red is one people mute rather than read.
+        result.neverFail = true
         break
       case '--refresh':
         // Overwrites specific template-owned files from the generator's

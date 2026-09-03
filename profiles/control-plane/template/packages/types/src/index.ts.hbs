@@ -92,14 +92,75 @@ export interface PortalOrganization {
   name: string
   slug: string
   status: string
+  /**
+   * What the signed-in caller may do here, from their own token.
+   *
+   * Present so a surface can decide whether to render a control. It is not an
+   * authorisation check: every write is gated on the server, and a hidden
+   * button is still a reachable endpoint.
+   */
+  roles: string[]
 }
 
 export interface PortalMember {
   email: string
   name: string | null
   role: OrganizationRole
+  /**
+   * `invited` until the platform has actually given this person access, then
+   * `active`.
+   *
+   * The two are worth telling apart in the interface. Adding a member writes a
+   * row; the access is created by a background job a moment later, and a list
+   * that says "active" for somebody who cannot yet sign in produces a support
+   * ticket rather than a wait. A surface that renders this without knowing the
+   * vocabulary will render `invited` as an error state.
+   */
   status: string
 }
+
+export interface PortalMemberInvite {
+  email: string
+  role: OrganizationRole
+  name?: string | null
+}
+
+export interface PortalBranding {
+  product_code: string
+  company_name: string | null
+  logo_light: string | null
+  logo_dark: string | null
+  favicon: string | null
+  login_background: string | null
+  email_logo: string | null
+  primary_color: string | null
+  secondary_color: string | null
+  accent_color: string | null
+  heading_font: string | null
+  body_font: string | null
+  email_from_name: string | null
+  support_email: string | null
+  /**
+   * `flat`, `rounded`, or null for "not chosen".
+   *
+   * Null is not a third style. It means the product's own radius stands, which
+   * is a different fact from a customer choosing square corners -- and the two
+   * have to stay distinguishable, or everybody who never opened the form looks
+   * like somebody who decided.
+   */
+  corner_style: string | null
+  linkedin_url: string | null
+  x_url: string | null
+}
+
+/**
+ * What a customer may change. The same fields, minus the product code.
+ *
+ * `hide_product_branding` is deliberately absent from `PortalBranding` itself:
+ * it is a commercial concession rather than a customer preference, and a portal
+ * that offered it would let every customer grant themselves white labelling.
+ */
+export type PortalBrandingChange = Omit<PortalBranding, 'product_code'>
 
 export interface PortalProduct {
   code: string
@@ -122,7 +183,17 @@ export interface PortalDomain {
 }
 
 export interface PortalSecurity {
+  /** What the customer has asked for. */
   mfa_required: boolean
+  /**
+   * Whether the identity provider has actually been made to agree.
+   *
+   * Separate from the line above on purpose. Setting the flag changes nothing
+   * about how anybody signs in until a background job has written the policy,
+   * so `mfa_required` true with this false is an ordinary, temporary state --
+   * and a surface that collapsed the two would report a protection nobody has.
+   */
+  mfa_applied: boolean
   sso_configured: boolean
   member_count: number
 }

@@ -63,6 +63,11 @@ OPTIONS:
                              registry entry.
   --check-drift              Report where an existing project no longer matches
                              the generator. Read-only; exits 1 on differences.
+  --verbose                  With --check-drift --all, list repo-only files
+                             individually rather than rolled up by directory.
+  --never-fail               With --check-drift, always exit 0. For scheduled
+                             runs, where drift is a standing condition rather
+                             than a regression.
   --all                      With --check-drift, also list every other
                              generator-owned file that differs. Informational.
                              the generator. Read-only; exits 1 on differences.
@@ -326,9 +331,9 @@ export async function run(argv: string[] = process.argv): Promise<void> {
 
   if (args.checkDrift) {
     const report = checkDrift(ctx, projectRoot, { all: args.all })
-    console.log(formatDriftReport(report, projectSlug))
+    console.log(formatDriftReport(report, projectSlug, { verbose: args.verbose }))
     if (!args.refreshModules && !args.provisionOnly) {
-      process.exit(report.findings.length > 0 ? 1 : 0)
+      process.exit(!args.neverFail && report.findings.length > 0 ? 1 : 0)
     }
   }
 
