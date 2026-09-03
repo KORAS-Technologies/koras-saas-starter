@@ -26,6 +26,7 @@ export type { ButtonSize, ButtonVariant } from './primitives/button'
 export { Card } from './primitives/card'
 export { Container } from './primitives/container'
 export { SelectField, TextField } from './primitives/field'
+export { SubmitButton } from './primitives/submit-button'
 export { Icon } from './primitives/icon'
 export { Section } from './primitives/section'
 
