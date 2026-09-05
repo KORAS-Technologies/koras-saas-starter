@@ -22,8 +22,9 @@ recommendation rather than a record — revise it, do not preserve it.
 
 | Order | Entry | Why here | Rough cost |
 |-------|-------|----------|------------|
-| 1 | **F7** | The last unverified link before anything is sold. Its remaining box needs a staff read — or the smaller Control Plane change described in F2c, which would make every registration verify itself. | ~1h with a staff identity |
-| 2 | **F3 + F2b** | One question from two sides. Not urgent while there is one product — the risk it names is one product's CI holding write access to *other* products' registry entries, and the blast radius is currently itself. | ½ day to decide, more to build |
+| 1 | **F21** | The first work with a customer on the other end of it. Phases 1 and 2 shipped 2026-09-05; Phase 3 is the signup with a card, and it is the first change that puts a price in front of somebody. Do the recorded-fixture and database halves of Phase 1 before starting it. | ~3 days for Phase 3 |
+| 2 | **F7** | The last unverified link before anything is sold. Its remaining box needs a staff read — or the smaller Control Plane change described in F2c, which would make every registration verify itself. | ~1h with a staff identity |
+| 3 | **F3 + F2b** | One question from two sides. Not urgent while there is one product — the risk it names is one product's CI holding write access to *other* products' registry entries, and the blast radius is currently itself. | ½ day to decide, more to build |
 
 F13's prerequisite sat at the top of this table for part of one day and is
 built: `koras-control-plane` R-93, which made `subscriptions.status` mean
@@ -91,6 +92,7 @@ otherwise stops at F6, and why there is no F0.
 | F18 | no test in this repository opens a browser | closed 2026-09-01 | Decisions |
 | F19 | a customer's platform branding was stored and never rendered | closed 2026-09-04 — logos still open | Decisions |
 | F20 | a product speaks one language | phase 1 closed 2026-09-05 — persistence, admin app, emails and locale URLs open | Decisions |
+| F21 | somebody can now be billed, and nothing yet asks them to be | phases 1 and 2 closed 2026-09-05 — checkout, portal, reconciliation open | Onboarding |
 
 **Two are open**: F2b and F3 — one Control Plane authorization decision arriving
 from two sides — plus **F7**, which is open in a different sense: its remaining
@@ -1510,6 +1512,52 @@ reportable rather than to enforce anything.
 
 So F13's prerequisite is met and the payment work has a field that means
 something to land on.
+
+### F21 — somebody can now be billed, and nothing yet asks them to be — opened 2026-09-05, phases 1 and 2 closed the same day
+
+- [x] Phase 1 — the provider adapter, a Paddle implementation, the signed webhook, `billing_events`, and status driven from outside (`koras-control-plane` 9cfee99)
+- [x] Phase 2 — price references and seat bounds on plans, in the API, the public catalogue, the client and the console form
+- [ ] Phase 1's other half: recorded sandbox events replacing the authored fixtures, and the database-backed suites run once with migration 00028 applied
+- [ ] Phase 3 — interval and seats on the signup form, Paddle.js on the verify page, provisioning started by `subscription.created`, the abandoned-checkout reminder
+- [ ] Phase 4 — the portal's billing section, plan and seat changes, the trial-ended and past-due states, the first module with `requiredEntitlements`
+- [ ] Phase 5 — reconciliation against the provider, the live Paddle account, production hostnames approved
+
+The design is `BILLING_DESIGN.md`, decided 2026-09-05: card at signup, charge
+at trial end, Paddle as Merchant of Record behind a five-operation adapter,
+and the Control Plane the only writer of `subscriptions.status`. What the
+Control Plane holds of it is `koras-control-plane/docs/BILLING.md`, and the
+sandbox catalogue it was built against is recorded at the top of the design.
+
+**What F13 left and this picked up.** F13 made status mean something. This
+gives status a writer: a webhook that verifies Paddle's signature over the raw
+body, stores every event by Paddle's id before acting on it, and refuses to
+let an older event move a row backwards. The webhook runs as the commercial
+authority rather than the machine, because the RLS suite asserts a machine out
+of `subscriptions` — and that one fact moved the customer reference from a
+column on `organizations` into its own table, since the billing authority
+cannot write an organization row and should not gain the ability for one
+column. Both are recorded in the design where they apply.
+
+**Why the top of the list.** Every earlier entry in this section was about
+getting a customer *in*. This is the first about a customer paying, and Phase
+3 is the first change that shows a price on a page a stranger can reach. It
+belongs above F7 because F7's remaining box is a verification of something
+already sold to nobody, and this is the thing that will be.
+
+**What is deliberately not in it.** A free tier or a "continue without a
+card" path. The design assumes neither, and adding one later is cheaper than
+removing one; the decision is the user's and is asked for before Phase 3
+begins. Usage-based pricing, coupons and invoiced contracts are price shapes
+the provider supports and none changes the adapter.
+
+**Left undone on 2026-09-05, and why.** The fixtures under
+`koras-control-plane/tests/fixtures/paddle/` were authored from Paddle's
+documented shape, because recording needs a destination Paddle can reach and
+the dev API received its secrets only that evening. The database-backed tests
+did not run in the session that wrote them, because Docker was not up. Neither
+is a reason to wait on Phase 3, but both are cheaper than Phase 3 and turn the
+code that shipped into evidence — which is why the first open box is the
+half-finished Phase 1 rather than the next phase.
 
 ---
 
