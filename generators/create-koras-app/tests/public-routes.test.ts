@@ -48,6 +48,20 @@ describe.each(APPS)('%s/%s middleware', (profile, app) => {
     expect(publicPaths.includes("'/signup'")).toBe(shipsSignup(profile, app))
   })
 
+  /**
+   * The language switcher posts to `/api/locale` from every public page, so
+   * the route has to be exempt wherever it exists -- gated, choosing German on
+   * the sign-in page redirects to the sign-in page. And only where it exists:
+   * an exemption for a route an application does not serve is a hole waiting
+   * for a route to fall into it.
+   */
+  it('exempts the locale route exactly when the application serves one', () => {
+    const servesLocale = existsSync(
+      join(PROFILES, profile, 'template', 'apps', app, 'src', 'app', 'api', 'locale'),
+    )
+    expect(publicPaths.includes("'/api/locale'")).toBe(servesLocale)
+  })
+
   it('still gates everything else by default', () => {
     // The guard on the guard: an exemption list that grew to include the root
     // would make every assertion above vacuously true.

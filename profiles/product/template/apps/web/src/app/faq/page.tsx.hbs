@@ -1,6 +1,8 @@
+import type { Metadata } from 'next'
 import { productConfig } from '@{{projectSlug}}/branding'
-import { PublicFooter, PublicHeader } from '@{{projectSlug}}/ui'
+import { PublicFooter, PublicHeader, rich, strongTag } from '@{{projectSlug}}/ui'
 import { LegalPage, LegalSection } from '../legal'
+import { currentLocale, translator } from '../../lib/locale'
 
 /**
  * Frequently asked questions.
@@ -13,83 +15,56 @@ import { LegalPage, LegalSection } from '../legal'
  * `reviewed` is set: unlike the privacy and terms pages, nothing here is a legal
  * commitment, so there is no unreviewed claim to warn about.
  */
-export const metadata = {
-  title: `FAQ · ${productConfig.product.name}`,
-  description: `Common questions about ${productConfig.product.name}.`,
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await translator()
+  const { name } = productConfig.product
+  return {
+    title: `${t('faq.title')} · ${name}`,
+    description: t('faq.metaDescription', { product: name }),
+  }
 }
 
-export default function FaqPage() {
-  const { product } = productConfig
+export default async function FaqPage() {
+  const [locale, t] = await Promise.all([currentLocale(), translator()])
+  const params = { product: productConfig.product.name }
 
   return (
     <>
-      <PublicHeader />
+      <PublicHeader locale={locale} />
       <main id="main-content">
-        <LegalPage
-          title="FAQ"
-          summary={`The questions ${product.name} is asked most often.`}
-          reviewed
-        >
-          <LegalSection title="How do I sign in?">
-            <p>
-              Through your organisation&rsquo;s identity provider. {product.name} never asks for
-              or stores a password — you are sent to sign in, and you come back here. If your
-              organisation requires a second factor, you will be asked for it and refused
-              without it rather than looped back to the sign-in page.
-            </p>
+        <LegalPage locale={locale} title={t('faq.title')} summary={t('faq.summary', params)} reviewed>
+          <LegalSection title={t('faq.signin.title')}>
+            <p>{t('faq.signin.p1', params)}</p>
           </LegalSection>
 
-          <LegalSection title="Why can I not see a section other people can?">
-            <p>Four things decide it, and they fail differently on purpose.</p>
-            <p>
-              Your <strong>role</strong> decides what you may do; a section you have no
-              permission for is hidden, and its address is refused as well. Your
-              organisation&rsquo;s <strong>plan</strong> decides what it has bought; those
-              sections either do not appear or appear locked, depending on whether it is
-              something you could add. Your organisation&rsquo;s own{' '}
-              <strong>feature switches</strong> work the same way. And some sections only exist
-              in builds that were generated with them.
-            </p>
-            <p>
-              Settings &rarr; General names the file behind each of the four, which is the
-              fastest way to find out which one you have hit.
-            </p>
+          <LegalSection title={t('faq.missing.title')}>
+            <p>{t('faq.missing.p1')}</p>
+            <p>{rich(t('faq.missing.p2'), { strong: strongTag })}</p>
+            <p>{t('faq.missing.p3')}</p>
           </LegalSection>
 
-          <LegalSection title="Who can add or remove people?">
-            <p>
-              Owners and administrators of your organisation, in the KORAS account portal.
-              Team &amp; Access in {product.name} shows who has access here and what each role
-              carries; adding somebody to the organisation itself happens in the portal.
-            </p>
+          <LegalSection title={t('faq.people.title')}>
+            <p>{t('faq.people.p1', params)}</p>
           </LegalSection>
 
-          <LegalSection title="What happens when a trial ends?">
-            <p>
-              Features that need a plan stop being available, and everything else keeps
-              working. The account stays open and you can still sign in — an account that
-              disappeared with the trial would be one nobody could upgrade.
-            </p>
+          <LegalSection title={t('faq.trial.title')}>
+            <p>{t('faq.trial.p1')}</p>
           </LegalSection>
 
-          <LegalSection title="Can we use our own colours and logo?">
-            <p>
-              Yes. An administrator sets them for your organisation and every signed-in page
-              picks them up — colours, corner radius, and a logo for light and dark
-              backgrounds. The product&rsquo;s own branding is what you see until then.
-            </p>
+          <LegalSection title={t('faq.branding.title')}>
+            <p>{t('faq.branding.p1')}</p>
           </LegalSection>
 
-          <LegalSection title="Is my organisation&rsquo;s data separate from everyone else&rsquo;s?">
-            <p>
-              Yes, and it is separated in the database rather than by the application
-              remembering to ask. A query that does not name your organisation returns nothing
-              at all.
-            </p>
+          <LegalSection title={t('faq.language.title', params)}>
+            <p>{t('faq.language.p1')}</p>
+          </LegalSection>
+
+          <LegalSection title={t('faq.isolation.title')}>
+            <p>{t('faq.isolation.p1')}</p>
           </LegalSection>
         </LegalPage>
       </main>
-      <PublicFooter />
+      <PublicFooter locale={locale} />
     </>
   )
 }

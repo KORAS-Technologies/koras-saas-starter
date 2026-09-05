@@ -1,7 +1,8 @@
 import { productConfig } from '@{{projectSlug}}/branding'
 import { ROLE_PERMISSIONS } from '@{{projectSlug}}/permissions'
-import { AccessDenied, Card, Container } from '@{{projectSlug}}/ui'
+import { AccessDenied, Card, Container, codeTag, rich } from '@{{projectSlug}}/ui'
 import { can, roleLabel, signedInContext } from '../../../../lib/access'
+import { currentLocale, translator } from '../../../../lib/locale'
 
 /**
  * Team & Access: who in this organisation may use this product, and as what.
@@ -25,57 +26,55 @@ import { can, roleLabel, signedInContext } from '../../../../lib/access'
  * When the assignment store arrives, this is where its table goes, and
  * `team.manage` is the permission that gates writing to it. The read gate is
  * already real, and is already exercised on every load.
+ *
+ * Role names and permission names are rendered as they are: they are
+ * identifiers the permissions package declares, not copy, and a translated
+ * identifier is one nobody can search the code for.
  */
 export const dynamic = 'force-dynamic'
 
 export default async function TeamAccessPage() {
-  const context = await signedInContext()
+  const [context, locale, t] = await Promise.all([signedInContext(), currentLocale(), translator()])
   if (context === null || !can(context.access, 'team.read')) {
-    return <AccessDenied />
+    return <AccessDenied locale={locale} />
   }
 
   const { access } = context.access
   const manages = can(context.access, 'team.manage')
+  const params = { product: productConfig.product.name }
+  const code = { code: codeTag }
 
   return (
     <div className="py-12">
       <Container>
-        <h1 className="font-display text-3xl font-bold tracking-tight text-ink">Team &amp; Access</h1>
-        <p className="mt-3 max-w-3xl leading-7 text-ink-muted">
-          Who in your organisation may use {productConfig.product.name}, and what they may do here.
-          Adding and removing people from the organisation itself is done in the KORAS account
-          portal; this page governs access to this product only.
-        </p>
+        <h1 className="font-display text-3xl font-bold tracking-tight text-ink">{t('team.title')}</h1>
+        <p className="mt-3 max-w-3xl leading-7 text-ink-muted">{t('team.intro', params)}</p>
 
         <Card className="mt-8 max-w-3xl">
-          <h2 className="font-display text-lg font-bold text-ink">Your access</h2>
+          <h2 className="font-display text-lg font-bold text-ink">{t('team.yours.title')}</h2>
           <dl className="mt-4 space-y-3 text-sm leading-6">
-            <Row label="Signed in as" value={context.member.email ?? context.member.userId} />
-            <Row label="Role in this product" value={roleLabel(context.access) ?? 'None'} />
-            <Row label="Organisation roles" value={context.member.organizationRoles.join(', ')} />
-            <Row label="Permissions" value={access.permissions.join(', ')} />
+            <Row label={t('team.yours.signedInAs')} value={context.member.email ?? context.member.userId} />
+            <Row
+              label={t('team.yours.role')}
+              value={roleLabel(context.access, locale) ?? t('common.none')}
+            />
+            <Row label={t('team.yours.orgRoles')} value={context.member.organizationRoles.join(', ')} />
+            <Row label={t('team.yours.permissions')} value={access.permissions.join(', ')} />
           </dl>
         </Card>
 
         <Card className="mt-6 max-w-3xl">
-          <h2 className="font-display text-lg font-bold text-ink">How access is decided</h2>
-          <p className="mt-2 text-sm leading-6 text-ink-muted">
-            Each organisation role carries a set of permissions in this product. The mapping lives
-            in <code className="text-ink">packages/permissions/src/index.ts</code> and is the same
-            one the sidebar and every route check read &mdash; a module hidden from the navigation
-            is refused at its URL by the same rule, not merely left out of the menu.
-          </p>
+          <h2 className="font-display text-lg font-bold text-ink">{t('team.how.title')}</h2>
+          <p className="mt-2 text-sm leading-6 text-ink-muted">{rich(t('team.how.description'), code)}</p>
           <table className="mt-4 w-full border-collapse text-left text-sm">
-            <caption className="sr-only">
-              Organisation roles and the product permissions each carries
-            </caption>
+            <caption className="sr-only">{t('team.how.caption')}</caption>
             <thead>
               <tr className="border-b border-line">
                 <th scope="col" className="py-2 pr-4 font-semibold text-ink">
-                  Organisation role
+                  {t('team.how.colRole')}
                 </th>
                 <th scope="col" className="py-2 font-semibold text-ink">
-                  Permissions in this product
+                  {t('team.how.colPermissions')}
                 </th>
               </tr>
             </thead>
@@ -93,20 +92,12 @@ export default async function TeamAccessPage() {
         </Card>
 
         <Card className="mt-6 max-w-3xl">
-          <h2 className="font-display text-lg font-bold text-ink">Per-person assignment</h2>
+          <h2 className="font-display text-lg font-bold text-ink">{t('team.perPerson.title')}</h2>
           <p className="mt-2 text-sm leading-6 text-ink-muted">
-            Not available yet. Access to this product is currently derived from each person&rsquo;s
-            organisation role, so everyone with a role in your organisation can open{' '}
-            {productConfig.product.name}. Granting or revoking one person&rsquo;s access to this
-            product independently needs an assignment store this repository does not have;{' '}
-            <code className="text-ink">packages/permissions/src/index.ts</code> names the single
-            function that changes when it arrives.
+            {rich(t('team.perPerson.description', params), code)}
           </p>
           {manages && (
-            <p className="mt-3 text-sm leading-6 text-ink-muted">
-              You hold <code className="text-ink">team.manage</code>, so the controls for it will
-              appear here for you once they exist.
-            </p>
+            <p className="mt-3 text-sm leading-6 text-ink-muted">{rich(t('team.perPerson.manage'), code)}</p>
           )}
         </Card>
       </Container>

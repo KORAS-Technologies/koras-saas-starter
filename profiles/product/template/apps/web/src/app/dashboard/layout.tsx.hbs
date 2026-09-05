@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
-import { productConfig, resolveNavigation } from '@{{projectSlug}}/branding'
+import { navigationFor, productConfig, resolveNavigation } from '@{{projectSlug}}/branding'
 import { AuthenticatedProductShell, BrandScope } from '@{{projectSlug}}/ui'
 import { NO_TENANT, roleLabel, signedInContext } from '../../lib/access'
+import { currentLocale } from '../../lib/locale'
 
 /**
  * The signed-in area, in the customer's colours and behind the product's shell.
@@ -29,11 +30,13 @@ import { NO_TENANT, roleLabel, signedInContext } from '../../lib/access'
  * somebody will eventually rely on to, and this one runs on a machine the
  * caller owns.
  *
- * The same registry refuses the URL in `src/middleware.ts`. Hiding a link and
- * refusing the route are the same data, which is what stops them drifting.
+ * The registry is read through `navigationFor(locale)`, which changes labels
+ * and nothing else. The same modules, routes and gates reach the middleware
+ * through `productConfig.navigation` directly, so a translated sidebar and the
+ * route gate still describe one registry.
  */
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
-  const context = await signedInContext()
+  const [context, locale] = await Promise.all([signedInContext(), currentLocale()])
 
   // The middleware admits nobody without a session, so this is defence rather
   // than a path a browser reaches. Rendering the frame with the product's own
@@ -48,7 +51,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   }
 
   const { member, access, tenant, organizationName } = context
-  const navigation = resolveNavigation(productConfig.navigation, access)
+  const navigation = resolveNavigation(navigationFor(locale), access)
 
   /*
    * Built here rather than inline in the JSX below, and not for tidiness.
@@ -73,7 +76,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     // rather than as a workspace -- so the badge renders nothing at all when
     // the settings read found no name.
     organizationName: tenant.name !== '' ? tenant.name : organizationName,
-    roleLabel: roleLabel(access),
+    roleLabel: roleLabel(access, locale),
   }
 
   // One outbound link, and only for somebody who could act on it.
@@ -91,6 +94,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         navigation={navigation}
         tenant={tenant}
         identity={identity}
+        locale={locale}
         accountUrl={accountUrl}
       >
         {children}

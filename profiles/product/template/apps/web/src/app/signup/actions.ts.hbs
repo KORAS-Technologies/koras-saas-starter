@@ -14,11 +14,17 @@
  * worth. These actions carry a form across and report what came back. They must
  * not add validation that duplicates the platform's, because the copy that
  * drifts is always the one further from the decision.
+ *
+ * Every message a visitor can read is translated here, on the server, in the
+ * language the request was made in. The form renders what it is handed, so a
+ * German visitor's refusal is German without the browser knowing a catalogue
+ * exists.
  */
 
 // Types only. A `'use server'` module may export nothing but async functions,
 // so `SignupState` and `IDLE` live in `./state` and are imported here.
 import type { SignupState, SignupStatus } from './state'
+import { translator } from '../../lib/locale'
 
 function controlPlane(): string | null {
   const base = process.env.KORAS_CONTROL_PLANE_URL
@@ -82,49 +88,41 @@ export async function availablePlans(): Promise<PublicPlan[]> {
 
 /** Turn a refusal into something a stranger can act on. */
 async function explain(response: Response): Promise<SignupState> {
+  const t = await translator()
   if (response.status === 429) {
-    return {
-      status: 'error',
-      message: 'Too many attempts from here. Please try again shortly.',
-    }
+    return { status: 'error', message: t('signup.error.tooMany') }
   }
   if (response.status === 404) {
     // The plan is not on sale. True and unhelpful to a visitor, so it says what
     // they can do rather than what the platform decided.
-    return {
-      status: 'error',
-      message: 'That plan is not available to sign up for online. Please contact us.',
-    }
+    return { status: 'error', message: t('signup.error.planUnavailable') }
   }
   if (response.status === 422) {
-    return { status: 'error', field: 'email', message: 'Check the details and try again.' }
+    return { status: 'error', field: 'email', message: t('signup.error.checkDetails') }
   }
-  return { status: 'error', message: 'Something went wrong. Please try again.' }
+  return { status: 'error', message: t('signup.error.generic') }
 }
 
 export async function startSignup(
   _previous: SignupState,
   form: FormData,
 ): Promise<SignupState> {
+  const t = await translator()
   const email = String(form.get('email') ?? '').trim()
   const organizationName = String(form.get('organizationName') ?? '').trim()
   const ownerName = String(form.get('ownerName') ?? '').trim()
   const planCode = String(form.get('planCode') ?? '').trim()
 
   if (!email.includes('@')) {
-    return { status: 'error', field: 'email', message: 'Enter your email address.' }
+    return { status: 'error', field: 'email', message: t('signup.error.email') }
   }
   if (!organizationName) {
-    return {
-      status: 'error',
-      field: 'organizationName',
-      message: 'What is your organisation called?',
-    }
+    return { status: 'error', field: 'organizationName', message: t('signup.error.organisation') }
   }
   if (!planCode) {
     // Only reachable if the list arrived empty and somebody posted anyway. The
     // Control Plane would refuse it too; this says so in the visitor's words.
-    return { status: 'error', message: 'Signing up is not available right now.' }
+    return { status: 'error', message: t('signup.error.notAvailable') }
   }
 
   const base = controlPlane()
@@ -132,10 +130,7 @@ export async function startSignup(
     // Unconfigured, and said plainly rather than presented as the visitor's
     // fault. A signup page that silently fails is worse than one that is
     // honestly switched off.
-    return {
-      status: 'error',
-      message: 'Signing up is not available yet. Please contact us.',
-    }
+    return { status: 'error', message: t('signup.error.notConfigured') }
   }
 
   let response: Response
@@ -152,7 +147,7 @@ export async function startSignup(
       }),
     })
   } catch {
-    return { status: 'error', message: 'We could not reach the signup service.' }
+    return { status: 'error', message: t('signup.error.unreachable') }
   }
 
   if (!response.ok) return explain(response)
@@ -161,10 +156,7 @@ export async function startSignup(
   // Control Plane answers identically for a new address, a repeat and one that
   // already has an account; repeating that here is what keeps this page from
   // becoming the oracle the API refused to be.
-  return {
-    status: 'ok',
-    message: `Check ${email} for a link to confirm your address. Nothing is created until you do.`,
-  }
+  return { status: 'ok', message: t('signup.sent.message', { email }) }
 }
 
 export type VerifyOutcome =

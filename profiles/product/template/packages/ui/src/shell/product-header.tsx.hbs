@@ -2,7 +2,10 @@
 
 import type { ReactNode, RefObject } from 'react'
 import type { TenantBranding } from '@{{projectSlug}}/branding'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale } from '@{{projectSlug}}/i18n'
 import { ProductLogo } from '../brand/product-logo'
+import { LanguageSwitcher } from '../i18n/language-switcher'
 import { ProductProfileMenu } from './profile-menu'
 import { ThemeToggle } from './theme-toggle'
 import { WorkspaceBadge } from './workspace-badge'
@@ -17,6 +20,10 @@ import type { ShellIdentity } from './product-shell'
  * palette and a switcher is a header nobody reads, and in a freshly generated
  * product four of those five would open nothing.
  *
+ * The two switchers that are here -- appearance and language -- earn the place
+ * because both work in every generated product from the first build, and both
+ * are document-level choices a person expects to find at the top.
+ *
  * Primary navigation is never duplicated here. The sidebar is where modules
  * live; a header that also lists them gives a reader two answers to "where am
  * I" and a maintainer two places to add a page.
@@ -28,6 +35,7 @@ import type { ShellIdentity } from './product-shell'
 export function ProductHeader({
   tenant,
   identity,
+  locale,
   accountUrl,
   actions,
   drawerOpen,
@@ -39,6 +47,7 @@ export function ProductHeader({
 }: {
   tenant: TenantBranding
   identity: ShellIdentity
+  locale: Locale
   accountUrl?: string
   actions?: ReactNode
   drawerOpen: boolean
@@ -48,6 +57,8 @@ export function ProductHeader({
   collapsed: boolean
   onToggleCollapsed: () => void
 }) {
+  const t = createTranslator(locale)
+
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-surface">
       <div className="flex h-18 items-center gap-3 px-4 sm:px-6">
@@ -66,7 +77,9 @@ export function ProductHeader({
           aria-controls={drawerId}
           className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-brand border border-line text-ink hover:bg-surface-muted lg:hidden"
         >
-          <span className="sr-only">{drawerOpen ? 'Close navigation' : 'Open navigation'}</span>
+          <span className="sr-only">
+            {drawerOpen ? t('shell.closeNavigation') : t('shell.openNavigation')}
+          </span>
           <MenuGlyph open={drawerOpen} />
         </button>
 
@@ -77,24 +90,24 @@ export function ProductHeader({
           className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-brand border border-line text-ink hover:bg-surface-muted lg:inline-flex"
         >
           <span className="sr-only">
-            {collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
+            {collapsed ? t('shell.expandSidebar') : t('shell.collapseSidebar')}
           </span>
           <MenuGlyph open={false} />
         </button>
 
         <ProductLogo href="/dashboard" tenant={tenant} size="sm" />
 
-        <WorkspaceBadge name={identity.organizationName} />
+        <WorkspaceBadge name={identity.organizationName} locale={locale} />
 
         <div className="ml-auto flex items-center gap-2">
           {actions}
-          {/* Hidden below `sm`, where the header has three controls competing
-              for the width already. The choice still applies -- it is a
-              document-level property, not a header feature -- and a phone is
-              also the device most likely to have an operating-system preference
-              worth following rather than overriding. */}
-          <ThemeToggle className="hidden sm:inline-flex" />
-          <ProductProfileMenu identity={identity} accountUrl={accountUrl} />
+          {/* Both hidden below `sm`, where the header has three controls
+              competing for the width already. Each choice still applies -- they
+              are document-level properties, not header features -- and both are
+              also offered in Settings, where a phone has room for them. */}
+          <LanguageSwitcher locale={locale} className="hidden sm:inline-flex" />
+          <ThemeToggle locale={locale} className="hidden sm:inline-flex" />
+          <ProductProfileMenu identity={identity} locale={locale} accountUrl={accountUrl} />
         </div>
       </div>
     </header>

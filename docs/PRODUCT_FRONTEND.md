@@ -35,6 +35,11 @@ public surface and for the design tokens both surfaces share.
 `apps/marketing`, when generated, serves the same homepage from the same
 components. It is a separate deployment with no session.
 
+Every one of those pages is served in the visitor's language. A generated
+product offers English, German and Spanish, complete in all three, with a
+switcher on every public page, in the shell header and in Settings; see
+**Languages** below.
+
 Nothing above needs an image, a font download, an icon library or a CMS. A
 freshly generated product is publishable as it stands, and improves when
 somebody who knows the product edits **one file**.
@@ -54,7 +59,9 @@ sections:
 |-------------|------------------------------------------------------------------|
 | `product`   | name, slug, tagline, description, contact address, origins        |
 | `brand`     | colours light and dark, radius, logos, favicon, fonts, social     |
+| `i18n`      | the languages offered, and the one a visitor starts in            |
 | `marketing` | navigation, every homepage section's copy, footer, access mode    |
+| `translations` | the same copy, tagline and navigation labels in each other language |
 
 `name` and `slug` are written by the generator from the project name. Everything
 else is yours.
@@ -389,10 +396,110 @@ reaches no settings without tenant context, and grants no write.
 
 ---
 
+## Languages
+
+A generated product speaks English, German and Spanish, and every string a
+person can read is in a catalogue rather than a component.
+
+```
+packages/i18n/src/messages/en.ts     the source of truth: every key, in English
+packages/i18n/src/messages/de.ts     typed against it; a missing key fails tsc
+packages/i18n/src/messages/es.ts     the same, neutral Spanish for Spain and Latin America
+packages/i18n/src/index.ts           Locale, negotiation, createTranslator, the cookie name
+packages/branding  productConfig.i18n           which locales this product offers
+                   productConfig.translations   the homepage copy, tagline and nav labels per locale
+```
+
+**Two lists, on purpose.** `SUPPORTED_LOCALES` in `packages/i18n` is what the
+package can *speak* — the catalogues that exist. `productConfig.i18n.locales`
+is what the product *offers*. A catalogue can be shipped and reviewed before it
+is switched on; a locale cannot be offered without a catalogue, because the
+type refuses it. A product that wants English only removes `'de'` from the
+offered list and every switcher disappears.
+
+### How a request gets its language
+
+```
+cookie `koras-locale`   ->   Accept-Language   ->   productConfig.i18n.defaultLocale
+      set by the switcher        the browser's own       the product's choice
+```
+
+Never the URL. A locale in a query string is a locale somebody can put in a
+link. `apps/web/src/lib/locale.ts` resolves it once per request, through
+React's `cache`, and the layout, every page and every server component read
+that one answer — which is what stops a heading rendering in one language and
+the footer in another. The cookie value is validated against the offered list
+before it reaches `lang` or a catalogue lookup.
+
+The switcher is a form. Each offered language is a submit button labelled in
+itself — the German button says "Deutsch", and carries `lang="de"` — posting
+to `POST /api/locale`, which sets the cookie and redirects back. No script is
+needed, which matters most for the visitor who cannot read the current
+language. Both applications serve the route, because `apps/marketing` is
+another origin. The route refuses a cross-origin post, ignores a locale the
+product does not offer, and sends an unsafe return path to `/`.
+
+### How a component gets its language
+
+As a prop. `locale` is a two-letter string, so it crosses the server/client
+boundary like every other prop the shell takes, and `createTranslator(locale)`
+is a plain function that works in a server component, a client component and a
+route handler alike. There is no provider and no context. A server component
+calls `translator()` from `lib/locale.ts`; a client component is handed
+`locale` and builds its own.
+
+```tsx
+const t = createTranslator(locale)
+t('login.heading', { product: product.name })          // "Sign in to Acme"
+rich(t('dashboard.start.build'), { code: codeTag })    // <code>…</code> inside a sentence
+```
+
+Placeholders are `{name}`, single-braced, because these files are also
+Handlebars templates and a doubled brace is the generator's delimiter. A
+message may carry `<code>`, `<a>` or `<strong>`; `rich()` in `packages/ui`
+maps each tag to an element and never sets `innerHTML`.
+
+### What is translated where
+
+| Kind of string                       | Lives in                                   |
+|--------------------------------------|--------------------------------------------|
+| Interface chrome, errors, legal pages | `packages/i18n/src/messages/<locale>.ts`   |
+| Homepage copy, tagline, description  | `productConfig.translations.<locale>`      |
+| Sidebar module and group labels      | `productConfig.translations.<locale>.navigation` |
+| The product's name, slug, addresses  | not translated; a product has one name     |
+| Role and permission identifiers      | not translated; they are code, not copy    |
+
+`marketingFor`, `productFor` and `navigationFor` merge a translation over the
+default field by field, so a product that has translated its hero and nothing
+else gets a German hero and an English feature grid rather than a page of keys.
+The navigation is translated by module id, so reordering the registry cannot
+put the wrong word on the wrong entry — and the middleware still reads
+`productConfig.navigation` directly, so the route gate and the translated
+sidebar describe one registry.
+
+### What it costs, and what is not done
+
+The marketing homepage was a cached static document; reading a cookie makes it
+render per request. A locale in the URL (`/de/`) would make it static again and
+is recorded as a follow-up, along with the choice following a person across
+devices (a stored preference, which needs the API's first write route), the
+admin application, and email templates. `docs/FOLLOW_UPS.md` F20 has the
+reasoning for each.
+
+The tests worth knowing: `packages/i18n` asserts every translation keeps its
+placeholders and tags; `packages/branding` asserts a translated list keeps its
+shape and its links; `product-i18n.test.ts` in the starter asserts no layout
+hardcodes `lang="en"`, every page resolves the locale, every catalogue key is
+used and every used key exists, and no component carries a sentence of English
+prose; and `e2e/language.spec.ts` presses the button in a browser and reads
+`html[lang]` back.
+
+---
+
 ## Homepage content
 
-Every section reads `productConfig.marketing` and renders nothing when its list
-is empty. Reordering or removing a section is an edit to
+Every section reads `productConfig.marketing` through `marketingFor(locale)`
+and renders nothing when its list is empty. Reordering or removing a section is an edit to
 `apps/web/src/app/page.tsx`; changing what it says is an edit to the
 configuration.
 
@@ -566,8 +673,12 @@ Rules 3 to 6 are asserted by `tests/product-frontend.test.ts` in the generator.
 profiles/product/template/
   packages/branding/src/index.ts.hbs        the configuration
   packages/branding/src/branding.test.ts    the customer-branding parser tests
+  packages/branding/src/i18n-config.test.ts the translation-merge tests
+  packages/i18n/src/index.ts                Locale, negotiation, createTranslator
+  packages/i18n/src/messages/               en.ts (source of truth), de.ts, es.ts
   packages/ui/src/
     lib/            cn, appHref
+    i18n/           LanguageSwitcher, rich, codeTag, strongTag
     primitives/     Button, Card, Container, Section, Icon, TextField, SelectField
     brand/          ProductLogo, KorasWordmark, brandStyle, BrandScope
     marketing/      PublicHeader, HeroSection, ValueStrip, FeatureGrid,
@@ -580,8 +691,11 @@ profiles/product/template/
                     ProductNavigation, ProductProfileMenu, WorkspaceBadge,
                     AccessDenied  -- see docs/PRODUCT_APP_SHELL.md
   apps/web/src/app/     page, dashboard, dashboard/settings, login, signin,
-                        signup, not-found
-  apps/marketing/src/app/
+                        signup, not-found, api/locale
+  apps/web/src/lib/locale.ts.hbs            currentLocale, translator -- once per request
+  apps/marketing/src/app/                   the same homepage, api/locale
+  apps/marketing/src/lib/locale.ts.hbs
+  e2e/language.spec.ts.hbs                  the switcher, in a browser
 ```
 
 The design language is adapted from `korastech-enterprise` — its content width,

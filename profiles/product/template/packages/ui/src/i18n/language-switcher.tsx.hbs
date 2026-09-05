@@ -1,0 +1,92 @@
+'use client'
+
+import { usePathname } from 'next/navigation'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { LOCALE_NAMES, createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale } from '@{{projectSlug}}/i18n'
+import { cn } from '../lib/cn'
+
+/**
+ * Change the language, from any page.
+ *
+ * A form, not a script. Each offered language is a submit button, so the
+ * control works before React has attached and keeps working if it never does
+ * -- which matters most on the public pages, where a visitor who cannot read
+ * the current language is exactly the visitor who needs this to work first
+ * time. The route handler behind it sets one cookie and sends the visitor back
+ * to the page they were on.
+ *
+ * Every language is offered in itself: the button that switches to German says
+ * "Deutsch", and carries `lang="de"` so a screen reader pronounces it as
+ * German rather than as an English word that looks odd. A switcher labelled in
+ * the current language is one the person who needs it cannot read.
+ *
+ * Renders nothing when the product offers one language. A control with a single
+ * option is a decision that has already been made.
+ *
+ * Client-side only for the current path: `usePathname` is how the form knows
+ * where to send the visitor back to, and nothing else here needs the browser.
+ */
+export function LanguageSwitcher({
+  locale,
+  action = '/api/locale',
+  tone = 'light',
+  className,
+}: {
+  locale: Locale
+  /** The route that sets the cookie. Both applications serve one at this path. */
+  action?: string
+  /** `dark` for a footer or an ink hero, where the light chrome would vanish. */
+  tone?: 'light' | 'dark'
+  className?: string
+}) {
+  const pathname = usePathname()
+  const { locales } = productConfig.i18n
+  if (locales.length < 2) return null
+
+  const t = createTranslator(locale)
+
+  return (
+    <form
+      method="post"
+      action={action}
+      role="group"
+      aria-label={t('common.language')}
+      className={cn(
+        'inline-flex items-center gap-0.5 rounded-brand border p-0.5',
+        tone === 'dark' ? 'border-white/20' : 'border-line',
+        className,
+      )}
+    >
+      <input type="hidden" name="next" value={pathname} />
+      {locales.map((option) => {
+        const selected = option === locale
+        return (
+          <button
+            key={option}
+            type="submit"
+            name="locale"
+            value={option}
+            lang={option}
+            aria-pressed={selected}
+            className={cn(
+              'inline-flex h-9 min-w-9 items-center justify-center rounded-brand px-2 text-sm font-medium uppercase transition-colors',
+              selected
+                ? tone === 'dark'
+                  ? 'bg-white/15 text-white'
+                  : 'bg-brand/10 text-brand'
+                : tone === 'dark'
+                  ? 'text-white/70 hover:bg-white/10 hover:text-white'
+                  : 'text-ink-muted hover:bg-surface-muted hover:text-ink',
+            )}
+          >
+            {/* The two-letter code is what fits in a header; the full name is
+                what a screen reader needs. Both are the language's own. */}
+            <span aria-hidden="true">{option}</span>
+            <span className="sr-only">{LOCALE_NAMES[option]}</span>
+          </button>
+        )
+      })}
+    </form>
+  )
+}

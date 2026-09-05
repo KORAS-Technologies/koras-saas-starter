@@ -12,6 +12,7 @@ import {
 } from '@{{projectSlug}}/ui'
 import { readSessionToken } from '@{{projectSlug}}/auth'
 import { cookies } from 'next/headers'
+import { currentLocale } from '../lib/locale'
 
 /**
  * The public front door.
@@ -22,10 +23,10 @@ import { cookies } from 'next/headers'
  * `/dashboard` when this page took the root.
  *
  * Every section is a component from `@{{projectSlug}}/ui` driven by
- * `productConfig`. There is no copy in this file on purpose: a product
- * customises its homepage by editing its configuration, which is one file, and
- * not by editing a page, which is the thing that makes the next upgrade a merge
- * conflict.
+ * `productConfig`, read in the visitor's language. There is no copy in this
+ * file on purpose: a product customises its homepage by editing its
+ * configuration, which is one file, and not by editing a page, which is the
+ * thing that makes the next upgrade a merge conflict.
  *
  * Rendered per request rather than prerendered, because the header changes with
  * the session: somebody already signed in should be offered their dashboard,
@@ -34,22 +35,22 @@ import { cookies } from 'next/headers'
 export const dynamic = 'force-dynamic'
 
 export default async function HomePage() {
-  const signedIn = await hasSession()
+  const [signedIn, locale] = await Promise.all([hasSession(), currentLocale()])
 
   return (
     <>
-      <PublicHeader signedIn={signedIn} />
+      <PublicHeader locale={locale} signedIn={signedIn} />
       <main id="main-content" className="flex-1">
-        <HeroSection />
-        <ValueStrip />
-        <FeatureGrid />
-        <OutcomeSection />
-        <HowItWorks />
-        <ProductPreview />
-        <TrustSection />
-        <CtaSection />
+        <HeroSection locale={locale} />
+        <ValueStrip locale={locale} />
+        <FeatureGrid locale={locale} />
+        <OutcomeSection locale={locale} />
+        <HowItWorks locale={locale} />
+        <ProductPreview locale={locale} />
+        <TrustSection locale={locale} />
+        <CtaSection locale={locale} />
       </main>
-      <PublicFooter />
+      <PublicFooter locale={locale} />
     </>
   )
 }

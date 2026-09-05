@@ -1,0 +1,31 @@
+import { cache } from 'react'
+import { cookies, headers } from 'next/headers'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { LOCALE_COOKIE, resolveLocale } from '@{{projectSlug}}/i18n'
+import type { Locale } from '@{{projectSlug}}/i18n'
+
+/**
+ * Which language this request is answered in.
+ *
+ * The same resolution as `apps/web/src/lib/locale.ts`, and the same cookie:
+ * a visitor who chose German on the marketing site arrives at the sign-in page
+ * in German, because both applications read one value under one name. Nothing
+ * here is shared through a package because the two lines that differ -- which
+ * `next/headers` a build sees -- are the two lines that matter.
+ *
+ * Reading the cookie makes this page render per request rather than as a
+ * cached document. That is the cost of a language chosen in the browser, and
+ * it is paid here rather than hidden: a locale in the URL (`/de/`) would let
+ * the page be static again and is the recorded follow-up.
+ */
+export const currentLocale = cache(async (): Promise<Locale> => {
+  const [store, requestHeaders] = await Promise.all([cookies(), headers()])
+  return resolveLocale(
+    {
+      cookie: store.get(LOCALE_COOKIE)?.value,
+      acceptLanguage: requestHeaders.get('accept-language'),
+    },
+    productConfig.i18n.locales,
+    productConfig.i18n.defaultLocale,
+  )
+})

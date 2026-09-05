@@ -1,0 +1,42 @@
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { LOCALE_COOKIE, isLocale, safeReturnPath } from '@{{projectSlug}}/i18n'
+
+/**
+ * Remember the language a visitor chose, on the marketing site.
+ *
+ * The same route as `apps/web/src/app/api/locale/route.ts`, because
+ * `LanguageSwitcher` posts to a relative `/api/locale` and this application is
+ * a separate deployment on a separate hostname: a form here that posted to the
+ * web application would be a cross-origin post the web route refuses. The
+ * cookie it sets is scoped to this host, so a visitor who switches here and
+ * then signs in is offered the same language there through `Accept-Language`
+ * rather than through this cookie -- which is the right answer for two origins.
+ *
+ * Everything the web route says about what it refuses applies here.
+ */
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  const origin = request.headers.get('origin')
+  if (origin !== null && origin !== request.nextUrl.origin) {
+    return new NextResponse('Forbidden', { status: 403 })
+  }
+
+  const form = await request.formData()
+  const requested = form.get('locale')
+  const next = safeReturnPath(form.get('next'))
+
+  const response = NextResponse.redirect(new URL(next, request.url), 303)
+
+  if (isLocale(requested) && productConfig.i18n.locales.includes(requested)) {
+    response.cookies.set(LOCALE_COOKIE, requested, {
+      path: '/',
+      maxAge: 60 * 60 * 24 * 365,
+      sameSite: 'lax',
+      httpOnly: true,
+      secure: request.nextUrl.protocol === 'https:',
+    })
+  }
+
+  return response
+}

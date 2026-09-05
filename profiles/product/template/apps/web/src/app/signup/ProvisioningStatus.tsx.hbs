@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { AuthCard, ButtonLink } from '@{{projectSlug}}/ui'
+import { AuthCard, ButtonLink, rich, strongTag } from '@{{projectSlug}}/ui'
 import { productConfig } from '@{{projectSlug}}/branding'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale } from '@{{projectSlug}}/i18n'
 import { signupStatus } from './actions'
 
 /**
@@ -46,11 +48,15 @@ const GIVE_UP_MS = 5 * 60 * 1000
 export function ProvisioningStatus({
   jobId,
   organizationSlug,
+  locale,
 }: {
   jobId: string
   organizationSlug: string
+  locale: Locale
 }) {
   const { product } = productConfig
+  const t = createTranslator(locale)
+  const params = { product: product.name }
   const [state, setState] = useState<'waiting' | 'ready' | 'failed' | 'slow'>('waiting')
   const startedAt = useRef(Date.now())
 
@@ -99,16 +105,16 @@ export function ProvisioningStatus({
   if (state === 'ready') {
     return (
       <AuthCard
-        title="Your workspace is ready"
-        description={`Taking you to ${product.name} to sign in.`}
+        title={t('provisioning.ready.title')}
+        description={t('provisioning.ready.description', params)}
       >
         {/* Announced, because the redirect is the only other signal and a
             screen reader user should not learn about it by arriving. */}
         <p role="status" className="text-sm leading-6 text-ink-muted">
-          Redirecting…
+          {t('provisioning.ready.redirecting')}
         </p>
         <ButtonLink href="/login?next=%2Fdashboard" size="lg" className="mt-4 w-full">
-          Continue to sign in
+          {t('provisioning.ready.continue')}
         </ButtonLink>
       </AuthCard>
     )
@@ -117,23 +123,22 @@ export function ProvisioningStatus({
   if (state === 'failed') {
     return (
       <AuthCard
-        title="We could not finish setting up your workspace"
+        title={t('provisioning.failed.title')}
         description={
-          <>
-            Your email is confirmed and nothing is lost. Someone needs to look at this before
-            you can sign in{product.contactEmail ? ', and we would like to hear from you' : ''}.
-          </>
+          product.contactEmail
+            ? t('provisioning.failed.descriptionContact')
+            : t('provisioning.failed.description')
         }
       >
         {product.contactEmail ? (
           <ButtonLink
             href={`mailto:${product.contactEmail}?subject=${encodeURIComponent(
-              `Setting up ${product.name}`,
+              t('provisioning.failed.subject', params),
             )}`}
             size="lg"
             className="w-full"
           >
-            Get in touch
+            {t('provisioning.failed.getInTouch')}
           </ButtonLink>
         ) : null}
       </AuthCard>
@@ -142,12 +147,9 @@ export function ProvisioningStatus({
 
   if (state === 'slow') {
     return (
-      <AuthCard
-        title="This is taking longer than usual"
-        description="Your account is still being set up. We will email you the moment it is ready — you can close this page."
-      >
+      <AuthCard title={t('provisioning.slow.title')} description={t('provisioning.slow.description')}>
         <ButtonLink href="/login" variant="secondary" size="lg" className="w-full">
-          Sign in
+          {t('common.signIn')}
         </ButtonLink>
       </AuthCard>
     )
@@ -155,16 +157,13 @@ export function ProvisioningStatus({
 
   return (
     <AuthCard
-      title="Setting up your workspace"
+      title={t('provisioning.waiting.title')}
       description={
-        organizationSlug ? (
-          <>
-            We are creating <span className="font-semibold text-ink">{organizationSlug}</span> in{' '}
-            {product.name}. This usually takes a minute or two.
-          </>
-        ) : (
-          <>We are creating your workspace in {product.name}. This usually takes a minute or two.</>
-        )
+        organizationSlug
+          ? rich(t('provisioning.waiting.description', { slug: organizationSlug, product: product.name }), {
+              strong: strongTag,
+            })
+          : t('provisioning.waiting.descriptionNoSlug', params)
       }
     >
       <p role="status" className="flex items-center gap-3 text-sm leading-6 text-ink-muted">
@@ -172,11 +171,9 @@ export function ProvisioningStatus({
           aria-hidden="true"
           className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-line border-t-brand"
         />
-        Setting up your organisation, your account and your workspace.
+        {t('provisioning.waiting.status')}
       </p>
-      <p className="mt-6 text-sm leading-6 text-ink-muted">
-        You can close this page — we will email you when it is ready.
-      </p>
+      <p className="mt-6 text-sm leading-6 text-ink-muted">{t('provisioning.waiting.close')}</p>
     </AuthCard>
   )
 }

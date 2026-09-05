@@ -44,6 +44,11 @@ const PUBLIC_PATHS = [
   '/privacy',
   '/terms',
   '/faq',
+  // The language switcher posts here from every public page. Gated, a stranger
+  // choosing German on the sign-in page would be redirected to the sign-in
+  // page. It sets one cookie that authorises nothing and answers a redirect;
+  // `app/api/locale/route.ts` says what it refuses.
+  '/api/locale',
 ]
 
 /**

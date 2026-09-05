@@ -1,0 +1,41 @@
+import { cache } from 'react'
+import { cookies, headers } from 'next/headers'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { LOCALE_COOKIE, createTranslator, resolveLocale } from '@{{projectSlug}}/i18n'
+import type { Locale, Translator } from '@{{projectSlug}}/i18n'
+
+/**
+ * Which language this request is answered in.
+ *
+ * Resolved once per render and read by the layout, every page and every server
+ * component that renders a string. `cache` from React de-duplicates within one
+ * render pass, so the cookie and the header are read once however many callers
+ * there are -- and every caller sees the same answer, which is what stops a page
+ * rendering its heading in one language and its footer in another.
+ *
+ * The order is the one `resolveLocale` documents: the cookie the visitor set,
+ * then the browser's `Accept-Language`, then the product's default. Nothing is
+ * read from the URL. The value is validated against the languages the product
+ * offers before it is used, because a cookie is a value the browser sent and
+ * `lang` on the document is where it ends up.
+ *
+ * Server-side only, like `tenantSettings`: `cookies()` and `headers()` are
+ * request-scoped and exist nowhere else. A client component receives the
+ * result as a prop.
+ */
+export const currentLocale = cache(async (): Promise<Locale> => {
+  const [store, requestHeaders] = await Promise.all([cookies(), headers()])
+  return resolveLocale(
+    {
+      cookie: store.get(LOCALE_COOKIE)?.value,
+      acceptLanguage: requestHeaders.get('accept-language'),
+    },
+    productConfig.i18n.locales,
+    productConfig.i18n.defaultLocale,
+  )
+})
+
+/** A translator for the current request's language. */
+export async function translator(): Promise<Translator> {
+  return createTranslator(await currentLocale())
+}

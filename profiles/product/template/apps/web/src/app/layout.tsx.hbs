@@ -1,36 +1,45 @@
 import type { Metadata, Viewport } from 'next'
 import { headers } from 'next/headers'
-import { productConfig } from '@{{projectSlug}}/branding'
+import { productConfig, productFor } from '@{{projectSlug}}/branding'
+import { createTranslator, localeDirection } from '@{{projectSlug}}/i18n'
 import { THEME_SCRIPT, brandStyle } from '@{{projectSlug}}/ui'
+import { currentLocale } from '../lib/locale'
 import './globals.css'
 
-const { product, brand } = productConfig
+const { brand } = productConfig
 
 /**
- * Every piece of page metadata comes from `productConfig`.
+ * Every piece of page metadata comes from `productConfig`, in the visitor's
+ * language.
  *
  * Nothing here names KORAS or hardcodes a title, which is the difference
  * between a generated product and a template with somebody else's name in the
  * browser tab. `metadataBase` is set only when the product knows its own
  * origin -- Next warns and falls back to localhost otherwise, and a wrong
  * absolute URL in an OpenGraph tag is worse than an absent one.
+ *
+ * A function rather than a constant because the tagline and description are
+ * translated. The name is not: a product has one name.
  */
-export const metadata: Metadata = {
-  ...(product.url ? { metadataBase: new URL(product.url) } : {}),
-  title: {
-    default: `${product.name} — ${product.tagline}`,
-    template: `%s · ${product.name}`,
-  },
-  description: product.description,
-  applicationName: product.name,
-  icons: { icon: brand.faviconUrl },
-  openGraph: {
-    type: 'website',
-    siteName: product.name,
-    title: `${product.name} — ${product.tagline}`,
+export async function generateMetadata(): Promise<Metadata> {
+  const product = productFor(await currentLocale())
+  return {
+    ...(product.url ? { metadataBase: new URL(product.url) } : {}),
+    title: {
+      default: `${product.name} — ${product.tagline}`,
+      template: `%s · ${product.name}`,
+    },
     description: product.description,
-  },
-  twitter: { card: 'summary_large_image', title: product.name, description: product.description },
+    applicationName: product.name,
+    icons: { icon: brand.faviconUrl },
+    openGraph: {
+      type: 'website',
+      siteName: product.name,
+      title: `${product.name} — ${product.tagline}`,
+      description: product.description,
+    },
+    twitter: { card: 'summary_large_image', title: product.name, description: product.description },
+  }
 }
 
 /**
@@ -59,9 +68,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // inline and the policy is nonce-based, so without it the script is refused
   // and a reader who chose dark gets a light flash on every fresh document.
   const nonce = (await headers()).get('x-nonce') ?? undefined
+  // The language, resolved once for this request and read again by every page
+  // and component below through the same cached function.
+  const locale = await currentLocale()
+  const t = createTranslator(locale)
 
   return (
-    <html lang="en">
+    <html lang={locale} dir={localeDirection(locale)}>
       {/*
         Applied before the first paint, ahead of React and ahead of hydration.
         It reads one key and sets one property; anybody who has not chosen an
@@ -80,7 +93,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body style={brandStyle(brand)} className="flex min-h-screen flex-col font-sans">
         {/* First in the tab order, visible only when focused. */}
         <a href="#main-content" className="skip-link">
-          Skip to main content
+          {t('common.skipToMain')}
         </a>
         {children}
       </body>

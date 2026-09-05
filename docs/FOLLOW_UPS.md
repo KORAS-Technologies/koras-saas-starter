@@ -90,6 +90,7 @@ otherwise stops at F6, and why there is no F0.
 | F17 | a product cannot read its customers' entitlements | closed 2026-09-01 | Decisions |
 | F18 | no test in this repository opens a browser | closed 2026-09-01 | Decisions |
 | F19 | a customer's platform branding was stored and never rendered | closed 2026-09-04 — logos still open | Decisions |
+| F20 | a product speaks one language | phase 1 closed 2026-09-05 — persistence, admin app, emails and locale URLs open | Decisions |
 
 **Two are open**: F2b and F3 — one Control Plane authorization decision arriving
 from two sides — plus **F7**, which is open in a different sense: its remaining
@@ -1132,6 +1133,77 @@ important half: the built application was probed with real signed session
 cookies, one per organisation role, and the sidebar, the 403s and the 404 were
 all asserted server-side. That covers the security claim. This covers the
 interaction, which is the part that was only ever claimed.
+
+### F20 — a product speaks one language — opened 2026-09-05, phase 1 closed the same day
+
+- [x] A dependency-free `packages/i18n`: typed catalogues, negotiation, a translator
+- [x] Every string in `apps/web`, `apps/marketing` and `packages/ui` read from it
+- [x] English, German and Spanish complete, all three offered by the default configuration
+- [x] `productConfig.i18n` and `productConfig.translations`; the homepage copy in German and Spanish
+- [x] A cookie-backed switcher, on every public page, in the shell header and in Settings
+- [x] `lang` and `dir` on the document from the resolved locale
+- [ ] Persist the choice per member, and a tenant default (phase 2)
+- [ ] `apps/admin`
+- [ ] Email templates and API error text
+- [ ] A locale in the marketing site's URL, so it can be a cached document again
+
+Every generated product was English, three times over: `lang="en"` in each
+layout, the homepage copy in `productConfig.marketing` with no locale
+dimension, and about a hundred and fifty lines of interface prose typed into
+pages and components. Nothing in the Control Plane knows what a language is, so
+this was the factory's alone to do.
+
+**What was built, and the shape of it.** `packages/i18n` is a leaf with no
+workspace dependency: an English catalogue that is the source of truth, a
+German one typed as `Record<keyof typeof en, string>` so a missing key is a
+compile error, and `createTranslator(locale)`, which is a plain function and
+therefore works in a server component, a client component and a route handler
+alike. The locale itself crosses the server/client boundary as a two-letter
+prop — no provider, no context — which is the same "every prop is plain data"
+rule the shell already lives by. `productConfig` gained `i18n` (what the product
+offers, as distinct from what the package can speak) and `translations` (a
+partial per-locale override of the product's own copy, merged field by field
+by `marketingFor`, `productFor` and `navigationFor`). The default configuration
+offers both languages so the switcher, the negotiation and the German catalogue
+are exercised in every generated product; a product that wants English only
+removes `'de'` from one list.
+
+**Resolution is cookie, then `Accept-Language`, then default — never the URL.**
+A locale in a query string is a locale somebody can put in a link. The cookie
+is set by `POST /api/locale`, a plain form target so the switcher works before
+any script attaches, and both applications serve one because the marketing
+site is another origin. The value is validated against the offered list before
+it reaches `lang` or a catalogue lookup; the return path is same-origin only.
+`/api/locale` joins `PUBLIC_PATHS` in the middleware, and the public-routes test
+learned that the exemption must exist exactly where the route does.
+
+**What this cost, deliberately.** The marketing homepage was a cached static
+document and is now rendered per request, because the language comes from a
+cookie and a header. The comment in `apps/marketing/src/app/page.tsx` says so.
+The repair is the last box above — `/de/` in the URL — and it is a different
+design (routing, `hreflang`, a redirect from the bare path) rather than a small
+edit, which is why it is a follow-up and not part of this.
+
+**What is out, and why each.** Persisting the choice per member means the
+API's first write route and a new RLS policy scoped to `current_user_id()`;
+that deserves its own review and was agreed as a second pull request. The
+admin application is staff-facing and does not depend on `packages/branding`,
+so it has no declared locale list to negotiate against; it keeps `lang="en"`
+until it is given one. Email templates in `packages/email` and the API's error
+`detail` strings are English; the frontend maps API status codes to its own
+messages, so nothing an API returns is shown to a person verbatim, but a
+welcome email arrives in English whatever the visitor chose. The Control Plane
+portal has no tenant default language for a product to read — that is a
+platform change and is recorded there when it is wanted.
+
+**The structural tests are the ones worth knowing about.** `product-i18n.test.ts`
+asserts that no layout hardcodes `lang="en"`, that every page under `apps/web`
+resolves the locale, that every catalogue key is used by some template and
+every used key is declared, that no JSX carries a sentence of English prose,
+and that `packages/i18n` imports nothing from the workspace. The last of those
+is the dependency direction — `i18n` is a leaf, `branding` reads it for the
+type, `ui` reads both — and a reversed edge would make the catalogue depend on
+the copy it translates.
 
 ## The customer-onboarding sequence
 

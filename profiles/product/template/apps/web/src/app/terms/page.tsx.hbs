@@ -1,6 +1,8 @@
+import type { Metadata } from 'next'
 import { productConfig } from '@{{projectSlug}}/branding'
 import { PublicFooter, PublicHeader } from '@{{projectSlug}}/ui'
 import { LegalPage, LegalSection } from '../legal'
+import { currentLocale, translator } from '../../lib/locale'
 
 /**
  * The terms of use.
@@ -14,71 +16,48 @@ import { LegalPage, LegalSection } from '../legal'
  * What is left is real and worth saying: what an account is, what a plan
  * grants, whose data it is, and what ends access.
  */
-export const metadata = {
-  title: `Terms · ${productConfig.product.name}`,
-  description: `The terms on which ${productConfig.product.name} is provided.`,
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await translator()
+  const { name } = productConfig.product
+  return {
+    title: `${t('terms.title')} · ${name}`,
+    description: t('terms.metaDescription', { product: name }),
+  }
 }
 
-export default function TermsPage() {
-  const { product } = productConfig
+export default async function TermsPage() {
+  const [locale, t] = await Promise.all([currentLocale(), translator()])
+  const params = { product: productConfig.product.name }
 
   return (
     <>
-      <PublicHeader />
+      <PublicHeader locale={locale} />
       <main id="main-content">
-        <LegalPage
-          title="Terms"
-          summary={`What you can expect from ${product.name}, and what it expects from you.`}
-        >
-          <LegalSection title="Accounts">
-            <p>
-              Access to {product.name} belongs to an organisation, not to a person. Your
-              organisation decides who may sign in and what each person may do; removing
-              somebody from the organisation removes their access.
-            </p>
-            <p>
-              You are responsible for what happens under your sign-in. Tell your administrator
-              promptly if you think somebody else is using it.
-            </p>
+        <LegalPage locale={locale} title={t('terms.title')} summary={t('terms.summary', params)}>
+          <LegalSection title={t('terms.accounts.title')}>
+            <p>{t('terms.accounts.p1', params)}</p>
+            <p>{t('terms.accounts.p2')}</p>
           </LegalSection>
 
-          <LegalSection title="Plans">
-            <p>
-              What your organisation may use is decided by its plan. Features outside it are
-              either hidden or shown as unavailable — never silently degraded, and never
-              charged for without being bought.
-            </p>
-            <p>
-              A trial ends on its date. When it does, access to plan-gated features stops and
-              the account itself stays open, so somebody can still sign in and choose a plan.
-            </p>
+          <LegalSection title={t('terms.plans.title')}>
+            <p>{t('terms.plans.p1')}</p>
+            <p>{t('terms.plans.p2')}</p>
           </LegalSection>
 
-          <LegalSection title="Your data">
-            <p>
-              The data your organisation puts into {product.name} remains your
-              organisation&rsquo;s. It is stored separately from every other
-              organisation&rsquo;s, and it is not used to train anything or sold to anybody.
-            </p>
+          <LegalSection title={t('terms.data.title')}>
+            <p>{t('terms.data.p1', params)}</p>
           </LegalSection>
 
-          <LegalSection title="Acceptable use">
-            <p>
-              Do not attempt to reach another organisation&rsquo;s data, disrupt the service
-              for others, or use {product.name} to break the law. Access can be suspended where
-              any of those is happening.
-            </p>
+          <LegalSection title={t('terms.use.title')}>
+            <p>{t('terms.use.p1', params)}</p>
           </LegalSection>
 
-          <LegalSection title="Changes">
-            <p>
-              These terms can change. Material changes are announced before they take effect,
-              not applied quietly.
-            </p>
+          <LegalSection title={t('terms.changes.title')}>
+            <p>{t('terms.changes.p1')}</p>
           </LegalSection>
         </LegalPage>
       </main>
-      <PublicFooter />
+      <PublicFooter locale={locale} />
     </>
   )
 }

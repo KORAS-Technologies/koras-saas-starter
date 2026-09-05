@@ -1,4 +1,5 @@
-import { productConfig } from '@{{projectSlug}}/branding'
+import { marketingFor } from '@{{projectSlug}}/branding'
+import type { Locale } from '@{{projectSlug}}/i18n'
 import { Container } from '../primitives/container'
 
 /**
@@ -12,8 +13,8 @@ import { Container } from '../primitives/container'
  * Not a sequence, so it carries no numerals -- unlike the process section,
  * where the order is the information.
  */
-export function ValueStrip() {
-  const { marketing } = productConfig
+export function ValueStrip({ locale }: { locale: Locale }) {
+  const marketing = marketingFor(locale)
   if (marketing.values.length === 0) return null
 
   return (

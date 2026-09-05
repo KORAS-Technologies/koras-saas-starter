@@ -1,6 +1,8 @@
 import { productConfig } from '@{{projectSlug}}/branding'
-import { AccessDenied, Card, Container } from '@{{projectSlug}}/ui'
+import { LOCALE_NAMES } from '@{{projectSlug}}/i18n'
+import { AccessDenied, Button, Card, Container, SelectField, codeTag, rich } from '@{{projectSlug}}/ui'
 import { can, signedInContext } from '../../../lib/access'
+import { currentLocale, translator } from '../../../lib/locale'
 
 /**
  * Product settings, general.
@@ -11,11 +13,15 @@ import { can, signedInContext } from '../../../lib/access'
  * X", which in a product with four independent gates is the question somebody
  * asks every week.
  *
- * It deliberately does not offer controls. Renaming the product, changing its
- * colours and adding a module are edits to `packages/branding/src/index.ts` --
- * one file, in the product's own repository, reviewed like any other change --
- * and a settings screen that wrote them at runtime would put a second authority
- * beside the one the whole frontend already reads from.
+ * It offers exactly one control, and the exception is instructive. Renaming the
+ * product, changing its colours and adding a module are edits to
+ * `packages/branding/src/index.ts` -- one file, in the product's own
+ * repository, reviewed like any other change -- and a settings screen that
+ * wrote them at runtime would put a second authority beside the one the whole
+ * frontend already reads from. The language is different: it is a choice about
+ * *this person on this device*, it changes nothing for anybody else, and the
+ * product already has to honour it from a cookie. So the form here posts to the
+ * same route the header's switcher does, and stores nothing anywhere else.
  *
  * Subscriptions, billing, domains, single sign-on and organization membership
  * are **not** here and never will be. They belong to the KORAS Customer Portal.
@@ -23,48 +29,72 @@ import { can, signedInContext } from '../../../lib/access'
 export const dynamic = 'force-dynamic'
 
 export default async function SettingsPage() {
-  const context = await signedInContext()
+  const [context, locale, t] = await Promise.all([signedInContext(), currentLocale(), translator()])
 
   // Checked here as well as in the middleware, which is not duplication: the
   // middleware guards the URL, and this guards the render. A page is reachable
   // by more than one route, and a check that lives only at the edge is a check
   // the next rewrite can lose.
   if (context === null || !can(context.access, 'settings.read')) {
-    return <AccessDenied />
+    return <AccessDenied locale={locale} />
   }
 
-  const { product } = productConfig
+  const { product, i18n } = productConfig
   const { entitlements, capabilities } = context.access
+  const params = { product: product.name }
+  const code = { code: codeTag }
 
   return (
     <div className="py-12">
       <Container>
-        <h1 className="font-display text-3xl font-bold tracking-tight text-ink">Settings</h1>
-        <p className="mt-3 max-w-2xl leading-7 text-ink-muted">
-          What {product.name} is, what this deployment contains, and what your organisation&rsquo;s
-          plan includes.
-        </p>
+        <h1 className="font-display text-3xl font-bold tracking-tight text-ink">{t('settings.title')}</h1>
+        <p className="mt-3 max-w-2xl leading-7 text-ink-muted">{t('settings.intro', params)}</p>
 
         <Card className="mt-8 max-w-3xl">
-          <h2 className="font-display text-lg font-bold text-ink">Product</h2>
+          <h2 className="font-display text-lg font-bold text-ink">{t('settings.product.title')}</h2>
           <dl className="mt-4 space-y-3 text-sm leading-6">
-            <Row label="Name" value={product.name} />
-            <Row label="Identifier" value={product.slug} />
-            <Row label="Tagline" value={product.tagline} />
+            <Row label={t('settings.product.name')} value={product.name} />
+            <Row label={t('settings.product.identifier')} value={product.slug} />
+            <Row label={t('settings.product.tagline')} value={product.tagline} />
           </dl>
-          <p className="mt-4 text-sm text-ink-muted">
-            Configured in <code className="text-ink">packages/branding/src/index.ts</code>, which
-            is also where this product&rsquo;s colours, logo and sidebar modules are declared.
-          </p>
+          <p className="mt-4 text-sm text-ink-muted">{rich(t('settings.product.configuredIn'), code)}</p>
         </Card>
 
+        {/* Rendered only when there is a choice to make. A form offering one
+            option asks a person to decide something already decided. */}
+        {i18n.locales.length > 1 && (
+          <Card className="mt-6 max-w-3xl">
+            <h2 className="font-display text-lg font-bold text-ink">{t('settings.language.title')}</h2>
+            <p className="mt-2 text-sm leading-6 text-ink-muted">
+              {t('settings.language.description', params)}
+            </p>
+            {/* A plain form to the same route the header's switcher uses, so a
+                choice made here and one made there are one cookie, and the
+                page works before any script has attached. */}
+            <form method="post" action="/api/locale" className="mt-4 flex max-w-sm flex-col gap-4">
+              <input type="hidden" name="next" value="/dashboard/settings" />
+              <SelectField
+                id="settings-locale"
+                name="locale"
+                label={t('settings.language.label', params)}
+                defaultValue={locale}
+              >
+                {i18n.locales.map((option) => (
+                  <option key={option} value={option} lang={option}>
+                    {LOCALE_NAMES[option]}
+                  </option>
+                ))}
+              </SelectField>
+              <Button type="submit" variant="secondary" className="self-start">
+                {t('settings.language.save')}
+              </Button>
+            </form>
+          </Card>
+        )}
+
         <Card className="mt-6 max-w-3xl">
-          <h2 className="font-display text-lg font-bold text-ink">This deployment</h2>
-          <p className="mt-2 text-sm leading-6 text-ink-muted">
-            The components this repository was generated with. A sidebar module requiring one
-            that is absent is hidden rather than broken, and the list is fixed for the life of
-            the repository &mdash; adding one means generating with it.
-          </p>
+          <h2 className="font-display text-lg font-bold text-ink">{t('settings.deployment.title')}</h2>
+          <p className="mt-2 text-sm leading-6 text-ink-muted">{t('settings.deployment.description')}</p>
           <ul className="mt-4 flex flex-wrap gap-2">
             {capabilities.map((capability) => (
               <li
@@ -78,19 +108,20 @@ export default async function SettingsPage() {
         </Card>
 
         <Card className="mt-6 max-w-3xl">
-          <h2 className="font-display text-lg font-bold text-ink">Plan</h2>
+          <h2 className="font-display text-lg font-bold text-ink">{t('settings.plan.title')}</h2>
           {entitlements.resolved ? (
             <>
-              <p className="mt-2 text-sm leading-6 text-ink-muted">
-                Resolved from the KORAS platform for your organisation.
-              </p>
+              <p className="mt-2 text-sm leading-6 text-ink-muted">{t('settings.plan.resolved')}</p>
               <dl className="mt-4 space-y-3 text-sm leading-6">
-                <Row label="Plan" value={entitlements.plan ?? 'None recorded'} />
                 <Row
-                  label="Included features"
+                  label={t('settings.plan.plan')}
+                  value={entitlements.plan ?? t('settings.plan.noneRecorded')}
+                />
+                <Row
+                  label={t('settings.plan.features')}
                   value={
                     Object.keys(entitlements.features).length === 0
-                      ? 'None'
+                      ? t('common.none')
                       : Object.entries(entitlements.features)
                           .filter(([, value]) => value.enabled)
                           .map(([name]) => name)
@@ -100,24 +131,19 @@ export default async function SettingsPage() {
               </dl>
             </>
           ) : (
-            <p className="mt-2 text-sm leading-6 text-ink-muted">
-              Not available. Your plan could not be read from the KORAS platform just now, so
-              anything gated by plan is unavailable until it can be. Nothing else about the
-              product is affected, and the reason is in this deployment&rsquo;s server log.
-            </p>
+            <p className="mt-2 text-sm leading-6 text-ink-muted">{t('settings.plan.unavailable')}</p>
           )}
           {product.accountUrl === '' ? (
-            <p className="mt-4 text-sm text-ink-muted">
-              Subscriptions and billing are managed in the KORAS account portal. Set{' '}
-              <code className="text-ink">product.accountUrl</code> to link to it from here and
-              from the profile menu.
-            </p>
+            <p className="mt-4 text-sm text-ink-muted">{rich(t('settings.plan.portalHint'), code)}</p>
           ) : (
             <p className="mt-4 text-sm text-ink-muted">
-              <a href={product.accountUrl} className="font-semibold text-brand underline">
-                Manage your subscription
-              </a>{' '}
-              in the KORAS account portal.
+              {rich(t('settings.plan.manage'), {
+                a: (chunk) => (
+                  <a href={product.accountUrl} className="font-semibold text-brand underline">
+                    {chunk}
+                  </a>
+                ),
+              })}
             </p>
           )}
         </Card>

@@ -8,8 +8,12 @@ import {
 } from '@{{projectSlug}}/ui'
 import { availablePlans } from './actions'
 import { SignupForm } from './SignupForm'
+import { currentLocale, translator } from '../../lib/locale'
 
-export const metadata: Metadata = { title: 'Get started' }
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await translator()
+  return { title: t('signup.title') }
+}
 
 /**
  * Where a customer starts, before they have anything to sign in to.
@@ -58,15 +62,16 @@ export const metadata: Metadata = { title: 'Get started' }
 export const dynamic = 'force-dynamic'
 
 export default async function SignupPage() {
+  const [locale, t] = await Promise.all([currentLocale(), translator()])
   const { product, marketing } = productConfig
 
   // Configured, and therefore asked first: a product that is invitation-only is
   // invitation-only whatever the catalogue happens to contain today.
   if (marketing.access.mode === 'invitation') {
     return (
-      <AuthLayout>
+      <AuthLayout locale={locale}>
         <div data-testid="signup-invitation-only">
-          <InvitationOnlyCard />
+          <InvitationOnlyCard locale={locale} />
         </div>
       </AuthLayout>
     )
@@ -79,29 +84,29 @@ export default async function SignupPage() {
   // address and is refused after it is sent.
   if (plans.length === 0) {
     return (
-      <AuthLayout>
+      <AuthLayout locale={locale}>
         <div data-testid="signup-closed">
-          <RequestAccessCard />
+          <RequestAccessCard locale={locale} />
         </div>
       </AuthLayout>
     )
   }
 
   return (
-    <AuthLayout>
+    <AuthLayout locale={locale}>
       <AuthCard
-        title={`Start with ${product.name}`}
-        description="Tell us where to send your confirmation link. Nothing is created until you open it."
+        title={t('signup.heading', { product: product.name })}
+        description={t('signup.description')}
         footer={
           <>
-            Already have an account?{' '}
+            {t('signup.haveAccount')}{' '}
             <a href="/login" className="font-semibold text-brand hover:underline">
-              Sign in
+              {t('common.signIn')}
             </a>
           </>
         }
       >
-        <SignupForm plans={plans} />
+        <SignupForm plans={plans} locale={locale} />
       </AuthCard>
     </AuthLayout>
   )

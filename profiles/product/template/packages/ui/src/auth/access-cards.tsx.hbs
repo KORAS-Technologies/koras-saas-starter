@@ -1,4 +1,6 @@
 import { productConfig } from '@{{projectSlug}}/branding'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale } from '@{{projectSlug}}/i18n'
 import { ButtonLink } from '../primitives/button'
 import { AuthCard } from './auth-card'
 
@@ -31,9 +33,11 @@ function mailto(subject: string): string | null {
  * was true, gave no way to get in touch, and was the first thing a prospective
  * customer saw.
  */
-export function RequestAccessCard() {
+export function RequestAccessCard({ locale }: { locale: Locale }) {
   const { product } = productConfig
-  const href = mailto(`Access to ${product.name}`)
+  const t = createTranslator(locale)
+  const params = { product: product.name }
+  const href = mailto(t('requestAccess.subject', params))
 
   // Two genuinely different cards, not one card with a hidden button. With a
   // contact address there is a way in and the page leads with it; without one
@@ -43,18 +47,9 @@ export function RequestAccessCard() {
   // Sign in twice.
   if (!href) {
     return (
-      <AuthCard
-        title={`Get started with ${product.name}`}
-        description={
-          <>
-            Access to {product.name} is arranged by your organisation&rsquo;s administrator rather
-            than online. If you are the administrator, get in touch with whoever runs{' '}
-            {product.name} for your organisation.
-          </>
-        }
-      >
+      <AuthCard title={t('requestAccess.heading', params)} description={t('requestAccess.byAdmin', params)}>
         <ButtonLink href="/login" size="lg" className="w-full">
-          Sign in
+          {t('common.signIn')}
         </ButtonLink>
       </AuthCard>
     )
@@ -62,20 +57,15 @@ export function RequestAccessCard() {
 
   return (
     <AuthCard
-      title={`Get started with ${product.name}`}
-      description={
-        <>
-          Accounts for {product.name} are set up with you rather than on your own. Tell us a
-          little about your organisation and we will get you running.
-        </>
-      }
+      title={t('requestAccess.heading', params)}
+      description={t('requestAccess.withContact', params)}
     >
       <div className="flex flex-col gap-3">
         <ButtonLink href={href} size="lg">
-          Request access
+          {t('requestAccess.button')}
         </ButtonLink>
         <ButtonLink href="/login" variant="secondary" size="lg">
-          Sign in
+          {t('common.signIn')}
         </ButtonLink>
       </div>
     </AuthCard>
@@ -89,32 +79,24 @@ export function RequestAccessCard() {
  * closed on purpose rather than closed by accident. Set
  * `marketing.access.mode` to `invitation` to say so.
  */
-export function InvitationOnlyCard() {
+export function InvitationOnlyCard({ locale }: { locale: Locale }) {
   const { product } = productConfig
-  const href = mailto(`Invitation to ${product.name}`)
+  const t = createTranslator(locale)
+  const params = { product: product.name }
+  const href = mailto(t('invitation.subject', params))
 
   return (
-    <AuthCard
-      title={`${product.name} is invitation only`}
-      description={
-        <>
-          New organisations join {product.name} by invitation. If somebody has invited you, the
-          link in your email is the way in — this page cannot create the account for you.
-        </>
-      }
-    >
+    <AuthCard title={t('invitation.heading', params)} description={t('invitation.description', params)}>
       <div className="flex flex-col gap-3">
         <ButtonLink href="/login" size="lg">
-          Sign in
+          {t('common.signIn')}
         </ButtonLink>
         {href ? (
           <ButtonLink href={href} variant="secondary" size="lg">
-            Ask about an invitation
+            {t('invitation.ask')}
           </ButtonLink>
         ) : (
-          <p className="text-sm leading-6 text-ink-muted">
-            Invitations are issued by your organisation&rsquo;s administrator.
-          </p>
+          <p className="text-sm leading-6 text-ink-muted">{t('invitation.byAdmin')}</p>
         )}
       </div>
     </AuthCard>
