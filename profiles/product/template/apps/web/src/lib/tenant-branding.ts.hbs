@@ -1,37 +1,61 @@
-import { NO_TENANT_BRANDING, parseTenantBranding } from '@{{projectSlug}}/branding'
+import { cache } from 'react'
+import {
+  NO_TENANT_BRANDING,
+  mergeTenantBranding,
+  parsePlatformBranding,
+  parseTenantBranding,
+} from '@{{projectSlug}}/branding'
 import type { TenantBranding } from '@{{projectSlug}}/branding'
+import { ApiError, fetchBranding } from '@{{projectSlug}}/api-client'
+import { providerToken } from './session'
 import { tenantSettings } from './tenant-settings'
 
 /**
  * The customer's own branding, for the signed-in area.
  *
- * The read is `tenant-settings.ts`; this is the boundary that decides which of
- * the values stored against a tenant are safe to put in a stylesheet.
+ * Two sources, layered. The Control Plane is where a customer actually edits
+ * their branding -- the portal has the form, and the platform stores what they
+ * save -- and `tenant_settings.branding` is this product's own column, for a
+ * product that offers its own. The platform's answer wins where both speak,
+ * because it is the one the customer can see and change.
  *
- * That split is the whole point. `tenant_settings.branding` is a `jsonb` column
- * a customer controls, and its contents end up as CSS custom property values in
- * a `style` attribute on every page their staff load. A custom property value
- * is not escaped the way text content is: a tenant storing
+ * Until 2026-09-04 only the column was read, and nothing wrote it. A customer
+ * could set their colours in the portal, be told this product would use them,
+ * and have it never do so: stored, and unused. The platform read below is what
+ * makes white labelling real rather than declared.
+ *
+ * Both reads end at a parser, and that split is the whole point. Either value
+ * ends up as CSS custom properties in a `style` attribute on every page the
+ * customer's staff load, and a custom property value is not escaped the way
+ * text content is: a value storing
  *
  *     red; } html { display: none } :root { --x: 1
  *
- * as `primaryColor` would be writing CSS into every one of those pages. This is
- * the same category as browser input — a value the product stored is not a
- * value the product chose — and it is validated at the point of use rather than
- * trusted because it survived a round trip through Postgres.
+ * as a colour would be writing CSS into every one of those pages. This is the
+ * same category as browser input -- a value somebody stored is not a value the
+ * product chose -- and it is validated at the point of use rather than trusted
+ * because it survived a round trip through a database, this product's or the
+ * platform's. The two parsers speak their own source's names, and each ignores
+ * the other's, so a response fed to the wrong one yields nothing rather than
+ * something wrong.
  *
- * `parseTenantBranding` accepts hex colours only, three length units for the
- * radius, and same-origin absolute paths for images. Unknown keys are dropped
- * and one bad value costs one token rather than the whole brand.
- *
- * The tenant is never named by the caller. The API resolves it from the token
- * and scopes the read with row-level security, so there is no organisation id
- * to pass and none to pass wrongly.
+ * The tenant is never named by the caller. This product's API resolves it from
+ * the token and scopes the read with row-level security; the platform's portal
+ * resolves the organization from the same token and takes no identifier at
+ * all. There is no organisation id to pass and none to pass wrongly.
  *
  * Never throws. Branding is decoration: a customer whose settings cannot be
  * read should see the product's colours, not an error page.
  */
 export async function tenantBranding(): Promise<TenantBranding> {
+  // Concurrent, and each already cached per render: `tenantSettings` is
+  // shared with the feature switches and the workspace badge, and the platform
+  // read is shared with nothing yet but costs one request either way.
+  const [local, platform] = await Promise.all([localBranding(), platformBranding()])
+  return mergeTenantBranding(local, platform)
+}
+
+async function localBranding(): Promise<TenantBranding> {
   const settings = await tenantSettings()
   if (settings === null) return NO_TENANT_BRANDING
 
@@ -42,3 +66,48 @@ export async function tenantBranding(): Promise<TenantBranding> {
     return NO_TENANT_BRANDING
   }
 }
+
+/**
+ * What the customer set in the Control Plane's portal, read once per render.
+ *
+ * The same credential and the same shape as `tenantEntitlements`: the
+ * customer's own token, with the platform's project in its audience, against a
+ * portal route that names the product and never the organization. No machine
+ * credential is held for this, and none is needed -- the platform's
+ * machine-only tenant endpoint answers the same values, but a product must not
+ * hold the identity that route admits (FOLLOW_UPS F2b), so this is the route.
+ *
+ * An unconfigured Control Plane is nothing set, silently: a product with no
+ * platform is a supported state, and it has no portal for a customer to have
+ * used. A configured one that fails is nothing set *with a log line*, because
+ * an unreachable platform and a customer who chose nothing paint exactly the
+ * same page, and only one of them is something to fix.
+ */
+const platformBranding = cache(async (): Promise<TenantBranding> => {
+  const baseUrl = process.env.KORAS_CONTROL_PLANE_URL
+  const token = await providerToken()
+  if (!baseUrl || !token) return NO_TENANT_BRANDING
+
+  try {
+    const answered = await fetchBranding({ baseUrl, token, productCode: '{{projectSlug}}' })
+    return parsePlatformBranding(answered)
+  } catch (error) {
+    // Server-side only, so this reaches the service log and never a customer.
+    if (error instanceof ApiError && error.status === 404) {
+      console.error(
+        "[branding] the platform has no product '{{projectSlug}}' for this caller. " +
+          'If that product code is not the one it is registered under, every ' +
+          'customer sees the product’s own colours whatever they set.',
+      )
+    } else if (error instanceof ApiError && error.status === 401) {
+      console.error(
+        '[branding] the platform refused this caller. The usual cause is ' +
+          'KORAS_CONTROL_PLANE_PROJECT_ID being unset or wrong when the customer ' +
+          'signed in, which leaves their token addressed to this product alone.',
+      )
+    } else {
+      console.error('[branding] the customer’s platform branding could not be read:', error)
+    }
+    return NO_TENANT_BRANDING
+  }
+})

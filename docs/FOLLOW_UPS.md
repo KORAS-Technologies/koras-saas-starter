@@ -89,6 +89,7 @@ otherwise stops at F6, and why there is no F0.
 | F16 | a customer's own branding has nowhere to be read from | closed 2026-09-01 | Decisions |
 | F17 | a product cannot read its customers' entitlements | closed 2026-09-01 | Decisions |
 | F18 | no test in this repository opens a browser | closed 2026-09-01 | Decisions |
+| F19 | a customer's platform branding was stored and never rendered | closed 2026-09-04 — logos still open | Decisions |
 
 **Two are open**: F2b and F3 — one Control Plane authorization decision arriving
 from two sides — plus **F7**, which is open in a different sense: its remaining
@@ -959,6 +960,57 @@ call to this API is not a fifth opinion about all three.
 different kind of blocker — a Control Plane authorization decision rather than a
 route this repository can write. It closed the same day, and the filing was
 wrong: see below.
+
+### F19 — a customer's platform branding was stored and never rendered — opened and closed 2026-09-04
+
+- [x] Read the Control Plane's portal branding from `apps/web/src/lib/tenant-branding.ts`
+- [x] Parse it in the platform's names, and assert them
+- [ ] Decide how a product renders the platform's logos under `img-src 'self'`
+
+F16 closed with the product reading `tenant_settings.branding` — its own
+column, which nothing writes. The place a customer actually sets their branding
+is the Control Plane's portal, and the platform stores what they save. Nothing
+in any product read it back. The Control Plane's contract says it plainly:
+branding had exactly two readers, platform staff and the customer's own portal,
+so a customer could set their colours, be told their product would use them,
+and have nothing ever do so. `koras-e2e-shop`'s first customer did exactly that.
+
+**The endpoint offered was not the endpoint used.** The contract's §6a is
+`GET /api/platform/v1/tenants/{tenant_key}/branding` — machine identity only,
+by tenant key, per environment. A product cannot call it as generated, for
+three reasons of different weight. A product holds no machine credential at
+runtime, by the F2b argument, and the only machine identity that exists is the
+estate-wide `registrar`. The web application does not know its environment
+name — `deploy.yml` injects `ENVIRONMENT` into the Fly services and never into
+Vercel. And the tenant settings route omits `tenant_key` deliberately. Above
+all three, the platform's own R-104 records that the route is unscoped across
+products and asks that nothing be built as if the check exists.
+
+The portal surface already had the same values, on
+`GET /api/portal/v1/products/{product_code}/branding`, authorised by the
+customer's own token with the organization resolved server-side — the exact
+shape F17 found for entitlements, with the audience scope already requested at
+sign-in. That is the read now made, from `packages/api-client`'s
+`fetchBranding`, cached per render beside `tenantEntitlements`. No new
+credential, no environment parameter, no tenant key.
+
+**The parser is the half worth arguing, again.** The portal speaks snake case
+— `primary_color`, `company_name`, `corner_style` — and `parseTenantBranding`
+reads camel case. Feeding the response into the existing parser would not have
+failed: every key unknown, every value dropped, and the customer appearing to
+have set nothing. That is the F17 defect in a second place, and this time it
+was caught before shipping rather than after. `parsePlatformBranding` reads the
+platform's names, six tests assert them in both directions, and renaming the
+wire field in the parser fails four of them.
+
+**The logos are the open box.** The platform validates its assets as `https`
+URLs on its own storage, and the product's Content-Security-Policy is
+`img-src 'self'`, so a remote logo is a broken image in every header. The
+parser drops them deliberately and a test says so. Closing the box is either a
+product serving the platform's assets from its own origin, or a policy
+exception for one named origin — and the second is a decision about what a
+customer's logo is allowed to load from, which is R-042 territory if it is made
+by editing a header and not writing it down.
 
 ### F17 — a product cannot read its customers' entitlements — opened 2026-08-31, closed 2026-09-01
 
