@@ -46,11 +46,19 @@ const POLL_MS = 3000
 const GIVE_UP_MS = 5 * 60 * 1000
 
 export function ProvisioningStatus({
-  jobId,
+  jobId = '',
+  registrationId = '',
   organizationSlug,
   locale,
 }: {
-  jobId: string
+  /** The run to poll, where verification started one. */
+  jobId?: string
+  /**
+   * The signup to poll, where a checkout came first and the run starts when
+   * the provider's webhook arrives. Until it does, the Control Plane answers
+   * `AWAITING_PAYMENT`, which this page treats as "still pending".
+   */
+  registrationId?: string
   organizationSlug: string
   locale: Locale
 }) {
@@ -61,7 +69,7 @@ export function ProvisioningStatus({
   const startedAt = useRef(Date.now())
 
   useEffect(() => {
-    if (!jobId) {
+    if (!jobId && !registrationId) {
       // Nothing to poll: an older Control Plane that does not return a job id.
       // The run is still happening and the email still arrives.
       setState('slow')
@@ -72,7 +80,7 @@ export function ProvisioningStatus({
     let timer: ReturnType<typeof setTimeout> | undefined
 
     const ask = async () => {
-      const status = await signupStatus(jobId)
+      const status = await signupStatus(jobId, registrationId)
       if (cancelled) return
 
       if (status.ready) {
@@ -100,7 +108,7 @@ export function ProvisioningStatus({
       cancelled = true
       if (timer) clearTimeout(timer)
     }
-  }, [jobId])
+  }, [jobId, registrationId])
 
   if (state === 'ready') {
     return (

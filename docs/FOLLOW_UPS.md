@@ -1518,7 +1518,8 @@ something to land on.
 - [x] Phase 1 — the provider adapter, a Paddle implementation, the signed webhook, `billing_events`, and status driven from outside (`koras-control-plane` 9cfee99)
 - [x] Phase 2 — price references and seat bounds on plans, in the API, the public catalogue, the client and the console form
 - [ ] Phase 1's other half: recorded sandbox events replacing the authored fixtures, and the database-backed suites run once with migration 00028 applied
-- [ ] Phase 3 — interval and seats on the signup form, Paddle.js on the verify page, provisioning started by `subscription.created`, the abandoned-checkout reminder
+- [x] Phase 3 — interval and seats on the signup form, Paddle.js on the verify page, provisioning started by `subscription.created`, the abandoned-checkout reminder (built 2026-09-05, both repositories)
+- [ ] Phase 3's browser run: a sandbox signup with a test card, from a product deployed with the client-side token, ending signed in — and the Playwright journey that records it
 - [ ] Phase 4 — the portal's billing section, plan and seat changes, the trial-ended and past-due states, the first module with `requiredEntitlements`
 - [ ] Phase 5 — reconciliation against the provider, the live Paddle account, production hostnames approved
 
@@ -1549,6 +1550,20 @@ card" path. The design assumes neither, and adding one later is cheaper than
 removing one; the decision is the user's and is asked for before Phase 3
 begins. Usage-based pricing, coupons and invoiced contracts are price shapes
 the provider supports and none changes the adapter.
+
+**Phase 3, the same evening.** Both halves. The Control Plane's verify
+endpoint answers `awaiting_payment` with checkout details where a provider key
+and a price exist, the webhook's `subscription.created` writes the subscription
+row with the provider's ids and starts the run through `koras_api.onboarding`,
+the status endpoint answers by registration id, and an hourly sweep reminds a
+closed checkout once with a reissued token. The product template's form gained
+the interval and seat controls, its verify page opens Paddle.js from the
+provider's CDN with the public token, its CSP admits the provider's hosts
+exactly when that token is set, and its settings contract declares the two
+`NEXT_PUBLIC_PADDLE_*` names. Tested end to end through the API with a
+simulated provider, and the template is type-checked as a generated project;
+the browser run against the real sandbox is the open box above, because it
+needs a product deployed with the token.
 
 **Left undone on 2026-09-05, and why.** The fixtures under
 `koras-control-plane/tests/fixtures/paddle/` were authored from Paddle's

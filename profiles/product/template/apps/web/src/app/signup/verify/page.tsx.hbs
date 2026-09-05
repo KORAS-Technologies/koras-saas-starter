@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { AuthCard, AuthLayout, ButtonLink } from '@{{projectSlug}}/ui'
 import { verifySignup } from '../actions'
+import { Checkout } from '../Checkout'
 import { ProvisioningStatus } from '../ProvisioningStatus'
 import { currentLocale, translator } from '../../../lib/locale'
 
@@ -25,6 +26,12 @@ export async function generateMetadata(): Promise<Metadata> {
  * disclose, and it is not copy to be improved for tone. Its translations must
  * keep the same property: one message for every failed token, in every
  * language.
+ *
+ * Since the billing work there is a fourth outcome between "invalid" and
+ * "provisioning": the address is proved and a card is needed. The page opens
+ * the payment provider's checkout and, once it completes, waits for the run
+ * the provider's webhook starts -- the same wait as before, polled by
+ * registration rather than by job.
  */
 export default async function VerifyPage({
   searchParams,
@@ -64,7 +71,7 @@ export default async function VerifyPage({
     )
   }
 
-  if (outcome.status !== 'verified') {
+  if (outcome.status === 'invalid') {
     return (
       <AuthLayout locale={locale}>
         <div data-testid="verify-failed">
@@ -73,6 +80,24 @@ export default async function VerifyPage({
               {t('verify.invalid.again')}
             </ButtonLink>
           </AuthCard>
+        </div>
+      </AuthLayout>
+    )
+  }
+
+  if (outcome.status === 'awaiting-payment') {
+    // The address is proved and the organisation exists; nothing is
+    // provisioned until the payment provider says a card is on file. The
+    // checkout is the provider's overlay, opened by a client component, and
+    // the wait that follows it is the same `ProvisioningStatus` as below.
+    return (
+      <AuthLayout locale={locale}>
+        <div data-testid="verify-checkout">
+          <Checkout
+            checkout={outcome.checkout}
+            organizationSlug={outcome.organizationSlug}
+            locale={locale}
+          />
         </div>
       </AuthLayout>
     )

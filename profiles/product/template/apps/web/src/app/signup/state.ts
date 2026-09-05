@@ -38,3 +38,24 @@ export interface SignupStatus {
   /** The run finished and did not succeed, so waiting longer will not help. */
   failed: boolean
 }
+
+/**
+ * What opens the payment provider's checkout, once an address is proved.
+ *
+ * Everything here is either something the visitor typed or something public
+ * by nature. The price id is what the pricing page is built from; the seat
+ * count and interval are what they chose; the address is the one they just
+ * confirmed. The two ids travel into the checkout so the provider's webhook
+ * can find its way back, and neither is a credential -- knowing one lets you
+ * poll a status that answers one of three words.
+ */
+export interface CheckoutDetails {
+  registrationId: string
+  organizationId: string
+  productCode: string
+  planCode: string
+  priceId: string
+  seats: number
+  billingInterval: 'month' | 'year'
+  email: string
+}

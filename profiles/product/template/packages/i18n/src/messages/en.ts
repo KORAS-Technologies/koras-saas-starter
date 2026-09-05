@@ -93,10 +93,18 @@ export const en = {
   'signup.form.name': 'Your name',
   'signup.form.optional': 'Optional.',
   'signup.form.plan': 'Plan',
+  'signup.form.interval': 'Billing',
+  'signup.form.interval.month': 'Monthly',
+  'signup.form.interval.year': 'Yearly',
+  'signup.form.seats': 'Seats',
+  'signup.form.seatsHint': 'Between {min} and {max}. You can change this later.',
+  'signup.form.seatsHintMin': 'At least {min}. You can change this later.',
   'signup.form.submit': 'Create account',
   'signup.form.submitting': 'Creating your account',
   'signup.form.note':
     'We will email you a link to confirm the address. Nothing is created until you open it.',
+  'signup.form.noteCard':
+    'We will email you a link to confirm the address, then ask for a card. Nothing is charged until your 14-day trial ends.',
   'signup.sent.title': 'Check your email',
   'signup.sent.message':
     'Check {email} for a link to confirm your address. Nothing is created until you do.',
@@ -110,6 +118,26 @@ export const en = {
   'signup.error.notAvailable': 'Signing up is not available right now.',
   'signup.error.notConfigured': 'Signing up is not available yet. Please contact us.',
   'signup.error.unreachable': 'We could not reach the signup service.',
+  'signup.error.seats': 'Choose between {min} and {max} seats.',
+  'signup.error.seatsMin': 'Choose at least {min} seats.',
+  'signup.error.interval': 'That plan is not sold that way. Choose another billing option.',
+
+  'checkout.title': 'Add a payment method',
+  'checkout.description':
+    'Your address is confirmed. Add a card to start your 14-day trial of {product}.',
+  'checkout.opening': 'Opening the secure checkout…',
+  'checkout.waiting': 'The checkout is open. Finish it to continue.',
+  'checkout.open': 'Open the checkout',
+  'checkout.trialNote': 'Nothing is charged until the trial ends, and you can cancel before then.',
+  'checkout.closed.title': 'The checkout was closed',
+  'checkout.closed.description':
+    'Nothing was charged and nothing was created. Open it again to continue, or come back later — we will email you a link.',
+  'checkout.failed.title': 'The checkout could not load',
+  'checkout.failed.description': 'Check your connection and reload this page. Your link is still good.',
+  'checkout.failed.reload': 'Reload',
+  'checkout.notConfigured.title': 'Payment is not set up yet',
+  'checkout.notConfigured.description':
+    '{product} cannot take a payment online yet. Your address is confirmed and nothing is lost — get in touch and we will finish setting up your account.',
 
   'requestAccess.heading': 'Get started with {product}',
   'requestAccess.byAdmin':

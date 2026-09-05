@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { createTranslator } from '@{{projectSlug}}/i18n'
 import type { Locale, Translator } from '@{{projectSlug}}/i18n'
@@ -18,9 +18,17 @@ import { IDLE } from './state'
  * loads, over whatever connection they have, and a signup that needs a
  * hydrated bundle is a signup some people cannot complete.
  *
- * Three fields, because the Control Plane needs three things. Anything else --
- * team size, how they heard about us -- belongs after they have an account, not
- * between them and one.
+ * Three fields, because the Control Plane needs three things -- and, since the
+ * billing work, the two a checkout needs: how the plan is billed and how many
+ * seats. Both appear only when the chosen plan is sold online, and both are
+ * submitted as hidden values otherwise, so a free trial asks exactly what it
+ * asked before. Anything else -- team size, how they heard about us -- belongs
+ * after they have an account, not between them and one.
+ *
+ * The plan drives the other two controls through state, and the state is a
+ * convenience rather than a dependency: with scripting off the form still
+ * submits, the defaults are the first plan's, and the Control Plane checks
+ * every value again.
  *
  * The fields are `TextField` and `SelectField` from the design system rather
  * than bare inputs, which is what ties `aria-invalid`, `aria-describedby` and
@@ -33,6 +41,7 @@ import { IDLE } from './state'
  */
 export function SignupForm({ plans, locale }: { plans: PublicPlan[]; locale: Locale }) {
   const [state, action] = useActionState(startSignup, IDLE)
+  const [planCode, setPlanCode] = useState(plans[0]?.code ?? '')
   const t = createTranslator(locale)
 
   if (state.status === 'ok') {
@@ -46,6 +55,14 @@ export function SignupForm({ plans, locale }: { plans: PublicPlan[]; locale: Loc
 
   const fieldError = (name: string) =>
     state.status === 'error' && state.field === name ? state.message : undefined
+
+  const plan = plans.find((candidate) => candidate.code === planCode) ?? plans[0]
+  const soldMonthly = Boolean(plan?.price_id_month)
+  const soldYearly = Boolean(plan?.price_id_year)
+  const priced = soldMonthly || soldYearly
+  const minSeats = plan?.min_seats ?? 1
+  const maxSeats = plan?.max_seats ?? null
+  const seatsAreAChoice = priced && (maxSeats === null || maxSeats > minSeats)
 
   return (
     <form action={action} data-testid="signup-form" className="flex flex-col gap-5">
@@ -89,14 +106,71 @@ export function SignupForm({ plans, locale }: { plans: PublicPlan[]; locale: Loc
           name="planCode"
           label={t('signup.form.plan')}
           required
-          defaultValue={plans[0]?.code}
+          value={planCode}
+          onChange={(event) => setPlanCode(event.target.value)}
         >
-          {plans.map((plan) => (
-            <option key={plan.code} value={plan.code}>
-              {plan.name}
+          {plans.map((candidate) => (
+            <option key={candidate.code} value={candidate.code}>
+              {candidate.name}
             </option>
           ))}
         </SelectField>
+      )}
+
+      {/*
+        How the plan is billed. A choice only when both intervals are sold;
+        one interval is submitted silently, and a free trial submits nothing
+        -- the Control Plane defaults it and never opens a checkout for it.
+      */}
+      {soldMonthly && soldYearly ? (
+        <fieldset className="flex flex-col gap-2" data-testid="signup-interval">
+          <legend className="text-sm font-medium text-ink">{t('signup.form.interval')}</legend>
+          <div className="flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-sm text-ink">
+              <input type="radio" name="billingInterval" value="month" defaultChecked />
+              {t('signup.form.interval.month')}
+            </label>
+            <label className="flex items-center gap-2 text-sm text-ink">
+              <input type="radio" name="billingInterval" value="year" />
+              {t('signup.form.interval.year')}
+            </label>
+          </div>
+          {fieldError('billingInterval') ? (
+            <p role="alert" className="text-sm font-medium text-red-800">
+              {fieldError('billingInterval')}
+            </p>
+          ) : null}
+        </fieldset>
+      ) : priced ? (
+        <input type="hidden" name="billingInterval" value={soldYearly ? 'year' : 'month'} />
+      ) : null}
+
+      {/*
+        Seats. A number only when the plan leaves room to choose one; a plan
+        with a single fixed size submits it, and a free trial submits its
+        minimum, so the checkout is always opened on a quantity the plan allows.
+      */}
+      {seatsAreAChoice ? (
+        <TextField
+          id="signup-seats"
+          name="seats"
+          type="number"
+          inputMode="numeric"
+          label={t('signup.form.seats')}
+          min={minSeats}
+          max={maxSeats ?? undefined}
+          step={1}
+          defaultValue={minSeats}
+          required
+          hint={
+            maxSeats !== null
+              ? t('signup.form.seatsHint', { min: minSeats, max: maxSeats })
+              : t('signup.form.seatsHintMin', { min: minSeats })
+          }
+          error={fieldError('seats')}
+        />
+      ) : (
+        <input type="hidden" name="seats" value={minSeats} />
       )}
 
       {/* Announced, because the page does not navigate and a screen reader has
@@ -115,7 +189,9 @@ export function SignupForm({ plans, locale }: { plans: PublicPlan[]; locale: Loc
 
       <SubmitButton t={t} />
 
-      <p className="text-sm leading-6 text-ink-muted">{t('signup.form.note')}</p>
+      <p className="text-sm leading-6 text-ink-muted">
+        {priced ? t('signup.form.noteCard') : t('signup.form.note')}
+      </p>
     </form>
   )
 }

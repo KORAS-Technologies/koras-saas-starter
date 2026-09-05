@@ -87,6 +87,14 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'signup.form.name': 'Su nombre',
   'signup.form.optional': 'Opcional.',
   'signup.form.plan': 'Plan',
+  'signup.form.interval': 'Facturación',
+  'signup.form.interval.month': 'Mensual',
+  'signup.form.interval.year': 'Anual',
+  'signup.form.seats': 'Puestos',
+  'signup.form.seatsHint': 'Entre {min} y {max}. Podrá cambiarlo más adelante.',
+  'signup.form.seatsHintMin': 'Al menos {min}. Podrá cambiarlo más adelante.',
+  'signup.form.noteCard':
+    'Le enviaremos un enlace para confirmar la dirección y después le pediremos una tarjeta. No se cobra nada hasta que termine su prueba de 14 días.',
   'signup.form.submit': 'Crear cuenta',
   'signup.form.submitting': 'Creando su cuenta',
   'signup.form.note':
@@ -105,6 +113,27 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'signup.error.notConfigured':
     'El registro aún no está disponible. Póngase en contacto con nosotros.',
   'signup.error.unreachable': 'No hemos podido conectar con el servicio de registro.',
+  'signup.error.seats': 'Elija entre {min} y {max} puestos.',
+  'signup.error.seatsMin': 'Elija al menos {min} puestos.',
+  'signup.error.interval': 'Ese plan no se vende así. Elija otra opción de facturación.',
+
+  'checkout.title': 'Añadir un método de pago',
+  'checkout.description':
+    'Su dirección está confirmada. Añada una tarjeta para empezar su prueba de 14 días de {product}.',
+  'checkout.opening': 'Abriendo el pago seguro…',
+  'checkout.waiting': 'El pago está abierto. Complételo para continuar.',
+  'checkout.open': 'Abrir el pago',
+  'checkout.trialNote': 'No se cobra nada hasta que termine la prueba, y puede cancelar antes.',
+  'checkout.closed.title': 'El pago se ha cerrado',
+  'checkout.closed.description':
+    'No se ha cobrado nada ni se ha creado nada. Ábralo de nuevo para continuar, o vuelva más tarde: le enviaremos un enlace.',
+  'checkout.failed.title': 'No se ha podido cargar el pago',
+  'checkout.failed.description':
+    'Compruebe su conexión y recargue esta página. Su enlace sigue siendo válido.',
+  'checkout.failed.reload': 'Recargar',
+  'checkout.notConfigured.title': 'El pago aún no está configurado',
+  'checkout.notConfigured.description':
+    '{product} todavía no puede aceptar pagos en línea. Su dirección está confirmada y no se pierde nada: escríbanos y terminaremos de configurar su cuenta.',
 
   'requestAccess.heading': 'Empezar con {product}',
   'requestAccess.byAdmin':

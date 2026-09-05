@@ -7,8 +7,9 @@
 > is authoritative for what a plan *is*; this document adds what a plan
 > *costs* and how a customer comes to pay it.
 
-Status: **Phases 1 and 2 built on 2026-09-05**, on `koras-control-plane`
-branch `feat/billing-foundation`; Phases 3 to 5 are not. FOLLOW_UPS F13
+Status: **Phases 1, 2 and 3 built on 2026-09-05** — the first two on
+`koras-control-plane` branch `feat/billing-foundation`, the third on `develop`
+in both repositories; Phases 4 and 5 are not. FOLLOW_UPS F13
 records the decision this document extends: trial-only self-serve shipped
 first, and `subscriptions.status` was made to mean something before a card is
 taken (`koras-control-plane` R-93). This is the payment work F13 said would
@@ -16,11 +17,15 @@ taken (`koras-control-plane` R-93). This is the payment work F13 said would
 `koras-control-plane/docs/BILLING.md`.
 
 The sandbox exists. Paddle sandbox account `koras`, product `koras-e2e-shop`
-(`pro_01m1sfr6w479m12zekmv3ckmbb`, tax category SaaS), two prices each with a
-14-day trial: `pri_01m1sg26mdqf1r4raam87rfkw5` at $399 monthly and
-`pri_01m1sg4ppttw8edjdheyvqe1sj` at $4,500 yearly, and a client-side token
-named `koras-control-plan`. Price ids are references and safe to record;
-the token and the API key are not, and live in Doppler only.
+with tax category SaaS, two prices each with a 14-day trial, and a client-side
+token named `koras-control-plan`. Price ids are references and safe to
+record; the token and the API key are not, and live in Doppler only.
+
+```text
+product  pro_01m1sfr6w479m12zekmv3ckmbb   koras-e2e-shop
+price    pri_01m1sg26mdqf1r4raam87rfkw5   $399 monthly, 14-day trial
+price    pri_01m1sg4ppttw8edjdheyvqe1sj   $4,500 yearly, 14-day trial
+```
 
 Two things changed between the proposal and the build, both recorded in the
 sections they touch: the customer reference is a table rather than a column
@@ -95,6 +100,20 @@ Day 15                Paddle charges the card
 What moves, in one line: **the provisioning trigger moves from verification to
 the provider's `subscription.created` webhook.** Everything downstream of it is
 untouched, which is the point of putting the card where it is.
+
+**As built.** Verification creates the organisation and, where the Control
+Plane holds a provider key and the plan is priced for the chosen interval,
+answers `awaiting_payment` with the price id, seat count, address and the two
+ids the checkout carries in its custom data. The product's verify page opens
+Paddle.js with `NEXT_PUBLIC_PADDLE_CLIENT_TOKEN` and polls the status endpoint
+by registration id; the Control Plane answers `AWAITING_PAYMENT` until the
+webhook has started the run. Where no key is configured, or the plan has no
+price, verification starts the run itself — a trial without a card, which is
+what every environment sold before and what `test` and `stg` still sell until
+they are given a sandbox key. The product's CSP admits `https://*.paddle.com`
+in `frame-src`, `connect-src` and `img-src` exactly when the token is set, and
+`NEXT_PUBLIC_PADDLE_ENVIRONMENT` is the sandbox unless it says `production`,
+so a token with no environment cannot charge a real card.
 
 ### Why the card comes after verification and before provisioning
 
@@ -256,7 +275,7 @@ knows which provider a value came from.
 as the commercial authority, `koras.is_platform_billing()`, because that is
 the policy `subscriptions` takes and a machine is asserted *out* of
 `subscriptions` by the RLS suite. That authority has no operational reach by
-design: `tests/rls/test_write_reach.py` proves the billing role cannot change
+design: `koras-control-plane/tests/rls/test_write_reach.py` proves the billing role cannot change
 a row of `organizations`. A column there would have needed either a policy
 widening billing into operations or a webhook running as an operator, and
 `billing_customers` under the billing policies needs neither.
@@ -285,7 +304,7 @@ Five operations. Anything a portal page wants that is not one of these — an
 invoice list, a card update, a receipt — is a link to the provider's customer
 portal, not a new operation.
 
-`koras_api/billing/paddle.py` implements all five against Paddle's HTTP API
+`koras-control-plane/services/api/koras_api/billing/paddle.py` implements all five against Paddle's HTTP API
 with `httpx`, which the API already depends on; the SDK would have brought an
 untyped client under strict mypy for five calls and one HMAC. Which Paddle a
 key opens is derived from the key, since a sandbox key carries `_sdbx_`, and
@@ -308,7 +327,7 @@ and see nothing.
 | Piece | Repository | Where |
 |---|---|---|
 | Migration, adapter, webhook endpoint, reconciliation half | `koras-control-plane` | `services/api`, `services/scheduler` |
-| Provisioning trigger moved to `subscription.created` | `koras-control-plane` | `services/api/.../routers/signup.py`, `services/worker/.../provisioning/` |
+| Provisioning trigger moved to `subscription.created` | `koras-control-plane` | `koras-control-plane/services/api/koras_api/onboarding.py`, called by the signup router and the billing webhook |
 | Plan prices and seat bounds in the console forms | `koras-control-plane` | `apps/admin`, the F9 forms |
 | Portal Billing section replacing `NotYet` | `koras-control-plane` | `apps/portal` |
 | Abandoned-checkout reminder | `koras-control-plane` | `services/scheduler` |
@@ -327,7 +346,7 @@ already does, and rendering two states it does not yet have.
 |---|---|---|---|---|
 | 1 Foundation — **built 2026-09-05** | control-plane | migration, adapter, Paddle implementation, webhook endpoint, `billing_events`, status mapping | 4 days | recorded sandbox events replay through the handler in tests and land the right status. **Half met:** the replay harness exists and runs against fixtures authored from Paddle's documented shape; recording needs a deployed API holding a secret, which no environment has yet |
 | 2 Catalogue — **built 2026-09-05** | control-plane | price ids, interval, seat bounds on plans; console forms | 1 day | a plan with two prices and seat bounds is visible from `GET /api/signup/v1/plans`. Met in code; not yet exercised against a database with the migration applied |
-| 3 Signup with card | both | interval and seats on the form; Paddle.js checkout on verify; provisioning on `subscription.created`; abandoned-checkout reminder | 3 days | a sandbox signup with a test card ends signed in, with a `trialing` row carrying billing ids |
+| 3 Signup with card — **built 2026-09-05** | both | interval and seats on the form; Paddle.js checkout on verify; provisioning on `subscription.created`; abandoned-checkout reminder | 3 days | a sandbox signup with a test card ends signed in, with a `trialing` row carrying billing ids. **Not yet run:** the code is tested end to end through the API with a simulated provider, and the product template is type-checked as a generated project; the browser journey against the real sandbox needs a product deployed with the client-side token, which `koras-e2e-shop` will be once it takes this change |
 | 4 In-app billing | both | portal Billing section; change plan, interval, seats; manage billing link; trial-ended and past-due states; first gated module | 3 days | trial to active to seat change to cancel observed in `subscriptions.status`, and the gated module closes on cancel |
 | 5 Reconciliation and go-live | control-plane | reconciliation half of the sweep; live account; live keys in Doppler; production hostnames approved in Paddle | 2 days + 1–2 weeks waiting | nightly reconciliation reports zero findings against sandbox; live account approved |
 

@@ -18,7 +18,8 @@ two-line stub, deliberately.
 /signin           alias of /login      redirect, forwards ?next
 /signup           get started          self-serve form, request access,
                                        or invitation only
-/signup/verify    confirm an address   three outcomes, unchanged wording
+/signup/verify    confirm an address   three outcomes, unchanged wording,
+                                       plus a checkout where a card is taken
 /dashboard        signed-in landing    behind the session gate, inside the shell
 /dashboard/settings       product settings   general; requires settings.read
 /dashboard/settings/team  Team & Access      product roles; requires team.read
@@ -574,6 +575,10 @@ harmless.
   the CSP and its nonce
 - the `href` and `data-testid="sign-in"` on the sign-in control
 - the wording of the three outcomes on `/signup/verify`
+- the fourth outcome, `awaiting-payment`, opens the payment provider's
+  checkout from `Checkout.tsx` with the public `NEXT_PUBLIC_PADDLE_CLIENT_TOKEN`
+  and nothing else; the run starts from the provider's webhook, never from
+  the browser — see `BILLING_DESIGN.md`
 
 The last one is not style. Unknown, expired and already-used tokens answer
 identically on purpose: telling somebody their link "has expired" tells whoever

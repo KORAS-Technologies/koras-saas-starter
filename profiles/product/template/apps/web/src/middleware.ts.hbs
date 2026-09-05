@@ -81,14 +81,27 @@ const PUBLIC_EXACT_PATHS = ['/']
  * passed to the renderer through a request header, and named in the policy --
  * which keeps inline script working for the code we ship and no one else's.
  */
-function contentSecurityPolicy(nonce: string, connectSrc: string): string {
+/**
+ * The payment provider's hosts, admitted only when this product can take a
+ * card. Paddle.js is loaded by `next/script`, which a nonced script inserts,
+ * so `'strict-dynamic'` already trusts it; what the policy has to name is
+ * the overlay's frame and the checkout service it talks to. A product with
+ * no token ships a policy that names nobody, which is the right default for
+ * the one directive -- `frame-src` -- that decides what may be drawn over
+ * the page.
+ */
+const PADDLE_HOSTS = 'https://*.paddle.com'
+
+function contentSecurityPolicy(nonce: string, connectSrc: string, takesCards: boolean): string {
+  const paddle = takesCards ? ` ${PADDLE_HOSTS}` : ''
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    `img-src 'self' data: blob:${paddle}`,
     "font-src 'self'",
-    `connect-src 'self' ${connectSrc}`.trim(),
+    `connect-src 'self' ${connectSrc}${paddle}`.trim(),
+    `frame-src ${takesCards ? PADDLE_HOSTS : "'none'"}`,
     "frame-ancestors 'none'",
     "form-action 'self'",
     "base-uri 'self'",
@@ -103,7 +116,11 @@ export async function middleware(request: NextRequest) {
   // two expressions that had to stay in step, and if one gained a
   // connect-src source the other did not, the policy the browser enforces
   // would stop naming the nonce the renderer used.
-  const policy = contentSecurityPolicy(nonce, process.env.NEXT_PUBLIC_API_URL ?? '')
+  const policy = contentSecurityPolicy(
+    nonce,
+    process.env.NEXT_PUBLIC_API_URL ?? '',
+    Boolean(process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN),
+  )
   const response = await authorize(request, nonce, policy)
 
   // Applied to every response the function can produce, including the refusals.
