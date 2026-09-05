@@ -1517,7 +1517,7 @@ something to land on.
 
 - [x] Phase 1 — the provider adapter, a Paddle implementation, the signed webhook, `billing_events`, and status driven from outside (`koras-control-plane` 9cfee99)
 - [x] Phase 2 — price references and seat bounds on plans, in the API, the public catalogue, the client and the console form
-- [ ] Phase 1's other half: recorded sandbox events replacing the authored fixtures, and the database-backed suites run once with migration 00028 applied
+- [ ] Phase 1's other half: recorded sandbox events replacing the authored fixtures. The database half is done — the suites ran green with 00028 and 00029 applied, locally and in dev, on 2026-09-05
 - [x] Phase 3 — interval and seats on the signup form, Paddle.js on the verify page, provisioning started by `subscription.created`, the abandoned-checkout reminder (built 2026-09-05, both repositories)
 - [ ] Phase 3's browser run: a sandbox signup with a test card, from a product deployed with the client-side token, ending signed in — and the Playwright journey that records it
 - [ ] Phase 4 — the portal's billing section, plan and seat changes, the trial-ended and past-due states, the first module with `requiredEntitlements`
