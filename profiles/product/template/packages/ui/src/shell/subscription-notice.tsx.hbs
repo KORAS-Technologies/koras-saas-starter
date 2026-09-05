@@ -1,0 +1,159 @@
+import type { ReactNode } from 'react'
+import type { SubscriptionState } from '@{{projectSlug}}/branding'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale } from '@{{projectSlug}}/i18n'
+import { ButtonLink } from '../primitives/button'
+import { Card } from '../primitives/card'
+
+/**
+ * What the shell says about the subscription, and when it says nothing.
+ *
+ * Four states matter and each gets a different treatment, because they ask
+ * different things of the person reading:
+ *
+ *   trialing    a quiet line with the days left and, for somebody who can act
+ *               on it, the way to add a card -- the product stays usable
+ *   past_due    a warning: a charge failed, access continues for a stated
+ *               time, and the card needs attention
+ *   suspended   the trial ended without a card, or a failed charge was never
+ *   cancelled   fixed, or the customer left. The product is closed: a card in
+ *               place of the page, saying which and what happens next
+ *   active      nothing at all, which is most days
+ *
+ * Nothing here decides access. The Control Plane resolves an ended trial to no
+ * entitlements whether or not this renders, and every plan-gated page refuses
+ * on its own. This is the sentence that explains an empty sidebar to the
+ * person looking at it -- and for the closed states, the page they see instead
+ * of one that would refuse them module by module.
+ *
+ * Who can act is decided by the caller: `manageUrl` is passed only for a
+ * product administrator, and everybody else is told to ask one. Billing lives
+ * in the Customer Portal, so the link leaves this product on purpose.
+ */
+
+const DAY = 24 * 60 * 60 * 1000
+
+function daysUntil(iso: string | null, now: number): number | null {
+  if (!iso) return null
+  const then = Date.parse(iso)
+  if (Number.isNaN(then)) return null
+  return Math.max(0, Math.ceil((then - now) / DAY))
+}
+
+/** Whether the state closes the product rather than annotating it. */
+export function subscriptionBlocks(subscription: SubscriptionState | null): boolean {
+  return subscription?.status === 'suspended' || subscription?.status === 'cancelled'
+}
+
+export function SubscriptionNotice({
+  subscription,
+  locale,
+  manageUrl,
+  now = Date.now(),
+}: {
+  subscription: SubscriptionState | null
+  locale: Locale
+  /** The portal's billing page, for somebody who may use it. */
+  manageUrl?: string
+  /** Injectable for tests; the wall clock otherwise. */
+  now?: number
+}) {
+  if (!subscription) return null
+  const t = createTranslator(locale)
+
+  if (subscription.status === 'trialing') {
+    const days = daysUntil(subscription.trialEndsAt, now)
+    const message =
+      days === null
+        ? t('subscription.trial.open')
+        : days === 0
+          ? t('subscription.trial.endsToday')
+          : t('subscription.trial.endsIn', { days })
+    return (
+      <Banner tone="info" testId="subscription-trial" message={message} manageUrl={manageUrl}>
+        {manageUrl ? t('subscription.trial.addCard') : null}
+      </Banner>
+    )
+  }
+
+  if (subscription.status === 'past_due') {
+    const days = daysUntil(subscription.periodEndsAt, now)
+    const message =
+      days === null ? t('subscription.pastDue.open') : t('subscription.pastDue.graceDays', { days: days + 7 })
+    return (
+      <Banner tone="warning" testId="subscription-past-due" message={message} manageUrl={manageUrl}>
+        {manageUrl ? t('subscription.pastDue.fixCard') : null}
+      </Banner>
+    )
+  }
+
+  return null
+}
+
+/** The closed states, rendered in place of the page. */
+export function SubscriptionClosed({
+  subscription,
+  locale,
+  manageUrl,
+  productName,
+}: {
+  subscription: SubscriptionState
+  locale: Locale
+  manageUrl?: string
+  productName: string
+}) {
+  const t = createTranslator(locale)
+  const params = { product: productName }
+  const trialEnded = subscription.status === 'suspended' && subscription.trialEndsAt !== null
+  const title = trialEnded ? t('subscription.closed.trialTitle') : t('subscription.closed.title')
+  const description = manageUrl
+    ? t('subscription.closed.descriptionAdmin', params)
+    : t('subscription.closed.descriptionMember', params)
+
+  return (
+    <div className="mx-auto max-w-lg py-12" data-testid="subscription-closed">
+      <Card className="flex flex-col gap-4 p-6">
+        <h1 className="font-display text-xl font-bold text-ink">{title}</h1>
+        <p className="leading-7 text-ink-muted">{description}</p>
+        {manageUrl ? (
+          <ButtonLink href={manageUrl} size="lg" className="w-full">
+            {t('subscription.closed.action')}
+          </ButtonLink>
+        ) : null}
+      </Card>
+    </div>
+  )
+}
+
+function Banner({
+  tone,
+  testId,
+  message,
+  manageUrl,
+  children,
+}: {
+  tone: 'info' | 'warning'
+  testId: string
+  message: string
+  manageUrl?: string
+  children: ReactNode
+}) {
+  const classes =
+    tone === 'warning'
+      ? 'border-amber-300 bg-amber-50 text-amber-900'
+      : 'border-line bg-surface-muted text-ink'
+  return (
+    <div
+      role="status"
+      data-testid={testId}
+      className={`mb-6 flex flex-wrap items-center justify-between gap-3 rounded-brand border px-4 py-3 text-sm ${classes}`}
+    >
+      <span>{message}</span>
+      {manageUrl && children ? (
+        <a href={manageUrl} className="font-semibold text-brand hover:underline">
+          {children}
+        </a>
+      ) : null}
+    </div>
+  )
+}

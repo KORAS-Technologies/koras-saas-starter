@@ -89,7 +89,7 @@ describe('the checkout', () => {
   it('opens the checkout with the public token and nothing else', () => {
     expect(checkout).toContain('process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN')
     // No server-side key of any provider, anywhere in the template.
-    expect(checkout).not.toMatch(/PADDLE_API_KEY|PADDLE_WEBHOOK_SECRET|pdl_(sdbx|live)_apikey/)
+    expect(checkout).not.toMatch(/PADDLE_(API_KEY|WEBHOOK_SECRET)|pdl_(sdbx|live)_apikey/)
   })
 
   it('defaults to the sandbox, so a token with no environment cannot charge a card', () => {
@@ -153,7 +153,7 @@ describe('the settings', () => {
   })
 
   it('never declares a server-side provider key for a product', () => {
-    expect(manifest).not.toMatch(/^PADDLE_API_KEY|^PADDLE_WEBHOOK_SECRET/m)
+    expect(manifest).not.toMatch(/^PADDLE_(API_KEY|WEBHOOK_SECRET)/m)
   })
 })
 

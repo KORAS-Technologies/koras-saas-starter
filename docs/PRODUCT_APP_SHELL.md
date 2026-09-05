@@ -297,8 +297,17 @@ interface EntitlementSet {
   resolved: boolean          // false when unread, unconfigured or failed
   plan: string | null
   features: Record<string, { enabled: boolean; limit: number | null }>
+  subscription?: { status: string; trialEndsAt: string | null; periodEndsAt: string | null } | null
 }
 ```
+
+`subscription` arrived with the billing work (`BILLING_DESIGN.md`, Phase 4).
+It is what the shell *says* — a trial counting down, a failed charge, an ended
+trial that closes the product — and never what it decides: the platform
+resolves an ended trial to no entitlements whether or not the field is read,
+and `SubscriptionNotice` in `packages/ui` renders the sentence for it. Null
+from a Control Plane that does not answer it, and absent from a set built by
+hand.
 
 The unresolved constant is the value a product ships with, and an unconfigured
 Control Plane is not an error — the same bootstrap-order rule (R-001) that makes

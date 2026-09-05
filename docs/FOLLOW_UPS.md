@@ -1520,7 +1520,7 @@ something to land on.
 - [ ] Phase 1's other half: recorded sandbox events replacing the authored fixtures. The database half is done — the suites ran green with 00028 and 00029 applied, locally and in dev, on 2026-09-05
 - [x] Phase 3 — interval and seats on the signup form, Paddle.js on the verify page, provisioning started by `subscription.created`, the abandoned-checkout reminder (built 2026-09-05, both repositories)
 - [ ] Phase 3's browser run: a sandbox signup with a test card, from a product deployed with the client-side token, ending signed in — and the Playwright journey that records it
-- [ ] Phase 4 — the portal's billing section, plan and seat changes, the trial-ended and past-due states, the first module with `requiredEntitlements`
+- [x] Phase 4 — the portal's billing section, plan and seat changes, the trial-ended and past-due states; the first module with `requiredEntitlements` had already shipped with the shell (built 2026-09-05, both repositories)
 - [ ] Phase 5 — reconciliation against the provider, the live Paddle account, production hostnames approved
 
 The design is `BILLING_DESIGN.md`, decided 2026-09-05: card at signup, charge
@@ -1564,6 +1564,18 @@ exactly when that token is set, and its settings contract declares the two
 simulated provider, and the template is type-checked as a generated project;
 the browser run against the real sandbox is the open box above, because it
 needs a product deployed with the token.
+
+**Phase 4, the same evening.** The portal's Billing page replaced its "not
+yet": plan, interval, seats and the next date per product, one form to change
+any of them, and a button into Paddle's own portal for the card and the
+invoices. The API applies the design's rules — increases and yearly now,
+decreases and monthly at period end, a decrease below the people holding a
+seat refused with the number to remove — and the row follows the provider's
+answer, never the request. The product's entitlement read carries the
+subscription's status and dates, and the shell says what they mean without
+deciding anything from them. The "first gated module" turned out to be
+already there: the shell shipped `reports` locked and `insights` hidden on
+2026-09-01, so what this phase added is the sentence that explains why.
 
 **Left undone on 2026-09-05, and why.** The fixtures under
 `koras-control-plane/tests/fixtures/paddle/` were authored from Paddle's

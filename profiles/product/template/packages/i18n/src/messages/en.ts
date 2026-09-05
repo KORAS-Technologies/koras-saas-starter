@@ -44,6 +44,22 @@ export const en = {
   'shell.themeDark': 'Dark',
   'shell.lockedPlan': 'Not included in your plan',
   'shell.lockedFeature': 'Not enabled for your organisation',
+
+  'subscription.trial.endsIn': 'Your free trial ends in {days} days.',
+  'subscription.trial.endsToday': 'Your free trial ends today.',
+  'subscription.trial.open': 'You are on a free trial.',
+  'subscription.trial.addCard': 'Add a payment method',
+  'subscription.pastDue.graceDays':
+    'Your last payment did not go through. Access continues for {days} days while the card is updated.',
+  'subscription.pastDue.open': 'Your last payment did not go through. Update your payment method to keep access.',
+  'subscription.pastDue.fixCard': 'Update payment method',
+  'subscription.closed.trialTitle': 'Your free trial has ended',
+  'subscription.closed.title': 'Your subscription has ended',
+  'subscription.closed.descriptionAdmin':
+    'Your data is kept and nothing is lost. Choose a plan to pick up where you left off in {product}.',
+  'subscription.closed.descriptionMember':
+    'Your data is kept and nothing is lost. An administrator of your organisation can choose a plan to reopen {product}.',
+  'subscription.closed.action': 'Choose a plan',
   'shell.roleAdministrator': 'Administrator',
   'shell.roleMember': 'Member',
 

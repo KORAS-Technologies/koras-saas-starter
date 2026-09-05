@@ -37,6 +37,22 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'shell.themeSystem': 'Sistema',
   'shell.themeDark': 'Oscuro',
   'shell.lockedPlan': 'No incluido en su plan',
+  'subscription.trial.endsIn': 'Su prueba gratuita termina en {days} días.',
+  'subscription.trial.endsToday': 'Su prueba gratuita termina hoy.',
+  'subscription.trial.open': 'Está en una prueba gratuita.',
+  'subscription.trial.addCard': 'Añadir un método de pago',
+  'subscription.pastDue.graceDays':
+    'Su último pago no se ha completado. El acceso continúa durante {days} días mientras se actualiza la tarjeta.',
+  'subscription.pastDue.open':
+    'Su último pago no se ha completado. Actualice su método de pago para conservar el acceso.',
+  'subscription.pastDue.fixCard': 'Actualizar el método de pago',
+  'subscription.closed.trialTitle': 'Su prueba gratuita ha terminado',
+  'subscription.closed.title': 'Su suscripción ha terminado',
+  'subscription.closed.descriptionAdmin':
+    'Sus datos se conservan y no se pierde nada. Elija un plan para continuar donde lo dejó en {product}.',
+  'subscription.closed.descriptionMember':
+    'Sus datos se conservan y no se pierde nada. Un administrador de su organización puede elegir un plan para reabrir {product}.',
+  'subscription.closed.action': 'Elegir un plan',
   'shell.lockedFeature': 'No activado para su organización',
   'shell.roleAdministrator': 'Administrador',
   'shell.roleMember': 'Miembro',

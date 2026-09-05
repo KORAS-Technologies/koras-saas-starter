@@ -42,6 +42,22 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'shell.themeSystem': 'System',
   'shell.themeDark': 'Dunkel',
   'shell.lockedPlan': 'Nicht in Ihrem Tarif enthalten',
+  'subscription.trial.endsIn': 'Ihre kostenlose Testphase endet in {days} Tagen.',
+  'subscription.trial.endsToday': 'Ihre kostenlose Testphase endet heute.',
+  'subscription.trial.open': 'Sie befinden sich in einer kostenlosen Testphase.',
+  'subscription.trial.addCard': 'Zahlungsmethode hinzufügen',
+  'subscription.pastDue.graceDays':
+    'Ihre letzte Zahlung ist fehlgeschlagen. Der Zugang bleibt noch {days} Tage bestehen, während die Karte aktualisiert wird.',
+  'subscription.pastDue.open':
+    'Ihre letzte Zahlung ist fehlgeschlagen. Aktualisieren Sie Ihre Zahlungsmethode, um den Zugang zu behalten.',
+  'subscription.pastDue.fixCard': 'Zahlungsmethode aktualisieren',
+  'subscription.closed.trialTitle': 'Ihre kostenlose Testphase ist beendet',
+  'subscription.closed.title': 'Ihr Abonnement ist beendet',
+  'subscription.closed.descriptionAdmin':
+    'Ihre Daten bleiben erhalten, nichts geht verloren. Wählen Sie einen Tarif, um in {product} dort weiterzumachen, wo Sie aufgehört haben.',
+  'subscription.closed.descriptionMember':
+    'Ihre Daten bleiben erhalten, nichts geht verloren. Ein Administrator Ihrer Organisation kann einen Tarif wählen, um {product} wieder zu öffnen.',
+  'subscription.closed.action': 'Tarif wählen',
   'shell.lockedFeature': 'Für Ihre Organisation nicht aktiviert',
   'shell.roleAdministrator': 'Administrator',
   'shell.roleMember': 'Mitglied',

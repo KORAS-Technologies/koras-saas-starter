@@ -53,6 +53,11 @@ export { ValueStrip } from './marketing/value-strip'
 
 export { AccessDenied } from './shell/access-denied'
 export { AuthenticatedProductShell } from './shell/product-shell'
+export {
+  SubscriptionClosed,
+  SubscriptionNotice,
+  subscriptionBlocks,
+} from './shell/subscription-notice'
 export type { ShellIdentity } from './shell/product-shell'
 export { ProductHeader } from './shell/product-header'
 export { ProductNavigation } from './shell/product-navigation'

@@ -1,6 +1,12 @@
 import type { ReactNode } from 'react'
 import { navigationFor, productConfig, resolveNavigation } from '@{{projectSlug}}/branding'
-import { AuthenticatedProductShell, BrandScope } from '@{{projectSlug}}/ui'
+import {
+  AuthenticatedProductShell,
+  BrandScope,
+  SubscriptionClosed,
+  SubscriptionNotice,
+  subscriptionBlocks,
+} from '@{{projectSlug}}/ui'
 import { NO_TENANT, roleLabel, signedInContext } from '../../lib/access'
 import { currentLocale } from '../../lib/locale'
 
@@ -88,6 +94,16 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       ? productConfig.product.accountUrl
       : undefined
 
+  // What the subscription is doing, said in the shell. A trial counting down
+  // and a failed charge are a line above the page; an ended trial or a
+  // cancelled subscription closes the product and the line becomes the page.
+  // The platform already resolves those to no entitlements, so this decides
+  // nothing -- it is the sentence that explains the empty sidebar, and the
+  // way for somebody who may act on it to reach the portal's billing page.
+  const subscription = access.entitlements.subscription ?? null
+  const manageUrl = accountUrl ? `${accountUrl.replace(/\/$/, '')}/billing` : undefined
+  const closed = subscriptionBlocks(subscription)
+
   return (
     <BrandScope tenant={tenant} className="flex min-h-screen flex-col">
       <AuthenticatedProductShell
@@ -97,7 +113,19 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         locale={locale}
         accountUrl={accountUrl}
       >
-        {children}
+        {closed && subscription ? (
+          <SubscriptionClosed
+            subscription={subscription}
+            locale={locale}
+            manageUrl={manageUrl}
+            productName={productConfig.product.name}
+          />
+        ) : (
+          <>
+            <SubscriptionNotice subscription={subscription} locale={locale} manageUrl={manageUrl} />
+            {children}
+          </>
+        )}
       </AuthenticatedProductShell>
     </BrandScope>
   )

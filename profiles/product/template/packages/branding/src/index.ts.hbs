@@ -1528,13 +1528,39 @@ export interface NavigationConfig {
  * The opposite convention -- unknown means entitled -- would make an outage the
  * way to obtain a paid feature, and would do it silently.
  */
+/**
+ * Whether the subscription behind an entitlement set is live, and until when.
+ *
+ * Carried so the shell can *say* why a set is empty -- a trial that ended and
+ * a failed card are different sentences -- and for nothing else: the grant is
+ * the feature map, resolved by the platform, and a status here decides no
+ * access. Dates are the platform's ISO strings, untouched; the shell turns
+ * them into days.
+ */
+export interface SubscriptionState {
+  status: string
+  trialEndsAt: string | null
+  periodEndsAt: string | null
+}
+
 export interface EntitlementSet {
   resolved: boolean
   plan: string | null
   features: Readonly<Record<string, { enabled: boolean; limit: number | null }>>
+  /**
+   * Null when the platform did not say, which an older Control Plane does not.
+   * Optional so a set built by hand -- a test, a product's own stub -- still
+   * types without it; readers treat absent and null alike.
+   */
+  subscription?: SubscriptionState | null
 }
 
-export const NO_ENTITLEMENTS: EntitlementSet = { resolved: false, plan: null, features: {} }
+export const NO_ENTITLEMENTS: EntitlementSet = {
+  resolved: false,
+  plan: null,
+  features: {},
+  subscription: null,
+}
 
 /**
  * Turn the Control Plane's answer into the set the resolver understands.
@@ -1579,6 +1605,15 @@ export function parseEntitlements(raw: unknown): EntitlementSet {
     resolved: true,
     plan: typeof record.plan_code === 'string' ? record.plan_code : null,
     features,
+    subscription:
+      typeof record.status === 'string' && record.status !== ''
+        ? {
+            status: record.status,
+            trialEndsAt: typeof record.trial_ends_at === 'string' ? record.trial_ends_at : null,
+            periodEndsAt:
+              typeof record.current_period_end === 'string' ? record.current_period_end : null,
+          }
+        : null,
   }
 }
 

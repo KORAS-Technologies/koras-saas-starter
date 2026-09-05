@@ -40,6 +40,30 @@ test('a plan resolves to its granted features', () => {
   assert.equal(isEntitled(set, 'never_defined'), false)
 })
 
+test('the subscription state rides along when the platform answers it', () => {
+  // Since the billing work the portal says whether the subscription is live
+  // and until when. The shell turns that into a sentence; nothing turns it
+  // into access, which is why the features above are untouched by it.
+  const set = parseEntitlements({
+    ...ANSWER,
+    status: 'trialing',
+    trial_ends_at: '2026-09-19T19:30:00Z',
+    current_period_end: '2026-09-19T19:30:00Z',
+  })
+  assert.deepEqual(set.subscription, {
+    status: 'trialing',
+    trialEndsAt: '2026-09-19T19:30:00Z',
+    periodEndsAt: '2026-09-19T19:30:00Z',
+  })
+  assert.equal(isEntitled(set, 'advanced_reporting'), true)
+})
+
+test('an older platform that names no status leaves the state null, not guessed', () => {
+  const set = parseEntitlements(ANSWER)
+  assert.equal(set.resolved, true)
+  assert.equal(set.subscription, null)
+})
+
 test('a plan the platform did not name still resolves', () => {
   // A subscription with no plan is a real state -- an override-only customer --
   // and it grants what it grants. Unresolved would be a claim that the read

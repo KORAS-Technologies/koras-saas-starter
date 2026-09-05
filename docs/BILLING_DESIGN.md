@@ -7,9 +7,9 @@
 > is authoritative for what a plan *is*; this document adds what a plan
 > *costs* and how a customer comes to pay it.
 
-Status: **Phases 1, 2 and 3 built on 2026-09-05** — the first two on
-`koras-control-plane` branch `feat/billing-foundation`, the third on `develop`
-in both repositories; Phases 4 and 5 are not. FOLLOW_UPS F13
+Status: **Phases 1 to 4 built on 2026-09-05** — the first two on
+`koras-control-plane` branch `feat/billing-foundation`, the third and fourth
+on `develop` in both repositories; Phase 5 is not. FOLLOW_UPS F13
 records the decision this document extends: trial-only self-serve shipped
 first, and `subscriptions.status` was made to mean something before a card is
 taken (`koras-control-plane` R-93). This is the payment work F13 said would
@@ -169,6 +169,20 @@ Changing interval is a subscription update through the Control Plane.
 Monthly to annual takes effect immediately with proration. Annual to monthly
 takes effect at the end of the current period, because refunding eleven months
 of a discount is not a change the customer meant to make.
+
+**As built.** The portal's Billing page shows each product's plan, interval,
+seats and next date, never an amount, and one form changes any of the three.
+The API applies the rules below and the row follows what the provider answers,
+never the request: an immediate change lands now, a scheduled one lands when
+the provider's webhook says it did. "Manage payment method and invoices" opens
+Paddle's own portal through a one-time URL and reimplements none of it. On
+the product side the entitlement read now carries the subscription's status
+and two dates, and the shell says what they mean: a trial counting down and a
+failed charge are a line above the page with the way to the portal for an
+administrator; an ended trial or a cancelled subscription replace the page. The
+shell decides nothing from them — the platform already resolves those states
+to no entitlements — and the two plan-gated modules the template shipped close
+with the rest.
 
 **Seats.** Seats are the quantity on the Paddle subscription item and the
 `limit_value` of a `seats` entitlement in the Control Plane, so products read
@@ -347,7 +361,7 @@ already does, and rendering two states it does not yet have.
 | 1 Foundation — **built 2026-09-05** | control-plane | migration, adapter, Paddle implementation, webhook endpoint, `billing_events`, status mapping | 4 days | recorded sandbox events replay through the handler in tests and land the right status. **Half met:** the replay harness exists and runs against fixtures authored from Paddle's documented shape; recording needs a deployed API holding a secret, which no environment has yet |
 | 2 Catalogue — **built 2026-09-05** | control-plane | price ids, interval, seat bounds on plans; console forms | 1 day | a plan with two prices and seat bounds is visible from `GET /api/signup/v1/plans`. Met in code; not yet exercised against a database with the migration applied |
 | 3 Signup with card — **built 2026-09-05** | both | interval and seats on the form; Paddle.js checkout on verify; provisioning on `subscription.created`; abandoned-checkout reminder | 3 days | a sandbox signup with a test card ends signed in, with a `trialing` row carrying billing ids. **Not yet run:** the code is tested end to end through the API with a simulated provider, and the product template is type-checked as a generated project; the browser journey against the real sandbox needs a product deployed with the client-side token, which `koras-e2e-shop` will be once it takes this change |
-| 4 In-app billing | both | portal Billing section; change plan, interval, seats; manage billing link; trial-ended and past-due states; first gated module | 3 days | trial to active to seat change to cancel observed in `subscriptions.status`, and the gated module closes on cancel |
+| 4 In-app billing — **built 2026-09-05** | both | portal Billing section; change plan, interval, seats; manage billing link; trial-ended and past-due states; first gated module | 3 days | trial to active to seat change to cancel observed in `subscriptions.status`, and the gated module closes on cancel. **Half met:** the seat, interval and plan changes are tested through the portal API against a stand-in provider, and the two gated modules the template already shipped close when the state closes; the full cycle against the real sandbox is the same browser run Phase 3 is waiting on |
 | 5 Reconciliation and go-live | control-plane | reconciliation half of the sweep; live account; live keys in Doppler; production hostnames approved in Paddle | 2 days + 1–2 weeks waiting | nightly reconciliation reports zero findings against sandbox; live account approved |
 
 Three weeks of engineering. Phase 5's waiting starts on day one: apply for the
