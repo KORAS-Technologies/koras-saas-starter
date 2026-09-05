@@ -1,6 +1,7 @@
 import { isEntitled } from '@{{projectSlug}}/branding'
-import { AccessDenied, Card, Container } from '@{{projectSlug}}/ui'
+import { AccessDenied, Card, Container, rich, strongTag } from '@{{projectSlug}}/ui'
 import { signedInContext } from '../../../lib/access'
+import { currentLocale, translator } from '../../../lib/locale'
 
 /**
  * A plan-gated page, and the second half of what gates it.
@@ -24,33 +25,30 @@ import { signedInContext } from '../../../lib/access'
 export const dynamic = 'force-dynamic'
 
 export default async function ReportsPage() {
-  const context = await signedInContext()
-  if (context === null) return <AccessDenied />
+  const [context, locale, t] = await Promise.all([signedInContext(), currentLocale(), translator()])
+  if (context === null) return <AccessDenied locale={locale} />
 
   const { entitlements } = context.access
 
   if (!isEntitled(entitlements, 'advanced_reporting')) {
+    const plan = { plan: entitlements.plan ?? t('reports.notIncluded.notRecorded') }
     return (
       <div className="py-12">
         <Container>
-          <h1 className="font-display text-2xl font-bold text-ink">Reports</h1>
+          <h1 className="font-display text-2xl font-bold text-ink">{t('reports.title')}</h1>
           <Card className="mt-6 max-w-3xl">
             <h2 className="font-display text-lg font-bold text-ink">
-              Not included in your plan
+              {t('reports.notIncluded.title')}
             </h2>
             <p className="mt-2 text-sm leading-6 text-ink-muted">
-              Advanced reporting is part of a higher plan. Your current plan is{' '}
-              <span className="font-medium text-ink">{entitlements.plan ?? 'not recorded'}</span>.
+              {rich(t('reports.notIncluded.description', plan), { strong: strongTag })}
             </p>
             {!entitlements.resolved && (
               // The honest version of the same screen. An unresolved plan and a
               // plan that genuinely excludes this produce the same refusal, and
               // only one of them is something to fix -- so the page says which
               // it is rather than leaving the customer to guess.
-              <p className="mt-3 text-sm leading-6 text-ink-muted">
-                Your plan could not be read from the KORAS platform just now, so this may be
-                available to you. The reason is in this deployment&rsquo;s server log.
-              </p>
+              <p className="mt-3 text-sm leading-6 text-ink-muted">{t('reports.unresolved')}</p>
             )}
           </Card>
         </Container>
@@ -61,11 +59,8 @@ export default async function ReportsPage() {
   return (
     <div className="py-12">
       <Container>
-        <h1 className="font-display text-2xl font-bold text-ink">Reports</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
-          Included in your plan. Build the real thing here — this page exists so the plan gate
-          has somewhere to lead, and so the pattern is visible before anyone needs it.
-        </p>
+        <h1 className="font-display text-2xl font-bold text-ink">{t('reports.title')}</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">{t('reports.included')}</p>
       </Container>
     </div>
   )

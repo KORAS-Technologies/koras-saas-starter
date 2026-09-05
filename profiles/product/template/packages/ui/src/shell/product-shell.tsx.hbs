@@ -4,6 +4,8 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
 import type { ResolvedGroup, TenantBranding } from '@{{projectSlug}}/branding'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale } from '@{{projectSlug}}/i18n'
 import { cn } from '../lib/cn'
 import { ProductHeader } from './product-header'
 import { ProductNavigation } from './product-navigation'
@@ -20,7 +22,9 @@ import { ProductNavigation } from './product-navigation'
  * where the caller owns the machine.
  *
  * That is also why every prop is plain data. It crosses the server/client
- * boundary, so it has to serialise.
+ * boundary, so it has to serialise. The language is one of those props: a
+ * two-letter code resolved on the server, from which every string below is
+ * derived. No provider, no context, nothing read from the browser.
  *
  * The two pieces of state it does own are genuinely the browser's: whether the
  * small-screen drawer is open, and whether the desktop sidebar is collapsed.
@@ -33,7 +37,7 @@ export interface ShellIdentity {
   email?: string
   /** The organization this session acts for. Shown beside the product name. */
   organizationName?: string
-  /** "Administrator" or "Member" -- what the caller is *in this product*. */
+  /** "Administrator" or "Member" -- what the caller is *in this product*, already translated. */
   roleLabel?: string
 }
 
@@ -43,6 +47,7 @@ export function AuthenticatedProductShell({
   navigation,
   tenant,
   identity,
+  locale,
   headerActions,
   accountUrl,
   children,
@@ -51,6 +56,8 @@ export function AuthenticatedProductShell({
   /** The customer's branding, already through `parseTenantBranding`. */
   tenant: TenantBranding
   identity: ShellIdentity
+  /** The language this caller is shown, resolved on the server. */
+  locale: Locale
   /**
    * Search, a command palette, notifications -- whatever this product actually
    * has.
@@ -77,6 +84,7 @@ export function AuthenticatedProductShell({
   const drawerId = useId()
   const toggleRef = useRef<HTMLButtonElement>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
+  const t = createTranslator(locale)
 
   // Read after mount rather than during render. The server has no local
   // storage, so consulting it while rendering would produce different markup on
@@ -160,6 +168,7 @@ export function AuthenticatedProductShell({
       <ProductHeader
         tenant={tenant}
         identity={identity}
+        locale={locale}
         accountUrl={accountUrl}
         actions={headerActions}
         drawerOpen={drawerOpen}
@@ -183,7 +192,12 @@ export function AuthenticatedProductShell({
           )}
         >
           <div className="sticky top-0 py-4">
-            <ProductNavigation groups={navigation} collapsed={collapsed} label="Product" />
+            <ProductNavigation
+              groups={navigation}
+              collapsed={collapsed}
+              locale={locale}
+              label={t('shell.navigationLabel')}
+            />
           </div>
         </aside>
 
@@ -199,7 +213,7 @@ export function AuthenticatedProductShell({
           className="fixed inset-0 z-50 lg:hidden"
           role="dialog"
           aria-modal="true"
-          aria-label="Product navigation"
+          aria-label={t('shell.productNavigation')}
         >
           {/* Dismisses on a tap outside, like every drawer. Not the only way
               out: Escape closes it, and so does the button inside. */}
@@ -220,7 +234,7 @@ export function AuthenticatedProductShell({
                 onClick={closeDrawer}
                 className="inline-flex h-11 w-11 items-center justify-center rounded-brand text-ink hover:bg-surface-muted"
               >
-                <span className="sr-only">Close navigation</span>
+                <span className="sr-only">{t('shell.closeNavigation')}</span>
                 <svg
                   viewBox="0 0 24 24"
                   fill="none"
@@ -236,7 +250,12 @@ export function AuthenticatedProductShell({
               </button>
             </div>
             <div className="flex-1 overflow-y-auto py-4">
-              <ProductNavigation groups={navigation} collapsed={false} label="Product, drawer" />
+              <ProductNavigation
+                groups={navigation}
+                collapsed={false}
+                locale={locale}
+                label={t('shell.drawerNavigationLabel')}
+              />
             </div>
           </div>
         </div>

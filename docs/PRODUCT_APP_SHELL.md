@@ -495,6 +495,25 @@ forbids.
 Every settings area is a module in the registry like any other, so it is subject
 to the same resolution and the same middleware gate.
 
+General carries exactly one control, the language, and the exception is
+instructive. Everything else on that page is a description of configuration
+that lives in `packages/branding/src/index.ts` and is changed there, in a
+reviewed commit, because a settings screen that wrote it at runtime would put
+a second authority beside the one the frontend already reads from. The language
+is a choice about *this person on this device*: it changes nothing for anybody
+else, and the product already has to honour it from a cookie. So the form posts
+to the same `POST /api/locale` the header's switcher uses, and stores nothing
+anywhere else. The header carries the switcher too, beside the appearance
+toggle, and hides both below `sm` where Settings has room for them.
+
+The sidebar's labels and the locked-module reasons are translated; its ids,
+routes and gates are not. `navigationFor(locale)` changes labels and nothing
+else, and the middleware still reads `productConfig.navigation` directly, so a
+German sidebar and the route gate describe one registry. Role and permission
+identifiers on the Team & Access page stay as they are: they are code, and a
+translated identifier is one nobody can search the repository for.
+`docs/PRODUCT_FRONTEND.md` owns the rest of the language design.
+
 ## 22. Generator and template integration
 
 Nothing new. The shell is ordinary template content under

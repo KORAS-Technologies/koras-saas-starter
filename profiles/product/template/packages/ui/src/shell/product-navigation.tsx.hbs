@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { ResolvedGroup, ResolvedModule } from '@{{projectSlug}}/branding'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale, Translator } from '@{{projectSlug}}/i18n'
 import { Icon } from '../primitives/icon'
 import { cn } from '../lib/cn'
 
@@ -18,18 +20,26 @@ import { cn } from '../lib/cn'
  * A group with no surviving items never reaches this component: the resolver
  * drops it, because a heading with nothing under it reads as a section that
  * failed to load.
+ *
+ * Labels arrive already in the caller's language -- the layout resolves the
+ * registry through `navigationFor(locale)` -- and the one string this file
+ * chooses itself, the reason a module is locked, is translated here from the
+ * gate that locked it.
  */
 export function ProductNavigation({
   groups,
   collapsed,
+  locale,
   label,
 }: {
   groups: ResolvedGroup[]
   collapsed: boolean
+  locale: Locale
   /** Distinguishes the desktop landmark from the drawer's copy of it. */
   label: string
 }) {
   const pathname = usePathname()
+  const t = createTranslator(locale)
   // Resolved once for the whole sidebar rather than per item: "which entry owns
   // this URL" is a question about the list, and an item cannot answer it alone.
   const active = owningHref(groups, pathname)
@@ -54,7 +64,7 @@ export function ProductNavigation({
           <ul className="flex flex-col gap-0.5">
             {group.items.map((item) => (
               <li key={item.id}>
-                <NavigationItem item={item} collapsed={collapsed} active={active} />
+                <NavigationItem item={item} collapsed={collapsed} active={active} t={t} />
               </li>
             ))}
           </ul>
@@ -104,15 +114,31 @@ function owningHref(groups: ResolvedGroup[], pathname: string): string | undefin
   return owner
 }
 
+/**
+ * Why a module is locked, in the caller's language.
+ *
+ * From `lockedBy`, never from `lockedReason`: the resolver's sentence is
+ * English, and rendering it would be the one untranslated string in a German
+ * sidebar. A module that is locked without saying by what -- an older resolver,
+ * a hand-built fixture -- falls back to the English it carries.
+ */
+function lockedText(item: ResolvedModule, t: Translator): string {
+  if (item.lockedBy === 'entitlement') return t('shell.lockedPlan')
+  if (item.lockedBy === 'feature') return t('shell.lockedFeature')
+  return item.lockedReason ?? ''
+}
+
 function NavigationItem({
   item,
   collapsed,
   active,
+  t,
 }: {
   item: ResolvedModule
   collapsed: boolean
   /** The href of the module that owns the current URL, if any. */
   active: string | undefined
+  t: Translator
 }) {
   // One value, used for both the highlight and the announcement, so the two can
   // never disagree again.
@@ -140,7 +166,7 @@ function NavigationItem({
             it is the only thing distinguishing this icon from an available
             one. */}
         <span className="sr-only">
-          {item.label}. {item.lockedReason}
+          {item.label}. {lockedText(item, t)}
         </span>
         {!collapsed && <LockGlyph />}
       </button>

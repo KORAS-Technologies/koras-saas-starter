@@ -1,3 +1,6 @@
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale } from '@{{projectSlug}}/i18n'
+
 /**
  * Which workspace this session is acting for.
  *
@@ -17,14 +20,15 @@
  * Renders nothing at all when there is no organization to name. An empty pill
  * beside the logo reads as a value that failed to load.
  */
-export function WorkspaceBadge({ name }: { name?: string }) {
+export function WorkspaceBadge({ name, locale }: { name?: string; locale: Locale }) {
   if (name === undefined || name.trim() === '') return null
+  const t = createTranslator(locale)
 
   return (
     <span className="hidden items-center gap-2 sm:inline-flex">
       <span aria-hidden="true" className="h-5 w-px bg-line" />
       <span className="max-w-48 truncate rounded-brand bg-surface-muted px-2.5 py-1 text-sm font-medium text-ink-muted">
-        <span className="sr-only">Workspace: </span>
+        <span className="sr-only">{t('shell.workspace')}</span>
         {name}
       </span>
     </span>

@@ -2,6 +2,8 @@
 
 import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale, Translator } from '@{{projectSlug}}/i18n'
 import { Button, SelectField, TextField } from '@{{projectSlug}}/ui'
 import type { PublicPlan } from './actions'
 import { startSignup } from './actions'
@@ -24,14 +26,19 @@ import { IDLE } from './state'
  * than bare inputs, which is what ties `aria-invalid`, `aria-describedby` and
  * the error message together. Doing it by hand per field is how a form ends up
  * announcing that something is invalid without ever saying what.
+ *
+ * The messages the action returns are already in the visitor's language: the
+ * action runs on the server, where the request's locale is known, so this
+ * component renders what it is given and translates only its own labels.
  */
-export function SignupForm({ plans }: { plans: PublicPlan[] }) {
+export function SignupForm({ plans, locale }: { plans: PublicPlan[]; locale: Locale }) {
   const [state, action] = useActionState(startSignup, IDLE)
+  const t = createTranslator(locale)
 
   if (state.status === 'ok') {
     return (
       <div data-testid="signup-sent" className="rounded-brand border border-line bg-surface-muted p-5">
-        <h2 className="font-display text-lg font-bold text-ink">Check your email</h2>
+        <h2 className="font-display text-lg font-bold text-ink">{t('signup.sent.title')}</h2>
         <p className="mt-2 leading-7 text-ink-muted">{state.message}</p>
       </div>
     )
@@ -45,7 +52,7 @@ export function SignupForm({ plans }: { plans: PublicPlan[] }) {
       <TextField
         id="signup-organizationName"
         name="organizationName"
-        label="Organisation"
+        label={t('signup.form.organisation')}
         required
         autoComplete="organization"
         error={fieldError('organizationName')}
@@ -55,7 +62,7 @@ export function SignupForm({ plans }: { plans: PublicPlan[] }) {
         id="signup-email"
         name="email"
         type="email"
-        label="Work email"
+        label={t('signup.form.email')}
         required
         autoComplete="email"
         error={fieldError('email')}
@@ -64,8 +71,8 @@ export function SignupForm({ plans }: { plans: PublicPlan[] }) {
       <TextField
         id="signup-ownerName"
         name="ownerName"
-        label="Your name"
-        hint="Optional."
+        label={t('signup.form.name')}
+        hint={t('signup.form.optional')}
         autoComplete="name"
       />
 
@@ -80,7 +87,7 @@ export function SignupForm({ plans }: { plans: PublicPlan[] }) {
         <SelectField
           id="signup-planCode"
           name="planCode"
-          label="Plan"
+          label={t('signup.form.plan')}
           required
           defaultValue={plans[0]?.code}
         >
@@ -106,11 +113,9 @@ export function SignupForm({ plans }: { plans: PublicPlan[] }) {
         ) : null}
       </div>
 
-      <SubmitButton />
+      <SubmitButton t={t} />
 
-      <p className="text-sm leading-6 text-ink-muted">
-        We will email you a link to confirm the address. Nothing is created until you open it.
-      </p>
+      <p className="text-sm leading-6 text-ink-muted">{t('signup.form.note')}</p>
     </form>
   )
 }
@@ -127,11 +132,11 @@ export function SignupForm({ plans }: { plans: PublicPlan[] }) {
  * screen changes for as long as the Control Plane takes to answer -- which is
  * the shape of interaction that gets a button pressed four times.
  */
-function SubmitButton() {
+function SubmitButton({ t }: { t: Translator }) {
   const { pending } = useFormStatus()
   return (
     <Button type="submit" size="lg" loading={pending} data-testid="signup-submit">
-      {pending ? 'Creating your account' : 'Create account'}
+      {pending ? t('signup.form.submitting') : t('signup.form.submit')}
     </Button>
   )
 }

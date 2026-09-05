@@ -1,5 +1,7 @@
 import Link from 'next/link'
-import { productConfig } from '@{{projectSlug}}/branding'
+import { marketingFor, productConfig, productFor } from '@{{projectSlug}}/branding'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale } from '@{{projectSlug}}/i18n'
 import { Container } from '../primitives/container'
 import { KorasWordmark, ProductLogo } from '../brand/product-logo'
 import { appHref } from '../lib/links'
@@ -31,8 +33,9 @@ import { appHref } from '../lib/links'
  * favicon, because an account is part of what the product is rather than copy
  * on one page.
  */
-function SocialLinks() {
-  const { brand } = productConfig
+function SocialLinks({ locale }: { locale: Locale }) {
+  const { brand, product } = productConfig
+  const t = createTranslator(locale)
   const accounts = [
     {
       href: brand.linkedinUrl,
@@ -64,7 +67,9 @@ function SocialLinks() {
             {/* The name is the accessible name. An icon-only link with none
                 announces its own URL, which is how a screen reader reads out a
                 tracking parameter. */}
-            <span className="sr-only">{productConfig.product.name} on {account.label}</span>
+            <span className="sr-only">
+              {t('footer.on', { product: product.name, network: account.label })}
+            </span>
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="h-5 w-5">
               <path d={account.path} />
             </svg>
@@ -75,8 +80,10 @@ function SocialLinks() {
   )
 }
 
-export function PublicFooter() {
-  const { product, marketing } = productConfig
+export function PublicFooter({ locale }: { locale: Locale }) {
+  const product = productFor(locale)
+  const marketing = marketingFor(locale)
+  const t = createTranslator(locale)
   const groups = marketing.footerGroups.filter((group) => group.links.length > 0)
 
   return (
@@ -93,7 +100,7 @@ export function PublicFooter() {
               {product.contactEmail}
             </a>
           )}
-          <SocialLinks />
+          <SocialLinks locale={locale} />
         </div>
 
         {groups.length > 0 && (
@@ -119,12 +126,12 @@ export function PublicFooter() {
       <Container>
         <div className="flex flex-col gap-4 border-t border-white/10 py-7 text-sm sm:flex-row sm:items-center sm:justify-between">
           <p>
-            © {new Date().getFullYear()} {product.name}
+            {t('common.copyright', { year: new Date().getFullYear(), product: product.name })}
             {marketing.footerNote ? ` · ${marketing.footerNote}` : ''}
           </p>
           {marketing.showPlatformCredit && (
             <p className="flex items-center gap-2">
-              <span>Built by</span>
+              <span>{t('footer.builtBy')}</span>
               <KorasWordmark tone="dark" className="text-white" />
             </p>
           )}

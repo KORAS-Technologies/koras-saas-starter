@@ -1,6 +1,7 @@
 import { isEntitled } from '@{{projectSlug}}/branding'
 import { AccessDenied, Card, Container } from '@{{projectSlug}}/ui'
 import { signedInContext } from '../../../lib/access'
+import { currentLocale, translator } from '../../../lib/locale'
 
 /**
  * The same plan gate, hidden rather than locked.
@@ -16,18 +17,16 @@ import { signedInContext } from '../../../lib/access'
 export const dynamic = 'force-dynamic'
 
 export default async function InsightsPage() {
-  const context = await signedInContext()
-  if (context === null) return <AccessDenied />
+  const [context, locale, t] = await Promise.all([signedInContext(), currentLocale(), translator()])
+  if (context === null) return <AccessDenied locale={locale} />
 
   if (!isEntitled(context.access.entitlements, 'insights')) {
     return (
       <div className="py-12">
         <Container>
-          <h1 className="font-display text-2xl font-bold text-ink">Insights</h1>
+          <h1 className="font-display text-2xl font-bold text-ink">{t('insights.title')}</h1>
           <Card className="mt-6 max-w-3xl">
-            <p className="text-sm leading-6 text-ink-muted">
-              Insights is not part of your plan. Speak to us about adding it.
-            </p>
+            <p className="text-sm leading-6 text-ink-muted">{t('insights.notInPlan')}</p>
           </Card>
         </Container>
       </div>
@@ -37,7 +36,7 @@ export default async function InsightsPage() {
   return (
     <div className="py-12">
       <Container>
-        <h1 className="font-display text-2xl font-bold text-ink">Insights</h1>
+        <h1 className="font-display text-2xl font-bold text-ink">{t('insights.title')}</h1>
       </Container>
     </div>
   )

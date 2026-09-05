@@ -2,6 +2,8 @@
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale } from '@{{projectSlug}}/i18n'
 import type { ShellIdentity } from './product-shell'
 
 /**
@@ -21,13 +23,17 @@ import type { ShellIdentity } from './product-shell'
  *
  * The one concession is `accountUrl`: a single outbound link, rendered only
  * when the caller may actually manage the account, that leaves for the portal.
- * A link out is not a reimplementation.
+ * A link out is not a reimplementation. Its label is the catalogue key
+ * `shell.manageSubscription`, and the starter test that keeps this menu honest
+ * reads the English catalogue for it.
  */
 export function ProductProfileMenu({
   identity,
+  locale,
   accountUrl,
 }: {
   identity: ShellIdentity
+  locale: Locale
   accountUrl?: string
 }) {
   const [open, setOpen] = useState(false)
@@ -35,6 +41,7 @@ export function ProductProfileMenu({
   const toggleRef = useRef<HTMLButtonElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const pathname = usePathname()
+  const t = createTranslator(locale)
 
   useEffect(() => setOpen(false), [pathname])
 
@@ -61,7 +68,7 @@ export function ProductProfileMenu({
     }
   }, [open])
 
-  const display = identity.name ?? identity.email ?? 'Signed in'
+  const display = identity.name ?? identity.email ?? t('shell.signedIn')
 
   return (
     <div ref={containerRef} className="relative">
@@ -75,7 +82,7 @@ export function ProductProfileMenu({
       >
         <Avatar label={display} />
         <span className="hidden max-w-40 truncate sm:inline">{display}</span>
-        <span className="sr-only">Account menu</span>
+        <span className="sr-only">{t('shell.accountMenu')}</span>
       </button>
 
       {/* Rendered in both states so `aria-controls` points at something real
@@ -105,9 +112,9 @@ export function ProductProfileMenu({
             href={accountUrl}
             className="flex min-h-11 items-center justify-between rounded-brand px-3 text-sm text-ink hover:bg-surface-muted"
           >
-            Manage subscription
+            {t('shell.manageSubscription')}
             <span aria-hidden="true">↗</span>
-            <span className="sr-only">(opens the Koras account portal)</span>
+            <span className="sr-only">{t('shell.opensPortal')}</span>
           </a>
         )}
 
@@ -122,7 +129,7 @@ export function ProductProfileMenu({
             type="submit"
             className="flex min-h-11 w-full items-center rounded-brand px-3 text-left text-sm font-semibold text-ink hover:bg-surface-muted"
           >
-            Sign out
+            {t('shell.signOut')}
           </button>
         </form>
       </div>

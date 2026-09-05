@@ -3,10 +3,13 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { productConfig } from '@{{projectSlug}}/branding'
+import { marketingFor } from '@{{projectSlug}}/branding'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale } from '@{{projectSlug}}/i18n'
 import { ButtonLink } from '../primitives/button'
 import { Container } from '../primitives/container'
 import { ProductLogo } from '../brand/product-logo'
+import { LanguageSwitcher } from '../i18n/language-switcher'
 import { cn } from '../lib/cn'
 import { appHref } from '../lib/links'
 
@@ -17,10 +20,10 @@ import { appHref } from '../lib/links'
  * browser: which navigation entry is current, and whether the small-screen menu
  * is open. Everything else it renders is static.
  *
- * Its links come from `productConfig.marketing.nav`. Nothing is hardcoded here,
- * and nothing is rendered for a link a product has removed -- an empty `nav`
- * gives a header with a logo and the account actions, which is a legitimate
- * shape rather than a broken one.
+ * Its links come from `productConfig.marketing.nav`, read in the visitor's
+ * language. Nothing is hardcoded here, and nothing is rendered for a link a
+ * product has removed -- an empty `nav` gives a header with a logo and the
+ * account actions, which is a legitimate shape rather than a broken one.
  *
  * The small-screen menu is a disclosure, not a dialog: it pushes the page down
  * rather than covering it, so there is nothing to trap focus inside and nothing
@@ -28,12 +31,15 @@ import { appHref } from '../lib/links'
  * opened it with a key expects to close it with one.
  */
 export function PublicHeader({
-  /** Rendered instead of the sign-in link once a session exists. */
+  locale,
   signedIn = false,
 }: {
+  locale: Locale
+  /** Rendered instead of the sign-in link once a session exists. */
   signedIn?: boolean
 }) {
-  const { marketing } = productConfig
+  const marketing = marketingFor(locale)
+  const t = createTranslator(locale)
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
   const panelId = useId()
@@ -58,14 +64,14 @@ export function PublicHeader({
   // Both routes belong to the web application; on the marketing site they are
   // on another origin, which is what `appHref` resolves.
   const accountHref = appHref(signedIn ? '/dashboard' : '/login')
-  const accountLabel = signedIn ? 'Go to dashboard' : 'Sign in'
+  const accountLabel = signedIn ? t('common.goToDashboard') : t('common.signIn')
 
   return (
     <header className="sticky top-0 z-50 border-b border-line bg-surface/90 backdrop-blur-sm">
       <Container className="flex h-18 items-center justify-between gap-6">
         <ProductLogo href="/" />
 
-        <nav aria-label="Primary" className="hidden lg:block">
+        <nav aria-label={t('header.primary')} className="hidden lg:block">
           <ul className="flex items-center gap-8">
             {marketing.nav.map((link) => {
               const current = link.href === pathname
@@ -88,6 +94,7 @@ export function PublicHeader({
         </nav>
 
         <div className="hidden items-center gap-3 lg:flex">
+          <LanguageSwitcher locale={locale} />
           <Link
             href={accountHref}
             className="rounded-brand px-2 py-2 text-sm font-semibold text-ink hover:text-brand"
@@ -111,7 +118,7 @@ export function PublicHeader({
         >
           {/* The accessible name changes with the state; the bars do not need
               announcing twice. */}
-          <span className="sr-only">{open ? 'Close menu' : 'Open menu'}</span>
+          <span className="sr-only">{open ? t('header.closeMenu') : t('header.openMenu')}</span>
           <svg
             viewBox="0 0 24 24"
             fill="none"
@@ -139,7 +146,7 @@ export function PublicHeader({
       */}
       <div id={panelId} hidden={!open} className="border-t border-line bg-surface lg:hidden">
         <Container className="py-4">
-          <nav aria-label="Primary, small screen">
+          <nav aria-label={t('header.primarySmall')}>
             <ul className="flex flex-col">
               {marketing.nav.map((link) => (
                 <li key={link.href}>
@@ -162,6 +169,9 @@ export function PublicHeader({
                 {marketing.headerCta.label}
               </ButtonLink>
             )}
+            {/* The same control as the wide header, where a phone has room for
+                it: below the links, beside nothing. */}
+            <LanguageSwitcher locale={locale} className="self-start" />
           </div>
         </Container>
       </div>

@@ -1,6 +1,8 @@
+import type { Metadata } from 'next'
 import { productConfig } from '@{{projectSlug}}/branding'
-import { PublicFooter, PublicHeader } from '@{{projectSlug}}/ui'
+import { PublicFooter, PublicHeader, rich } from '@{{projectSlug}}/ui'
 import { LegalPage, LegalSection } from '../legal'
+import { currentLocale, translator } from '../../lib/locale'
 
 /**
  * The privacy notice.
@@ -14,85 +16,63 @@ import { LegalPage, LegalSection } from '../legal'
  * them is worse than no policy: it is a published commitment nobody made.
  *
  * The banner at the top says so plainly rather than burying it, and it is meant
- * to be removed by whoever replaces this text with a reviewed notice.
+ * to be removed by whoever replaces this text with a reviewed notice -- in
+ * every language the product offers, because a notice reviewed in one language
+ * and machine-carried into another has been reviewed in one language.
  */
-export const metadata = {
-  title: `Privacy · ${productConfig.product.name}`,
-  description: `How ${productConfig.product.name} handles personal data.`,
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await translator()
+  const { name } = productConfig.product
+  return {
+    title: `${t('privacy.title')} · ${name}`,
+    description: t('privacy.metaDescription', { product: name }),
+  }
 }
 
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
+  const [locale, t] = await Promise.all([currentLocale(), translator()])
   const { product } = productConfig
+  const params = { product: product.name }
 
   return (
     <>
-      <PublicHeader />
+      <PublicHeader locale={locale} />
       <main id="main-content">
-        <LegalPage
-          title="Privacy"
-          summary={`What ${product.name} stores about the people who use it, and why.`}
-        >
-          <LegalSection title="What is stored about you">
-            <p>
-              When you sign in, {product.name} records the identifier your organisation&rsquo;s
-              sign-in provider gives us, your email address and your display name. It records
-              which organisation you belong to and what role you hold there, because those two
-              facts decide what you are allowed to open.
-            </p>
-            <p>
-              Anything else in {product.name} is data your own organisation put there. It
-              belongs to them, not to us.
-            </p>
+        <LegalPage locale={locale} title={t('privacy.title')} summary={t('privacy.summary', params)}>
+          <LegalSection title={t('privacy.stored.title')}>
+            <p>{t('privacy.stored.p1', params)}</p>
+            <p>{t('privacy.stored.p2', params)}</p>
           </LegalSection>
 
-          <LegalSection title="Who can see it">
-            <p>
-              Your organisation&rsquo;s data is separated from every other organisation&rsquo;s
-              in the database itself, by row-level security, rather than by a filter in the
-              application. A query that forgets to scope itself returns nothing rather than
-              somebody else&rsquo;s records.
-            </p>
-            <p>
-              People who administer {product.name} can reach data in the course of running and
-              supporting it. What they do is recorded.
-            </p>
+          <LegalSection title={t('privacy.who.title')}>
+            <p>{t('privacy.who.p1')}</p>
+            <p>{t('privacy.who.p2', params)}</p>
           </LegalSection>
 
-          <LegalSection title="Sign-in">
-            <p>
-              {product.name} never sees your password. Sign-in happens at your
-              organisation&rsquo;s identity provider, which tells us only who you are and what
-              you may do. Your session is a cookie this application signs, readable by nobody
-              else and sent only to this site.
-            </p>
+          <LegalSection title={t('privacy.signin.title')}>
+            <p>{t('privacy.signin.p1', params)}</p>
           </LegalSection>
 
-          <LegalSection title="Cookies">
-            <p>
-              Two, and both are necessary: one holds your session, one carries the token this
-              application forwards to its own API. There is no advertising or analytics cookie
-              in {product.name} as it is shipped.
-            </p>
+          <LegalSection title={t('privacy.cookies.title')}>
+            <p>{t('privacy.cookies.p1', params)}</p>
           </LegalSection>
 
-          <LegalSection title="Asking us about your data">
+          <LegalSection title={t('privacy.ask.title')}>
             <p>
-              {product.contactEmail === '' ? (
-                <>Contact whoever administers {product.name} in your organisation.</>
-              ) : (
-                <>
-                  Write to{' '}
-                  <a className="text-brand hover:underline" href={`mailto:${product.contactEmail}`}>
-                    {product.contactEmail}
-                  </a>
-                  .
-                </>
-              )}
+              {product.contactEmail === ''
+                ? t('privacy.ask.contactAdmin', params)
+                : rich(t('privacy.ask.writeTo', { email: product.contactEmail }), {
+                    a: (chunk) => (
+                      <a className="text-brand hover:underline" href={`mailto:${product.contactEmail}`}>
+                        {chunk}
+                      </a>
+                    ),
+                  })}
             </p>
           </LegalSection>
         </LegalPage>
       </main>
-      <PublicFooter />
+      <PublicFooter locale={locale} />
     </>
   )
 }

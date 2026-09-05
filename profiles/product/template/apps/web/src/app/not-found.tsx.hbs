@@ -1,4 +1,5 @@
 import { AuthCard, AuthLayout, ButtonLink } from '@{{projectSlug}}/ui'
+import { currentLocale, translator } from '../lib/locale'
 
 /**
  * A page that does not exist.
@@ -14,15 +15,14 @@ import { AuthCard, AuthLayout, ButtonLink } from '@{{projectSlug}}/ui'
  * The auth frame rather than the marketing frame, deliberately: this is a dead
  * end with one thing to do next, which is exactly the shape those screens have.
  */
-export default function NotFound() {
+export default async function NotFound() {
+  const [locale, t] = await Promise.all([currentLocale(), translator()])
+
   return (
-    <AuthLayout>
-      <AuthCard
-        title="We cannot find that page"
-        description="The link may be out of date, or the page may have moved."
-      >
+    <AuthLayout locale={locale}>
+      <AuthCard title={t('notFound.title')} description={t('notFound.description')}>
         <ButtonLink href="/" size="lg" className="w-full">
-          Go to the homepage
+          {t('notFound.home')}
         </ButtonLink>
       </AuthCard>
     </AuthLayout>

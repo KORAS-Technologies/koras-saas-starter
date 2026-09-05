@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
-import { Container } from '@{{projectSlug}}/ui'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale } from '@{{projectSlug}}/i18n'
+import { Container, codeTag, rich } from '@{{projectSlug}}/ui'
 
 /**
  * The shell the three public text pages share.
@@ -14,11 +16,13 @@ import { Container } from '@{{projectSlug}}/ui'
  * not using.
  */
 export function LegalPage({
+  locale,
   title,
   summary,
   reviewed = false,
   children,
 }: {
+  locale: Locale
   title: string
   summary: string
   /**
@@ -32,6 +36,8 @@ export function LegalPage({
   reviewed?: boolean
   children: ReactNode
 }) {
+  const t = createTranslator(locale)
+
   return (
     <div className="py-16">
       <Container className="max-w-3xl">
@@ -41,10 +47,8 @@ export function LegalPage({
         {!reviewed && (
           <div className="mt-8 rounded-brand border border-line bg-surface-muted px-5 py-4">
             <p className="text-sm leading-6 text-ink-muted">
-              <span className="font-semibold text-ink">Not yet reviewed.</span> This page
-              describes what the software does. It is not a legal document and has not been
-              checked by anyone qualified to write one. Replace it before this product is sold,
-              and pass <code className="text-ink">reviewed</code> to remove this notice.
+              <span className="font-semibold text-ink">{t('legal.notReviewed.label')}</span>{' '}
+              {rich(t('legal.notReviewed.text'), { code: codeTag })}
             </p>
           </div>
         )}

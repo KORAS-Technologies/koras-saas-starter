@@ -235,12 +235,19 @@ describe('the shell renders decisions rather than making them', () => {
    * integration.
    */
   it('keeps portal and platform management out of the profile menu', () => {
-    const menu = read(SHELL, 'profile-menu.tsx')
+    const menu = read(SHELL, 'profile-menu.tsx.hbs')
+    // The menu's words live in the catalogue now, so both halves of this check
+    // read it: the English catalogue is what a person sees, and the menu is
+    // what decides which keys reach them.
+    const catalogue = read(PRODUCT, 'packages', 'i18n', 'src', 'messages', 'en.ts')
+    const shellStrings = [...catalogue.matchAll(/^\s+'shell\.[a-zA-Z]+': '([^']*)'/gm)].map((m) => m[1])
     for (const forbidden of ['Billing', 'Invoices', 'Domains', 'Provisioning', 'Product catalogue']) {
       expect(menu, `the profile menu offers ${forbidden}`).not.toContain(forbidden)
+      expect(shellStrings.join('\n'), `the shell catalogue offers ${forbidden}`).not.toContain(forbidden)
     }
     // The permitted one, and it leaves.
-    expect(menu).toContain('Manage subscription')
+    expect(menu).toContain("t('shell.manageSubscription')")
+    expect(catalogue).toContain("'shell.manageSubscription': 'Manage subscription'")
   })
 })
 
@@ -281,6 +288,9 @@ describe('the route gate', () => {
       '/privacy',
       '/terms',
       '/faq',
+      // The language switcher's target. A stranger choosing German on the
+      // sign-in page must not be redirected to the sign-in page.
+      '/api/locale',
     ])
     expect(middleware).toContain("const PUBLIC_EXACT_PATHS = ['/']")
 

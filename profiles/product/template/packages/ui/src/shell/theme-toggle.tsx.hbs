@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale, MessageKey } from '@{{projectSlug}}/i18n'
 import { cn } from '../lib/cn'
 
 /**
@@ -59,10 +61,10 @@ function apply(choice: ThemeChoice): void {
   }
 }
 
-const CHOICES: { value: ThemeChoice; label: string; glyph: ReactNode }[] = [
+const CHOICES: { value: ThemeChoice; label: MessageKey; glyph: ReactNode }[] = [
   {
     value: 'light',
-    label: 'Light',
+    label: 'shell.themeLight',
     glyph: (
       <g>
         <circle cx="12" cy="12" r="4" />
@@ -72,7 +74,7 @@ const CHOICES: { value: ThemeChoice; label: string; glyph: ReactNode }[] = [
   },
   {
     value: 'system',
-    label: 'System',
+    label: 'shell.themeSystem',
     glyph: (
       <g>
         <rect x="3" y="4" width="18" height="12" rx="2" />
@@ -82,17 +84,18 @@ const CHOICES: { value: ThemeChoice; label: string; glyph: ReactNode }[] = [
   },
   {
     value: 'dark',
-    label: 'Dark',
+    label: 'shell.themeDark',
     glyph: <path d="M20 14.5A8 8 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" />,
   },
 ]
 
-export function ThemeToggle({ className }: { className?: string }) {
+export function ThemeToggle({ locale, className }: { locale: Locale; className?: string }) {
   // Starts as `system` on the server and on the first client render, because
   // that is what the markup says and disagreeing with it is a hydration error.
   // The stored choice is read in an effect and shown a frame later; the *page*
   // is already correct by then, painted by THEME_SCRIPT.
   const [choice, setChoice] = useState<ThemeChoice>('system')
+  const t = createTranslator(locale)
 
   useEffect(() => {
     try {
@@ -109,7 +112,7 @@ export function ThemeToggle({ className }: { className?: string }) {
     // and a single tab stop from the browser rather than from us.
     <div
       role="radiogroup"
-      aria-label="Appearance"
+      aria-label={t('shell.appearance')}
       className={cn(
         'inline-flex items-center gap-0.5 rounded-brand border border-line p-0.5',
         className,
@@ -134,7 +137,7 @@ export function ThemeToggle({ className }: { className?: string }) {
                 : 'text-ink-muted hover:bg-surface-muted hover:text-ink',
             )}
           >
-            <span className="sr-only">{option.label}</span>
+            <span className="sr-only">{t(option.label)}</span>
             <svg
               viewBox="0 0 24 24"
               fill="none"

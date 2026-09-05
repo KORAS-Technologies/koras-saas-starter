@@ -10,6 +10,7 @@ import {
   TrustSection,
   ValueStrip,
 } from '@{{projectSlug}}/ui'
+import { currentLocale } from '../lib/locale'
 
 /**
  * The marketing homepage.
@@ -23,25 +24,28 @@ import {
  * always offers sign-in; `apps/web` reads its cookie and offers the dashboard
  * instead to somebody already signed in.
  *
- * Static, unlike the web application's copy. Nothing on this page varies per
- * request, which is the whole advantage of serving it from a separate
- * application: it can be a cached document.
+ * Rendered per request since the page learned to speak more than one language:
+ * the locale comes from a cookie and a header, and neither is a property of the
+ * build. `docs/FOLLOW_UPS.md` records the locale-in-the-URL variant that would
+ * make this a cached document again.
  */
-export default function MarketingPage() {
+export default async function MarketingPage() {
+  const locale = await currentLocale()
+
   return (
     <>
-      <PublicHeader />
+      <PublicHeader locale={locale} />
       <main id="main-content" className="flex-1">
-        <HeroSection />
-        <ValueStrip />
-        <FeatureGrid />
-        <OutcomeSection />
-        <HowItWorks />
-        <ProductPreview />
-        <TrustSection />
-        <CtaSection />
+        <HeroSection locale={locale} />
+        <ValueStrip locale={locale} />
+        <FeatureGrid locale={locale} />
+        <OutcomeSection locale={locale} />
+        <HowItWorks locale={locale} />
+        <ProductPreview locale={locale} />
+        <TrustSection locale={locale} />
+        <CtaSection locale={locale} />
       </main>
-      <PublicFooter />
+      <PublicFooter locale={locale} />
     </>
   )
 }

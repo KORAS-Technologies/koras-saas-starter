@@ -1,4 +1,6 @@
 import { productConfig } from '@{{projectSlug}}/branding'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale, MessageKey } from '@{{projectSlug}}/i18n'
 import { cn } from '../lib/cn'
 
 /**
@@ -19,17 +21,26 @@ import { cn } from '../lib/cn'
  *
  * Entirely decorative to assistive technology: everything it says is said in
  * the heading and the copy beside it, so announcing the same thing again as a
- * pile of unlabelled boxes would be noise. `aria-hidden` is deliberate.
+ * pile of unlabelled boxes would be noise. `aria-hidden` is deliberate. The
+ * words in it are still translated, because a German homepage with an English
+ * screenshot in the middle of it looks like a screenshot of somebody else's
+ * product.
  *
  * Replaced wholesale the moment a product configures `heroImage` or
  * `previewImage`. This is the floor, not the ceiling.
  */
 
-const ROWS = [
-  { label: 'Onboarding · Northwind', meta: 'Due today', state: 'active' as const },
-  { label: 'Renewal review · Contoso', meta: 'In progress', state: 'progress' as const },
-  { label: 'Access request · Fabrikam', meta: 'Waiting', state: 'waiting' as const },
-  { label: 'Quarterly export', meta: 'Scheduled', state: 'waiting' as const },
+const ROWS: { label: MessageKey; meta: MessageKey; state: 'active' | 'progress' | 'waiting' }[] = [
+  { label: 'appFrame.row.onboarding', meta: 'appFrame.dueToday', state: 'active' },
+  { label: 'appFrame.row.renewal', meta: 'appFrame.inProgress', state: 'progress' },
+  { label: 'appFrame.row.access', meta: 'appFrame.waiting', state: 'waiting' },
+  { label: 'appFrame.row.export', meta: 'appFrame.scheduled', state: 'waiting' },
+]
+
+const MEASURES: [MessageKey, string][] = [
+  ['appFrame.open', '128'],
+  ['appFrame.dueToday', '24'],
+  ['appFrame.blocked', '3'],
 ]
 
 /**
@@ -55,8 +66,9 @@ const STATE_STYLES = {
   waiting: 'bg-slate-100 text-slate-500',
 }
 
-export function AppFrame({ className }: { className?: string }) {
+export function AppFrame({ locale, className }: { locale: Locale; className?: string }) {
   const { product } = productConfig
+  const t = createTranslator(locale)
 
   return (
     <div
@@ -72,7 +84,7 @@ export function AppFrame({ className }: { className?: string }) {
         <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
         <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
         <span className="ml-2 truncate rounded-full bg-white px-3 py-1 text-[11px] font-medium text-slate-400 ring-1 ring-slate-200">
-          {product.slug} / workspace
+          {product.slug} / {t('appFrame.workspace')}
         </span>
       </div>
 
@@ -90,7 +102,7 @@ export function AppFrame({ className }: { className?: string }) {
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="truncate text-[13px] font-semibold text-slate-900">{product.name}</p>
-              <p className="truncate text-[11px] text-slate-400">Operations overview</p>
+              <p className="truncate text-[11px] text-slate-400">{t('appFrame.overview')}</p>
             </div>
             <span className="h-7 w-7 shrink-0 rounded-full bg-slate-200" />
           </div>
@@ -98,14 +110,10 @@ export function AppFrame({ className }: { className?: string }) {
           {/* Three measures. Numbers are illustrative and stay unlabelled by
               unit, so nothing here reads as a claim about a real deployment. */}
           <div className="mt-4 grid grid-cols-3 gap-2.5">
-            {[
-              ['Open', '128'],
-              ['Due today', '24'],
-              ['Blocked', '3'],
-            ].map(([label, value]) => (
+            {MEASURES.map(([label, value]) => (
               <div key={label} className="rounded-lg border border-slate-200 px-2.5 py-2">
                 <p className="text-[10px] font-medium tracking-wide text-slate-400 uppercase">
-                  {label}
+                  {t(label)}
                 </p>
                 <p className="mt-0.5 text-base font-bold text-slate-900">{value}</p>
               </div>
@@ -126,7 +134,7 @@ export function AppFrame({ className }: { className?: string }) {
                     )}
                   />
                   <span className="truncate text-[12px] font-medium text-slate-700">
-                    {row.label}
+                    {t(row.label)}
                   </span>
                 </span>
                 <span
@@ -135,7 +143,7 @@ export function AppFrame({ className }: { className?: string }) {
                     STATE_STYLES[row.state],
                   )}
                 >
-                  {row.meta}
+                  {t(row.meta)}
                 </span>
               </div>
             ))}

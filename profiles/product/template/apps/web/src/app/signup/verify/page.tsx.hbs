@@ -2,8 +2,12 @@ import type { Metadata } from 'next'
 import { AuthCard, AuthLayout, ButtonLink } from '@{{projectSlug}}/ui'
 import { verifySignup } from '../actions'
 import { ProvisioningStatus } from '../ProvisioningStatus'
+import { currentLocale, translator } from '../../../lib/locale'
 
-export const metadata: Metadata = { title: 'Confirm your email' }
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await translator()
+  return { title: t('verify.title') }
+}
 
 /**
  * Where the link in the email lands.
@@ -17,26 +21,24 @@ export const metadata: Metadata = { title: 'Confirm your email' }
  * between them would undo that: telling somebody their link "has expired" tells
  * whoever is holding a guessed token that it was once real.
  *
- * The wording of every outcome below is unchanged from before this page was
- * given a layout. It was chosen for what it does and does not disclose, and it
- * is not copy to be improved for tone.
+ * The wording of every outcome below was chosen for what it does and does not
+ * disclose, and it is not copy to be improved for tone. Its translations must
+ * keep the same property: one message for every failed token, in every
+ * language.
  */
 export default async function VerifyPage({
   searchParams,
 }: {
   searchParams: Promise<{ token?: string }>
 }) {
-  const { token } = await searchParams
+  const [{ token }, locale, t] = await Promise.all([searchParams, currentLocale(), translator()])
 
   if (!token) {
     return (
-      <AuthLayout>
-        <AuthCard
-          title="That link is incomplete"
-          description="Open the link from your email again, or start over."
-        >
+      <AuthLayout locale={locale}>
+        <AuthCard title={t('verify.incomplete.title')} description={t('verify.incomplete.description')}>
           <ButtonLink href="/signup" size="lg" className="w-full">
-            Start over
+            {t('verify.incomplete.startOver')}
           </ButtonLink>
         </AuthCard>
       </AuthLayout>
@@ -51,11 +53,11 @@ export default async function VerifyPage({
     // used to do -- a 429 was reported as an invalid link on 2026-08-31, while
     // the token sat unspent.
     return (
-      <AuthLayout>
+      <AuthLayout locale={locale}>
         <div data-testid="verify-rate-limited">
           <AuthCard
-            title="Too many attempts"
-            description="Your link is still good. Wait a few minutes and open it again — do not start over, that will not help."
+            title={t('verify.rateLimited.title')}
+            description={t('verify.rateLimited.description')}
           />
         </div>
       </AuthLayout>
@@ -64,14 +66,11 @@ export default async function VerifyPage({
 
   if (outcome.status !== 'verified') {
     return (
-      <AuthLayout>
+      <AuthLayout locale={locale}>
         <div data-testid="verify-failed">
-          <AuthCard
-            title="That link is not valid"
-            description="It may have been used already, or it may have expired. Sign up again to get a new one."
-          >
+          <AuthCard title={t('verify.invalid.title')} description={t('verify.invalid.description')}>
             <ButtonLink href="/signup" size="lg" className="w-full">
-              Sign up again
+              {t('verify.invalid.again')}
             </ButtonLink>
           </AuthCard>
         </div>
@@ -88,11 +87,12 @@ export default async function VerifyPage({
   // The welcome email is still sent, by the run itself, so closing this tab
   // costs nothing.
   return (
-    <AuthLayout>
+    <AuthLayout locale={locale}>
       <div data-testid="verify-ok">
         <ProvisioningStatus
           jobId={outcome.jobId}
           organizationSlug={outcome.organizationSlug}
+          locale={locale}
         />
       </div>
     </AuthLayout>

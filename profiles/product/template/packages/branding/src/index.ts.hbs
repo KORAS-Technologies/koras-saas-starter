@@ -13,6 +13,7 @@
  */
 
 import type { ProductAccess, ProductPermission } from '@{{projectSlug}}/permissions'
+import type { Locale } from '@{{projectSlug}}/i18n'
 
 /* -------------------------------------------------------------------------- */
 /* Brand tokens                                                               */
@@ -580,10 +581,60 @@ export interface MarketingConfig {
   access: { mode: AccessMode }
 }
 
+/* -------------------------------------------------------------------------- */
+/* Languages                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Which languages this product offers, and which it starts in.
+ *
+ * `Locale` comes from `packages/i18n`, whose catalogues decide what *can* be
+ * offered: a locale with no catalogue does not typecheck here. Offering is the
+ * product's decision -- a catalogue can be shipped and reviewed before it is
+ * switched on -- so the list is configuration rather than the package's
+ * `SUPPORTED_LOCALES`.
+ *
+ * `defaultLocale` has to be in `locales`; `defaultLocale` is what a visitor
+ * whose browser asks for nothing on offer is shown. A product offering exactly
+ * one locale renders no switcher anywhere, which is the right shape for a
+ * product that has not yet reviewed a second catalogue.
+ */
+export interface I18nConfig {
+  defaultLocale: Locale
+  locales: readonly Locale[]
+}
+
+/**
+ * What one other language says where this file says something in the default.
+ *
+ * Every field is optional, and every field falls back to the default-locale
+ * value in `productConfig` when absent. A product that translates its hero and
+ * nothing else gets a translated hero and an English feature grid, rather than
+ * a page that refuses to render or a page half-filled with keys. `marketingFor`,
+ * `productFor` and `navigationFor` do the merging; components read through
+ * them and never through `translations` directly.
+ *
+ * Navigation labels are keyed by module and group id rather than positionally,
+ * so reordering the registry cannot put the wrong word on the wrong entry.
+ */
+export interface ProductTranslation {
+  product?: Partial<Pick<ProductIdentity, 'tagline' | 'description'>>
+  marketing?: Partial<MarketingConfig>
+  navigation?: {
+    groups?: Readonly<Record<string, string>>
+    modules?: Readonly<Record<string, string>>
+  }
+}
+
 export interface ProductConfig {
   product: ProductIdentity
   brand: BrandingTokens
+  /** The languages offered. See the languages section above. */
+  i18n: I18nConfig
+  /** The default-locale copy. Other locales override it through `translations`. */
   marketing: MarketingConfig
+  /** Per-locale overrides of `product`, `marketing` and the navigation labels. */
+  translations: Partial<Record<Locale, ProductTranslation>>
   /** The authenticated shell's modules. See the navigation section below. */
   navigation: NavigationConfig
 }
@@ -617,6 +668,467 @@ export const productConfig: ProductConfig = {
   },
 
   brand: defaultBranding,
+
+  /* ---------------------------------------------------------------------- */
+  /* Languages                                                              */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * English, German and Spanish, all offered.
+   *
+   * More than one so that the switcher, the negotiation and the catalogues are
+   * all exercised in a freshly generated product -- a language feature shipped
+   * with one language is a feature nobody has seen work. A product that wants
+   * fewer removes a code from this list and the switcher shrinks; the catalogue
+   * stays, costs nothing, and is there when the product is sold into that
+   * market.
+   *
+   * Every string in `packages/i18n` has a translation in each, so the
+   * interface is complete in all three. The homepage copy below is translated
+   * too, in `translations`; it is the product's own copy and is expected to be
+   * rewritten -- in every language offered -- by somebody who knows the product.
+   */
+  i18n: {
+    defaultLocale: 'en',
+    locales: ['en', 'de', 'es'],
+  },
+
+  translations: {
+    de: {
+      product: {
+        tagline: 'Der Betrieb, an einem Ort',
+        description:
+          '{{projectName}} bringt die Menschen, Datensätze und Entscheidungen hinter Ihrem täglichen Betrieb in einen gemeinsamen Arbeitsbereich — mit der Zugriffskontrolle und Mandantentrennung, die eine Einführung im Unternehmen verlangt.',
+      },
+      navigation: {
+        groups: { administration: 'Verwaltung' },
+        modules: {
+          home: 'Start',
+          reports: 'Berichte',
+          insights: 'Einblicke',
+          team: 'Team & Zugriff',
+          settings: 'Einstellungen',
+        },
+      },
+      marketing: {
+        nav: [
+          { label: 'Funktionen', href: '/#features' },
+          { label: 'Ergebnisse', href: '/#outcomes' },
+          { label: 'So funktioniert es', href: '/#how-it-works' },
+          { label: 'Sicherheit', href: '/#security' },
+        ],
+        headerCta: { label: 'Loslegen', href: '/signup' },
+
+        eyebrow: 'Mandantenfähig · Single Sign-on · Rollenbasierter Zugriff',
+        heroTitle: 'Ein Arbeitsbereich für die Arbeit, die {{projectName}} steuert.',
+        heroDescription:
+          'Bringen Sie Ihre Teams, deren Datensätze und die Entscheidungen dazwischen an einen Ort — mit der Zugriffskontrolle, Mandantentrennung und Nachvollziehbarkeit, nach der eine Einführung im Unternehmen fragen wird.',
+        heroNote: 'Anmeldung mit Ihrem Organisationskonto. Kein separates Passwort zu verwalten.',
+        primaryCta: { label: 'Loslegen', href: '/signup' },
+        secondaryCta: { label: 'Anmelden', href: '/login' },
+
+        values: [
+          {
+            title: 'Standardmäßig geschlossen',
+            description:
+              'Jede Route verlangt ein angemeldetes Konto mit einer Rolle. Neue Seiten erben das.',
+          },
+          {
+            title: 'Nach Mandant getrennt',
+            description:
+              'Jede Organisation ist in der Datenbank selbst isoliert, nicht nur in der Abfrage.',
+          },
+          {
+            title: 'Ihr Identitätsanbieter',
+            description:
+              'OpenID-Connect-Single-Sign-on, mit erzwungener Mehrfaktor-Authentifizierung, wo Sie es verlangen.',
+          },
+          {
+            title: 'Gebaut zum Erweitern',
+            description:
+              'Eine typisierte API, ein Hintergrund-Worker und gemeinsame Pakete, die Ihnen vollständig gehören.',
+          },
+        ],
+
+        featuresEyebrow: 'Was Sie bekommen',
+        featuresTitle: 'Die Bausteine, die jede ernsthafte Einführung braucht — bereits verbunden',
+        features: [
+          {
+            icon: 'layers',
+            title: 'Organisationen und Arbeitsbereiche',
+            description:
+              'Jeder Kunde erhält seinen eigenen Mandanten, seine eigenen Daten und seine eigenen Mitglieder — nichts wird versehentlich geteilt.',
+          },
+          {
+            icon: 'key',
+            title: 'Rollen und Berechtigungen',
+            description:
+              'Zugriff wird nach Rolle erteilt und für jede geschützte Operation auf dem Server geprüft, nie nur im Browser.',
+          },
+          {
+            icon: 'shield',
+            title: 'Single Sign-on',
+            description:
+              'Ihre Mitarbeitenden melden sich über Ihren Identitätsanbieter an und landen direkt in {{projectName}}, nie auf einer Anbieterseite.',
+          },
+          {
+            icon: 'workflow',
+            title: 'Hintergrundarbeit',
+            description:
+              'Langlaufende Aufträge, Importe und geplante Aufgaben laufen abseits des Anfragepfads, damit die Oberfläche reaktionsschnell bleibt.',
+          },
+          {
+            icon: 'plug',
+            title: 'Eine typisierte API',
+            description:
+              'Dieselbe API, die die Oberfläche nutzt, steht Ihren eigenen Systemen offen — mit einheitlichen Fehlern und Anfrage-IDs.',
+          },
+          {
+            icon: 'chart',
+            title: 'Betriebliche Transparenz',
+            description:
+              'Strukturierte Protokolle und Traces tragen das handelnde Konto und die Organisation, sodass Aktivität zugeordnet werden kann.',
+          },
+        ],
+
+        outcomesEyebrow: 'Warum Teams wechseln',
+        outcomesTitle: 'Was sich ändert, sobald {{projectName}} im Einsatz ist',
+        outcomes: [
+          {
+            title: 'Weniger Handarbeit',
+            description:
+              'Routineschritte laufen von selbst, statt darauf zu warten, dass jemand an sie denkt.',
+          },
+          {
+            title: 'Klarere Sicht',
+            description:
+              'Der aktuelle Stand der Arbeit steht an einem Ort, statt aus Postfächern rekonstruiert zu werden.',
+          },
+          {
+            title: 'Einheitlicher Betrieb',
+            description:
+              'Derselbe Prozess läuft über Teams, Standorte und Zeitzonen hinweg gleich ab.',
+          },
+          {
+            title: 'Schnelleres Onboarding',
+            description:
+              'Neue Mitglieder erhalten am ersten Tag genau den Zugriff, den ihre Rolle erlaubt.',
+          },
+        ],
+
+        processEyebrow: 'So funktioniert es',
+        processTitle: 'Drei Schritte, in dieser Reihenfolge',
+        steps: [
+          {
+            title: 'Konfigurieren',
+            description:
+              'Verbinden Sie Ihren Identitätsanbieter, legen Sie Ihre Organisationen an und entscheiden Sie, was jede Rolle darf.',
+          },
+          {
+            title: 'Betreiben',
+            description:
+              'Ihre Teams arbeiten Tag für Tag in {{projectName}}, während die Automatisierung übernimmt, was keinen Menschen braucht.',
+          },
+          {
+            title: 'Messen',
+            description:
+              'Beobachten Sie Durchsatz, Ausnahmen und Aktivität, und passen Sie die Konfiguration an dem an, was Sie tatsächlich sehen.',
+          },
+        ],
+
+        previewTitle: 'Ein Arbeitsbereich, in dem man sich zurechtfindet',
+        previewDescription:
+          'Dicht, wo die Arbeit ist, und ruhig überall sonst — damit die aktuelle Aufgabe vor der Person bleibt, die sie erledigt.',
+
+        trustEyebrow: 'Sicherheit',
+        trustTitle: 'Gebaut für die Prüfung, die Ihr Sicherheitsteam durchführen wird',
+        trust: [
+          {
+            icon: 'shield',
+            title: 'Sichere Authentifizierung',
+            description:
+              'OpenID Connect mit PKCE, ein signiertes Sitzungscookie und erzwungene Mehrfaktor-Authentifizierung, wenn Ihre Richtlinie es verlangt.',
+          },
+          {
+            icon: 'layers',
+            title: 'Mandantentrennung',
+            description:
+              'Zeilensicherheit in der Datenbank, sodass eine Abfrage, die den Mandanten vergisst, nichts liefert statt alles.',
+          },
+          {
+            icon: 'key',
+            title: 'Rollenbasierter Zugriff',
+            description:
+              'Jede geschützte Operation prüft den Aufrufer und die benötigte Berechtigung auf dem Server.',
+          },
+          {
+            icon: 'eye',
+            title: 'Barrierefreiheit',
+            description:
+              'Gebaut nach WCAG 2.2 AA: semantische Struktur, Tastaturbedienung, sichtbarer Fokus und reduzierte Bewegung.',
+          },
+          {
+            icon: 'clock',
+            title: 'Nachvollziehbarkeit',
+            description:
+              'Anfragen tragen das handelnde Konto und die Organisation durch die API bis in die Protokolle.',
+          },
+        ],
+        trustNote:
+          '{{projectName}} erhebt keinen Zertifizierungsanspruch. Ergänzen Sie hier erst einen, wenn er geprüft und erteilt wurde.',
+
+        ctaTitle: 'Bereit, mit {{projectName}} zu starten?',
+        ctaDescription:
+          'Erstellen Sie in wenigen Minuten ein Konto, oder melden Sie sich an, wenn Ihre Organisation bereits eingerichtet ist.',
+        ctaPrimary: { label: 'Loslegen', href: '/signup' },
+        ctaSecondary: { label: 'Anmelden', href: '/login' },
+
+        footerGroups: [
+          {
+            title: 'Produkt',
+            links: [
+              { label: 'Funktionen', href: '/#features' },
+              { label: 'Ergebnisse', href: '/#outcomes' },
+              { label: 'So funktioniert es', href: '/#how-it-works' },
+              { label: 'Sicherheit', href: '/#security' },
+            ],
+          },
+          {
+            title: 'Konto',
+            links: [
+              { label: 'Anmelden', href: '/login' },
+              { label: 'Loslegen', href: '/signup' },
+            ],
+          },
+          {
+            title: 'Rechtliches',
+            links: [
+              { label: 'Datenschutz', href: '/privacy' },
+              { label: 'Nutzungsbedingungen', href: '/terms' },
+              { label: 'FAQ', href: '/faq' },
+            ],
+          },
+        ],
+      },
+    },
+    es: {
+      product: {
+        tagline: 'Las operaciones, en un solo lugar',
+        description:
+          '{{projectName}} reúne a las personas, los registros y las decisiones detrás de sus operaciones diarias en un único espacio de trabajo, con el control de acceso y el aislamiento de inquilinos que exige una implantación empresarial.',
+      },
+      navigation: {
+        groups: { administration: 'Administración' },
+        modules: {
+          home: 'Inicio',
+          reports: 'Informes',
+          insights: 'Análisis',
+          team: 'Equipo y acceso',
+          settings: 'Configuración',
+        },
+      },
+      marketing: {
+        nav: [
+          { label: 'Funciones', href: '/#features' },
+          { label: 'Resultados', href: '/#outcomes' },
+          { label: 'Cómo funciona', href: '/#how-it-works' },
+          { label: 'Seguridad', href: '/#security' },
+        ],
+        headerCta: { label: 'Empezar', href: '/signup' },
+
+        eyebrow: 'Multiinquilino · Inicio de sesión único · Acceso por roles',
+        heroTitle: 'Un espacio de trabajo para el trabajo que {{projectName}} gestiona.',
+        heroDescription:
+          'Reúna a sus equipos, sus registros y las decisiones entre ellos en un solo lugar, con el control de acceso, el aislamiento de inquilinos y la trazabilidad por los que preguntará una implantación empresarial.',
+        heroNote: 'Inicie sesión con la cuenta de su organización. Sin contraseña separada que gestionar.',
+        primaryCta: { label: 'Empezar', href: '/signup' },
+        secondaryCta: { label: 'Iniciar sesión', href: '/login' },
+
+        values: [
+          {
+            title: 'Cerrado por defecto',
+            description:
+              'Cada ruta exige una cuenta con sesión iniciada y un rol. Las páginas nuevas lo heredan.',
+          },
+          {
+            title: 'Separado por inquilino',
+            description:
+              'Cada organización está aislada en la propia base de datos, no solo en la consulta.',
+          },
+          {
+            title: 'Su proveedor de identidad',
+            description:
+              'Inicio de sesión único con OpenID Connect, con autenticación multifactor exigida donde usted lo requiera.',
+          },
+          {
+            title: 'Hecho para ampliarse',
+            description:
+              'Una API tipada, un worker en segundo plano y paquetes compartidos que son totalmente suyos.',
+          },
+        ],
+
+        featuresEyebrow: 'Lo que obtiene',
+        featuresTitle: 'Las piezas que necesita toda implantación seria, ya conectadas',
+        features: [
+          {
+            icon: 'layers',
+            title: 'Organizaciones y espacios de trabajo',
+            description:
+              'Cada cliente obtiene su propio inquilino, sus propios datos y sus propios miembros, sin que nada se comparta por accidente.',
+          },
+          {
+            icon: 'key',
+            title: 'Roles y permisos',
+            description:
+              'El acceso se concede por rol y se comprueba en el servidor en cada operación protegida, nunca solo en el navegador.',
+          },
+          {
+            icon: 'shield',
+            title: 'Inicio de sesión único',
+            description:
+              'Las personas inician sesión a través de su proveedor de identidad y entran directamente en {{projectName}}, nunca en una pantalla del proveedor.',
+          },
+          {
+            icon: 'workflow',
+            title: 'Trabajo en segundo plano',
+            description:
+              'Los trabajos largos, las importaciones y las tareas programadas se ejecutan fuera de la ruta de la petición, para que la interfaz siga respondiendo.',
+          },
+          {
+            icon: 'plug',
+            title: 'Una API tipada',
+            description:
+              'La misma API que usa la interfaz está disponible para sus propios sistemas, con errores coherentes e identificadores de petición.',
+          },
+          {
+            icon: 'chart',
+            title: 'Visibilidad operativa',
+            description:
+              'Los registros y trazas estructurados llevan la cuenta y la organización que actúan, para que la actividad pueda atribuirse.',
+          },
+        ],
+
+        outcomesEyebrow: 'Por qué cambian los equipos',
+        outcomesTitle: 'Lo que cambia cuando {{projectName}} está en marcha',
+        outcomes: [
+          {
+            title: 'Menos trabajo manual',
+            description:
+              'Los pasos rutinarios se ejecutan solos en lugar de esperar a que alguien los recuerde.',
+          },
+          {
+            title: 'Visibilidad más clara',
+            description:
+              'El estado actual del trabajo está en un solo lugar, no reconstruido a partir de bandejas de entrada.',
+          },
+          {
+            title: 'Operaciones coherentes',
+            description:
+              'El mismo proceso se ejecuta igual en todos los equipos, sedes y zonas horarias.',
+          },
+          {
+            title: 'Incorporación más rápida',
+            description:
+              'Los nuevos miembros obtienen exactamente el acceso que permite su rol, desde el primer día.',
+          },
+        ],
+
+        processEyebrow: 'Cómo funciona',
+        processTitle: 'Tres pasos, en este orden',
+        steps: [
+          {
+            title: 'Configurar',
+            description:
+              'Conecte su proveedor de identidad, cree sus organizaciones y decida qué puede hacer cada rol.',
+          },
+          {
+            title: 'Operar',
+            description:
+              'Sus equipos trabajan en {{projectName}} día a día, con la automatización encargándose de lo que no necesita a una persona.',
+          },
+          {
+            title: 'Medir',
+            description:
+              'Observe el rendimiento, las excepciones y la actividad, y ajuste la configuración según lo que realmente ve.',
+          },
+        ],
+
+        previewTitle: 'Un espacio de trabajo en el que la gente se orienta',
+        previewDescription:
+          'Denso donde está el trabajo y tranquilo en todo lo demás, para que la tarea actual quede delante de quien la realiza.',
+
+        trustEyebrow: 'Seguridad',
+        trustTitle: 'Hecho para la revisión que hará su equipo de seguridad',
+        trust: [
+          {
+            icon: 'shield',
+            title: 'Autenticación segura',
+            description:
+              'OpenID Connect con PKCE, una cookie de sesión firmada y autenticación multifactor exigida cuando su política lo requiera.',
+          },
+          {
+            icon: 'layers',
+            title: 'Aislamiento de inquilinos',
+            description:
+              'Seguridad a nivel de fila en la base de datos, para que una consulta que olvide el inquilino no devuelva nada en lugar de todo.',
+          },
+          {
+            icon: 'key',
+            title: 'Acceso basado en roles',
+            description:
+              'Cada operación protegida verifica al solicitante y el permiso requerido en el servidor.',
+          },
+          {
+            icon: 'eye',
+            title: 'Accesibilidad',
+            description:
+              'Construido según WCAG 2.2 AA: estructura semántica, manejo por teclado, foco visible y movimiento reducido.',
+          },
+          {
+            icon: 'clock',
+            title: 'Trazabilidad',
+            description:
+              'Las peticiones llevan la cuenta y la organización que actúan a través de la API y hasta los registros.',
+          },
+        ],
+        trustNote:
+          '{{projectName}} no reclama ninguna certificación. Añada una aquí solo cuando haya sido auditada y emitida.',
+
+        ctaTitle: '¿Listo para empezar con {{projectName}}?',
+        ctaDescription:
+          'Cree una cuenta en un par de minutos, o inicie sesión si su organización ya está configurada.',
+        ctaPrimary: { label: 'Empezar', href: '/signup' },
+        ctaSecondary: { label: 'Iniciar sesión', href: '/login' },
+
+        footerGroups: [
+          {
+            title: 'Producto',
+            links: [
+              { label: 'Funciones', href: '/#features' },
+              { label: 'Resultados', href: '/#outcomes' },
+              { label: 'Cómo funciona', href: '/#how-it-works' },
+              { label: 'Seguridad', href: '/#security' },
+            ],
+          },
+          {
+            title: 'Cuenta',
+            links: [
+              { label: 'Iniciar sesión', href: '/login' },
+              { label: 'Empezar', href: '/signup' },
+            ],
+          },
+          {
+            title: 'Legal',
+            links: [
+              { label: 'Privacidad', href: '/privacy' },
+              { label: 'Condiciones', href: '/terms' },
+              { label: 'Preguntas frecuentes', href: '/faq' },
+            ],
+          },
+        ],
+      },
+    },
+  },
 
   marketing: {
     // In-page anchors, because they are the links this page can honour today.
@@ -1139,8 +1651,16 @@ export interface ResolvedModule {
   href: string
   order: number
   state: ModuleState
-  /** Set on a locked module, and rendered in its accessible name. */
+  /**
+   * Set on a locked module, and rendered in its accessible name.
+   *
+   * English, and kept for the tests and callers that read it. The shell renders
+   * `lockedBy` through the caller's language instead; this is the untranslated
+   * reason, not the one a person sees.
+   */
   lockedReason?: string
+  /** Which gate locked it, so the shell can say so in the caller's language. */
+  lockedBy?: 'entitlement' | 'feature'
 }
 
 export interface ResolvedGroup {
@@ -1232,6 +1752,7 @@ export function resolveNavigation(
 
     let state: ModuleState = 'available'
     let lockedReason: string | undefined
+    let lockedBy: ResolvedModule['lockedBy']
 
     if (missingEntitlement !== undefined || missingFeature !== undefined) {
       // Hidden unless the product asked for the upgrade affordance. A locked
@@ -1239,10 +1760,9 @@ export function resolveNavigation(
       // makes per module rather than something the shell does on its behalf.
       if ((module.lockedBehavior ?? 'hide') === 'hide') continue
       state = 'locked'
+      lockedBy = missingEntitlement !== undefined ? 'entitlement' : 'feature'
       lockedReason =
-        missingEntitlement !== undefined
-          ? 'Not included in your plan'
-          : 'Not enabled for your organisation'
+        lockedBy === 'entitlement' ? 'Not included in your plan' : 'Not enabled for your organisation'
     }
 
     const items = byGroup.get(module.group) ?? []
@@ -1254,6 +1774,7 @@ export function resolveNavigation(
       order: module.order,
       state,
       ...(lockedReason === undefined ? {} : { lockedReason }),
+      ...(lockedBy === undefined ? {} : { lockedBy }),
     })
     byGroup.set(module.group, items)
   }
@@ -1296,4 +1817,57 @@ export function moduleForPath(
     if (best === undefined || module.href.length > best.href.length) best = module
   }
   return best
+}
+
+/* -------------------------------------------------------------------------- */
+/* Reading the configuration in a language                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The product's identity, in one language.
+ *
+ * Name, slug, addresses and capabilities are not translated -- a product has one
+ * name -- so only the tagline and description can differ, and each falls back to
+ * the default when the translation leaves it out.
+ */
+export function productFor(locale: Locale, config: ProductConfig = productConfig): ProductIdentity {
+  const over = config.translations[locale]?.product
+  return over === undefined ? config.product : { ...config.product, ...over }
+}
+
+/**
+ * The homepage copy, in one language.
+ *
+ * A shallow merge, deliberately: a translated `features` list replaces the
+ * whole list rather than being zipped item by item, because a translation
+ * with one item fewer would otherwise leave the last card in English and look
+ * like a bug in the merge rather than a gap in the copy. Per-field fallback is
+ * the granularity a translator works at.
+ */
+export function marketingFor(locale: Locale, config: ProductConfig = productConfig): MarketingConfig {
+  const over = config.translations[locale]?.marketing
+  return over === undefined ? config.marketing : { ...config.marketing, ...over }
+}
+
+/**
+ * The navigation registry with its labels in one language.
+ *
+ * Only labels change. Ids, routes, permissions and every other gate are the
+ * same object in every language, which is what keeps `moduleForPath` in the
+ * middleware and the sidebar a person sees describing the same registry. A
+ * module or group the translation does not name keeps its default label.
+ */
+export function navigationFor(locale: Locale, config: ProductConfig = productConfig): NavigationConfig {
+  const over = config.translations[locale]?.navigation
+  if (over === undefined) return config.navigation
+  return {
+    groups: config.navigation.groups.map((group) => ({
+      ...group,
+      label: over.groups?.[group.id] ?? group.label,
+    })),
+    modules: config.navigation.modules.map((module) => ({
+      ...module,
+      label: over.modules?.[module.id] ?? module.label,
+    })),
+  }
 }

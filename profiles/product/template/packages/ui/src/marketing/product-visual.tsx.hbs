@@ -1,4 +1,5 @@
 import type { ProductImage } from '@{{projectSlug}}/branding'
+import type { Locale } from '@{{projectSlug}}/i18n'
 import { cn } from '../lib/cn'
 import { AppFrame } from './app-frame'
 
@@ -17,15 +18,18 @@ import { AppFrame } from './app-frame'
  */
 export function ProductVisual({
   image,
+  locale,
   className,
   priority = false,
 }: {
   image: ProductImage | null
+  /** For the drawn frame's own words, when there is no image to show. */
+  locale: Locale
   className?: string
   /** Set on the hero: it is the largest paint above the fold. */
   priority?: boolean
 }) {
-  if (!image) return <AppFrame className={className} />
+  if (!image) return <AppFrame locale={locale} className={className} />
 
   return (
     // A plain <img>: a product-supplied asset of declared size. `next/image`

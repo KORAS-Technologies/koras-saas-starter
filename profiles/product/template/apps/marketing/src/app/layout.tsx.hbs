@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from 'next'
-import { productConfig } from '@{{projectSlug}}/branding'
+import { productConfig, productFor } from '@{{projectSlug}}/branding'
+import { createTranslator, localeDirection } from '@{{projectSlug}}/i18n'
 import { brandStyle } from '@{{projectSlug}}/ui'
+import { currentLocale } from '../lib/locale'
 import './globals.css'
 
-const { product, brand } = productConfig
+const { brand } = productConfig
 
 /**
  * The marketing site's root layout.
@@ -12,35 +14,44 @@ const { product, brand } = productConfig
  * read their metadata and their brand tokens from `productConfig`, so the two
  * sites cannot describe the same product differently. What differs is only what
  * has to -- this application has no session and therefore no session gate.
+ *
+ * Metadata is a function because the tagline and description are read in the
+ * visitor's language. Everything else in it is the same in every language.
  */
-export const metadata: Metadata = {
-  ...(product.url ? { metadataBase: new URL(product.url) } : {}),
-  title: {
-    default: `${product.name} — ${product.tagline}`,
-    template: `%s · ${product.name}`,
-  },
-  description: product.description,
-  applicationName: product.name,
-  icons: { icon: brand.faviconUrl },
-  openGraph: {
-    type: 'website',
-    siteName: product.name,
-    title: `${product.name} — ${product.tagline}`,
+export async function generateMetadata(): Promise<Metadata> {
+  const product = productFor(await currentLocale())
+  return {
+    ...(product.url ? { metadataBase: new URL(product.url) } : {}),
+    title: {
+      default: `${product.name} — ${product.tagline}`,
+      template: `%s · ${product.name}`,
+    },
     description: product.description,
-  },
-  twitter: { card: 'summary_large_image', title: product.name, description: product.description },
+    applicationName: product.name,
+    icons: { icon: brand.faviconUrl },
+    openGraph: {
+      type: 'website',
+      siteName: product.name,
+      title: `${product.name} — ${product.tagline}`,
+      description: product.description,
+    },
+    twitter: { card: 'summary_large_image', title: product.name, description: product.description },
+  }
 }
 
 export const viewport: Viewport = {
   themeColor: brand.secondaryColor,
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const locale = await currentLocale()
+  const t = createTranslator(locale)
+
   return (
-    <html lang="en">
+    <html lang={locale} dir={localeDirection(locale)}>
       <body style={brandStyle(brand)} className="flex min-h-screen flex-col font-sans">
         <a href="#main-content" className="skip-link">
-          Skip to main content
+          {t('common.skipToMain')}
         </a>
         {children}
       </body>

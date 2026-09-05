@@ -1,4 +1,5 @@
-import { productConfig } from '@{{projectSlug}}/branding'
+import { marketingFor } from '@{{projectSlug}}/branding'
+import type { Locale } from '@{{projectSlug}}/i18n'
 import { ButtonLink } from '../primitives/button'
 import { Container } from '../primitives/container'
 import { appHref } from '../lib/links'
@@ -13,8 +14,8 @@ import { appHref } from '../lib/links'
  * contains. The rule carries the brand instead, and it is the only place the
  * primary colour appears at full strength on ink.
  */
-export function CtaSection() {
-  const { marketing } = productConfig
+export function CtaSection({ locale }: { locale: Locale }) {
+  const marketing = marketingFor(locale)
 
   return (
     <section className="py-20 sm:py-24">

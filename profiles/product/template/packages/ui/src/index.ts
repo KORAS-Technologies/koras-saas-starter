@@ -21,6 +21,10 @@ export { cn } from './lib/cn'
 export type { ClassValue } from './lib/cn'
 export { appHref } from './lib/links'
 
+export { LanguageSwitcher } from './i18n/language-switcher'
+export { codeTag, rich, strongTag } from './i18n/rich'
+export type { RichTags } from './i18n/rich'
+
 export { Button, ButtonLink } from './primitives/button'
 export type { ButtonSize, ButtonVariant } from './primitives/button'
 export { Card } from './primitives/card'
