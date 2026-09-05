@@ -139,3 +139,31 @@ export function fetchEntitlements(
     options,
   )
 }
+
+/**
+ * How this caller's organization wants this product to look, from the Control Plane.
+ *
+ * The platform's portal surface again, and the same argument as
+ * `fetchEntitlements`: the product code is in the path and the organization is
+ * not, so a customer can only ever read their own branding. Their own token
+ * authorises it, with the platform's project already in its audience.
+ *
+ * This is the read that makes white labelling real. The portal is where a
+ * customer sets their colours, the platform stores them, and until a product
+ * fetches them here they are stored and unused. The platform's machine-only
+ * tenant endpoint exists for the same values, but a product holds no machine
+ * credential at runtime -- that is the F2b argument -- and this route needs
+ * none.
+ *
+ * A customer who has set nothing is answered with a record of nulls, not a
+ * `404`; a `404` means the organization holds no such product, which is the
+ * same thing it means for a wrong product code.
+ */
+export function fetchBranding(
+  options: RequestOptions & { productCode: string },
+): Promise<unknown> {
+  return request<unknown>(
+    `/api/portal/v1/products/${encodeURIComponent(options.productCode)}/branding`,
+    options,
+  )
+}

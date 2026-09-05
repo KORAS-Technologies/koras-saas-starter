@@ -52,9 +52,10 @@ export default function DashboardPage() {
               the same file.
             </li>
             <li>
-              A customer&rsquo;s own colours and logo arrive through{' '}
-              <code className="text-ink">apps/web/src/lib/tenant-branding.ts</code>, which names
-              the one read still to be wired up.
+              A customer&rsquo;s own colours arrive through{' '}
+              <code className="text-ink">apps/web/src/lib/tenant-branding.ts</code>, read from
+              what they set in the platform&rsquo;s portal and layered over this product&rsquo;s
+              own tenant settings.
             </li>
           </ul>
         </Card>

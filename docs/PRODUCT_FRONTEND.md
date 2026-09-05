@@ -191,13 +191,15 @@ capability of the profile. Tenant branding is applied **through design tokens,
 never by forking components per tenant**.
 
 ```
-tenant_settings.branding (jsonb, RLS-scoped)
-        |
-parseTenantBranding()          decides what is safe to render
-        |
-<BrandScope tenant={...}>      re-declares the CSS custom properties
-        |
-every component below it, unchanged
+Control Plane portal branding          tenant_settings.branding (jsonb, RLS-scoped)
+        |                                        |
+parsePlatformBranding()                parseTenantBranding()      each decides what is safe to render
+        \                                      /
+             mergeTenantBranding()             the platform wins where both speak
+                        |
+            <BrandScope tenant={...}>          re-declares the CSS custom properties
+                        |
+            every component below it, unchanged
 ```
 
 `apps/web/src/app/dashboard/layout.tsx` wraps the whole signed-in area. Any
@@ -285,10 +287,51 @@ with a slash), no remote origins (a logo fetched from somewhere a tenant
 controls is a beacon on every page). Unknown keys are dropped, and one bad value
 costs one token rather than the whole brand.
 
-`packages/branding/src/branding.test.ts` is that argument, in twelve tests that
+`packages/branding/src/branding.test.ts` is that argument, in eighteen tests that
 run as part of the generated project's own `pnpm test`.
 
-### How it is read
+### Where it is read from
+
+Two places, since 2026-09-04, and they are different documents.
+
+**The Control Plane's portal** is where a customer actually edits their
+branding: the portal has the form, and the platform stores what they save. A
+product reads it back from
+`GET /api/portal/v1/products/{product_code}/branding` — the customer's own
+surface, with the customer's own token, exactly as `tenantEntitlements` reads
+their plan. The product code is in the path and the organization is not, so a
+customer can only ever read their own branding; the platform's project is
+already in the token's audience from sign-in (F17). No machine credential is
+held for this and none is needed. The platform also offers a machine-only
+tenant endpoint for the same values (its contract §6a), and a product does not
+call it: a product holds no machine identity at runtime, by the argument that
+keeps deploy-time registration off (F2b), and that route is unscoped across
+products until the platform's R-104 closes.
+
+Until this read existed, branding had exactly two readers — platform staff and
+the customer's own portal — so a customer could set their colours, be told the
+product would use them, and have nothing ever do so.
+
+**This product's own column** is `tenant_settings.branding`, for a product that
+offers its own branding surface. Nothing writes it today.
+
+The portal answer speaks the platform's names — `primary_color`,
+`company_name`, `corner_style` — and the column speaks this package's, so each
+has its own parser and each ignores the other's spelling. Fed to the wrong
+parser, a response yields nothing rather than something wrong, and the tests
+assert both directions: a rename on either side is otherwise a silent no-op in
+which the customer simply appears to have set nothing. `mergeTenantBranding`
+layers the platform's answer over the column's, because the platform's is the
+one the customer can see and change.
+
+**The platform's logos are not rendered.** The portal stores them as `https`
+URLs on the platform's storage, and this product's Content-Security-Policy is
+`img-src 'self'`; a remote logo would be a broken image in every header. Until
+a product serves the platform's assets itself, a logo set in the portal is
+dropped by the parser, deliberately and testably, rather than left to the
+browser to refuse. FOLLOW_UPS F19 holds the decision.
+
+### How the column is read
 
 `GET /api/v1/tenant/settings` on `services/api`, added 2026-09-01 and the first
 route in this API a browser reaches. It answers with the tenant's name, its
@@ -300,7 +343,8 @@ version of that row a page was rendered from.
 ```
 apps/web/src/lib/tenant-settings.ts    the read, cached per render
         |
-tenant-branding.ts     parseTenantBranding   -> BrandScope
+tenant-branding.ts     parseTenantBranding   -> mergeTenantBranding -> BrandScope
+                       (with the platform read beside it, cached the same way)
 tenant-features.ts     parseTenantFeatures   -> resolveNavigation
         |
 the organisation's name                      -> the workspace badge

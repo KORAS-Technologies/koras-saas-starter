@@ -284,6 +284,80 @@ export function parseTenantBranding(raw: unknown): TenantBranding {
   return { tokens, name, cornerStyle }
 }
 
+/**
+ * The keys the Control Plane's portal API answers with, and what each becomes.
+ *
+ * A second parser rather than a second spelling in the first, because the two
+ * sources are different documents. `tenant_settings.branding` is this product's
+ * own column and speaks this package's names; the Control Plane's answer is the
+ * platform's contract and speaks the platform's, in snake case. Feeding one into
+ * the other's parser would not fail -- every key would be unknown, every value
+ * dropped, and the customer would appear to have set nothing. That is the
+ * defect `parseEntitlements` shipped with for a day, reading `feature` where
+ * the wire said `code`, and the reason `branding.test.ts` asserts these names.
+ *
+ * The images are deliberately absent. The platform stores them as `https`
+ * URLs on its own storage, and this product's Content-Security-Policy is
+ * `img-src 'self'`, so a remote logo would be refused by the browser as a
+ * broken image. Until a product serves the platform's assets itself, a logo
+ * set in the portal is not rendered here -- and that is said rather than
+ * left to a broken image to say.
+ */
+const PLATFORM_COLOURS: ReadonlyArray<readonly [string, TenantBrandingKey]> = [
+  ['primary_color', 'primaryColor'],
+  ['secondary_color', 'secondaryColor'],
+  ['accent_color', 'accentColor'],
+]
+
+/**
+ * Turn the Control Plane's answer into tokens, or into nothing.
+ *
+ * `GET /api/portal/v1/products/{product_code}/branding` -- the customer's own
+ * surface, read with the customer's own token, so there is no tenant to name
+ * and no way to read another one. The platform validated these values when the
+ * customer saved them; they are validated again here for the reason
+ * `parseTenantBranding` gives, which does not depend on who wrote them.
+ *
+ * Same degradation rules: unknown keys dropped, bad values dropped one at a
+ * time, a malformed record as a whole is the product's own branding.
+ */
+export function parsePlatformBranding(raw: unknown): TenantBranding {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return NO_TENANT_BRANDING
+
+  const record = raw as Record<string, unknown>
+  const tokens: Partial<Pick<BrandingTokens, TenantBrandingKey>> = {}
+
+  for (const [wire, key] of PLATFORM_COLOURS) {
+    const value = record[wire]
+    if (isColour(value)) tokens[key] = value
+  }
+
+  const name =
+    typeof record.company_name === 'string' ? record.company_name.trim().slice(0, 60) : ''
+
+  const cornerStyle = isCornerStyle(record.corner_style) ? record.corner_style : null
+
+  return { tokens, name, cornerStyle }
+}
+
+/**
+ * One customer, two places they may have set branding: layer the second over
+ * the first.
+ *
+ * The Control Plane is where a customer actually edits their branding -- the
+ * portal has the form -- and this product's own column is where a product may
+ * one day offer its own. When both say something, the platform's answer wins,
+ * because it is the one the customer can see and change. A value only one of
+ * them holds stands on its own; nothing set in either is still nothing.
+ */
+export function mergeTenantBranding(base: TenantBranding, over: TenantBranding): TenantBranding {
+  return {
+    tokens: { ...base.tokens, ...over.tokens },
+    name: over.name !== '' ? over.name : base.name,
+    cornerStyle: over.cornerStyle ?? base.cornerStyle,
+  }
+}
+
 /** The tokens a page should actually render with, for this customer. */
 export function brandingFor(base: BrandingTokens, tenant: TenantBranding): BrandingTokens {
   const merged = mergeBranding(base, tenant.tokens)
