@@ -1521,7 +1521,8 @@ something to land on.
 - [x] Phase 3 — interval and seats on the signup form, Paddle.js on the verify page, provisioning started by `subscription.created`, the abandoned-checkout reminder (built 2026-09-05, both repositories)
 - [ ] Phase 3's browser run: a sandbox signup with a test card, from a product deployed with the client-side token, ending signed in — and the Playwright journey that records it
 - [x] Phase 4 — the portal's billing section, plan and seat changes, the trial-ended and past-due states; the first module with `requiredEntitlements` had already shipped with the shell (built 2026-09-05, both repositories)
-- [ ] Phase 5 — reconciliation against the provider, the live Paddle account, production hostnames approved
+- [x] Phase 5's code — the `billing.subscription` check in the estate sweep, repaired toward the provider (built 2026-09-06)
+- [ ] Phase 5's rest — the live Paddle account, live keys and destination in prod, production hostnames approved, the first real cycle: `koras-control-plane/docs/runbooks/paddle-go-live.md`
 
 The design is `BILLING_DESIGN.md`, decided 2026-09-05: card at signup, charge
 at trial end, Paddle as Merchant of Record behind a five-operation adapter,
@@ -1576,6 +1577,15 @@ subscription's status and dates, and the shell says what they mean without
 deciding anything from them. The "first gated module" turned out to be
 already there: the shell shipped `reports` locked and `insights` hidden on
 2026-09-01, so what this phase added is the sentence that explains why.
+
+**Phase 5's code, 2026-09-06.** The provider adapter moved into
+`python-packages/koras-billing` so the worker could hold one, and the
+reconciliation engine gained `billing.subscription`: every held subscription
+read back from Paddle every fifteen minutes and compared on the four things
+that decide access and money, repaired toward the provider because it holds
+the money. Severity follows cost — a paying customer the row calls closed is
+CRITICAL. What is left of Phase 5 is the live account and the walk from
+sandbox to live, which is a runbook rather than code.
 
 **Left undone on 2026-09-05, and why.** The fixtures under
 `koras-control-plane/tests/fixtures/paddle/` were authored from Paddle's

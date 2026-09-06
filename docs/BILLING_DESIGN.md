@@ -7,9 +7,11 @@
 > is authoritative for what a plan *is*; this document adds what a plan
 > *costs* and how a customer comes to pay it.
 
-Status: **Phases 1 to 4 built on 2026-09-05** — the first two on
-`koras-control-plane` branch `feat/billing-foundation`, the third and fourth
-on `develop` in both repositories; Phase 5 is not. FOLLOW_UPS F13
+Status: **all five phases built** — Phases 1 to 4 on 2026-09-05 and the
+code half of Phase 5 on 2026-09-06, on `develop` in both repositories. What
+remains is not code: the live Paddle account, and the browser run against the
+real sandbox. `koras-control-plane/docs/runbooks/paddle-go-live.md` is the
+walk from sandbox to live. FOLLOW_UPS F13
 records the decision this document extends: trial-only self-serve shipped
 first, and `subscriptions.status` was made to mean something before a card is
 taken (`koras-control-plane` R-93). This is the payment work F13 said would
@@ -242,6 +244,16 @@ the provider is right — and logged as a reconciliation finding, in the same
 shape `RECONCILIATION_DESIGN.md` uses for infrastructure. Zero findings is the
 expected nightly result and the number that appears in the console.
 
+**As built.** Not a second half of the nightly job but a check in the
+reconciliation engine itself, `billing.subscription`, which the estate sweep
+already runs every fifteen minutes — so a lost webhook is caught within the
+quarter hour, through the same engine that catches a hand-deleted grant, with
+the same finding types and the same policy table. The provider adapter moved
+into a shared Python package so the worker could hold one beside the API. A
+provider that cannot be asked is UNREACHABLE and never repaired; an
+environment whose rows name a provider the worker has no key for reports that
+rather than a clean estate.
+
 ## Data model changes
 
 `koras-control-plane`, one migration: `00028_billing.sql`.
@@ -362,7 +374,7 @@ already does, and rendering two states it does not yet have.
 | 2 Catalogue — **built 2026-09-05** | control-plane | price ids, interval, seat bounds on plans; console forms | 1 day | a plan with two prices and seat bounds is visible from `GET /api/signup/v1/plans`. Met in code; not yet exercised against a database with the migration applied |
 | 3 Signup with card — **built 2026-09-05** | both | interval and seats on the form; Paddle.js checkout on verify; provisioning on `subscription.created`; abandoned-checkout reminder | 3 days | a sandbox signup with a test card ends signed in, with a `trialing` row carrying billing ids. **Not yet run:** the code is tested end to end through the API with a simulated provider, and the product template is type-checked as a generated project; the browser journey against the real sandbox needs a product deployed with the client-side token, which `koras-e2e-shop` will be once it takes this change |
 | 4 In-app billing — **built 2026-09-05** | both | portal Billing section; change plan, interval, seats; manage billing link; trial-ended and past-due states; first gated module | 3 days | trial to active to seat change to cancel observed in `subscriptions.status`, and the gated module closes on cancel. **Half met:** the seat, interval and plan changes are tested through the portal API against a stand-in provider, and the two gated modules the template already shipped close when the state closes; the full cycle against the real sandbox is the same browser run Phase 3 is waiting on |
-| 5 Reconciliation and go-live | control-plane | reconciliation half of the sweep; live account; live keys in Doppler; production hostnames approved in Paddle | 2 days + 1–2 weeks waiting | nightly reconciliation reports zero findings against sandbox; live account approved |
+| 5 Reconciliation and go-live — **code built 2026-09-06** | control-plane | reconciliation half of the sweep; live account; live keys in Doppler; production hostnames approved in Paddle | 2 days + 1–2 weeks waiting | nightly reconciliation reports zero findings against sandbox; live account approved. **The check exists and is tested with a stand-in provider**, and runs every fifteen minutes with the estate sweep rather than nightly; the zero-findings night against the real sandbox and the live account are the two open boxes |
 
 Three weeks of engineering. Phase 5's waiting starts on day one: apply for the
 live Paddle account as soon as a public site with pricing, terms, privacy and

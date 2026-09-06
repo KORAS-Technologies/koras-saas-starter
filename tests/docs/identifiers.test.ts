@@ -68,12 +68,12 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   // system.
   send_signup_verification: 'a Control Plane worker task; named in F7/F11, absent here by design',
   self_serve: 'a column on the Control Plane plans table; no product repository has one',
-  // A value of the Control Plane's `subscriptions.status` check constraint,
-  // named in F13's grant-policy table. Like `self_serve`, it must stay absent
-  // here: a product decides nothing about whether a customer has paid, and a
-  // product repository naming a billing state would mean that boundary had
-  // moved.
-  past_due: "a Control Plane subscription status; a product never decides one",
+  // `past_due` was exempted here as "a Control Plane subscription status; a
+  // product never decides one". It left the list on 2026-09-06 because the
+  // product template now *names* it -- `SubscriptionNotice` renders the
+  // sentence for a failed charge -- without deciding it: the platform still
+  // resolves the state to no entitlements whether or not the product reads it.
+  // This test is what noticed, which is the point of asserting exemptions.
   // The Control Plane's registry tables. REGISTRATION_LIFECYCLE names them
   // because the safety of a single-environment re-registration rests on which
   // of them prune and which do not -- read out of that repository rather than
