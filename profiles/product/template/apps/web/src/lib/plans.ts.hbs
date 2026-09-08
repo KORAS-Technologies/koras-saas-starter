@@ -1,0 +1,52 @@
+import { parsePublicPlans } from '@{{projectSlug}}/branding'
+import type { PublicPlan } from '@{{projectSlug}}/branding'
+
+/**
+ * What this product sells to somebody without an account.
+ *
+ * Read on the server when a page renders, not chosen at generation time. An
+ * empty list is the common answer and a meaningful one: no plan is self-serve
+ * until somebody marks it so, and a page that receives none should say so --
+ * the pricing section renders nothing, the signup page says signup is not
+ * available -- rather than show an empty control.
+ *
+ * Failures answer empty too. A visitor cannot act on "the platform is
+ * unreachable" any differently from "nothing is on sale", and the page says
+ * the same thing for both. They are not the same to whoever runs this, and
+ * for a while nothing said so: on 2026-08-30 the Control Plane answered 500
+ * to every request this ever made, and the signup page reported it as
+ * "signing up online is not available yet" -- correct for the visitor, and
+ * indistinguishable from a catalogue nobody has filled in. The log line is
+ * the whole difference.
+ *
+ * `KORAS_CONTROL_PLANE_URL` stays on the server. The platform's address is
+ * not the browser's business, and a page fetching the platform directly
+ * would put it in every visitor's network tab. Anonymous, no token: the
+ * catalogue is the one thing the platform serves to strangers.
+ */
+export async function loadPublicPlans(): Promise<PublicPlan[]> {
+  const base = process.env.KORAS_CONTROL_PLANE_URL
+  if (!base) return []
+
+  try {
+    const response = await fetch(
+      `${base.replace(/\/$/, '')}/api/signup/v1/plans?product_code={{projectSlug}}`,
+      { cache: 'no-store' },
+    )
+    if (!response.ok) {
+      // Server-side only: this reaches the service log and never the browser.
+      // The status is the diagnosis -- 500 is the platform, 422 is this
+      // request, 404 is the product code.
+      console.error(
+        `[plans] the plan catalogue answered ${response.status}; ` +
+          'the page will say nothing is on sale, which is indistinguishable ' +
+          'from an empty catalogue to a visitor but not to you.',
+      )
+      return []
+    }
+    return parsePublicPlans(await response.json())
+  } catch (error) {
+    console.error('[plans] the plan catalogue could not be reached:', error)
+    return []
+  }
+}

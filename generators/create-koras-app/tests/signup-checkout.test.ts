@@ -51,8 +51,12 @@ describe('the form', () => {
   })
 
   it('fills in a catalogue from before the billing work as a free trial', () => {
-    expect(actions).toContain('price_id_month: plan.price_id_month ?? null')
-    expect(actions).toContain('min_seats: plan.min_seats ?? 1')
+    // The rule moved into `parsePublicPlans` in packages/branding when the
+    // pricing section became a second reader of the catalogue.
+    const branding = read('packages', 'branding', 'src', 'index.ts.hbs')
+    expect(actions).toContain('return loadPublicPlans()')
+    expect(branding).toContain('export function parsePublicPlans(')
+    expect(branding).toContain('min_seats: typeof plan.min_seats === ')
   })
 })
 
@@ -82,7 +86,9 @@ describe('the checkout', () => {
   const actions = signup('actions.ts.hbs')
 
   it("loads the provider's script from the provider, not from this repository", () => {
-    expect(checkout).toContain("'https://cdn.paddle.com/paddle/v2/paddle.js'")
+    const paddle = read('packages', 'ui', 'src', 'lib', 'paddle.ts')
+    expect(paddle).toContain("'https://cdn.paddle.com/paddle/v2/paddle.js'")
+    expect(checkout).toContain('PADDLE_JS')
     expect(checkout).toContain("from 'next/script'")
   })
 
@@ -93,7 +99,9 @@ describe('the checkout', () => {
   })
 
   it('defaults to the sandbox, so a token with no environment cannot charge a card', () => {
-    expect(checkout).toMatch(/=== 'production' \? 'production' : 'sandbox'/)
+    const paddle = read('packages', 'ui', 'src', 'lib', 'paddle.ts')
+    expect(paddle).toMatch(/=== 'production' \? 'production' : 'sandbox'/)
+    expect(checkout).toContain('paddleEnvironment(process.env.NEXT_PUBLIC_PADDLE_ENVIRONMENT)')
   })
 
   it('carries the ids the webhook finds its way back with', () => {

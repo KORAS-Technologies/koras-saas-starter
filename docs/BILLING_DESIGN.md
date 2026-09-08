@@ -103,6 +103,19 @@ What moves, in one line: **the provisioning trigger moves from verification to
 the provider's `subscription.created` webhook.** Everything downstream of it is
 untouched, which is the point of putting the card where it is.
 
+**The pricing page, which this flow assumed and which did not exist.** Built
+2026-09-07 as a section on both public homepages, `/#pricing`, in the header
+and footer navigation in all three languages. The plans are the Control
+Plane's public catalogue, read on the server by the page — the same list the
+signup form offers, so a card cannot name a plan that is not on sale. The
+prices are the provider's: Paddle.js renders a price preview in the browser
+with the public token, in the visitor's currency and tax, so no amount is
+typed anywhere in this repository. Where the product takes no card, or the
+provider does not answer, a card says the price is shown at checkout rather
+than inventing one. Each card links to `/signup?plan=…&interval=…`, and the
+form preselects both. What a plan is *for* — the bullet points under its
+name — is configuration per language, keyed by plan code.
+
 **As built.** Verification creates the organisation and, where the Control
 Plane holds a provider key and the plan is priced for the chosen interval,
 answers `awaiting_payment` with the price id, seat count, address and the two

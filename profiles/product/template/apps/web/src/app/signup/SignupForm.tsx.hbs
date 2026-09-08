@@ -5,7 +5,7 @@ import { useFormStatus } from 'react-dom'
 import { createTranslator } from '@{{projectSlug}}/i18n'
 import type { Locale, Translator } from '@{{projectSlug}}/i18n'
 import { Button, SelectField, TextField } from '@{{projectSlug}}/ui'
-import type { PublicPlan } from './actions'
+import type { PublicPlan } from '@{{projectSlug}}/branding'
 import { startSignup } from './actions'
 import { IDLE } from './state'
 
@@ -39,9 +39,22 @@ import { IDLE } from './state'
  * action runs on the server, where the request's locale is known, so this
  * component renders what it is given and translates only its own labels.
  */
-export function SignupForm({ plans, locale }: { plans: PublicPlan[]; locale: Locale }) {
+export function SignupForm({
+  plans,
+  locale,
+  initialPlan,
+  initialInterval = 'month',
+}: {
+  plans: PublicPlan[]
+  locale: Locale
+  /** The plan a pricing card chose, honoured only if it is in the list. */
+  initialPlan?: string
+  initialInterval?: 'month' | 'year'
+}) {
   const [state, action] = useActionState(startSignup, IDLE)
-  const [planCode, setPlanCode] = useState(plans[0]?.code ?? '')
+  const [planCode, setPlanCode] = useState(
+    plans.some((candidate) => candidate.code === initialPlan) ? initialPlan! : (plans[0]?.code ?? ''),
+  )
   const t = createTranslator(locale)
 
   if (state.status === 'ok') {
@@ -127,11 +140,21 @@ export function SignupForm({ plans, locale }: { plans: PublicPlan[]; locale: Loc
           <legend className="text-sm font-medium text-ink">{t('signup.form.interval')}</legend>
           <div className="flex flex-wrap gap-4">
             <label className="flex items-center gap-2 text-sm text-ink">
-              <input type="radio" name="billingInterval" value="month" defaultChecked />
+              <input
+                type="radio"
+                name="billingInterval"
+                value="month"
+                defaultChecked={initialInterval !== 'year'}
+              />
               {t('signup.form.interval.month')}
             </label>
             <label className="flex items-center gap-2 text-sm text-ink">
-              <input type="radio" name="billingInterval" value="year" />
+              <input
+                type="radio"
+                name="billingInterval"
+                value="year"
+                defaultChecked={initialInterval === 'year'}
+              />
               {t('signup.form.interval.year')}
             </label>
           </div>

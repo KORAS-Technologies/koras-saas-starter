@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Script from 'next/script'
-import { AuthCard, Button, ButtonLink } from '@{{projectSlug}}/ui'
+import { AuthCard, Button, ButtonLink, PADDLE_JS, paddleEnvironment } from '@{{projectSlug}}/ui'
+import type { PaddleJs } from '@{{projectSlug}}/ui'
 import { productConfig } from '@{{projectSlug}}/branding'
 import { createTranslator } from '@{{projectSlug}}/i18n'
 import type { Locale } from '@{{projectSlug}}/i18n'
@@ -38,42 +39,6 @@ import type { CheckoutDetails } from './state'
 
 type Phase = 'loading' | 'open' | 'closed' | 'paid' | 'failed'
 
-interface PaddleJs {
-  Environment: { set(environment: 'sandbox' | 'production'): void }
-  Initialize(options: {
-    token: string
-    eventCallback?: (event: { name?: string }) => void
-  }): void
-  Checkout: {
-    open(options: {
-      items: { priceId: string; quantity: number }[]
-      customer?: { email?: string }
-      customData?: Record<string, string>
-      settings?: { displayMode?: 'overlay' | 'inline'; locale?: string }
-    }): void
-  }
-}
-
-declare global {
-  interface Window {
-    Paddle?: PaddleJs
-  }
-}
-
-const PADDLE_JS = 'https://cdn.paddle.com/paddle/v2/paddle.js'
-
-/**
- * Which Paddle the token belongs to.
- *
- * `production` only when said so. The default is the sandbox, so a product
- * deployed with a token and no environment setting opens a checkout that
- * takes no real money -- the wrong default here would be one that charges a
- * card from a test.
- */
-function environment(): 'sandbox' | 'production' {
-  return process.env.NEXT_PUBLIC_PADDLE_ENVIRONMENT === 'production' ? 'production' : 'sandbox'
-}
-
 export function Checkout({
   checkout,
   organizationSlug,
@@ -91,7 +56,7 @@ export function Checkout({
   const initialised = useRef(false)
 
   const open = useCallback(() => {
-    const paddle = window.Paddle
+    const paddle: PaddleJs | undefined = window.Paddle
     if (!paddle) return
     setPhase('open')
     paddle.Checkout.open({
@@ -114,7 +79,7 @@ export function Checkout({
     const paddle = window.Paddle
     if (!paddle || !token || initialised.current) return
     initialised.current = true
-    paddle.Environment.set(environment())
+    paddle.Environment.set(paddleEnvironment(process.env.NEXT_PUBLIC_PADDLE_ENVIRONMENT))
     paddle.Initialize({
       token,
       eventCallback: (event) => {

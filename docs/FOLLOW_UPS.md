@@ -1578,6 +1578,15 @@ deciding anything from them. The "first gated module" turned out to be
 already there: the shell shipped `reports` locked and `insights` hidden on
 2026-09-01, so what this phase added is the sentence that explains why.
 
+**The pricing section, 2026-09-07.** The flow the design opens with started
+at a page nobody had built. `/#pricing` now sits on both public homepages:
+plans from the platform's public catalogue, read on the server; prices from
+Paddle's price preview, rendered in the browser with the public token, so no
+amount lives in this repository; each card into the signup form with the plan
+and interval preselected. `parsePublicPlans` moved into `packages/branding`
+beside `parseEntitlements`, and the signup action reads through the same
+loader as the section, so the two never disagree about what is on sale.
+
 **Phase 5's code, 2026-09-06.** The provider adapter moved into
 `python-packages/koras-billing` so the worker could hold one, and the
 reconciliation engine gained `billing.subscription`: every held subscription

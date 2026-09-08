@@ -61,8 +61,19 @@ export async function generateMetadata(): Promise<Metadata> {
  */
 export const dynamic = 'force-dynamic'
 
-export default async function SignupPage() {
-  const [locale, t] = await Promise.all([currentLocale(), translator()])
+export default async function SignupPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ plan?: string; interval?: string }>
+}) {
+  // What the pricing card chose, if the visitor came from one. Presentation
+  // only: the form validates the plan against the catalogue it renders, and
+  // the Control Plane validates everything again.
+  const [{ plan: initialPlan, interval: initialInterval }, locale, t] = await Promise.all([
+    searchParams,
+    currentLocale(),
+    translator(),
+  ])
   const { product, marketing } = productConfig
 
   // Configured, and therefore asked first: a product that is invitation-only is
@@ -106,7 +117,12 @@ export default async function SignupPage() {
           </>
         }
       >
-        <SignupForm plans={plans} locale={locale} />
+        <SignupForm
+          plans={plans}
+          locale={locale}
+          initialPlan={initialPlan}
+          initialInterval={initialInterval === 'year' ? 'year' : 'month'}
+        />
       </AuthCard>
     </AuthLayout>
   )

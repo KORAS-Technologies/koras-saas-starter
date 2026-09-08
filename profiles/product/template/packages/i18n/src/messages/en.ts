@@ -60,6 +60,18 @@ export const en = {
   'subscription.closed.descriptionMember':
     'Your data is kept and nothing is lost. An administrator of your organisation can choose a plan to reopen {product}.',
   'subscription.closed.action': 'Choose a plan',
+
+  'pricing.monthly': 'Monthly',
+  'pricing.yearly': 'Yearly',
+  'pricing.billing': 'Billing period',
+  'pricing.perSeatMonth': 'per seat, per month',
+  'pricing.perSeatYear': 'per seat, per year',
+  'pricing.choose': 'Start free trial',
+  'pricing.priceAtCheckout': 'Price shown at checkout',
+  'pricing.loading': 'Fetching the price…',
+  'pricing.seatsRange': '{min} to {max} seats',
+  'pricing.seatsFrom': 'From {min} seats',
+  'pricing.singleSeat': 'Any number of seats',
   'shell.roleAdministrator': 'Administrator',
   'shell.roleMember': 'Member',
 

@@ -567,6 +567,21 @@ export interface MarketingConfig {
    */
   trustNote: string
 
+  /**
+   * The pricing section's words. Never its numbers.
+   *
+   * The plans come from the Control Plane's public catalogue and the amounts
+   * from the payment provider's price preview, so what a product configures
+   * here is the sentence above the cards, the note below them, and what each
+   * plan is *for* -- `planHighlights`, keyed by plan code, the bullet points
+   * under a plan's name. A plan the map does not name shows no bullets.
+   */
+  pricingEyebrow: string
+  pricingTitle: string
+  pricingDescription: string
+  pricingNote: string
+  planHighlights: Readonly<Record<string, readonly string[]>>
+
   ctaTitle: string
   ctaDescription: string
   ctaPrimary: Cta
@@ -713,6 +728,7 @@ export const productConfig: ProductConfig = {
       marketing: {
         nav: [
           { label: 'Funktionen', href: '/#features' },
+          { label: 'Preise', href: '/#pricing' },
           { label: 'Ergebnisse', href: '/#outcomes' },
           { label: 'So funktioniert es', href: '/#how-it-works' },
           { label: 'Sicherheit', href: '/#security' },
@@ -877,6 +893,30 @@ export const productConfig: ProductConfig = {
         trustNote:
           '{{projectName}} erhebt keinen Zertifizierungsanspruch. Ergänzen Sie hier erst einen, wenn er geprüft und erteilt wurde.',
 
+        pricingEyebrow: 'Preise',
+        pricingTitle: 'Ein Preis pro Platz, und vorher eine kostenlose Testphase',
+        pricingDescription:
+          'Jeder Tarif beginnt mit einer 14-tägigen kostenlosen Testphase. Hinterlegen Sie bei der Registrierung eine Karte; bis zum Ende der Testphase wird nichts berechnet, und Sie können vorher kündigen.',
+        pricingNote:
+          'Preise werden in Ihrer Währung angezeigt, gegebenenfalls mit Steuern. Jährliche Abrechnung wird einmal im Jahr berechnet.',
+        planHighlights: {
+          starter: [
+            'Alles, was ein Team für den Betrieb braucht',
+            'Single Sign-on und rollenbasierter Zugriff',
+            'Support per E-Mail',
+          ],
+          pro: [
+            'Alles aus Starter',
+            'Erweiterte Berichte und Auswertungen',
+            'Bevorzugter Support',
+          ],
+          premium: [
+            'Alles aus Pro',
+            'Eigene Domain und White-Labeling',
+            'Eine feste Ansprechperson',
+          ],
+        },
+
         ctaTitle: 'Bereit, mit {{projectName}} zu starten?',
         ctaDescription:
           'Erstellen Sie in wenigen Minuten ein Konto, oder melden Sie sich an, wenn Ihre Organisation bereits eingerichtet ist.',
@@ -888,6 +928,7 @@ export const productConfig: ProductConfig = {
             title: 'Produkt',
             links: [
               { label: 'Funktionen', href: '/#features' },
+              { label: 'Preise', href: '/#pricing' },
               { label: 'Ergebnisse', href: '/#outcomes' },
               { label: 'So funktioniert es', href: '/#how-it-works' },
               { label: 'Sicherheit', href: '/#security' },
@@ -930,6 +971,7 @@ export const productConfig: ProductConfig = {
       marketing: {
         nav: [
           { label: 'Funciones', href: '/#features' },
+          { label: 'Precios', href: '/#pricing' },
           { label: 'Resultados', href: '/#outcomes' },
           { label: 'Cómo funciona', href: '/#how-it-works' },
           { label: 'Seguridad', href: '/#security' },
@@ -1094,6 +1136,30 @@ export const productConfig: ProductConfig = {
         trustNote:
           '{{projectName}} no reclama ninguna certificación. Añada una aquí solo cuando haya sido auditada y emitida.',
 
+        pricingEyebrow: 'Precios',
+        pricingTitle: 'Un precio por puesto, y una prueba gratuita antes de todo',
+        pricingDescription:
+          'Todos los planes empiezan con una prueba gratuita de 14 días. Añada una tarjeta al registrarse; no se cobra nada hasta que termine la prueba, y puede cancelar antes.',
+        pricingNote:
+          'Los precios se muestran en su moneda, con impuestos cuando corresponda. La facturación anual se cobra una vez al año.',
+        planHighlights: {
+          starter: [
+            'Todo lo necesario para un equipo',
+            'Inicio de sesión único y acceso por roles',
+            'Soporte por correo electrónico',
+          ],
+          pro: [
+            'Todo lo de Starter',
+            'Informes y análisis avanzados',
+            'Soporte prioritario',
+          ],
+          premium: [
+            'Todo lo de Pro',
+            'Su propio dominio y marca blanca',
+            'Una persona de contacto asignada',
+          ],
+        },
+
         ctaTitle: '¿Listo para empezar con {{projectName}}?',
         ctaDescription:
           'Cree una cuenta en un par de minutos, o inicie sesión si su organización ya está configurada.',
@@ -1105,6 +1171,7 @@ export const productConfig: ProductConfig = {
             title: 'Producto',
             links: [
               { label: 'Funciones', href: '/#features' },
+              { label: 'Precios', href: '/#pricing' },
               { label: 'Resultados', href: '/#outcomes' },
               { label: 'Cómo funciona', href: '/#how-it-works' },
               { label: 'Seguridad', href: '/#security' },
@@ -1136,6 +1203,7 @@ export const productConfig: ProductConfig = {
     // leads nowhere costs more trust than a short header does.
     nav: [
       { label: 'Features', href: '/#features' },
+      { label: 'Pricing', href: '/#pricing' },
       { label: 'Outcomes', href: '/#outcomes' },
       { label: 'How it works', href: '/#how-it-works' },
       { label: 'Security', href: '/#security' },
@@ -1296,6 +1364,30 @@ export const productConfig: ProductConfig = {
     trustNote:
       '{{projectName}} makes no certification claim. Add one here only once it has been audited and issued.',
 
+    pricingEyebrow: 'Pricing',
+    pricingTitle: 'One price per seat, and a free trial before any of it',
+    pricingDescription:
+      'Every plan starts with a 14-day free trial. Add a card when you sign up; nothing is charged until the trial ends, and you can cancel before then.',
+    pricingNote:
+      'Prices are shown in your currency, with tax where it applies. Yearly billing is charged once a year.',
+    planHighlights: {
+      starter: [
+        'Everything you need to run one team',
+        'Single sign-on and role-based access',
+        'Email support',
+      ],
+      pro: [
+        'Everything in Starter',
+        'Advanced reporting and insights',
+        'Priority support',
+      ],
+      premium: [
+        'Everything in Pro',
+        'Your own domain and white labelling',
+        'A named contact',
+      ],
+    },
+
     ctaTitle: 'Ready to get started with {{projectName}}?',
     ctaDescription:
       'Create an account in a couple of minutes, or sign in if your organisation is already set up.',
@@ -1307,6 +1399,7 @@ export const productConfig: ProductConfig = {
         title: 'Product',
         links: [
           { label: 'Features', href: '/#features' },
+          { label: 'Pricing', href: '/#pricing' },
           { label: 'Outcomes', href: '/#outcomes' },
           { label: 'How it works', href: '/#how-it-works' },
           { label: 'Security', href: '/#security' },
@@ -1615,6 +1708,62 @@ export function parseEntitlements(raw: unknown): EntitlementSet {
           }
         : null,
   }
+}
+
+/**
+ * A plan somebody without an account may choose, as the platform's anonymous
+ * catalogue answers it.
+ *
+ * The price ids are references into the payment provider's catalogue and are
+ * public by nature: the checkout is opened on one from the browser, and it
+ * reveals nothing the pricing page does not. A null id means the plan is not
+ * sold in that interval; two nulls mean a free trial, which is what every
+ * plan was before the billing work.
+ */
+export interface PublicPlan {
+  code: string
+  name: string
+  price_id_month: string | null
+  price_id_year: string | null
+  min_seats: number
+  max_seats: number | null
+}
+
+/**
+ * Turn the platform's answer into the plans the pricing section and the
+ * signup form render.
+ *
+ * Here beside `parseEntitlements`, for the same reason: this is the half
+ * worth testing without a network. A Control Plane from before the billing
+ * work answers two fields per plan, and this fills the rest in as "free
+ * trial, one seat", which is what it was selling. Anything that is not a
+ * list is an empty catalogue, and a row with no code is dropped rather than
+ * guessed at -- a plan the form cannot name is a plan the platform would
+ * refuse.
+ */
+export function parsePublicPlans(raw: unknown): PublicPlan[] {
+  if (!Array.isArray(raw)) return []
+  const plans: PublicPlan[] = []
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const plan = entry as Record<string, unknown>
+    if (typeof plan.code !== 'string' || plan.code === '') continue
+    plans.push({
+      code: plan.code,
+      name: typeof plan.name === 'string' && plan.name !== '' ? plan.name : plan.code,
+      price_id_month:
+        typeof plan.price_id_month === 'string' && plan.price_id_month !== ''
+          ? plan.price_id_month
+          : null,
+      price_id_year:
+        typeof plan.price_id_year === 'string' && plan.price_id_year !== ''
+          ? plan.price_id_year
+          : null,
+      min_seats: typeof plan.min_seats === 'number' && plan.min_seats >= 1 ? plan.min_seats : 1,
+      max_seats: typeof plan.max_seats === 'number' ? plan.max_seats : null,
+    })
+  }
+  return plans
 }
 
 /** Tenant-configured feature switches, from the tenant settings row. */

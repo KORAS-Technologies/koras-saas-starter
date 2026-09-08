@@ -53,6 +53,18 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'subscription.closed.descriptionMember':
     'Sus datos se conservan y no se pierde nada. Un administrador de su organización puede elegir un plan para reabrir {product}.',
   'subscription.closed.action': 'Elegir un plan',
+
+  'pricing.monthly': 'Mensual',
+  'pricing.yearly': 'Anual',
+  'pricing.billing': 'Periodo de facturación',
+  'pricing.perSeatMonth': 'por puesto y mes',
+  'pricing.perSeatYear': 'por puesto y año',
+  'pricing.choose': 'Empezar la prueba gratuita',
+  'pricing.priceAtCheckout': 'Precio al pagar',
+  'pricing.loading': 'Obteniendo el precio…',
+  'pricing.seatsRange': 'De {min} a {max} puestos',
+  'pricing.seatsFrom': 'Desde {min} puestos',
+  'pricing.singleSeat': 'Cualquier número de puestos',
   'shell.lockedFeature': 'No activado para su organización',
   'shell.roleAdministrator': 'Administrador',
   'shell.roleMember': 'Miembro',

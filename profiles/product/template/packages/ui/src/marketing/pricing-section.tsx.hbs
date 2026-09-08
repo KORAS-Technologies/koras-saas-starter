@@ -1,0 +1,80 @@
+import { marketingFor } from '@{{projectSlug}}/branding'
+import type { PublicPlan } from '@{{projectSlug}}/branding'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale } from '@{{projectSlug}}/i18n'
+import { Section } from '../primitives/section'
+import { PricingPlans } from './pricing-plans'
+
+/**
+ * What the product costs, on the page a stranger reads first.
+ *
+ * The plans are the Control Plane's -- the same public catalogue the signup
+ * form offers, read on the server by the page and handed in -- so this section
+ * cannot list a plan that is not on sale. The prices are the payment
+ * provider's, rendered in the browser from a price preview with the public
+ * token, so this section cannot show an amount the checkout will not charge.
+ * Nothing about a price is typed into this repository, which is the whole
+ * point: a pricing page that is copied by hand is a pricing page that is wrong
+ * the first time somebody changes a price and forgets it.
+ *
+ * Nothing on sale renders nothing at all. A new estate has no self-serve plan
+ * until somebody marks one, and a pricing section with no plans is a claim
+ * that the product is free.
+ *
+ * What the product *says* about each plan -- the eyebrow, the title, the
+ * bullet points under a plan's name -- is configuration, per language, like
+ * every other sentence on this page.
+ */
+export function PricingSection({
+  locale,
+  plans,
+  paddleToken,
+  paddleEnvironment,
+}: {
+  locale: Locale
+  plans: readonly PublicPlan[]
+  /** The public client-side token, or empty where this product takes no card. */
+  paddleToken: string
+  paddleEnvironment: string | undefined
+}) {
+  if (plans.length === 0) return null
+  const marketing = marketingFor(locale)
+  const t = createTranslator(locale)
+
+  // Built here rather than inline: a JSX prop given an object literal opens
+  // with two braces, which the generator reads as a Handlebars expression.
+  const labels = {
+    monthly: t('pricing.monthly'),
+    yearly: t('pricing.yearly'),
+    billing: t('pricing.billing'),
+    perSeatMonth: t('pricing.perSeatMonth'),
+    perSeatYear: t('pricing.perSeatYear'),
+    choose: t('pricing.choose'),
+    priceAtCheckout: t('pricing.priceAtCheckout'),
+    loading: t('pricing.loading'),
+    seatsRange: t('pricing.seatsRange'),
+    seatsFrom: t('pricing.seatsFrom'),
+    singleSeat: t('pricing.singleSeat'),
+  }
+
+  return (
+    <Section
+      id="pricing"
+      tone="muted"
+      eyebrow={marketing.pricingEyebrow}
+      title={marketing.pricingTitle}
+      description={marketing.pricingDescription}
+      headingClassName="max-w-3xl"
+    >
+      <PricingPlans
+        plans={plans}
+        highlights={marketing.planHighlights}
+        note={marketing.pricingNote}
+        paddleToken={paddleToken}
+        paddleEnvironment={paddleEnvironment}
+        locale={locale}
+        labels={labels}
+      />
+    </Section>
+  )
+}

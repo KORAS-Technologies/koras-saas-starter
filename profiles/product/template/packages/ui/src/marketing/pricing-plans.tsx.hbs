@@ -1,0 +1,215 @@
+'use client'
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import Script from 'next/script'
+import type { PublicPlan } from '@{{projectSlug}}/branding'
+import type { Locale } from '@{{projectSlug}}/i18n'
+import { PADDLE_JS, paddleEnvironment } from '../lib/paddle'
+import type { PaddleJs } from '../lib/paddle'
+import { ButtonLink } from '../primitives/button'
+import { Card } from '../primitives/card'
+import { Icon } from '../primitives/icon'
+
+/**
+ * The plan cards, with the prices the provider quotes.
+ *
+ * A client component for one reason: the amount. Paddle's price preview is a
+ * browser call with the public token, and it answers in the visitor's own
+ * currency with their own tax applied, which no server render could know.
+ * Until it answers -- and where this product takes no card at all -- the card
+ * says the price is shown at checkout rather than inventing one.
+ *
+ * The toggle between monthly and yearly is the only state. It appears only
+ * when at least one plan is sold both ways; a plan sold one way is shown that
+ * way whatever the toggle says, and a free plan -- no price in either interval
+ * -- is shown as a trial with no amount, because that is what it is.
+ *
+ * Each card's button carries the plan and the interval into the signup form,
+ * which preselects them. The seat count is asked for there, not here: a
+ * pricing card that asks how many people you are is a form, and this is a
+ * page.
+ */
+
+export interface PricingLabels {
+  monthly: string
+  yearly: string
+  billing: string
+  perSeatMonth: string
+  perSeatYear: string
+  choose: string
+  priceAtCheckout: string
+  loading: string
+  /** `{min}` and `{max}` */
+  seatsRange: string
+  /** `{min}` */
+  seatsFrom: string
+  singleSeat: string
+}
+
+type Interval = 'month' | 'year'
+
+function fill(template: string, values: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ''))
+}
+
+export function PricingPlans({
+  plans,
+  highlights,
+  note,
+  paddleToken,
+  paddleEnvironment: environmentSetting,
+  locale,
+  labels,
+}: {
+  plans: readonly PublicPlan[]
+  highlights: Readonly<Record<string, readonly string[]>>
+  note: string
+  paddleToken: string
+  paddleEnvironment: string | undefined
+  locale: Locale
+  labels: PricingLabels
+}) {
+  const sellsBoth = plans.some((plan) => plan.price_id_month && plan.price_id_year)
+  const [interval, setInterval] = useState<Interval>('month')
+  const [prices, setPrices] = useState<Record<string, string>>({})
+  const [previewed, setPreviewed] = useState(false)
+
+  // Every price this page could show, asked for in one call.
+  const priceIds = useMemo(
+    () =>
+      plans.flatMap((plan) => [plan.price_id_month, plan.price_id_year]).filter(
+        (id): id is string => Boolean(id),
+      ),
+    [plans],
+  )
+
+  const preview = useCallback(async () => {
+    const paddle: PaddleJs | undefined = window.Paddle
+    if (!paddle || !paddleToken || priceIds.length === 0 || previewed) return
+    setPreviewed(true)
+    try {
+      paddle.Environment.set(paddleEnvironment(environmentSetting))
+      paddle.Initialize({ token: paddleToken })
+      const answer = await paddle.PricePreview({
+        items: priceIds.map((priceId) => ({ priceId, quantity: 1 })),
+      })
+      const quoted: Record<string, string> = {}
+      for (const line of answer.data.details.lineItems) {
+        quoted[line.price.id] = line.formattedTotals.total
+      }
+      setPrices(quoted)
+    } catch {
+      // The provider did not answer. The cards keep saying the price is
+      // shown at checkout, which is true, rather than showing nothing or a
+      // stale number.
+    }
+  }, [environmentSetting, paddleToken, previewed, priceIds])
+
+  useEffect(() => {
+    if (window.Paddle) void preview()
+  }, [preview])
+
+  const canPreview = paddleToken !== '' && priceIds.length > 0
+
+  return (
+    <div className="flex flex-col gap-8" data-testid="pricing">
+      {canPreview ? <Script src={PADDLE_JS} strategy="afterInteractive" onLoad={preview} /> : null}
+
+      {sellsBoth ? (
+        <fieldset className="mx-auto flex items-center gap-1 rounded-full border border-line bg-surface p-1">
+          <legend className="sr-only">{labels.billing}</legend>
+          {(['month', 'year'] as const).map((choice) => (
+            <label
+              key={choice}
+              className={`cursor-pointer rounded-full px-4 py-1.5 text-sm font-medium ${
+                interval === choice ? 'bg-brand text-brand-foreground' : 'text-ink-muted'
+              }`}
+            >
+              <input
+                type="radio"
+                name="pricing-interval"
+                value={choice}
+                checked={interval === choice}
+                onChange={() => setInterval(choice)}
+                className="sr-only"
+              />
+              {choice === 'month' ? labels.monthly : labels.yearly}
+            </label>
+          ))}
+        </fieldset>
+      ) : null}
+
+      <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {plans.map((plan) => {
+          const shown: Interval | null = plan.price_id_month && plan.price_id_year
+            ? interval
+            : plan.price_id_year
+              ? 'year'
+              : plan.price_id_month
+                ? 'month'
+                : null
+          const priceId = shown === 'year' ? plan.price_id_year : plan.price_id_month
+          const amount = priceId ? prices[priceId] : undefined
+          const seats =
+            plan.max_seats === null
+              ? plan.min_seats === 1
+                ? labels.singleSeat
+                : fill(labels.seatsFrom, { min: plan.min_seats })
+              : fill(labels.seatsRange, { min: plan.min_seats, max: plan.max_seats })
+          const href = shown
+            ? `/signup?plan=${encodeURIComponent(plan.code)}&interval=${shown}`
+            : `/signup?plan=${encodeURIComponent(plan.code)}`
+
+          return (
+            <Card key={plan.code} as="li" className="flex h-full flex-col">
+              <h3 className="font-display text-xl font-bold text-ink">{plan.name}</h3>
+
+              <p className="mt-4 min-h-[3.5rem]">
+                {shown === null ? (
+                  <span className="font-display text-3xl font-bold text-ink">{labels.priceAtCheckout}</span>
+                ) : amount ? (
+                  <>
+                    <span className="font-display text-3xl font-bold text-ink">{amount}</span>
+                    <span className="ml-1 text-sm text-ink-muted">
+                      {shown === 'year' ? labels.perSeatYear : labels.perSeatMonth}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-sm text-ink-muted" aria-live="polite">
+                    {canPreview ? labels.loading : labels.priceAtCheckout}
+                  </span>
+                )}
+              </p>
+
+              <p className="mt-1 text-sm text-ink-muted">{seats}</p>
+
+              {highlights[plan.code]?.length ? (
+                <ul className="mt-5 flex flex-col gap-2 text-sm leading-6 text-ink">
+                  {highlights[plan.code]!.map((line) => (
+                    <li key={line} className="flex gap-2">
+                      <span className="mt-1 shrink-0 text-brand" aria-hidden="true">
+                        <Icon name="check" />
+                      </span>
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              <div className="mt-auto pt-6">
+                <ButtonLink href={href} size="lg" className="w-full" testId={`pricing-${plan.code}-choose`}>
+                  {labels.choose}
+                </ButtonLink>
+              </div>
+            </Card>
+          )
+        })}
+      </ul>
+
+      {note ? <p className="text-center text-sm leading-6 text-ink-muted">{note}</p> : null}
+      <span className="sr-only" lang={locale}>
+        {labels.billing}
+      </span>
+    </div>
+  )
+}

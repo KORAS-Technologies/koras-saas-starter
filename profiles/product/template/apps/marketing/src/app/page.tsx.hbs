@@ -4,6 +4,7 @@ import {
   HeroSection,
   HowItWorks,
   OutcomeSection,
+  PricingSection,
   ProductPreview,
   PublicFooter,
   PublicHeader,
@@ -11,6 +12,7 @@ import {
   ValueStrip,
 } from '@{{projectSlug}}/ui'
 import { currentLocale } from '../lib/locale'
+import { loadPublicPlans } from '../lib/plans'
 
 /**
  * The marketing homepage.
@@ -30,7 +32,10 @@ import { currentLocale } from '../lib/locale'
  * make this a cached document again.
  */
 export default async function MarketingPage() {
-  const locale = await currentLocale()
+  // The plans are the platform's, read here on the server; the prices are the
+  // provider's, read in the browser by the section. Neither is typed into
+  // this repository.
+  const [locale, plans] = await Promise.all([currentLocale(), loadPublicPlans()])
 
   return (
     <>
@@ -42,6 +47,12 @@ export default async function MarketingPage() {
         <OutcomeSection locale={locale} />
         <HowItWorks locale={locale} />
         <ProductPreview locale={locale} />
+        <PricingSection
+          locale={locale}
+          plans={plans}
+          paddleToken={process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN ?? ''}
+          paddleEnvironment={process.env.NEXT_PUBLIC_PADDLE_ENVIRONMENT}
+        />
         <TrustSection locale={locale} />
         <CtaSection locale={locale} />
       </main>
