@@ -916,7 +916,7 @@ export const productConfig: ProductConfig = {
             'Eine feste Ansprechperson',
           ],
           enterprise: [
-            'Alles aus Premium',
+            'Alles aus Business',
             'Single Sign-on mit Ihrem eigenen Identitätsanbieter',
             'Vertrag, Rechnung und ein fester technischer Ansprechpartner',
           ],
@@ -1164,7 +1164,7 @@ export const productConfig: ProductConfig = {
             'Una persona de contacto asignada',
           ],
           enterprise: [
-            'Todo lo de Premium',
+            'Todo lo de Business',
             'Inicio de sesión único con su propio proveedor de identidad',
             'Contrato, factura y un ingeniero asignado',
           ],
@@ -1397,7 +1397,7 @@ export const productConfig: ProductConfig = {
         'A named contact',
       ],
       enterprise: [
-        'Everything in Premium',
+        'Everything in Business',
         'Single sign-on with your own identity provider',
         'A contract, an invoice and a named engineer',
       ],
