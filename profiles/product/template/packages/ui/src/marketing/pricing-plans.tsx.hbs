@@ -89,43 +89,55 @@ export function PricingPlans({
   const [interval, setInterval] = useState<Interval>('month')
   const [prices, setPrices] = useState<Record<string, string>>({})
   const [previewed, setPreviewed] = useState(false)
+  // The provider refused or never answered. The cards say the price is at
+  // the checkout, which is true, rather than "fetching" for ever.
+  const [failed, setFailed] = useState(false)
 
-  // Every price this page could show, asked for in one call.
-  const priceIds = useMemo(
+  // Every price this page could show, asked for in one call -- each at its
+  // plan's least seats. The provider's price carries a quantity range of its
+  // own, and a preview below it is refused for the whole request: asking for
+  // one seat of a plan that starts at ten left every card on the page
+  // "fetching" for ever. The amount shown is per seat whatever the quantity
+  // asked, because the provider quotes a unit total beside the line total.
+  const items = useMemo(
     () =>
-      plans.flatMap((plan) => [plan.price_id_month, plan.price_id_year]).filter(
-        (id): id is string => Boolean(id),
+      plans.flatMap((plan) =>
+        [plan.price_id_month, plan.price_id_year]
+          .filter((id): id is string => Boolean(id))
+          .map((priceId) => ({ priceId, quantity: plan.min_seats })),
       ),
     [plans],
   )
 
   const preview = useCallback(async () => {
     const paddle: PaddleJs | undefined = window.Paddle
-    if (!paddle || !paddleToken || priceIds.length === 0 || previewed) return
+    if (!paddle || !paddleToken || items.length === 0 || previewed) return
     setPreviewed(true)
     try {
       paddle.Environment.set(paddleEnvironment(environmentSetting))
       paddle.Initialize({ token: paddleToken })
-      const answer = await paddle.PricePreview({
-        items: priceIds.map((priceId) => ({ priceId, quantity: 1 })),
-      })
+      const answer = await paddle.PricePreview({ items })
       const quoted: Record<string, string> = {}
       for (const line of answer.data.details.lineItems) {
-        quoted[line.price.id] = line.formattedTotals.total
+        // Per seat. The line total is for the quantity asked, which is the
+        // plan's floor, and a card that showed ten seats' worth as the price
+        // would be a card that lied by a factor of ten.
+        quoted[line.price.id] = line.formattedUnitTotals?.total ?? line.formattedTotals.total
       }
       setPrices(quoted)
     } catch {
-      // The provider did not answer. The cards keep saying the price is
-      // shown at checkout, which is true, rather than showing nothing or a
-      // stale number.
+      // The provider did not answer, or refused. The cards say the price is
+      // shown at checkout, which is true, rather than showing nothing, a
+      // stale number, or a spinner that never stops.
+      setFailed(true)
     }
-  }, [environmentSetting, paddleToken, previewed, priceIds])
+  }, [environmentSetting, paddleToken, previewed, items])
 
   useEffect(() => {
     if (window.Paddle) void preview()
   }, [preview])
 
-  const canPreview = paddleToken !== '' && priceIds.length > 0
+  const canPreview = paddleToken !== '' && items.length > 0 && !failed
 
   return (
     <div className="flex flex-col gap-8" data-testid="pricing">
