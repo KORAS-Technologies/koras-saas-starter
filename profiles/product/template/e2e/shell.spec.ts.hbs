@@ -101,12 +101,10 @@ test('a plan-gated module is offered, not merely missing', async ({ page }, test
   await expect(page.getByRole('button', { name: /Insights/ })).toHaveCount(0)
 })
 
-test('the appearance switch repaints the page and survives a navigation', async ({
-  page,
-}, testInfo) => {
-  test.skip(testInfo.project.name === MOBILE, 'the control is hidden below sm')
-
-  await page.goto('/dashboard')
+test('the appearance switch repaints the page and survives a navigation', async ({ page }) => {
+  // The control lives in Settings, at every width; it used to be in the
+  // header and hidden below `sm`, which is why this ran on desktop only.
+  await page.goto('/dashboard/settings')
   const background = () =>
     page.evaluate(() => getComputedStyle(document.body).backgroundColor)
 
@@ -123,10 +121,11 @@ test('the appearance switch repaints the page and survives a navigation', async 
   // A fresh document, not a client navigation: this is what the pre-paint
   // script in the layout exists for, and a client-side-only implementation
   // passes every assertion above and fails this one.
-  await page.goto('/dashboard/settings')
+  await page.goto('/dashboard')
   expect(await background()).toBe(dark)
 
   // System releases the override and hands the page back to the machine.
+  await page.goto('/dashboard/settings')
   await page.getByRole('radio', { name: 'System' }).click()
   expect(await page.evaluate(() => document.documentElement.style.colorScheme)).toBe('')
 })

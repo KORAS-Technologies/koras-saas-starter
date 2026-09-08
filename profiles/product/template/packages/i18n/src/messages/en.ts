@@ -280,6 +280,9 @@ export const en = {
     'The language {product} is shown to you in, on this device. It applies to the interface only; what your organisation puts into the product stays as it was entered.',
   'settings.language.label': 'Show {product} in',
   'settings.language.save': 'Change language',
+  'settings.appearance.title': 'Appearance',
+  'settings.appearance.description':
+    'Light, dark, or whatever this device is set to. Remembered in this browser only.',
 
   /* --------------------------------------------------------- team & access */
   'team.title': 'Team & Access',

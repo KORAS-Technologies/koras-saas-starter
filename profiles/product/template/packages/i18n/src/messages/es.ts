@@ -276,6 +276,9 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'El idioma en que se le muestra {product} en este dispositivo. Solo afecta a la interfaz; lo que su organización introduce en el producto se conserva tal como se escribió.',
   'settings.language.label': 'Mostrar {product} en',
   'settings.language.save': 'Cambiar idioma',
+  'settings.appearance.title': 'Apariencia',
+  'settings.appearance.description':
+    'Claro, oscuro o lo que tenga configurado este dispositivo. Se recuerda solo en este navegador.',
 
   /* --------------------------------------------------------- team & access */
   'team.title': 'Equipo y acceso',

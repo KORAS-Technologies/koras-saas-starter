@@ -511,9 +511,11 @@ reviewed commit, because a settings screen that wrote it at runtime would put
 a second authority beside the one the frontend already reads from. The language
 is a choice about *this person on this device*: it changes nothing for anybody
 else, and the product already has to honour it from a cookie. So the form posts
-to the same `POST /api/locale` the header's switcher uses, and stores nothing
-anywhere else. The header carries the switcher too, beside the appearance
-toggle, and hides both below `sm` where Settings has room for them.
+to the same `POST /api/locale` the public footer's switcher uses, and stores
+nothing anywhere else. The appearance control sits beside it on the same
+page. Neither is in the header: both are choices about this person on this
+device, made once and rarely, and a header that carried them had two
+controls competing with the product's own actions.
 
 The sidebar's labels and the locked-module reasons are translated; its ids,
 routes and gates are not. `navigationFor(locale)` changes labels and nothing
