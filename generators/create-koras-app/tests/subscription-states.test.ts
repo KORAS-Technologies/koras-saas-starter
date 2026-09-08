@@ -53,7 +53,7 @@ describe('the notice', () => {
     expect(notice).toContain('testId="subscription-past-due"')
     expect(notice).toContain('data-testid="subscription-closed"')
     // The fall-through: nothing rendered.
-    expect(notice).toMatch(/\n  return null\n\}/)
+    expect(notice).toMatch(/\n {2}return null\n\}/)
   })
 
   it('offers the portal only to somebody who was given the link', () => {
