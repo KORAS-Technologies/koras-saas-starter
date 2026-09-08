@@ -48,12 +48,10 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   // and a name like this appearing in the code would mean somebody had started
   // storing a staff token.
   STAFF_TOKEN: "a shell variable in a worked example; the platform has no such setting",
-  // Two names from koras-control-plane, cited by FOLLOW_UPS F7 and F11 as the
-  // record of what the first deployment of a generated product found. They must
+  // A name from koras-control-plane, cited by FOLLOW_UPS F7 and F11 as the
+  // record of what the first deployment of a generated product found. It must
   // stay absent here: `send_signup_verification` is a Control Plane worker
-  // task, and `self_serve` is a column on its `plans` table -- the commercial
-  // catalogue is the platform's, and a product repository holding either would
-  // mean a boundary had moved.
+  // task, and a product repository holding it would mean a boundary had moved.
   //
   // `install_rls` was the third and is no longer exempt. It was described here
   // as a Control Plane engine hook, which it was: the boundary moved on
@@ -67,7 +65,12 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   // nobody deletes, and the next reader takes it as a description of the
   // system.
   send_signup_verification: 'a Control Plane worker task; named in F7/F11, absent here by design',
-  self_serve: 'a column on the Control Plane plans table; no product repository has one',
+  // `self_serve` was exempted beside it as "a column on the Control Plane
+  // plans table; no product repository has one". It left the list on
+  // 2026-09-08 because the public catalogue now *publishes* the flag and the
+  // product reads it -- `canSignUp` in packages/branding decides which
+  // pricing card to draw from it -- without owning it: the column, and the
+  // decision of what to set it to, are still the platform's.
   // `past_due` was exempted here as "a Control Plane subscription status; a
   // product never decides one". It left the list on 2026-09-06 because the
   // product template now *names* it -- `SubscriptionNotice` renders the
