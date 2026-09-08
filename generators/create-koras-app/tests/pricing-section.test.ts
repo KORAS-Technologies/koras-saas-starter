@@ -29,7 +29,11 @@ describe('the section', () => {
 
   it("asks the provider for every price and never carries one of its own", () => {
     expect(plans).toContain('paddle.PricePreview(')
-    expect(plans).toContain('line.formattedTotals.total')
+    // Per seat, at each plan's least seats: the provider refuses a whole
+    // preview when one line is below its price's quantity floor.
+    expect(plans).toContain('quantity: plan.min_seats')
+    expect(plans).toContain('line.formattedUnitTotals?.total ?? line.formattedTotals.total')
+    expect(plans).toContain('setFailed(true)')
     // No currency amount anywhere in the section or the configuration.
     for (const source of [section, plans, read('packages', 'branding', 'src', 'index.ts.hbs')]) {
       expect(source).not.toMatch(/[$€£]\s?\d/)
@@ -38,7 +42,7 @@ describe('the section', () => {
 
   it('says the price is at the checkout where it cannot ask', () => {
     expect(plans).toContain('labels.priceAtCheckout')
-    expect(plans).toContain("const canPreview = paddleToken !== '' && priceIds.length > 0")
+    expect(plans).toContain("const canPreview = paddleToken !== '' && items.length > 0 && !failed")
   })
 
   it('carries the plan and the interval into the signup form', () => {
