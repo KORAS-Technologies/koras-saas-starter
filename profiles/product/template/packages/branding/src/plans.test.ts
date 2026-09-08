@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { parsePublicPlans } from './index.js'
+import { canSignUp, parsePublicPlans } from './index.js'
 
 /**
  * The public catalogue, as the pricing section and the signup form read it.
@@ -30,7 +30,31 @@ test('a priced plan comes through with its references and bounds', () => {
     price_id_year: 'pri_year',
     min_seats: 2,
     max_seats: 50,
+    self_serve: true,
   })
+})
+
+test('the platform says which plans a stranger may start, and silence means yes', () => {
+  const [sold, offered, older] = parsePublicPlans([
+    { code: 'enterprise', name: 'Enterprise', self_serve: false },
+    { code: 'pro', name: 'Pro', self_serve: true },
+    { code: 'starter', name: 'Starter' },
+  ])
+  assert.equal(sold?.self_serve, false)
+  assert.equal(offered?.self_serve, true)
+  // A platform from before the flag listed only what could be started.
+  assert.equal(older?.self_serve, true)
+})
+
+test('a price or the flag lets the form offer a plan; neither is a conversation', () => {
+  const [priced, trial, sold] = parsePublicPlans([
+    { code: 'premium', name: 'Premium', price_id_year: 'pri_year', self_serve: false },
+    { code: 'starter', name: 'Starter', self_serve: true },
+    { code: 'enterprise', name: 'Enterprise', self_serve: false },
+  ])
+  assert.equal(canSignUp(priced!), true)
+  assert.equal(canSignUp(trial!), true)
+  assert.equal(canSignUp(sold!), false)
 })
 
 test('an older platform answering two fields is a free trial with one seat', () => {

@@ -915,6 +915,11 @@ export const productConfig: ProductConfig = {
             'Eigene Domain und White-Labeling',
             'Eine feste Ansprechperson',
           ],
+          enterprise: [
+            'Alles aus Premium',
+            'Single Sign-on mit Ihrem eigenen Identitätsanbieter',
+            'Vertrag, Rechnung und ein fester technischer Ansprechpartner',
+          ],
         },
 
         ctaTitle: 'Bereit, mit {{projectName}} zu starten?',
@@ -1158,6 +1163,11 @@ export const productConfig: ProductConfig = {
             'Su propio dominio y marca blanca',
             'Una persona de contacto asignada',
           ],
+          enterprise: [
+            'Todo lo de Premium',
+            'Inicio de sesión único con su propio proveedor de identidad',
+            'Contrato, factura y un ingeniero asignado',
+          ],
         },
 
         ctaTitle: '¿Listo para empezar con {{projectName}}?',
@@ -1385,6 +1395,11 @@ export const productConfig: ProductConfig = {
         'Everything in Pro',
         'Your own domain and white labelling',
         'A named contact',
+      ],
+      enterprise: [
+        'Everything in Premium',
+        'Single sign-on with your own identity provider',
+        'A contract, an invoice and a named engineer',
       ],
     },
 
@@ -1727,6 +1742,27 @@ export interface PublicPlan {
   price_id_year: string | null
   min_seats: number
   max_seats: number | null
+  /**
+   * Whether a stranger may start on this plan without a conversation.
+   *
+   * The catalogue lists every active plan, including the ones a sales team
+   * sells; this is what separates a card with a trial button from a card
+   * with a contact address. A platform from before the flag was published
+   * listed only what could be started, so its silence reads as true.
+   */
+  self_serve: boolean
+}
+
+/**
+ * Whether the signup form may offer this plan.
+ *
+ * A price is enough on its own -- a checkout opens on it -- and so is the
+ * self-serve flag without one, which is the free trial. A plan with neither
+ * is on the pricing page as something to ask about, and the platform's
+ * signup route refuses it by the same rule, so the form must not list it.
+ */
+export function canSignUp(plan: PublicPlan): boolean {
+  return plan.self_serve || plan.price_id_month !== null || plan.price_id_year !== null
 }
 
 /**
@@ -1761,6 +1797,7 @@ export function parsePublicPlans(raw: unknown): PublicPlan[] {
           : null,
       min_seats: typeof plan.min_seats === 'number' && plan.min_seats >= 1 ? plan.min_seats : 1,
       max_seats: typeof plan.max_seats === 'number' ? plan.max_seats : null,
+      self_serve: typeof plan.self_serve === 'boolean' ? plan.self_serve : true,
     })
   }
   return plans

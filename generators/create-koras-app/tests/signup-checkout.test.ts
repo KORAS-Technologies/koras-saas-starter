@@ -54,7 +54,9 @@ describe('the form', () => {
     // The rule moved into `parsePublicPlans` in packages/branding when the
     // pricing section became a second reader of the catalogue.
     const branding = read('packages', 'branding', 'src', 'index.ts.hbs')
-    expect(actions).toContain('return loadPublicPlans()')
+    // Narrowed to what the form may offer: the catalogue also lists the
+    // sales-led tiers for the pricing page, and the platform refuses those.
+    expect(actions).toContain('(await loadPublicPlans()).filter(canSignUp)')
     expect(branding).toContain('export function parsePublicPlans(')
     expect(branding).toContain('min_seats: typeof plan.min_seats === ')
   })
