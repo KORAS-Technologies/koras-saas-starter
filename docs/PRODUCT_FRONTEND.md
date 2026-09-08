@@ -45,8 +45,8 @@ components. It is a separate deployment with no session.
 
 Every one of those pages is served in the visitor's language. A generated
 product offers English, German and Spanish, complete in all three, with a
-switcher in the footer of every public page, on the sign-in frame, in the
-shell header and in Settings; see **Languages** below.
+switcher in the footer of every public page, on the sign-in frame, and in
+the signed-in Settings beside the appearance control; see **Languages** below.
 
 Nothing above needs an image, a font download, an icon library or a CMS. A
 freshly generated product is publishable as it stands, and improves when

@@ -5,9 +5,7 @@ import type { TenantBranding } from '@{{projectSlug}}/branding'
 import { createTranslator } from '@{{projectSlug}}/i18n'
 import type { Locale } from '@{{projectSlug}}/i18n'
 import { ProductLogo } from '../brand/product-logo'
-import { LanguageSwitcher } from '../i18n/language-switcher'
 import { ProductProfileMenu } from './profile-menu'
-import { ThemeToggle } from './theme-toggle'
 import { WorkspaceBadge } from './workspace-badge'
 import type { ShellIdentity } from './product-shell'
 
@@ -105,8 +103,10 @@ export function ProductHeader({
               competing for the width already. Each choice still applies -- they
               are document-level properties, not header features -- and both are
               also offered in Settings, where a phone has room for them. */}
-          <LanguageSwitcher locale={locale} className="hidden sm:inline-flex" />
-          <ThemeToggle locale={locale} className="hidden sm:inline-flex" />
+          {/* Language and appearance are not here. Both are choices about this
+              person on this device, made once and rarely, and Settings is where
+              a person looks for those; a header that carried them was a header
+              with two controls competing with the product's own actions. */}
           <ProductProfileMenu identity={identity} locale={locale} accountUrl={accountUrl} />
         </div>
       </div>

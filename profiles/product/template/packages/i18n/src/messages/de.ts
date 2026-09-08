@@ -286,6 +286,9 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Die Sprache, in der {product} Ihnen auf diesem Gerät angezeigt wird. Sie gilt nur für die Oberfläche; was Ihre Organisation in das Produkt einträgt, bleibt so, wie es eingegeben wurde.',
   'settings.language.label': '{product} anzeigen in',
   'settings.language.save': 'Sprache ändern',
+  'settings.appearance.title': 'Darstellung',
+  'settings.appearance.description':
+    'Hell, dunkel oder wie dieses Gerät eingestellt ist. Wird nur in diesem Browser gespeichert.',
 
   /* --------------------------------------------------------- team & access */
   'team.title': 'Team & Zugriff',

@@ -11,8 +11,8 @@ import { signInAs } from './support/session'
  * those are claims about a cookie round-tripping through a real browser.
  *
  * Runs at both viewports like the shell suite. The public switcher is in the
- * footer at every width; the signed-in header hides its own below `sm`, where
- * Settings carries the form instead.
+ * footer at every width; signed in, Settings carries the form and the
+ * appearance control, and the header carries neither.
  */
 
 const MOBILE = 'mobile'
@@ -53,28 +53,26 @@ test('a stranger can switch language on the sign-in page, and it sticks', async 
 
 test('the signed-in shell is translated, sidebar and header alike', async ({ page, context }, testInfo) => {
   await signInAs(context)
-  await page.goto('/dashboard')
-
-  if (testInfo.project.name === MOBILE) {
-    // Below `sm` the header hides both switchers; Settings carries the form.
-    await page.goto('/dashboard/settings')
-    await page.getByLabel(/Show .* in/).selectOption('de')
-    await page.getByRole('button', { name: 'Change language' }).click()
-    await expect(page).toHaveURL(/\/dashboard\/settings$/)
-    await expect(page.locator('html')).toHaveAttribute('lang', 'de')
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Einstellungen')
-    await page.getByRole('button', { name: 'Navigation öffnen' }).click()
-    await expect(page.locator('[aria-current="page"]:visible')).toContainText('Einstellungen')
-    return
-  }
-
-  await page.getByRole('button', { name: 'Deutsch' }).click()
+  // Settings carries the language form and the appearance control at every
+  // width; the header carries neither.
+  await page.goto('/dashboard/settings')
+  await expect(page.getByRole('radiogroup', { name: 'Appearance' })).toBeVisible()
+  await page.getByLabel(/Show .* in/).selectOption('de')
+  await page.getByRole('button', { name: 'Change language' }).click()
+  await expect(page).toHaveURL(/\/dashboard\/settings$/)
   await expect(page.locator('html')).toHaveAttribute('lang', 'de')
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('Willkommen')
-  await expect(page.locator('[aria-current="page"]:visible')).toContainText('Start')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Einstellungen')
   // The appearance control is announced in German too: one locale, every string.
   await expect(page.getByRole('radiogroup', { name: 'Darstellung' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Kontomenü' })).toBeVisible()
+
+  if (testInfo.project.name === MOBILE) {
+    await page.getByRole('button', { name: 'Navigation öffnen' }).click()
+  }
+  await expect(page.locator('[aria-current="page"]:visible')).toContainText('Einstellungen')
+
+  await page.goto('/dashboard')
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Willkommen')
 })
 
 test('a locale the product does not offer is ignored, not honoured', async ({ page, request }) => {

@@ -1142,7 +1142,7 @@ interaction, which is the part that was only ever claimed.
 - [x] Every string in `apps/web`, `apps/marketing` and `packages/ui` read from it
 - [x] English, German and Spanish complete, all three offered by the default configuration
 - [x] `productConfig.i18n` and `productConfig.translations`; the homepage copy in German and Spanish
-- [x] A cookie-backed switcher, in the footer of every public page, on the sign-in frame, in the shell header and in Settings
+- [x] A cookie-backed switcher, in the footer of every public page, on the sign-in frame, and in Settings beside the appearance control
 - [x] `lang` and `dir` on the document from the resolved locale
 - [ ] Persist the choice per member, and a tenant default (phase 2)
 - [ ] `apps/admin`
