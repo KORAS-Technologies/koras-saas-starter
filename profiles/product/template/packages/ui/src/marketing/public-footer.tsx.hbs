@@ -4,6 +4,7 @@ import { createTranslator } from '@{{projectSlug}}/i18n'
 import type { Locale } from '@{{projectSlug}}/i18n'
 import { Container } from '../primitives/container'
 import { KorasWordmark, ProductLogo } from '../brand/product-logo'
+import { LanguageSwitcher } from '../i18n/language-switcher'
 import { appHref } from '../lib/links'
 
 /**
@@ -129,12 +130,20 @@ export function PublicFooter({ locale }: { locale: Locale }) {
             {t('common.copyright', { year: new Date().getFullYear(), product: product.name })}
             {marketing.footerNote ? ` · ${marketing.footerNote}` : ''}
           </p>
-          {marketing.showPlatformCredit && (
-            <p className="flex items-center gap-2">
-              <span>{t('footer.builtBy')}</span>
-              <KorasWordmark tone="dark" className="text-white" />
-            </p>
-          )}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
+            {/* The language lives here, on every public page, rather than in the
+                header: the header is the product's name and its three links, and
+                a footer is where a visitor already looks for the site's own
+                settings. The sign-in frame and the signed-in header carry their
+                own, because neither renders this footer. */}
+            <LanguageSwitcher locale={locale} tone="dark" />
+            {marketing.showPlatformCredit && (
+              <p className="flex items-center gap-2">
+                <span>{t('footer.builtBy')}</span>
+                <KorasWordmark tone="dark" className="text-white" />
+              </p>
+            )}
+          </div>
         </div>
       </Container>
     </footer>

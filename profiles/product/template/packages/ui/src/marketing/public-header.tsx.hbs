@@ -9,7 +9,6 @@ import type { Locale } from '@{{projectSlug}}/i18n'
 import { ButtonLink } from '../primitives/button'
 import { Container } from '../primitives/container'
 import { ProductLogo } from '../brand/product-logo'
-import { LanguageSwitcher } from '../i18n/language-switcher'
 import { cn } from '../lib/cn'
 import { appHref } from '../lib/links'
 
@@ -94,7 +93,6 @@ export function PublicHeader({
         </nav>
 
         <div className="hidden items-center gap-3 lg:flex">
-          <LanguageSwitcher locale={locale} />
           <Link
             href={accountHref}
             className="rounded-brand px-2 py-2 text-sm font-semibold text-ink hover:text-brand"
@@ -169,9 +167,6 @@ export function PublicHeader({
                 {marketing.headerCta.label}
               </ButtonLink>
             )}
-            {/* The same control as the wide header, where a phone has room for
-                it: below the links, beside nothing. */}
-            <LanguageSwitcher locale={locale} className="self-start" />
           </div>
         </Container>
       </div>

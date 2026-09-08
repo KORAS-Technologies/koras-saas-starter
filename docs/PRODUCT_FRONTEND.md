@@ -44,8 +44,8 @@ components. It is a separate deployment with no session.
 
 Every one of those pages is served in the visitor's language. A generated
 product offers English, German and Spanish, complete in all three, with a
-switcher on every public page, in the shell header and in Settings; see
-**Languages** below.
+switcher in the footer of every public page, on the sign-in frame, in the
+shell header and in Settings; see **Languages** below.
 
 Nothing above needs an image, a font download, an icon library or a CMS. A
 freshly generated product is publishable as it stands, and improves when
@@ -438,7 +438,11 @@ that one answer — which is what stops a heading rendering in one language and
 the footer in another. The cookie value is validated against the offered list
 before it reaches `lang` or a catalogue lookup.
 
-The switcher is a form. Each offered language is a submit button labelled in
+The switcher is a form, and on the public pages it sits in the footer rather
+than the header -- the header is the product's name and its links, and the
+footer is where a visitor already looks for a site's own settings. The sign-in
+frame carries its own, because it renders no footer. Each offered language is
+a submit button labelled in
 itself — the German button says "Deutsch", and carries `lang="de"` — posting
 to `POST /api/locale`, which sets the cookie and redirects back. No script is
 needed, which matters most for the visitor who cannot read the current
