@@ -97,7 +97,11 @@ function contentSecurityPolicy(nonce: string, connectSrc: string, takesCards: bo
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
-    "style-src 'self' 'unsafe-inline'",
+    // The overlay also ships a stylesheet from the provider's CDN. Without
+    // it the checkout still opens, unstyled, and the browser reports a
+    // blocked stylesheet on every page that loaded Paddle.js -- which is
+    // every page with a pricing card.
+    `style-src 'self' 'unsafe-inline'${paddle}`,
     `img-src 'self' data: blob:${paddle}`,
     "font-src 'self'",
     `connect-src 'self' ${connectSrc}${paddle}`.trim(),
