@@ -1,4 +1,4 @@
-import { marketingFor } from '@{{projectSlug}}/branding'
+import { marketingFor, productConfig } from '@{{projectSlug}}/branding'
 import type { PublicPlan } from '@{{projectSlug}}/branding'
 import { createTranslator } from '@{{projectSlug}}/i18n'
 import type { Locale } from '@{{projectSlug}}/i18n'
@@ -17,9 +17,13 @@ import { PricingPlans } from './pricing-plans'
  * point: a pricing page that is copied by hand is a pricing page that is wrong
  * the first time somebody changes a price and forgets it.
  *
- * Nothing on sale renders nothing at all. A new estate has no self-serve plan
- * until somebody marks one, and a pricing section with no plans is a claim
- * that the product is free.
+ * Nothing listed renders nothing at all. A pricing section with no plans is
+ * a claim that the product is free.
+ *
+ * The catalogue lists every active plan, including the ones a sales team
+ * sells. Those get a card with no trial and the product's contact address,
+ * so a stranger sees the whole ladder and knows which rungs need a
+ * conversation.
  *
  * What the product *says* about each plan -- the eyebrow, the title, the
  * bullet points under a plan's name -- is configuration, per language, like
@@ -55,7 +59,17 @@ export function PricingSection({
     seatsRange: t('pricing.seatsRange'),
     seatsFrom: t('pricing.seatsFrom'),
     singleSeat: t('pricing.singleSeat'),
+    custom: t('pricing.custom'),
+    contactSales: t('pricing.contactSales'),
+    noTrial: t('pricing.noTrial'),
   }
+
+  // The same address the request-access card uses, or nothing. A card with
+  // no way to ask is still worth showing; a button that opens nothing is not.
+  const { contactEmail } = productConfig.product
+  const contactHref = contactEmail
+    ? `mailto:${contactEmail}?subject=${encodeURIComponent(t('pricing.contactSubject', { product: productConfig.product.name }))}`
+    : ''
 
   return (
     <Section
@@ -74,6 +88,7 @@ export function PricingSection({
         paddleEnvironment={paddleEnvironment}
         locale={locale}
         labels={labels}
+        contactHref={contactHref}
       />
     </Section>
   )

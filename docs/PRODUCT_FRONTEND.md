@@ -16,10 +16,11 @@ two-line stub, deliberately.
                                        process, preview, security, CTA
 /login            sign-in              two-panel, brand panel + auth card
 /signin           alias of /login      redirect, forwards ?next
-/#pricing         what it costs        plans from the platform's public
+/#pricing         what it costs        every active plan from the platform's
                                        catalogue, prices from the provider's
-                                       price preview in the browser; absent
-                                       when nothing is on sale
+                                       price preview in the browser; a plan
+                                       the team sells gets a card with no
+                                       trial and the contact address
 /signup           get started          self-serve form, request access,
                                        or invitation only; ?plan= and
                                        ?interval= preselect what a pricing

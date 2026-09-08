@@ -28,6 +28,7 @@
 import type { PublicPlan } from '@{{projectSlug}}/branding'
 import type { CheckoutDetails, SignupState, SignupStatus } from './state'
 import { translator } from '../../lib/locale'
+import { canSignUp } from '@{{projectSlug}}/branding'
 import { loadPublicPlans } from '../../lib/plans'
 
 function controlPlane(): string | null {
@@ -38,13 +39,15 @@ function controlPlane(): string | null {
 /**
  * What this product sells to somebody without an account.
  *
- * The same loader the homepage's pricing section reads, so the plan a card
- * offered and the plan the form offers are one list from one place. The
- * shape and the "older platform means free trial" rule live in
+ * The same loader the homepage's pricing section reads, narrowed to what the
+ * form may actually offer: the catalogue lists every active plan so the
+ * pricing page can show the sales-led tiers, and this drops those, because
+ * the platform's signup route refuses them by the same rule `canSignUp`
+ * encodes. The shape and the "older platform means free trial" rule live in
  * `parsePublicPlans` in `packages/branding`, where they are tested.
  */
 export async function availablePlans(): Promise<PublicPlan[]> {
-  return loadPublicPlans()
+  return (await loadPublicPlans()).filter(canSignUp)
 }
 
 /** Turn a refusal into something a stranger can act on. */

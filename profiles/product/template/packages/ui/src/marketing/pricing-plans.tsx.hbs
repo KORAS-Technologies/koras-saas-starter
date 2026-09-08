@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Script from 'next/script'
+import { canSignUp } from '@{{projectSlug}}/branding'
 import type { PublicPlan } from '@{{projectSlug}}/branding'
 import type { Locale } from '@{{projectSlug}}/i18n'
 import { PADDLE_JS, paddleEnvironment } from '../lib/paddle'
@@ -24,6 +25,12 @@ import { Icon } from '../primitives/icon'
  * way whatever the toggle says, and a free plan -- no price in either interval
  * -- is shown as a trial with no amount, because that is what it is.
  *
+ * A plan the platform lists but will not sell to a stranger -- no price and
+ * not self-serve, which is how a sales-led tier looks -- gets the third card:
+ * no amount, no trial, and the product's contact address where the button
+ * would be. It is on the page because a pricing page that hides its dearest
+ * tier reads as a product that stops at the one below it.
+ *
  * Each card's button carries the plan and the interval into the signup form,
  * which preselects them. The seat count is asked for there, not here: a
  * pricing card that asks how many people you are is a form, and this is a
@@ -44,6 +51,12 @@ export interface PricingLabels {
   /** `{min}` */
   seatsFrom: string
   singleSeat: string
+  /** Where the amount would be, on a plan sold by people. */
+  custom: string
+  /** The button on that plan, when the product has a contact address. */
+  contactSales: string
+  /** Under the seats line on that plan: no trial, sold by the team. */
+  noTrial: string
 }
 
 type Interval = 'month' | 'year'
@@ -60,6 +73,7 @@ export function PricingPlans({
   paddleEnvironment: environmentSetting,
   locale,
   labels,
+  contactHref,
 }: {
   plans: readonly PublicPlan[]
   highlights: Readonly<Record<string, readonly string[]>>
@@ -68,6 +82,8 @@ export function PricingPlans({
   paddleEnvironment: string | undefined
   locale: Locale
   labels: PricingLabels
+  /** A `mailto:` for the sales-led card, or empty when the product has none. */
+  contactHref: string
 }) {
   const sellsBoth = plans.some((plan) => plan.price_id_month && plan.price_id_year)
   const [interval, setInterval] = useState<Interval>('month')
@@ -159,13 +175,16 @@ export function PricingPlans({
           const href = shown
             ? `/signup?plan=${encodeURIComponent(plan.code)}&interval=${shown}`
             : `/signup?plan=${encodeURIComponent(plan.code)}`
+          const startable = canSignUp(plan)
 
           return (
             <Card key={plan.code} as="li" className="flex h-full flex-col">
               <h3 className="font-display text-xl font-bold text-ink">{plan.name}</h3>
 
               <p className="mt-4 min-h-[3.5rem]">
-                {shown === null ? (
+                {!startable ? (
+                  <span className="font-display text-3xl font-bold text-ink">{labels.custom}</span>
+                ) : shown === null ? (
                   <span className="font-display text-3xl font-bold text-ink">{labels.priceAtCheckout}</span>
                 ) : amount ? (
                   <>
@@ -182,6 +201,7 @@ export function PricingPlans({
               </p>
 
               <p className="mt-1 text-sm text-ink-muted">{seats}</p>
+              {!startable ? <p className="mt-1 text-sm text-ink-muted">{labels.noTrial}</p> : null}
 
               {highlights[plan.code]?.length ? (
                 <ul className="mt-5 flex flex-col gap-2 text-sm leading-6 text-ink">
@@ -197,9 +217,21 @@ export function PricingPlans({
               ) : null}
 
               <div className="mt-auto pt-6">
-                <ButtonLink href={href} size="lg" className="w-full" testId={`pricing-${plan.code}-choose`}>
-                  {labels.choose}
-                </ButtonLink>
+                {startable ? (
+                  <ButtonLink href={href} size="lg" className="w-full" testId={`pricing-${plan.code}-choose`}>
+                    {labels.choose}
+                  </ButtonLink>
+                ) : contactHref ? (
+                  <ButtonLink
+                    href={contactHref}
+                    variant="secondary"
+                    size="lg"
+                    className="w-full"
+                    testId={`pricing-${plan.code}-contact`}
+                  >
+                    {labels.contactSales}
+                  </ButtonLink>
+                ) : null}
               </div>
             </Card>
           )

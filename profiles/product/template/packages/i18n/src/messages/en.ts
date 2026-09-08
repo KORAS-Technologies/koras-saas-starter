@@ -72,6 +72,10 @@ export const en = {
   'pricing.seatsRange': '{min} to {max} seats',
   'pricing.seatsFrom': 'From {min} seats',
   'pricing.singleSeat': 'Any number of seats',
+  'pricing.custom': 'Custom pricing',
+  'pricing.contactSales': 'Talk to sales',
+  'pricing.noTrial': 'No free trial. Agreed with our team, on your terms.',
+  'pricing.contactSubject': '{product}: a plan for our organisation',
   'shell.roleAdministrator': 'Administrator',
   'shell.roleMember': 'Member',
 

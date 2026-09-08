@@ -45,6 +45,19 @@ describe('the section', () => {
     expect(plans).toContain('/signup?plan=${encodeURIComponent(plan.code)}&interval=${shown}')
   })
 
+  it('gives a sales-led plan a card with no trial and the contact address', () => {
+    // The catalogue lists every active plan. One the platform will not sell
+    // to a stranger is shown, not hidden -- with no amount, no trial button
+    // and the product's own address where the button would be.
+    expect(plans).toContain('const startable = canSignUp(plan)')
+    expect(plans).toContain('labels.custom')
+    expect(plans).toContain('labels.noTrial')
+    expect(plans).toContain('testId={`pricing-${plan.code}-contact`}')
+    // And the form never offers it: the same rule decides both.
+    const actions = read('apps/web/src/app/signup/actions.ts.hbs')
+    expect(actions).toContain('(await loadPublicPlans()).filter(canSignUp)')
+  })
+
   it('shares one view of the provider script with the checkout', () => {
     const paddle = read('packages', 'ui', 'src', 'lib', 'paddle.ts')
     expect(paddle).toContain("export const PADDLE_JS = 'https://cdn.paddle.com/paddle/v2/paddle.js'")
