@@ -10,8 +10,9 @@ import { signInAs } from './support/session'
  * says so in `lang`, and that the choice is still there on the next page --
  * those are claims about a cookie round-tripping through a real browser.
  *
- * Runs at both viewports like the shell suite, because below `lg` the public
- * header's switcher lives inside the disclosure and above it in the bar.
+ * Runs at both viewports like the shell suite. The public switcher is in the
+ * footer at every width; the signed-in header hides its own below `sm`, where
+ * Settings carries the form instead.
  */
 
 const MOBILE = 'mobile'
@@ -27,7 +28,7 @@ test('the public homepage follows the browser language until a choice is made', 
   await german.close()
 })
 
-test('a stranger can switch language on the sign-in page, and it sticks', async ({ page }, testInfo) => {
+test('a stranger can switch language on the sign-in page, and it sticks', async ({ page }) => {
   await page.goto('/login')
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
 
@@ -43,14 +44,10 @@ test('a stranger can switch language on the sign-in page, and it sticks', async 
   await expect(page.locator('html')).toHaveAttribute('lang', 'de')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Datenschutz')
 
-  // The public header renders the switcher twice -- in the bar above `lg` and
-  // inside the small-screen disclosure below it -- and only one is ever
-  // reachable. Below `lg` the disclosure has to be opened first, in the
-  // language the page is now in.
-  if (testInfo.project.name === MOBILE) {
-    await page.getByRole('button', { name: 'Menü öffnen' }).click()
-  }
-  await page.getByRole('button', { name: 'English' }).locator('visible=true').click()
+  // The public footer carries the switcher at every width, so switching back
+  // needs nothing opened first. The page is in German now; the button is not,
+  // because every language is labelled in itself.
+  await page.getByRole('contentinfo').getByRole('button', { name: 'English' }).click()
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
 })
 
