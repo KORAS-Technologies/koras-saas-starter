@@ -1,0 +1,106 @@
+'use client'
+
+import { useActionState } from 'react'
+import { useFormStatus } from 'react-dom'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale, Translator } from '@{{projectSlug}}/i18n'
+import { Button, ButtonLink, TextField } from '@{{projectSlug}}/ui'
+import { setPassword } from './actions'
+import { IDLE } from './state'
+
+/**
+ * Two password fields and a button.
+ *
+ * The token travels as a hidden field rather than in the action's closure so
+ * the form works before React attaches -- a native post carries it too. The
+ * confirm field is compared in the action, because the browser's own check is
+ * a convenience and the server's is the one that counts.
+ *
+ * On success the form is replaced by where to go next. There is no automatic
+ * redirect: the person has just typed a password twice and deserves to be told
+ * it took, and the sign-in that follows opens the identity provider's page,
+ * which should not appear to happen on its own.
+ */
+export function ActivateForm({ token, locale }: { token: string; locale: Locale }) {
+  const [state, action] = useActionState(setPassword, IDLE)
+  const t = createTranslator(locale)
+
+  if (state.status === 'ok') {
+    return (
+      <div data-testid="activate-done" className="rounded-brand border border-line bg-surface-muted p-5">
+        <h2 className="font-display text-lg font-bold text-ink">{t('activate.done.title')}</h2>
+        <p className="mt-2 leading-7 text-ink-muted">{t('activate.done.description')}</p>
+        <ButtonLink href="/login" size="lg" className="mt-5 w-full" testId="activate-sign-in">
+          {t('activate.done.signIn')}
+        </ButtonLink>
+      </div>
+    )
+  }
+
+  if (state.status === 'invalid') {
+    // Spent between the page's read and this post -- by this person in
+    // another tab, or by the link's second click. One message, as above.
+    return (
+      <div data-testid="activate-failed" role="alert" className="rounded-brand border border-line p-5">
+        <h2 className="font-display text-lg font-bold text-ink">{t('activate.invalid.title')}</h2>
+        <p className="mt-2 leading-7 text-ink-muted">{t('activate.invalid.description')}</p>
+      </div>
+    )
+  }
+
+  const fieldError = (name: string) =>
+    state.status === 'error' && state.field === name ? state.message : undefined
+
+  return (
+    <form action={action} data-testid="activate-form" className="flex flex-col gap-5">
+      <input type="hidden" name="token" value={token} />
+
+      <TextField
+        id="activate-password"
+        name="password"
+        type="password"
+        label={t('activate.form.password')}
+        hint={t('activate.form.hint')}
+        required
+        minLength={8}
+        autoComplete="new-password"
+        error={fieldError('password')}
+      />
+
+      <TextField
+        id="activate-confirm"
+        name="confirm"
+        type="password"
+        label={t('activate.form.confirm')}
+        required
+        minLength={8}
+        autoComplete="new-password"
+        error={fieldError('confirm')}
+      />
+
+      <div aria-live="polite">
+        {state.status === 'error' && !state.field ? (
+          <p
+            role="alert"
+            data-testid="activate-error"
+            className="rounded-brand border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800"
+          >
+            {state.message}
+          </p>
+        ) : null}
+      </div>
+
+      <SubmitButton t={t} />
+    </form>
+  )
+}
+
+/** Its own component because `useFormStatus` reads the form it sits inside. */
+function SubmitButton({ t }: { t: Translator }) {
+  const { pending } = useFormStatus()
+  return (
+    <Button type="submit" size="lg" loading={pending} data-testid="activate-submit">
+      {pending ? t('activate.form.submitting') : t('activate.form.submit')}
+    </Button>
+  )
+}

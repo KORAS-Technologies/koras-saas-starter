@@ -1,0 +1,96 @@
+import type { Metadata } from 'next'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { AuthCard, AuthLayout, ButtonLink } from '@{{projectSlug}}/ui'
+import { currentLocale, translator } from '../../lib/locale'
+import { activationDetails } from './actions'
+import { ActivateForm } from './ActivateForm'
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await translator()
+  return { title: t('activate.title') }
+}
+
+/**
+ * Where the welcome email lands: the owner's first password, set here.
+ *
+ * Public, like `/signup/verify`, and for the same reason: nobody who arrives
+ * here has an account they can sign in to yet. The token comes in the query
+ * string, is read on the server to learn whom the link is for, and is spent by
+ * the form's action, never by the browser itself.
+ *
+ * A failure says one thing for every cause, in every language. The Control
+ * Plane answers unknown, expired and spent identically on purpose, and the
+ * wording below keeps that property rather than being copy to improve.
+ *
+ * This page is what keeps SECURITY_MODEL §8 for the first sign-in: before it
+ * existed, the owner set their password on ZITADEL's screen and was left in
+ * the ZITADEL Console (Control Plane R-107).
+ */
+export default async function ActivatePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string }>
+}) {
+  const [{ token }, locale, t] = await Promise.all([searchParams, currentLocale(), translator()])
+
+  if (!token) {
+    return (
+      <AuthLayout locale={locale}>
+        <div data-testid="activate-incomplete">
+          <AuthCard
+            title={t('activate.incomplete.title')}
+            description={t('activate.incomplete.description')}
+          >
+            <ButtonLink href="/login" size="lg" className="w-full">
+              {t('common.signIn')}
+            </ButtonLink>
+          </AuthCard>
+        </div>
+      </AuthLayout>
+    )
+  }
+
+  const outcome = await activationDetails(token)
+
+  if (outcome.status === 'rate-limited') {
+    return (
+      <AuthLayout locale={locale}>
+        <div data-testid="activate-rate-limited">
+          <AuthCard
+            title={t('activate.rateLimited.title')}
+            description={t('activate.rateLimited.description')}
+          />
+        </div>
+      </AuthLayout>
+    )
+  }
+
+  if (outcome.status === 'invalid') {
+    return (
+      <AuthLayout locale={locale}>
+        <div data-testid="activate-failed">
+          <AuthCard title={t('activate.invalid.title')} description={t('activate.invalid.description')}>
+            <ButtonLink href="/login" size="lg" className="w-full">
+              {t('common.signIn')}
+            </ButtonLink>
+          </AuthCard>
+        </div>
+      </AuthLayout>
+    )
+  }
+
+  const { details } = outcome
+  return (
+    <AuthLayout locale={locale}>
+      <AuthCard
+        title={t('activate.heading', { product: productConfig.product.name })}
+        description={t('activate.description', {
+          email: details.email,
+          organization: details.organizationName,
+        })}
+      >
+        <ActivateForm token={token} locale={locale} />
+      </AuthCard>
+    </AuthLayout>
+  )
+}

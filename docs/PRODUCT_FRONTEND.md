@@ -27,6 +27,9 @@ two-line stub, deliberately.
                                        card chose
 /signup/verify    confirm an address   three outcomes, unchanged wording,
                                        plus a checkout where a card is taken
+/activate         first password       where the welcome email lands; the
+                                       owner sets a password on this page and
+                                       never on ZITADEL's (Control Plane R-107)
 /dashboard        signed-in landing    behind the session gate, inside the shell
 /dashboard/settings       product settings   general; requires settings.read
 /dashboard/settings/team  Team & Access      product roles; requires team.read

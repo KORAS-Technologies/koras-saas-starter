@@ -198,6 +198,32 @@ export const en = {
     'It may have been used already, or it may have expired. Sign up again to get a new one.',
   'verify.invalid.again': 'Sign up again',
 
+  // ── /activate: the owner's first password, from the welcome email ──────────
+  // Failure wording keeps the verify page's property: one message for every
+  // bad link, in every language. See that page for why.
+  'activate.title': 'Set your password',
+  'activate.heading': 'Welcome to {product}',
+  'activate.description':
+    'Set a password for {email} to finish setting up {organization}.',
+  'activate.form.password': 'Password',
+  'activate.form.hint': 'At least 8 characters. Your organisation may require more.',
+  'activate.form.confirm': 'Confirm password',
+  'activate.form.tooShort': 'Use at least 8 characters.',
+  'activate.form.mismatch': 'The two passwords do not match.',
+  'activate.form.submit': 'Set password and continue',
+  'activate.form.submitting': 'Setting your password…',
+  'activate.done.title': 'Your password is set',
+  'activate.done.description': 'Sign in with your email address and the password you just chose.',
+  'activate.done.signIn': 'Sign in',
+  'activate.incomplete.title': 'That link is incomplete',
+  'activate.incomplete.description': 'Open the link from your welcome email again.',
+  'activate.rateLimited.title': 'Too many attempts',
+  'activate.rateLimited.description': 'Wait a few minutes and open the link again. Nothing was lost.',
+  'activate.invalid.title': 'That link is not valid',
+  'activate.invalid.description':
+    'It may have been used already or expired. If you have set a password, sign in; otherwise use “Forgot password” on the sign-in page.',
+  'activate.failed': 'Something went wrong on our side. Wait a moment and try again.',
+
   'provisioning.ready.title': 'Your workspace is ready',
   'provisioning.ready.description': 'Taking you to {product} to sign in.',
   'provisioning.ready.redirecting': 'Redirecting…',
