@@ -120,6 +120,6 @@ describe('the settings', () => {
 
   it('points a deployed product at the S3 gateway, not the REST root', () => {
     const terraform = read('infrastructure', 'terraform', 'main.tf.hbs')
-    expect(terraform).toContain('"${url}/storage/v1/s3"')
+    expect(terraform).toContain('"https://${ref}.storage.supabase.co/storage/v1/s3"')
   })
 })

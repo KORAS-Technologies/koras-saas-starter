@@ -281,9 +281,12 @@ output "ai_gateway_urls" {
 
 output "storage_endpoints" {
   description = "Map of env -> Supabase Storage S3-compatible endpoint."
+  # The `.storage.` host is the one the dashboard shows under Storage -> S3 and
+  # the one the signing region belongs to; the older `<ref>.supabase.co` path is
+  # still proxied but is not what Supabase documents any more.
   value = {
-    for name, url in module.bootstrap.supabase_project_api_urls :
-    name => "${url}/storage/v1/s3"
+    for name, ref in module.bootstrap.supabase_project_refs :
+    name => "https://${ref}.storage.supabase.co/storage/v1/s3"
   }
 }
 
