@@ -92,6 +92,30 @@ const PUBLIC_EXACT_PATHS = ['/']
  */
 const PADDLE_HOSTS = 'https://*.paddle.com'
 
+/**
+ * The origin the browser uploads files to and downloads them from.
+ *
+ * The Files page puts an object straight into the bucket on a signed URL the
+ * API minted, so the bucket's origin has to be a `connect-src` source or the
+ * browser refuses the PUT with `blocked:csp` and the page says the upload
+ * could not reach the bucket -- which is what happened the first time. Read
+ * from the same setting the API signs against, so the two cannot name
+ * different hosts. Empty when the product has no storage configured.
+ *
+ * One origin, the product's own. A customer whose policy names a bucket on
+ * another provider is served by the API today and blocked here; FOLLOW_UPS
+ * F22 records that the policy's endpoint has to reach this list too.
+ */
+function storageOrigin(): string {
+  const endpoint = process.env.STORAGE_ENDPOINT ?? ''
+  if (!endpoint) return ''
+  try {
+    return new URL(endpoint).origin
+  } catch {
+    return ''
+  }
+}
+
 function contentSecurityPolicy(nonce: string, connectSrc: string, takesCards: boolean): string {
   const paddle = takesCards ? ` ${PADDLE_HOSTS}` : ''
   return [
@@ -122,7 +146,7 @@ export async function middleware(request: NextRequest) {
   // would stop naming the nonce the renderer used.
   const policy = contentSecurityPolicy(
     nonce,
-    process.env.NEXT_PUBLIC_API_URL ?? '',
+    `${process.env.NEXT_PUBLIC_API_URL ?? ''} ${storageOrigin()}`.trim(),
     Boolean(process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN),
   )
   const response = await authorize(request, nonce, policy)

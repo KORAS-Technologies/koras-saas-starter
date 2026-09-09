@@ -1814,6 +1814,12 @@ reason rather than for lack of time:
 - [ ] **A real upload in CI.** Generator Integration has Postgres and no
       bucket. The browser spec proves the page's states without one; the
       upload itself is proven against MinIO locally and against dev by hand.
+- [ ] **A foreign bucket's origin in the browser's policy.** `connect-src`
+      names the product's own storage origin, from `STORAGE_ENDPOINT`. A
+      customer whose policy names a bucket on another provider is served by
+      the API and refused by the browser, because the page's policy is built
+      before the tenant is known. Either the policy's endpoint joins the list
+      per request, or uploads to foreign buckets go through a signed proxy.
 - [ ] **Quota by period.** The limit is a ceiling in gigabytes on a boolean
       entitlement's plan grant, not a `quota` kind, because the platform's
       quota needs a period and storage has none.

@@ -89,6 +89,16 @@ describe('no byte passes through the product', () => {
     expect(router).toContain('storage.store.head(row.storage_key)')
   })
 
+  it('lets the browser reach the bucket the API signs for', () => {
+    // The upload is a PUT from the browser to the storage origin. A policy
+    // that names only the API refuses it, and the page reports the bucket as
+    // unreachable -- which is what the first live upload did.
+    const middleware = read('apps', 'web', 'src', 'middleware.ts.hbs')
+    expect(middleware).toContain('function storageOrigin()')
+    expect(middleware).toContain('process.env.STORAGE_ENDPOINT')
+    expect(middleware).toContain("`${process.env.NEXT_PUBLIC_API_URL ?? ''} ${storageOrigin()}`.trim()")
+  })
+
   it('keeps the API address and the token on the server', () => {
     expect(panel).not.toContain('NEXT_PUBLIC_API_URL')
     expect(panel).not.toContain('providerToken')
