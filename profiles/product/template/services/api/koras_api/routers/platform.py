@@ -48,6 +48,12 @@ class Organization(BaseModel):
     id: UUID
     name: str
     slug: str
+    # The identifier a tenant is resolved by. Every customer request carries
+    # the ZITADEL organization in its token and row-level security scopes on
+    # this column; a tenant created without it can be recorded and listed
+    # and never reached. Optional in the schema because the Control Plane
+    # sent none until 2026-09-09 (R-105) and a repeat call fills it in.
+    zitadel_org_id: str | None = None
 
 
 class Owner(BaseModel):
@@ -122,6 +128,7 @@ async def create_tenant(
             plan=body.plan,
             owner_email=body.owner.email,
             owner_zitadel_user_id=body.owner.zitadel_user_id,
+            zitadel_org_id=body.organization.zitadel_org_id,
         )
     except tenant_store.SlugTaken as exc:
         # Not the retry case, which is answered above with 200. This is a
