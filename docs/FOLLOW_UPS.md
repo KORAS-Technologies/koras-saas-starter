@@ -25,6 +25,7 @@ recommendation rather than a record — revise it, do not preserve it.
 | 1 | **F21** | The first work with a customer on the other end of it. Phases 1 and 2 shipped 2026-09-05; Phase 3 is the signup with a card, and it is the first change that puts a price in front of somebody. Do the recorded-fixture and database halves of Phase 1 before starting it. | ~3 days for Phase 3 |
 | 2 | **F7** | The last unverified link before anything is sold. Its remaining box needs a staff read — or the smaller Control Plane change described in F2c, which would make every registration verify itself. | ~1h with a staff identity |
 | 3 | **F3 + F2b** | One question from two sides. Not urgent while there is one product — the risk it names is one product's CI holding write access to *other* products' registry entries, and the blast radius is currently itself. | ½ day to decide, more to build |
+| 4 | **F23** | The sign-in page is the one customer surface still drawn by ZITADEL, with its footer controls. Self-hosting the login on an estate host removes them and puts the surface under this estate's control; it narrows Control Plane R-90 rather than closing it. Planned in full, nothing built. | ~2 days to dev, ½ day for the other environments |
 
 F13's prerequisite sat at the top of this table for part of one day and is
 built: `koras-control-plane` R-93, which made `subscriptions.status` mean
@@ -53,6 +54,9 @@ exist and that the hours are the same hours.
 
 F22 — the Files module shipped on 2026-09-08 with the platform's policy and
 quota wired through; what it deliberately leaves out is below.
+
+F23 — self-host the ZITADEL login so customers stop seeing ZITADEL's footer
+controls; planned 2026-09-09 in `koras-control-plane/docs/LOGIN_UI_PLAN.md`.
 
 Entries are grouped below by *why they are undone*, and numbered by *when they
 were opened*. Those two orders cannot both run in sequence, so this is the
@@ -1823,3 +1827,35 @@ reason rather than for lack of time:
 - [ ] **Quota by period.** The limit is a ceiling in gigabytes on a boolean
       entitlement's plan grant, not a `quota` kind, because the platform's
       quota needs a period and storage has none.
+
+### F23 — the sign-in page, on a host of ours — opened 2026-09-09, planned, not built
+
+The one customer surface still drawn by ZITADEL is the sign-in page: ZITADEL
+Cloud's hosted Login V2, with a language switcher and a theme toggle in its
+footer that no ZITADEL setting removes. Every other surface on a customer's
+first day is the product's since 2026-09-09 (Control Plane R-107: the owner
+and every invited member set their password on the product's `/activate`).
+
+**The plan** is written and checked against ZITADEL's source and docs:
+`koras-control-plane/docs/LOGIN_UI_PLAN.md`. In one paragraph: a full fork of
+`zitadel/zitadel` from a release tag, three source commits in `apps/login`
+(remove both switchers, the font, the application name), the image on Fly as
+`koras-login-<env>` at `login-<env>.korastechnologies.com`, a login-client
+token of its own in Doppler, the instance's Login V2 flag pointed at it, dev
+first for a week. About two days to dev, half a day for the rest.
+
+**Why it is here and not done.** It is a fork to maintain -- a monthly merge
+from upstream -- and a flag that redirects every login on the instance at
+once, staff included. Neither belongs to a day that also shipped four fixes to
+the signup path. And it is the *first half* of R-90 only: the page would be
+ZITADEL's login app on our host, not a product page. The second half, a
+branded sign-in calling ZITADEL's session API from the product, is the larger
+piece and is not planned.
+
+- [ ] Fork, three commits, image (plan §1).
+- [ ] Login-client user, PAT, break-glass owner PAT, DNS (plan §2; the
+      Console and Doppler halves are the user's).
+- [ ] Fly app and deploy workflow (plan §3).
+- [ ] Flag on for dev; the smoke list in plan §4.
+- [ ] Test, staging, prod after a week on dev.
+- [ ] The monthly upstream merge, as a scheduled job (plan §5).
