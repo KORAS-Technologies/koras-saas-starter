@@ -1,0 +1,90 @@
+import { isEntitled } from '@{{projectSlug}}/branding'
+import { AccessDenied, Card, Container, rich, strongTag } from '@{{projectSlug}}/ui'
+import { can, signedInContext } from '../../../lib/access'
+import { currentLocale, translator } from '../../../lib/locale'
+import { FilesPanel } from './FilesPanel'
+import { listFiles } from './actions'
+
+/**
+ * Files: what this tenant has stored, and the means to add to it.
+ *
+ * Three gates, each answered on the server before anything renders. The
+ * caller's permission (`files.read`), checked here as well as in the
+ * middleware because a page is reachable by more than one route. The plan's
+ * entitlement (`storage.files`), which locks the module in the sidebar and
+ * refuses here with the plan named, the way Reports does. And the API's own
+ * answer, which decides again with the same token when the panel acts.
+ *
+ * The list is read once here and handed to the panel, so the first paint has
+ * the files in it and no spinner. Everything after -- upload, download,
+ * delete -- is a server action the panel calls, and each re-reads the list
+ * from the API rather than trusting its own bookkeeping.
+ */
+export const dynamic = 'force-dynamic'
+
+export default async function FilesPage() {
+  const [context, locale, t] = await Promise.all([signedInContext(), currentLocale(), translator()])
+  if (context === null || !can(context.access, 'files.read')) {
+    return <AccessDenied locale={locale} />
+  }
+
+  const { entitlements } = context.access
+  if (entitlements.resolved && !isEntitled(entitlements, 'storage.files')) {
+    const plan = { plan: entitlements.plan ?? t('files.notIncluded.notRecorded') }
+    return (
+      <div className="py-12">
+        <Container>
+          <h1 className="font-display text-2xl font-bold text-ink">{t('files.title')}</h1>
+          <Card className="mt-6 max-w-3xl">
+            <h2 className="font-display text-lg font-bold text-ink">{t('files.notIncluded.title')}</h2>
+            <p className="mt-2 text-sm leading-6 text-ink-muted">
+              {rich(t('files.notIncluded.description', plan), { strong: strongTag })}
+            </p>
+          </Card>
+        </Container>
+      </div>
+    )
+  }
+
+  const initial = await listFiles()
+
+  // Built here rather than inline: a JSX prop given an object literal opens
+  // with two braces, which the generator reads as a Handlebars expression.
+  const labels = {
+    upload: t('files.upload'),
+    uploading: t('files.uploading'),
+    choose: t('files.choose'),
+    download: t('files.download'),
+    remove: t('files.remove'),
+    confirmRemove: t('files.confirmRemove'),
+    empty: t('files.empty'),
+    emptyHint: t('files.emptyHint'),
+    name: t('files.column.name'),
+    size: t('files.column.size'),
+    uploadedAt: t('files.column.uploadedAt'),
+    usage: t('files.usage'),
+    usageUnlimited: t('files.usageUnlimited'),
+    usageUnknown: t('files.usageUnknown'),
+    provider: t('files.provider'),
+    retry: t('files.retry'),
+  }
+
+  return (
+    <div className="py-12">
+      <Container>
+        <h1 className="font-display text-2xl font-bold text-ink">{t('files.title')}</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">{t('files.intro')}</p>
+        {!entitlements.resolved && (
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">{t('files.unresolved')}</p>
+        )}
+        <FilesPanel
+          initial={initial}
+          canUpload={can(context.access, 'files.upload')}
+          canManage={can(context.access, 'files.manage')}
+          locale={locale}
+          labels={labels}
+        />
+      </Container>
+    </div>
+  )
+}

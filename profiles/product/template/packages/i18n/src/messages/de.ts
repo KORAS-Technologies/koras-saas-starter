@@ -290,6 +290,39 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'settings.appearance.description':
     'Hell, dunkel oder wie dieses Gerät eingestellt ist. Wird nur in diesem Browser gespeichert.',
 
+  /* ---------------------------------------------------------------- files */
+  'files.title': 'Dateien',
+  'files.intro':
+    'Was Ihre Organisation in {product} abgelegt hat. Dateien gehen direkt aus Ihrem Browser in den Speicher, der Ihrer Organisation zugewiesen ist; das Produkt führt die Liste.',
+  'files.unresolved':
+    'Ihr Tarif konnte gerade nicht von der KORAS-Plattform gelesen werden, daher wird kein Speicherlimit angezeigt. Hochladen funktioniert weiterhin.',
+  'files.notIncluded.title': 'Nicht in Ihrem Tarif enthalten',
+  'files.notIncluded.description':
+    'Dateispeicher ist Teil eines höheren Tarifs. Ihr aktueller Tarif ist <strong>{plan}</strong>. Bereits Abgelegtes bleibt erhalten.',
+  'files.notIncluded.notRecorded': 'nicht erfasst',
+  'files.upload': 'Datei hochladen',
+  'files.uploading': 'Wird hochgeladen…',
+  'files.choose': 'Datei zum Hochladen auswählen',
+  'files.download': 'Herunterladen',
+  'files.remove': 'Löschen',
+  'files.confirmRemove': '{name} löschen? Das kann nicht rückgängig gemacht werden.',
+  'files.empty': 'Noch nichts abgelegt',
+  'files.emptyHint': 'Laden Sie eine Datei hoch, und sie erscheint hier für alle in Ihrer Organisation.',
+  'files.column.name': 'Name',
+  'files.column.size': 'Größe',
+  'files.column.uploadedAt': 'Hochgeladen',
+  'files.usage': '{used} von {limit} belegt',
+  'files.usageUnlimited': '{used} belegt',
+  'files.usageUnknown': 'Speicherlimit gerade nicht verfügbar',
+  'files.provider': 'Gespeichert bei {provider}',
+  'files.retry': 'Erneut versuchen',
+  'files.error.plan': 'Ihr Tarif enthält das nicht, oder der Upload würde das Speicherlimit überschreiten.',
+  'files.error.forbidden': 'Ihr Konto darf das nicht.',
+  'files.error.notArrived': 'Die Datei ist nicht wie erwartet im Speicher angekommen. Versuchen Sie den Upload erneut.',
+  'files.error.unavailable':
+    'Dateispeicher ist für Ihre Organisation gerade nicht verfügbar. Der Grund steht im Serverprotokoll.',
+  'files.error.generic': 'Etwas ist schiefgelaufen. Versuchen Sie es erneut.',
+
   /* --------------------------------------------------------- team & access */
   'team.title': 'Team & Zugriff',
   'team.intro':

@@ -284,6 +284,39 @@ export const en = {
   'settings.appearance.description':
     'Light, dark, or whatever this device is set to. Remembered in this browser only.',
 
+  /* ---------------------------------------------------------------- files */
+  'files.title': 'Files',
+  'files.intro':
+    'What your organisation has stored in {product}. Files go straight from your browser to the storage your organisation has been assigned; the product keeps the list.',
+  'files.unresolved':
+    'Your plan could not be read from the KORAS platform just now, so no storage limit is shown. Uploads still work.',
+  'files.notIncluded.title': 'Not included in your plan',
+  'files.notIncluded.description':
+    'File storage is part of a higher plan. Your current plan is <strong>{plan}</strong>. What is already stored stays.',
+  'files.notIncluded.notRecorded': 'not recorded',
+  'files.upload': 'Upload a file',
+  'files.uploading': 'Uploading…',
+  'files.choose': 'Choose a file to upload',
+  'files.download': 'Download',
+  'files.remove': 'Delete',
+  'files.confirmRemove': 'Delete {name}? This cannot be undone.',
+  'files.empty': 'Nothing stored yet',
+  'files.emptyHint': 'Upload a file and it will appear here for everyone in your organisation.',
+  'files.column.name': 'Name',
+  'files.column.size': 'Size',
+  'files.column.uploadedAt': 'Uploaded',
+  'files.usage': '{used} of {limit} used',
+  'files.usageUnlimited': '{used} used',
+  'files.usageUnknown': 'Usage limit not available right now',
+  'files.provider': 'Stored with {provider}',
+  'files.retry': 'Try again',
+  'files.error.plan': 'Your plan does not include this, or the upload would exceed its storage limit.',
+  'files.error.forbidden': 'Your account may not do that.',
+  'files.error.notArrived': 'The file did not arrive in storage as expected. Try the upload again.',
+  'files.error.unavailable':
+    'File storage is not available for your organisation right now. The reason is in the server log.',
+  'files.error.generic': 'Something went wrong. Try again.',
+
   /* --------------------------------------------------------- team & access */
   'team.title': 'Team & Access',
   'team.intro':

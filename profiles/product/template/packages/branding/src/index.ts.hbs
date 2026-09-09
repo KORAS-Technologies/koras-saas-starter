@@ -719,6 +719,7 @@ export const productConfig: ProductConfig = {
         groups: { administration: 'Verwaltung' },
         modules: {
           home: 'Start',
+          files: 'Dateien',
           reports: 'Berichte',
           insights: 'Einblicke',
           team: 'Team & Zugriff',
@@ -967,6 +968,7 @@ export const productConfig: ProductConfig = {
         groups: { administration: 'Administración' },
         modules: {
           home: 'Inicio',
+          files: 'Archivos',
           reports: 'Informes',
           insights: 'Análisis',
           team: 'Equipo y acceso',
@@ -1538,6 +1540,21 @@ export const productConfig: ProductConfig = {
         group: 'administration',
         order: 20,
         requiredPermissions: ['settings.read'],
+      },
+      // The first module that stores something. Locked rather than hidden
+      // when the plan lacks it, because file storage is something a
+      // customer could buy; `storage.files` is the platform capability the
+      // API enforces too, and the generator's test keeps the two names level.
+      {
+        id: 'files',
+        label: 'Files',
+        icon: 'folder',
+        href: '/dashboard/files',
+        group: 'primary',
+        order: 5,
+        requiredPermissions: ['files.read'],
+        requiredEntitlements: ['storage.files'],
+        lockedBehavior: 'lock',
       },
     ],
   },

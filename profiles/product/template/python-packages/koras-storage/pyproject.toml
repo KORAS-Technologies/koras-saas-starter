@@ -2,7 +2,11 @@
 name = "koras-storage"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["boto3>=1.34.0","koras-auth","koras-tenant"]
+# botocore is boto3's own dependency and is imported directly for its client
+# configuration and error type, so it is declared: an import that resolves
+# only because something else brought it is the defect class R-34 through
+# R-45 keep finding.
+dependencies = ["boto3>=1.34.0", "botocore>=1.34.0", "koras-auth", "koras-tenant"]
 
 [tool.uv.sources]
 koras-auth = { workspace = true }

@@ -10,7 +10,7 @@ from .core.observability import setup_telemetry
 from .core.ratelimit import limit_anonymous, limit_authenticated
 from .core.security import SecurityHeadersMiddleware
 from .core.settings import settings
-from .routers import health, platform, tenant
+from .routers import files, health, platform, tenant
 
 
 @asynccontextmanager
@@ -103,6 +103,13 @@ app.include_router(health.router, prefix="/api/v1")
 # can still be abusive.
 app.include_router(
     tenant.router,
+    prefix="/api/v1",
+    dependencies=[Depends(limit_authenticated)],
+)
+# Files: the same customer surface, the same limiter, its own module because
+# it is the first route family that mints signed URLs and touches a bucket.
+app.include_router(
+    files.router,
     prefix="/api/v1",
     dependencies=[Depends(limit_authenticated)],
 )

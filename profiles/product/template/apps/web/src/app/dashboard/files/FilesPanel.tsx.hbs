@@ -1,0 +1,295 @@
+'use client'
+
+import { useCallback, useRef, useState } from 'react'
+import type { ActionResult } from './actions'
+import type { FileList } from '@{{projectSlug}}/api-client'
+import type { Locale } from '@{{projectSlug}}/i18n'
+import { Button, Card } from '@{{projectSlug}}/ui'
+import { completeUpload, deleteFile, downloadUrl, listFiles, requestUpload } from './actions'
+
+/**
+ * The list, the upload control and the two per-file actions.
+ *
+ * A client component for the one thing a server cannot do: put the bytes in
+ * the bucket from the reader's machine. The upload is an `XMLHttpRequest`
+ * rather than `fetch`, because only the former reports progress, and a
+ * multi-hundred-megabyte upload with no progress bar is one the reader
+ * cancels. Everything else -- tickets, confirmation, the list -- is a server
+ * action, so no credential and no API address reaches this file.
+ *
+ * The list is never edited locally. After every action the panel re-reads it
+ * from the server, which is slower by one round trip and right by
+ * construction: the API is the only thing that knows whether the object
+ * really arrived.
+ */
+
+export interface FilesLabels {
+  upload: string
+  uploading: string
+  choose: string
+  download: string
+  remove: string
+  confirmRemove: string
+  empty: string
+  emptyHint: string
+  name: string
+  size: string
+  uploadedAt: string
+  /** `{used}` and `{limit}` */
+  usage: string
+  /** `{used}` */
+  usageUnlimited: string
+  usageUnknown: string
+  /** `{provider}` */
+  provider: string
+  retry: string
+}
+
+function fill(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? '')
+}
+
+function formatBytes(bytes: number, locale: Locale): string {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  const digits = unit === 0 ? 0 : value < 10 ? 1 : 0
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(value)} ${units[unit]}`
+}
+
+function putWithProgress(
+  url: string,
+  headers: Record<string, string>,
+  file: File,
+  onProgress: (fraction: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', url)
+    for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value)
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total)
+    }
+    xhr.onload = () =>
+      xhr.status >= 200 && xhr.status < 300
+        ? resolve()
+        : reject(new Error(`the bucket answered ${xhr.status}`))
+    xhr.onerror = () => reject(new Error('the upload could not reach the bucket'))
+    xhr.send(file)
+  })
+}
+
+export function FilesPanel({
+  initial,
+  canUpload,
+  canManage,
+  locale,
+  labels,
+}: {
+  initial: ActionResult<FileList>
+  canUpload: boolean
+  canManage: boolean
+  locale: Locale
+  labels: FilesLabels
+}) {
+  const [list, setList] = useState<FileList | null>(initial.status === 'ok' ? initial.value : null)
+  const [error, setError] = useState<string | null>(initial.status === 'error' ? initial.message : null)
+  const [progress, setProgress] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
+  const input = useRef<HTMLInputElement>(null)
+
+  const refresh = useCallback(async () => {
+    const answer = await listFiles()
+    if (answer.status === 'ok') {
+      setList(answer.value)
+      setError(null)
+    } else {
+      setError(answer.message)
+    }
+  }, [])
+
+  const upload = useCallback(
+    async (file: File) => {
+      setBusy(true)
+      setError(null)
+      setProgress(0)
+      try {
+        const ticket = await requestUpload({
+          name: file.name,
+          sizeBytes: file.size,
+          contentType: file.type || 'application/octet-stream',
+        })
+        if (ticket.status === 'error') {
+          setError(ticket.message)
+          return
+        }
+        await putWithProgress(ticket.value.upload_url, ticket.value.headers, file, setProgress)
+        const done = await completeUpload(ticket.value.file_id)
+        if (done.status === 'error') {
+          setError(done.message)
+          return
+        }
+        await refresh()
+      } catch (failure) {
+        setError(failure instanceof Error ? failure.message : String(failure))
+      } finally {
+        setBusy(false)
+        setProgress(null)
+        if (input.current) input.current.value = ''
+      }
+    },
+    [refresh],
+  )
+
+  const download = useCallback(async (id: string) => {
+    const answer = await downloadUrl(id)
+    if (answer.status === 'error') {
+      setError(answer.message)
+      return
+    }
+    // A signed URL with an attachment disposition: the browser saves it and
+    // the tab stays here. Opened directly rather than through an anchor so
+    // nothing in the DOM carries a URL that expires.
+    window.location.assign(answer.value)
+  }, [])
+
+  const remove = useCallback(
+    async (id: string, name: string) => {
+      if (!window.confirm(fill(labels.confirmRemove, { name }))) return
+      setBusy(true)
+      const answer = await deleteFile(id)
+      setBusy(false)
+      if (answer.status === 'error') {
+        setError(answer.message)
+        return
+      }
+      await refresh()
+    },
+    [labels.confirmRemove, refresh],
+  )
+
+  const usage =
+    list === null
+      ? null
+      : !list.resolved
+        ? labels.usageUnknown
+        : list.limit_bytes === null
+          ? fill(labels.usageUnlimited, { used: formatBytes(list.used_bytes, locale) })
+          : fill(labels.usage, {
+              used: formatBytes(list.used_bytes, locale),
+              limit: formatBytes(list.limit_bytes, locale),
+            })
+
+  return (
+    <div className="mt-8 flex flex-col gap-6" data-testid="files">
+      {canUpload && (
+        <Card className="max-w-3xl">
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="inline-flex cursor-pointer items-center">
+              <span className="sr-only">{labels.choose}</span>
+              <input
+                ref={input}
+                type="file"
+                className="sr-only"
+                disabled={busy}
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) void upload(file)
+                }}
+              />
+              <Button
+                type="button"
+                loading={busy}
+                onClick={() => input.current?.click()}
+                data-testid="files-upload"
+              >
+                {busy && progress !== null ? labels.uploading : labels.upload}
+              </Button>
+            </label>
+            {progress !== null && (
+              <progress
+                className="h-2 w-48 overflow-hidden rounded-brand"
+                value={Math.round(progress * 100)}
+                max={100}
+                aria-label={labels.uploading}
+              />
+            )}
+            {usage !== null && <p className="text-sm text-ink-muted">{usage}</p>}
+          </div>
+        </Card>
+      )}
+
+      {error !== null && (
+        <Card className="max-w-3xl border-danger">
+          <p className="text-sm text-ink" role="alert">
+            {error}
+          </p>
+          <Button type="button" variant="secondary" className="mt-3" onClick={() => void refresh()}>
+            {labels.retry}
+          </Button>
+        </Card>
+      )}
+
+      {list !== null && list.files.length === 0 ? (
+        <Card className="max-w-3xl">
+          <h2 className="font-display text-lg font-bold text-ink">{labels.empty}</h2>
+          <p className="mt-2 text-sm leading-6 text-ink-muted">{labels.emptyHint}</p>
+        </Card>
+      ) : list !== null ? (
+        <div className="overflow-x-auto rounded-brand border border-line bg-surface">
+          <table className="w-full text-sm">
+            <thead className="bg-surface-muted text-left text-ink-muted">
+              <tr>
+                <th scope="col" className="px-4 py-3 font-medium">{labels.name}</th>
+                <th scope="col" className="px-4 py-3 font-medium">{labels.size}</th>
+                <th scope="col" className="px-4 py-3 font-medium">{labels.uploadedAt}</th>
+                <th scope="col" className="px-4 py-3">
+                  <span className="sr-only">{labels.download}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.files.map((file) => (
+                <tr key={file.id} className="border-t border-line">
+                  <td className="px-4 py-3 text-ink">{file.name}</td>
+                  <td className="px-4 py-3 text-ink-muted">{formatBytes(file.size_bytes, locale)}</td>
+                  <td className="px-4 py-3 text-ink-muted">
+                    {new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
+                      new Date(file.uploaded_at),
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      <Button type="button" variant="secondary" onClick={() => void download(file.id)}>
+                        {labels.download}
+                      </Button>
+                      {canManage && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={busy}
+                          onClick={() => void remove(file.id, file.name)}
+                        >
+                          {labels.remove}
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {list.provider && (
+            <p className="border-t border-line px-4 py-2 text-xs text-ink-muted">
+              {fill(labels.provider, { provider: list.provider })}
+            </p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  )
+}
