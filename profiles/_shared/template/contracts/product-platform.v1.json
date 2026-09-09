@@ -21,7 +21,8 @@
     { "method": "post", "path": "/tenants", "summary": "Create a tenant, or return the existing one" },
     { "method": "get", "path": "/tenants/{tenant_id}", "summary": "Read a tenant" },
     { "method": "post", "path": "/tenants/{tenant_id}/activate", "summary": "Activate a tenant" },
-    { "method": "post", "path": "/tenants/{tenant_id}/suspend", "summary": "Suspend a tenant" }
+    { "method": "post", "path": "/tenants/{tenant_id}/suspend", "summary": "Suspend a tenant" },
+    { "method": "get", "path": "/storage-defaults", "summary": "Where this product keeps files unless a policy says otherwise" }
   ],
   "rules": {
     "machine_identity_only": {
