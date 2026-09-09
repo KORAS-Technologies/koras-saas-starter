@@ -194,6 +194,32 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'Puede que ya se haya usado o que haya caducado. Regístrese de nuevo para obtener uno nuevo.',
   'verify.invalid.again': 'Registrarse de nuevo',
 
+  // ── /activate ───────────────────────────────────────────────────────────────
+  'activate.title': 'Establecer contraseña',
+  'activate.heading': 'Bienvenido a {product}',
+  'activate.description':
+    'Establezca una contraseña para {email} para terminar de configurar {organization}.',
+  'activate.form.password': 'Contraseña',
+  'activate.form.hint': 'Al menos 8 caracteres. Su organización puede exigir más.',
+  'activate.form.confirm': 'Confirmar contraseña',
+  'activate.form.tooShort': 'Use al menos 8 caracteres.',
+  'activate.form.mismatch': 'Las dos contraseñas no coinciden.',
+  'activate.form.submit': 'Establecer contraseña y continuar',
+  'activate.form.submitting': 'Estableciendo su contraseña…',
+  'activate.done.title': 'Su contraseña está establecida',
+  'activate.done.description':
+    'Inicie sesión con su dirección de correo y la contraseña que acaba de elegir.',
+  'activate.done.signIn': 'Iniciar sesión',
+  'activate.incomplete.title': 'Ese enlace está incompleto',
+  'activate.incomplete.description': 'Vuelva a abrir el enlace de su correo de bienvenida.',
+  'activate.rateLimited.title': 'Demasiados intentos',
+  'activate.rateLimited.description':
+    'Espere unos minutos y vuelva a abrir el enlace. No se ha perdido nada.',
+  'activate.invalid.title': 'Ese enlace no es válido',
+  'activate.invalid.description':
+    'Puede que ya se haya usado o que haya caducado. Si ya estableció una contraseña, inicie sesión; si no, use «Olvidé mi contraseña» en la página de inicio de sesión.',
+  'activate.failed': 'Algo ha fallado por nuestra parte. Espere un momento y vuelva a intentarlo.',
+
   'provisioning.ready.title': 'Su espacio de trabajo está listo',
   'provisioning.ready.description': 'Le llevamos a {product} para iniciar sesión.',
   'provisioning.ready.redirecting': 'Redirigiendo…',

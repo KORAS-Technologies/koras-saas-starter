@@ -202,6 +202,32 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Er wurde möglicherweise bereits verwendet oder ist abgelaufen. Registrieren Sie sich erneut, um einen neuen zu erhalten.',
   'verify.invalid.again': 'Erneut registrieren',
 
+  // ── /activate ───────────────────────────────────────────────────────────────
+  'activate.title': 'Passwort festlegen',
+  'activate.heading': 'Willkommen bei {product}',
+  'activate.description':
+    'Legen Sie ein Passwort für {email} fest, um die Einrichtung von {organization} abzuschließen.',
+  'activate.form.password': 'Passwort',
+  'activate.form.hint': 'Mindestens 8 Zeichen. Ihre Organisation kann mehr verlangen.',
+  'activate.form.confirm': 'Passwort bestätigen',
+  'activate.form.tooShort': 'Verwenden Sie mindestens 8 Zeichen.',
+  'activate.form.mismatch': 'Die beiden Passwörter stimmen nicht überein.',
+  'activate.form.submit': 'Passwort festlegen und weiter',
+  'activate.form.submitting': 'Passwort wird festgelegt…',
+  'activate.done.title': 'Ihr Passwort ist festgelegt',
+  'activate.done.description':
+    'Melden Sie sich mit Ihrer E-Mail-Adresse und dem soeben gewählten Passwort an.',
+  'activate.done.signIn': 'Anmelden',
+  'activate.incomplete.title': 'Dieser Link ist unvollständig',
+  'activate.incomplete.description': 'Öffnen Sie den Link aus Ihrer Willkommens-E-Mail erneut.',
+  'activate.rateLimited.title': 'Zu viele Versuche',
+  'activate.rateLimited.description':
+    'Warten Sie einige Minuten und öffnen Sie den Link erneut. Es ist nichts verloren gegangen.',
+  'activate.invalid.title': 'Dieser Link ist nicht gültig',
+  'activate.invalid.description':
+    'Er wurde möglicherweise bereits verwendet oder ist abgelaufen. Wenn Sie ein Passwort festgelegt haben, melden Sie sich an; andernfalls nutzen Sie „Passwort vergessen“ auf der Anmeldeseite.',
+  'activate.failed': 'Auf unserer Seite ist etwas schiefgelaufen. Warten Sie kurz und versuchen Sie es erneut.',
+
   'provisioning.ready.title': 'Ihr Arbeitsbereich ist bereit',
   'provisioning.ready.description': 'Sie werden zur Anmeldung bei {product} weitergeleitet.',
   'provisioning.ready.redirecting': 'Weiterleitung…',

@@ -284,6 +284,9 @@ describe('the route gate', () => {
       '/login',
       '/signin',
       '/signup',
+      // The welcome email's link. The owner has no password yet, so there is
+      // nothing to gate it behind (Control Plane R-107).
+      '/activate',
       '/api/auth',
       '/privacy',
       '/terms',

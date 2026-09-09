@@ -37,6 +37,12 @@ const PUBLIC_PATHS = [
   '/login',
   '/signin',
   '/signup',
+  // Where the welcome email lands: the first password of a new owner, set on
+  // a page of this product rather than one of ZITADEL. Nobody who arrives
+  // here can sign in yet, which is the whole point (Control Plane R-107).
+  // No apostrophes in this comment: the structural test reads the list with
+  // a quote-matching regex.
+  '/activate',
   '/api/auth',
   // The three the public footer links to. A privacy policy behind a sign-in is
   // a privacy policy nobody can read before deciding whether to sign up, which
