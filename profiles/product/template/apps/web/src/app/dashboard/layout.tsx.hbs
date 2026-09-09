@@ -41,6 +41,22 @@ import { currentLocale } from '../../lib/locale'
  * through `productConfig.navigation` directly, so a translated sidebar and the
  * route gate still describe one registry.
  */
+/**
+ * What the workspace badge says, given what the logo already says.
+ *
+ * The logo shows the white-label name where there is one, else the product's.
+ * The badge shows the organisation's own name -- from its tenant row, or the
+ * name the platform recorded at signup -- and nothing when that would repeat
+ * the logo, which happens whenever a customer white-labels the product with
+ * their own name. Exported for the structural test; it is pure.
+ */
+export function workspaceLabel(whiteLabel: string, organizationName?: string): string | undefined {
+  const name = organizationName?.trim()
+  if (!name) return undefined
+  if (whiteLabel !== '' && whiteLabel.trim().toLowerCase() === name.toLowerCase()) return undefined
+  return name
+}
+
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const [context, locale] = await Promise.all([signedInContext(), currentLocale()])
 
@@ -72,16 +88,17 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const identity = {
     name: member.name,
     email: member.email,
-    // The customer's own name for themselves. A white-label name overrides it
-    // where one is set, because a tenant that has renamed the product has
-    // renamed the workspace it appears beside; otherwise it is the
-    // organisation's name from its own tenant row.
+    // The customer's own name for themselves, beside the product's mark --
+    // unless the mark already says it. A white-label name replaces the
+    // product's name in the logo, and a customer who named the product after
+    // themselves then saw their name twice, side by side. The badge exists
+    // to say which workspace this is; when the logo says it, it is silent.
     //
     // Never the organization id. The session carries a ZITADEL organization
     // *id*, which is a uuid, and a uuid where a name belongs reads as a bug
     // rather than as a workspace -- so the badge renders nothing at all when
     // the settings read found no name.
-    organizationName: tenant.name !== '' ? tenant.name : organizationName,
+    organizationName: workspaceLabel(tenant.name, organizationName),
     roleLabel: roleLabel(access, locale),
   }
 

@@ -201,3 +201,24 @@ def test_the_setting_is_declared_so_a_deployment_asks_for_it() -> None:
         "the platform caller is not declared as supplied, so nothing prompts for it "
         "and nothing refuses a deployment that omits it"
     )
+
+
+def test_the_create_call_records_the_identity_the_resolver_needs() -> None:
+    """The tenant resolver matches `zitadel_org_id` and `status = 'active'`.
+
+    Until 2026-09-09 the create call carried no such identifier and nothing
+    called activate, so every tenant sat at `provisioning` with no organization
+    and refused its own customer (R-105 in koras-control-plane). This asserts
+    the request schema accepts it, the store writes it, and a repeat call fills
+    in a row that lacks it -- which is the repair for tenants made before.
+    """
+    source = _router_source()
+    assert "zitadel_org_id: str | None = None" in source, "the organization schema has no identity"
+    assert "zitadel_org_id=body.organization.zitadel_org_id" in source
+    store = (REPO_ROOT / "services" / "api" / "koras_api" / "core" / "tenant_store.py").read_text(
+        encoding="utf-8"
+    )
+    assert ":zitadel_org_id) " in store, "the insert does not write the identity"
+    assert "where tenant_key = :tenant_key and zitadel_org_id is null" in store, (
+        "a repeat call does not fill in a missing identity"
+    )

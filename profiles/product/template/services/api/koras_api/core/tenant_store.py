@@ -87,6 +87,7 @@ async def create(
     plan: str,
     owner_email: str,
     owner_zitadel_user_id: str | None,
+    zitadel_org_id: str | None = None,
 ) -> tuple[TenantRow, bool]:
     """Create the tenant, or adopt the one this key already names.
 
@@ -104,10 +105,11 @@ async def create(
         inserted = await session.execute(
             text(
                 "insert into public.tenants "
-                "  (tenant_key, organization_id, name, slug, plan, status, owner_email) "
+                "  (tenant_key, organization_id, name, slug, plan, status, owner_email, "
+                "   zitadel_org_id) "
                 "values "
                 "  (:tenant_key, cast(:organization_id as uuid), :name, :slug, "
-                "   :plan, :status, :owner_email) "
+                "   :plan, :status, :owner_email, :zitadel_org_id) "
                 "on conflict (tenant_key) do nothing "
                 "returning id::text, tenant_key, status"
             ),
@@ -119,6 +121,7 @@ async def create(
                 "plan": plan,
                 "status": INITIAL_STATUS,
                 "owner_email": owner_email,
+                "zitadel_org_id": zitadel_org_id,
             },
         )
     except IntegrityError as exc:
@@ -137,6 +140,20 @@ async def create(
         existing = await find_by_key(session, tenant_key)
         if existing is None:  # pragma: no cover - the conflict names a row by definition
             raise RuntimeError("the tenant_key conflicted with a row that cannot be read")
+        # A repeat that carries the identity fills in a row that lacks it. This
+        # is how every tenant created before the identity travelled (R-105) is
+        # repaired: the Control Plane calls create again, idempotently, with
+        # the organization it now knows. Never overwritten: a row that already
+        # names an organization keeps it, because the column is unique and a
+        # second organization on one tenant is the mistake RLS exists to stop.
+        if zitadel_org_id:
+            await session.execute(
+                text(
+                    "update public.tenants set zitadel_org_id = :zitadel_org_id "
+                    "where tenant_key = :tenant_key and zitadel_org_id is null"
+                ),
+                {"zitadel_org_id": zitadel_org_id, "tenant_key": tenant_key},
+            )
         await session.commit()
         return existing, False
 
