@@ -77,6 +77,11 @@ export const PRODUCT_PERMISSIONS = [
   'team.manage',
   'settings.read',
   'settings.manage',
+  // The Files module. Everyone in the tenant may see and add; deleting is
+  // the destructive half and belongs to the people who administer it.
+  'files.read',
+  'files.upload',
+  'files.manage',
 ] as const
 
 export type ProductPermission = (typeof PRODUCT_PERMISSIONS)[number]
@@ -106,9 +111,9 @@ export function isProductPermission(value: string): value is ProductPermission {
 export const ROLE_PERMISSIONS: Record<OrganizationRole, readonly ProductPermission[]> = {
   organization_owner: PRODUCT_PERMISSIONS,
   organization_admin: PRODUCT_PERMISSIONS,
-  security_admin: ['product.access', 'team.read', 'settings.read'],
-  billing_admin: ['product.access', 'settings.read'],
-  member: ['product.access'],
+  security_admin: ['product.access', 'team.read', 'settings.read', 'files.read', 'files.upload'],
+  billing_admin: ['product.access', 'settings.read', 'files.read', 'files.upload'],
+  member: ['product.access', 'files.read', 'files.upload'],
 }
 
 /**

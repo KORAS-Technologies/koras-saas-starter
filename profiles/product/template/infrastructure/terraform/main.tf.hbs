@@ -283,7 +283,18 @@ output "storage_endpoints" {
   description = "Map of env -> Supabase Storage S3-compatible endpoint."
   value = {
     for name, url in module.bootstrap.supabase_project_api_urls :
-    name => "${url}/storage/v1"
+    name => "${url}/storage/v1/s3"
+  }
+}
+
+# The region each project's S3 gateway signs against. Signature v4 carries
+# the region, and a request signed for the wrong one is refused with a
+# message that names neither region.
+output "supabase_regions" {
+  description = "Map of env -> the Supabase project region, for S3 signing."
+  value = {
+    for name, _ in module.bootstrap.supabase_project_api_urls :
+    name => var.supabase_region
   }
 }
 

@@ -280,6 +280,39 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'settings.appearance.description':
     'Claro, oscuro o lo que tenga configurado este dispositivo. Se recuerda solo en este navegador.',
 
+  /* ---------------------------------------------------------------- files */
+  'files.title': 'Archivos',
+  'files.intro':
+    'Lo que su organización ha guardado en {product}. Los archivos van directamente desde su navegador al almacenamiento asignado a su organización; el producto mantiene la lista.',
+  'files.unresolved':
+    'No se ha podido leer su plan desde la plataforma KORAS en este momento, así que no se muestra el límite de almacenamiento. Las subidas siguen funcionando.',
+  'files.notIncluded.title': 'No incluido en su plan',
+  'files.notIncluded.description':
+    'El almacenamiento de archivos forma parte de un plan superior. Su plan actual es <strong>{plan}</strong>. Lo ya guardado se conserva.',
+  'files.notIncluded.notRecorded': 'no registrado',
+  'files.upload': 'Subir un archivo',
+  'files.uploading': 'Subiendo…',
+  'files.choose': 'Elegir un archivo para subir',
+  'files.download': 'Descargar',
+  'files.remove': 'Eliminar',
+  'files.confirmRemove': '¿Eliminar {name}? No se puede deshacer.',
+  'files.empty': 'Aún no hay nada guardado',
+  'files.emptyHint': 'Suba un archivo y aparecerá aquí para todos en su organización.',
+  'files.column.name': 'Nombre',
+  'files.column.size': 'Tamaño',
+  'files.column.uploadedAt': 'Subido',
+  'files.usage': '{used} de {limit} usados',
+  'files.usageUnlimited': '{used} usados',
+  'files.usageUnknown': 'Límite de almacenamiento no disponible ahora mismo',
+  'files.provider': 'Guardado en {provider}',
+  'files.retry': 'Volver a intentarlo',
+  'files.error.plan': 'Su plan no incluye esto, o la subida superaría su límite de almacenamiento.',
+  'files.error.forbidden': 'Su cuenta no puede hacer eso.',
+  'files.error.notArrived': 'El archivo no ha llegado al almacenamiento como se esperaba. Vuelva a intentar la subida.',
+  'files.error.unavailable':
+    'El almacenamiento de archivos no está disponible para su organización ahora mismo. El motivo está en el registro del servidor.',
+  'files.error.generic': 'Algo ha fallado. Vuelva a intentarlo.',
+
   /* --------------------------------------------------------- team & access */
   'team.title': 'Equipo y acceso',
   'team.intro':

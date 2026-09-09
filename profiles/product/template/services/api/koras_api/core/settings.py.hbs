@@ -2,6 +2,12 @@ from koras_platform import Environment
 from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# The code this product is registered under with the Control Plane. Written
+# by the generator, like the slug in packages/branding, because it is a fact
+# of the repository rather than a setting: nobody should be able to point a
+# deployed API at another product's policies by editing Doppler.
+PRODUCT_CODE = "{{projectSlug}}"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
@@ -50,8 +56,30 @@ class Settings(BaseSettings):
 
     doppler_token: str = ""
 
-    otel_exporter_otlp_endpoint: str = "http://localhost:4317"
+    # Where a tenant's files go when the Control Plane has decided nothing
+    # for them: the product's own bucket on its own Supabase project, or
+    # MinIO locally. `storage_endpoint` is the S3-compatible gateway -- for
+    # Supabase that is `<project>/storage/v1/s3`, which Terraform outputs --
+    # and the key pair is one minted for that gateway. The R2 and S3 pairs
+    # are for a customer whose policy names those providers under the
+    # product's own accounts; empty means the product cannot serve them and
+    # says so rather than falling back to Supabase.
+    storage_endpoint: str = ""
+    storage_bucket: str = ""
+    storage_region: str = "us-east-1"
+    storage_access_key: str = ""
+    storage_secret_key: str = ""
+    storage_r2_access_key: str = ""
+    storage_r2_secret_key: str = ""
+    storage_s3_access_key: str = ""
+    storage_s3_secret_key: str = ""
 
+    # The platform, for the two answers this service acts on rather than
+    # displays: where files go and how much may be stored. Optional: a
+    # product with no platform stores files in its own bucket, ungated.
+    koras_control_plane_url: str = ""
+
+    otel_exporter_otlp_endpoint: str = "http://localhost:4317"
 
     @field_validator("database_url", mode="after")
     @classmethod

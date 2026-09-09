@@ -68,7 +68,15 @@ export interface RequestOptions {
   fetchImpl?: typeof fetch
 }
 
-async function request<T>(path: string, options: RequestOptions): Promise<T> {
+interface Call {
+  method?: 'GET' | 'POST' | 'DELETE'
+  /** Sent as JSON. */
+  body?: unknown
+  /** True for a 204. */
+  empty?: boolean
+}
+
+async function request<T>(path: string, options: RequestOptions, call: Call = {}): Promise<T> {
   const base = options.baseUrl.replace(/\/$/, '')
   if (!base) throw new ApiError('no API base URL is configured', 0)
 
@@ -80,10 +88,13 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
 
   try {
     const response = await (options.fetchImpl ?? fetch)(`${base}${path}`, {
+      method: call.method ?? 'GET',
       headers: {
         Authorization: `Bearer ${options.token}`,
         Accept: 'application/json',
+        ...(call.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       },
+      ...(call.body !== undefined ? { body: JSON.stringify(call.body) } : {}),
       // Never cached at this layer. The response is per-tenant and per-caller,
       // and a shared cache keyed on a URL that carries neither is how one
       // customer is served another's settings. A caller that wants caching
@@ -95,6 +106,7 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
     if (!response.ok) {
       throw new ApiError(`${path} answered ${response.status}`, response.status)
     }
+    if (call.empty) return undefined as T
     return (await response.json()) as T
   } finally {
     clearTimeout(timer)
@@ -166,4 +178,76 @@ export function fetchBranding(
     `/api/portal/v1/products/${encodeURIComponent(options.productCode)}/branding`,
     options,
   )
+}
+
+/* -------------------------------------------------------------------------- */
+/* Files                                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The Files surface of this product's own API.
+ *
+ * Tickets, not bytes: the API answers with signed URLs and the browser moves
+ * the file itself. Every call is scoped by the token -- there is no tenant
+ * and no organization to name -- and a file id from another tenant is a 404,
+ * because the row is invisible to this caller's session before any code runs.
+ */
+export interface FileRow {
+  id: string
+  name: string
+  size_bytes: number
+  content_type: string
+  uploaded_by: string
+  uploaded_at: string
+}
+
+export interface FileList {
+  files: FileRow[]
+  used_bytes: number
+  limit_bytes: number | null
+  provider: string
+  resolved: boolean
+}
+
+export interface UploadTicket {
+  file_id: string
+  upload_url: string
+  method: string
+  headers: Record<string, string>
+  expires_in: number
+}
+
+export interface DownloadTicket {
+  url: string
+  expires_in: number
+}
+
+export function fetchFiles(options: RequestOptions): Promise<FileList> {
+  return request<FileList>('/api/v1/files', options)
+}
+
+export function requestUpload(
+  options: RequestOptions & { name: string; sizeBytes: number; contentType: string },
+): Promise<UploadTicket> {
+  return request<UploadTicket>('/api/v1/files/uploads', options, {
+    method: 'POST',
+    body: { name: options.name, size_bytes: options.sizeBytes, content_type: options.contentType },
+  })
+}
+
+export function completeUpload(options: RequestOptions & { fileId: string }): Promise<FileRow> {
+  return request<FileRow>(`/api/v1/files/${encodeURIComponent(options.fileId)}/complete`, options, {
+    method: 'POST',
+  })
+}
+
+export function fetchDownloadUrl(options: RequestOptions & { fileId: string }): Promise<DownloadTicket> {
+  return request<DownloadTicket>(`/api/v1/files/${encodeURIComponent(options.fileId)}/download`, options)
+}
+
+export function deleteFile(options: RequestOptions & { fileId: string }): Promise<void> {
+  return request<void>(`/api/v1/files/${encodeURIComponent(options.fileId)}`, options, {
+    method: 'DELETE',
+    empty: true,
+  })
 }

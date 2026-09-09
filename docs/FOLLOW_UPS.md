@@ -51,6 +51,9 @@ exist and that the hours are the same hours.
 
 ## The index, in number order
 
+F22 — the Files module shipped on 2026-09-08 with the platform's policy and
+quota wired through; what it deliberately leaves out is below.
+
 Entries are grouped below by *why they are undone*, and numbered by *when they
 were opened*. Those two orders cannot both run in sequence, so this is the
 numeric one; the sections are the useful one. Within each section entries are in
@@ -1792,3 +1795,25 @@ this entry was one real gap filed under another one's name.
 
 Corrected 2026-08-29, by reading the workflow rather than the entry.
 
+
+### F22 — Files: what the first storage module leaves out
+
+Built 2026-09-08: `docs/PRODUCT_APP_SHELL.md` §21a. Left undone, each for a
+reason rather than for lack of time:
+
+- [ ] **Multipart uploads.** One object, one signed PUT, five gigabytes at
+      most. Larger files need the multipart protocol, which needs the API to
+      hold an upload id across requests. Not until a product needs it.
+- [ ] **A sweep for orphans.** A row without an object is a `pending` upload
+      that never confirmed; an object without a row is a confirmation that
+      failed after the PUT. Both are findable and neither is found yet.
+- [ ] **`customer-owned` and `azure-blob`.** The policy can name both; the
+      product refuses both with 503. The first needs the customer's own
+      credential, which nothing in the estate holds; the second is not
+      S3-compatible.
+- [ ] **A real upload in CI.** Generator Integration has Postgres and no
+      bucket. The browser spec proves the page's states without one; the
+      upload itself is proven against MinIO locally and against dev by hand.
+- [ ] **Quota by period.** The limit is a ceiling in gigabytes on a boolean
+      entitlement's plan grant, not a `quota` kind, because the platform's
+      quota needs a period and storage has none.

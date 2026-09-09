@@ -33,13 +33,16 @@ test('no roles at all grants nothing', () => {
   assert.equal(productAccessFromOrganizationRoles([]).granted, false)
 })
 
-test('a plain member may open the product and nothing else', () => {
+test('a plain member may open the product and use its files, and nothing else', () => {
   const access = productAccessFromOrganizationRoles(['member'])
   assert.equal(access.granted, true)
   assert.equal(access.role, 'product_member')
-  assert.deepEqual(access.permissions, ['product.access'])
+  // Sorted, as every permission list is, so two equal authorities compare equal.
+  assert.deepEqual(access.permissions, ['files.read', 'files.upload', 'product.access'])
   assert.equal(hasPermissions(access, ['team.read']), false)
   assert.equal(hasPermissions(access, ['settings.manage']), false)
+  // Deleting a file is the destructive half and stays with the administrators.
+  assert.equal(hasPermissions(access, ['files.manage']), false)
 })
 
 test('an owner and an administrator are product administrators', () => {

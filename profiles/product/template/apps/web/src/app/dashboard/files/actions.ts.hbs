@@ -1,0 +1,120 @@
+'use server'
+
+import { revalidatePath } from 'next/cache'
+import {
+  ApiError,
+  completeUpload as completeUploadRequest,
+  deleteFile as deleteFileRequest,
+  fetchDownloadUrl,
+  fetchFiles,
+  requestUpload as requestUploadRequest,
+} from '@{{projectSlug}}/api-client'
+import type { FileList, UploadTicket } from '@{{projectSlug}}/api-client'
+import { can, signedInContext } from '../../../lib/access'
+import { translator } from '../../../lib/locale'
+import { apiBaseUrl, providerToken } from '../../../lib/session'
+
+/**
+ * The Files page's server half.
+ *
+ * Every action re-establishes who is calling and what they may do before it
+ * talks to the API, and the API decides again with the same token. Neither
+ * trusts the other's answer, which is what lets the page be a convenience
+ * and the API be the boundary.
+ *
+ * The bytes never come through here. The upload ticket carries a signed URL
+ * the browser puts the file to directly, and the download ticket a signed
+ * URL it fetches directly; this file only records intent and confirmation.
+ * A Next server action has a body limit measured in megabytes, and a file
+ * that arrived through it would be a file the API never checked.
+ */
+
+export type ActionResult<T> = { status: 'ok'; value: T } | { status: 'error'; message: string }
+
+async function session(permission: 'files.read' | 'files.upload' | 'files.manage') {
+  const context = await signedInContext()
+  if (context === null || !can(context.access, permission)) return null
+  const token = await providerToken()
+  const baseUrl = apiBaseUrl()
+  if (!token || !baseUrl) return null
+  return { baseUrl, token }
+}
+
+/** Turn the API's refusal into a sentence in the reader's language. */
+async function explain(error: unknown): Promise<string> {
+  const t = await translator()
+  if (error instanceof ApiError) {
+    if (error.status === 402) return t('files.error.plan')
+    if (error.status === 403) return t('files.error.forbidden')
+    if (error.status === 409) return t('files.error.notArrived')
+    if (error.status === 503) return t('files.error.unavailable')
+  }
+  return t('files.error.generic')
+}
+
+export async function listFiles(): Promise<ActionResult<FileList>> {
+  const auth = await session('files.read')
+  if (auth === null) return { status: 'error', message: (await translator())('files.error.forbidden') }
+  try {
+    return { status: 'ok', value: await fetchFiles(auth) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function requestUpload(input: {
+  name: string
+  sizeBytes: number
+  contentType: string
+}): Promise<ActionResult<UploadTicket>> {
+  const auth = await session('files.upload')
+  if (auth === null) return { status: 'error', message: (await translator())('files.error.forbidden') }
+  try {
+    return {
+      status: 'ok',
+      value: await requestUploadRequest({
+        ...auth,
+        name: input.name,
+        sizeBytes: input.sizeBytes,
+        contentType: input.contentType,
+      }),
+    }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function completeUpload(fileId: string): Promise<ActionResult<null>> {
+  const auth = await session('files.upload')
+  if (auth === null) return { status: 'error', message: (await translator())('files.error.forbidden') }
+  try {
+    await completeUploadRequest({ ...auth, fileId })
+    revalidatePath('/dashboard/files')
+    return { status: 'ok', value: null }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function downloadUrl(fileId: string): Promise<ActionResult<string>> {
+  const auth = await session('files.read')
+  if (auth === null) return { status: 'error', message: (await translator())('files.error.forbidden') }
+  try {
+    const ticket = await fetchDownloadUrl({ ...auth, fileId })
+    return { status: 'ok', value: ticket.url }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function deleteFile(fileId: string): Promise<ActionResult<null>> {
+  const auth = await session('files.manage')
+  if (auth === null) return { status: 'error', message: (await translator())('files.error.forbidden') }
+  try {
+    await deleteFileRequest({ ...auth, fileId })
+    revalidatePath('/dashboard/files')
+    return { status: 'ok', value: null }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}

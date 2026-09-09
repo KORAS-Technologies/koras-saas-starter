@@ -31,11 +31,20 @@ const PROFILES = ['product', 'control-plane'] as const
 
 function settingsFor(profile: string): string {
   // Through templatePath, so a file that moves into the shared layer is still
-  // found rather than failing as ENOENT on a path that no longer exists.
-  return readFileSync(
-    templatePath(profile, 'services', 'api', 'koras_api', 'core', 'settings.py'),
-    'utf8',
-  )
+  // found rather than failing as ENOENT on a path that no longer exists. The
+  // product's is a template since 2026-09-08, because the generator writes the
+  // product code into it; the driver rule it asserts is the same either way.
+  try {
+    return readFileSync(
+      templatePath(profile, 'services', 'api', 'koras_api', 'core', 'settings.py.hbs'),
+      'utf8',
+    )
+  } catch {
+    return readFileSync(
+      templatePath(profile, 'services', 'api', 'koras_api', 'core', 'settings.py'),
+      'utf8',
+    )
+  }
 }
 
 describe.each(PROFILES)('%s: the API normalises its database URL', (profile) => {

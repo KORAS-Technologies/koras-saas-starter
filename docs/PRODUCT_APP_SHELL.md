@@ -525,6 +525,45 @@ identifiers on the Team & Access page stay as they are: they are code, and a
 translated identifier is one nobody can search the repository for.
 `docs/PRODUCT_FRONTEND.md` owns the rest of the language design.
 
+## 21a. Files
+
+The first module that stores something, and the reference for the next one.
+Four boundaries, each with a name the other side must agree on:
+
+```
+supabase/migrations/00005_files.sql      the index: a row per object, tenant-scoped, forced
+python-packages/koras-storage            where files go and how: one S3-compatible client
+services/api/koras_api/routers/files.py  list, upload ticket, confirm, download ticket, delete
+apps/web/src/app/dashboard/files/        the page, the panel, the server actions
+```
+
+No byte passes through the product. The API mints a signed upload URL, the
+browser puts the object into the bucket itself, and the API confirms the
+object is there and is the size that was promised before the row is listed.
+Downloads are signed URLs with an attachment disposition. The credential
+never leaves the API; the browser holds a URL that names one key and
+expires in minutes.
+
+Where a customer's files go is the Control Plane's storage policy, read by
+the API through the portal route with the customer's own token and cached
+for a minute. No policy is the platform default -- the product's own
+Supabase bucket -- which is exactly what the platform answers for a
+customer nobody has decided anything for. A policy naming Cloudflare R2 or
+AWS S3 is served through the same client with the provider's own key pair
+from Doppler; one naming a provider the product cannot serve is refused
+with 503 and a reason, never quietly written to the default.
+
+Whether the tenant may store anything, and how much, is the `storage.files`
+entitlement: granted from Starter upward with a per-plan limit in gigabytes,
+enforced by the API at upload with a 402, locked in the sidebar and refused
+on the page with the plan named. An unreachable platform is no gate rather
+than a closed one, the same decision the Reports page makes.
+
+Permissions: `files.read` and `files.upload` for every role in the tenant,
+`files.manage` -- deletion -- for owners and administrators. The API mirrors
+the mapping by role because it cannot import the catalogue;
+`product-files.test.ts` in the starter keeps the two agreeing.
+
 ## 22. Generator and template integration
 
 Nothing new. The shell is ordinary template content under

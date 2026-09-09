@@ -30,6 +30,8 @@ two-line stub, deliberately.
 /dashboard        signed-in landing    behind the session gate, inside the shell
 /dashboard/settings       product settings   general; requires settings.read
 /dashboard/settings/team  Team & Access      product roles; requires team.read
+/dashboard/files          Files              upload, list, download, delete; requires
+                                             files.read and the storage.files plan capability
 ```
 
 Everything from `/dashboard` down renders inside the **authenticated product
