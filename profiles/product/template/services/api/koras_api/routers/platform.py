@@ -143,6 +143,31 @@ async def create_tenant(
     return _response(tenant)
 
 
+class StorageDefaults(BaseModel):
+    """Where this product keeps files unless a customer's policy says otherwise.
+
+    Read by the Control Plane when it provisions a customer and when it
+    backfills the storage policies of customers provisioned before it asked.
+    The values are this deployment's own settings, from Doppler: the bucket
+    and region the product signs uploads against when a policy names none.
+    Never a credential -- the key pair stays in Doppler and is not a
+    reference the Control Plane holds.
+    """
+
+    provider: str
+    bucket: str | None
+    region: str | None
+
+
+@router.get("/storage-defaults", response_model=StorageDefaults)
+async def storage_defaults(_principal: PlatformMachineDep) -> StorageDefaults:
+    return StorageDefaults(
+        provider="supabase",
+        bucket=settings.storage_bucket or None,
+        region=settings.storage_region or None,
+    )
+
+
 @router.get("/tenants/{tenant_id}", response_model=TenantResponse)
 async def get_tenant(
     tenant_id: str,

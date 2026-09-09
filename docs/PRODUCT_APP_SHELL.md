@@ -527,6 +527,15 @@ translated identifier is one nobody can search the repository for.
 
 ## 21a. Files
 
+**Storage defaults are the product's to report.** `GET
+/internal/platform/v1/storage-defaults` answers the bucket and region this
+deployment signs against when a customer's policy names none -- `STORAGE_BUCKET`
+and `STORAGE_REGION` from Doppler, provider `supabase`. The Control Plane reads
+it when provisioning a customer, so the storage policy it records carries the
+real destination rather than blanks, and again when backfilling policies made
+before it asked (2026-09-09). Machine identity only, like the rest of the
+contract; the key pair is never part of the answer.
+
 The first module that stores something, and the reference for the next one.
 Four boundaries, each with a name the other side must agree on:
 

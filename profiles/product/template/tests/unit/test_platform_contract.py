@@ -222,3 +222,16 @@ def test_the_create_call_records_the_identity_the_resolver_needs() -> None:
     assert "where tenant_key = :tenant_key and zitadel_org_id is null" in store, (
         "a repeat call does not fill in a missing identity"
     )
+
+
+def test_storage_defaults_are_the_settings_and_never_a_credential() -> None:
+    """The Control Plane records where files go from this answer; it must be the
+    bucket and region the product actually signs against, and nothing that
+    authenticates."""
+    source = _router_source()
+    handler = source[source.index("async def storage_defaults") :]
+    handler = handler[: handler.index("@router.")]
+    assert "settings.storage_bucket" in handler
+    assert "settings.storage_region" in handler
+    for secret in ("access_key", "secret_key", "storage_endpoint"):
+        assert secret not in handler, f"{secret} must not be reported"
