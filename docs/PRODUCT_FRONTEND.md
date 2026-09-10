@@ -591,10 +591,12 @@ harmless.
   the CSP and its nonce
 - the `href` and `data-testid="sign-in"` on the sign-in control
 - the wording of the three outcomes on `/signup/verify`
-- the fourth outcome, `awaiting-payment`, opens the payment provider's
-  checkout from `Checkout.tsx` with the public `NEXT_PUBLIC_PADDLE_CLIENT_TOKEN`
-  and nothing else; the run starts from the provider's webhook, never from
-  the browser — see `BILLING_DESIGN.md`
+- the fourth outcome, `awaiting-payment`, sends the browser to the payment
+  provider's hosted checkout from `Checkout.tsx`, at a URL the Control Plane
+  minted, and the provider sends it back to `/signup/verify` with the
+  registration id; the product holds no provider credential and loads no
+  provider script, and the run starts from the provider's webhook, never
+  from the browser — see `BILLING_DESIGN.md`
 
 The last one is not style. Unknown, expired and already-used tokens answer
 identically on purpose: telling somebody their link "has expired" tells whoever

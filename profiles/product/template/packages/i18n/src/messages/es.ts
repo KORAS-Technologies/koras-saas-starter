@@ -61,7 +61,6 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'pricing.perSeatYear': 'por puesto y año',
   'pricing.choose': 'Empezar la prueba gratuita',
   'pricing.priceAtCheckout': 'Precio al pagar',
-  'pricing.loading': 'Obteniendo el precio…',
   'pricing.seatsRange': 'De {min} a {max} puestos',
   'pricing.seatsFrom': 'Desde {min} puestos',
   'pricing.singleSeat': 'Cualquier número de puestos',
@@ -152,20 +151,15 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'checkout.title': 'Añadir un método de pago',
   'checkout.description':
     'Su dirección está confirmada. Añada una tarjeta para empezar su prueba de 14 días de {product}.',
-  'checkout.opening': 'Abriendo el pago seguro…',
-  'checkout.waiting': 'El pago está abierto. Complételo para continuar.',
-  'checkout.open': 'Abrir el pago',
+  'checkout.opening': 'Le llevamos al pago seguro…',
+  'checkout.open': 'Continuar al pago',
   'checkout.trialNote': 'No se cobra nada hasta que termine la prueba, y puede cancelar antes.',
   'checkout.closed.title': 'El pago se ha cerrado',
   'checkout.closed.description':
-    'No se ha cobrado nada ni se ha creado nada. Ábralo de nuevo para continuar, o vuelva más tarde: le enviaremos un enlace.',
-  'checkout.failed.title': 'No se ha podido cargar el pago',
+    'No se ha cobrado nada ni se ha creado nada. Continúe al pago para retomarlo donde lo dejó, o vuelva más tarde: le enviaremos un enlace.',
+  'checkout.failed.title': 'No se ha podido abrir el pago',
   'checkout.failed.description':
-    'Compruebe su conexión y recargue esta página. Su enlace sigue siendo válido.',
-  'checkout.failed.reload': 'Recargar',
-  'checkout.notConfigured.title': 'El pago aún no está configurado',
-  'checkout.notConfigured.description':
-    '{product} todavía no puede aceptar pagos en línea. Su dirección está confirmada y no se pierde nada: escríbanos y terminaremos de configurar su cuenta.',
+    'Inténtelo de nuevo en un momento. Su dirección está confirmada y no se pierde nada: le enviaremos un enlace que lo abre.',
 
   'requestAccess.heading': 'Empezar con {product}',
   'requestAccess.byAdmin':

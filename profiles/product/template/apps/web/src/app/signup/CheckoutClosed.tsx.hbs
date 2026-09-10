@@ -1,0 +1,62 @@
+'use client'
+
+import { useState } from 'react'
+import { AuthCard, Button } from '@{{projectSlug}}/ui'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale } from '@{{projectSlug}}/i18n'
+import { reopenCheckout } from './actions'
+
+/**
+ * The provider's page was left without paying.
+ *
+ * The provider sends the browser back here with the registration id, and
+ * the token that proved the address is spent, so the link in the email will
+ * not open the checkout again. This asks the Control Plane for a fresh
+ * session by registration id -- the same thing verification handed out --
+ * and sends the browser there. Nothing was charged and nothing was created,
+ * and the card says so before offering the way back.
+ *
+ * A refusal answers in one sentence and keeps the door open: the reminder
+ * email a day later carries a link that works whatever happened here.
+ */
+export function CheckoutClosed({
+  registrationId,
+  locale,
+}: {
+  registrationId: string
+  locale: Locale
+}) {
+  const t = createTranslator(locale)
+  const [phase, setPhase] = useState<'idle' | 'opening' | 'failed'>('idle')
+
+  const open = async () => {
+    setPhase('opening')
+    const opened = await reopenCheckout(registrationId)
+    if (opened) {
+      window.location.assign(opened.url)
+      return
+    }
+    setPhase('failed')
+  }
+
+  if (phase === 'failed') {
+    return (
+      <AuthCard title={t('checkout.failed.title')} description={t('checkout.failed.description')} />
+    )
+  }
+
+  return (
+    <AuthCard title={t('checkout.closed.title')} description={t('checkout.closed.description')}>
+      <Button
+        type="button"
+        size="lg"
+        className="w-full"
+        onClick={() => void open()}
+        disabled={phase === 'opening'}
+        data-testid="checkout-reopen"
+      >
+        {phase === 'opening' ? t('checkout.opening') : t('checkout.open')}
+      </Button>
+    </AuthCard>
+  )
+}

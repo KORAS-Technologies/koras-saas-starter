@@ -11,11 +11,11 @@ import { PricingPlans } from './pricing-plans'
  * The plans are the Control Plane's -- the same public catalogue the signup
  * form offers, read on the server by the page and handed in -- so this section
  * cannot list a plan that is not on sale. The prices are the payment
- * provider's, rendered in the browser from a price preview with the public
- * token, so this section cannot show an amount the checkout will not charge.
- * Nothing about a price is typed into this repository, which is the whole
- * point: a pricing page that is copied by hand is a pricing page that is wrong
- * the first time somebody changes a price and forgets it.
+ * provider's, read by the Control Plane with its secret key and served beside
+ * the plans, so this section cannot show an amount the checkout will not
+ * charge. Nothing about a price is typed into this repository, which is the
+ * whole point: a pricing page that is copied by hand is a pricing page that
+ * is wrong the first time somebody changes a price and forgets it.
  *
  * Nothing listed renders nothing at all. A pricing section with no plans is
  * a claim that the product is free.
@@ -32,14 +32,9 @@ import { PricingPlans } from './pricing-plans'
 export function PricingSection({
   locale,
   plans,
-  paddleToken,
-  paddleEnvironment,
 }: {
   locale: Locale
   plans: readonly PublicPlan[]
-  /** The public client-side token, or empty where this product takes no card. */
-  paddleToken: string
-  paddleEnvironment: string | undefined
 }) {
   if (plans.length === 0) return null
   const marketing = marketingFor(locale)
@@ -55,7 +50,6 @@ export function PricingSection({
     perSeatYear: t('pricing.perSeatYear'),
     choose: t('pricing.choose'),
     priceAtCheckout: t('pricing.priceAtCheckout'),
-    loading: t('pricing.loading'),
     seatsRange: t('pricing.seatsRange'),
     seatsFrom: t('pricing.seatsFrom'),
     singleSeat: t('pricing.singleSeat'),
@@ -84,8 +78,6 @@ export function PricingSection({
         plans={plans}
         highlights={marketing.planHighlights}
         note={marketing.pricingNote}
-        paddleToken={paddleToken}
-        paddleEnvironment={paddleEnvironment}
         locale={locale}
         labels={labels}
         contactHref={contactHref}

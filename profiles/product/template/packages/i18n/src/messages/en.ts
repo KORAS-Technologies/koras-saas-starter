@@ -68,7 +68,6 @@ export const en = {
   'pricing.perSeatYear': 'per seat, per year',
   'pricing.choose': 'Start free trial',
   'pricing.priceAtCheckout': 'Price shown at checkout',
-  'pricing.loading': 'Fetching the price…',
   'pricing.seatsRange': '{min} to {max} seats',
   'pricing.seatsFrom': 'From {min} seats',
   'pricing.singleSeat': 'Any number of seats',
@@ -157,19 +156,15 @@ export const en = {
   'checkout.title': 'Add a payment method',
   'checkout.description':
     'Your address is confirmed. Add a card to start your 14-day trial of {product}.',
-  'checkout.opening': 'Opening the secure checkout…',
-  'checkout.waiting': 'The checkout is open. Finish it to continue.',
-  'checkout.open': 'Open the checkout',
+  'checkout.opening': 'Taking you to the secure checkout…',
+  'checkout.open': 'Continue to checkout',
   'checkout.trialNote': 'Nothing is charged until the trial ends, and you can cancel before then.',
   'checkout.closed.title': 'The checkout was closed',
   'checkout.closed.description':
-    'Nothing was charged and nothing was created. Open it again to continue, or come back later — we will email you a link.',
-  'checkout.failed.title': 'The checkout could not load',
-  'checkout.failed.description': 'Check your connection and reload this page. Your link is still good.',
-  'checkout.failed.reload': 'Reload',
-  'checkout.notConfigured.title': 'Payment is not set up yet',
-  'checkout.notConfigured.description':
-    '{product} cannot take a payment online yet. Your address is confirmed and nothing is lost — get in touch and we will finish setting up your account.',
+    'Nothing was charged and nothing was created. Continue to the checkout to pick up where you left off, or come back later — we will email you a link.',
+  'checkout.failed.title': 'The checkout could not be opened',
+  'checkout.failed.description':
+    'Try again in a moment. Your address is confirmed and nothing is lost — we will email you a link that opens it.',
 
   'requestAccess.heading': 'Get started with {product}',
   'requestAccess.byAdmin':

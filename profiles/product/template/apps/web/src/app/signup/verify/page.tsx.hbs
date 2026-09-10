@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { AuthCard, AuthLayout, ButtonLink } from '@{{projectSlug}}/ui'
 import { verifySignup } from '../actions'
 import { Checkout } from '../Checkout'
+import { CheckoutClosed } from '../CheckoutClosed'
 import { ProvisioningStatus } from '../ProvisioningStatus'
 import { currentLocale, translator } from '../../../lib/locale'
 
@@ -11,7 +12,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * Where the link in the email lands.
+ * Where the link in the email lands -- and where the checkout comes back to.
  *
  * The token arrives in the query string, which is how an email link can carry
  * anything at all, and it is spent here on the server -- the browser never
@@ -28,17 +29,46 @@ export async function generateMetadata(): Promise<Metadata> {
  * language.
  *
  * Since the billing work there is a fourth outcome between "invalid" and
- * "provisioning": the address is proved and a card is needed. The page opens
- * the payment provider's checkout and, once it completes, waits for the run
- * the provider's webhook starts -- the same wait as before, polled by
- * registration rather than by job.
+ * "provisioning": the address is proved and a card is needed. The page sends
+ * the browser to the payment provider's hosted checkout, and the provider
+ * sends it back here with `registration` and `checkout` in the query and no
+ * token -- `done` waits for the run the provider's webhook starts, polled by
+ * registration rather than by job; `cancelled` offers the checkout again.
+ * Neither word is trusted as a fact about money: `done` only starts the same
+ * wait the free-trial path runs, and the webhook is what ends it.
  */
 export default async function VerifyPage({
   searchParams,
 }: {
-  searchParams: Promise<{ token?: string }>
+  searchParams: Promise<{ token?: string; registration?: string; checkout?: string }>
 }) {
-  const [{ token }, locale, t] = await Promise.all([searchParams, currentLocale(), translator()])
+  const [{ token, registration, checkout }, locale, t] = await Promise.all([
+    searchParams,
+    currentLocale(),
+    translator(),
+  ])
+
+  if (!token && registration) {
+    // Back from the provider. The registration id is a UUID nobody can
+    // enumerate, and holding one lets you watch a status that says one of
+    // three words -- or ask for the checkout you just left.
+    if (checkout === 'cancelled') {
+      return (
+        <AuthLayout locale={locale}>
+          <div data-testid="verify-checkout-closed">
+            <CheckoutClosed registrationId={registration} locale={locale} />
+          </div>
+        </AuthLayout>
+      )
+    }
+    return (
+      <AuthLayout locale={locale}>
+        <div data-testid="verify-ok">
+          <ProvisioningStatus registrationId={registration} organizationSlug="" locale={locale} />
+        </div>
+      </AuthLayout>
+    )
+  }
 
   if (!token) {
     return (
@@ -88,16 +118,11 @@ export default async function VerifyPage({
   if (outcome.status === 'awaiting-payment') {
     // The address is proved and the organisation exists; nothing is
     // provisioned until the payment provider says a card is on file. The
-    // checkout is the provider's overlay, opened by a client component, and
-    // the wait that follows it is the same `ProvisioningStatus` as below.
+    // checkout is a page the provider hosts, and the browser is sent there.
     return (
       <AuthLayout locale={locale}>
         <div data-testid="verify-checkout">
-          <Checkout
-            checkout={outcome.checkout}
-            organizationSlug={outcome.organizationSlug}
-            locale={locale}
-          />
+          <Checkout checkout={outcome.checkout} locale={locale} />
         </div>
       </AuthLayout>
     )

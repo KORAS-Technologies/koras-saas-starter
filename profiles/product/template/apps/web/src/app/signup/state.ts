@@ -48,6 +48,10 @@ export interface SignupStatus {
  * confirmed. The two ids travel into the checkout so the provider's webhook
  * can find its way back, and neither is a credential -- knowing one lets you
  * poll a status that answers one of three words.
+ *
+ * `url` is the provider's hosted checkout page, minted by the Control Plane
+ * for this signup. It expires on its own within a day and opens nothing but
+ * a form asking for a card.
  */
 export interface CheckoutDetails {
   registrationId: string
@@ -58,4 +62,5 @@ export interface CheckoutDetails {
   seats: number
   billingInterval: 'month' | 'year'
   email: string
+  url: string
 }

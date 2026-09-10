@@ -1,180 +1,61 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import Script from 'next/script'
-import { AuthCard, Button, ButtonLink, PADDLE_JS, paddleEnvironment } from '@{{projectSlug}}/ui'
-import type { PaddleJs } from '@{{projectSlug}}/ui'
+import { useEffect } from 'react'
+import { AuthCard, ButtonLink } from '@{{projectSlug}}/ui'
 import { productConfig } from '@{{projectSlug}}/branding'
 import { createTranslator } from '@{{projectSlug}}/i18n'
 import type { Locale } from '@{{projectSlug}}/i18n'
-import { ProvisioningStatus } from './ProvisioningStatus'
 import type { CheckoutDetails } from './state'
 
 /**
  * The card, between a proved address and a provisioned workspace.
  *
  * This is the one place in the product that touches the payment provider, and
- * it touches it from the browser with the provider's *client-side* token --
- * which is public by design: it can open a checkout and nothing else. The
- * server-side key never leaves the Control Plane, and this product holds none.
+ * it touches it by sending the browser to a page the provider hosts. The
+ * Control Plane created that page with its secret key and handed back the
+ * address; this product holds no provider credential at all, public or
+ * otherwise, and loads no provider script. That is what a hosted checkout
+ * buys: the card is typed on the provider's origin and the CSP here names
+ * nobody.
  *
- * Paddle.js is loaded from the provider's CDN rather than bundled, because the
- * provider updates it and a stale copy is a checkout that stops working on a
- * day nobody deployed. The middleware's Content-Security-Policy admits the
- * provider's hosts exactly when the token is configured, so a product that
- * takes no card ships a policy that names nobody.
+ * The browser is sent on as soon as the card renders, and a button is left
+ * behind for the case where it is not -- a blocked navigation, a reader
+ * mode, a slow device -- because a page that says "taking you there" and
+ * then does nothing is a dead end.
  *
- * What happens after "Pay": nothing here. The provider tells the Control
- * Plane, the Control Plane starts the run, and this page waits for it the
- * same way the free-trial path does -- `ProvisioningStatus`, polled by
- * registration id until a job exists. The redirect the provider offers after
- * checkout is deliberately unused: a page that trusted it would report a
- * workspace on the strength of a browser event, and the webhook is the only
- * word that counts.
- *
- * `checkout.closed` before `checkout.completed` is somebody changing their
- * mind, and the page says so plainly: nothing was charged, nothing was
- * created, the link is still good, and a reminder follows if they leave.
+ * What happens after "Subscribe": the provider sends the browser back to
+ * this product's verify page with the registration id, and that page waits
+ * for the run the provider's webhook starts -- `ProvisioningStatus`, polled
+ * by registration until a job exists. The return itself is deliberately not
+ * trusted as proof of payment: a page that reported a workspace on the
+ * strength of a redirect would report one for anybody who typed the URL, and
+ * the webhook is the only word that counts.
  */
-
-type Phase = 'loading' | 'open' | 'closed' | 'paid' | 'failed'
-
-export function Checkout({
-  checkout,
-  organizationSlug,
-  locale,
-}: {
-  checkout: CheckoutDetails
-  organizationSlug: string
-  locale: Locale
-}) {
+export function Checkout({ checkout, locale }: { checkout: CheckoutDetails; locale: Locale }) {
   const { product } = productConfig
   const t = createTranslator(locale)
   const params = { product: product.name }
-  const token = process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN ?? ''
-  const [phase, setPhase] = useState<Phase>('loading')
-  const initialised = useRef(false)
-
-  const open = useCallback(() => {
-    const paddle: PaddleJs | undefined = window.Paddle
-    if (!paddle) return
-    setPhase('open')
-    paddle.Checkout.open({
-      items: [{ priceId: checkout.priceId, quantity: checkout.seats }],
-      customer: { email: checkout.email },
-      // How the provider's webhook finds its way back. Ids, not secrets: a
-      // registration id opens nothing and a status poll answers one of three
-      // words.
-      customData: {
-        registration_id: checkout.registrationId,
-        organization_id: checkout.organizationId,
-        product_code: checkout.productCode,
-        plan_code: checkout.planCode,
-      },
-      settings: { displayMode: 'overlay', locale },
-    })
-  }, [checkout, locale])
-
-  const initialise = useCallback(() => {
-    const paddle = window.Paddle
-    if (!paddle || !token || initialised.current) return
-    initialised.current = true
-    paddle.Environment.set(paddleEnvironment(process.env.NEXT_PUBLIC_PADDLE_ENVIRONMENT))
-    paddle.Initialize({
-      token,
-      eventCallback: (event) => {
-        if (event.name === 'checkout.completed') {
-          setPhase('paid')
-        } else if (event.name === 'checkout.closed') {
-          // Closed after completing is the overlay going away; closed before
-          // is a change of mind. `paid` wins because it was set first.
-          setPhase((current) => (current === 'paid' ? current : 'closed'))
-        }
-      },
-    })
-    open()
-  }, [open, token])
 
   useEffect(() => {
-    // The script may already be on the page from an earlier render of this
-    // route, in which case `onLoad` never fires again.
-    if (window.Paddle) initialise()
-  }, [initialise])
-
-  if (!token) {
-    // The Control Plane asked for a card and this product has no way to take
-    // one: a configuration gap between the two, not the visitor's problem.
-    // Said as such, with a way to reach a person.
-    return (
-      <AuthCard
-        title={t('checkout.notConfigured.title')}
-        description={t('checkout.notConfigured.description', params)}
-      >
-        {product.contactEmail ? (
-          <ButtonLink
-            href={`mailto:${product.contactEmail}?subject=${encodeURIComponent(
-              t('provisioning.failed.subject', params),
-            )}`}
-            size="lg"
-            className="w-full"
-          >
-            {t('provisioning.failed.getInTouch')}
-          </ButtonLink>
-        ) : null}
-      </AuthCard>
-    )
-  }
-
-  if (phase === 'paid') {
-    return (
-      <ProvisioningStatus
-        registrationId={checkout.registrationId}
-        organizationSlug={organizationSlug}
-        locale={locale}
-      />
-    )
-  }
+    // A beat, so the card is seen rather than flashed past, and so a
+    // visitor with the button in view knows where they are going.
+    const timer = setTimeout(() => window.location.assign(checkout.url), 600)
+    return () => clearTimeout(timer)
+  }, [checkout.url])
 
   return (
-    <>
-      <Script src={PADDLE_JS} strategy="afterInteractive" onLoad={initialise} onError={() => setPhase('failed')} />
-
-      {phase === 'failed' ? (
-        <AuthCard title={t('checkout.failed.title')} description={t('checkout.failed.description')}>
-          <Button type="button" size="lg" className="w-full" onClick={() => window.location.reload()}>
-            {t('checkout.failed.reload')}
-          </Button>
-        </AuthCard>
-      ) : phase === 'closed' ? (
-        <AuthCard title={t('checkout.closed.title')} description={t('checkout.closed.description')}>
-          <Button type="button" size="lg" className="w-full" onClick={open} data-testid="checkout-reopen">
-            {t('checkout.open')}
-          </Button>
-        </AuthCard>
-      ) : (
-        <AuthCard title={t('checkout.title')} description={t('checkout.description', params)}>
-          <p role="status" className="flex items-center gap-3 text-sm leading-6 text-ink-muted">
-            <span
-              aria-hidden="true"
-              className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-line border-t-brand"
-            />
-            {phase === 'loading' ? t('checkout.opening') : t('checkout.waiting')}
-          </p>
-          {phase === 'open' ? (
-            <Button
-              type="button"
-              variant="secondary"
-              size="lg"
-              className="mt-4 w-full"
-              onClick={open}
-              data-testid="checkout-open"
-            >
-              {t('checkout.open')}
-            </Button>
-          ) : null}
-          <p className="mt-6 text-sm leading-6 text-ink-muted">{t('checkout.trialNote')}</p>
-        </AuthCard>
-      )}
-    </>
+    <AuthCard title={t('checkout.title')} description={t('checkout.description', params)}>
+      <p role="status" className="flex items-center gap-3 text-sm leading-6 text-ink-muted">
+        <span
+          aria-hidden="true"
+          className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-line border-t-brand"
+        />
+        {t('checkout.opening')}
+      </p>
+      <ButtonLink href={checkout.url} size="lg" className="mt-4 w-full" testId="checkout-open">
+        {t('checkout.open')}
+      </ButtonLink>
+      <p className="mt-6 text-sm leading-6 text-ink-muted">{t('checkout.trialNote')}</p>
+    </AuthCard>
   )
 }

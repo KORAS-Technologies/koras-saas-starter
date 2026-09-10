@@ -6,13 +6,14 @@ import { join } from 'node:path'
  * A signup that takes a card, in the product template.
  *
  * Phase 3 of docs/BILLING_DESIGN.md. Between a proved address and a
- * provisioned workspace there is now a checkout, opened by the payment
- * provider's script in the browser with a public token, and the run starts
- * when the provider's webhook reaches the Control Plane rather than when the
- * page says so. These assert the decisions in that which are easy to undo by
- * accident: where the script comes from, what the policy admits, what the
- * form posts, what the page polls, and that no server-side key ever appears
- * in this template.
+ * provisioned workspace there is now a checkout -- a page the payment
+ * provider hosts, minted by the Control Plane and reached by a URL the
+ * product is handed -- and the run starts when the provider's webhook
+ * reaches the Control Plane rather than when the page says so. These assert
+ * the decisions in that which are easy to undo by accident: that no provider
+ * script or token is in the product, what the policy admits, what the form
+ * posts, where the checkout comes back to, what the page polls, and that no
+ * provider key of any kind ever appears in this template.
  */
 
 const TEMPLATE = join(__dirname, '..', '..', '..', 'profiles', 'product', 'template')
@@ -68,9 +69,22 @@ describe('the verify page', () => {
 
   it('has a fourth outcome, and hands it to the checkout', () => {
     expect(actions).toContain("status: 'awaiting-payment'")
+    expect(actions).toContain('url: body.checkout.url')
     expect(verify).toContain("outcome.status === 'awaiting-payment'")
     expect(verify).toContain('<Checkout')
     expect(verify).toContain('data-testid="verify-checkout"')
+  })
+
+  it('is where the hosted checkout comes back to, by registration id and one word', () => {
+    // `done` starts the same wait as the free-trial path, by registration;
+    // `cancelled` offers the checkout again. Neither is trusted as a fact
+    // about money: the webhook is what ends the wait.
+    expect(verify).toContain('registration?: string; checkout?: string')
+    expect(verify).toContain('if (!token && registration)')
+    expect(verify).toContain("checkout === 'cancelled'")
+    expect(verify).toContain('<CheckoutClosed registrationId={registration}')
+    expect(verify).toContain('data-testid="verify-checkout-closed"')
+    expect(verify).toContain('<ProvisioningStatus registrationId={registration}')
   })
 
   it('keeps the three outcomes it had, with their wording untouched', () => {
@@ -87,36 +101,24 @@ describe('the checkout', () => {
   const waiting = signup('ProvisioningStatus.tsx.hbs')
   const actions = signup('actions.ts.hbs')
 
-  it("loads the provider's script from the provider, not from this repository", () => {
-    const paddle = read('packages', 'ui', 'src', 'lib', 'paddle.ts')
-    expect(paddle).toContain("'https://cdn.paddle.com/paddle/v2/paddle.js'")
-    expect(checkout).toContain('PADDLE_JS')
-    expect(checkout).toContain("from 'next/script'")
+  it('loads no provider script and holds no provider token, public or otherwise', () => {
+    expect(checkout).not.toMatch(/next\/script|paddle|stripe\.js|NEXT_PUBLIC_/i)
+    expect(() => read('packages', 'ui', 'src', 'lib', 'paddle.ts')).toThrow()
+    // No key of any provider, anywhere in the template's signup surface.
+    expect(checkout + actions).not.toMatch(/(PADDLE|STRIPE)_(API_KEY|SECRET_KEY|WEBHOOK_SECRET)|sk_(test|live)_/)
   })
 
-  it('opens the checkout with the public token and nothing else', () => {
-    expect(checkout).toContain('process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN')
-    // No server-side key of any provider, anywhere in the template.
-    expect(checkout).not.toMatch(/PADDLE_(API_KEY|WEBHOOK_SECRET)|pdl_(sdbx|live)_apikey/)
+  it('sends the browser to the URL the Control Plane minted, and leaves a button behind', () => {
+    expect(checkout).toContain('window.location.assign(checkout.url)')
+    expect(checkout).toContain('href={checkout.url}')
+    expect(checkout).toContain('testId="checkout-open"')
   })
 
-  it('defaults to the sandbox, so a token with no environment cannot charge a card', () => {
-    const paddle = read('packages', 'ui', 'src', 'lib', 'paddle.ts')
-    expect(paddle).toMatch(/=== 'production' \? 'production' : 'sandbox'/)
-    expect(checkout).toContain('paddleEnvironment(process.env.NEXT_PUBLIC_PADDLE_ENVIRONMENT)')
-  })
-
-  it('carries the ids the webhook finds its way back with', () => {
-    for (const key of ['registration_id', 'organization_id', 'product_code', 'plan_code']) {
-      expect(checkout).toContain(`${key}:`)
-    }
-  })
-
-  it("trusts the webhook, not the browser: a completed checkout starts a wait, not a workspace", () => {
-    expect(checkout).toContain("event.name === 'checkout.completed'")
-    expect(checkout).toContain('<ProvisioningStatus')
-    expect(checkout).toContain('registrationId={checkout.registrationId}')
-    expect(checkout).not.toContain('successUrl')
+  it("trusts the webhook, not the browser: coming back from the checkout starts a wait, not a workspace", () => {
+    const verify = signup('verify', 'page.tsx.hbs')
+    expect(verify).toContain('<ProvisioningStatus registrationId={registration}')
+    expect(checkout).not.toContain('ready')
+    expect(checkout).not.toContain('/dashboard')
   })
 
   it('polls by registration until the run exists, and treats the wait as pending', () => {
@@ -125,25 +127,24 @@ describe('the checkout', () => {
     expect(actions).toContain('registration_id=${encodeURIComponent(registrationId)}')
   })
 
-  it('says plainly what a closed checkout means', () => {
-    expect(checkout).toContain("event.name === 'checkout.closed'")
-    expect(checkout).toContain('data-testid="checkout-reopen"')
-  })
-
-  it('answers a Control Plane that asks for a card the product cannot take', () => {
-    expect(checkout).toContain("t('checkout.notConfigured.title')")
+  it('says plainly what a closed checkout means, and asks for it again by registration id', () => {
+    const closed = signup('CheckoutClosed.tsx.hbs')
+    expect(closed).toContain("t('checkout.closed.title')")
+    expect(closed).toContain('data-testid="checkout-reopen"')
+    expect(closed).toContain('reopenCheckout(registrationId)')
+    expect(actions).toContain('/api/signup/v1/registrations/checkout')
+    expect(actions).toContain('registration_id: registrationId')
   })
 })
 
 describe('the policy', () => {
   const middleware = read('apps', 'web', 'src', 'middleware.ts.hbs')
 
-  it("admits the provider's hosts exactly when a token is configured", () => {
-    expect(middleware).toContain("const PADDLE_HOSTS = 'https://*.paddle.com'")
-    expect(middleware).toContain('Boolean(process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN)')
-    // The overlay is a frame, and frame-src is the directive that decides
-    // what may be drawn over the page. Nobody, unless the product takes a card.
-    expect(middleware).toMatch(/frame-src \$\{takesCards \? PADDLE_HOSTS : "'none'"\}/)
+  it('names no provider host, because the checkout is a page the browser leaves for', () => {
+    expect(middleware).not.toMatch(/paddle|stripe/i)
+    // frame-src is the directive that decides what may be drawn over the
+    // page. Nobody: the card is typed on the provider's own origin.
+    expect(middleware).toContain(`"frame-src 'none'"`)
   })
 
   it('keeps every visitor-facing page unframable', () => {
@@ -155,15 +156,10 @@ describe('the settings', () => {
   const manifest = read('local', 'config', 'secrets.manifest.hbs')
   const example = read('local', 'config', '.env.local.example.hbs')
 
-  it('declares both as optional, because a product may take no card', () => {
-    expect(manifest).toContain('NEXT_PUBLIC_PADDLE_CLIENT_TOKEN optional')
-    expect(manifest).toContain('NEXT_PUBLIC_PADDLE_ENVIRONMENT optional')
-    expect(example).toContain('NEXT_PUBLIC_PADDLE_CLIENT_TOKEN=')
-    expect(example).toContain('NEXT_PUBLIC_PADDLE_ENVIRONMENT=sandbox')
-  })
-
-  it('never declares a server-side provider key for a product', () => {
-    expect(manifest).not.toMatch(/^PADDLE_(API_KEY|WEBHOOK_SECRET)/m)
+  it('declares no provider setting at all, and says why', () => {
+    expect(manifest).toContain('No payment provider setting, and none is missing.')
+    expect(manifest).not.toMatch(/PADDLE|STRIPE/)
+    expect(example).not.toMatch(/PADDLE|STRIPE/)
   })
 })
 
@@ -191,16 +187,12 @@ describe('the catalogues', () => {
       'checkout.title',
       'checkout.description',
       'checkout.opening',
-      'checkout.waiting',
       'checkout.open',
       'checkout.trialNote',
       'checkout.closed.title',
       'checkout.closed.description',
       'checkout.failed.title',
       'checkout.failed.description',
-      'checkout.failed.reload',
-      'checkout.notConfigured.title',
-      'checkout.notConfigured.description',
     ]
     for (const key of required) expect(en.has(key), `en lacks ${key}`).toBe(true)
     for (const locale of ['de', 'es']) {

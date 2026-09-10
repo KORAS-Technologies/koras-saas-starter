@@ -8,41 +8,38 @@
 > *costs* and how a customer comes to pay it.
 
 Status: **all five phases built** — Phases 1 to 4 on 2026-09-05 and the
-code half of Phase 5 on 2026-09-06, on `develop` in both repositories. What
-remains is not code: the live Paddle account, and the browser run against the
-real sandbox. `koras-control-plane/docs/runbooks/paddle-go-live.md` is the
-walk from sandbox to live. FOLLOW_UPS F13
-records the decision this document extends: trial-only self-serve shipped
-first, and `subscriptions.status` was made to mean something before a card is
-taken (`koras-control-plane` R-93). This is the payment work F13 said would
-"have a field to land on". What the Control Plane holds of it is
-`koras-control-plane/docs/BILLING.md`.
+code half of Phase 5 on 2026-09-06, on `develop` in both repositories — and
+**the provider switched from Paddle to Stripe Managed Payments on
+2026-09-09**, before any customer existed to migrate. What remains is not
+code: the Stripe account with Managed Payments enabled, the test-mode
+catalogue, and the browser run against it.
+`koras-control-plane/docs/runbooks/stripe-go-live.md` is the walk from test
+mode to live. FOLLOW_UPS F13 records the decision this document extends:
+trial-only self-serve shipped first, and `subscriptions.status` was made to
+mean something before a card is taken (`koras-control-plane` R-93). This is
+the payment work F13 said would "have a field to land on". What the Control
+Plane holds of it is `koras-control-plane/docs/BILLING.md`.
 
-The sandbox exists. Paddle sandbox account `koras`, product `koras-e2e-shop`
-with tax category SaaS, two prices each with a 14-day trial, and a client-side
-token named `koras-control-plan`. Price ids are references and safe to
-record; the token and the API key are not, and live in Doppler only.
+The test-mode catalogue does not exist yet. The fixtures carry placeholder
+price ids until it does; the runbook's second step creates it, and the ids
+go on the plan row in `dev`. Price ids are references and safe to record;
+the secret key and the webhook secret are not, and live in Doppler only.
 
-```text
-product  pro_01m1sfr6w479m12zekmv3ckmbb   koras-e2e-shop
-price    pri_01m1sg26mdqf1r4raam87rfkw5   $399 monthly, 14-day trial
-price    pri_01m1sg4ppttw8edjdheyvqe1sj   $4,500 yearly, 14-day trial
-```
-
-Two things changed between the proposal and the build, both recorded in the
-sections they touch: the customer reference is a table rather than a column
-on `organizations`, because of what the webhook's authority may write; and
-the Paddle adapter speaks to the HTTP API through `httpx` rather than through
-Paddle's SDK, because five calls did not justify an untyped dependency under
-strict mypy.
+Three things changed between the proposal and the build, each recorded in
+the section it touches: the customer reference is a table rather than a
+column on `organizations`, because of what the webhook's authority may
+write; the adapter speaks to the provider's HTTP API through `httpx` rather
+than through an SDK, because six calls did not justify an untyped dependency
+under strict mypy; and the provider itself, below.
 
 ## The decision
 
 Self-serve signup collects a card **before** provisioning and charges it
-**after** a 14-day trial. The payment provider is **Paddle**, acting as
-Merchant of Record. The Control Plane remains the only authority on who is
-subscribed to what, in which status, and what that grants. No product ever
-holds a provider credential, and no product ever calls the provider.
+**after** a 14-day trial. The payment provider is **Stripe**, with **Managed
+Payments** on every checkout, which makes Stripe the Merchant of Record. The
+Control Plane remains the only authority on who is subscribed to what, in
+which status, and what that grants. No product ever holds a provider
+credential, and no product ever calls the provider.
 
 Three choices sit inside that sentence.
 
@@ -55,21 +52,43 @@ rather than being retrofitted on upgrade. The plan and seat count are known on
 day one. The customer has already decided; the form only asks them to prove it.
 
 **Charge at trial end rather than at signup.** No money moves on the signup
-day. Paddle supports a trial period on a price, so checkout completes with a
-zero-value transaction and the first charge is scheduled for day 15. A customer
-who cancels inside the trial is never charged, which is what "trial" has to
-mean for the card-upfront model to be honest.
+day. The trial is stated on the checkout session, so checkout completes with
+nothing charged and the first invoice is scheduled for day 15. A customer who
+cancels inside the trial is never charged, which is what "trial" has to mean
+for the card-upfront model to be honest.
 
-**Paddle rather than Stripe.** KORAS is a German entity selling into the US
-first, with subscribers from any country, and has no finance function. Under
-Stripe, KORAS is the seller and owes sales tax registration in every US state
-whose threshold it crosses, and VAT or GST registration in every country
-likewise. Under Paddle, Paddle is the seller, collects and files all of it, and
-is one counterparty in the books. The fee is higher — 5% + $0.50 against
-roughly 2.9% + $0.30 + 0.5% for tax — and the difference is smaller than a
-filing service and an accountant until well into six figures of annual
-revenue. The provider sits behind an adapter so the decision can be revisited
-without touching the portal or a product.
+**A Merchant of Record rather than a processor.** KORAS is a German entity
+selling into the US first, with subscribers from any country, and has no
+finance function. Under a plain processor, KORAS is the seller and owes sales
+tax registration in every US state whose threshold it crosses, and VAT or GST
+registration in every country likewise. Under a Merchant of Record, the
+provider is the seller, collects and files all of it, and is one counterparty
+in the books. The fee is higher — a few points above processing — and the
+difference is smaller than a filing service and an accountant until well
+into six figures of annual revenue.
+
+**Stripe Managed Payments rather than Paddle**, decided 2026-09-09. Paddle
+was chosen on 2026-09-05 because it was the Merchant of Record on offer.
+Stripe's Managed Payments is the same offer — Stripe as the seller, sales
+tax, VAT and GST filed in more than eighty countries, disputes and
+transaction-level support handled — for a business in one of its supported
+locations selling an eligible digital product, and a German SaaS company is
+both. The account opens in hours rather than after a one-to-two-week review,
+the customer portal and the Checkout page are the ones most customers have
+already used, and the developer surface is the one most people at KORAS
+already know. No subscription existed on the day, so nothing was migrated;
+the Paddle adapter was deleted rather than kept behind a flag, since a
+provider nobody flips to is a second codebase that only rots. The provider
+still sits behind an adapter so the decision can be revisited without
+touching the portal or a product.
+
+Managed Payments has three constraints the design absorbs. It admits Stripe
+Checkout and Payment Links only, so the checkout is a hosted page the
+browser is sent to, not an overlay drawn over the product. It has no
+browser-side price preview, so the Control Plane reads amounts from Stripe
+and serves them beside the plans, through a sixth adapter operation. And it
+keeps eligibility conditional on a low dispute rate, which makes customer
+support a billing concern.
 
 ## The flow
 
@@ -81,26 +100,27 @@ Signup form           organisation name · owner name · work email · plan · s
       │               POST /api/signup/v1/registrations          (exists — creates nothing)
       ▼
 Email verification    link → /signup/verify?token=…
-      │               POST /api/signup/v1/registrations/verify  (exists — today this starts provisioning)
+      │               POST /api/signup/v1/registrations/verify  creates the organisation and a Checkout Session
       ▼
-Paddle checkout       overlay on /signup/verify, trial price, quantity = seats, $0 today
-      │               custom_data: registration_id · organization slug · product code · plan code
+Stripe Checkout       hosted page the browser is sent to; trial on the session, quantity = seats, $0 today
+      │               metadata: registration_id · organization_id · product code · plan code
+      │               returns to /signup/verify?registration=…&checkout=done|cancelled
       ▼
-Webhook               subscription.created → Control Plane records billing ids and STARTS PROVISIONING
+Webhook               customer.subscription.created → Control Plane records billing ids and STARTS PROVISIONING
       │               (verification no longer starts it)
       ▼
 Provisioning          unchanged — ZITADEL org, owner, grants, tenant, subscription row
-      │               subscription: status='trialing', trial_ends_at from Paddle, seats from quantity
+      │               subscription: status='trialing', trial_ends_at from Stripe, seats from quantity
       ▼
 Wait page             unchanged — polls GET /api/signup/v1/registrations/status, then /login?next=/dashboard
       │
       ▼
-Day 15                Paddle charges the card
-                      transaction.completed + subscription.updated → status='active'
+Day 15                Stripe charges the card
+                      invoice.paid + customer.subscription.updated → status='active'
 ```
 
 What moves, in one line: **the provisioning trigger moves from verification to
-the provider's `subscription.created` webhook.** Everything downstream of it is
+the provider's subscription-created webhook.** Everything downstream of it is
 untouched, which is the point of putting the card where it is.
 
 **The pricing page, which this flow assumed and which did not exist.** Built
@@ -108,27 +128,37 @@ untouched, which is the point of putting the card where it is.
 and footer navigation in all three languages. The plans are the Control
 Plane's public catalogue, read on the server by the page — the same list the
 signup form offers, so a card cannot name a plan that is not on sale. The
-prices are the provider's: Paddle.js renders a price preview in the browser
-with the public token, in the visitor's currency and tax, so no amount is
-typed anywhere in this repository. Where the product takes no card, or the
-provider does not answer, a card says the price is shown at checkout rather
-than inventing one. Each card links to `/signup?plan=…&interval=…`, and the
-form preselects both. What a plan is *for* — the bullet points under its
-name — is configuration per language, keyed by plan code.
+prices are the provider's: the Control Plane reads them from Stripe with its
+secret key, holds them for ten minutes, and serves them beside the plans as
+minor units per seat, which the page formats in the visitor's language. No
+amount is typed anywhere in either repository. Tax is added by Stripe on its
+own page, in the visitor's own country, so the card shows the price before
+tax and says so by showing nothing else. Where the product takes no card, or
+the platform could not vouch for an amount just now, a card says the price is
+shown at checkout rather than inventing one. Each card links to
+`/signup?plan=…&interval=…`, and the form preselects both. What a plan is
+*for* — the bullet points under its name — is configuration per language,
+keyed by plan code.
 
 **As built.** Verification creates the organisation and, where the Control
 Plane holds a provider key and the plan is priced for the chosen interval,
-answers `awaiting_payment` with the price id, seat count, address and the two
-ids the checkout carries in its custom data. The product's verify page opens
-Paddle.js with `NEXT_PUBLIC_PADDLE_CLIENT_TOKEN` and polls the status endpoint
-by registration id; the Control Plane answers `AWAITING_PAYMENT` until the
-webhook has started the run. Where no key is configured, or the plan has no
-price, verification starts the run itself — a trial without a card, which is
-what every environment sold before and what `test` and `stg` still sell until
-they are given a sandbox key. The product's CSP admits `https://*.paddle.com`
-in `frame-src`, `connect-src` and `img-src` exactly when the token is set, and
-`NEXT_PUBLIC_PADDLE_ENVIRONMENT` is the sandbox unless it says `production`,
-so a token with no environment cannot charge a real card.
+creates a Checkout Session — `mode=subscription`, Managed Payments on, the
+trial on the session, the registration and organisation ids in the
+subscription's metadata — and answers `awaiting_payment` with its URL beside
+the price id, seat count and address. The product's verify page sends the
+browser there. The session returns to the product's own verify page, at the
+application URL the product registered for the environment and never one
+the request supplied, with the registration id and one word: `done` shows
+the same provisioning wait as the free-trial path, polled by registration
+until the webhook has started the run; `cancelled` offers the checkout
+again, through `POST /api/signup/v1/registrations/checkout`, which mints a
+fresh session for a verified signup that has neither a subscription nor a
+run. Where no key is configured, or the plan has no price, verification
+starts the run itself — a trial without a card, which is what every
+environment sold before and what `test` and `stg` still sell until they are
+given a test-mode key. The product holds no provider credential, public or
+otherwise, loads no provider script, and its CSP names no provider host:
+`frame-src 'none'` is the policy for a page nothing may be drawn over.
 
 ### Why the card comes after verification and before provisioning
 
@@ -154,27 +184,28 @@ The unit of billing is the organisation, and one organisation may hold one
 subscription per product. That is what `subscriptions` already says with its
 `unique (organization_id, product_id)`.
 
-| KORAS | Paddle | Cardinality |
+| KORAS | Stripe | Cardinality |
 |---|---|---|
 | organisation | customer | one to one |
 | organisation × product | subscription | one to one |
-| plan | product | one to one |
+| plan | product, with an eligible tax code | one to one |
 | plan × billing interval | price | one plan has a monthly and an annual price |
 | seats | quantity on the subscription item | an integer between the plan's minimum and maximum |
 
-The Paddle customer is created at checkout and its id written to the
-organisation on `subscription.created`. A second product bought later by the
-same organisation reuses the customer and creates a second Paddle
-subscription; the portal opens checkout with the existing customer id so the
-card on file is offered.
+The Stripe customer is created at checkout and its id written to
+`billing_customers` on `customer.subscription.created`. A second product
+bought later by the same organisation reuses the customer and creates a
+second Stripe subscription; the checkout is opened with the existing
+customer id so the card on file is offered.
 
-Payouts arrive from Paddle monthly as a single settlement. Reconciling that
+Payouts arrive from Stripe on the account's schedule, net of the Managed
+Payments fee and the tax Stripe collected as the seller. Reconciling a payout
 against the Control Plane's `active` subscription count is the only recurring
 finance task this design creates.
 
 ## Annual plans and seats
 
-**Interval.** Each plan carries two Paddle price ids, monthly and annual, held
+**Interval.** Each plan carries two Stripe price ids, monthly and annual, held
 on the plan row. The signup form offers the interval as a toggle beside the
 plan, not as a separate plan — "Team, yearly" is not a different bundle of
 entitlements from "Team, monthly", and `COMMERCIAL_CATALOGUE.md` is right that
@@ -190,7 +221,10 @@ seats and next date, never an amount, and one form changes any of the three.
 The API applies the rules below and the row follows what the provider answers,
 never the request: an immediate change lands now, a scheduled one lands when
 the provider's webhook says it did. "Manage payment method and invoices" opens
-Paddle's own portal through a one-time URL and reimplements none of it. On
+Stripe's customer portal through a one-time URL and reimplements none of it;
+the portal is configured in the dashboard to allow the card, the invoices and
+cancellation, and not plan or quantity changes, which belong to this
+platform's rules. On
 the product side the entitlement read now carries the subscription's status
 and two dates, and the shell says what they mean: a trial counting down and a
 failed charge are a line above the page with the way to the portal for an
@@ -199,49 +233,60 @@ shell decides nothing from them — the platform already resolves those states
 to no entitlements — and the two plan-gated modules the template shipped close
 with the rest.
 
-**Seats.** Seats are the quantity on the Paddle subscription item and the
+**Seats.** Seats are the quantity on the Stripe subscription item and the
 `limit_value` of a `seats` entitlement in the Control Plane, so products read
 the seat count the way they already read every other limit. The plan row
 carries `min_seats` and `max_seats`; the signup form and the portal enforce
-them, and the Control Plane enforces them again before calling Paddle.
+them, and the Control Plane enforces them again before calling Stripe.
 
 Seat changes are a Control Plane endpoint, never a product call. Increasing
-seats is immediate and prorated. Decreasing seats takes effect at period end
-and is refused while the organisation has more active members than the new
-count, with the response naming the number to remove.
+seats is immediate and prorated, with the proration invoiced at once.
+Decreasing seats takes effect at period end and is refused while the
+organisation has more active members than the new count, with the response
+naming the number to remove. Stripe has no "from the next period" flag on an
+update, so a period-end change is a **subscription schedule**: the current
+item to the end of the current period, the new item for one period after,
+and the subscription released from the schedule when that period starts, so
+it continues on the new item and a later scheduled change starts clean.
 
-**Trial.** The trial is a property of the price in Paddle, 14 days on every
-self-serve price. The Control Plane copies `trial_ends_at` from the provider
-rather than computing its own, so the two can never disagree about the day the
-card is charged.
+**Trial.** The trial is stated on every checkout session — `BILLING_TRIAL_DAYS`,
+fourteen unless a deployment says otherwise — because that is where Stripe
+takes it. The Control Plane copies `trial_ends_at` from the provider rather
+than computing its own, so the two can never disagree about the day the card
+is charged.
 
 ## Status, and what drives it
 
 `subscriptions.status` is written by exactly two things: the webhook handler,
 and the nightly sweep. Nothing in a portal action, a product, or an admin
 console form writes it directly; an admin who needs to cancel a subscription
-does so through the Control Plane, which does so through Paddle, which tells
+does so through the Control Plane, which does so through Stripe, which tells
 the Control Plane through the webhook. One path in, so the record and the
 provider cannot diverge by design.
 
-| Paddle event | Control Plane effect |
+| Stripe event | Control Plane effect |
 |---|---|
-| `subscription.created` | record billing ids, seats, `trial_ends_at`; **start provisioning** |
-| `subscription.activated` | `status='active'` |
-| `subscription.updated` | copy status, seats, interval, `current_period_end` |
-| `subscription.trialing` | `status='trialing'`, copy `trial_ends_at` |
-| `subscription.past_due` | `status='past_due'`; the seven-day grace window R-93 built applies from `current_period_end` |
-| `subscription.paused` | `status='suspended'` |
-| `subscription.canceled` | `status='cancelled'`, `cancelled_at` |
-| `transaction.completed` | record the transaction id and amount for reporting; no status change |
+| `customer.subscription.created` | record billing ids, seats, `trial_ends_at`; **start provisioning** |
+| `customer.subscription.updated` | copy status, seats, interval, `current_period_end`, `trial_ends_at` — `active` when the trial's first invoice is paid, `past_due` when a charge fails; the seven-day grace window R-93 built applies from `current_period_end` |
+| `customer.subscription.paused`, `customer.subscription.resumed` | `status='suspended'`, then whatever Stripe says it is |
+| `customer.subscription.deleted` | `status='cancelled'`, `cancelled_at` |
+| `customer.subscription.trial_will_end` | copy the state; three days before the charge, for a product that wants to say so |
+| `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed` | recorded for reporting; no status change |
+
+Stripe's `unpaid` and `paused` both land as `suspended`: a card that failed
+past every retry and a trial that ended without a card are, to a product, the
+same absence of a paying subscription. `incomplete` and `incomplete_expired`
+are a first payment that never happened, which a Managed Payments checkout
+does not produce; the adapter passes them through untranslated and the
+handler records rather than applies them.
 
 The grant policy is unchanged from F13 and lives in the resolver. `trialing`
 past its end date grants nothing; `past_due` grants for the grace window;
 `suspended` and `cancelled` grant nothing. A card that fails on day 15 is a
-`past_due` subscription with seven days of access while Paddle's dunning runs.
+`past_due` subscription with seven days of access while Stripe's retries run.
 
-Every webhook request is verified against the `Paddle-Signature` header,
-stored in `billing_events` keyed by Paddle's event id **before** it is acted
+Every webhook request is verified against the `Stripe-Signature` header,
+stored in `billing_events` keyed by Stripe's event id **before** it is acted
 on, and processed idempotently. A redelivered event finds its id and returns
 200 without doing anything. Events arriving out of order are resolved by
 `occurred_at`: an older event never overwrites the effect of a newer one.
@@ -306,8 +351,9 @@ create table public.billing_events (
 );
 ```
 
-Column names say `billing_`, not `paddle_`. The adapter is the only code that
-knows which provider a value came from.
+Column names say `billing_`, not `stripe_`. The adapter is the only code that
+knows which provider a value came from — and the switch of 2026-09-09 touched
+no column, which is what the naming was for.
 
 **Why the customer reference is a table.** The proposal put
 `billing_customer_id` on `organizations`. The webhook runs its transactions
@@ -325,36 +371,44 @@ and is recorded as `stale`.
 
 ## The adapter
 
-One interface in the Control Plane API, one implementation to begin with.
+One interface, shared by the API and the worker, one implementation.
 
 ```python
 class BillingProvider(Protocol):
-    async def checkout(self, *, customer_id: str | None, price_id: str,
-                       quantity: int, custom_data: dict[str, str]) -> CheckoutSession: ...
-    async def portal_session(self, *, customer_id: str) -> PortalSession: ...
+    async def checkout(self, *, customer_id: str | None, customer_email: str | None,
+                       price_id: str, quantity: int, trial_days: int,
+                       custom_data: dict[str, str],
+                       success_url: str, cancel_url: str) -> CheckoutSession: ...
+    async def portal_session(self, *, customer_id: str,
+                             return_url: str | None = None) -> PortalSession: ...
     def verify_webhook(self, *, body: bytes, signature: str) -> BillingEvent: ...
     async def subscription(self, *, subscription_id: str) -> ProviderSubscription: ...
     async def update_subscription(self, *, subscription_id: str,
                                   price_id: str | None, quantity: int | None,
-                                  effective: Literal['immediately', 'period_end']) -> ProviderSubscription: ...
+                                  effective: Literal['immediately', 'period_end', 'trial']) -> ProviderSubscription: ...
+    async def prices(self, *, price_ids: list[str]) -> dict[str, ProviderPrice]: ...
 ```
 
-Five operations. Anything a portal page wants that is not one of these — an
+Six operations. Anything a portal page wants that is not one of these — an
 invoice list, a card update, a receipt — is a link to the provider's customer
-portal, not a new operation.
+portal, not a new operation. The sixth, `prices`, is a read that arrived with
+Stripe: Paddle let a browser ask for a price with a public token, Stripe has
+no such call, and a pricing page that shows an amount has to get it from
+whoever holds the secret key.
 
-`koras-control-plane/services/api/koras_api/billing/paddle.py` implements all five against Paddle's HTTP API
-with `httpx`, which the API already depends on; the SDK would have brought an
-untyped client under strict mypy for five calls and one HMAC. Which Paddle a
-key opens is derived from the key, since a sandbox key carries `_sdbx_`, and
-`billing.provider()` refuses a live key outside `prod` and a sandbox key
-inside it before any request goes out. The API key and the webhook secret
-live in Doppler for the Control Plane's `api` service only, as
-`PADDLE_API_KEY` and `PADDLE_WEBHOOK_SECRET`. The client-side token, which
-Paddle.js needs in the browser, is the single provider value a frontend ever
-sees, and it is scoped to opening checkout.
+`koras-control-plane/python-packages/koras-billing/src/koras_billing/stripe.py`
+implements all six against Stripe's HTTP API with `httpx`, pinned to API
+version `2025-03-31.basil` — the version from which the current period lives
+on the subscription item and `managed_payments` exists — with the request
+bodies form-encoded the way Stripe reads them. Which Stripe a key opens is
+derived from the key, since a test key starts with `sk_test_` or `rk_test_`,
+and `billing.provider()` refuses a live key outside `prod` and a test key
+inside it before any request goes out. The secret key and the webhook secret
+live in Doppler for the Control Plane's `api` and `worker` services, as
+`STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. No provider value reaches a
+frontend at all: the checkout is a URL, and the URL is not a credential.
 
-**The webhook** is `POST /api/billing/v1/webhooks/paddle`, the third
+**The webhook** is `POST /api/billing/v1/webhooks/stripe`, the third
 anonymous route on the Control Plane API after health and signup, on its own
 prefix for the same reason signup is. `GET /api/billing/v1/events` lists the
 delivery log to the billing role, without payloads, and
@@ -365,13 +419,13 @@ and see nothing.
 
 | Piece | Repository | Where |
 |---|---|---|
-| Migration, adapter, webhook endpoint, reconciliation half | `koras-control-plane` | `services/api`, `services/scheduler` |
-| Provisioning trigger moved to `subscription.created` | `koras-control-plane` | `koras-control-plane/services/api/koras_api/onboarding.py`, called by the signup router and the billing webhook |
+| Migration, adapter, webhook endpoint, reconciliation half | `koras-control-plane` | `python-packages/koras-billing`, `services/api`, `services/worker` |
+| Provisioning trigger moved to the subscription-created event | `koras-control-plane` | `koras-control-plane/services/api/koras_api/onboarding.py`, called by the signup router and the billing webhook |
 | Plan prices and seat bounds in the console forms | `koras-control-plane` | `apps/admin`, the F9 forms |
 | Portal Billing section replacing `NotYet` | `koras-control-plane` | `apps/portal` |
 | Abandoned-checkout reminder | `koras-control-plane` | `services/scheduler` |
 | Interval and seats on the signup form | this factory | `profiles/product/template/apps/web/src/app/signup/SignupForm.tsx.hbs` |
-| Paddle.js checkout on the verify page | this factory | `profiles/product/template/apps/web/src/app/signup/verify/` |
+| The hosted checkout on the verify page, and the return from it | this factory | `profiles/product/template/apps/web/src/app/signup/` — `Checkout.tsx.hbs`, `CheckoutClosed.tsx.hbs`, `verify/page.tsx.hbs` |
 | Trial-ended and past-due states in the shell | this factory | `profiles/product/template/apps/web/src/app/dashboard/` |
 | First module declaring `requiredEntitlements` | this factory | the navigation registry, `docs/PRODUCT_APP_SHELL.md` |
 
@@ -383,70 +437,89 @@ already does, and rendering two states it does not yet have.
 
 | Phase | Repository | Content | Effort | Exit criterion |
 |---|---|---|---|---|
-| 1 Foundation — **built 2026-09-05** | control-plane | migration, adapter, Paddle implementation, webhook endpoint, `billing_events`, status mapping | 4 days | recorded sandbox events replay through the handler in tests and land the right status. **Half met:** the replay harness exists and runs against fixtures authored from Paddle's documented shape; recording needs a deployed API holding a secret, which no environment has yet |
+| 1 Foundation — **built 2026-09-05, re-implemented for Stripe 2026-09-09** | control-plane | migration, adapter, provider implementation, webhook endpoint, `billing_events`, status mapping | 4 days | recorded test-mode events replay through the handler in tests and land the right status. **Half met:** the replay harness exists and runs against fixtures authored from Stripe's documented shape; recording needs a deployed API holding a secret, which no environment has yet |
 | 2 Catalogue — **built 2026-09-05** | control-plane | price ids, interval, seat bounds on plans; console forms | 1 day | a plan with two prices and seat bounds is visible from `GET /api/signup/v1/plans`. Met in code; not yet exercised against a database with the migration applied |
-| 3 Signup with card — **built 2026-09-05** | both | interval and seats on the form; Paddle.js checkout on verify; provisioning on `subscription.created`; abandoned-checkout reminder | 3 days | a sandbox signup with a test card ends signed in, with a `trialing` row carrying billing ids. **Not yet run:** the code is tested end to end through the API with a simulated provider, and the product template is type-checked as a generated project; the browser journey against the real sandbox needs a product deployed with the client-side token, which `koras-e2e-shop` will be once it takes this change |
+| 3 Signup with card — **built 2026-09-05, hosted checkout since 2026-09-09** | both | interval and seats on the form; the hosted checkout on verify and the return from it; provisioning on the subscription-created event; abandoned-checkout reminder | 3 days | a test-mode signup with a test card ends signed in, with a `trialing` row carrying billing ids. **Not yet run:** the code is tested end to end through the API with a stand-in provider that opens a checkout without asking Stripe and verifies webhooks with the adapter's own code, and the product template is type-checked as a generated project; the browser journey needs the test-mode catalogue and a deployed API holding the key |
 | 4 In-app billing — **built 2026-09-05** | both | portal Billing section; change plan, interval, seats; manage billing link; trial-ended and past-due states; first gated module | 3 days | trial to active to seat change to cancel observed in `subscriptions.status`, and the gated module closes on cancel. **Half met:** the seat, interval and plan changes are tested through the portal API against a stand-in provider, and the two gated modules the template already shipped close when the state closes; the full cycle against the real sandbox is the same browser run Phase 3 is waiting on |
-| 5 Reconciliation and go-live — **code built 2026-09-06** | control-plane | reconciliation half of the sweep; live account; live keys in Doppler; production hostnames approved in Paddle | 2 days + 1–2 weeks waiting | nightly reconciliation reports zero findings against sandbox; live account approved. **The check exists and is tested with a stand-in provider**, and runs every fifteen minutes with the estate sweep rather than nightly; the zero-findings night against the real sandbox and the live account are the two open boxes |
+| 5 Reconciliation and go-live — **code built 2026-09-06** | control-plane | reconciliation half of the sweep; the account with Managed Payments enabled; live keys in Doppler; the customer portal configured | 2 days | reconciliation reports zero findings against test mode; live mode activated. **The check exists and is tested with a stand-in provider**, and runs every fifteen minutes with the estate sweep rather than nightly; the zero-findings night against test mode and the activated account are the two open boxes |
 
-Three weeks of engineering. Phase 5's waiting starts on day one: apply for the
-live Paddle account as soon as a public site with pricing, terms, privacy and
-refund policy exists, because approval is the one step nobody at KORAS can
-speed up.
+Three weeks of engineering. Stripe activates an account on business details
+rather than after a review, so Phase 5's waiting is hours; Managed Payments
+itself is one eligibility check, and the account must accept its terms in
+the dashboard before the first checkout.
 
 ## Test evidence
 
 Four things, and a phase does not close without the ones it names.
 
-1. **Replayed events.** A checked-in set of sandbox webhook payloads covering
-   every row of the event table, replayed through the handler under test, with
-   a redelivered event and an out-of-order pair among them. Phase 1.
-2. **One full cycle in dev, against sandbox.** Signup with a test card, trial
-   expiry forced by editing `trial_ends_at`, charge, seat increase, seat
-   decrease refused over the member count, interval change, cancel. Each step
-   observed as a row in `billing_events` and a value in `subscriptions.status`.
-   Phase 4.
+1. **Replayed events.** A checked-in set of test-mode webhook payloads
+   covering every row of the event table, replayed through the handler under
+   test, with a redelivered event and an out-of-order pair among them. Phase 1.
+2. **One full cycle in dev, against test mode.** Signup with a test card,
+   trial expiry forced by editing `trial_ends_at`, charge, seat increase, seat
+   decrease refused over the member count, seat decrease observed as a
+   subscription schedule, interval change, cancel. Each step observed as a row
+   in `billing_events` and a value in `subscriptions.status`. Phase 4.
 3. **A browser run.** The product template's Playwright suite gains a signup
-   journey that completes Paddle's sandbox checkout overlay with a test card
-   and ends on the dashboard. Generator Integration already runs that suite
-   against a freshly generated product. Phase 3.
-4. **A quiet night.** Reconciliation against sandbox reporting zero findings,
-   then one deliberately corrupted row reported and corrected. Phase 5.
+   journey that completes Stripe's hosted checkout in test mode with a test
+   card, returns to the verify page, and ends on the dashboard. Generator
+   Integration already runs that suite against a freshly generated product.
+   Phase 3.
+4. **A quiet night.** Reconciliation against test mode reporting zero
+   findings, then one deliberately corrupted row reported and corrected.
+   Phase 5.
 
 No module in any product declares `requiredEntitlements` until item 2 has
 been done once. That is the rule F13 applied to the trial, applied again.
 
 ## Things that go wrong
 
-- **Paddle.js will not open on an unapproved hostname.** Every hostname that
-  serves `/signup/verify` — dev, test, staging, production, and any Vercel
-  preview that needs it — has to be approved in the Paddle dashboard. Vercel
-  preview URLs are per deployment; approve the stable branch alias, not the
-  hash.
-- **Sandbox and live are different accounts** with different keys, different
-  price ids and different webhook secrets. Price ids are data on the plan row,
-  so they differ per environment the way every other reference does, and
-  Doppler holds the keys per environment the way it holds everything else.
+- **The checkout returns to the URL the product registered.** The success
+  and cancel addresses on a session are built from the product's application
+  URL for the environment, so a product that has not registered one is
+  answered 409 at verification rather than sent to a checkout with nowhere to
+  come back to. A Vercel preview is a different hostname and gets no
+  checkout, which is right.
+- **Test mode and live mode share nothing** but the account: different keys,
+  different price ids and different webhook secrets. Price ids are data on
+  the plan row, so they differ per environment the way every other reference
+  does, and Doppler holds the keys per environment the way it holds
+  everything else.
+- **A period-end change lives in a subscription schedule**, and the row keeps
+  today's values until the webhook says the change landed. A schedule can be
+  seen and released in the Stripe dashboard; releasing one by hand is the one
+  way a scheduled change disappears without this platform being told, and the
+  fifteen-minute reconciliation is what notices.
+- **Managed Payments is conditional.** Stripe keeps it on a low dispute rate
+  and can decline a product it judges ineligible, in which case KORAS becomes
+  the seller for that product with the filings that follow. A dispute is a
+  support failure before it is a billing one.
 - **A verified registration with no checkout is normal**, not an error. It is
   the reminder job's input.
 - **A webhook that arrives before the registration exists** cannot happen in
   this flow, because checkout is opened from a verified registration and
-  carries its id. The handler still refuses an event whose `custom_data` names
-  no known registration, and stores it, so the case is visible if it ever
-  occurs.
-- **Payouts are monthly.** Cash arrives later than it would from a processor.
-  This is a finance fact, not an engineering one, and it is written here so
-  nobody reads a slow first payout as a failed integration.
+  carries its id. The handler still refuses an event whose metadata names no
+  known registration, and stores it, so the case is visible if it ever occurs.
+- **`checkout.session.completed` may arrive before or after
+  `customer.subscription.created`.** Neither order matters: the session
+  event is recorded and moves nothing, and the subscription event is the one
+  that starts the run, whenever it comes.
+- **Payouts are net.** The Managed Payments fee and the tax Stripe collected
+  as seller are taken before the payout, so a payout is smaller than the sum
+  of the prices. This is a finance fact, not an engineering one, and it is
+  written here so nobody reads a small first payout as a failed integration.
 
 ## What this does not cover
 
 Usage-based pricing, coupons, invoiced enterprise contracts with net terms, and
-a free tier. Each is a price shape Paddle supports and none changes the
-architecture. They are not in the first build because none has a customer
-asking for it yet, and the design's rule for that is the same as F13's: run
-the flow once before extending it.
+a free tier. Each is a price shape Stripe supports and none changes the
+architecture — though Managed Payments does not admit a one-off invoice
+outside the billing period, so an invoiced contract would be sold outside it,
+with KORAS the seller for that one customer. They are not in the first build
+because none has a customer asking for it yet, and the design's rule for that
+is the same as F13's: run the flow once before extending it.
 
-Revisit the provider choice when annual revenue passes roughly $300,000, or
-when KORAS incorporates a US entity and hires finance, whichever comes first.
-At that point Stripe becomes a second implementation of the same five
-operations for new customers, and Paddle subscriptions run out on their own.
+Revisit the Merchant of Record choice when annual revenue passes roughly
+$300,000, or when KORAS incorporates a US entity and hires finance, whichever
+comes first. At that point turning Managed Payments off is a flag on the
+checkout and a tax registration, not a new provider; the adapter stays.

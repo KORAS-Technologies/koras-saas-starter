@@ -27,22 +27,24 @@ describe('the section', () => {
     expect(section).toContain('if (plans.length === 0) return null')
   })
 
-  it("asks the provider for every price and never carries one of its own", () => {
-    expect(plans).toContain('paddle.PricePreview(')
-    // Per seat, at each plan's least seats: the provider refuses a whole
-    // preview when one line is below its price's quantity floor.
-    expect(plans).toContain('quantity: plan.min_seats')
-    expect(plans).toContain('line.formattedUnitTotals?.total ?? line.formattedTotals.total')
-    expect(plans).toContain('setFailed(true)')
+  it("shows the provider's amounts as the platform serves them, and never carries one of its own", () => {
+    // The Control Plane reads the amounts from the provider with its secret
+    // key and serves them beside the plans, per seat, in minor units. The
+    // page only formats them -- in the visitor's language, whole where whole.
+    expect(plans).toContain('plan.unit_amount_year : plan.unit_amount_month')
+    expect(plans).toContain('formatAmount(minor, plan.currency, locale)')
+    expect(plans).toContain("style: 'currency'")
+    // No provider script, no provider token, no browser call to a provider.
+    expect(plans).not.toMatch(/paddle|stripe|next\/script|PricePreview/i)
     // No currency amount anywhere in the section or the configuration.
     for (const source of [section, plans, read('packages', 'branding', 'src', 'index.ts.hbs')]) {
       expect(source).not.toMatch(/[$€£]\s?\d/)
     }
   })
 
-  it('says the price is at the checkout where it cannot ask', () => {
+  it('says the price is at the checkout where the platform could not vouch for one', () => {
     expect(plans).toContain('labels.priceAtCheckout')
-    expect(plans).toContain("const canPreview = paddleToken !== '' && items.length > 0 && !failed")
+    expect(plans).toContain('shown !== null && minor !== null && plan.currency')
   })
 
   it('carries the plan and the interval into the signup form', () => {
@@ -62,14 +64,12 @@ describe('the section', () => {
     expect(actions).toContain('(await loadPublicPlans()).filter(canSignUp)')
   })
 
-  it('shares one view of the provider script with the checkout', () => {
-    const paddle = read('packages', 'ui', 'src', 'lib', 'paddle.ts')
-    expect(paddle).toContain("export const PADDLE_JS = 'https://cdn.paddle.com/paddle/v2/paddle.js'")
-    expect(paddle).toMatch(/=== 'production' \? 'production' : 'sandbox'/)
-    const checkout = read('apps', 'web', 'src', 'app', 'signup', 'Checkout.tsx.hbs')
-    expect(checkout).toContain('PADDLE_JS')
-    expect(checkout).toContain('paddleEnvironment(')
-    expect(checkout).not.toContain('declare global')
+  it('takes the amounts through the catalogue parser, as whole minor units or nothing', () => {
+    const branding = read('packages', 'branding', 'src', 'index.ts.hbs')
+    expect(branding).toContain('unit_amount_month: number | null')
+    expect(branding).toContain('currency: string | null')
+    expect(branding).toContain('Number.isInteger(plan.unit_amount_month)')
+    expect(branding).toContain('/^[a-z]{3}$/i.test(plan.currency)')
   })
 })
 
@@ -82,7 +82,8 @@ describe('the pages', () => {
       const source = read(page)
       expect(source).toContain('<PricingSection')
       expect(source).toContain('loadPublicPlans()')
-      expect(source).toContain('process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN')
+      // No provider token reaches a page: the amounts arrive with the plans.
+      expect(source).not.toMatch(/NEXT_PUBLIC_(PADDLE|STRIPE)/)
     })
     it(`${app} keeps the platform's address on the server`, () => {
       const loader = read('apps', app, 'src', 'lib', 'plans.ts.hbs')
@@ -146,7 +147,6 @@ describe('the copy', () => {
       'pricing.perSeatYear',
       'pricing.choose',
       'pricing.priceAtCheckout',
-      'pricing.loading',
       'pricing.seatsRange',
       'pricing.seatsFrom',
       'pricing.singleSeat',

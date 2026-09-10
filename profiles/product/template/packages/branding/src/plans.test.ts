@@ -28,10 +28,40 @@ test('a priced plan comes through with its references and bounds', () => {
     name: 'Starter',
     price_id_month: 'pri_month',
     price_id_year: 'pri_year',
+    unit_amount_month: null,
+    unit_amount_year: null,
+    currency: null,
     min_seats: 2,
     max_seats: 50,
     self_serve: true,
   })
+})
+
+test('the amounts are whole minor units in a three-letter currency, or nothing', () => {
+  const [priced, odd] = parsePublicPlans([
+    {
+      code: 'pro',
+      name: 'Pro',
+      price_id_month: 'price_month',
+      unit_amount_month: 39900,
+      unit_amount_year: null,
+      currency: 'USD',
+    },
+    {
+      code: 'odd',
+      name: 'Odd',
+      unit_amount_month: '39900',
+      unit_amount_year: 12.5,
+      currency: 'dollars',
+    },
+  ])
+  assert.equal(priced?.unit_amount_month, 39900)
+  assert.equal(priced?.unit_amount_year, null)
+  assert.equal(priced?.currency, 'usd')
+  // A string, a fraction and a word are not a price this page will show.
+  assert.equal(odd?.unit_amount_month, null)
+  assert.equal(odd?.unit_amount_year, null)
+  assert.equal(odd?.currency, null)
 })
 
 test('the platform says which plans a stranger may start, and silence means yes', () => {

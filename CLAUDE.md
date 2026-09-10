@@ -40,7 +40,7 @@ All planning and reference documents live in `docs/`, matching
 | `docs/PRODUCT_FRONTEND.md`       | The generated product's frontend: tokens, branding, pages |
 | `docs/PRODUCT_APP_SHELL.md`      | The authenticated product shell: navigation registry, access model, product settings |
 | `docs/PRODUCT_SHELL_AUDIT.md`    | What the signed-in surface was before that shell, and the gaps it closes |
-| `docs/BILLING_DESIGN.md`         | Card at signup, charge at trial end: Paddle behind an adapter, phases and test evidence |
+| `docs/BILLING_DESIGN.md`         | Card at signup, charge at trial end: Stripe Managed Payments behind an adapter, phases and test evidence |
 
 ## Repository layout (target state)
 

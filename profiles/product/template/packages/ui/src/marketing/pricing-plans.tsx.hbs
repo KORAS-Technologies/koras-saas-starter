@@ -1,29 +1,31 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import Script from 'next/script'
+import { useState } from 'react'
 import { canSignUp } from '@{{projectSlug}}/branding'
 import type { PublicPlan } from '@{{projectSlug}}/branding'
 import type { Locale } from '@{{projectSlug}}/i18n'
-import { PADDLE_JS, paddleEnvironment } from '../lib/paddle'
-import type { PaddleJs } from '../lib/paddle'
 import { ButtonLink } from '../primitives/button'
 import { Card } from '../primitives/card'
 import { Icon } from '../primitives/icon'
 
 /**
- * The plan cards, with the prices the provider quotes.
+ * The plan cards, with the prices the provider holds.
  *
- * A client component for one reason: the amount. Paddle's price preview is a
- * browser call with the public token, and it answers in the visitor's own
- * currency with their own tax applied, which no server render could know.
- * Until it answers -- and where this product takes no card at all -- the card
- * says the price is shown at checkout rather than inventing one.
+ * The amounts arrive with the plans: the Control Plane reads them from the
+ * payment provider with its secret key and serves them beside the price ids,
+ * per seat, in the currency's minor unit. This component only formats them
+ * in the visitor's language. Where the platform could not vouch for an
+ * amount just now -- the provider was down, or a plan names a price that
+ * does not exist -- the card says the price is shown at checkout rather than
+ * inventing one, and a product that takes no card at all says the same. Tax
+ * is the provider's to add on its own page, in the visitor's own country, so
+ * nothing here is tax-inclusive and nothing here claims to be.
  *
- * The toggle between monthly and yearly is the only state. It appears only
- * when at least one plan is sold both ways; a plan sold one way is shown that
- * way whatever the toggle says, and a free plan -- no price in either interval
- * -- is shown as a trial with no amount, because that is what it is.
+ * A client component for one reason: the toggle between monthly and yearly,
+ * which is the only state. It appears only when at least one plan is sold
+ * both ways; a plan sold one way is shown that way whatever the toggle says,
+ * and a free plan -- no price in either interval -- is shown as a trial with
+ * no amount, because that is what it is.
  *
  * A plan the platform lists but will not sell to a stranger -- no price and
  * not self-serve, which is how a sales-led tier looks -- gets the third card:
@@ -45,7 +47,6 @@ export interface PricingLabels {
   perSeatYear: string
   choose: string
   priceAtCheckout: string
-  loading: string
   /** `{min}` and `{max}` */
   seatsRange: string
   /** `{min}` */
@@ -65,12 +66,43 @@ function fill(template: string, values: Record<string, string | number>): string
   return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ''))
 }
 
+/**
+ * Currencies the provider counts in whole units rather than hundredths.
+ *
+ * Every other currency's minor unit is a hundredth. The list is the
+ * provider's own; a currency missing from it would show a hundredfold error,
+ * so it is the handful KORAS could plausibly price in rather than a claim to
+ * completeness.
+ */
+const ZERO_DECIMAL = new Set(['jpy', 'krw', 'clp', 'vnd', 'isk', 'huf', 'twd', 'ugx'])
+
+/**
+ * An amount in minor units, in the visitor's own number format.
+ *
+ * Whole amounts are shown whole, without a trailing ".00", because that is
+ * how a price is written on a page, and a cent value is shown to the cent.
+ */
+export function formatAmount(minor: number, currency: string, locale: string): string {
+  const code = currency.toUpperCase()
+  const amount = ZERO_DECIMAL.has(currency.toLowerCase()) ? minor : minor / 100
+  const whole = Number.isInteger(amount)
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: whole ? 0 : 2,
+      maximumFractionDigits: 2,
+    }).format(amount)
+  } catch {
+    // An unknown currency code. The number and the code are still right.
+    return `${amount} ${code}`
+  }
+}
+
 export function PricingPlans({
   plans,
   highlights,
   note,
-  paddleToken,
-  paddleEnvironment: environmentSetting,
   locale,
   labels,
   contactHref,
@@ -78,8 +110,6 @@ export function PricingPlans({
   plans: readonly PublicPlan[]
   highlights: Readonly<Record<string, readonly string[]>>
   note: string
-  paddleToken: string
-  paddleEnvironment: string | undefined
   locale: Locale
   labels: PricingLabels
   /** A `mailto:` for the sales-led card, or empty when the product has none. */
@@ -87,62 +117,9 @@ export function PricingPlans({
 }) {
   const sellsBoth = plans.some((plan) => plan.price_id_month && plan.price_id_year)
   const [interval, setInterval] = useState<Interval>('month')
-  const [prices, setPrices] = useState<Record<string, string>>({})
-  const [previewed, setPreviewed] = useState(false)
-  // The provider refused or never answered. The cards say the price is at
-  // the checkout, which is true, rather than "fetching" for ever.
-  const [failed, setFailed] = useState(false)
-
-  // Every price this page could show, asked for in one call -- each at its
-  // plan's least seats. The provider's price carries a quantity range of its
-  // own, and a preview below it is refused for the whole request: asking for
-  // one seat of a plan that starts at ten left every card on the page
-  // "fetching" for ever. The amount shown is per seat whatever the quantity
-  // asked, because the provider quotes a unit total beside the line total.
-  const items = useMemo(
-    () =>
-      plans.flatMap((plan) =>
-        [plan.price_id_month, plan.price_id_year]
-          .filter((id): id is string => Boolean(id))
-          .map((priceId) => ({ priceId, quantity: plan.min_seats })),
-      ),
-    [plans],
-  )
-
-  const preview = useCallback(async () => {
-    const paddle: PaddleJs | undefined = window.Paddle
-    if (!paddle || !paddleToken || items.length === 0 || previewed) return
-    setPreviewed(true)
-    try {
-      paddle.Environment.set(paddleEnvironment(environmentSetting))
-      paddle.Initialize({ token: paddleToken })
-      const answer = await paddle.PricePreview({ items })
-      const quoted: Record<string, string> = {}
-      for (const line of answer.data.details.lineItems) {
-        // Per seat. The line total is for the quantity asked, which is the
-        // plan's floor, and a card that showed ten seats' worth as the price
-        // would be a card that lied by a factor of ten.
-        quoted[line.price.id] = line.formattedUnitTotals?.total ?? line.formattedTotals.total
-      }
-      setPrices(quoted)
-    } catch {
-      // The provider did not answer, or refused. The cards say the price is
-      // shown at checkout, which is true, rather than showing nothing, a
-      // stale number, or a spinner that never stops.
-      setFailed(true)
-    }
-  }, [environmentSetting, paddleToken, previewed, items])
-
-  useEffect(() => {
-    if (window.Paddle) void preview()
-  }, [preview])
-
-  const canPreview = paddleToken !== '' && items.length > 0 && !failed
 
   return (
     <div className="flex flex-col gap-8" data-testid="pricing">
-      {canPreview ? <Script src={PADDLE_JS} strategy="afterInteractive" onLoad={preview} /> : null}
-
       {sellsBoth ? (
         <fieldset className="mx-auto flex items-center gap-1 rounded-full border border-line bg-surface p-1">
           <legend className="sr-only">{labels.billing}</legend>
@@ -176,8 +153,11 @@ export function PricingPlans({
               : plan.price_id_month
                 ? 'month'
                 : null
-          const priceId = shown === 'year' ? plan.price_id_year : plan.price_id_month
-          const amount = priceId ? prices[priceId] : undefined
+          const minor = shown === 'year' ? plan.unit_amount_year : plan.unit_amount_month
+          const amount =
+            shown !== null && minor !== null && plan.currency
+              ? formatAmount(minor, plan.currency, locale)
+              : undefined
           const seats =
             plan.max_seats === null
               ? plan.min_seats === 1
@@ -196,8 +176,6 @@ export function PricingPlans({
               <p className="mt-4 min-h-[3.5rem]">
                 {!startable ? (
                   <span className="font-display text-3xl font-bold text-ink">{labels.custom}</span>
-                ) : shown === null ? (
-                  <span className="font-display text-3xl font-bold text-ink">{labels.priceAtCheckout}</span>
                 ) : amount ? (
                   <>
                     <span className="font-display text-3xl font-bold text-ink">{amount}</span>
@@ -206,9 +184,7 @@ export function PricingPlans({
                     </span>
                   </>
                 ) : (
-                  <span className="text-sm text-ink-muted" aria-live="polite">
-                    {canPreview ? labels.loading : labels.priceAtCheckout}
-                  </span>
+                  <span className="font-display text-3xl font-bold text-ink">{labels.priceAtCheckout}</span>
                 )}
               </p>
 

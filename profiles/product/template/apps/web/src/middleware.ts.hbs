@@ -88,15 +88,12 @@ const PUBLIC_EXACT_PATHS = ['/']
  * which keeps inline script working for the code we ship and no one else's.
  */
 /**
- * The payment provider's hosts, admitted only when this product can take a
- * card. Paddle.js is loaded by `next/script`, which a nonced script inserts,
- * so `'strict-dynamic'` already trusts it; what the policy has to name is
- * the overlay's frame and the checkout service it talks to. A product with
- * no token ships a policy that names nobody, which is the right default for
- * the one directive -- `frame-src` -- that decides what may be drawn over
- * the page.
+ * No payment provider host is named here, and that is deliberate. The
+ * checkout is a page the provider hosts, which the browser is sent to and
+ * comes back from; this product loads no provider script, draws no provider
+ * frame and holds no provider token, public or otherwise. `frame-src 'none'`
+ * is the policy for a page that nothing may be drawn over.
  */
-const PADDLE_HOSTS = 'https://*.paddle.com'
 
 /**
  * The origin the browser uploads files to and downloads them from.
@@ -122,20 +119,15 @@ function storageOrigin(): string {
   }
 }
 
-function contentSecurityPolicy(nonce: string, connectSrc: string, takesCards: boolean): string {
-  const paddle = takesCards ? ` ${PADDLE_HOSTS}` : ''
+function contentSecurityPolicy(nonce: string, connectSrc: string): string {
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
-    // The overlay also ships a stylesheet from the provider's CDN. Without
-    // it the checkout still opens, unstyled, and the browser reports a
-    // blocked stylesheet on every page that loaded Paddle.js -- which is
-    // every page with a pricing card.
-    `style-src 'self' 'unsafe-inline'${paddle}`,
-    `img-src 'self' data: blob:${paddle}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
     "font-src 'self'",
-    `connect-src 'self' ${connectSrc}${paddle}`.trim(),
-    `frame-src ${takesCards ? PADDLE_HOSTS : "'none'"}`,
+    `connect-src 'self' ${connectSrc}`.trim(),
+    "frame-src 'none'",
     "frame-ancestors 'none'",
     "form-action 'self'",
     "base-uri 'self'",
@@ -153,7 +145,6 @@ export async function middleware(request: NextRequest) {
   const policy = contentSecurityPolicy(
     nonce,
     `${process.env.NEXT_PUBLIC_API_URL ?? ''} ${storageOrigin()}`.trim(),
-    Boolean(process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN),
   )
   const response = await authorize(request, nonce, policy)
 

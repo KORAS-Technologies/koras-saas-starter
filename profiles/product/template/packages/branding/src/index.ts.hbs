@@ -1757,6 +1757,17 @@ export interface PublicPlan {
   name: string
   price_id_month: string | null
   price_id_year: string | null
+  /**
+   * What a seat costs per interval, in the currency's minor unit -- cents --
+   * read by the platform from the payment provider. Null where the platform
+   * could not vouch for an amount just now, or the plan is not sold that
+   * way; a card shown null says the price is at checkout. Tax is added by
+   * the provider on its own page, so nothing here is tax-inclusive.
+   */
+  unit_amount_month: number | null
+  unit_amount_year: number | null
+  /** The ISO code the amounts are in, lower case, or null with them. */
+  currency: string | null
   min_seats: number
   max_seats: number | null
   /**
@@ -1811,6 +1822,25 @@ export function parsePublicPlans(raw: unknown): PublicPlan[] {
       price_id_year:
         typeof plan.price_id_year === 'string' && plan.price_id_year !== ''
           ? plan.price_id_year
+          : null,
+      // An amount is a non-negative integer of minor units or nothing. A
+      // string, a float or a negative number is not a price this page will
+      // show, whatever sent it.
+      unit_amount_month:
+        typeof plan.unit_amount_month === 'number' &&
+        Number.isInteger(plan.unit_amount_month) &&
+        plan.unit_amount_month >= 0
+          ? plan.unit_amount_month
+          : null,
+      unit_amount_year:
+        typeof plan.unit_amount_year === 'number' &&
+        Number.isInteger(plan.unit_amount_year) &&
+        plan.unit_amount_year >= 0
+          ? plan.unit_amount_year
+          : null,
+      currency:
+        typeof plan.currency === 'string' && /^[a-z]{3}$/i.test(plan.currency)
+          ? plan.currency.toLowerCase()
           : null,
       min_seats: typeof plan.min_seats === 'number' && plan.min_seats >= 1 ? plan.min_seats : 1,
       max_seats: typeof plan.max_seats === 'number' ? plan.max_seats : null,

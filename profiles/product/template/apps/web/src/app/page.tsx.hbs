@@ -37,9 +37,9 @@ import { loadPublicPlans } from '../lib/plans'
 export const dynamic = 'force-dynamic'
 
 export default async function HomePage() {
-  // The plans are the platform's, read here on the server; the prices are the
-  // provider's, read in the browser by the section. Neither is typed into
-  // this repository.
+  // The plans are the platform's, read here on the server, and the prices
+  // arrive with them -- the platform reads those from the provider. Neither
+  // is typed into this repository.
   const [signedIn, locale, plans] = await Promise.all([
     hasSession(),
     currentLocale(),
@@ -59,8 +59,6 @@ export default async function HomePage() {
         <PricingSection
           locale={locale}
           plans={plans}
-          paddleToken={process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN ?? ''}
-          paddleEnvironment={process.env.NEXT_PUBLIC_PADDLE_ENVIRONMENT}
         />
         <TrustSection locale={locale} />
         <CtaSection locale={locale} />

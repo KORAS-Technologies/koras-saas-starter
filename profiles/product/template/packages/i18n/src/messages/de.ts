@@ -66,7 +66,6 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'pricing.perSeatYear': 'pro Platz und Jahr',
   'pricing.choose': 'Kostenlos testen',
   'pricing.priceAtCheckout': 'Preis beim Bezahlen',
-  'pricing.loading': 'Preis wird geladen …',
   'pricing.seatsRange': '{min} bis {max} Plätze',
   'pricing.seatsFrom': 'Ab {min} Plätzen',
   'pricing.singleSeat': 'Beliebig viele Plätze',
@@ -158,21 +157,16 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'checkout.title': 'Zahlungsmethode hinzufügen',
   'checkout.description':
     'Ihre Adresse ist bestätigt. Hinterlegen Sie eine Karte, um Ihre 14-tägige Testphase von {product} zu starten.',
-  'checkout.opening': 'Sicherer Bezahlvorgang wird geöffnet …',
-  'checkout.waiting': 'Der Bezahlvorgang ist geöffnet. Schließen Sie ihn ab, um fortzufahren.',
-  'checkout.open': 'Bezahlvorgang öffnen',
+  'checkout.opening': 'Sie werden zum sicheren Bezahlvorgang weitergeleitet …',
+  'checkout.open': 'Weiter zum Bezahlvorgang',
   'checkout.trialNote':
     'Bis zum Ende der Testphase wird nichts berechnet, und Sie können vorher kündigen.',
   'checkout.closed.title': 'Der Bezahlvorgang wurde geschlossen',
   'checkout.closed.description':
-    'Es wurde nichts berechnet und nichts angelegt. Öffnen Sie ihn erneut, um fortzufahren, oder kommen Sie später zurück – wir senden Ihnen einen Link.',
-  'checkout.failed.title': 'Der Bezahlvorgang konnte nicht geladen werden',
+    'Es wurde nichts berechnet und nichts angelegt. Gehen Sie weiter zum Bezahlvorgang, um dort fortzufahren, oder kommen Sie später zurück – wir senden Ihnen einen Link.',
+  'checkout.failed.title': 'Der Bezahlvorgang konnte nicht geöffnet werden',
   'checkout.failed.description':
-    'Prüfen Sie Ihre Verbindung und laden Sie die Seite neu. Ihr Link ist weiterhin gültig.',
-  'checkout.failed.reload': 'Neu laden',
-  'checkout.notConfigured.title': 'Zahlung ist noch nicht eingerichtet',
-  'checkout.notConfigured.description':
-    '{product} kann online noch keine Zahlung entgegennehmen. Ihre Adresse ist bestätigt und nichts geht verloren – melden Sie sich bei uns, und wir richten Ihr Konto fertig ein.',
+    'Versuchen Sie es gleich noch einmal. Ihre Adresse ist bestätigt und nichts geht verloren – wir senden Ihnen einen Link, der ihn öffnet.',
 
   'requestAccess.heading': 'Mit {product} loslegen',
   'requestAccess.byAdmin':

@@ -1529,13 +1529,28 @@ something to land on.
 - [ ] Phase 3's browser run: a sandbox signup with a test card, from a product deployed with the client-side token, ending signed in — and the Playwright journey that records it
 - [x] Phase 4 — the portal's billing section, plan and seat changes, the trial-ended and past-due states; the first module with `requiredEntitlements` had already shipped with the shell (built 2026-09-05, both repositories)
 - [x] Phase 5's code — the `billing.subscription` check in the estate sweep, repaired toward the provider (built 2026-09-06)
-- [ ] Phase 5's rest — the live Paddle account, live keys and destination in prod, production hostnames approved, the first real cycle: `koras-control-plane/docs/runbooks/paddle-go-live.md`
+- [x] **The provider switched from Paddle to Stripe Managed Payments on 2026-09-09**, before any customer existed to migrate. The adapter, the webhook, the checkout and the pricing page were rewritten in both repositories; the Paddle adapter was deleted rather than kept behind a flag. See the note below
+- [ ] Phase 5's rest — the Stripe account with Managed Payments enabled, the test-mode catalogue with eligible tax codes, keys and webhook endpoint in Doppler, the customer portal configured, the first real cycle: `koras-control-plane/docs/runbooks/stripe-go-live.md`
+- [ ] The two paths the stand-in provider cannot exercise: the hosted checkout completed in a browser against test mode, and a period-end change observed as a subscription schedule on a real subscription
 
 The design is `BILLING_DESIGN.md`, decided 2026-09-05: card at signup, charge
-at trial end, Paddle as Merchant of Record behind a five-operation adapter,
-and the Control Plane the only writer of `subscriptions.status`. What the
-Control Plane holds of it is `koras-control-plane/docs/BILLING.md`, and the
-sandbox catalogue it was built against is recorded at the top of the design.
+at trial end, a Merchant of Record behind an adapter, and the Control Plane
+the only writer of `subscriptions.status`. What the Control Plane holds of it
+is `koras-control-plane/docs/BILLING.md`.
+
+**Why the provider changed.** Paddle was chosen for one reason: Merchant of
+Record, so that KORAS files no sales tax or VAT anywhere. On 2026-09-09 the
+comparison was re-run and Stripe's Managed Payments turned out to offer the
+same thing -- Stripe as the seller, tax filed in more than eighty countries,
+Germany an eligible location, SaaS an eligible category -- on the provider
+whose account opens in hours rather than weeks. No subscription existed, so
+there was nothing to migrate and the switch cost the adapter and the
+checkout: Stripe Checkout is a hosted page rather than an overlay, so the
+product now loads no provider script and holds no provider token at all;
+Stripe has no browser-side price preview, so the adapter gained a sixth
+operation, `prices`, and the public catalogue carries the amounts; and Stripe
+has no "from next period" flag, so a scheduled seat decrease is a
+subscription schedule. Each is recorded where it applies in the design.
 
 **What F13 left and this picked up.** F13 made status mean something. This
 gives status a writer: a webhook that verifies Paddle's signature over the raw

@@ -214,6 +214,7 @@ export async function verifySignup(token: string): Promise<VerifyOutcome> {
           seats: number
           billing_interval: string
           email: string
+          url: string
         } | null
       }
       if (body.status === 'awaiting_payment' && body.checkout) {
@@ -229,6 +230,7 @@ export async function verifySignup(token: string): Promise<VerifyOutcome> {
             seats: body.checkout.seats,
             billingInterval: body.checkout.billing_interval === 'year' ? 'year' : 'month',
             email: body.checkout.email,
+            url: body.checkout.url,
           },
         }
       }
@@ -242,6 +244,35 @@ export async function verifySignup(token: string): Promise<VerifyOutcome> {
     return { status: 'invalid' }
   } catch {
     return { status: 'invalid' }
+  }
+}
+
+/**
+ * The checkout was left; ask for it again.
+ *
+ * The provider's hosted page sends the browser back here with the
+ * registration id and no token -- the token was spent proving the address --
+ * so a fresh session is asked for by id. The Control Plane hands one out only
+ * for a signup that is verified and has neither a subscription nor a run;
+ * anything else is `null` here, and the card says the checkout could not be
+ * opened. Nothing is inferred from the refusal: the reminder email a day
+ * later carries a link that works whatever the answer was.
+ */
+export async function reopenCheckout(registrationId: string): Promise<{ url: string } | null> {
+  const base = controlPlane()
+  if (!base) return null
+
+  try {
+    const response = await fetch(`${base}/api/signup/v1/registrations/checkout`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ registration_id: registrationId }),
+    })
+    if (!response.ok) return null
+    const body = (await response.json()) as { checkout?: { url?: string } | null }
+    return body.checkout?.url ? { url: body.checkout.url } : null
+  } catch {
+    return null
   }
 }
 
