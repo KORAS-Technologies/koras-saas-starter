@@ -135,9 +135,12 @@ per account rather than per address.
   happens when it ends. Reusing a held ZITADEL session would mean the
   platform keeping session tokens past one use, and is not done until a
   customer asks.
-- **The Control Plane's portal and the product's admin application** still
-  sign in on ZITADEL's page. The portal is the Control Plane's to change;
-  the admin application is staff-only, which §8 does not cover.
+- **The product's admin application** shares the web application's OIDC
+  client, so a staff sign-in there goes through the product's page too. The
+  Control Plane's portal got its own page the same day, on the same routes,
+  naming itself `koras-control-plane`; the Control Plane's console and
+  ZITADEL's own Management Console stay on ZITADEL's hosted V2 page, which
+  §8 does not cover for staff.
 - **Enrolment** of a second factor on a product page. R-90's enrolment
   half; not started.
 - **The local stack.** `local/zitadel/provision.py` leaves the local OIDC
