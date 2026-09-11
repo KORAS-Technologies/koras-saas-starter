@@ -190,7 +190,15 @@ PUT https://<instance>/v2/features/instance
 Reverting is the same call with `true`. Done on dev on 2026-09-11; test,
 staging and prod still have it on, so their applications keep the hosted
 page until somebody makes that call -- which is the right order, since
-their web applications are not deployed with the page yet.
+their web applications are not deployed with the page yet. Checked on
+2026-09-12: every web application on all four instances already declares
+V2 with its base URI, so the Terraform half is done everywhere; the
+product's `/login` answers 404 on test, staging and prod because nothing
+past `develop` has been promoted, so turning the feature off there today
+would send every sign-in to a page that does not exist. The `worker` user
+holds `IAM_LOGIN_CLIENT` on dev only. Grant the role now on the other
+three -- it breaks nothing while the feature is on -- and flip the feature
+when the environment is promoted, one instance at a time.
 
 With the feature off, an application that says nothing about its login
 version gets ZITADEL's **V1** login -- the "Select Account" page with
@@ -210,8 +218,11 @@ module call for that environment and applies.
 Applied to `koras-e2e-shop`'s dev on 2026-09-11, with the instance feature
 turned off the same day: ZITADEL answers the authorize request with a
 redirect to the product's `/login?authRequest=…`, and the platform's route
-answers the form. A sign-in with a real password has still not been watched
-in a browser by a person; the Control Plane's `koras-control-plane/tests/integration/test_product_sign_in.py`
+answers the form. Late the same day a real Chromium signed a customer in
+with a real password on the product's page and reached `/dashboard` with
+the session and id-token cookies set, and a staff account with a passkey
+was handed to ZITADEL's page as designed. The Control Plane's
+`koras-control-plane/tests/integration/test_product_sign_in.py`
 covers what the API does between the two, and the generated project's
 `e2e/sign-in.spec.ts` covers the page without a platform behind it.
 
