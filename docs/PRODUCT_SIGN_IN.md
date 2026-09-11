@@ -130,14 +130,19 @@ per account rather than per address.
 
 ## What is deliberately not in it
 
-- **Only TOTP as a second factor.** Passkeys and U2F need a browser
-  ceremony the platform cannot take part in; OTP by mail or SMS would have
-  ZITADEL send its own message, which R-107 forbids. A person whose only
-  second factor is one of those is signed in on the password, and the
-  product's middleware refuses the session if their organization requires
-  a second factor -- the refusal they would meet today. Nobody has any of
-  them enrolled: no product has offered enrolment yet, which is the other
-  half of R-90 and stays open.
+- **Only TOTP as a second factor on this page.** Passkeys and U2F need a
+  browser ceremony the platform cannot take part in; OTP by mail or SMS
+  would have ZITADEL send its own message, which R-107 forbids. A person
+  whose second factor is one of those is handed to ZITADEL's hosted login
+  for that one sign-in (`/ui/v2/login/login?authRequest=…`), which asks
+  for the password again and runs the ceremony. That is the one deliberate
+  exception to the page being ours, and in practice it is a staff account:
+  signing such a person in on the password alone, as the first build did,
+  minted a session with no second factor, which the middleware then refused
+  for staff -- a staff account with a security key could not sign in
+  anywhere (found live on dev on 2026-09-11). No product has offered
+  enrolment of any factor yet, which is the other half of R-90 and stays
+  open.
 - **No "keep me signed in".** ZITADEL's own login remembered its session in
   a cookie on ZITADEL's host, so a second sign-in within its lifetime asked
   for nothing. Here every sign-in asks for the password. The product's own

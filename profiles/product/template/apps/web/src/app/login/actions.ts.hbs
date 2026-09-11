@@ -77,13 +77,35 @@ function callbackAllowed(url: string): boolean {
   return allowed.includes(parsed.origin)
 }
 
+
+/**
+ * ZITADEL's own hosted login, for one auth request.
+ *
+ * Where a person's second factor is a passkey or a security key, only a
+ * browser ceremony on the provider's page can check it. The platform answers
+ * `factor_required` with `provider`, and this sends the browser there for
+ * this sign-in only -- the one deliberate exception to the page being ours,
+ * and in practice a staff account. The origin is the one this application
+ * was configured with, so it passes the same check as the callback.
+ */
+function hostedLogin(authRequest: string): string | null {
+  const provider = process.env.ZITADEL_DOMAIN
+  if (!provider) return null
+  return `${provider.replace(/\/$/, '')}/ui/v2/login/login?authRequest=${encodeURIComponent(authRequest)}`
+}
+
 type Outcome =
   | { kind: 'done'; callbackUrl: string }
   | { kind: 'factor'; attemptId: string }
   | { kind: 'state'; state: SignInState }
 
 /** Turn the platform's answer into what the page does next. */
-async function explain(response: Response, t: Translator, attemptId?: string): Promise<Outcome> {
+async function explain(
+  response: Response,
+  t: Translator,
+  attemptId?: string,
+  hosted?: string | null,
+): Promise<Outcome> {
   if (response.ok) {
     const body = (await response.json()) as {
       status?: string
@@ -96,6 +118,9 @@ async function explain(response: Response, t: Translator, attemptId?: string): P
     }
     if (body.status === 'factor_required' && body.factor === 'totp' && body.attempt_id) {
       return { kind: 'factor', attemptId: body.attempt_id }
+    }
+    if (body.status === 'factor_required' && body.factor === 'provider' && hosted) {
+      return { kind: 'done', callbackUrl: hosted }
     }
     return { kind: 'state', state: { status: 'error', message: t('signIn.unavailable') } }
   }
@@ -158,7 +183,7 @@ export async function signIn(_prev: SignInState, form: FormData): Promise<SignIn
       }),
       cache: 'no-store',
     })
-    outcome = await explain(response, t)
+    outcome = await explain(response, t, undefined, hostedLogin(authRequest))
   } catch {
     return { status: 'error', message: t('signIn.unavailable') }
   }
