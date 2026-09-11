@@ -104,6 +104,8 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'login.description':
     'Le llevaremos al inicio de sesión de su organización y le traeremos de vuelta directamente.',
   'login.noAccount': '¿Aún no tiene cuenta?',
+  'login.signedOut.heading': 'Ha cerrado la sesión',
+  'login.signedOut.description': 'Vuelva a iniciar sesión cuando lo desee.',
   'login.note':
     'El inicio de sesión usa la cuenta de su organización. No hay una contraseña separada de {product} que recordar ni restablecer.',
 

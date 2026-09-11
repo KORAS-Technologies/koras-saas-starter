@@ -23,12 +23,15 @@ export async function generateMetadata(): Promise<Metadata> {
  * `/` is the public homepage and a completed sign-in that lands there looks
  * exactly like one that failed.
  *
- * The button remains for one case: an environment with no identity provider
- * configured, where the start route could only answer 500. Then the page says
+ * The button remains for two cases. An environment with no identity provider
+ * configured, where the start route could only answer 500: then the page says
  * what it is about to do and lets the person choose to do it, which is also
- * what the browser suite -- which runs without a provider -- sees. `href`,
- * `data-testid="sign-in"` and the redirect it starts are still the contract
- * the smoke checks depend on.
+ * what the browser suite -- which runs without a provider -- sees. And the
+ * page a sign-out lands on: the sign-out is a form post, the content security
+ * policy's form-action is 'self', and Chrome applies that to every hop of the
+ * redirect chain that follows, so a chain that reached the provider from the
+ * sign-out would be refused. `href`, `data-testid="sign-in"` and the redirect
+ * it starts are still the contract the smoke checks depend on.
  *
  * **With `authRequest`**, it is the sign-in itself. When this product's OIDC
  * application is configured for a custom login (the Terraform module's
@@ -50,9 +53,9 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; authRequest?: string }>
+  searchParams: Promise<{ next?: string; authRequest?: string; signed_out?: string }>
 }) {
-  const [{ next, authRequest }, locale, t] = await Promise.all([
+  const [{ next, authRequest, signed_out: signedOut }, locale, t] = await Promise.all([
     searchParams,
     currentLocale(),
     translator(),
@@ -84,15 +87,15 @@ export default async function LoginPage({
 
   const href = `/api/auth/start?next=${encodeURIComponent(next ?? '/dashboard')}`
 
-  if (process.env.ZITADEL_DOMAIN && process.env.ZITADEL_CLIENT_ID) {
+  if (!signedOut && process.env.ZITADEL_DOMAIN && process.env.ZITADEL_CLIENT_ID) {
     redirect(href)
   }
 
   return (
     <AuthLayout locale={locale}>
       <AuthCard
-        title={t('login.heading', params)}
-        description={t('login.description')}
+        title={signedOut ? t('login.signedOut.heading') : t('login.heading', params)}
+        description={signedOut ? t('login.signedOut.description') : t('login.description')}
         footer={footer}
       >
         <ButtonLink href={href} size="lg" className="w-full" testId="sign-in">

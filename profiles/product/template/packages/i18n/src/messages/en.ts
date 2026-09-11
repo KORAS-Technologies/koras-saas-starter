@@ -110,6 +110,8 @@ export const en = {
   'login.description':
     "You will be taken to your organisation's sign-in and brought straight back.",
   'login.noAccount': 'No account yet?',
+  'login.signedOut.heading': 'You are signed out',
+  'login.signedOut.description': 'Sign in again whenever you are ready.',
   'login.note':
     'Signing in uses your organisation account. There is no separate {product} password to remember or reset.',
 

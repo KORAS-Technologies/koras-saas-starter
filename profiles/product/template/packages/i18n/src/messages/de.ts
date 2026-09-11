@@ -109,6 +109,8 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'login.description':
     'Sie werden zur Anmeldung Ihrer Organisation weitergeleitet und danach direkt zurückgebracht.',
   'login.noAccount': 'Noch kein Konto?',
+  'login.signedOut.heading': 'Sie sind abgemeldet',
+  'login.signedOut.description': 'Melden Sie sich wieder an, wann immer Sie möchten.',
   'login.note':
     'Die Anmeldung erfolgt über Ihr Organisationskonto. Es gibt kein separates {product}-Passwort, das Sie sich merken oder zurücksetzen müssten.',
 

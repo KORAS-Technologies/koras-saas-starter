@@ -25,6 +25,15 @@ test('without an auth request, and no provider configured, the page is the butto
   await expect(page.getByTestId('sign-in-form')).toHaveCount(0)
 })
 
+test('a sign-out lands on a signed-out page, not in the provider', async ({ page }) => {
+  // The sign-out is a form post, and the content security policy's
+  // form-action is 'self': a redirect chain from that post into the provider
+  // would be refused by the browser. So the page after a sign-out is a page.
+  await page.goto('/login?signed_out=1')
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('signed out')
+  await expect(page.getByTestId('sign-in')).toBeVisible()
+})
+
 test('with an auth request the page is the sign-in itself', async ({ page }) => {
   await page.goto('/login?authRequest=V2_test')
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Sign in')

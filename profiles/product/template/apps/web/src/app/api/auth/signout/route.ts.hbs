@@ -10,7 +10,13 @@ import { cookieOptions, PROVIDER_TOKEN_COOKIE } from '@{{projectSlug}}/auth'
  * than a breach but is trivially avoided.
  */
 export async function POST(request: NextRequest) {
-  const response = NextResponse.redirect(new URL('/login', request.nextUrl.origin))
+  // `signed_out`, so the login page shows a page rather than starting the
+  // next sign-in at once. It cannot start one from here: the content security
+  // policy's form-action is 'self', and Chrome applies it to every hop of the
+  // redirect chain that follows a form post -- so a chain that reached the
+  // identity provider from this 303 would be refused, and the person would be
+  // left on the page they signed out of, still looking signed in.
+  const response = NextResponse.redirect(new URL('/login?signed_out=1', request.nextUrl.origin))
   const cleared = cookieOptions({ secure: request.nextUrl.protocol === 'https:', maxAge: 0 })
   // Both, or signing out leaves the provider's token behind and the next
   // sign-in reuses it.
