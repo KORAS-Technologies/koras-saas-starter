@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { productConfig } from '@{{projectSlug}}/branding'
 import { AuthCard, AuthLayout, ButtonLink } from '@{{projectSlug}}/ui'
 import { currentLocale, translator } from '../../lib/locale'
+import { signInProviders } from './platform'
 import { SignInForm } from './SignInForm'
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -49,13 +50,24 @@ export async function generateMetadata(): Promise<Metadata> {
  * application is *not* configured for it, ZITADEL never sends anybody here
  * with an `authRequest`, and the page is the button. `docs/PRODUCT_SIGN_IN.md`
  * has the whole flow.
+ *
+ * Below the password form, one button per external provider the platform
+ * offers -- "Continue with Google" -- read from the Control Plane. The
+ * provider brings the person back to `/login/provider`, or here with
+ * `provider=failed` when they cancelled or the provider refused, which is
+ * one sentence above the form rather than a dead end.
  */
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; authRequest?: string; signed_out?: string }>
+  searchParams: Promise<{
+    next?: string
+    authRequest?: string
+    signed_out?: string
+    provider?: string
+  }>
 }) {
-  const [{ next, authRequest, signed_out: signedOut }, locale, t] = await Promise.all([
+  const [{ next, authRequest, signed_out: signedOut, provider }, locale, t] = await Promise.all([
     searchParams,
     currentLocale(),
     translator(),
@@ -72,6 +84,11 @@ export default async function LoginPage({
   )
 
   if (authRequest) {
+    const providers = await signInProviders()
+    const initial =
+      provider === 'failed'
+        ? ({ status: 'error', message: t('signIn.provider.failed') } as const)
+        : undefined
     return (
       <AuthLayout locale={locale}>
         <AuthCard
@@ -79,7 +96,12 @@ export default async function LoginPage({
           description={t('signIn.description', params)}
           footer={footer}
         >
-          <SignInForm authRequest={authRequest} locale={locale} />
+          <SignInForm
+            authRequest={authRequest}
+            locale={locale}
+            providers={providers}
+            initial={initial}
+          />
         </AuthCard>
       </AuthLayout>
     )

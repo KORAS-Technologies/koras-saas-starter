@@ -29,127 +29,26 @@
  * the browser looped back to the form. Found live on dev on 2026-09-11. The
  * callback has to be a real page load, exactly like the redirect ZITADEL's
  * own login page performs: the form gets the URL and assigns `location`.
+ *
+ * **Continue with Google** is the third action. It posts the chosen provider
+ * and the auth request to the platform and gets the provider's own
+ * authorization URL back; the form sends the browser there the same way it
+ * sends it to the callback. The provider brings the person back to
+ * `/login/provider`, which finishes the sign-in server-side.
  */
 
+import { productConfig } from '@{{projectSlug}}/branding'
 import { translator } from '../../lib/locale'
-import type { Translator } from '@{{projectSlug}}/i18n'
+import {
+  controlPlane,
+  explain,
+  fromOutcome,
+  hostedLogin,
+  ownOrigin,
+  providerReturnUrls,
+} from './platform'
+import type { Outcome } from './platform'
 import type { SignInState } from './state'
-
-function controlPlane(): string | null {
-  const base = process.env.KORAS_CONTROL_PLANE_URL
-  return base ? base.replace(/\/$/, '') : null
-}
-
-/**
- * Where the browser may be sent when the sign-in is done.
- *
- * The Control Plane answers with this product's own `/api/auth/callback`,
- * code and state appended -- that is what ZITADEL hands back for a code flow
- * -- or, for other flows, a URL on the identity provider's host. This server
- * trusts the platform, and still checks the answer against the origins it was
- * configured with, so a platform answering something else cannot turn the
- * sign-in into a redirect anywhere. With neither `ZITADEL_REDIRECT_URI` nor
- * `ZITADEL_DOMAIN` set -- a local stack pointing at a stub -- any https URL is
- * accepted, because then there is nothing to check against.
- */
-function callbackAllowed(url: string): boolean {
-  let parsed: URL
-  try {
-    parsed = new URL(url)
-  } catch {
-    return false
-  }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false
-  // What ZITADEL answers for a code flow is this application's own redirect
-  // URI with the code and state appended -- not a URL on ZITADEL's host. The
-  // first live sign-in threw a successful answer away by checking it against
-  // the provider's origin, and the retry reused a finished auth request.
-  const own = process.env.ZITADEL_REDIRECT_URI
-  const provider = process.env.ZITADEL_DOMAIN
-  if (!own && !provider) return true
-  const allowed = [own, provider].filter(Boolean).map((value) => {
-    try {
-      return new URL(value as string).origin
-    } catch {
-      return null
-    }
-  })
-  return allowed.includes(parsed.origin)
-}
-
-
-/**
- * ZITADEL's own hosted login, for one auth request.
- *
- * Where a person's second factor is a passkey or a security key, only a
- * browser ceremony on the provider's page can check it. The platform answers
- * `factor_required` with `provider`, and this sends the browser there for
- * this sign-in only -- the one deliberate exception to the page being ours,
- * and in practice a staff account. The origin is the one this application
- * was configured with, so it passes the same check as the callback.
- */
-function hostedLogin(authRequest: string): string | null {
-  const provider = process.env.ZITADEL_DOMAIN
-  if (!provider) return null
-  return `${provider.replace(/\/$/, '')}/ui/v2/login/login?authRequest=${encodeURIComponent(authRequest)}`
-}
-
-type Outcome =
-  | { kind: 'done'; callbackUrl: string }
-  | { kind: 'factor'; attemptId: string }
-  | { kind: 'state'; state: SignInState }
-
-/** Turn the platform's answer into what the page does next. */
-async function explain(
-  response: Response,
-  t: Translator,
-  attemptId?: string,
-  hosted?: string | null,
-): Promise<Outcome> {
-  if (response.ok) {
-    const body = (await response.json()) as {
-      status?: string
-      callback_url?: string
-      factor?: string
-      attempt_id?: string
-    }
-    if (body.status === 'done' && body.callback_url && callbackAllowed(body.callback_url)) {
-      return { kind: 'done', callbackUrl: body.callback_url }
-    }
-    if (body.status === 'factor_required' && body.factor === 'totp' && body.attempt_id) {
-      return { kind: 'factor', attemptId: body.attempt_id }
-    }
-    if (body.status === 'factor_required' && body.factor === 'provider' && hosted) {
-      return { kind: 'done', callbackUrl: hosted }
-    }
-    return { kind: 'state', state: { status: 'error', message: t('signIn.unavailable') } }
-  }
-  if (response.status === 401) {
-    // Wrong address, wrong password, wrong code: whichever, it is the one
-    // thing the person can act on, and it goes under the form as a whole.
-    return {
-      kind: 'state',
-      state: {
-        status: attemptId ? 'factor' : 'error',
-        attemptId,
-        message: attemptId ? t('signIn.factor.refused') : t('signIn.refused'),
-      },
-    }
-  }
-  if (response.status === 404) {
-    return { kind: 'state', state: { status: 'expired', message: t('signIn.expired') } }
-  }
-  if (response.status === 429) {
-    return {
-      kind: 'state',
-      state: { status: attemptId ? 'factor' : 'error', attemptId, message: t('signIn.tooMany') },
-    }
-  }
-  return {
-    kind: 'state',
-    state: { status: attemptId ? 'factor' : 'error', attemptId, message: t('signIn.unavailable') },
-  }
-}
 
 /** The email address and password. The form's action. */
 export async function signIn(_prev: SignInState, form: FormData): Promise<SignInState> {
@@ -188,9 +87,7 @@ export async function signIn(_prev: SignInState, form: FormData): Promise<SignIn
     return { status: 'error', message: t('signIn.unavailable') }
   }
 
-  if (outcome.kind === 'state') return outcome.state
-  if (outcome.kind === 'factor') return { status: 'factor', attemptId: outcome.attemptId }
-  return { status: 'done', callbackUrl: outcome.callbackUrl }
+  return fromOutcome(outcome)
 }
 
 /** The second factor's code, for a sign-in the platform is holding. */
@@ -228,7 +125,108 @@ export async function verifyFactor(_prev: SignInState, form: FormData): Promise<
     return { status: 'factor', attemptId, message: t('signIn.unavailable') }
   }
 
-  if (outcome.kind === 'state') return outcome.state
-  if (outcome.kind === 'factor') return { status: 'factor', attemptId: outcome.attemptId }
-  return { status: 'done', callbackUrl: outcome.callbackUrl }
+  return fromOutcome(outcome)
+}
+
+/**
+ * Continue with an external provider. The provider button's action.
+ *
+ * What comes back is the provider's own authorization URL -- on Google's
+ * host, not on ZITADEL's or this application's -- so it is not checked the
+ * way the callback is; https is required and nothing else can be, because
+ * where a provider signs people in is the provider's to say. The platform
+ * has already refused to start anything whose return URLs are not this
+ * application's own, which is the check that matters: the proof comes back
+ * here or nowhere.
+ */
+export async function startProvider(_prev: SignInState, form: FormData): Promise<SignInState> {
+  const t = await translator()
+  const authRequest = String(form.get('authRequest') ?? '')
+  const providerId = String(form.get('providerId') ?? '')
+
+  if (!authRequest) return { status: 'expired', message: t('signIn.expired') }
+  const base = controlPlane()
+  const origin = ownOrigin()
+  if (!base || !origin || !providerId) {
+    return { status: 'error', message: t('signIn.unavailable') }
+  }
+
+  try {
+    const response = await fetch(`${base}/api/sign-in/v1/providers/intents`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        auth_request_id: authRequest,
+        product_code: '{{projectSlug}}',
+        provider_id: providerId,
+        ...snakeCase(providerReturnUrls(origin, authRequest)),
+      }),
+      cache: 'no-store',
+    })
+    if (response.ok) {
+      const body = (await response.json()) as { auth_url?: string }
+      if (body.auth_url && body.auth_url.startsWith('https://')) {
+        return { status: 'done', callbackUrl: body.auth_url }
+      }
+      return { status: 'error', message: t('signIn.unavailable') }
+    }
+    if (response.status === 404) {
+      // The auth request is gone, or the provider is not offered: either way
+      // the form is where to go, with the buttons the platform offers now.
+      return { status: 'expired', message: t('signIn.expired') }
+    }
+    if (response.status === 429) return { status: 'error', message: t('signIn.tooMany') }
+    return { status: 'error', message: t('signIn.unavailable') }
+  } catch {
+    return { status: 'error', message: t('signIn.unavailable') }
+  }
+}
+
+function snakeCase(urls: { successUrl: string; failureUrl: string }) {
+  return { success_url: urls.successUrl, failure_url: urls.failureUrl }
+}
+
+/**
+ * Finish a sign-in the provider sent back. Called by `/login/provider` from
+ * the server while rendering, not by a form: the person arrives with the
+ * intent's id and token in the URL, and the page has to answer at once.
+ */
+export async function finishProvider(
+  authRequest: string,
+  intentId: string,
+  intentToken: string,
+): Promise<SignInState> {
+  const t = await translator()
+  if (!authRequest || !intentId || !intentToken) {
+    return { status: 'expired', message: t('signIn.expired') }
+  }
+  const base = controlPlane()
+  if (!base) return { status: 'error', message: t('signIn.unavailable') }
+
+  let outcome: Outcome
+  try {
+    const response = await fetch(
+      `${base}/api/sign-in/v1/providers/intents/${encodeURIComponent(intentId)}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          auth_request_id: authRequest,
+          product_code: '{{projectSlug}}',
+          intent_token: intentToken,
+        }),
+        cache: 'no-store',
+      },
+    )
+    outcome = await explain(
+      response,
+      t,
+      undefined,
+      hostedLogin(authRequest),
+      productConfig.product.name,
+    )
+  } catch {
+    return { status: 'error', message: t('signIn.unavailable') }
+  }
+  return fromOutcome(outcome)
 }

@@ -57,6 +57,50 @@ test('with an auth request the page is the sign-in itself', async ({ page }) => 
   )
 })
 
+test('with no platform there is no provider button, and the password form stands alone', async ({
+  page,
+}) => {
+  // "Continue with Google" is drawn from what the platform says the instance
+  // offers. No platform, no list, no button -- and never a button that would
+  // lead nowhere.
+  await page.goto('/login?authRequest=V2_test')
+  await expect(page.getByTestId('sign-in-form')).toBeVisible()
+  await expect(page.getByTestId('sign-in-providers')).toHaveCount(0)
+})
+
+test('a provider that sent the person back without a proof is an expired sign-in', async ({
+  page,
+}) => {
+  // The return page needs the intent's id and token in the URL. Without
+  // them there is nothing to finish, and the only way on is to start again.
+  await page.goto('/login/provider?authRequest=V2_test')
+  const expired = page.getByTestId('sign-in-expired')
+  await expect(expired).toBeVisible()
+  await expect(expired.getByRole('link', { name: 'Start again' })).toHaveAttribute('href', '/login')
+})
+
+test('a provider return the platform cannot finish is one message, with the password form', async ({
+  page,
+}) => {
+  // No Control Plane here. The refusal must not claim anything about the
+  // person -- nothing checked them -- and the password form stays, because
+  // that is the other way in.
+  await page.goto('/login/provider?authRequest=V2_test&id=intent-1&token=proof')
+  const error = page.getByTestId('sign-in-error')
+  await expect(error).toBeVisible()
+  await expect(error).toContainText('not available')
+  await expect(page.getByTestId('sign-in-form')).toBeVisible()
+  await expect(page.getByLabel('Email address')).toBeVisible()
+})
+
+test('a provider the person came back from without finishing is said once', async ({ page }) => {
+  await page.goto('/login?authRequest=V2_test&provider=failed')
+  const error = page.getByTestId('sign-in-error')
+  await expect(error).toBeVisible()
+  await expect(error).toContainText('did not finish')
+  await expect(page.getByTestId('sign-in-form')).toBeVisible()
+})
+
 test('a platform that cannot be reached is one message, under the form', async ({ page }) => {
   // No Control Plane is configured in this suite. The refusal must not claim
   // the password was wrong -- nothing checked it -- and must leave the form

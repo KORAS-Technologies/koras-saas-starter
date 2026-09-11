@@ -1,0 +1,248 @@
+/**
+ * What the sign-in page says to the Control Plane, and how it reads the answer.
+ *
+ * Server-side only, and not a server action: `actions.ts` carries
+ * `'use server'` and such a file may export only async functions, so the
+ * helpers both the actions and the provider return page need live here.
+ * Nothing in this file is imported by a client component.
+ *
+ * The Control Plane answers the same shape for a password and for an external
+ * provider -- finished, with where to send the browser, or waiting for a
+ * second factor, with the attempt to post the code against -- so one reader
+ * serves both.
+ */
+
+import type { MessageKey, Translator } from '@{{projectSlug}}/i18n'
+import type { SignInState } from './state'
+
+export function controlPlane(): string | null {
+  const base = process.env.KORAS_CONTROL_PLANE_URL
+  return base ? base.replace(/\/$/, '') : null
+}
+
+/**
+ * This application's own origin, from the redirect URI it was configured with.
+ *
+ * Where an external provider sends the person back. Read from configuration
+ * rather than from the request's `Host` header, because a header is a value
+ * the browser sent and this URL is where a proof of identity will be
+ * delivered. Null where no redirect URI is configured -- a local stack with a
+ * stub -- and then no provider button is offered.
+ */
+export function ownOrigin(): string | null {
+  const own = process.env.ZITADEL_REDIRECT_URI
+  if (!own) return null
+  try {
+    return new URL(own).origin
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Where the browser may be sent when the sign-in is done.
+ *
+ * The Control Plane answers with this product's own `/api/auth/callback`,
+ * code and state appended -- that is what ZITADEL hands back for a code flow
+ * -- or, for other flows, a URL on the identity provider's host. This server
+ * trusts the platform, and still checks the answer against the origins it was
+ * configured with, so a platform answering something else cannot turn the
+ * sign-in into a redirect anywhere. With neither `ZITADEL_REDIRECT_URI` nor
+ * `ZITADEL_DOMAIN` set -- a local stack pointing at a stub -- any https URL is
+ * accepted, because then there is nothing to check against.
+ */
+export function callbackAllowed(url: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false
+  // What ZITADEL answers for a code flow is this application's own redirect
+  // URI with the code and state appended -- not a URL on ZITADEL's host. The
+  // first live sign-in threw a successful answer away by checking it against
+  // the provider's origin, and the retry reused a finished auth request.
+  const own = process.env.ZITADEL_REDIRECT_URI
+  const provider = process.env.ZITADEL_DOMAIN
+  if (!own && !provider) return true
+  const allowed = [own, provider].filter(Boolean).map((value) => {
+    try {
+      return new URL(value as string).origin
+    } catch {
+      return null
+    }
+  })
+  return allowed.includes(parsed.origin)
+}
+
+/**
+ * ZITADEL's own hosted login, for one auth request.
+ *
+ * Where a person's second factor is a passkey or a security key, only a
+ * browser ceremony on the provider's page can check it. The platform answers
+ * `factor_required` with `provider`, and this sends the browser there for
+ * this sign-in only -- the one deliberate exception to the page being ours,
+ * and in practice a staff account. The origin is the one this application
+ * was configured with, so it passes the same check as the callback.
+ */
+export function hostedLogin(authRequest: string): string | null {
+  const provider = process.env.ZITADEL_DOMAIN
+  if (!provider) return null
+  return `${provider.replace(/\/$/, '')}/ui/v2/login/login?authRequest=${encodeURIComponent(authRequest)}`
+}
+
+export type Outcome =
+  | { kind: 'done'; callbackUrl: string }
+  | { kind: 'factor'; attemptId: string }
+  | { kind: 'state'; state: SignInState }
+
+/**
+ * The three refusals an external sign-in can meet that a password cannot,
+ * each something the person can act on. The platform names them by code
+ * beside its sentence, so this page can say them in the person's language.
+ */
+const PROVIDER_REFUSALS: Record<string, MessageKey> = {
+  not_a_member: 'signIn.provider.notMember',
+  unverified: 'signIn.provider.unverified',
+  ambiguous: 'signIn.provider.ambiguous',
+}
+
+/** Turn the platform's answer into what the page does next. */
+export async function explain(
+  response: Response,
+  t: Translator,
+  attemptId?: string,
+  hosted?: string | null,
+  product?: string,
+): Promise<Outcome> {
+  if (response.ok) {
+    const body = (await response.json()) as {
+      status?: string
+      callback_url?: string
+      factor?: string
+      attempt_id?: string
+    }
+    if (body.status === 'done' && body.callback_url && callbackAllowed(body.callback_url)) {
+      return { kind: 'done', callbackUrl: body.callback_url }
+    }
+    if (body.status === 'factor_required' && body.factor === 'totp' && body.attempt_id) {
+      return { kind: 'factor', attemptId: body.attempt_id }
+    }
+    if (body.status === 'factor_required' && body.factor === 'provider' && hosted) {
+      return { kind: 'done', callbackUrl: hosted }
+    }
+    return { kind: 'state', state: { status: 'error', message: t('signIn.unavailable') } }
+  }
+  if (response.status === 401) {
+    // Wrong address, wrong password, wrong code: whichever, it is the one
+    // thing the person can act on, and it goes under the form as a whole. An
+    // external sign-in's refusals say more, because the address is one the
+    // provider just proved the person holds.
+    const code = await refusalCode(response)
+    const key = code ? PROVIDER_REFUSALS[code] : undefined
+    if (key) {
+      return {
+        kind: 'state',
+        state: { status: 'error', message: t(key, { product: product ?? '' }) },
+      }
+    }
+    return {
+      kind: 'state',
+      state: {
+        status: attemptId ? 'factor' : 'error',
+        attemptId,
+        message: attemptId ? t('signIn.factor.refused') : t('signIn.refused'),
+      },
+    }
+  }
+  if (response.status === 404) {
+    return { kind: 'state', state: { status: 'expired', message: t('signIn.expired') } }
+  }
+  if (response.status === 429) {
+    return {
+      kind: 'state',
+      state: { status: attemptId ? 'factor' : 'error', attemptId, message: t('signIn.tooMany') },
+    }
+  }
+  return {
+    kind: 'state',
+    state: { status: attemptId ? 'factor' : 'error', attemptId, message: t('signIn.unavailable') },
+  }
+}
+
+async function refusalCode(response: Response): Promise<string | null> {
+  try {
+    const body = (await response.json()) as { detail?: unknown }
+    const detail = body.detail
+    if (detail && typeof detail === 'object' && 'code' in detail) {
+      const code = (detail as { code?: unknown }).code
+      return typeof code === 'string' ? code : null
+    }
+  } catch {
+    // A refusal without a body is still a refusal.
+  }
+  return null
+}
+
+export function fromOutcome(outcome: Outcome): SignInState {
+  if (outcome.kind === 'state') return outcome.state
+  if (outcome.kind === 'factor') return { status: 'factor', attemptId: outcome.attemptId }
+  return { status: 'done', callbackUrl: outcome.callbackUrl }
+}
+
+/** An external identity provider the platform offers, as the page draws it. */
+export interface SignInProvider {
+  id: string
+  name: string
+  kind: string
+}
+
+/**
+ * Which external providers the sign-in page may offer buttons for.
+ *
+ * The platform reads them from ZITADEL's login settings; this page asks once
+ * every five minutes rather than per render. None where the platform cannot
+ * be reached, where this application has no origin to be sent back to, or
+ * where the answer is not the shape expected -- a missing button is a page
+ * that still works with a password, and a wrong button is not.
+ */
+export async function signInProviders(): Promise<SignInProvider[]> {
+  const base = controlPlane()
+  if (!base || !ownOrigin()) return []
+  try {
+    const response = await fetch(`${base}/api/sign-in/v1/providers`, {
+      next: { revalidate: 300 },
+    })
+    if (!response.ok) return []
+    const body = (await response.json()) as { providers?: unknown }
+    if (!Array.isArray(body.providers)) return []
+    return body.providers.filter(
+      (p): p is SignInProvider =>
+        typeof p === 'object' &&
+        p !== null &&
+        typeof (p as SignInProvider).id === 'string' &&
+        typeof (p as SignInProvider).name === 'string' &&
+        typeof (p as SignInProvider).kind === 'string',
+    )
+  } catch {
+    return []
+  }
+}
+
+/**
+ * The URLs the provider brings the person back to: this page's own return
+ * route on success, and the sign-in form with a flag on failure. Both on this
+ * application's origin, which the platform checks against the auth request's
+ * redirect URI before it will start anything.
+ */
+export function providerReturnUrls(
+  origin: string,
+  authRequest: string,
+): { successUrl: string; failureUrl: string } {
+  const request = encodeURIComponent(authRequest)
+  return {
+    successUrl: `${origin}/login/provider?authRequest=${request}`,
+    failureUrl: `${origin}/login?authRequest=${request}&provider=failed`,
+  }
+}

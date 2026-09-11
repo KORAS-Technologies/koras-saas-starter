@@ -1,0 +1,72 @@
+import type { Metadata } from 'next'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { AuthCard, AuthLayout } from '@{{projectSlug}}/ui'
+import { currentLocale, translator } from '../../../lib/locale'
+import { finishProvider } from '../actions'
+import { signInProviders } from '../platform'
+import { SignInForm } from '../SignInForm'
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await translator()
+  return { title: t('login.title') }
+}
+
+/**
+ * Where an external provider brings the person back.
+ *
+ * ZITADEL sends the browser here with the intent's `id` and `token` appended
+ * to the success URL the platform was given when the sign-in started. This
+ * page hands both to the Control Plane from the server, at once, while
+ * rendering: the platform asks ZITADEL who came back, links the identity to
+ * the member it belongs to where it is not linked yet, creates the session
+ * and finalises the auth request. What comes back is the same answer the
+ * password gets -- done, a code to ask for, or a refusal -- and the same
+ * form shows it, with the password form underneath for the refusals that
+ * say "sign in with your password".
+ *
+ * The token is single-use and short-lived, and ZITADEL checks it; this page
+ * reads it out of the URL and puts it in one request body, and nowhere else.
+ * A reload after a finished sign-in finds the intent spent and shows the
+ * expired panel, whose button starts again.
+ */
+export default async function ProviderReturnPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ authRequest?: string; id?: string; token?: string }>
+}) {
+  const [{ authRequest, id, token }, locale, t] = await Promise.all([
+    searchParams,
+    currentLocale(),
+    translator(),
+  ])
+  const params = { product: productConfig.product.name }
+
+  const [initial, providers] = await Promise.all([
+    finishProvider(authRequest ?? '', id ?? '', token ?? ''),
+    signInProviders(),
+  ])
+
+  return (
+    <AuthLayout locale={locale}>
+      <AuthCard
+        title={t('login.heading', params)}
+        description={t('signIn.description', params)}
+        footer={
+          <>
+            {t('login.noAccount')}{' '}
+            <a href="/signup" className="font-semibold text-brand hover:underline">
+              {t('common.getStarted')}
+            </a>
+          </>
+        }
+      >
+        <SignInForm
+          authRequest={authRequest ?? ''}
+          locale={locale}
+          providers={providers}
+          initial={initial}
+        />
+      </AuthCard>
+    </AuthLayout>
+  )
+}

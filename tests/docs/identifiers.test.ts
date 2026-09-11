@@ -119,6 +119,10 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   // the first -- found live on 2026-09-11. They are granted in the ZITADEL
   // Console, so no file here carries them; one appearing in the code would
   // mean the membership had started being managed from a repository.
+  // The Control Plane's link from a member row to the ZITADEL account
+  // provisioning created, named in PRODUCT_SIGN_IN.md because a Google sign-in
+  // finds the account through it. Same rule as the registry tables above.
+  identity_users: 'a Control Plane identity table; no product repository has one',
   IAM_OWNER: 'a ZITADEL instance role, granted in the Console rather than by any file here',
   IAM_LOGIN_CLIENT: 'a ZITADEL instance role, granted in the Console rather than by any file here',
 }

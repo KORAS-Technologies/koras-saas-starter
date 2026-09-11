@@ -5,7 +5,8 @@ import { useFormStatus } from 'react-dom'
 import { createTranslator } from '@{{projectSlug}}/i18n'
 import type { Locale, Translator } from '@{{projectSlug}}/i18n'
 import { Button, ButtonLink, TextField } from '@{{projectSlug}}/ui'
-import { signIn, verifyFactor } from './actions'
+import { signIn, startProvider, verifyFactor } from './actions'
+import type { SignInProvider } from './platform'
 import { IDLE } from './state'
 import type { SignInState } from './state'
 
@@ -25,64 +26,127 @@ import type { SignInState } from './state'
  * Refusals sit under the form as a whole rather than under a field, because
  * the platform does not say which half was wrong and this form must not guess.
  * Missing fields are the one case the field itself is told.
+ *
+ * **Continue with Google** is a third form, below the first, one button per
+ * provider the platform offers. It posts the provider and the auth request
+ * and gets back where to send the browser -- the provider's own page -- which
+ * it navigates to exactly as the callback is navigated to. `initial` is how
+ * the provider's return page hands this form what the platform answered:
+ * done, a code to ask for, or one of the refusals only an external sign-in
+ * can meet, shown above the password form so the person can use that instead.
  */
-export function SignInForm({ authRequest, locale }: { authRequest: string; locale: Locale }) {
-  const [state, action] = useActionState(signIn, IDLE)
+export function SignInForm({
+  authRequest,
+  locale,
+  providers = [],
+  initial = IDLE,
+}: {
+  authRequest: string
+  locale: Locale
+  providers?: SignInProvider[]
+  initial?: SignInState
+}) {
+  const [state, action] = useActionState(signIn, initial)
+  const [provider, providerAction] = useActionState(startProvider, IDLE)
   const t = createTranslator(locale)
 
-  if (state.status === 'factor' && state.attemptId) {
-    return <FactorForm attemptId={state.attemptId} initial={state} locale={locale} />
+  // Whichever form last did something decides what the page shows. The
+  // provider form only ever answers done, expired or an error; a code is
+  // asked for by the return page, through `initial`.
+  const current = provider.status === 'idle' ? state : provider
+
+  if (current.status === 'factor' && current.attemptId) {
+    return <FactorForm attemptId={current.attemptId} initial={current} locale={locale} />
   }
 
-  if (state.status === 'expired') {
+  if (current.status === 'expired') {
     return <Expired t={t} />
   }
-  if (state.status === 'done' && state.callbackUrl) {
-    return <Continue url={state.callbackUrl} t={t} />
+  if (current.status === 'done' && current.callbackUrl) {
+    return <Continue url={current.callbackUrl} t={t} />
   }
 
   const fieldError = (name: string) =>
     state.status === 'error' && state.field === name ? state.message : undefined
 
   return (
-    <form action={action} data-testid="sign-in-form" className="flex flex-col gap-5">
-      <input type="hidden" name="authRequest" value={authRequest} />
+    <div className="flex flex-col gap-5">
+      <form action={action} data-testid="sign-in-form" className="flex flex-col gap-5">
+        <input type="hidden" name="authRequest" value={authRequest} />
 
-      <TextField
-        id="sign-in-email"
-        name="email"
-        type="email"
-        label={t('signIn.form.email')}
-        required
-        autoComplete="username"
-        autoFocus
-        error={fieldError('email')}
-      />
+        <TextField
+          id="sign-in-email"
+          name="email"
+          type="email"
+          label={t('signIn.form.email')}
+          required
+          autoComplete="username"
+          autoFocus
+          error={fieldError('email')}
+        />
 
-      <TextField
-        id="sign-in-password"
-        name="password"
-        type="password"
-        label={t('signIn.form.password')}
-        required
-        autoComplete="current-password"
-        error={fieldError('password')}
-      />
+        <TextField
+          id="sign-in-password"
+          name="password"
+          type="password"
+          label={t('signIn.form.password')}
+          required
+          autoComplete="current-password"
+          error={fieldError('password')}
+        />
 
-      <FormError state={state} testId="sign-in-error" />
+        <FormError state={current} testId="sign-in-error" />
 
-      <SubmitButton
-        idle={t('signIn.form.submit')}
-        busy={t('signIn.form.submitting')}
-        testId="sign-in-submit"
-      />
+        <SubmitButton
+          idle={t('signIn.form.submit')}
+          busy={t('signIn.form.submitting')}
+          testId="sign-in-submit"
+        />
 
-      <p className="text-sm text-ink-muted">
-        <a href="/login/forgot" className="font-semibold text-brand hover:underline">
-          {t('signIn.form.forgot')}
-        </a>
-      </p>
-    </form>
+        <p className="text-sm text-ink-muted">
+          <a href="/login/forgot" className="font-semibold text-brand hover:underline">
+            {t('signIn.form.forgot')}
+          </a>
+        </p>
+      </form>
+
+      {providers.length > 0 ? (
+        <form action={providerAction} data-testid="sign-in-providers" className="flex flex-col gap-3">
+          <input type="hidden" name="authRequest" value={authRequest} />
+          <p
+            aria-hidden="true"
+            className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-ink-muted before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line"
+          >
+            {t('signIn.provider.or')}
+          </p>
+          {providers.map((p) => (
+            <ProviderButton key={p.id} provider={p} t={t} />
+          ))}
+        </form>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * One button per provider, in the same form. The provider is the button's
+ * value rather than a hidden field, so the form works before React attaches
+ * and one form serves however many providers the platform offers.
+ */
+function ProviderButton({ provider, t }: { provider: SignInProvider; t: Translator }) {
+  const { pending } = useFormStatus()
+  return (
+    <Button
+      type="submit"
+      name="providerId"
+      value={provider.id}
+      variant="secondary"
+      size="lg"
+      loading={pending}
+      data-testid={`sign-in-provider-${provider.kind}`}
+    >
+      {t('signIn.provider.continueWith', { provider: provider.name })}
+    </Button>
   )
 }
 
@@ -164,11 +228,6 @@ function FormError({ state, testId }: { state: SignInState; testId: string }) {
 }
 
 /**
- * The auth request is gone -- expired, or finished in another tab. There is
- * nothing to retype; the only way on is to start the sign-in again, which is
- * what the button does.
- */
-/**
  * The sign-in is done; the browser goes to the callback as a full page load.
  *
  * Not a server-side `redirect()`: that is a soft navigation, and Next's router
@@ -190,6 +249,11 @@ function Continue({ url, t }: { url: string; t: Translator }) {
   )
 }
 
+/**
+ * The auth request is gone -- expired, or finished in another tab. There is
+ * nothing to retype; the only way on is to start the sign-in again, which is
+ * what the button does.
+ */
 function Expired({ t }: { t: Translator }) {
   return (
     <div data-testid="sign-in-expired" role="alert" className="rounded-brand border border-line p-5">

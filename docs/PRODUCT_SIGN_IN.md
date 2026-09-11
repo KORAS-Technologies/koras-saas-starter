@@ -128,6 +128,53 @@ Budgets: twenty password or code checks in ten minutes from one address,
 five reset mails an hour. ZITADEL's own lockout policy is the second line,
 per account rather than per address.
 
+## Continue with Google
+
+Since 2026-09-12 the form has a second way in, below the password: one
+button per external identity provider the ZITADEL instance offers on its
+login. Which ones is read from the Control Plane
+(`GET /api/sign-in/v1/providers`, which reads ZITADEL's login settings), so
+the page draws what the instance has and never a button that leads nowhere
+-- an environment with no providers, or no platform, is the password form
+alone. Instance-level providers only: one added to a single organization
+reaches that organization's members alone, and the page has no organization
+until the address is known.
+
+The button posts the provider and the auth request to the platform from the
+server; the platform checks the auth request's client against the product's
+project exactly as it does for a password, refuses return URLs that are not
+on the origin of the auth request's own redirect URI, and asks ZITADEL to
+start an *intent* whose success URL is the product's `/login/provider` and
+whose failure URL is the form with `provider=failed`. What comes back is the
+provider's own authorization URL, and the form sends the browser there the
+way it sends it to the callback. Google signs the person in, ZITADEL takes
+the provider's callback, and sends the browser to `/login/provider` with the
+intent's `id` and `token` appended.
+
+That page hands both to the platform while rendering. The platform asks
+ZITADEL who came back. An account already linked to that identity is signed
+in. Otherwise the address the provider **verified** has to be a member's on
+this product here, found through `identity_users` -- the account
+provisioning created -- and that account is linked to the identity and
+signed in. Nobody is created: ZITADEL's *automatic creation* is not asked
+for, because membership is an invitation and a Google account is not one.
+Three refusals have their own sentence, because the address is one the
+person just proved they hold and none of them is an oracle: no account here
+uses that address, the provider has not verified it, or it holds more than
+one account here and the platform will not guess which. Each says "sign in
+with your password", and the password form is right there. A second factor
+holds the sign-in exactly as it does after a password: the same attempt
+row, the same code form.
+
+Google's settings on the instance, in the ZITADEL Console under Default
+settings, Identity Providers: **automatic creation off** and **manual
+creation off**, since the platform never creates from a provider and
+ZITADEL's hosted login -- which staff still use -- would; automatic update
+is harmless either way. The authorized redirect URI on the Google side is
+ZITADEL's `/idps/callback` on each instance's domain, one per environment.
+The same shape serves Microsoft once an Entra application exists; nothing
+in the page or the platform names Google.
+
 ## What is deliberately not in it
 
 - **Only TOTP as a second factor on this page.** Passkeys and U2F need a
@@ -158,6 +205,15 @@ per account rather than per address.
   §8 does not cover for staff.
 - **Enrolment** of a second factor on a product page. R-90's enrolment
   half; not started.
+- **Signing up with Google.** The provider button signs a member in and
+  never creates anybody; a stranger with a Google account is told to ask
+  for an invitation. A signup that starts from a provider would be the
+  signup flow's change, not this page's.
+- **The portal's provider buttons.** The Control Plane's own sign-in page
+  shares these routes and could draw the same buttons; it does not yet,
+  because a portal address can be a member of several organizations and
+  the platform refuses to guess between their accounts. Until the portal
+  chooses an organization first, its members use the password.
 - **The local stack.** `local/zitadel/provision.py` leaves the local OIDC
   application on the hosted login, because a local product has no Control
   Plane to post to. Locally the page is the button.
@@ -233,6 +289,8 @@ covers what the API does between the two, and the generated project's
 | The page, both shapes | `profiles/product/template/apps/web/src/app/login/page.tsx.hbs` |
 | The form and the code step | `profiles/product/template/apps/web/src/app/login/SignInForm.tsx.hbs` |
 | The server actions | `profiles/product/template/apps/web/src/app/login/actions.ts.hbs` |
+| What the page says to the platform | `profiles/product/template/apps/web/src/app/login/platform.ts.hbs` |
+| Where a provider brings the person back | `profiles/product/template/apps/web/src/app/login/provider/page.tsx.hbs` |
 | Forgotten password | `profiles/product/template/apps/web/src/app/login/forgot/` |
 | The strings, three languages | `profiles/product/template/packages/i18n/src/messages/` |
 | The browser tests | `profiles/product/template/e2e/sign-in.spec.ts.hbs` |

@@ -138,6 +138,16 @@ export const en = {
   'signIn.factor.submitting': 'Checking…',
   'signIn.factor.refused': 'The code is wrong.',
   'signIn.factor.codeRequired': 'Enter the code from your authenticator app.',
+  'signIn.provider.or': 'or',
+  'signIn.provider.continueWith': 'Continue with {provider}',
+  'signIn.provider.failed':
+    'The sign-in with that provider did not finish. Try again, or sign in with your password.',
+  'signIn.provider.notMember':
+    'No {product} account uses that email address. Ask your organization to invite you, or sign in with your password.',
+  'signIn.provider.unverified':
+    'That provider has not verified your email address. Sign in with your password.',
+  'signIn.provider.ambiguous':
+    'That email address belongs to more than one account. Sign in with your password.',
 
   /* ------------------------------------------------------ forgot password */
   'forgot.title': 'Forgot password',

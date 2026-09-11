@@ -134,6 +134,16 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'signIn.factor.submitting': 'Comprobando…',
   'signIn.factor.refused': 'El código no es correcto.',
   'signIn.factor.codeRequired': 'Introduzca el código de su aplicación de autenticación.',
+  'signIn.provider.or': 'o',
+  'signIn.provider.continueWith': 'Continuar con {provider}',
+  'signIn.provider.failed':
+    'El inicio de sesión con ese proveedor no se completó. Inténtelo de nuevo o inicie sesión con su contraseña.',
+  'signIn.provider.notMember':
+    'Ninguna cuenta de {product} usa esa dirección de correo electrónico. Pida a su organización que le invite o inicie sesión con su contraseña.',
+  'signIn.provider.unverified':
+    'Ese proveedor no ha verificado su dirección de correo electrónico. Inicie sesión con su contraseña.',
+  'signIn.provider.ambiguous':
+    'Esa dirección de correo electrónico pertenece a más de una cuenta. Inicie sesión con su contraseña.',
 
   /* ------------------------------------------------------ forgot password */
   'forgot.title': 'Contraseña olvidada',

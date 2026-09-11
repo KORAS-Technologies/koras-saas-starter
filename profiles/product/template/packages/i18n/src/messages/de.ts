@@ -138,6 +138,16 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'signIn.factor.submitting': 'Wird geprüft…',
   'signIn.factor.refused': 'Der Code ist falsch.',
   'signIn.factor.codeRequired': 'Geben Sie den Code aus Ihrer Authenticator-App ein.',
+  'signIn.provider.or': 'oder',
+  'signIn.provider.continueWith': 'Weiter mit {provider}',
+  'signIn.provider.failed':
+    'Die Anmeldung über diesen Anbieter wurde nicht abgeschlossen. Versuchen Sie es erneut oder melden Sie sich mit Ihrem Passwort an.',
+  'signIn.provider.notMember':
+    'Kein {product}-Konto verwendet diese E-Mail-Adresse. Bitten Sie Ihre Organisation um eine Einladung oder melden Sie sich mit Ihrem Passwort an.',
+  'signIn.provider.unverified':
+    'Dieser Anbieter hat Ihre E-Mail-Adresse nicht bestätigt. Melden Sie sich mit Ihrem Passwort an.',
+  'signIn.provider.ambiguous':
+    'Diese E-Mail-Adresse gehört zu mehr als einem Konto. Melden Sie sich mit Ihrem Passwort an.',
 
   /* ------------------------------------------------------ forgot password */
   'forgot.title': 'Passwort vergessen',
