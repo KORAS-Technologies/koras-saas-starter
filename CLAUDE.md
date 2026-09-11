@@ -41,6 +41,7 @@ All planning and reference documents live in `docs/`, matching
 | `docs/PRODUCT_APP_SHELL.md`      | The authenticated product shell: navigation registry, access model, product settings |
 | `docs/PRODUCT_SHELL_AUDIT.md`    | What the signed-in surface was before that shell, and the gaps it closes |
 | `docs/BILLING_DESIGN.md`         | Card at signup, charge at trial end: Stripe Managed Payments behind an adapter, phases and test evidence |
+| `docs/PRODUCT_SIGN_IN.md`        | The product's own sign-in page: how a customer signs in without seeing ZITADEL, and what is not yet checked live |
 
 ## Repository layout (target state)
 

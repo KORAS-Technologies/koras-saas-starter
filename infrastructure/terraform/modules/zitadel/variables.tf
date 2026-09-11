@@ -74,3 +74,20 @@ variable "org_id" {
   type        = string
   default     = null
 }
+
+variable "login_base_uri" {
+  type        = string
+  default     = null
+  description = <<-EOT
+    Where ZITADEL sends the browser to sign in, instead of rendering its own
+    login page: the product's own `/login`, which posts the credentials to the
+    Control Plane from its server (koras-saas-starter, docs/PRODUCT_SIGN_IN.md).
+    Null keeps ZITADEL's hosted login, which is what a product with no
+    application domain yet -- and the Control Plane profile -- still uses.
+
+    Per application, not per instance. The instance-wide Login V2 feature
+    flag would redirect the Console and every other application on the
+    instance too, staff included; this setting moves exactly one application.
+    Needs provider 2.4 or later; the estate locks 2.12.
+  EOT
+}

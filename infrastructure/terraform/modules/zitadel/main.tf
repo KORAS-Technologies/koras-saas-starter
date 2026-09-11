@@ -181,6 +181,17 @@ resource "zitadel_application_oidc" "web" {
   id_token_role_assertion     = true
   id_token_userinfo_assertion = true
 
+  # The product's own sign-in page, where one is configured. Absent, ZITADEL
+  # renders its hosted login for this application. See the variable.
+  dynamic "login_version" {
+    for_each = var.login_base_uri == null ? [] : [var.login_base_uri]
+    content {
+      login_v2 {
+        base_uri = login_version.value
+      }
+    }
+  }
+
   # Relaxed OIDC checks are acceptable in dev only.
   dev_mode = var.environment == "dev"
 

@@ -1,0 +1,184 @@
+'use client'
+
+import { useActionState } from 'react'
+import { useFormStatus } from 'react-dom'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale, Translator } from '@{{projectSlug}}/i18n'
+import { Button, ButtonLink, TextField } from '@{{projectSlug}}/ui'
+import { signIn, verifyFactor } from './actions'
+import { IDLE } from './state'
+import type { SignInState } from './state'
+
+/**
+ * The sign-in form: an email address and a password, then a code if there is one.
+ *
+ * Two forms rather than one with a mode: the second exists only once the first
+ * has succeeded, and it posts to a different action against a different thing
+ * -- the attempt the platform is holding, not the credentials. The attempt id
+ * travels as a hidden field, like the token on `/activate`, so the form works
+ * before React attaches.
+ *
+ * The auth request id is a hidden field for the same reason. It is ZITADEL's
+ * name for the sign-in the person started, and it authorises nothing on its
+ * own: whoever holds it still needs the password.
+ *
+ * Refusals sit under the form as a whole rather than under a field, because
+ * the platform does not say which half was wrong and this form must not guess.
+ * Missing fields are the one case the field itself is told.
+ */
+export function SignInForm({ authRequest, locale }: { authRequest: string; locale: Locale }) {
+  const [state, action] = useActionState(signIn, IDLE)
+  const t = createTranslator(locale)
+
+  if (state.status === 'factor' && state.attemptId) {
+    return <FactorForm attemptId={state.attemptId} initial={state} locale={locale} />
+  }
+
+  if (state.status === 'expired') {
+    return <Expired t={t} />
+  }
+
+  const fieldError = (name: string) =>
+    state.status === 'error' && state.field === name ? state.message : undefined
+
+  return (
+    <form action={action} data-testid="sign-in-form" className="flex flex-col gap-5">
+      <input type="hidden" name="authRequest" value={authRequest} />
+
+      <TextField
+        id="sign-in-email"
+        name="email"
+        type="email"
+        label={t('signIn.form.email')}
+        required
+        autoComplete="username"
+        autoFocus
+        error={fieldError('email')}
+      />
+
+      <TextField
+        id="sign-in-password"
+        name="password"
+        type="password"
+        label={t('signIn.form.password')}
+        required
+        autoComplete="current-password"
+        error={fieldError('password')}
+      />
+
+      <FormError state={state} testId="sign-in-error" />
+
+      <SubmitButton
+        idle={t('signIn.form.submit')}
+        busy={t('signIn.form.submitting')}
+        testId="sign-in-submit"
+      />
+
+      <p className="text-sm text-ink-muted">
+        <a href="/login/forgot" className="font-semibold text-brand hover:underline">
+          {t('signIn.form.forgot')}
+        </a>
+      </p>
+    </form>
+  )
+}
+
+/**
+ * The code from an authenticator app.
+ *
+ * `autoComplete="one-time-code"` lets a phone offer the code it just received;
+ * `inputMode="numeric"` opens the number pad. Neither is a validation: the
+ * platform checks the code, and this form only carries it.
+ */
+function FactorForm({
+  attemptId,
+  initial,
+  locale,
+}: {
+  attemptId: string
+  initial: SignInState
+  locale: Locale
+}) {
+  const [state, action] = useActionState(verifyFactor, initial)
+  const t = createTranslator(locale)
+
+  if (state.status === 'expired') {
+    return <Expired t={t} />
+  }
+
+  return (
+    <form action={action} data-testid="sign-in-factor" className="flex flex-col gap-5">
+      <input type="hidden" name="attemptId" value={attemptId} />
+
+      <div>
+        <h2 className="font-display text-lg font-bold text-ink">{t('signIn.factor.heading')}</h2>
+        <p className="mt-2 leading-7 text-ink-muted">{t('signIn.factor.description')}</p>
+      </div>
+
+      <TextField
+        id="sign-in-code"
+        name="code"
+        type="text"
+        label={t('signIn.factor.code')}
+        required
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        autoFocus
+        error={state.field === 'code' ? state.message : undefined}
+      />
+
+      <FormError state={state} testId="sign-in-factor-error" />
+
+      <SubmitButton
+        idle={t('signIn.factor.submit')}
+        busy={t('signIn.factor.submitting')}
+        testId="sign-in-factor-submit"
+      />
+    </form>
+  )
+}
+
+/** A message about the form as a whole, announced when it appears. */
+function FormError({ state, testId }: { state: SignInState; testId: string }) {
+  const message =
+    (state.status === 'error' || state.status === 'factor') && !state.field ? state.message : undefined
+  return (
+    <div aria-live="polite">
+      {message ? (
+        <p
+          role="alert"
+          data-testid={testId}
+          className="rounded-brand border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800"
+        >
+          {message}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * The auth request is gone -- expired, or finished in another tab. There is
+ * nothing to retype; the only way on is to start the sign-in again, which is
+ * what the button does.
+ */
+function Expired({ t }: { t: Translator }) {
+  return (
+    <div data-testid="sign-in-expired" role="alert" className="rounded-brand border border-line p-5">
+      <p className="leading-7 text-ink-muted">{t('signIn.expired')}</p>
+      <ButtonLink href="/login" size="lg" className="mt-5 w-full">
+        {t('signIn.startAgain')}
+      </ButtonLink>
+    </div>
+  )
+}
+
+/** Its own component because `useFormStatus` reads the form it sits inside. */
+function SubmitButton({ idle, busy, testId }: { idle: string; busy: string; testId: string }) {
+  const { pending } = useFormStatus()
+  return (
+    <Button type="submit" size="lg" loading={pending} data-testid={testId}>
+      {pending ? busy : idle}
+    </Button>
+  )
+}

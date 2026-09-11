@@ -1,0 +1,184 @@
+'use server'
+
+/**
+ * Signing in, from the product's own page.
+ *
+ * The credentials go from this server to the Control Plane, which checks them
+ * with ZITADEL's session API and finalises the OIDC request; what comes back
+ * is where to send the browser. The browser never talks to the platform, never
+ * sees a provider host until the final redirect, and never sees a ZITADEL page
+ * at all -- which is SECURITY_MODEL §8, kept for the sign-in as `/activate`
+ * keeps it for the first password (Control Plane R-90).
+ *
+ * The password crosses two TLS hops and is not stored, logged or echoed on
+ * either. This file never reads it into anything but the request body.
+ *
+ * Refusals are one sentence each, and the sentence for a wrong password is
+ * the sentence for an address nobody has. The Control Plane answers both with
+ * the same status on purpose, and this page must not guess between them.
+ *
+ * `redirect()` throws, and a `try` around it would swallow the sign-in it was
+ * completing. Every network call is inside its own `try`; every redirect is
+ * outside all of them.
+ */
+
+import { redirect } from 'next/navigation'
+import { translator } from '../../lib/locale'
+import type { Translator } from '@{{projectSlug}}/i18n'
+import type { SignInState } from './state'
+
+function controlPlane(): string | null {
+  const base = process.env.KORAS_CONTROL_PLANE_URL
+  return base ? base.replace(/\/$/, '') : null
+}
+
+/**
+ * Where the browser may be sent when the sign-in is done.
+ *
+ * The Control Plane answers with a URL on the identity provider's host: the
+ * OIDC callback that redirects to this product's own `/api/auth/callback` with
+ * the authorization code. This server trusts the platform, and still checks
+ * the answer against the provider it was configured with, so a platform
+ * answering something else cannot turn the sign-in into a redirect anywhere.
+ * Unset `ZITADEL_DOMAIN` -- a local stack pointing at a stub -- accepts any
+ * https URL, because then there is nothing to check against.
+ */
+function callbackOnProvider(url: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false
+  const provider = process.env.ZITADEL_DOMAIN
+  if (!provider) return true
+  try {
+    return new URL(provider).origin === parsed.origin
+  } catch {
+    return false
+  }
+}
+
+type Outcome =
+  | { kind: 'done'; callbackUrl: string }
+  | { kind: 'factor'; attemptId: string }
+  | { kind: 'state'; state: SignInState }
+
+/** Turn the platform's answer into what the page does next. */
+async function explain(response: Response, t: Translator, attemptId?: string): Promise<Outcome> {
+  if (response.ok) {
+    const body = (await response.json()) as {
+      status?: string
+      callback_url?: string
+      factor?: string
+      attempt_id?: string
+    }
+    if (body.status === 'done' && body.callback_url && callbackOnProvider(body.callback_url)) {
+      return { kind: 'done', callbackUrl: body.callback_url }
+    }
+    if (body.status === 'factor_required' && body.factor === 'totp' && body.attempt_id) {
+      return { kind: 'factor', attemptId: body.attempt_id }
+    }
+    return { kind: 'state', state: { status: 'error', message: t('signIn.unavailable') } }
+  }
+  if (response.status === 401) {
+    // Wrong address, wrong password, wrong code: whichever, it is the one
+    // thing the person can act on, and it goes under the form as a whole.
+    return {
+      kind: 'state',
+      state: {
+        status: attemptId ? 'factor' : 'error',
+        attemptId,
+        message: attemptId ? t('signIn.factor.refused') : t('signIn.refused'),
+      },
+    }
+  }
+  if (response.status === 404) {
+    return { kind: 'state', state: { status: 'expired', message: t('signIn.expired') } }
+  }
+  if (response.status === 429) {
+    return {
+      kind: 'state',
+      state: { status: attemptId ? 'factor' : 'error', attemptId, message: t('signIn.tooMany') },
+    }
+  }
+  return {
+    kind: 'state',
+    state: { status: attemptId ? 'factor' : 'error', attemptId, message: t('signIn.unavailable') },
+  }
+}
+
+/** The email address and password. The form's action. */
+export async function signIn(_prev: SignInState, form: FormData): Promise<SignInState> {
+  const t = await translator()
+  const authRequest = String(form.get('authRequest') ?? '')
+  const email = String(form.get('email') ?? '').trim()
+  const password = String(form.get('password') ?? '')
+
+  if (!authRequest) return { status: 'expired', message: t('signIn.expired') }
+  if (!email) return { status: 'error', field: 'email', message: t('signIn.form.emailRequired') }
+  if (!password) {
+    return { status: 'error', field: 'password', message: t('signIn.form.passwordRequired') }
+  }
+
+  const base = controlPlane()
+  if (!base) return { status: 'error', message: t('signIn.unavailable') }
+
+  let outcome: Outcome
+  try {
+    const response = await fetch(`${base}/api/sign-in/v1/attempts`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ auth_request_id: authRequest, login_name: email, password }),
+      cache: 'no-store',
+    })
+    outcome = await explain(response, t)
+  } catch {
+    return { status: 'error', message: t('signIn.unavailable') }
+  }
+
+  if (outcome.kind === 'state') return outcome.state
+  if (outcome.kind === 'factor') return { status: 'factor', attemptId: outcome.attemptId }
+  redirect(outcome.callbackUrl)
+}
+
+/** The second factor's code, for a sign-in the platform is holding. */
+export async function verifyFactor(_prev: SignInState, form: FormData): Promise<SignInState> {
+  const t = await translator()
+  const attemptId = String(form.get('attemptId') ?? '')
+  const code = String(form.get('code') ?? '').replace(/\s+/g, '')
+
+  if (!attemptId) return { status: 'expired', message: t('signIn.expired') }
+  if (!code) {
+    return {
+      status: 'factor',
+      attemptId,
+      field: 'code',
+      message: t('signIn.factor.codeRequired'),
+    }
+  }
+
+  const base = controlPlane()
+  if (!base) return { status: 'factor', attemptId, message: t('signIn.unavailable') }
+
+  let outcome: Outcome
+  try {
+    const response = await fetch(
+      `${base}/api/sign-in/v1/attempts/${encodeURIComponent(attemptId)}/factor`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ code }),
+        cache: 'no-store',
+      },
+    )
+    outcome = await explain(response, t, attemptId)
+  } catch {
+    return { status: 'factor', attemptId, message: t('signIn.unavailable') }
+  }
+
+  if (outcome.kind === 'state') return outcome.state
+  if (outcome.kind === 'factor') return { status: 'factor', attemptId: outcome.attemptId }
+  redirect(outcome.callbackUrl)
+}

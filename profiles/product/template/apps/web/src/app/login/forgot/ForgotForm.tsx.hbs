@@ -1,0 +1,88 @@
+'use client'
+
+import { useActionState } from 'react'
+import { useFormStatus } from 'react-dom'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale, Translator } from '@{{projectSlug}}/i18n'
+import { Button, ButtonLink, TextField } from '@{{projectSlug}}/ui'
+import { requestReset } from './actions'
+import { IDLE } from './state'
+
+/**
+ * One field and a button.
+ *
+ * On success the form is replaced by where the link went. The wording is the
+ * same whether the address matched an account or not -- see the action for
+ * why -- so the success state is a statement about what *would* happen, not
+ * a confirmation that it did.
+ */
+export function ForgotForm({ locale }: { locale: Locale }) {
+  const [state, action] = useActionState(requestReset, IDLE)
+  const t = createTranslator(locale)
+
+  if (state.status === 'sent') {
+    return (
+      <div data-testid="forgot-sent" className="rounded-brand border border-line bg-surface-muted p-5">
+        <h2 className="font-display text-lg font-bold text-ink">{t('forgot.sent.title')}</h2>
+        <p className="mt-2 leading-7 text-ink-muted">
+          {t('forgot.sent.description', {
+            email: state.email ?? '',
+            product: productConfig.product.name,
+          })}
+        </p>
+        <ButtonLink href="/login" size="lg" className="mt-5 w-full" testId="forgot-back">
+          {t('forgot.back')}
+        </ButtonLink>
+      </div>
+    )
+  }
+
+  const fieldError = (name: string) =>
+    state.status === 'error' && state.field === name ? state.message : undefined
+
+  return (
+    <form action={action} data-testid="forgot-form" className="flex flex-col gap-5">
+      <TextField
+        id="forgot-email"
+        name="email"
+        type="email"
+        label={t('forgot.form.email')}
+        required
+        autoComplete="username"
+        autoFocus
+        error={fieldError('email')}
+      />
+
+      <div aria-live="polite">
+        {state.status === 'error' && !state.field ? (
+          <p
+            role="alert"
+            data-testid="forgot-error"
+            className="rounded-brand border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800"
+          >
+            {state.message}
+          </p>
+        ) : null}
+      </div>
+
+      <SubmitButton t={t} />
+
+      <p className="text-sm text-ink-muted">
+        <a href="/login" className="font-semibold text-brand hover:underline">
+          {t('forgot.back')}
+        </a>
+      </p>
+    </form>
+  )
+}
+
+/** Its own component because `useFormStatus` reads the form it sits inside. */
+function SubmitButton({ t }: { t: Translator }) {
+  const { pending } = useFormStatus()
+  return (
+    <Button type="submit" size="lg" loading={pending} data-testid="forgot-submit">
+      {pending ? t('forgot.form.submitting') : t('forgot.form.submit')}
+    </Button>
+  )
+}

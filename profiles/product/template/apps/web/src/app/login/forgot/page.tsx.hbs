@@ -1,0 +1,31 @@
+import type { Metadata } from 'next'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { AuthCard, AuthLayout } from '@{{projectSlug}}/ui'
+import { currentLocale, translator } from '../../../lib/locale'
+import { ForgotForm } from './ForgotForm'
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await translator()
+  return { title: t('forgot.title') }
+}
+
+/**
+ * A forgotten password, on the product's own page.
+ *
+ * Public by being under `/login`, which the middleware exempts by prefix.
+ * The link the email carries opens `/activate`, so the whole journey --
+ * asking, receiving, setting -- happens on this product's pages and never on
+ * ZITADEL's (SECURITY_MODEL §8; Control Plane R-107 for the mechanism).
+ */
+export default async function ForgotPasswordPage() {
+  const [locale, t] = await Promise.all([currentLocale(), translator()])
+  const params = { product: productConfig.product.name }
+
+  return (
+    <AuthLayout locale={locale}>
+      <AuthCard title={t('forgot.heading')} description={t('forgot.description', params)}>
+        <ForgotForm locale={locale} />
+      </AuthCard>
+    </AuthLayout>
+  )
+}
