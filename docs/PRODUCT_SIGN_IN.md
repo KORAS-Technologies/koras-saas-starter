@@ -156,8 +156,16 @@ in `infrastructure/terraform/modules/project-bootstrap`, so the next
 else. Apply it. The provider needs to be 2.4 or later; `koras-e2e-shop`
 locks 2.12.8.
 
-Then, once per instance, turn the "Login V2 required" feature off, with a
-token that holds `IAM_OWNER` (the worker's service token does):
+Then, once per instance, two things about the platform's service user --
+the `worker` user whose token the Control Plane API holds. First, it must
+hold the instance role `IAM_LOGIN_CLIENT` as well as `IAM_OWNER`: finalising
+an auth request needs the `session.link` permission, which only that role
+carries, and without it every sign-in passes the password check and then
+fails with ZITADEL's "No matching permissions found" -- found live on dev on
+2026-09-11, after the Control Plane's risk register had predicted it. In the
+ZITADEL Console: Default settings, Members, the `worker` user, add
+`IAM_LOGIN_CLIENT`. Second, turn the "Login V2 required" feature off, with
+that token:
 
 ```text
 PUT https://<instance>/v2/features/instance
