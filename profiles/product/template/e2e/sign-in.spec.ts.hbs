@@ -12,7 +12,12 @@ import { expect, test } from '@playwright/test'
  * `tests/integration/test_product_sign_in.py` in the Control Plane.
  */
 
-test('without an auth request the page is the button it always was', async ({ page }) => {
+test('without an auth request, and no provider configured, the page is the button', async ({
+  page,
+}) => {
+  // With a provider configured the page redirects into the sign-in at once;
+  // this suite has none, so it sees the fallback the redirect would have
+  // replaced, and asserts that the fallback still starts the same flow.
   await page.goto('/login')
   const button = page.getByTestId('sign-in')
   await expect(button).toBeVisible()

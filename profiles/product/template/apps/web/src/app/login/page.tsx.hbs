@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { redirect } from 'next/navigation'
 import { productConfig } from '@{{projectSlug}}/branding'
 import { AuthCard, AuthLayout, ButtonLink } from '@{{projectSlug}}/ui'
 import { currentLocale, translator } from '../../lib/locale'
@@ -12,14 +13,22 @@ export async function generateMetadata(): Promise<Metadata> {
 /**
  * The sign-in page. Two shapes, one route.
  *
- * **Without `authRequest`**, it is what it always was: a button to
+ * **Without `authRequest`**, it starts the sign-in at once: a redirect to
  * `/api/auth/start`, which stores the CSRF token and the PKCE verifier in
- * cookies and sends the browser to the identity provider. Nothing here may be
- * altered to suit a layout: `href`, `data-testid="sign-in"` and the redirect
- * it starts are the contract the smoke checks and the deployed sign-in depend
- * on. `next` defaults to `/dashboard` rather than `/`, because `/` is the
- * public homepage and a completed sign-in that lands there looks exactly like
- * one that failed.
+ * cookies and sends the browser to the identity provider -- which, where this
+ * product hosts its own login, sends it straight back here with an
+ * `authRequest`. Two redirects the person never sees, and no button to click
+ * first: a link to `/login` from the header, the middleware or a sign-out
+ * lands on the form. `next` defaults to `/dashboard` rather than `/`, because
+ * `/` is the public homepage and a completed sign-in that lands there looks
+ * exactly like one that failed.
+ *
+ * The button remains for one case: an environment with no identity provider
+ * configured, where the start route could only answer 500. Then the page says
+ * what it is about to do and lets the person choose to do it, which is also
+ * what the browser suite -- which runs without a provider -- sees. `href`,
+ * `data-testid="sign-in"` and the redirect it starts are still the contract
+ * the smoke checks depend on.
  *
  * **With `authRequest`**, it is the sign-in itself. When this product's OIDC
  * application is configured for a custom login (the Terraform module's
@@ -74,6 +83,10 @@ export default async function LoginPage({
   }
 
   const href = `/api/auth/start?next=${encodeURIComponent(next ?? '/dashboard')}`
+
+  if (process.env.ZITADEL_DOMAIN && process.env.ZITADEL_CLIENT_ID) {
+    redirect(href)
+  }
 
   return (
     <AuthLayout locale={locale}>

@@ -41,6 +41,12 @@ per hop:
 /login  ──302 callbackUrl──▶  ZITADEL  ──302──▶  /api/auth/callback?code=…&state=…  (as before)
 ```
 
+`/login` without an `authRequest` does not wait to be clicked: where an
+identity provider is configured it redirects into `/api/auth/start` itself,
+so the header link, the middleware's redirect and a sign-out all land on
+the form after two redirects nobody sees. The button page survives only
+where no provider is configured, which is the browser suite's case.
+
 Where the person has a TOTP factor enrolled, the platform answers
 `factor_required` with an attempt id instead of a callback URL, the form
 asks for the code, and a second post to `/attempts/{id}/factor` finishes
