@@ -166,6 +166,17 @@ staging and prod still have it on, so their applications keep the hosted
 page until somebody makes that call -- which is the right order, since
 their web applications are not deployed with the page yet.
 
+With the feature off, an application that says nothing about its login
+version gets ZITADEL's **V1** login -- the "Select Account" page with
+"Powered by ZITADEL" in the footer. On dev that is ZITADEL's own Management
+Console, and the Control Plane's portal and console until its Terraform is
+applied with the synced module. The Console is not in anybody's Terraform;
+set its login version once, in the ZITADEL Console under the `ZITADEL`
+project, application *Management Console*, login version V2 -- or with
+`PUT /management/v1/projects/{zitadel project}/apps/{console app}/oidc_config`
+sending the existing config plus `"loginVersion": {"loginV2": {}}`. Seen
+on 2026-09-11 by following the "password changed" email's Login button.
+
 Reverting is removing the block, which the null default does: a product
 that must go back to the hosted login sets `login_base_uri = null` on the
 module call for that environment and applies.
