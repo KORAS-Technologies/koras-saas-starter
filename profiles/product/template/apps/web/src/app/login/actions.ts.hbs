@@ -35,15 +35,16 @@ function controlPlane(): string | null {
 /**
  * Where the browser may be sent when the sign-in is done.
  *
- * The Control Plane answers with a URL on the identity provider's host: the
- * OIDC callback that redirects to this product's own `/api/auth/callback` with
- * the authorization code. This server trusts the platform, and still checks
- * the answer against the provider it was configured with, so a platform
- * answering something else cannot turn the sign-in into a redirect anywhere.
- * Unset `ZITADEL_DOMAIN` -- a local stack pointing at a stub -- accepts any
- * https URL, because then there is nothing to check against.
+ * The Control Plane answers with this product's own `/api/auth/callback`,
+ * code and state appended -- that is what ZITADEL hands back for a code flow
+ * -- or, for other flows, a URL on the identity provider's host. This server
+ * trusts the platform, and still checks the answer against the origins it was
+ * configured with, so a platform answering something else cannot turn the
+ * sign-in into a redirect anywhere. With neither `ZITADEL_REDIRECT_URI` nor
+ * `ZITADEL_DOMAIN` set -- a local stack pointing at a stub -- any https URL is
+ * accepted, because then there is nothing to check against.
  */
-function callbackOnProvider(url: string): boolean {
+function callbackAllowed(url: string): boolean {
   let parsed: URL
   try {
     parsed = new URL(url)
@@ -51,13 +52,21 @@ function callbackOnProvider(url: string): boolean {
     return false
   }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false
+  // What ZITADEL answers for a code flow is this application's own redirect
+  // URI with the code and state appended -- not a URL on ZITADEL's host. The
+  // first live sign-in threw a successful answer away by checking it against
+  // the provider's origin, and the retry reused a finished auth request.
+  const own = process.env.ZITADEL_REDIRECT_URI
   const provider = process.env.ZITADEL_DOMAIN
-  if (!provider) return true
-  try {
-    return new URL(provider).origin === parsed.origin
-  } catch {
-    return false
-  }
+  if (!own && !provider) return true
+  const allowed = [own, provider].filter(Boolean).map((value) => {
+    try {
+      return new URL(value as string).origin
+    } catch {
+      return null
+    }
+  })
+  return allowed.includes(parsed.origin)
 }
 
 type Outcome =
@@ -74,7 +83,7 @@ async function explain(response: Response, t: Translator, attemptId?: string): P
       factor?: string
       attempt_id?: string
     }
-    if (body.status === 'done' && body.callback_url && callbackOnProvider(body.callback_url)) {
+    if (body.status === 'done' && body.callback_url && callbackAllowed(body.callback_url)) {
       return { kind: 'done', callbackUrl: body.callback_url }
     }
     if (body.status === 'factor_required' && body.factor === 'totp' && body.attempt_id) {

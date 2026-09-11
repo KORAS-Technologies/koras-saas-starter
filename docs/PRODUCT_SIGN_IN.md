@@ -60,9 +60,11 @@ and it carries two ids through hidden fields: ZITADEL's auth request id,
 which authorises nothing without the password, and the platform's attempt
 id, which authorises nothing without the code. The password is read into
 one request body and nowhere else. `apps/web/src/app/login/actions.ts`
-checks the callback URL it is handed against `ZITADEL_DOMAIN` before
-redirecting to it, so a platform answering something else cannot turn the
-sign-in into a redirect anywhere.
+checks the callback URL it is handed before redirecting to it -- it must be
+on this application's own origin (ZITADEL answers a code flow with the
+application's redirect URI, code appended) or on `ZITADEL_DOMAIN` -- so a
+platform answering something else cannot turn the sign-in into a redirect
+anywhere.
 
 **The Control Plane** holds the ZITADEL service token it already held for
 activation, and the half-done sign-ins: a table of sign-in attempts
