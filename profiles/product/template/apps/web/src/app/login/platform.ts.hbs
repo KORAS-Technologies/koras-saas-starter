@@ -12,7 +12,7 @@
  * serves both.
  */
 
-import type { MessageKey, Translator } from '@{{projectSlug}}/i18n'
+import type { Translator } from '@{{projectSlug}}/i18n'
 import type { SignInState } from './state'
 
 export function controlPlane(): string | null {
@@ -101,11 +101,20 @@ export type Outcome =
  * The three refusals an external sign-in can meet that a password cannot,
  * each something the person can act on. The platform names them by code
  * beside its sentence, so this page can say them in the person's language.
+ * Spelled out as calls rather than a map of keys, because the catalogue test
+ * counts a key as rendered only where it is passed to `t` directly.
  */
-const PROVIDER_REFUSALS: Record<string, MessageKey> = {
-  not_a_member: 'signIn.provider.notMember',
-  unverified: 'signIn.provider.unverified',
-  ambiguous: 'signIn.provider.ambiguous',
+function providerRefusal(code: string, t: Translator, product: string): string | null {
+  switch (code) {
+    case 'not_a_member':
+      return t('signIn.provider.notMember', { product })
+    case 'unverified':
+      return t('signIn.provider.unverified')
+    case 'ambiguous':
+      return t('signIn.provider.ambiguous')
+    default:
+      return null
+  }
 }
 
 /** Turn the platform's answer into what the page does next. */
@@ -140,12 +149,9 @@ export async function explain(
     // external sign-in's refusals say more, because the address is one the
     // provider just proved the person holds.
     const code = await refusalCode(response)
-    const key = code ? PROVIDER_REFUSALS[code] : undefined
-    if (key) {
-      return {
-        kind: 'state',
-        state: { status: 'error', message: t(key, { product: product ?? '' }) },
-      }
+    const message = code ? providerRefusal(code, t, product ?? '') : null
+    if (message) {
+      return { kind: 'state', state: { status: 'error', message } }
     }
     return {
       kind: 'state',
