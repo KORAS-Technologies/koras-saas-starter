@@ -239,7 +239,15 @@ each built, linted, typechecked, tested and run through the RLS suite. The claim
 outlived the work by four days, in the one file every session reads first.
 
 **What is verified, and how.** CI, Security and Generator Integration all run on
-`develop` and are green. Generator Integration generates both profiles and
+`develop`. All three were red from 2026-09-05 to 2026-09-12 while this line said
+green: the docs tests on identifiers the billing switch and the sign-in page
+introduced, mypy on a worker settings class that never subclassed arq's base,
+and CodeQL unable to check out a repository that had gone private. The first
+two are fixed and green again. The third is half fixed -- the checkout works --
+but a private repository also needs GitHub Code Security enabled before CodeQL
+may upload its results, a paid setting nobody has decided on. Security stays
+red until it is decided, and R-030's premise, that the repository is public, no
+longer holds. Generator Integration generates both profiles and
 lints, builds, typechecks and tests each, runs the row-level security suite
 against a real Postgres, mutation-tests that suite by removing `force` and
 requiring it to fail, and — since 2026-09-01 — **opens a browser**: the product
