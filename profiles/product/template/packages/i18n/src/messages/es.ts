@@ -119,6 +119,8 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'signIn.form.passwordRequired': 'Introduzca su contraseña.',
   'signIn.form.forgot': '¿Ha olvidado su contraseña?',
   'signIn.refused': 'La dirección de correo electrónico o la contraseña no son correctas.',
+  'signIn.continuing': 'Sesión iniciada. Le llevamos a la aplicación…',
+  'signIn.continue': 'Continuar',
   'signIn.expired': 'Este inicio de sesión ha caducado. Empiece de nuevo.',
   'signIn.startAgain': 'Empezar de nuevo',
   'signIn.tooMany': 'Demasiados intentos desde aquí. Inténtelo de nuevo en unos minutos.',

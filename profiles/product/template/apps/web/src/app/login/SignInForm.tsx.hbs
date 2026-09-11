@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useEffect } from 'react'
 import { useFormStatus } from 'react-dom'
 import { createTranslator } from '@{{projectSlug}}/i18n'
 import type { Locale, Translator } from '@{{projectSlug}}/i18n'
@@ -36,6 +36,9 @@ export function SignInForm({ authRequest, locale }: { authRequest: string; local
 
   if (state.status === 'expired') {
     return <Expired t={t} />
+  }
+  if (state.status === 'done' && state.callbackUrl) {
+    return <Continue url={state.callbackUrl} t={t} />
   }
 
   const fieldError = (name: string) =>
@@ -105,6 +108,9 @@ function FactorForm({
   if (state.status === 'expired') {
     return <Expired t={t} />
   }
+  if (state.status === 'done' && state.callbackUrl) {
+    return <Continue url={state.callbackUrl} t={t} />
+  }
 
   return (
     <form action={action} data-testid="sign-in-factor" className="flex flex-col gap-5">
@@ -162,6 +168,28 @@ function FormError({ state, testId }: { state: SignInState; testId: string }) {
  * nothing to retype; the only way on is to start the sign-in again, which is
  * what the button does.
  */
+/**
+ * The sign-in is done; the browser goes to the callback as a full page load.
+ *
+ * Not a server-side `redirect()`: that is a soft navigation, and Next's router
+ * does not carry one into a route handler -- see `actions.ts`. `location`
+ * is assigned as soon as this renders; the link is for a browser whose script
+ * has not attached, and says where it is going.
+ */
+function Continue({ url, t }: { url: string; t: Translator }) {
+  useEffect(() => {
+    window.location.assign(url)
+  }, [url])
+  return (
+    <div data-testid="sign-in-done" role="status" className="rounded-brand border border-line p-5">
+      <p className="leading-7 text-ink-muted">{t('signIn.continuing')}</p>
+      <ButtonLink href={url} size="lg" className="mt-5 w-full">
+        {t('signIn.continue')}
+      </ButtonLink>
+    </div>
+  )
+}
+
 function Expired({ t }: { t: Translator }) {
   return (
     <div data-testid="sign-in-expired" role="alert" className="rounded-brand border border-line p-5">

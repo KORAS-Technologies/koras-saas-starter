@@ -10,12 +10,17 @@ export interface SignInState {
    * sign-in until a code arrives. `expired`: the auth request is gone, and
    * the only way on is to start again.
    */
-  status: 'idle' | 'error' | 'factor' | 'expired'
+  status: 'idle' | 'error' | 'factor' | 'expired' | 'done'
   message?: string
   /** Set when the fault belongs to one field, so the message can sit under it. */
   field?: string
   /** The held sign-in, once the password has been checked. An id, not a credential. */
   attemptId?: string
+  /**
+   * `done`: where the browser goes next -- this application's own OIDC
+   * callback, code appended. The form navigates there as a full page load.
+   */
+  callbackUrl?: string
 }
 
 export const IDLE: SignInState = { status: 'idle' }

@@ -38,8 +38,16 @@ per hop:
                                             │  POST /v2/sessions (user + password, checked together)
                                             │  GET  /v2/users/{id}/authentication_methods
                                             │  POST /v2/oidc/auth_requests/{id}  ──▶ callbackUrl
-/login  ──302 callbackUrl──▶  ZITADEL  ──302──▶  /api/auth/callback?code=…&state=…  (as before)
+/login  ──location.assign(callbackUrl)──▶  /api/auth/callback?code=…&state=…  (as before)
 ```
+
+The last hop is the browser's, not a server-side `redirect()`: ZITADEL
+answers a code flow with the product's own callback URL, and a server action
+redirecting there is a soft navigation Next's router does not carry into a
+route handler -- it re-rendered the login route and the browser looped back
+to the form, with the sign-in complete on the platform. Found live on dev on
+2026-09-11. The form is handed the URL and assigns `location`, which is
+exactly the page load ZITADEL's own login page would have caused.
 
 `/login` without an `authRequest` does not wait to be clicked: where an
 identity provider is configured it redirects into `/api/auth/start` itself,

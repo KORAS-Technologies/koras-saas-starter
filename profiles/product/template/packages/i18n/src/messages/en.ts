@@ -124,6 +124,8 @@ export const en = {
   'signIn.form.passwordRequired': 'Enter your password.',
   'signIn.form.forgot': 'Forgot your password?',
   'signIn.refused': 'The email address or password is wrong.',
+  'signIn.continuing': 'Signed in. Taking you to the application…',
+  'signIn.continue': 'Continue',
   'signIn.expired': 'This sign-in has expired. Start again.',
   'signIn.startAgain': 'Start again',
   'signIn.tooMany': 'Too many attempts from here. Try again in a few minutes.',

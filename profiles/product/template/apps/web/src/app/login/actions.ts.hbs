@@ -17,12 +17,20 @@
  * the sentence for an address nobody has. The Control Plane answers both with
  * the same status on purpose, and this page must not guess between them.
  *
- * `redirect()` throws, and a `try` around it would swallow the sign-in it was
- * completing. Every network call is inside its own `try`; every redirect is
- * outside all of them.
+ * Nothing here redirects. The callback URL goes back to the form, which
+ * assigns it to `location` -- see below for why a server-side redirect cannot
+ * do this job.
+ *
+ * **Why the browser, not `redirect()`.** A server action's `redirect()` to the
+ * callback is a soft navigation: Next answers the form post with a 303 that
+ * names the callback URL in a header, but its router never fetches a route
+ * handler that way -- it re-rendered the login route instead and followed
+ * that page's own auto-start, so the sign-in completed on the platform and
+ * the browser looped back to the form. Found live on dev on 2026-09-11. The
+ * callback has to be a real page load, exactly like the redirect ZITADEL's
+ * own login page performs: the form gets the URL and assigns `location`.
  */
 
-import { redirect } from 'next/navigation'
 import { translator } from '../../lib/locale'
 import type { Translator } from '@{{projectSlug}}/i18n'
 import type { SignInState } from './state'
@@ -157,7 +165,7 @@ export async function signIn(_prev: SignInState, form: FormData): Promise<SignIn
 
   if (outcome.kind === 'state') return outcome.state
   if (outcome.kind === 'factor') return { status: 'factor', attemptId: outcome.attemptId }
-  redirect(outcome.callbackUrl)
+  return { status: 'done', callbackUrl: outcome.callbackUrl }
 }
 
 /** The second factor's code, for a sign-in the platform is holding. */
@@ -197,5 +205,5 @@ export async function verifyFactor(_prev: SignInState, form: FormData): Promise<
 
   if (outcome.kind === 'state') return outcome.state
   if (outcome.kind === 'factor') return { status: 'factor', attemptId: outcome.attemptId }
-  redirect(outcome.callbackUrl)
+  return { status: 'done', callbackUrl: outcome.callbackUrl }
 }
