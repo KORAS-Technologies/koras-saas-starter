@@ -105,10 +105,13 @@ locals {
   # customer-facing application has no domain yet -- then ZITADEL keeps
   # rendering its hosted login for that environment. Product profile only:
   # the Control Plane's portal still signs in on ZITADEL's page (its R-90).
+  #
+  # The origin, not the page: ZITADEL appends `/login?authRequest=` itself
+  # (see the zitadel module's variable).
   login_base_uris = {
     for environment in local.auth_environments : environment => (
       var.profile == "product" && contains(keys(module.vercel.domains), "web-${environment}")
-      ? "https://${module.vercel.domains["web-${environment}"]}/login"
+      ? "https://${module.vercel.domains["web-${environment}"]}"
       : null
     )
   }
