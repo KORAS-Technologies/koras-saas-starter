@@ -112,6 +112,47 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'login.note':
     'Die Anmeldung erfolgt über Ihr Organisationskonto. Es gibt kein separates {product}-Passwort, das Sie sich merken oder zurücksetzen müssten.',
 
+  'signIn.description': 'Verwenden Sie die E-Mail-Adresse und das Passwort Ihres {product}-Kontos.',
+  'signIn.form.email': 'E-Mail-Adresse',
+  'signIn.form.password': 'Passwort',
+  'signIn.form.submit': 'Anmelden',
+  'signIn.form.submitting': 'Anmeldung läuft…',
+  'signIn.form.emailRequired': 'Geben Sie Ihre E-Mail-Adresse ein.',
+  'signIn.form.passwordRequired': 'Geben Sie Ihr Passwort ein.',
+  'signIn.form.forgot': 'Passwort vergessen?',
+  'signIn.refused': 'E-Mail-Adresse oder Passwort ist falsch.',
+  'signIn.expired': 'Diese Anmeldung ist abgelaufen. Beginnen Sie von vorn.',
+  'signIn.startAgain': 'Von vorn beginnen',
+  'signIn.tooMany': 'Zu viele Versuche von hier. Versuchen Sie es in ein paar Minuten erneut.',
+  'signIn.unavailable':
+    'Die Anmeldung ist gerade nicht verfügbar. Versuchen Sie es in Kürze erneut.',
+  'signIn.factor.heading': 'Code eingeben',
+  'signIn.factor.description':
+    'Öffnen Sie Ihre Authenticator-App und geben Sie den sechsstelligen Code ein, den sie anzeigt.',
+  'signIn.factor.code': 'Code',
+  'signIn.factor.submit': 'Weiter',
+  'signIn.factor.submitting': 'Wird geprüft…',
+  'signIn.factor.refused': 'Der Code ist falsch.',
+  'signIn.factor.codeRequired': 'Geben Sie den Code aus Ihrer Authenticator-App ein.',
+
+  /* ------------------------------------------------------ forgot password */
+  'forgot.title': 'Passwort vergessen',
+  'forgot.heading': 'Passwort zurücksetzen',
+  'forgot.description':
+    'Geben Sie die E-Mail-Adresse ein, mit der Sie sich anmelden. Gehört sie zu einem Konto bei {product}, senden wir Ihnen einen Link zum Festlegen eines neuen Passworts.',
+  'forgot.form.email': 'E-Mail-Adresse',
+  'forgot.form.emailRequired': 'Geben Sie Ihre E-Mail-Adresse ein.',
+  'forgot.form.emailInvalid': 'Das sieht nicht wie eine E-Mail-Adresse aus.',
+  'forgot.form.submit': 'Link senden',
+  'forgot.form.submitting': 'Wird gesendet…',
+  'forgot.sent.title': 'Prüfen Sie Ihr E-Mail-Postfach',
+  'forgot.sent.description':
+    'Gehört {email} zu einem Konto bei {product}, ist ein Link zum Festlegen eines neuen Passworts unterwegs. Er gilt 7 Tage und nur einmal.',
+  'forgot.back': 'Zurück zur Anmeldung',
+  'forgot.tooMany': 'Zu viele Anfragen von hier. Versuchen Sie es in einer Stunde erneut.',
+  'forgot.unavailable':
+    'Das Zurücksetzen des Passworts ist gerade nicht verfügbar. Versuchen Sie es in Kürze erneut.',
+
   /* --------------------------------------------------------------- signup */
   'signup.title': 'Loslegen',
   'signup.heading': 'Mit {product} starten',

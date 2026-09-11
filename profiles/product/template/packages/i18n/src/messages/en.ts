@@ -113,6 +113,45 @@ export const en = {
   'login.note':
     'Signing in uses your organisation account. There is no separate {product} password to remember or reset.',
 
+  'signIn.description': 'Use the email address and password for your {product} account.',
+  'signIn.form.email': 'Email address',
+  'signIn.form.password': 'Password',
+  'signIn.form.submit': 'Sign in',
+  'signIn.form.submitting': 'Signing in…',
+  'signIn.form.emailRequired': 'Enter your email address.',
+  'signIn.form.passwordRequired': 'Enter your password.',
+  'signIn.form.forgot': 'Forgot your password?',
+  'signIn.refused': 'The email address or password is wrong.',
+  'signIn.expired': 'This sign-in has expired. Start again.',
+  'signIn.startAgain': 'Start again',
+  'signIn.tooMany': 'Too many attempts from here. Try again in a few minutes.',
+  'signIn.unavailable': 'Signing in is not available right now. Try again shortly.',
+  'signIn.factor.heading': 'Enter your code',
+  'signIn.factor.description':
+    'Open your authenticator app and enter the six-digit code it shows.',
+  'signIn.factor.code': 'Code',
+  'signIn.factor.submit': 'Continue',
+  'signIn.factor.submitting': 'Checking…',
+  'signIn.factor.refused': 'The code is wrong.',
+  'signIn.factor.codeRequired': 'Enter the code from your authenticator app.',
+
+  /* ------------------------------------------------------ forgot password */
+  'forgot.title': 'Forgot password',
+  'forgot.heading': 'Reset your password',
+  'forgot.description':
+    'Enter the email address you sign in with. If it belongs to an account on {product}, we will send a link to set a new password.',
+  'forgot.form.email': 'Email address',
+  'forgot.form.emailRequired': 'Enter your email address.',
+  'forgot.form.emailInvalid': 'That does not look like an email address.',
+  'forgot.form.submit': 'Send the link',
+  'forgot.form.submitting': 'Sending…',
+  'forgot.sent.title': 'Check your email',
+  'forgot.sent.description':
+    'If {email} belongs to an account on {product}, a link to set a new password is on its way. It works for 7 days and once.',
+  'forgot.back': 'Back to sign in',
+  'forgot.tooMany': 'Too many requests from here. Try again in an hour.',
+  'forgot.unavailable': 'Resetting a password is not available right now. Try again shortly.',
+
   /* --------------------------------------------------------------- signup */
   'signup.title': 'Get started',
   'signup.heading': 'Start with {product}',

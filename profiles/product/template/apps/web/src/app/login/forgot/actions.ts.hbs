@@ -1,0 +1,53 @@
+'use server'
+
+/**
+ * A forgotten password, asked for on the product's own page.
+ *
+ * The address goes to the Control Plane from this server, like everything
+ * else on the sign-in path. The platform works out which organizations it
+ * belongs to on this product and has the worker send each one this
+ * platform's own email, whose link opens `/activate` here -- the same page
+ * the welcome lands on -- and sets the password server-side. Nobody sees
+ * ZITADEL's reset mail or ZITADEL's reset screen (Control Plane R-107).
+ *
+ * The platform answers 202 whether the address matched nothing or several
+ * organizations, and this page says the same thing either way. A page that
+ * said "no account with that address" would be a way to list customers.
+ */
+
+import { translator } from '../../../lib/locale'
+import type { ForgotState } from './state'
+
+function controlPlane(): string | null {
+  const base = process.env.KORAS_CONTROL_PLANE_URL
+  return base ? base.replace(/\/$/, '') : null
+}
+
+export async function requestReset(_prev: ForgotState, form: FormData): Promise<ForgotState> {
+  const t = await translator()
+  const email = String(form.get('email') ?? '').trim()
+
+  if (!email) return { status: 'error', field: 'email', message: t('forgot.form.emailRequired') }
+
+  const base = controlPlane()
+  if (!base) return { status: 'error', message: t('forgot.unavailable') }
+
+  try {
+    const response = await fetch(`${base}/api/sign-in/v1/password-resets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, product_code: '{{projectSlug}}' }),
+      cache: 'no-store',
+    })
+    if (response.status === 202) return { status: 'sent', email }
+    if (response.status === 429) return { status: 'error', message: t('forgot.tooMany') }
+    if (response.status === 422) {
+      // The platform's own validation of the address: the one refusal the
+      // person can act on, so it sits under the field.
+      return { status: 'error', field: 'email', message: t('forgot.form.emailInvalid') }
+    }
+    return { status: 'error', message: t('forgot.unavailable') }
+  } catch {
+    return { status: 'error', message: t('forgot.unavailable') }
+  }
+}

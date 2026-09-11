@@ -107,6 +107,48 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'login.note':
     'El inicio de sesión usa la cuenta de su organización. No hay una contraseña separada de {product} que recordar ni restablecer.',
 
+  'signIn.description':
+    'Use la dirección de correo electrónico y la contraseña de su cuenta de {product}.',
+  'signIn.form.email': 'Dirección de correo electrónico',
+  'signIn.form.password': 'Contraseña',
+  'signIn.form.submit': 'Iniciar sesión',
+  'signIn.form.submitting': 'Iniciando sesión…',
+  'signIn.form.emailRequired': 'Introduzca su dirección de correo electrónico.',
+  'signIn.form.passwordRequired': 'Introduzca su contraseña.',
+  'signIn.form.forgot': '¿Ha olvidado su contraseña?',
+  'signIn.refused': 'La dirección de correo electrónico o la contraseña no son correctas.',
+  'signIn.expired': 'Este inicio de sesión ha caducado. Empiece de nuevo.',
+  'signIn.startAgain': 'Empezar de nuevo',
+  'signIn.tooMany': 'Demasiados intentos desde aquí. Inténtelo de nuevo en unos minutos.',
+  'signIn.unavailable':
+    'El inicio de sesión no está disponible ahora mismo. Inténtelo de nuevo en breve.',
+  'signIn.factor.heading': 'Introduzca su código',
+  'signIn.factor.description':
+    'Abra su aplicación de autenticación e introduzca el código de seis dígitos que muestra.',
+  'signIn.factor.code': 'Código',
+  'signIn.factor.submit': 'Continuar',
+  'signIn.factor.submitting': 'Comprobando…',
+  'signIn.factor.refused': 'El código no es correcto.',
+  'signIn.factor.codeRequired': 'Introduzca el código de su aplicación de autenticación.',
+
+  /* ------------------------------------------------------ forgot password */
+  'forgot.title': 'Contraseña olvidada',
+  'forgot.heading': 'Restablecer su contraseña',
+  'forgot.description':
+    'Introduzca la dirección de correo electrónico con la que inicia sesión. Si pertenece a una cuenta de {product}, le enviaremos un enlace para establecer una nueva contraseña.',
+  'forgot.form.email': 'Dirección de correo electrónico',
+  'forgot.form.emailRequired': 'Introduzca su dirección de correo electrónico.',
+  'forgot.form.emailInvalid': 'Eso no parece una dirección de correo electrónico.',
+  'forgot.form.submit': 'Enviar el enlace',
+  'forgot.form.submitting': 'Enviando…',
+  'forgot.sent.title': 'Revise su correo electrónico',
+  'forgot.sent.description':
+    'Si {email} pertenece a una cuenta de {product}, un enlace para establecer una nueva contraseña está en camino. Funciona durante 7 días y una sola vez.',
+  'forgot.back': 'Volver al inicio de sesión',
+  'forgot.tooMany': 'Demasiadas solicitudes desde aquí. Inténtelo de nuevo dentro de una hora.',
+  'forgot.unavailable':
+    'El restablecimiento de la contraseña no está disponible ahora mismo. Inténtelo de nuevo en breve.',
+
   /* --------------------------------------------------------------- signup */
   'signup.title': 'Empezar',
   'signup.heading': 'Empezar con {product}',

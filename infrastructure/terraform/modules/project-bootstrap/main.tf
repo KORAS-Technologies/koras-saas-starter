@@ -100,6 +100,18 @@ locals {
       var.zitadel_post_logout_redirect_uris,
     )
   }
+
+  # The product's own sign-in page, per environment, or null where the
+  # customer-facing application has no domain yet -- then ZITADEL keeps
+  # rendering its hosted login for that environment. Product profile only:
+  # the Control Plane's portal still signs in on ZITADEL's page (its R-90).
+  login_base_uris = {
+    for environment in local.auth_environments : environment => (
+      var.profile == "product" && contains(keys(module.vercel.domains), "web-${environment}")
+      ? "https://${module.vercel.domains["web-${environment}"]}/login"
+      : null
+    )
+  }
 }
 
 # One module instance per ZITADEL instance. Terraform cannot index providers,
@@ -114,6 +126,7 @@ module "zitadel_dev" {
   environment               = "dev"
   redirect_uris             = local.redirect_uris["dev"]
   post_logout_redirect_uris = local.post_logout_redirect_uris["dev"]
+  login_base_uri            = local.login_base_uris["dev"]
   role_grants               = lookup(var.zitadel_role_grants, "dev", {})
   # Absent unless this instance holds more than one organization. See the
   # zitadel module: it discovers the single active one and refuses to guess.
@@ -140,6 +153,7 @@ module "zitadel_test" {
   environment               = "test"
   redirect_uris             = local.redirect_uris["test"]
   post_logout_redirect_uris = local.post_logout_redirect_uris["test"]
+  login_base_uri            = local.login_base_uris["test"]
   role_grants               = lookup(var.zitadel_role_grants, "test", {})
   # Absent unless this instance holds more than one organization. See the
   # zitadel module: it discovers the single active one and refuses to guess.
@@ -155,6 +169,7 @@ module "zitadel_stg" {
   environment               = "stg"
   redirect_uris             = local.redirect_uris["stg"]
   post_logout_redirect_uris = local.post_logout_redirect_uris["stg"]
+  login_base_uri            = local.login_base_uris["stg"]
   role_grants               = lookup(var.zitadel_role_grants, "stg", {})
   # Absent unless this instance holds more than one organization. See the
   # zitadel module: it discovers the single active one and refuses to guess.
@@ -170,6 +185,7 @@ module "zitadel_prod" {
   environment               = "prod"
   redirect_uris             = local.redirect_uris["prod"]
   post_logout_redirect_uris = local.post_logout_redirect_uris["prod"]
+  login_base_uri            = local.login_base_uris["prod"]
   role_grants               = lookup(var.zitadel_role_grants, "prod", {})
   # Absent unless this instance holds more than one organization. See the
   # zitadel module: it discovers the single active one and refuses to guess.
