@@ -17,6 +17,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       security-events: write
+      # A job that declares any permission gets only what it declares, and
+      # this one declared none for the repository itself. That was invisible
+      # while the repository was public -- an anonymous checkout works there --
+      # and became a "repository not found" on every run from 2026-09-05,
+      # when it went private. `actions: read` is what CodeQL asks for on a
+      # private repository so that it can read workflow runs.
+      contents: read
+      actions: read
     strategy:
       matrix:
         language: [javascript-typescript, python]

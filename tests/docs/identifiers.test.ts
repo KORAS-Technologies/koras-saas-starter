@@ -92,20 +92,35 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   plan_entitlements: 'a Control Plane catalogue table; no product repository has one',
   // The billing work, BILLING_DESIGN.md and FOLLOW_UPS F21. Every one of these
   // is the Control Plane's: the two settings are the provider's server-side
-  // credentials, which a product must never hold -- the product's own half is
-  // the NEXT_PUBLIC_ client token, and that one exists here -- and the rest
-  // are columns and tables of the subscription record, which is the platform's
-  // by the same rule as `past_due` above. A product repository naming any of
-  // them would mean the money had moved.
-  PADDLE_API_KEY: "the provider's server-side key; the Control Plane holds it, no product does",
-  PADDLE_WEBHOOK_SECRET: "the provider's webhook secret; the Control Plane holds it, no product does",
+  // credentials, which a product must never hold -- since the switch to Stripe
+  // on 2026-09-09 the product holds no provider value at all, because the
+  // checkout is a hosted URL -- and the rest are columns, tables and states of
+  // the subscription record, which is the platform's by the same rule as
+  // `past_due` above. A product repository naming any of them would mean the
+  // money had moved.
+  //
+  // `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET` and `custom_data` were exempted
+  // here for the same reason until 2026-09-12; they left when the documents
+  // stopped naming them, since an exemption nothing cites is a line nobody
+  // deletes.
+  STRIPE_SECRET_KEY: "the provider's server-side key; the Control Plane holds it, no product does",
+  STRIPE_WEBHOOK_SECRET: "the provider's webhook secret; the Control Plane holds it, no product does",
+  BILLING_TRIAL_DAYS: 'a Control Plane setting; the trial length is stated on the checkout session',
+  managed_payments: "a Stripe Checkout parameter the Control Plane's adapter sends; no product does",
+  incomplete_expired: 'a Stripe subscription status the Control Plane maps; a product never decides one',
   billing_customers: 'a Control Plane table; no product repository has one',
   billing_events: 'a Control Plane table; no product repository has one',
   billing_synced_at: 'a column on the Control Plane subscriptions table',
   billing_customer_id: 'a column the design proposed and the build replaced with billing_customers',
   cancelled_at: 'a column on the Control Plane subscriptions table',
   occurred_at: 'a column on the Control Plane billing_events table',
-  custom_data: "the provider's name for checkout metadata; the product spells it customData",
+  // ZITADEL instance roles, named in PRODUCT_SIGN_IN.md because finalising an
+  // auth request needs the second and the platform's service user held only
+  // the first -- found live on 2026-09-11. They are granted in the ZITADEL
+  // Console, so no file here carries them; one appearing in the code would
+  // mean the membership had started being managed from a repository.
+  IAM_OWNER: 'a ZITADEL instance role, granted in the Console rather than by any file here',
+  IAM_LOGIN_CLIENT: 'a ZITADEL instance role, granted in the Console rather than by any file here',
 }
 
 function tracked(): string[] {

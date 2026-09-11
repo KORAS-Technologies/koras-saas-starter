@@ -1,10 +1,11 @@
 from arq.connections import RedisSettings
+from arq.typing import WorkerSettingsBase
 
 from .settings import settings
 from .tasks import provision_product, reconcile_infrastructure
 
 
-class WorkerSettings:
+class WorkerSettings(WorkerSettingsBase):
     # The tasks this profile actually defines. It registered `example_task`,
     # which src/tasks does not export here -- so the worker raised ImportError
     # on startup and the only symptom was a container that would not stay up.

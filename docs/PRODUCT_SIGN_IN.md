@@ -100,7 +100,7 @@ the button it always was.
 One instance-level fact the first live run found (2026-09-11): ZITADEL Cloud
 creates an instance with the feature "Login V2 required" **on**, and while
 it is on, ZITADEL overwrites every application's own login setting with the
-instance's (`internal/query/oidc_client.go`), so the per-application URL is
+instance's (`zitadel/zitadel/internal/query/oidc_client.go`), so the per-application URL is
 silently ignored and the browser lands on the hosted page as before. The
 feature has to be off for the per-application setting to count. Turning it
 off moves nothing by itself: every KORAS application declares the V2 login

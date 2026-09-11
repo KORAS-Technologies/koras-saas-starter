@@ -1890,9 +1890,18 @@ provider. The design is `docs/PRODUCT_SIGN_IN.md`; the Control Plane's
       `feat/product-sign-in`).
 - [x] The per-application setting in the Terraform module, derived per
       environment in `project-bootstrap`.
-- [ ] `terraform apply` on `koras-e2e-shop` dev, then one sign-in in a
+- [x] `terraform apply` on `koras-e2e-shop` dev, then one sign-in in a
       browser: ZITADEL answering the authorize request with a redirect to
       `/login`, and the platform's callback URL landing on
-      `/api/auth/callback`. Exercised only against a stubbed ZITADEL so far.
+      `/api/auth/callback`. Done late on 2026-09-11, after four fixes the
+      stub could not have found (the Login V2 instance feature, the base URI
+      being an origin, the `IAM_LOGIN_CLIENT` role, and the callback landing
+      on the product's own origin): a real Chromium signed a customer in on
+      the product's page and reached `/dashboard`. This box stood unticked
+      for a day after that, which is R-042 landing on the file that lists
+      what is undone.
+- [ ] The same on test, stg and prod: the instance feature off, the role on
+      the `worker` user, the Control Plane's Terraform applied so the portal
+      has its base URI. Only dev has any of it.
 - [ ] The remaining halves of R-90, unchanged: enrolment of a second factor
       on a product page; the Control Plane's own portal.

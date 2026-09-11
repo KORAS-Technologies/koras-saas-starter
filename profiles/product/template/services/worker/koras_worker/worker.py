@@ -1,10 +1,11 @@
 from arq.connections import RedisSettings
+from arq.typing import WorkerSettingsBase
 
 from .settings import settings
 from .tasks import example_task
 
 
-class WorkerSettings:
+class WorkerSettings(WorkerSettingsBase):
     functions = [example_task]
     # Derived from REDIS_URL rather than hardcoded. A fixed localhost:6379 is
     # not merely wrong once deployed -- the worker starts, stays up, and quietly
