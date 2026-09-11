@@ -62,10 +62,12 @@ sign-in into a redirect anywhere.
 activation, and the half-done sign-ins: a table of sign-in attempts
 (migration 00036) keeps the session id and token ZITADEL issued after the password
 check, for ten minutes and one use, so that the product never carries a
-session credential. It honours an auth request only when its client id is a
-registered product's in that environment -- without that, the route would
-sign a password holder into any application on the instance, the Console
-included.
+session credential. It honours an auth request only when its client is an
+application of the ZITADEL project the named product registered for that
+environment -- read from ZITADEL, since the registry holds the project and
+never the client id (the generator withholds that output on purpose).
+Without that, the route would sign a password holder into any application
+on the instance, the Console included.
 
 **ZITADEL** is told per application. `login_version { login_v2 { base_uri } }`
 on the product's OIDC application, set by `infrastructure/terraform/modules/zitadel`

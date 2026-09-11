@@ -130,7 +130,15 @@ export async function signIn(_prev: SignInState, form: FormData): Promise<SignIn
     const response = await fetch(`${base}/api/sign-in/v1/attempts`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ auth_request_id: authRequest, login_name: email, password }),
+      // The product names itself, as signup does. The platform does not take
+      // that on trust: the auth request's client has to be one of this
+      // product's own applications, which it checks with ZITADEL.
+      body: JSON.stringify({
+        auth_request_id: authRequest,
+        product_code: '{{projectSlug}}',
+        login_name: email,
+        password,
+      }),
       cache: 'no-store',
     })
     outcome = await explain(response, t)
