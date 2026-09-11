@@ -70,13 +70,25 @@ included.
 **ZITADEL** is told per application. `login_version { login_v2 { base_uri } }`
 on the product's OIDC application, set by `infrastructure/terraform/modules/zitadel`
 from the `web-<env>` domain the Vercel module created, moves exactly one
-application's sign-in. The instance-wide Login V2 feature flag would have
-moved the Console and every other application on the instance too, staff
-included, which is why the earlier plan to self-host ZITADEL's login app
-(F23, `koras-control-plane/docs/LOGIN_UI_PLAN.md`) needed a break-glass
+application's sign-in. The value is the origin: ZITADEL appends
+`/login?authRequest=…` itself. The instance-wide Login V2 feature flag would
+have moved the Console and every other application on the instance too,
+staff included, which is why the earlier plan to self-host ZITADEL's login
+app (F23, `koras-control-plane/docs/LOGIN_UI_PLAN.md`) needed a break-glass
 token and a week on dev. This needs neither: an environment whose
 `login_base_uri` is null keeps the hosted login, and the product's page is
 the button it always was.
+
+One instance-level fact the first live run found (2026-09-11): ZITADEL Cloud
+creates an instance with the feature "Login V2 required" **on**, and while
+it is on, ZITADEL overwrites every application's own login setting with the
+instance's (`internal/query/oidc_client.go`), so the per-application URL is
+silently ignored and the browser lands on the hosted page as before. The
+feature has to be off for the per-application setting to count. Turning it
+off moves nothing by itself: every KORAS application declares the V2 login
+explicitly, with or without a base URI, so the Console is the only
+application left to ZITADEL's default, and on these instances that default
+still answers.
 
 ## One answer for every refusal
 
@@ -126,26 +138,37 @@ per account rather than per address.
 
 ## Turning it on for an estate
 
-Nothing to set. `login_base_uri` is derived from the `web-<env>` Vercel
-domain in `infrastructure/terraform/modules/project-bootstrap`, so the next
+Two things. `login_base_uri` is derived from the `web-<env>` Vercel domain
+in `infrastructure/terraform/modules/project-bootstrap`, so the next
 `terraform plan` for a product estate shows one change per environment on
 `zitadel_application_oidc.web` -- the `login_version` block -- and nothing
-else. Apply it, and that environment's sign-in is the product's. The
-provider needs to be 2.4 or later; `koras-e2e-shop` locks 2.12.8.
+else. Apply it. The provider needs to be 2.4 or later; `koras-e2e-shop`
+locks 2.12.8.
+
+Then, once per instance, turn the "Login V2 required" feature off, with a
+token that holds `IAM_OWNER` (the worker's service token does):
+
+```text
+PUT https://<instance>/v2/features/instance
+{"loginV2": {"required": false}}
+```
+
+Reverting is the same call with `true`. Done on dev on 2026-09-11; test,
+staging and prod still have it on, so their applications keep the hosted
+page until somebody makes that call -- which is the right order, since
+their web applications are not deployed with the page yet.
 
 Reverting is removing the block, which the null default does: a product
 that must go back to the hosted login sets `login_base_uri = null` on the
 module call for that environment and applies.
 
-What has not been done as of 2026-09-11: that plan has not been applied to
-`koras-e2e-shop`'s dev, so the whole journey -- ZITADEL answering the
-authorize request with a redirect to `/login`, and the callback URL the
-platform returns landing on `/api/auth/callback` -- has been exercised only
-with a stubbed ZITADEL. The Control Plane's `koras-control-plane/tests/integration/test_product_sign_in.py`
-covers what the API does between the two; the generated project's
-`e2e/sign-in.spec.ts` covers the page without a platform behind it. The
-first live sign-in on dev is the verification, and belongs in the same
-sitting as the other live work in `FOLLOW_UPS.md`.
+Applied to `koras-e2e-shop`'s dev on 2026-09-11, with the instance feature
+turned off the same day: ZITADEL answers the authorize request with a
+redirect to the product's `/login?authRequest=…`, and the platform's route
+answers the form. A sign-in with a real password has still not been watched
+in a browser by a person; the Control Plane's `koras-control-plane/tests/integration/test_product_sign_in.py`
+covers what the API does between the two, and the generated project's
+`e2e/sign-in.spec.ts` covers the page without a platform behind it.
 
 ## Where things are
 

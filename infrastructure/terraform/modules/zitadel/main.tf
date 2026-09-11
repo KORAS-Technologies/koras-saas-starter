@@ -181,14 +181,17 @@ resource "zitadel_application_oidc" "web" {
   id_token_role_assertion     = true
   id_token_userinfo_assertion = true
 
-  # The product's own sign-in page, where one is configured. Absent, ZITADEL
-  # renders its hosted login for this application. See the variable.
-  dynamic "login_version" {
-    for_each = var.login_base_uri == null ? [] : [var.login_base_uri]
-    content {
-      login_v2 {
-        base_uri = login_version.value
-      }
+  # Which login this application sends a browser to. Always the V2 login,
+  # said explicitly: with `base_uri` it is the product's own sign-in page,
+  # without it ZITADEL's hosted V2 page. Explicit because the alternative --
+  # leaving it unspecified -- means the V1 login the moment the instance-wide
+  # "Login V2 required" feature is off, and that feature *has* to be off for
+  # any application's own `base_uri` to be honoured: ZITADEL's query layer
+  # overwrites the client's login version with the instance's whenever the
+  # feature is required (internal/query/oidc_client.go). See the variable.
+  login_version {
+    login_v2 {
+      base_uri = var.login_base_uri
     }
   }
 

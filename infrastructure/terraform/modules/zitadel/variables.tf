@@ -80,14 +80,22 @@ variable "login_base_uri" {
   default     = null
   description = <<-EOT
     Where ZITADEL sends the browser to sign in, instead of rendering its own
-    login page: the product's own `/login`, which posts the credentials to the
-    Control Plane from its server (koras-saas-starter, docs/PRODUCT_SIGN_IN.md).
-    Null keeps ZITADEL's hosted login, which is what a product with no
-    application domain yet -- and the Control Plane profile -- still uses.
+    login page: the product's origin, to which ZITADEL appends `/login` and
+    the auth request id, so the product's own `/login` page gets it and posts
+    the credentials to the Control Plane from its server (koras-saas-starter,
+    docs/PRODUCT_SIGN_IN.md). The origin, not the page: `https://app.example`
+    becomes `https://app.example/login?authRequest=...`, and a value ending
+    in `/login` becomes `/login/login`. Null keeps ZITADEL's hosted V2 login,
+    which is what a product with no application domain yet -- and the Control
+    Plane profile -- still uses.
 
-    Per application, not per instance. The instance-wide Login V2 feature
-    flag would redirect the Console and every other application on the
+    Per application, not per instance. The instance-wide "Login V2 required"
+    feature would redirect the Console and every other application on the
     instance too, staff included; this setting moves exactly one application.
+    It is honoured only while that instance feature is *off* -- ZITADEL
+    overwrites the application's setting with the instance's whenever it is
+    required -- which is why the feature was turned off on dev on 2026-09-11
+    (docs/PRODUCT_SIGN_IN.md, "Turning it on for an estate").
     Needs provider 2.4 or later; the estate locks 2.12.
   EOT
 }
