@@ -1,3 +1,15 @@
+# LiteLLM proxy configuration.
+#
+# The gateway is an OpenAI-compatible proxy in front of the model providers, so
+# a product calls it with any OpenAI SDK pointed at AI_GATEWAY_URL and
+# authenticated with LITELLM_MASTER_KEY. Which providers it can reach is this
+# file; the keys come from the environment (Doppler in a deployed estate,
+# .env.local locally) and never live here.
+#
+# To add a model, add an entry to `model_list`: `model_name` is what a caller
+# asks for, `litellm_params.model` is the provider route, and `api_key` names
+# the environment variable that holds the credential. Declare that variable in
+# `local/config/secrets.manifest` so a deployed gateway is required to have it.
 model_list:
   - model_name: gpt-4o
     litellm_params:
@@ -10,9 +22,19 @@ model_list:
       api_key: os.environ/ANTHROPIC_API_KEY
 
 general_settings:
+  # Every call presents this key; without it the proxy is open to anyone who
+  # can reach it. The product holds the same value and sends it as the bearer.
   master_key: os.environ/LITELLM_MASTER_KEY
-  database_url: os.environ/DATABASE_URL
+  # No `database_url` on purpose. It turns on LiteLLM's own key-management and
+  # spend-tracking tables, which need a Postgres of their own and a Prisma
+  # migration nothing in the estate runs -- so setting it makes the proxy fail
+  # to boot rather than adding a feature. Re-add it, with a provisioned and
+  # migrated database, only when virtual keys or spend limits are wanted.
 
 litellm_settings:
   telemetry: false
-  success_callback: ["langfuse"]
+  # No `success_callback` here. It listed "langfuse", which is neither a
+  # dependency of this service nor given any LANGFUSE_* credentials, so the
+  # first request failed loading the callback. Add langfuse (the dependency,
+  # the three LANGFUSE_* secrets, and the callback) as one deliberate change
+  # when request tracing is wanted.

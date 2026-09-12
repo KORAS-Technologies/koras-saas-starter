@@ -4,6 +4,15 @@ WORKDIR /app
 
 RUN pip install uv
 
+# Force UTF-8 regardless of the container locale. LiteLLM prints a banner with
+# non-ASCII characters at startup; under a C/POSIX locale that write raises
+# UnicodeEncodeError and the process dies before it serves. Python coerces the
+# C locale to C.UTF-8 on its own (PEP 538), but a base image that sets a
+# non-UTF-8 locale would defeat that, so this is explicit. Unbuffered so the
+# boot logs reach Fly as they happen rather than at the first flush.
+ENV PYTHONUTF8=1
+ENV PYTHONUNBUFFERED=1
+
 # Pin where uv puts the environment, and put it on PATH. fly.toml may override
 # the CMD below with a [processes] entry, and those run the bare command -- a
 # `python -m ...` that resolves to the system interpreter finds none of the

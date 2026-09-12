@@ -27,7 +27,10 @@ primary_region = "{{flyRegion}}"
     timeout = "5s"
     grace_period = "20s"
     method = "GET"
-    path = "/health"
+    # Liveness, not /health: LiteLLM's /health calls every provider on
+    # each hit, which costs money every 15s and fails on a bad key. This
+    # says only that the process is up, which is what a health check is for.
+    path = "/health/liveliness"
 
 [[vm]]
   cpu_kind = "shared"
