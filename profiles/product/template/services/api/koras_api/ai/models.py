@@ -19,27 +19,36 @@ from koras_ai import ModelAlias, ModelCatalogue, ModelRoute
 #: The provider names, in the platform's vocabulary, that the gateway serves.
 #: A customer's policy may name others -- a private model of their own -- and
 #: those are skipped until a provider is registered for them.
-PROVIDER_NAMES: tuple[str, ...] = ("openai", "anthropic")
+PROVIDER_NAMES: tuple[str, ...] = ("openai", "anthropic", "gemini", "openrouter")
 
 CATALOGUE = ModelCatalogue(
     {
         ModelAlias.FAST: [
             ModelRoute(provider="openai", model="gpt-4o-mini"),
-            ModelRoute(provider="anthropic", model="claude-3-5-sonnet"),
+            ModelRoute(provider="anthropic", model="claude-3-5-haiku"),
+            ModelRoute(provider="gemini", model="gemini-2.5-flash"),
+            ModelRoute(provider="openrouter", model="openrouter-llama-3.3-70b"),
         ],
         ModelAlias.BALANCED: [
             ModelRoute(provider="openai", model="gpt-4o"),
             ModelRoute(provider="anthropic", model="claude-3-5-sonnet"),
+            ModelRoute(provider="gemini", model="gemini-2.5-pro"),
+            ModelRoute(provider="openrouter", model="openrouter-llama-3.3-70b"),
         ],
         ModelAlias.REASONING: [
             ModelRoute(provider="anthropic", model="claude-3-5-sonnet"),
             ModelRoute(provider="openai", model="gpt-4o"),
+            ModelRoute(provider="gemini", model="gemini-2.5-pro"),
+            ModelRoute(provider="openrouter", model="openrouter-deepseek-r1"),
         ],
         ModelAlias.VISION: [
             ModelRoute(provider="openai", model="gpt-4o"),
+            ModelRoute(provider="anthropic", model="claude-3-5-sonnet"),
+            ModelRoute(provider="gemini", model="gemini-2.5-pro"),
         ],
         ModelAlias.EMBEDDING: [
             ModelRoute(provider="openai", model="text-embedding-3-small"),
+            ModelRoute(provider="gemini", model="gemini-embedding"),
         ],
     }
 )

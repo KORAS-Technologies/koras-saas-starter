@@ -172,11 +172,16 @@ class ControlPlaneRouting:
         )
         if routing is None:
             return None
-        model = routing.config.get("model")
         return AliasPolicy(
             providers=tuple(routing.providers),
-            model=model if isinstance(model, str) and model else None,
+            model=_name(routing.config.get("model")),
+            fallback_model=_name(routing.config.get("fallback_model")),
         )
+
+
+def _name(value: object) -> str | None:
+    """A model name out of the policy's configuration, or nothing."""
+    return value if isinstance(value, str) and value else None
 
 
 # ── the rows ──────────────────────────────────────────────────────────────────

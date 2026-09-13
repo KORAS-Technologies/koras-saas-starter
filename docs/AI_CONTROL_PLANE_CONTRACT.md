@@ -9,7 +9,12 @@
 
 **Status.** The consumed half is in the code and tested with stubs. The
 required half is a proposal, dated 2026-09-13, for the Control Plane's own
-roadmap to take up or decline.
+roadmap to take up or decline. Two parts of it were taken up the same day,
+in `koras-control-plane` rather than here: a plan-tier routing template
+written to a new customer's rows at provisioning, and a staff-only
+catalogue of providers, aliases and default models behind the admin's AI
+page. Both are described under *Routing* below, because they change what a
+product reads, not what it has to offer.
 
 ## The separation
 
@@ -55,9 +60,19 @@ and the same argument, read by `ai_routing` in
 `services/api/koras_api/core/platform.py`. The capability key is the model
 alias: a policy for `koras-balanced` for one organization names the ordered
 providers to try and, in its secret-free configuration, may name the primary
-model. `ControlPlaneRouting` in `services/api/koras_api/core/ai.py` turns it
-into an `AliasPolicy`; `ModelCatalogue.resolve` merges it with the product's
-defaults.
+model as `model` and the fallback's as `fallback_model`. `ControlPlaneRouting`
+in `services/api/koras_api/core/ai.py` turns it into an `AliasPolicy`;
+`ModelCatalogue.resolve` merges it with the product's defaults, a named model
+applying to the provider it was named for and to no other.
+
+The platform writes those rows itself for a new customer on Pro, Business or
+Enterprise, from a template per tier, at provisioning; a row staff have
+already set is never moved back to the template, and Starter gets none,
+because Starter has no assistant. The provider names it offers are the four
+the product's gateway serves -- `openai`, `anthropic`, `gemini`,
+`openrouter` -- each a reference to a key by name in the product's Doppler
+config, the last two optional. A customer's policy may still name a provider
+outside that list, with the consequence the next paragraph describes.
 
 What the two decisions already made there mean for a product: there is no
 platform default provider, so a configured platform holding no policy for

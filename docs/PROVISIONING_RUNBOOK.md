@@ -170,7 +170,8 @@ that is the recovery path, not a failure.
 
 **Step 7 prompts per environment.** For a product, 11 settings come from
 Terraform and 13 are asked for — 11 of them unless `ai_gateway` is enabled,
-which adds `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`. For the Control Plane, 12
+which adds `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`, plus the optional
+`GEMINI_API_KEY` and `OPENROUTER_API_KEY`. For the Control Plane, 12
 derived and 8 asked.
 
 | Prompt | Where the value comes from |
@@ -188,6 +189,7 @@ derived and 8 asked.
 | `KORAS_CONTROL_PLANE_URL` | the Control Plane's address. Empty if there is none. It cannot be derived: the Control Plane is a separate estate with its own state |
 | `STORAGE_BUCKET` | a name you pick. The storage module provisions no buckets, so there is nothing to derive it from |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | only when `ai_gateway` is enabled |
+| `GEMINI_API_KEY`, `OPENROUTER_API_KEY` | only when `ai_gateway` is enabled, and optional: an empty answer leaves that provider unkeyed, and a routing policy naming it is answered with the provider's refusal |
 
 **An empty answer is not recorded.** Pressing enter prints `skipped, still
 missing`, writes nothing, and marks the run failed; the script then hands off to
