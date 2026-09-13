@@ -30,7 +30,7 @@ from typing import Any
 
 import httpx
 
-from .settings import settings
+from .settings import PRODUCT_CODE, settings
 
 _log = logging.getLogger(__name__)
 
@@ -111,6 +111,48 @@ async def read_portal(path: str, *, organization_id: str, token: str) -> PortalA
 
     _cache[key] = (now + _TTL_SECONDS, answer)
     return answer
+
+
+@dataclass(frozen=True)
+class AiRouting:
+    """The ordered providers to try for one capability, and the provider config.
+
+    `providers` is the routing decision -- the product tries them in turn and
+    never has to know which providers exist. `config` is the staff-set,
+    secret-free settings that ride with the policy (a model name, say).
+    """
+
+    providers: list[str]
+    config: dict[str, Any]
+
+
+async def ai_routing(
+    capability: str, *, organization_id: str, token: str
+) -> AiRouting | None:
+    """How this customer's product should route one AI capability, or None.
+
+    None means the capability is not available for this customer, and the
+    product must fail closed: an AI capability has no platform default, on
+    purpose (routing customer data to a provider nobody chose is exactly the
+    decision the platform makes explicit), so "no policy" and "no answer" are
+    both refusals rather than a licence to pick a provider. This differs from
+    storage, whose no-answer is the product's own default bucket.
+    """
+    answer = await read_portal(
+        f"/api/portal/v1/products/{PRODUCT_CODE}/ai-routing/{capability}",
+        organization_id=organization_id,
+        token=token,
+    )
+    if answer is None or answer.body is None:
+        return None
+    providers = answer.body.get("providers")
+    if not isinstance(providers, list) or not providers:
+        return None
+    config = answer.body.get("config")
+    return AiRouting(
+        providers=[str(p) for p in providers],
+        config=config if isinstance(config, dict) else {},
+    )
 
 
 def forget(organization_id: str) -> None:
