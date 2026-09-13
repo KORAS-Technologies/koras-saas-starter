@@ -48,6 +48,10 @@ capabilities:
   feature_flags: true
   audit: true
   observability: true
+  # The AI foundation: the runtime, the assistant's routes and page, the
+  # tables and the extension point. Off by default in defaults.yaml, and
+  # requires the gateway service below, which is where the provider keys live.
+  ai: true
 
 registration:
   registers_as_product: true
@@ -85,6 +89,24 @@ template_map:
     billing: packages/billing
     custom_domains: packages/domains
     feature_flags: packages/feature-flags
+    # Several paths, because the capability is spread across the tree. What
+    # is not listed is generated always and harmless without it: the
+    # `koras-ai` package (a framework nothing imports), the permissions the
+    # catalogue names, the components in `packages/ui` and the translations.
+    ai:
+      - services/api/koras_api/core/ai.py
+      - services/api/koras_api/routers/ai.py
+      - services/api/koras_api/ai
+      - supabase/migrations/00006_ai.sql
+      - supabase/tests/060_ai_isolation.sql
+      - tests/unit/test_ai_api.py
+      - apps/web/src/app/dashboard/assistant
+      - e2e/assistant.spec.ts
+
+# Components that need another enabled beside them. See the generator's
+# manifest schema for why this is refused rather than switched on silently.
+requires:
+  ai: [ai_gateway]
 
 # Directories copied verbatim from the starter into the generated project.
 # Terraform modules stay single-sourced here rather than being duplicated

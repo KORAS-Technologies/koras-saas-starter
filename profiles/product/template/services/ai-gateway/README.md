@@ -1,7 +1,8 @@
 # AI gateway
 
 A LiteLLM proxy in front of the model providers. It is an optional component:
-a product only has it when generated with `--with ai_gateway`.
+a product only has it when generated with `--with ai_gateway`, and the `ai`
+capability -- the assistant, the runtime and its routes -- requires it.
 
 ## What it is
 
@@ -12,7 +13,7 @@ the product code stays provider-agnostic.
 
 - Deployed as its own Fly app per environment. Its URL arrives as
   `AI_GATEWAY_URL` (derived from Terraform).
-- Authenticated with `LITELLM_MASTER_KEY`, which the product sends as the
+- Authenticated with `LITELLM_MASTER_KEY`, which the product's API sends as the
   bearer token. Without it the proxy is open to anyone who can reach it.
 - The models it can reach are in `litellm_config.yaml`; the keys are read from
   the environment and declared in `local/config/secrets.manifest`.
@@ -23,44 +24,43 @@ the product code stays provider-agnostic.
   (`model_name` is what callers ask for, `litellm_params.model` is the provider
   route, `api_key` names the environment variable), then declare that variable
   in `local/config/secrets.manifest` so a deployed gateway is required to have
-  it.
+  it. If the product's catalogue should route an alias to it, add the route in
+  `services/api/koras_api/ai/models.py`; the starter's structural test keeps
+  the two files level.
 - **Set the keys:** locally in `.env.local`; in a deployed environment in that
   product's Doppler config (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
   `LITELLM_MASTER_KEY`).
 
 ## Using it from the product
 
-The gateway speaks the OpenAI API, so any OpenAI client works — point its base
-URL at `AI_GATEWAY_URL` and its key at `LITELLM_MASTER_KEY`:
+Not directly. Application code never calls this service, holds its master key
+or names one of its models: the `koras_ai` runtime does, from the API, under a
+model alias, after the caller's tenant, permission and plan have been checked
+and with a usage row written per call. A product's agents, tools and prompts
+are declared in `services/api/koras_api/ai/`, and that is where a feature that
+needs a model goes. See `docs/AI_DEVELOPER_GUIDE.md` in the starter.
 
-```ts
-import OpenAI from 'openai'
-
-const ai = new OpenAI({
-  baseURL: process.env.AI_GATEWAY_URL, // e.g. https://…-ai_gateway-dev.fly.dev
-  apiKey: process.env.LITELLM_MASTER_KEY,
-})
-
-const reply = await ai.chat.completions.create({
-  model: 'claude-3-5-sonnet', // a model_name from litellm_config.yaml
-  messages: [{ role: 'user', content: 'Summarise this ticket…' }],
-})
-```
+The one thing that reaches this service from the product is the runtime's
+`GatewayProvider`, speaking the OpenAI-compatible protocol with the master key
+as its bearer. Anything else calling it is a design that has bypassed the
+tenant boundary, the entitlement gate and the meter, and is refused in review.
 
 ## Health
 
-`/health/liveliness` says the process is up without calling any provider — this
+`/health/liveliness` says the process is up without calling any provider -- this
 is what the Fly health check and the local `health.sh` use. `/health` exists
 too, but it pings every configured model on each call, so it costs money and
 fails on a bad key; do not wire an automated check to it.
 
 ## What is deliberately off
 
-- **Per-customer routing.** The Control Plane records a routing table per
-  organization and capability (`ai_policies`), but this proxy routes by its
-  static `model_list` and does not read that table yet. Routing is one catalog
-  for all customers until that integration is built.
+- **Per-customer routing in the proxy.** The Control Plane records a routing
+  policy per organization and alias, and the product's runtime reads it and
+  chooses which of these models to ask for. The proxy itself routes by its
+  static `model_list` and reads no policy; it does not need to, because the
+  runtime has already chosen.
 - **Spend tracking and virtual keys.** LiteLLM's `database_url` feature is off;
-  it needs a Postgres and a migration the estate does not run.
+  it needs a Postgres and a migration the estate does not run. Usage is
+  metered by the runtime instead, in the product's own database, per tenant.
 - **Request tracing.** The langfuse callback is not configured; it needs the
   dependency and `LANGFUSE_*` secrets.

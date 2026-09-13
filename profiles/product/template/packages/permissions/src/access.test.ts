@@ -38,7 +38,7 @@ test('a plain member may open the product and use its files, and nothing else', 
   assert.equal(access.granted, true)
   assert.equal(access.role, 'product_member')
   // Sorted, as every permission list is, so two equal authorities compare equal.
-  assert.deepEqual(access.permissions, ['files.read', 'files.upload', 'product.access'])
+  assert.deepEqual(access.permissions, ['ai.use', 'files.read', 'files.upload', 'product.access'])
   assert.equal(hasPermissions(access, ['team.read']), false)
   assert.equal(hasPermissions(access, ['settings.manage']), false)
   // Deleting a file is the destructive half and stays with the administrators.

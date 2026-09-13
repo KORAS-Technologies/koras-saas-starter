@@ -573,6 +573,45 @@ Permissions: `files.read` and `files.upload` for every role in the tenant,
 the mapping by role because it cannot import the catalogue;
 `product-files.test.ts` in the starter keeps the two agreeing.
 
+## 21b. Assistant
+
+The second module that stores something, and the first that runs a model.
+Generated only with the `ai` capability, which requires the gateway service;
+`docs/AI_ARCHITECTURE.md` is the whole description and this section is where
+it meets the shell.
+
+```
+supabase/migrations/00006_ai.sql            conversations, messages, actions, usage
+python-packages/koras-ai                    the runtime: providers, aliases, policy, approvals
+services/api/koras_api/core/ai.py           the dependency: context, plan, routing, rows
+services/api/koras_api/routers/ai.py        status, conversations, messages, approve, reject
+services/api/koras_api/ai/                  the extension point: agents, tools, prompts
+apps/web/src/app/dashboard/assistant/       the page, the panel, the launcher, the actions
+```
+
+The module sits in the registry with `requiredPermissions` of `ai.use`,
+`requiredEntitlements` of `ai.assistant`, `requiredCapabilities` of `ai`, and
+`lockedBehavior` of `lock`, so a customer whose plan lacks it sees it greyed
+with the upgrade hint. The page checks the permission and the plan again
+server-side; a plan that could not be read is let through with a note, the
+decision the Files page makes, because the API decides again with the same
+token. The API refuses a missing plan feature with 402, a spent monthly
+allowance with 429, a caller without the tool's permission with 403, and a
+platform that is configured and silent with 503 -- unlike storage, and for
+the reason recorded in `docs/AI_FOUNDATION_ASSESSMENT.md`.
+
+The header carries a trigger for the same panel in a drawer, mounted by the
+dashboard layout through the shell's `headerActions` slot; nothing under
+`packages/ui/src/shell` changes, and the starter's `product-ai.test.ts` asserts
+it stays that way. A page declares what it shows with `AIPageScope`, and the
+launcher sends that pair when a conversation starts. It is informational: the
+tenant comes from the token, as it does everywhere else.
+
+Permissions: `ai.use` for every role in the tenant, `ai.approve` -- agreeing
+to an action the assistant proposed -- for owners and administrators. The API
+does not mirror these by role: it reads the catalogue's Python twin in
+`python-packages/koras-auth`, and `product-ai.test.ts` keeps the two level.
+
 ## 22. Generator and template integration
 
 Nothing new. The shell is ordinary template content under

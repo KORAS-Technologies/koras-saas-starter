@@ -102,6 +102,8 @@ EXAMPLES:
     pnpm create-koras-app docoris --profile product --output-dir ../output --dry-run
     pnpm create-koras-app docoris --profile product --output-dir ../output \\
       --with marketing,ai_gateway
+    pnpm create-koras-app docoris --profile product --output-dir ../output \\
+      --with ai,ai_gateway
     pnpm create-koras-app koras-control-plane --profile control-plane --output-dir ../output
 
   Provision — credentials are pulled from Doppler automatically:

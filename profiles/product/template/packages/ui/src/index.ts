@@ -70,5 +70,23 @@ export { ThemeToggle, THEME_SCRIPT, THEME_STORAGE_KEY } from './shell/theme-togg
 export type { ThemeChoice } from './shell/theme-toggle'
 
 export { AuthBrandPanel, AuthLayout } from './auth/auth-layout'
+
+export { AITrigger } from './ai/ai-trigger'
+export { AIDrawer } from './ai/ai-drawer'
+export { AIConversation } from './ai/ai-conversation'
+export { AIMessage } from './ai/ai-message'
+export { AIComposer } from './ai/ai-composer'
+export { AISuggestedActions } from './ai/ai-suggested-actions'
+export { AICitations } from './ai/ai-citations'
+export { AIToolResult } from './ai/ai-tool-result'
+export { AIActionApproval } from './ai/ai-action-approval'
+export { AIUsageNotice } from './ai/ai-usage-notice'
+export { AIError } from './ai/ai-error'
+export type {
+  AIActionItem,
+  AICitationItem,
+  AIConversationLabels,
+  AIMessageItem,
+} from './ai/types'
 export { AuthCard } from './auth/auth-card'
 export { InvitationOnlyCard, RequestAccessCard } from './auth/access-cards'

@@ -85,7 +85,7 @@ jobs:
           - profile: product
             slug: integration-product-full
             rls_flags: ""
-            components: "--with marketing,ai_gateway,scheduler"
+            components: "--with marketing,ai_gateway,scheduler,ai"
           # The other direction. Removing a component must leave a project that
           # still builds -- a workspace reference to something no longer
           # generated fails here rather than for whoever passed the flag.

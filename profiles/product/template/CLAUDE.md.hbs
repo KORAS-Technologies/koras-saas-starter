@@ -53,7 +53,18 @@ make health      # verify all services
   Control Plane for provisioning and entitlement checks
 - ZITADEL JWT is validated on every API request in `services/api`
 
-## Claude Code configuration
+{{#if capability.ai}}## The assistant
+
+This product was generated with the `ai` capability. The runtime is the
+`koras_ai` package; this product's own agents, tools, prompts, knowledge sources
+and model catalogue live in `services/api/koras_api/ai/` and nowhere else.
+Product code names model aliases and never a provider's model; nothing in this
+repository calls a provider directly, holds a provider key or decides an
+authorization from a model's output. A tool declares the permission it needs
+and its operation class, and anything that is not a read waits for a person.
+The starter's `docs/AI_DEVELOPER_GUIDE.md` is the guide.
+
+{{/if}}## Claude Code configuration
 
 This repository's Claude Code configuration lives in `.claude/` and arrived with
 generation. Do not hand-edit it — it is single-sourced in `koras-saas-starter`

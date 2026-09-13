@@ -171,6 +171,73 @@ describe('product optional components', () => {
   })
 })
 
+// ── the ai capability ────────────────────────────────────────────────────────
+
+describe('the ai capability', () => {
+  /**
+   * Off by default, and off means absent: a product that did not ask for an
+   * assistant carries no router, no page, no migration and no test for it.
+   * The framework package ships regardless -- it is a library nothing imports
+   * -- and so do the components and the translations, which are inert.
+   */
+  it('generates none of the assistant by default', () => {
+    const gen = generate('product', 'sampleapp-noai')
+    expect(gen.has('services/api/koras_api/routers/ai.py')).toBe(false)
+    expect(gen.has('services/api/koras_api/core/ai.py')).toBe(false)
+    expect(gen.has('services/api/koras_api/ai')).toBe(false)
+    expect(gen.has('supabase/migrations/00006_ai.sql')).toBe(false)
+    expect(gen.has('supabase/tests/060_ai_isolation.sql')).toBe(false)
+    expect(gen.has('apps/web/src/app/dashboard/assistant')).toBe(false)
+    expect(gen.has('e2e/assistant.spec.ts')).toBe(false)
+    expect(gen.has('tests/unit/test_ai_api.py')).toBe(false)
+    expect(gen.has('python-packages/koras-ai')).toBe(true)
+    expect(gen.read('services/api/koras_api/main.py')).not.toContain('ai.router')
+    expect(gen.read('services/api/koras_api/core/settings.py')).not.toContain('ai_gateway_url')
+    expect(gen.read('services/api/pyproject.toml')).not.toContain('koras-ai')
+    expect(gen.read('packages/branding/src/index.ts')).not.toContain("id: 'assistant'")
+    expect(gen.read('apps/web/src/app/dashboard/layout.tsx')).not.toContain('AssistantLauncher')
+  })
+
+  it('refuses the capability without the gateway it needs', () => {
+    expect(() => generate('product', 'sampleapp-ai-alone', { with: ['ai'] })).toThrow(
+      /Component "ai" requires "ai_gateway".*--with ai,ai_gateway/s,
+    )
+  })
+
+  it('generates the whole assistant with the gateway', () => {
+    const gen = generate('product', 'sampleapp-ai', { with: ['ai', 'ai_gateway'] })
+    for (const path of [
+      'services/api/koras_api/routers/ai.py',
+      'services/api/koras_api/core/ai.py',
+      'services/api/koras_api/ai/__init__.py',
+      'services/api/koras_api/ai/agents.py',
+      'services/api/koras_api/ai/tools.py',
+      'services/api/koras_api/ai/prompts.py',
+      'services/api/koras_api/ai/knowledge.py',
+      'services/api/koras_api/ai/models.py',
+      'supabase/migrations/00006_ai.sql',
+      'supabase/tests/060_ai_isolation.sql',
+      'apps/web/src/app/dashboard/assistant/page.tsx',
+      'apps/web/src/app/dashboard/assistant/actions.ts',
+      'e2e/assistant.spec.ts',
+      'tests/unit/test_ai_api.py',
+      'services/ai-gateway/litellm_config.yaml',
+    ]) {
+      expect(gen.has(path), `${path} missing`).toBe(true)
+    }
+    expect(gen.read('services/api/koras_api/main.py')).toContain('ai.router')
+    expect(gen.read('services/api/koras_api/core/settings.py')).toContain('ai_gateway_url')
+    expect(gen.read('services/api/pyproject.toml')).toContain('koras-ai = { workspace = true }')
+    expect(gen.read('packages/branding/src/index.ts')).toContain("id: 'assistant'")
+    expect(gen.read('apps/web/src/app/dashboard/layout.tsx')).toContain('AssistantLauncher')
+    // Recorded, so a later --check-drift or --refresh knows what this project has.
+    expect(gen.read(PROJECT_MANIFEST_PATH)).toMatch(/capabilities:[\s\S]*- ai\n/)
+    // No provider key, no provider model, no secret anywhere the generator wrote.
+    expect(gen.read('services/api/koras_api/ai/models.py')).not.toMatch(/sk-|openai\/|anthropic\//)
+    expect(gen.read('local/config/secrets.manifest')).toContain('AI_GATEWAY_URL derived')
+  })
+})
+
 // ── control-plane profile ────────────────────────────────────────────────────
 
 describe('generate control-plane', () => {

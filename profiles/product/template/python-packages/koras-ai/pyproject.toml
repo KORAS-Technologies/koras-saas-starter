@@ -2,11 +2,24 @@
 name = "koras-ai"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["litellm>=1.44.0","koras-auth","koras-logging"]
+# httpx and pydantic, and deliberately not litellm. LiteLLM is the gateway --
+# a separate service that holds the provider keys -- and this package speaks
+# to it over HTTP. The stub this replaced declared litellm here, which pulled
+# the whole proxy library into every product's API image for a package that
+# did nothing.
+#
+# koras-platform for the organization role names the approval policy compares
+# against; koras-audit for the event shape the runtime emits.
+dependencies = [
+  "httpx>=0.27.0",
+  "pydantic>=2.0.0",
+  "koras-platform",
+  "koras-audit",
+]
 
 [tool.uv.sources]
-koras-auth = { workspace = true }
-koras-logging = { workspace = true }
+koras-platform = { workspace = true }
+koras-audit = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

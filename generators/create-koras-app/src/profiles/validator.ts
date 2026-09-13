@@ -94,4 +94,27 @@ export function validateSelections(
       )
     }
   }
+
+  // A component that needs another, enabled without it. Refused with the flag
+  // to pass rather than enabled silently: turning on a service the operator
+  // did not ask for provisions a Fly app and asks for its secrets, and that is
+  // theirs to decide.
+  for (const [name, needed] of Object.entries(manifest.requires)) {
+    if (!isEnabled(selections, name)) continue
+    const missing = needed.filter((dependency) => !isEnabled(selections, dependency))
+    if (missing.length > 0) {
+      throw new Error(
+        `Component "${name}" requires ${missing.map((m) => `"${m}"`).join(', ')}. ` +
+          `Enable it as well: --with ${[name, ...missing].join(',')}`,
+      )
+    }
+  }
+}
+
+function isEnabled(selections: ComponentSelections, name: string): boolean {
+  return (
+    selections.applications[name] === true ||
+    selections.services[name] === true ||
+    selections.capabilities[name] === true
+  )
 }

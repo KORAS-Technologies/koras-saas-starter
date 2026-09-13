@@ -42,6 +42,13 @@ All planning and reference documents live in `docs/`, matching
 | `docs/PRODUCT_SHELL_AUDIT.md`    | What the signed-in surface was before that shell, and the gaps it closes |
 | `docs/BILLING_DESIGN.md`         | Card at signup, charge at trial end: Stripe Managed Payments behind an adapter, phases and test evidence |
 | `docs/PRODUCT_SIGN_IN.md`        | The product's own sign-in page: how a customer signs in without seeing ZITADEL, and what is not yet checked live |
+| `docs/AI_FOUNDATION_ASSESSMENT.md` | What the repository had before the AI foundation, what it lacked, and where the request conflicted with decisions already made |
+| `docs/AI_FOUNDATION_PLAN.md`     | The AI foundation in phases: files, decisions, tests |
+| `docs/AI_ARCHITECTURE.md`        | The AI foundation as built: one runtime in the API, aliases in product code, the gateway as the only provider |
+| `docs/AI_DEVELOPER_GUIDE.md`     | How a generated product enables AI and adds agents, tools, prompts and knowledge |
+| `docs/AI_SECURITY.md`            | The assistant as an untrusted subsystem: tenant, authorization, tools, injection, secrets, audit |
+| `docs/AI_CONTROL_PLANE_CONTRACT.md` | What a product reads from the platform today, and what the platform would need to offer |
+| `docs/adr/0001-koras-shared-ai-foundation.md` | The decision record for the shared AI foundation |
 
 ## Repository layout (target state)
 
@@ -210,6 +217,15 @@ sees only files it never received, not content drift in files it has. Template
 breakage is still caught independently by Generator Integration building a
 product from the templates.
 R-031 stands accepted with mitigation.
+
+**The AI foundation shipped on 2026-09-13** as a product capability, `ai`, off
+by default and requiring the `ai_gateway` service: a Python runtime in the API,
+aliases in product code, the gateway as the only provider, tools with
+deterministic permission checks and human approval for anything that is not a
+read, usage metered per call, and an assistant page and drawer in the shell.
+`docs/AI_ARCHITECTURE.md` is the description; F24 in `FOLLOW_UPS.md` is what it
+leaves out, the first of which is that no model has yet been called through a
+deployed gateway.
 
 **Next step:** `FOLLOW_UPS.md` opens with the order rather than leaving it to be
 re-derived. Two entries are left, F7 and the F3/F2b pair, and neither is this

@@ -18,6 +18,10 @@ capabilities:
   billing: true
   custom_domains: true
   white_label: false
+  # Off until a product wants an assistant: on, it needs the gateway service
+  # and the provider keys a deployed gateway is refused without. Enable both
+  # together: --with ai,ai_gateway.
+  ai: false
 
 infrastructure:
   supabase_region: "us-east-1"

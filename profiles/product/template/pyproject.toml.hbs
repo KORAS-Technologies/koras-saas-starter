@@ -32,11 +32,16 @@ dev = [
   # *depends* on it yet, deliberately: a service adds it when it has a message
   # to send. Until then this is what makes its tests run at all.
   "koras-email",
+  # The AI foundation, for the same reason: its tests are pure and run in
+  # every product, whether or not the API was generated with the `ai`
+  # capability that would otherwise be the only thing installing it.
+  "koras-ai",
 ]
 
 [tool.uv.sources]
 "{{projectSlug}}-api" = { workspace = true }
 koras-email = { workspace = true }
+koras-ai = { workspace = true }
 
 [tool.ruff]
 line-length = 100

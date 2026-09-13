@@ -1,0 +1,248 @@
+'use client'
+
+import { useCallback, useState } from 'react'
+import type { AiAction, AiMessage, AiStatus } from '@{{projectSlug}}/api-client'
+import {
+  AIActionApproval,
+  AIComposer,
+  AIConversation,
+  AIError,
+  AISuggestedActions,
+  AIUsageNotice,
+} from '@{{projectSlug}}/ui'
+import type { AIActionItem, AIMessageItem } from '@{{projectSlug}}/ui'
+import type { ActionResult } from './actions'
+import { approveAction, loadConversation, rejectAction, sendMessage, startConversation } from './actions'
+import type { AssistantLabels } from './labels'
+
+/**
+ * The conversation, the composer, the approvals and the errors, in one column.
+ *
+ * Used twice -- on the assistant's page and inside the header drawer -- so
+ * it knows nothing about where it is. It starts a conversation lazily on the
+ * first message, carrying the page context it was given, and after every
+ * action it takes the API's answer as the truth rather than editing its own
+ * copy: a message the API did not record was not sent, and an action the API
+ * did not execute did not happen.
+ *
+ * No credential and no address reaches this file. Every call is a server
+ * action, and the server action decides again who is calling.
+ */
+
+function fill(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? '')
+}
+
+function toItem(message: AiMessage): AIMessageItem {
+  const role =
+    message.role === 'user' || message.role === 'assistant' || message.role === 'tool'
+      ? message.role
+      : 'system'
+  return {
+    id: message.id,
+    role,
+    content: message.content,
+    toolName: message.tool_name,
+    createdAt: message.created_at,
+  }
+}
+
+function toAction(action: AiAction): AIActionItem {
+  const operation =
+    action.operation === 'write' || action.operation === 'destructive' || action.operation === 'external'
+      ? action.operation
+      : 'read'
+  return {
+    id: action.id,
+    toolId: action.tool_id,
+    operation,
+    status: action.status,
+    input: action.input,
+    result: action.result,
+    error: action.error,
+    createdAt: action.created_at,
+  }
+}
+
+export function AssistantPanel({
+  initialStatus,
+  labels,
+  canApprove,
+  pageType,
+  pageId,
+  compact = false,
+}: {
+  initialStatus: ActionResult<AiStatus> | null
+  labels: AssistantLabels
+  canApprove: boolean
+  pageType?: string
+  pageId?: string
+  compact?: boolean
+}) {
+  const [status, setStatus] = useState<AiStatus | null>(
+    initialStatus?.status === 'ok' ? initialStatus.value : null,
+  )
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [messages, setMessages] = useState<AIMessageItem[]>([])
+  const [pending, setPending] = useState<AIActionItem[]>([])
+  const [error, setError] = useState<string | null>(
+    initialStatus?.status === 'error' ? initialStatus.message : null,
+  )
+  const [busy, setBusy] = useState(false)
+  const [lastText, setLastText] = useState<string | null>(null)
+
+  const refresh = useCallback(async (id: string) => {
+    const answer = await loadConversation(id)
+    if (answer.status === 'ok') {
+      setMessages(answer.value.messages.map(toItem))
+      setPending(answer.value.pending.map(toAction))
+      setError(null)
+    } else {
+      setError(answer.message)
+    }
+  }, [])
+
+  const send = useCallback(
+    async (text: string) => {
+      setBusy(true)
+      setError(null)
+      setLastText(text)
+      try {
+        let id = conversationId
+        if (id === null) {
+          const started = await startConversation({
+            title: text.slice(0, 80),
+            ...(pageType && pageId ? { contextType: pageType, contextId: pageId } : {}),
+          })
+          if (started.status === 'error') {
+            setError(started.message)
+            return
+          }
+          id = started.value.id
+          setConversationId(id)
+        }
+        const answer = await sendMessage(id, text)
+        if (answer.status === 'error') {
+          setError(answer.message)
+          return
+        }
+        setMessages((current) => [...current, ...answer.value.messages.map(toItem)])
+        setPending((current) => [...current, ...answer.value.pending.map(toAction)])
+        setStatus((current) =>
+          current === null
+            ? null
+            : { ...current, requests_this_month: current.requests_this_month + 1 },
+        )
+        setLastText(null)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [conversationId, pageType, pageId],
+  )
+
+  const decide = useCallback(
+    async (actionId: string, decision: 'approve' | 'reject') => {
+      if (conversationId === null) return
+      setBusy(true)
+      setError(null)
+      try {
+        const answer =
+          decision === 'approve' ? await approveAction(actionId) : await rejectAction(actionId)
+        if (answer.status === 'error') {
+          setError(answer.message)
+          return
+        }
+        await refresh(conversationId)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [conversationId, refresh],
+  )
+
+  const reset = useCallback(() => {
+    setConversationId(null)
+    setMessages([])
+    setPending([])
+    setError(null)
+    setLastText(null)
+  }, [])
+
+  const usage =
+    status === null
+      ? null
+      : !status.resolved
+        ? null
+        : status.monthly_limit === null
+          ? fill(labels.usage.unlimited, { used: String(status.requests_this_month) })
+          : fill(labels.usage.withLimit, {
+              used: String(status.requests_this_month),
+              limit: String(status.monthly_limit),
+            })
+
+  const footer = (
+    <>
+      {pending.map((action) => (
+        <AIActionApproval
+          key={action.id}
+          action={action}
+          labels={labels.approval}
+          canDecide={canApprove}
+          busy={busy}
+          onApprove={(id) => void decide(id, 'approve')}
+          onReject={(id) => void decide(id, 'reject')}
+        />
+      ))}
+      {error !== null && (
+        <AIError
+          message={error}
+          retryLabel={lastText !== null ? labels.retry : undefined}
+          onRetry={lastText !== null ? () => void send(lastText) : undefined}
+        />
+      )}
+    </>
+  )
+
+  return (
+    <div
+      className={compact ? 'flex min-h-0 flex-1 flex-col' : 'flex h-[70vh] min-h-96 flex-col rounded-brand border border-line bg-surface shadow-card'}
+      data-testid="assistant-panel"
+    >
+      <AIUsageNotice text={usage} />
+      <AIConversation
+        messages={messages}
+        labels={labels.conversation}
+        footer={pending.length > 0 || error !== null ? footer : undefined}
+      />
+      {messages.length === 0 && (
+        <AISuggestedActions
+          title={labels.suggestions.title}
+          suggestions={labels.suggestions.items}
+          disabled={busy}
+          onPick={(text) => void send(text)}
+        />
+      )}
+      <AIComposer
+        label={labels.composer.label}
+        placeholder={labels.composer.placeholder}
+        sendLabel={labels.composer.send}
+        sendingLabel={labels.composer.sending}
+        busy={busy}
+        onSend={(text) => void send(text)}
+      />
+      {conversationId !== null && (
+        <div className="border-t border-line px-4 py-2 text-right">
+          <button
+            type="button"
+            onClick={reset}
+            disabled={busy}
+            className="text-xs font-medium text-ink-muted hover:text-ink"
+          >
+            {labels.newConversation}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}

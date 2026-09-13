@@ -9,7 +9,13 @@ import {
 } from '@{{projectSlug}}/ui'
 import { NO_TENANT, roleLabel, signedInContext } from '../../lib/access'
 import { currentLocale } from '../../lib/locale'
-
+{{#if capability.ai}}import { isEntitled } from '@{{projectSlug}}/branding'
+import { can } from '../../lib/access'
+import { translator } from '../../lib/locale'
+import { AssistantLauncher } from './assistant/AssistantLauncher'
+import { AIPageContextProvider } from './assistant/context'
+import { assistantLabels } from './assistant/labels'
+{{/if}}
 /**
  * The signed-in area, in the customer's colours and behind the product's shell.
  *
@@ -120,6 +126,21 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const subscription = access.entitlements.subscription ?? null
   const manageUrl = accountUrl ? `${accountUrl.replace(/\/$/, '')}/billing` : undefined
   const closed = subscriptionBlocks(subscription)
+{{#if capability.ai}}
+  // The assistant's trigger, in the header slot that has been empty since
+  // the shell was written. Shown to a caller who may use the assistant and
+  // whose plan includes it -- or whose plan could not be read, the same
+  // decision the Files page makes, because the API decides again with the
+  // same token and an outage is not the way to hide a paid feature that was
+  // bought. Hidden, not locked: the sidebar entry carries the upgrade hint.
+  const assistantAllowed =
+    can(access, 'ai.use') &&
+    (!access.entitlements.resolved || isEntitled(access.entitlements, 'ai.assistant'))
+  const labels = assistantLabels(await translator())
+  const headerActions = assistantAllowed ? (
+    <AssistantLauncher locale={locale} labels={labels} canApprove={can(access, 'ai.approve')} />
+  ) : undefined
+{{/if}}
 
   return (
     <BrandScope tenant={tenant} className="flex min-h-screen flex-col">
@@ -129,7 +150,13 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         identity={identity}
         locale={locale}
         accountUrl={accountUrl}
+{{#if capability.ai}}
+        headerActions={headerActions}
+{{/if}}
       >
+{{#if capability.ai}}
+        <AIPageContextProvider>
+{{/if}}
         {closed && subscription ? (
           <SubscriptionClosed
             subscription={subscription}
@@ -143,6 +170,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             {children}
           </>
         )}
+{{#if capability.ai}}
+        </AIPageContextProvider>
+{{/if}}
       </AuthenticatedProductShell>
     </BrandScope>
   )

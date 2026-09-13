@@ -459,6 +459,7 @@ export type IconName =
   | 'settings'
   | 'folder'
   | 'bell'
+  | 'sparkle'
 
 export interface NavLink {
   label: string
@@ -1556,6 +1557,25 @@ export const productConfig: ProductConfig = {
         requiredEntitlements: ['storage.files'],
         lockedBehavior: 'lock',
       },
+{{#if capability.ai}}
+      // The assistant. Generated only with the `ai` capability, gated on the
+      // permission every member holds and locked when the plan lacks it --
+      // `ai.assistant` is the entitlement the API enforces too, and the
+      // generator's test keeps the two names level. The page checks the
+      // plan again server-side, and the API decides with the same token.
+      {
+        id: 'assistant',
+        label: 'Assistant',
+        icon: 'sparkle',
+        href: '/dashboard/assistant',
+        group: 'primary',
+        order: 7,
+        requiredPermissions: ['ai.use'],
+        requiredEntitlements: ['ai.assistant'],
+        requiredCapabilities: ['ai'],
+        lockedBehavior: 'lock',
+      },
+{{/if}}
     ],
   },
 }

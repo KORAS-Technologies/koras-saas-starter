@@ -10,7 +10,16 @@
 # asks for, `litellm_params.model` is the provider route, and `api_key` names
 # the environment variable that holds the credential. Declare that variable in
 # `local/config/secrets.manifest` so a deployed gateway is required to have it.
+#
+# The names below are what `services/api/koras_api/ai/models.py` routes the
+# product's model aliases to. Rename one here and the catalogue there in the
+# same change; the starter's structural test keeps the two level.
 model_list:
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
   - model_name: gpt-4o
     litellm_params:
       model: openai/gpt-4o
@@ -20,6 +29,11 @@ model_list:
     litellm_params:
       model: anthropic/claude-3-5-sonnet-20241022
       api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: text-embedding-3-small
+    litellm_params:
+      model: openai/text-embedding-3-small
+      api_key: os.environ/OPENAI_API_KEY
 
 general_settings:
   # Every call presents this key; without it the proxy is open to anyone who
