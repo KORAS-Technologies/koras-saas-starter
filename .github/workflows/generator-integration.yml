@@ -308,6 +308,13 @@ jobs:
           OPENAI_API_KEY: sk-smoke-not-real
           ANTHROPIC_API_KEY: sk-smoke-not-real
           LITELLM_MASTER_KEY: sk-smoke-master
+          # The deploy injects the whole product's Doppler env into every
+          # service, so the gateway boots with these set. LiteLLM enables its
+          # Prisma key store on sight of DATABASE_URL and crashes without
+          # prisma installed; the smoke only catches that if it boots the same
+          # way the container does. It did not, and a deploy timed out for it.
+          DATABASE_URL: postgresql://smoke:smoke@127.0.0.1:5/smoke
+          REDIS_URL: redis://127.0.0.1:6/0
           PYTHONUTF8: "1"
           PYTHONUNBUFFERED: "1"
         run: |

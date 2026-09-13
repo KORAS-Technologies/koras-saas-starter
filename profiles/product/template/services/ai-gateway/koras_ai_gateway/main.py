@@ -1,7 +1,22 @@
-import asyncio
+import os
 
-import uvicorn
-from litellm.proxy.proxy_server import app, initialize
+# Before importing litellm. The deploy injects the whole product's Doppler
+# environment into every service, so this container receives DATABASE_URL --
+# the restricted role the API and worker connect as. LiteLLM turns on its own
+# Prisma-backed key store the instant it sees that variable and then dies at
+# startup with `ModuleNotFoundError: No module named 'prisma'`, because this is
+# deliberately a keyless proxy with no database of its own (see
+# litellm_config.yaml). The machine restart-loops and never becomes healthy, so
+# the deploy times out. The gateway has no database, so the variable is not
+# meant for it: drop it before litellm can read it. Same for a Redis URL, which
+# LiteLLM would otherwise adopt as a cache backend nobody configured.
+for _leaked in ("DATABASE_URL", "DATABASE_ADMIN_URL", "REDIS_URL"):
+    os.environ.pop(_leaked, None)
+
+import asyncio  # noqa: E402
+
+import uvicorn  # noqa: E402
+from litellm.proxy.proxy_server import app, initialize  # noqa: E402
 
 if __name__ == "__main__":
     # `initialize` is a coroutine. Called without awaiting it, the coroutine is
