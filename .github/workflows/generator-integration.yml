@@ -307,6 +307,8 @@ jobs:
         env:
           OPENAI_API_KEY: sk-smoke-not-real
           ANTHROPIC_API_KEY: sk-smoke-not-real
+          GEMINI_API_KEY: sk-smoke-not-real
+          OPENROUTER_API_KEY: sk-smoke-not-real
           LITELLM_MASTER_KEY: sk-smoke-master
           # The deploy injects the whole product's Doppler env into every
           # service, so the gateway boots with these set. LiteLLM enables its

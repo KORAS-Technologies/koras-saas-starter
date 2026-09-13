@@ -132,7 +132,7 @@ describe('the names the sides share', () => {
       expect(listed.has(model), `${model} is routed to but the gateway does not list it`).toBe(true)
     }
     // And never a vendor route: the gateway is the only place one is written.
-    expect(catalogue).not.toMatch(/openai\/|anthropic\//)
+    expect(catalogue).not.toMatch(/openai\/|anthropic\/|gemini\/|openrouter\//)
   })
 
   it('serves the page the module points at, and a browser test for it', () => {

@@ -36,6 +36,32 @@ def test_a_policy_reorders_and_may_name_the_primary_model(catalogue: ModelCatalo
     assert routes == (ModelRoute("anthropic", "claude-private"), ModelRoute("openai", "gpt-mini"))
 
 
+def test_a_policy_may_name_the_fallback_model_and_it_binds_to_the_fallback(
+    catalogue: ModelCatalogue,
+) -> None:
+    routes = catalogue.resolve(
+        ModelAlias.FAST,
+        ["openai", "anthropic"],
+        model="gpt-private",
+        fallback_model="claude-private",
+    )
+    assert routes == (
+        ModelRoute("openai", "gpt-private"),
+        ModelRoute("anthropic", "claude-private"),
+    )
+
+
+def test_a_fallback_model_for_a_provider_the_catalogue_lacks_goes_with_it(
+    catalogue: ModelCatalogue,
+) -> None:
+    # The model was named for the skipped provider; it must not land on the
+    # next one, which would send a Gemini model name to OpenAI.
+    routes = catalogue.resolve(
+        ModelAlias.FAST, ["anthropic", "private-llama", "openai"], fallback_model="llama-70b"
+    )
+    assert routes == (ModelRoute("anthropic", "claude-mini"), ModelRoute("openai", "gpt-mini"))
+
+
 def test_a_policy_naming_only_unknown_providers_is_a_configuration_error(
     catalogue: ModelCatalogue,
 ) -> None:

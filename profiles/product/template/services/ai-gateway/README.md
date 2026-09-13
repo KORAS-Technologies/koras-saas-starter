@@ -29,7 +29,10 @@ the product code stays provider-agnostic.
   the two files level.
 - **Set the keys:** locally in `.env.local`; in a deployed environment in that
   product's Doppler config (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
-  `LITELLM_MASTER_KEY`).
+  `LITELLM_MASTER_KEY`; and `GEMINI_API_KEY`, `OPENROUTER_API_KEY` when a
+  customer's routing names those providers -- both optional, and a route to
+  an unkeyed provider is answered with that provider's refusal rather than
+  another provider's model).
 
 ## Using it from the product
 

@@ -80,31 +80,35 @@ class ModelCatalogue:
         alias: str,
         providers: Sequence[str] | None = None,
         model: str | None = None,
+        *,
+        fallback_model: str | None = None,
     ) -> tuple[ModelRoute, ...]:
         """The routes to try, in order, for this alias under this policy.
 
         No policy is the catalogue's own order. A policy names providers in
         the order to try them; the first is the primary, and a model the
-        policy names applies to the primary alone -- the fallback answers as
-        whatever the catalogue lists for it, because a model name belongs to
-        one provider and the policy stated one. A provider the catalogue has
-        no route for is skipped, and a policy that leaves nothing is a
-        configuration error rather than a silent fall-through to the default:
-        the customer chose those providers, and answering with a different
-        one would be exactly the decision the policy exists to prevent.
+        policy names applies to the primary alone, `fallback_model` to the
+        second alone -- a model name belongs to one provider, and the policy
+        stated which. A provider the policy names but the catalogue has no
+        route for is skipped along with the model named for it, and a policy
+        that leaves nothing is a configuration error rather than a silent
+        fall-through to the default: the customer chose those providers, and
+        answering with a different one would be exactly the decision the
+        policy exists to prevent.
         """
         defaults = self.routes_for(alias)
         if providers is None:
             return defaults
 
         by_provider = {route.provider: route for route in defaults}
+        named = {0: model, 1: fallback_model}
         chosen: list[ModelRoute] = []
         for position, provider in enumerate(providers):
             route = by_provider.get(provider)
             if route is None:
                 continue
-            if position == 0 and model:
-                route = ModelRoute(provider=provider, model=model)
+            if named.get(position):
+                route = ModelRoute(provider=provider, model=named[position] or route.model)
             chosen.append(route)
 
         if not chosen:

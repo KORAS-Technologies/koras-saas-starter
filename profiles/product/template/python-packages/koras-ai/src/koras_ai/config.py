@@ -29,6 +29,10 @@ class AliasPolicy:
 
     providers: tuple[str, ...]
     model: str | None = None
+    #: The model the second provider answers as, when the policy names one.
+    #: A model name belongs to one provider, so this belongs to the fallback
+    #: alone the way `model` belongs to the primary alone.
+    fallback_model: str | None = None
 
 
 class RoutingSource(Protocol):
@@ -79,4 +83,6 @@ class AIConfiguration:
                     detail=f"no routing policy for {alias} and a platform is configured",
                 )
             return self.catalogue.routes_for(alias)
-        return self.catalogue.resolve(alias, policy.providers, policy.model)
+        return self.catalogue.resolve(
+            alias, policy.providers, policy.model, fallback_model=policy.fallback_model
+        )
