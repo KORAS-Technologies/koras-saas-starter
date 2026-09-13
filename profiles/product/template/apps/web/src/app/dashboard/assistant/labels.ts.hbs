@@ -1,0 +1,102 @@
+import type { Translator } from '@{{projectSlug}}/i18n'
+
+/**
+ * Every string the assistant's components render, in the caller's language.
+ *
+ * Built once on the server from the request's translator and handed to the
+ * client components as plain data, the way the Files page hands its panel
+ * its labels. A client component that translated for itself would need the
+ * catalogue in the bundle and a second answer to which language this is.
+ */
+export interface AssistantLabels {
+  title: string
+  drawerTitle: string
+  open: string
+  close: string
+  newConversation: string
+  conversation: {
+    you: string
+    speaker: string
+    empty: string
+    emptyHint: string
+    toolResult: string
+    toolResultShow: string
+  }
+  composer: { label: string; placeholder: string; send: string; sending: string }
+  suggestions: { title: string; items: string[] }
+  usage: { withLimit: string; unlimited: string; unknown: string }
+  approval: {
+    title: string
+    hint: string
+    cannotDecide: string
+    approve: string
+    reject: string
+    deciding: string
+    operation: { read: string; write: string; destructive: string; external: string }
+  }
+  retry: string
+  errors: {
+    plan: string
+    forbidden: string
+    limit: string
+    unavailable: string
+    timeout: string
+    generic: string
+  }
+}
+
+export function assistantLabels(t: Translator): AssistantLabels {
+  return {
+    title: t('assistant.title'),
+    drawerTitle: t('assistant.drawerTitle'),
+    open: t('assistant.open'),
+    close: t('assistant.close'),
+    newConversation: t('assistant.newConversation'),
+    conversation: {
+      you: t('assistant.you'),
+      speaker: t('assistant.speaker'),
+      empty: t('assistant.empty'),
+      emptyHint: t('assistant.emptyHint'),
+      toolResult: t('assistant.toolResult'),
+      toolResultShow: t('assistant.toolResultShow'),
+    },
+    composer: {
+      label: t('assistant.composer.label'),
+      placeholder: t('assistant.composer.placeholder'),
+      send: t('assistant.send'),
+      sending: t('assistant.sending'),
+    },
+    suggestions: {
+      title: t('assistant.suggestions.title'),
+      items: [t('assistant.suggestions.files'), t('assistant.suggestions.summary')],
+    },
+    usage: {
+      withLimit: t('assistant.usage'),
+      unlimited: t('assistant.usageUnlimited'),
+      unknown: t('assistant.usageUnknown'),
+    },
+    approval: {
+      title: t('assistant.pending.title'),
+      hint: t('assistant.pending.hint'),
+      cannotDecide: t('assistant.pending.cannotDecide'),
+      approve: t('assistant.approve'),
+      reject: t('assistant.reject'),
+      deciding: t('assistant.deciding'),
+      operation: {
+        read: t('assistant.operation.read'),
+        write: t('assistant.operation.write'),
+        destructive: t('assistant.operation.destructive'),
+        external: t('assistant.operation.external'),
+      },
+    },
+    retry: t('assistant.retry'),
+    errors: {
+      plan: t('assistant.error.plan'),
+      forbidden: t('assistant.error.forbidden'),
+      limit: t('assistant.error.limit'),
+      unavailable: t('assistant.error.unavailable'),
+      timeout: t('assistant.error.timeout'),
+      generic: t('assistant.error.generic'),
+    },
+  }
+}

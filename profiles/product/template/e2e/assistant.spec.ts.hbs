@@ -1,0 +1,76 @@
+import { expect, test } from '@playwright/test'
+import { signInAs } from './support/session'
+
+/**
+ * The assistant, in a browser without an API.
+ *
+ * The suite runs against `next start` with a session secret and no API, so
+ * every call the panel makes is answered with an error. That is the state
+ * worth proving here: a page whose backing services are missing says so and
+ * offers a retry, the composer still works, and the drawer behaves like a
+ * dialog. The turn itself is exercised by the API's own tests with a fake
+ * provider, and by a real call against a deployed environment.
+ */
+
+test('the page names its state and the composer is usable without an API', async ({
+  page,
+  context,
+}) => {
+  await signInAs(context)
+  await page.goto('/dashboard/assistant')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Assistant')
+
+  // The allowance could not be read, so an alert says so. Scoped to the
+  // page's main region: the header drawer holds a second, hidden copy of the
+  // panel, and a locator that matched both would be a strict-mode violation.
+  const panel = page.locator('#main-content').getByTestId('assistant-panel')
+  await expect(panel.getByRole('alert')).toBeVisible()
+
+  // A message can still be typed and sent; the send fails and says so, and the
+  // text is kept so a retry is one click.
+  const composer = panel.getByLabel('Your message')
+  await composer.fill('hello')
+  await composer.press('Enter')
+  await expect(panel.getByRole('alert')).toBeVisible()
+  await expect(panel.getByRole('button', { name: 'Try again' })).toBeVisible()
+  await expect(panel.getByTestId('assistant-send')).toBeDisabled()
+})
+
+test('the header trigger opens a dialog that Escape closes and hands focus back', async ({
+  page,
+  context,
+}) => {
+  await signInAs(context)
+  await page.goto('/dashboard')
+
+  const trigger = page.getByTestId('assistant-trigger')
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  await trigger.click()
+
+  const drawer = page.getByRole('dialog', { name: 'Assistant' })
+  await expect(drawer).toBeVisible()
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+  // Focus lands in the composer, where a person opening an assistant expects to type.
+  await expect(drawer.getByLabel('Your message')).toBeFocused()
+
+  await page.keyboard.press('Escape')
+  await expect(drawer).toBeHidden()
+  await expect(trigger).toBeFocused()
+})
+
+test('a member sees the assistant but not the approve control', async ({ page, context }) => {
+  await signInAs(context, { roles: ['member'] })
+  await page.goto('/dashboard/assistant')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Assistant')
+  await expect(page.getByTestId('assistant-approve')).toHaveCount(0)
+})
+
+test('the page is translated with the rest of the shell', async ({ page, context }) => {
+  await signInAs(context)
+  await page.goto('/dashboard/settings')
+  await page.getByLabel(/Show .* in/).selectOption('de')
+  await page.getByRole('button', { name: 'Change language' }).click()
+  await page.goto('/dashboard/assistant')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Assistent')
+  await expect(page.locator('#main-content').getByTestId('assistant-send')).toHaveText('Senden')
+})

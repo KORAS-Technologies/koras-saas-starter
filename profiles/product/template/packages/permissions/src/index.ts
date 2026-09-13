@@ -82,6 +82,13 @@ export const PRODUCT_PERMISSIONS = [
   'files.read',
   'files.upload',
   'files.manage',
+  // The assistant. Every member may use it; approving the actions it
+  // proposes is the authority to make them happen, so it belongs to the
+  // people who administer the tenant. The Python catalogue in
+  // `python-packages/koras-auth` mirrors both, and the starter's structural
+  // test keeps the two level.
+  'ai.use',
+  'ai.approve',
 ] as const
 
 export type ProductPermission = (typeof PRODUCT_PERMISSIONS)[number]
@@ -111,9 +118,9 @@ export function isProductPermission(value: string): value is ProductPermission {
 export const ROLE_PERMISSIONS: Record<OrganizationRole, readonly ProductPermission[]> = {
   organization_owner: PRODUCT_PERMISSIONS,
   organization_admin: PRODUCT_PERMISSIONS,
-  security_admin: ['product.access', 'team.read', 'settings.read', 'files.read', 'files.upload'],
-  billing_admin: ['product.access', 'settings.read', 'files.read', 'files.upload'],
-  member: ['product.access', 'files.read', 'files.upload'],
+  security_admin: ['product.access', 'team.read', 'settings.read', 'files.read', 'files.upload', 'ai.use'],
+  billing_admin: ['product.access', 'settings.read', 'files.read', 'files.upload', 'ai.use'],
+  member: ['product.access', 'files.read', 'files.upload', 'ai.use'],
 }
 
 /**

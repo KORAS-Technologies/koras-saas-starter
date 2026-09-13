@@ -389,6 +389,56 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'El almacenamiento de archivos no está disponible para su organización ahora mismo. El motivo está en el registro del servidor.',
   'files.error.generic': 'Algo ha fallado. Vuelva a intentarlo.',
 
+  /* --------------------------------------------------------------- assistant */
+  'assistant.title': 'Asistente',
+  'assistant.intro':
+    'Pregunte sobre aquello en lo que trabaja. El asistente puede leer lo que su organización guarda aquí y proponer acciones, que solo se ejecutan cuando alguien las aprueba.',
+  'assistant.unresolved':
+    'No se ha podido leer su plan ahora mismo, así que el asistente puede rechazar la petición. Si persiste, avise a un administrador.',
+  'assistant.notIncluded.title': 'No incluido en su plan',
+  'assistant.notIncluded.description':
+    'El asistente no forma parte del plan <strong>{plan}</strong>. Un administrador de su organización puede cambiar el plan en el portal de la cuenta.',
+  'assistant.notIncluded.notRecorded': 'sin registrar',
+  'assistant.open': 'Abrir el asistente',
+  'assistant.close': 'Cerrar el asistente',
+  'assistant.drawerTitle': 'Asistente',
+  'assistant.newConversation': 'Nueva conversación',
+  'assistant.empty': 'Pregunte lo que quiera sobre su organización',
+  'assistant.emptyHint': 'El asistente responde a partir de lo que su organización guarda aquí, y de nada más.',
+  'assistant.you': 'Usted',
+  'assistant.speaker': 'Asistente',
+  'assistant.composer.label': 'Su mensaje',
+  'assistant.composer.placeholder': 'Pregunte al asistente…',
+  'assistant.send': 'Enviar',
+  'assistant.sending': 'Pensando…',
+  'assistant.retry': 'Volver a intentarlo',
+  'assistant.suggestions.title': 'Pruebe a preguntar',
+  'assistant.suggestions.files': '¿Qué archivos tenemos?',
+  'assistant.suggestions.summary': 'Resume lo que estoy viendo',
+  'assistant.usage': '{used} de {limit} peticiones usadas este mes',
+  'assistant.usageUnlimited': '{used} peticiones este mes',
+  'assistant.usageUnknown': 'El cupo no está disponible ahora mismo',
+  'assistant.pending.title': 'Pendiente de aprobación',
+  'assistant.pending.hint':
+    'El asistente lo ha propuesto y no se ejecutará hasta que alguien lo apruebe.',
+  'assistant.pending.cannotDecide': 'Un administrador de su organización tiene que decidirlo.',
+  'assistant.approve': 'Aprobar',
+  'assistant.reject': 'Rechazar',
+  'assistant.deciding': 'En curso…',
+  'assistant.operation.read': 'Lee',
+  'assistant.operation.write': 'Cambia algo',
+  'assistant.operation.destructive': 'Elimina algo',
+  'assistant.operation.external': 'Sale del producto',
+  'assistant.toolResult': 'Resultado de {tool}',
+  'assistant.toolResultShow': 'Ver los detalles',
+  'assistant.error.plan': 'Su plan no incluye el asistente.',
+  'assistant.error.forbidden': 'Su cuenta no puede hacer eso.',
+  'assistant.error.limit': 'Su organización ha agotado el cupo del asistente para este mes.',
+  'assistant.error.unavailable':
+    'El asistente no está disponible ahora mismo. El motivo está en el registro del servidor.',
+  'assistant.error.timeout': 'El asistente ha tardado demasiado en responder. Vuelva a intentarlo.',
+  'assistant.error.generic': 'Algo ha fallado. Vuelva a intentarlo.',
+
   /* --------------------------------------------------------- team & access */
   'team.title': 'Equipo y acceso',
   'team.intro':

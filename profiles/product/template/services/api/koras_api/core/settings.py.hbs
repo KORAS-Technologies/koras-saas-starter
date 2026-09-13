@@ -80,6 +80,17 @@ class Settings(BaseSettings):
     koras_control_plane_url: str = ""
 
     otel_exporter_otlp_endpoint: str = "http://localhost:4317"
+{{#if capability.ai}}
+    # The AI gateway: the LiteLLM proxy that holds the provider keys, deployed
+    # as its own Fly app per environment. The URL is derived from Terraform and
+    # the master key is supplied per environment; both are declared under the
+    # gateway service in `local/config/secrets.manifest`, which the `ai`
+    # capability requires. Empty is allowed here so the service still starts
+    # -- health and every other route are unaffected -- and refused at the
+    # first AI request with a sentence naming the setting.
+    ai_gateway_url: str = ""
+    litellm_master_key: str = ""
+{{/if}}
 
     @field_validator("database_url", mode="after")
     @classmethod

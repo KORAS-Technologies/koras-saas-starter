@@ -1,0 +1,79 @@
+'use client'
+
+import { useCallback, useId, useRef, useState } from 'react'
+import type { AiStatus } from '@{{projectSlug}}/api-client'
+import type { Locale } from '@{{projectSlug}}/i18n'
+import { AIDrawer, AITrigger } from '@{{projectSlug}}/ui'
+import type { ActionResult } from './actions'
+import { getStatus } from './actions'
+import { AssistantPanel } from './AssistantPanel'
+import { useAIPageContext } from './context'
+import type { AssistantLabels } from './labels'
+
+/**
+ * The header button and the drawer it opens, on every signed-in page.
+ *
+ * Mounted by the dashboard layout through the shell's `headerActions` slot,
+ * which is the one place the shell offers for a product's own controls; the
+ * shell itself does not change. The panel inside is the same one the
+ * assistant's page renders, given the page context this screen declared.
+ *
+ * The allowance is read when the drawer first opens rather than on every
+ * page, because most navigations never open it.
+ */
+export function AssistantLauncher({
+  locale,
+  labels,
+  canApprove,
+}: {
+  locale: Locale
+  labels: AssistantLabels
+  canApprove: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [status, setStatus] = useState<ActionResult<AiStatus> | null>(null)
+  const drawerId = useId()
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const page = useAIPageContext()
+
+  const toggle = useCallback(() => {
+    setOpen((wasOpen) => {
+      if (!wasOpen && status === null) {
+        void getStatus().then(setStatus)
+      }
+      return !wasOpen
+    })
+  }, [status])
+
+  const close = useCallback(() => setOpen(false), [])
+
+  return (
+    <>
+      <AITrigger
+        open={open}
+        controls={drawerId}
+        label={open ? labels.close : labels.open}
+        onClick={toggle}
+        buttonRef={triggerRef}
+      />
+      <AIDrawer
+        id={drawerId}
+        open={open}
+        title={labels.drawerTitle}
+        closeLabel={labels.close}
+        onClose={close}
+        returnFocusTo={triggerRef}
+      >
+        <AssistantPanel
+          key={locale}
+          initialStatus={status}
+          labels={labels}
+          canApprove={canApprove}
+          pageType={page?.type}
+          pageId={page?.id}
+          compact
+        />
+      </AIDrawer>
+    </>
+  )
+}

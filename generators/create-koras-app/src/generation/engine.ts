@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import Handlebars from 'handlebars'
 import type { GenerationContext } from './context.js'
 import { contextToTemplateVars } from './context.js'
+import { templatePaths } from '../profiles/types.js'
 import { PROJECT_MANIFEST_PATH, renderProjectManifest } from './project-manifest.js'
 import { isForbiddenArtifact } from '../git.js'
 import { SKIP_ENTRIES } from './skip.js'
@@ -101,9 +102,12 @@ export function excludedSubtrees(ctx: GenerationContext): string[] {
   const { template_map: map } = ctx.manifest
   const excluded: string[] = []
 
-  const collect = (mapping: Record<string, string>, selected: Record<string, boolean>) => {
-    for (const [key, path] of Object.entries(mapping)) {
-      if (selected[key] !== true) excluded.push(path)
+  const collect = (
+    mapping: Record<string, string | string[]>,
+    selected: Record<string, boolean>,
+  ) => {
+    for (const [key, entry] of Object.entries(mapping)) {
+      if (selected[key] !== true) excluded.push(...templatePaths(entry))
     }
   }
 

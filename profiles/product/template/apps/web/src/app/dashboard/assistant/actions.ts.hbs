@@ -1,0 +1,152 @@
+'use server'
+
+import {
+  ApiError,
+  approveAiAction,
+  fetchAiConversation,
+  fetchAiStatus,
+  rejectAiAction,
+  sendAiMessage,
+  startAiConversation,
+} from '@{{projectSlug}}/api-client'
+import type { AiAction, AiConversation, AiConversationDetail, AiStatus, AiTurn } from '@{{projectSlug}}/api-client'
+import { can, signedInContext } from '../../../lib/access'
+import { translator } from '../../../lib/locale'
+import { apiBaseUrl, providerToken } from '../../../lib/session'
+
+/**
+ * The assistant's server half.
+ *
+ * Every action re-establishes who is calling and what they may do before it
+ * talks to the API, and the API decides again with the same token. Nothing
+ * here reaches the browser: not the API's address, not the token, and not a
+ * provider's detail -- a refusal arrives as a code and leaves as a sentence.
+ *
+ * The page context a call carries is the screen the person was on. It is
+ * sent so the assistant can be useful about it, and it scopes nothing: the
+ * API resolves the tenant from the token and ignores what a body says about
+ * whose data it is.
+ */
+
+export type ActionResult<T> = { status: 'ok'; value: T } | { status: 'error'; message: string }
+
+async function session(permission: 'ai.use' | 'ai.approve') {
+  const context = await signedInContext()
+  if (context === null || !can(context.access, permission)) return null
+  const token = await providerToken()
+  const baseUrl = apiBaseUrl()
+  if (!token || !baseUrl) return null
+  return { baseUrl, token }
+}
+
+async function forbidden<T>(): Promise<ActionResult<T>> {
+  return { status: 'error', message: (await translator())('assistant.error.forbidden') }
+}
+
+/** Turn the API's refusal into a sentence in the reader's language. */
+async function explain(error: unknown): Promise<string> {
+  const t = await translator()
+  if (error instanceof ApiError) {
+    switch (error.code) {
+      case 'entitlement_missing':
+        return t('assistant.error.plan')
+      case 'tool_denied':
+        return t('assistant.error.forbidden')
+      case 'usage_exceeded':
+        return t('assistant.error.limit')
+      case 'timeout':
+        return t('assistant.error.timeout')
+      case 'provider_unavailable':
+      case 'configuration_error':
+      case 'upstream_error':
+        return t('assistant.error.unavailable')
+      default:
+        break
+    }
+    if (error.status === 402) return t('assistant.error.plan')
+    if (error.status === 403) return t('assistant.error.forbidden')
+    if (error.status === 429) return t('assistant.error.limit')
+    if (error.status === 502 || error.status === 503) return t('assistant.error.unavailable')
+    if (error.status === 504) return t('assistant.error.timeout')
+  }
+  return t('assistant.error.generic')
+}
+
+export async function getStatus(): Promise<ActionResult<AiStatus>> {
+  const auth = await session('ai.use')
+  if (auth === null) return forbidden()
+  try {
+    return { status: 'ok', value: await fetchAiStatus(auth) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function startConversation(input: {
+  title?: string
+  contextType?: string
+  contextId?: string
+}): Promise<ActionResult<AiConversation>> {
+  const auth = await session('ai.use')
+  if (auth === null) return forbidden()
+  try {
+    return {
+      status: 'ok',
+      value: await startAiConversation({
+        ...auth,
+        ...(input.title ? { title: input.title } : {}),
+        ...(input.contextType ? { contextType: input.contextType } : {}),
+        ...(input.contextId ? { contextId: input.contextId } : {}),
+      }),
+    }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function loadConversation(
+  conversationId: string,
+): Promise<ActionResult<AiConversationDetail>> {
+  const auth = await session('ai.use')
+  if (auth === null) return forbidden()
+  try {
+    return { status: 'ok', value: await fetchAiConversation({ ...auth, conversationId }) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function sendMessage(
+  conversationId: string,
+  text: string,
+): Promise<ActionResult<AiTurn>> {
+  const auth = await session('ai.use')
+  if (auth === null) return forbidden()
+  const trimmed = text.trim()
+  if (trimmed.length === 0 || trimmed.length > 8000) return forbidden()
+  try {
+    return { status: 'ok', value: await sendAiMessage({ ...auth, conversationId, text: trimmed }) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function approveAction(actionId: string): Promise<ActionResult<AiAction>> {
+  const auth = await session('ai.approve')
+  if (auth === null) return forbidden()
+  try {
+    return { status: 'ok', value: await approveAiAction({ ...auth, actionId }) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function rejectAction(actionId: string): Promise<ActionResult<AiAction>> {
+  const auth = await session('ai.approve')
+  if (auth === null) return forbidden()
+  try {
+    return { status: 'ok', value: await rejectAiAction({ ...auth, actionId }) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}

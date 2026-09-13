@@ -1,0 +1,76 @@
+import { isEntitled } from '@{{projectSlug}}/branding'
+import { AccessDenied, Card, Container, rich, strongTag } from '@{{projectSlug}}/ui'
+import { can, signedInContext } from '../../../lib/access'
+import { currentLocale, translator } from '../../../lib/locale'
+import { AssistantPanel } from './AssistantPanel'
+import { getStatus } from './actions'
+import { assistantLabels } from './labels'
+
+/**
+ * The assistant, as a page.
+ *
+ * Three gates, each answered on the server before anything renders, the
+ * same three the Files page answers. The caller's permission, `ai.use`,
+ * checked here as well as in the middleware because a page is reachable by
+ * more than one route. The plan's entitlement, `ai.assistant`, which locks
+ * the module in the sidebar and refuses here with the plan named; a plan that
+ * could not be read is let through with a note, because the API decides again
+ * with the same token and an outage is not the way to hide a paid feature.
+ * And the API's own answer, which every action re-asks.
+ *
+ * The allowance is read once here so the first paint says how much is left.
+ * Everything after is a server action the panel calls.
+ */
+export const dynamic = 'force-dynamic'
+
+export default async function AssistantPage() {
+  const [context, locale, t] = await Promise.all([signedInContext(), currentLocale(), translator()])
+  if (context === null || !can(context.access, 'ai.use')) {
+    return <AccessDenied locale={locale} />
+  }
+
+  const { entitlements } = context.access
+  if (entitlements.resolved && !isEntitled(entitlements, 'ai.assistant')) {
+    const plan = { plan: entitlements.plan ?? t('assistant.notIncluded.notRecorded') }
+    const tags = { strong: strongTag }
+    return (
+      <div className="py-12">
+        <Container>
+          <h1 className="font-display text-2xl font-bold text-ink">{t('assistant.title')}</h1>
+          <Card className="mt-6 max-w-3xl">
+            <h2 className="font-display text-lg font-bold text-ink">
+              {t('assistant.notIncluded.title')}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-ink-muted">
+              {rich(t('assistant.notIncluded.description', plan), tags)}
+            </p>
+          </Card>
+        </Container>
+      </div>
+    )
+  }
+
+  const [status, labels] = [await getStatus(), assistantLabels(t)]
+
+  return (
+    <div className="py-12">
+      <Container>
+        <h1 className="font-display text-2xl font-bold text-ink">{t('assistant.title')}</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">{t('assistant.intro')}</p>
+        {!entitlements.resolved && (
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
+            {t('assistant.unresolved')}
+          </p>
+        )}
+        <div className="mt-8 max-w-3xl">
+          <AssistantPanel
+            key={locale}
+            initialStatus={status}
+            labels={labels}
+            canApprove={can(context.access, 'ai.approve')}
+          />
+        </div>
+      </Container>
+    </div>
+  )
+}

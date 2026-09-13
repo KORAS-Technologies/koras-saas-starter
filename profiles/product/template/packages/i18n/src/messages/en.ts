@@ -391,6 +391,56 @@ export const en = {
     'File storage is not available for your organisation right now. The reason is in the server log.',
   'files.error.generic': 'Something went wrong. Try again.',
 
+  /* --------------------------------------------------------------- assistant */
+  'assistant.title': 'Assistant',
+  'assistant.intro':
+    'Ask about what you are working on. The assistant can read what your organisation holds and can propose actions, which run only after somebody approves them.',
+  'assistant.unresolved':
+    'Your plan could not be read just now, so the assistant may refuse. If it keeps happening, tell an administrator.',
+  'assistant.notIncluded.title': 'Not included in your plan',
+  'assistant.notIncluded.description':
+    'The assistant is not part of the <strong>{plan}</strong> plan. An administrator of your organisation can change the plan in the account portal.',
+  'assistant.notIncluded.notRecorded': 'not recorded',
+  'assistant.open': 'Open the assistant',
+  'assistant.close': 'Close the assistant',
+  'assistant.drawerTitle': 'Assistant',
+  'assistant.newConversation': 'New conversation',
+  'assistant.empty': 'Ask anything about your organisation',
+  'assistant.emptyHint': 'The assistant answers from what your organisation holds here, and nothing else.',
+  'assistant.you': 'You',
+  'assistant.speaker': 'Assistant',
+  'assistant.composer.label': 'Your message',
+  'assistant.composer.placeholder': 'Ask the assistant…',
+  'assistant.send': 'Send',
+  'assistant.sending': 'Thinking…',
+  'assistant.retry': 'Try again',
+  'assistant.suggestions.title': 'Try asking',
+  'assistant.suggestions.files': 'What files do we have?',
+  'assistant.suggestions.summary': 'Summarise what I am looking at',
+  'assistant.usage': '{used} of {limit} requests used this month',
+  'assistant.usageUnlimited': '{used} requests this month',
+  'assistant.usageUnknown': 'Usage allowance not available right now',
+  'assistant.pending.title': 'Waiting for approval',
+  'assistant.pending.hint':
+    'The assistant proposed this and it will not run until somebody approves it.',
+  'assistant.pending.cannotDecide': 'An administrator of your organisation has to decide this.',
+  'assistant.approve': 'Approve',
+  'assistant.reject': 'Reject',
+  'assistant.deciding': 'Working…',
+  'assistant.operation.read': 'Reads',
+  'assistant.operation.write': 'Changes something',
+  'assistant.operation.destructive': 'Deletes something',
+  'assistant.operation.external': 'Leaves the product',
+  'assistant.toolResult': 'Result from {tool}',
+  'assistant.toolResultShow': 'Show the details',
+  'assistant.error.plan': 'Your plan does not include the assistant.',
+  'assistant.error.forbidden': 'Your account may not do that.',
+  'assistant.error.limit': 'Your organisation has used its assistant allowance for this month.',
+  'assistant.error.unavailable':
+    'The assistant is not available right now. The reason is in the server log.',
+  'assistant.error.timeout': 'The assistant took too long to answer. Try again.',
+  'assistant.error.generic': 'Something went wrong. Try again.',
+
   /* --------------------------------------------------------- team & access */
   'team.title': 'Team & Access',
   'team.intro':

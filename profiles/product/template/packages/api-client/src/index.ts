@@ -30,10 +30,34 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /**
+     * The API's own name for the refusal, where it gave one.
+     *
+     * The assistant's routes answer a refusal as `{ code, message }` so the
+     * page can say *why* in the reader's language -- a spent allowance and an
+     * unreachable model are both errors and are different sentences. Other
+     * routes answer a plain detail, and this is undefined for them.
+     */
+    readonly code?: string,
   ) {
     super(message)
     this.name = 'ApiError'
   }
+}
+
+/** The `code` an error body carries, when it is the assistant's shape. */
+async function errorCode(response: Response): Promise<string | undefined> {
+  try {
+    const body = (await response.json()) as { detail?: unknown }
+    const detail = body.detail
+    if (detail !== null && typeof detail === 'object' && 'code' in detail) {
+      const code = (detail as { code?: unknown }).code
+      return typeof code === 'string' ? code : undefined
+    }
+  } catch {
+    // Not JSON, or not this shape. The status is still the answer.
+  }
+  return undefined
 }
 
 /**
@@ -104,7 +128,11 @@ async function request<T>(path: string, options: RequestOptions, call: Call = {}
     })
 
     if (!response.ok) {
-      throw new ApiError(`${path} answered ${response.status}`, response.status)
+      throw new ApiError(
+        `${path} answered ${response.status}`,
+        response.status,
+        await errorCode(response),
+      )
     }
     if (call.empty) return undefined as T
     return (await response.json()) as T
@@ -250,4 +278,147 @@ export function deleteFile(options: RequestOptions & { fileId: string }): Promis
     method: 'DELETE',
     empty: true,
   })
+}
+
+/* -------------------------------------------------------------------------- */
+/* The assistant                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The assistant's surface of this product's own API.
+ *
+ * Scoped by the token like everything else: there is no tenant, organization
+ * or user to name in any call, and a conversation or action id from another
+ * tenant is a 404 because the row is invisible to this caller's session
+ * before any code runs. A refusal carries a `code` on the `ApiError`, and the
+ * page turns it into a sentence.
+ */
+export interface AiStatus {
+  enabled: boolean
+  tools_enabled: boolean
+  requests_this_month: number
+  monthly_limit: number | null
+  resolved: boolean
+  agents: string[]
+}
+
+export interface AiConversation {
+  id: string
+  title: string
+  agent_id: string
+  context_type: string | null
+  context_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AiMessage {
+  id: string
+  role: string
+  content: string
+  tool_name: string | null
+  created_at: string
+}
+
+export interface AiAction {
+  id: string
+  conversation_id: string
+  tool_id: string
+  operation: string
+  status: string
+  input: Record<string, unknown>
+  result: Record<string, unknown> | null
+  error: string | null
+  proposed_by: string
+  decided_by: string | null
+  created_at: string
+  decided_at: string | null
+}
+
+export interface AiConversationDetail {
+  conversation: AiConversation
+  messages: AiMessage[]
+  pending: AiAction[]
+}
+
+export interface AiUsage {
+  input: number
+  output: number
+  total: number
+}
+
+export interface AiTurn {
+  conversation: AiConversation
+  messages: AiMessage[]
+  pending: AiAction[]
+  usage: AiUsage
+}
+
+/** A model call can take a while; the default timeout is for pages, not for this. */
+const AI_TIMEOUT_MS = 90_000
+
+export function fetchAiStatus(options: RequestOptions): Promise<AiStatus> {
+  return request<AiStatus>('/api/v1/ai/status', options)
+}
+
+export function fetchAiConversations(
+  options: RequestOptions,
+): Promise<{ conversations: AiConversation[] }> {
+  return request<{ conversations: AiConversation[] }>('/api/v1/ai/conversations', options)
+}
+
+export function startAiConversation(
+  options: RequestOptions & {
+    title?: string
+    agentId?: string
+    contextType?: string
+    contextId?: string
+  },
+): Promise<AiConversation> {
+  return request<AiConversation>('/api/v1/ai/conversations', options, {
+    method: 'POST',
+    body: {
+      ...(options.title !== undefined ? { title: options.title } : {}),
+      ...(options.agentId !== undefined ? { agent_id: options.agentId } : {}),
+      ...(options.contextType !== undefined ? { context_type: options.contextType } : {}),
+      ...(options.contextId !== undefined ? { context_id: options.contextId } : {}),
+    },
+  })
+}
+
+export function fetchAiConversation(
+  options: RequestOptions & { conversationId: string },
+): Promise<AiConversationDetail> {
+  return request<AiConversationDetail>(
+    `/api/v1/ai/conversations/${encodeURIComponent(options.conversationId)}`,
+    options,
+  )
+}
+
+export function sendAiMessage(
+  options: RequestOptions & { conversationId: string; text: string },
+): Promise<AiTurn> {
+  return request<AiTurn>(
+    `/api/v1/ai/conversations/${encodeURIComponent(options.conversationId)}/messages`,
+    { timeoutMs: AI_TIMEOUT_MS, ...options },
+    { method: 'POST', body: { text: options.text } },
+  )
+}
+
+export function approveAiAction(
+  options: RequestOptions & { actionId: string },
+): Promise<AiAction> {
+  return request<AiAction>(
+    `/api/v1/ai/actions/${encodeURIComponent(options.actionId)}/approve`,
+    { timeoutMs: AI_TIMEOUT_MS, ...options },
+    { method: 'POST' },
+  )
+}
+
+export function rejectAiAction(options: RequestOptions & { actionId: string }): Promise<AiAction> {
+  return request<AiAction>(
+    `/api/v1/ai/actions/${encodeURIComponent(options.actionId)}/reject`,
+    options,
+    { method: 'POST' },
+  )
 }

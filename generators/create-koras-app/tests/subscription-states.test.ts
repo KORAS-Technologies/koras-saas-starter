@@ -87,9 +87,17 @@ describe('the layout', () => {
   })
 
   it('keeps inline object literals out of the template', () => {
-    // `{{projectSlug}}` is the one double brace a template may carry; a JSX
-    // prop opening with two braces stops generation of the whole project.
-    expect(layout.replace(/\{\{projectSlug\}\}/g, '')).not.toContain('{{')
+    // `{{projectSlug}}` and the capability blocks are the double braces a
+    // template may carry; a JSX prop opening with two braces stops generation
+    // of the whole project. Block helpers are what gate the assistant's
+    // trigger on the `ai` capability, and `product-frontend.test.ts` applies
+    // the same allowance to every template.
+    expect(
+      layout
+        .replace(/\{\{projectSlug\}\}/g, '')
+        .replace(/\{\{#if [a-z.]+\}\}/g, '')
+        .replace(/\{\{\/if\}\}/g, ''),
+    ).not.toContain('{{')
   })
 })
 

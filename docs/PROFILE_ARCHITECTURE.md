@@ -222,11 +222,24 @@ template_map:
     ai_gateway: services/ai-gateway
   capabilities:
     billing: packages/billing
+    ai:                            # a capability may gate several paths
+      - services/api/koras_api/routers/ai.py
+      - supabase/migrations/00006_ai.sql
 ```
 
 Rules:
 
 - A component key absent from `template_map` is generated unconditionally.
+- A capability entry is one path or a list of paths. An application or a
+  service is one directory; a capability like `ai` is a router, a page, a
+  migration, a test and an extension point spread across the tree, and gating
+  it on one of them would generate the rest into a project that asked for none.
+  Added 2026-09-13; a string still means one path.
+- A `requires` block names components that only make sense beside another.
+  `ai` requires `ai_gateway`, because the gateway is where the provider keys
+  live; enabling one without the other is refused with the flag to pass rather
+  than switched on silently, since a service the operator did not ask for
+  provisions a Fly app and asks for its secrets.
 - A capability the manifest sets to `false` can never be enabled — `defaults.yaml`
   may switch a supported capability off, never on.
 - Required applications and services cannot be disabled; the generator rejects

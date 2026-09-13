@@ -398,6 +398,56 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Dateispeicher ist für Ihre Organisation gerade nicht verfügbar. Der Grund steht im Serverprotokoll.',
   'files.error.generic': 'Etwas ist schiefgelaufen. Versuchen Sie es erneut.',
 
+  /* --------------------------------------------------------------- assistant */
+  'assistant.title': 'Assistent',
+  'assistant.intro':
+    'Fragen Sie zu dem, woran Sie gerade arbeiten. Der Assistent kann lesen, was Ihre Organisation hier hält, und Aktionen vorschlagen, die erst nach einer Freigabe ausgeführt werden.',
+  'assistant.unresolved':
+    'Ihr Tarif konnte gerade nicht gelesen werden, daher kann der Assistent ablehnen. Wenn das anhält, wenden Sie sich an einen Administrator.',
+  'assistant.notIncluded.title': 'Nicht in Ihrem Tarif enthalten',
+  'assistant.notIncluded.description':
+    'Der Assistent ist nicht Teil des Tarifs <strong>{plan}</strong>. Ein Administrator Ihrer Organisation kann den Tarif im Kundenportal ändern.',
+  'assistant.notIncluded.notRecorded': 'nicht erfasst',
+  'assistant.open': 'Assistenten öffnen',
+  'assistant.close': 'Assistenten schließen',
+  'assistant.drawerTitle': 'Assistent',
+  'assistant.newConversation': 'Neue Unterhaltung',
+  'assistant.empty': 'Fragen Sie etwas zu Ihrer Organisation',
+  'assistant.emptyHint': 'Der Assistent antwortet aus dem, was Ihre Organisation hier hält, und aus nichts anderem.',
+  'assistant.you': 'Sie',
+  'assistant.speaker': 'Assistent',
+  'assistant.composer.label': 'Ihre Nachricht',
+  'assistant.composer.placeholder': 'Fragen Sie den Assistenten…',
+  'assistant.send': 'Senden',
+  'assistant.sending': 'Denkt nach…',
+  'assistant.retry': 'Erneut versuchen',
+  'assistant.suggestions.title': 'Vorschläge',
+  'assistant.suggestions.files': 'Welche Dateien haben wir?',
+  'assistant.suggestions.summary': 'Fasse zusammen, was ich gerade sehe',
+  'assistant.usage': '{used} von {limit} Anfragen in diesem Monat genutzt',
+  'assistant.usageUnlimited': '{used} Anfragen in diesem Monat',
+  'assistant.usageUnknown': 'Das Kontingent ist gerade nicht verfügbar',
+  'assistant.pending.title': 'Wartet auf Freigabe',
+  'assistant.pending.hint':
+    'Der Assistent hat dies vorgeschlagen; es wird erst ausgeführt, wenn jemand es freigibt.',
+  'assistant.pending.cannotDecide': 'Ein Administrator Ihrer Organisation muss das entscheiden.',
+  'assistant.approve': 'Freigeben',
+  'assistant.reject': 'Ablehnen',
+  'assistant.deciding': 'Wird ausgeführt…',
+  'assistant.operation.read': 'Liest',
+  'assistant.operation.write': 'Ändert etwas',
+  'assistant.operation.destructive': 'Löscht etwas',
+  'assistant.operation.external': 'Verlässt das Produkt',
+  'assistant.toolResult': 'Ergebnis von {tool}',
+  'assistant.toolResultShow': 'Details anzeigen',
+  'assistant.error.plan': 'Ihr Tarif enthält den Assistenten nicht.',
+  'assistant.error.forbidden': 'Ihr Konto darf das nicht.',
+  'assistant.error.limit': 'Ihre Organisation hat ihr Assistenten-Kontingent für diesen Monat aufgebraucht.',
+  'assistant.error.unavailable':
+    'Der Assistent ist gerade nicht verfügbar. Der Grund steht im Serverprotokoll.',
+  'assistant.error.timeout': 'Der Assistent hat zu lange gebraucht. Versuchen Sie es erneut.',
+  'assistant.error.generic': 'Etwas ist schiefgelaufen. Versuchen Sie es erneut.',
+
   /* --------------------------------------------------------- team & access */
   'team.title': 'Team & Zugriff',
   'team.intro':

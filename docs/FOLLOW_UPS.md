@@ -26,6 +26,7 @@ recommendation rather than a record — revise it, do not preserve it.
 | 2 | **F7** | The last unverified link before anything is sold. Its remaining box needs a staff read — or the smaller Control Plane change described in F2c, which would make every registration verify itself. | ~1h with a staff identity |
 | 3 | **F3 + F2b** | One question from two sides. Not urgent while there is one product — the risk it names is one product's CI holding write access to *other* products' registry entries, and the blast radius is currently itself. | ½ day to decide, more to build |
 | 4 | **F23** | Built 2026-09-11 as the product's own sign-in page rather than a self-hosted copy of ZITADEL's (`docs/PRODUCT_SIGN_IN.md`). What is left is the first live sign-in on `koras-e2e-shop` dev, which needs one `terraform apply`, and belongs in the live sitting below. | ~1h, in the live sitting |
+| 5 | **F24** | The assistant has answered a fake provider and a stubbed platform and never a real model. One conversation through a deployed gateway, with the three entitlements authored in the Control Plane's catalogue, before anything is built on top of it. Belongs in the live sitting too: it needs `koras-e2e-shop` regenerated with `--with ai,ai_gateway` and the keys that are already in its Doppler. | ~2h, in the live sitting |
 
 F13's prerequisite sat at the top of this table for part of one day and is
 built: `koras-control-plane` R-93, which made `subscriptions.status` mean
@@ -58,6 +59,9 @@ quota wired through; what it deliberately leaves out is below.
 F23 — the sign-in page is the product's own since 2026-09-11, posting to the
 Control Plane's session routes; the self-hosted ZITADEL login planned on
 2026-09-09 was not built, for the reason recorded in the entry.
+
+F24 — the AI foundation shipped on 2026-09-13 as the `ai` capability; what it
+deliberately leaves out is below, and the first item is a real model call.
 
 Entries are grouped below by *why they are undone*, and numbered by *when they
 were opened*. Those two orders cannot both run in sequence, so this is the
@@ -1843,6 +1847,44 @@ reason rather than for lack of time:
 - [ ] **Quota by period.** The limit is a ceiling in gigabytes on a boolean
       entitlement's plan grant, not a `quota` kind, because the platform's
       quota needs a period and storage has none.
+
+### F24 — the AI foundation: what the first shared AI layer leaves out
+
+Built 2026-09-13: `docs/AI_ARCHITECTURE.md`. Every line below is a decision
+rather than an omission, and each names the seam it plugs into.
+
+- [ ] **A real model call.** The runtime has answered a scripted provider,
+      the routes a stubbed dependency, the page a build with no API, and the
+      tables the RLS suite. Nothing here has reached a deployed gateway, and
+      `koras-e2e-shop` was generated before the capability existed. Regenerate
+      it with `--with ai,ai_gateway`, author `ai.assistant`, `ai.tools` and
+      `ai.requests` in the Control Plane's catalogue, grant them to a plan, and
+      hold one conversation. Every design in this repository says to run the
+      flow once before extending it, and this is that run.
+- [ ] **Streaming.** `GatewayProvider` streams and the runtime does not use
+      it: a Next server action cannot stream, and the product surface is
+      request and response. A streaming route needs a route handler that
+      forwards the caller's token to the API, which is a design of its own.
+- [ ] **Approval notification.** A waiting action is visible in the assistant
+      and nowhere else. Mail is sent server-side in Python only (F12), and
+      nothing sends it for this yet.
+- [ ] **A vector store.** `koras_ai.knowledge` is contracts, a chunker and an
+      embedder. No index ships and no source is declared. A product that needs
+      retrieval writes the index, the ingestion pipeline and the design
+      document that chooses the store.
+- [ ] **A durable audit table.** `koras_audit` writes a structured log line.
+      The event shape is final; the sink behind it is the next implementation.
+- [ ] **Retention.** Messages hold content and nothing deletes them. The
+      tables carry `created_at` so a sweep needs no second migration.
+- [ ] **Usage reporting to the platform.** Metered per call in the product's
+      database and read there. Reporting it needs a machine identity a product
+      does not hold at runtime, which is F2b's question again.
+- [ ] **A per-minute AI quota.** The API's tier-2 limiter and the monthly
+      allowance bound abuse today; a finer ceiling is a field on `Limits`.
+- [ ] **The local gateway.** `make dev` starts the gateway through uvicorn,
+      which imports the proxy without initialising it, so it serves with no
+      models loaded. A local model call needs the service started with
+      `python -m` the way the container does. Unchanged by this work.
 
 ### F23 — the sign-in page, on a host of ours — opened 2026-09-09, built 2026-09-11 as the product's own page
 

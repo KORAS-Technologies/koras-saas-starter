@@ -64,8 +64,12 @@ describe('the names the two sides share', () => {
       expect(permissions).toContain(`'${permission}'`)
     }
     // Members read and upload; only owners and admins delete. The API mirrors
-    // the second half by role, since it cannot import the catalogue.
-    expect(permissions).toMatch(/member: \['product\.access', 'files\.read', 'files\.upload'\]/)
+    // the second half by role, since it cannot import the catalogue. The
+    // assistant's `ai.use` sits beside them since the AI foundation, granted
+    // to every role the same way.
+    expect(permissions).toMatch(
+      /member: \['product\.access', 'files\.read', 'files\.upload', 'ai\.use'\]/,
+    )
     expect(router).toContain('_MANAGERS = (OrganizationRole.OWNER, OrganizationRole.ADMIN)')
     expect(branding).toMatch(/id: 'files',[\s\S]*?requiredPermissions: \['files\.read'\]/)
   })

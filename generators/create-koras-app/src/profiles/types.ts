@@ -41,13 +41,28 @@ const RegistrationSchema = z.object({
 // Maps component keys to template subtree paths. A subtree is generated only
 // when its component is enabled — this is how the capability matrix reaches
 // template selection without profile-specific branching in the generator.
+//
+// A capability may map to several paths. An application or a service is one
+// directory, and one path is right for it; a capability like `ai` is a router,
+// a page, a migration, a test and an extension point spread across the tree,
+// and gating it on one of them would generate the rest into a project that
+// asked for none. A string still means one path, so every manifest written
+// before the list form keeps parsing.
 const TemplateMapSchema = z.object({
   applications: z.record(z.string(), z.string()).default({}),
   services: z.record(z.string(), z.string()).default({}),
-  capabilities: z.record(z.string(), z.string()).default({}),
+  capabilities: z
+    .record(z.string(), z.union([z.string(), z.array(z.string()).min(1)]))
+    .default({}),
 })
 
 export type TemplateMap = z.infer<typeof TemplateMapSchema>
+
+/** The paths a template_map entry names, whichever form it was written in. */
+export function templatePaths(entry: string | string[] | undefined): string[] {
+  if (entry === undefined) return []
+  return typeof entry === 'string' ? [entry] : entry
+}
 
 // Directories copied verbatim from the starter repository into the generated
 // project. Used for assets that must stay single-sourced rather than being
@@ -82,6 +97,12 @@ export const ProfileManifestSchema = z.object({
     capabilities: {},
   }),
   shared_assets: z.array(SharedAssetSchema).default([]),
+  // Components that only make sense beside another. `ai` needs the gateway
+  // service, because the gateway is where the provider keys live and the AI
+  // runtime calls nothing else; a project with the runtime and no gateway
+  // would refuse every request with a sentence about a missing setting. The
+  // rule lives here so the generator carries no component names of its own.
+  requires: z.record(z.string(), z.array(z.string()).min(1)).default({}),
 })
 
 export type ProfileManifest = z.infer<typeof ProfileManifestSchema>
