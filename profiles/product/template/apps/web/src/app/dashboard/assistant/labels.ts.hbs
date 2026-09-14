@@ -21,6 +21,7 @@ export interface AssistantLabels {
     emptyHint: string
     toolResult: string
     toolResultShow: string
+    citations: string
   }
   composer: { label: string; placeholder: string; send: string; sending: string }
   suggestions: { title: string; items: string[] }
@@ -59,6 +60,7 @@ export function assistantLabels(t: Translator): AssistantLabels {
       emptyHint: t('assistant.emptyHint'),
       toolResult: t('assistant.toolResult'),
       toolResultShow: t('assistant.toolResultShow'),
+      citations: t('assistant.citations'),
     },
     composer: {
       label: t('assistant.composer.label'),

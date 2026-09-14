@@ -15,6 +15,8 @@ export interface AIMessageItem {
   content: string
   /** Set on a tool message: which tool answered. */
   toolName?: string | null
+  /** On an assistant message: the sources a document search gave it. */
+  citations?: AICitationItem[]
   createdAt: string
 }
 
@@ -44,4 +46,6 @@ export interface AIConversationLabels {
   emptyHint: string
   toolResult: string
   toolResultShow: string
+  /** Heading over the sources under an answer. */
+  citations: string
 }

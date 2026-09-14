@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { AICitations } from './ai-citations'
 import { AIMessage } from './ai-message'
 import { AIToolResult } from './ai-tool-result'
 import type { AIConversationLabels, AIMessageItem } from './types'
@@ -45,12 +46,12 @@ export function AIConversation({
               showLabel={labels.toolResultShow}
             />
           ) : (
-            <AIMessage
-              key={message.id}
-              message={message}
-              youLabel={labels.you}
-              speakerLabel={labels.speaker}
-            />
+            <div key={message.id} className="flex flex-col gap-2">
+              <AIMessage message={message} youLabel={labels.you} speakerLabel={labels.speaker} />
+              {message.citations && message.citations.length > 0 ? (
+                <AICitations title={labels.citations} citations={message.citations} />
+              ) : null}
+            </div>
           ),
         )
       )}

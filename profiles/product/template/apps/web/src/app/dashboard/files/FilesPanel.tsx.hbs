@@ -35,6 +35,10 @@ export interface FilesLabels {
   name: string
   size: string
   uploadedAt: string
+  searchable: string
+  searchableYes: string
+  searchablePending: string
+  searchableNo: string
   /** `{used}` and `{limit}` */
   usage: string
   /** `{used}` */
@@ -247,6 +251,7 @@ export function FilesPanel({
                 <th scope="col" className="px-4 py-3 font-medium">{labels.name}</th>
                 <th scope="col" className="px-4 py-3 font-medium">{labels.size}</th>
                 <th scope="col" className="px-4 py-3 font-medium">{labels.uploadedAt}</th>
+                <th scope="col" className="px-4 py-3 font-medium">{labels.searchable}</th>
                 <th scope="col" className="px-4 py-3">
                   <span className="sr-only">{labels.download}</span>
                 </th>
@@ -260,6 +265,15 @@ export function FilesPanel({
                   <td className="px-4 py-3 text-ink-muted">
                     {new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
                       new Date(file.uploaded_at),
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-ink-muted" data-testid="file-searchable">
+                    {file.indexed_at ? (
+                      <span className="text-ink">{labels.searchableYes}</span>
+                    ) : file.index_note ? (
+                      <span title={file.index_note}>{labels.searchableNo}</span>
+                    ) : (
+                      <span>{labels.searchablePending}</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
