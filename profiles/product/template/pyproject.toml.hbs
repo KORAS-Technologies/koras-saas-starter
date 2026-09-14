@@ -36,18 +36,13 @@ dev = [
   # every product, whether or not the API was generated with the `ai`
   # capability that would otherwise be the only thing installing it.
   "koras-ai",
-{{#if service.worker}}  # The worker, for the same reason again: its sweeps -- AI retention among
-  # them -- have tests in `tests/unit`, and a member that is not also a
-  # dependency here is buildable and not importable.
-  "{{projectSlug}}-worker",
-{{/if}}]
+]
 
 [tool.uv.sources]
 "{{projectSlug}}-api" = { workspace = true }
 koras-email = { workspace = true }
 koras-ai = { workspace = true }
-{{#if service.worker}}"{{projectSlug}}-worker" = { workspace = true }
-{{/if}}
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
@@ -101,4 +96,11 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests", "python-packages", "services"]
-addopts = "--cov --cov-report=term-missing"
+{{#if service.worker}}# The worker's sweeps have tests in `tests/unit`, and the worker is not a
+# dependency of the root environment: every service's Docker build parses the
+# root project and copies only what it depends on, so a member listed here
+# would have to be copied into every image that never runs it. Importing its
+# source by path is enough -- its own dependencies are already present through
+# the API's -- and costs nothing at deploy.
+pythonpath = ["services/worker"]
+{{/if}}addopts = "--cov --cov-report=term-missing"
