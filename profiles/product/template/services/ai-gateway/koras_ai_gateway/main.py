@@ -18,6 +18,12 @@ import asyncio  # noqa: E402
 import uvicorn  # noqa: E402
 from litellm.proxy.proxy_server import app, initialize  # noqa: E402
 
+from .guard import RequireBearer  # noqa: E402
+
+# In front of the proxy, so a request with no key is a 401 here and never
+# reaches the handler that turns it into a 500. See guard.py.
+app.add_middleware(RequireBearer)
+
 if __name__ == "__main__":
     # `initialize` is a coroutine. Called without awaiting it, the coroutine is
     # created, discarded, and never runs -- so litellm_config.yaml is never

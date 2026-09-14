@@ -20,5 +20,14 @@ class Settings(BaseSettings):
     # else.
     redis_url: RedisDsn
 
+    #: The product's database, for sweeps that run across every tenant on the
+    #: provisioning context. Empty when the worker has none, and each sweep
+    #: that needs it says so and skips rather than failing the worker.
+    database_url: str = ""
+
+    #: Days an assistant conversation is kept after it was last touched before
+    #: the nightly sweep removes it, messages and actions with it.
+    ai_retention_days: int = 90
+
 
 settings = Settings()  # type: ignore[call-arg]
