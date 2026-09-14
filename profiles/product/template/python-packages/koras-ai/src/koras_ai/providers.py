@@ -93,6 +93,22 @@ class ProviderRegistry:
 # ── The wire shape ────────────────────────────────────────────────────────────
 
 
+def _wire_name(tool_id: str) -> str:
+    """A tool id as a vendor's function name.
+
+    A tool id is `files.list`: a namespace, a dot, a verb. OpenAI's function
+    names match `^[a-zA-Z0-9_-]+$` and refuse the dot, and the first real
+    conversation on dev ended in a 400 for exactly that. The dot becomes a
+    hyphen, which the id grammar never contains, so `_tool_id` reverses it
+    without ambiguity; an underscore would not, because an id may hold one.
+    """
+    return tool_id.replace(".", "-")
+
+
+def _tool_id(wire_name: str) -> str:
+    return wire_name.replace("-", ".")
+
+
 def _message_to_wire(message: Message) -> dict[str, Any]:
     wire: dict[str, Any] = {"role": message.role, "content": message.content}
     if message.tool_calls:
@@ -100,14 +116,17 @@ def _message_to_wire(message: Message) -> dict[str, Any]:
             {
                 "id": call.id,
                 "type": "function",
-                "function": {"name": call.name, "arguments": json.dumps(dict(call.arguments))},
+                "function": {
+                    "name": _wire_name(call.name),
+                    "arguments": json.dumps(dict(call.arguments)),
+                },
             }
             for call in message.tool_calls
         ]
     if message.role == "tool":
         wire["tool_call_id"] = message.tool_call_id
         if message.name:
-            wire["name"] = message.name
+            wire["name"] = _wire_name(message.name)
     return wire
 
 
@@ -115,7 +134,7 @@ def _tool_to_wire(tool: ToolSpec) -> dict[str, Any]:
     return {
         "type": "function",
         "function": {
-            "name": tool.name,
+            "name": _wire_name(tool.name),
             "description": tool.description,
             "parameters": dict(tool.parameters),
         },
@@ -159,7 +178,7 @@ def _parse_tool_calls(raw: object) -> tuple[ToolCall, ...]:
         calls.append(
             ToolCall(
                 id=str(entry.get("id") or f"call_{len(calls)}"),
-                name=name,
+                name=_tool_id(name),
                 arguments=_parse_arguments(function.get("arguments")),
             )
         )
@@ -396,7 +415,7 @@ class GatewayProvider:
         calls = tuple(
             ToolCall(
                 id=str(fragment.get("id") or f"call_{index}"),
-                name=str(fragment.get("name") or ""),
+                name=_tool_id(str(fragment.get("name") or "")),
                 arguments=_parse_arguments("".join(fragment.get("arguments", []))),
             )
             for index, fragment in sorted(pending.items())

@@ -63,6 +63,7 @@ from koras_ai import (
 )
 from koras_audit import LoggingAuditSink
 from koras_auth.permissions import permissions_for
+from koras_database import set_rls_context
 from sqlalchemy import text
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -229,8 +230,24 @@ class SqlStore:
     substitute for one that remembers.
     """
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, tenant_id: str) -> None:
         self._session = session
+        self._tenant_id = tenant_id
+
+    async def _commit(self) -> None:
+        """Commit, then bind the tenant again.
+
+        The tenant context the policies filter on is transaction-local by
+        design, so it cannot outlive a request on a pooled connection. A
+        commit ends that transaction, and the next statement on this session
+        would run with no tenant -- every policy matches nothing, and an
+        insert is refused. The first real conversation on dev recorded its
+        usage that way: the message committed, the usage row violated the
+        policy. Rebinding after each commit is what keeps "one request, one
+        tenant" true across the several transactions a turn takes.
+        """
+        await self._session.commit()
+        await set_rls_context(self._session, self._tenant_id)
 
     async def create_conversation(
         self, context: AIContext, *, agent_id: str, title: str, page: PageContext | None
@@ -254,7 +271,7 @@ class SqlStore:
                 },
             )
         ).one()
-        await self._session.commit()
+        await self._commit()
         return Conversation(
             id=row.id,
             tenant_id=context.tenant_id,
@@ -387,7 +404,7 @@ class SqlStore:
             ),
             {"tenant_id": context.tenant_id, "conversation_id": conversation_id},
         )
-        await self._session.commit()
+        await self._commit()
         return StoredMessage(
             id=row.id,
             tenant_id=context.tenant_id,
@@ -411,7 +428,7 @@ class SqlStore:
             ),
             self._action_params(action),
         )
-        await self._session.commit()
+        await self._commit()
         return action
 
     async def get_action(self, context: AIContext, action_id: str) -> ProposedAction | None:
@@ -465,7 +482,7 @@ class SqlStore:
         )
         if result.first() is None:
             raise KeyError(action.id)
-        await self._session.commit()
+        await self._commit()
         return action
 
     def _action_params(self, action: ProposedAction) -> dict[str, Any]:
@@ -533,7 +550,7 @@ class SqlStore:
                 "error_code": event.error_code,
             },
         )
-        await self._session.commit()
+        await self._commit()
 
     async def requests_since(self, tenant_id: str, since: datetime) -> int:
         result = await self._session.execute(
@@ -615,7 +632,7 @@ async def tenant_ai(
     for name in registries.PROVIDER_NAMES:
         providers.register(name, provider)
 
-    store = SqlStore(session)
+    store = SqlStore(session, tenant.id)
     runtime = AIRuntime(
         configuration=AIConfiguration(
             catalogue=registries.catalogue,
