@@ -25,26 +25,26 @@ CATALOGUE = ModelCatalogue(
     {
         ModelAlias.FAST: [
             ModelRoute(provider="openai", model="gpt-4o-mini"),
-            ModelRoute(provider="anthropic", model="claude-3-5-haiku"),
-            ModelRoute(provider="gemini", model="gemini-2.5-flash"),
+            ModelRoute(provider="anthropic", model="claude-haiku-4-5"),
+            ModelRoute(provider="gemini", model="gemini-3-5-flash"),
             ModelRoute(provider="openrouter", model="openrouter-llama-3.3-70b"),
         ],
         ModelAlias.BALANCED: [
             ModelRoute(provider="openai", model="gpt-4o"),
-            ModelRoute(provider="anthropic", model="claude-3-5-sonnet"),
-            ModelRoute(provider="gemini", model="gemini-2.5-pro"),
+            ModelRoute(provider="anthropic", model="claude-sonnet-4-6"),
+            ModelRoute(provider="gemini", model="gemini-3-1-pro"),
             ModelRoute(provider="openrouter", model="openrouter-llama-3.3-70b"),
         ],
         ModelAlias.REASONING: [
-            ModelRoute(provider="anthropic", model="claude-3-5-sonnet"),
+            ModelRoute(provider="anthropic", model="claude-sonnet-4-6"),
             ModelRoute(provider="openai", model="gpt-4o"),
-            ModelRoute(provider="gemini", model="gemini-2.5-pro"),
+            ModelRoute(provider="gemini", model="gemini-3-1-pro"),
             ModelRoute(provider="openrouter", model="openrouter-deepseek-r1"),
         ],
         ModelAlias.VISION: [
             ModelRoute(provider="openai", model="gpt-4o"),
-            ModelRoute(provider="anthropic", model="claude-3-5-sonnet"),
-            ModelRoute(provider="gemini", model="gemini-2.5-pro"),
+            ModelRoute(provider="anthropic", model="claude-sonnet-4-6"),
+            ModelRoute(provider="gemini", model="gemini-3-1-pro"),
         ],
         ModelAlias.EMBEDDING: [
             ModelRoute(provider="openai", model="text-embedding-3-small"),
