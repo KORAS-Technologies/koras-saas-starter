@@ -81,8 +81,9 @@ async def test_an_event_for_another_tenant_is_refused_at_the_sink() -> None:
         raise AssertionError("an event for another tenant was accepted")
 
 
-def test_the_activity_read_needs_the_approve_permission(  # noqa: F811
-    harness_fixture: Harness, client_fixture: TestClient
+def test_the_activity_read_needs_the_approve_permission(
+    harness_fixture: Harness,  # noqa: F811
+    client_fixture: TestClient,  # noqa: F811
 ) -> None:
     assert client_fixture.get("/api/v1/ai/audit", headers=AUTH).status_code == 200
     harness_fixture.as_member()
