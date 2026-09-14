@@ -362,3 +362,55 @@ def test_a_refusal_on_our_side_puts_its_detail_in_the_log(
     logged = [record.getMessage() for record in caplog.records]
     assert len(logged) == 1
     assert "koras-balanced" in logged[0] and "503" in logged[0]
+
+
+class _RecordingSession:
+    """The two calls the store makes, in the order it makes them."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    async def execute(self, statement: object, parameters: object = None) -> object:
+        self.calls.append(str(statement).split("(")[0].strip().split("\n")[0])
+        return _NoRows()
+
+    async def commit(self) -> None:
+        self.calls.append("commit")
+
+
+class _NoRows:
+    def first(self) -> None:
+        return None
+
+    def scalar_one(self) -> int:
+        return 0
+
+
+async def test_the_store_binds_the_tenant_again_after_every_commit() -> None:
+    """Row-level security reads a transaction-local setting; a commit ends
+    the transaction. A store that committed and carried on would make its
+    next statement as nobody, and the policies would refuse it -- which is
+    how the first real usage row on dev was lost."""
+    from datetime import UTC, datetime
+
+    from koras_ai import Usage, UsageEvent
+    from koras_api.core.ai import SqlStore
+
+    session = _RecordingSession()
+    store = SqlStore(session, "tenant-1")  # type: ignore[arg-type]
+    await store.record(
+        UsageEvent(
+            tenant_id="tenant-1",
+            user_id="user-1",
+            agent_id="assistant",
+            model_alias="koras-balanced",
+            provider="openai",
+            model="gpt-4o-mini",
+            usage=Usage(),
+            latency_ms=0,
+            status="error",
+            created_at=datetime.now(UTC),
+            error_code="upstream_error",
+        )
+    )
+    assert session.calls == ["insert into public.ai_usage_events", "commit", "select set_config"]

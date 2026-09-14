@@ -71,7 +71,9 @@ async def test_a_completion_is_translated_with_its_usage() -> None:
     body = seen["body"]
     assert isinstance(body, dict)
     assert body["model"] == "gpt-4o"  # the route's model, never the alias
-    assert body["tools"][0]["function"]["name"] == "files.list"
+    # The dot is not a legal function name at the vendor; the wire form is
+    # the hyphen and the runtime never sees it.
+    assert body["tools"][0]["function"]["name"] == "files-list"
     assert result.message.content == "Two files."
     assert (result.usage.input, result.usage.output, result.usage.total) == (12, 3, 15)
     assert result.model == "gpt-4o-2024" and result.provider == "openai"
@@ -91,12 +93,12 @@ async def test_tool_calls_are_parsed_from_json_strings_and_objects() -> None:
                                 {
                                     "id": "c1",
                                     "type": "function",
-                                    "function": {"name": "files.list", "arguments": '{"limit": 2}'},
+                                    "function": {"name": "files-list", "arguments": '{"limit": 2}'},
                                 },
                                 {
                                     "id": "c2",
                                     "type": "function",
-                                    "function": {"name": "files.list", "arguments": {"limit": 3}},
+                                    "function": {"name": "files-list", "arguments": {"limit": 3}},
                                 },
                                 {
                                     "id": "c3",
@@ -169,7 +171,7 @@ async def test_a_stream_yields_text_then_whole_tool_calls_then_the_result() -> N
                             {
                                 "index": 0,
                                 "id": "c1",
-                                "function": {"name": "files.list", "arguments": '{"li'},
+                                "function": {"name": "files-list", "arguments": '{"li'},
                             }
                         ]
                     }
