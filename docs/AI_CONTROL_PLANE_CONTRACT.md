@@ -108,7 +108,7 @@ GET /api/portal/v1/products/{code}/ai-configuration
     { "name": "anthropic", "secret_ref": "ANTHROPIC_API_KEY" }
   ],
   "aliases": {
-    "koras-balanced": { "providers": ["anthropic", "openai"], "model": "claude-3-5-sonnet" }
+    "koras-balanced": { "providers": ["anthropic", "openai"], "model": "claude-sonnet-4-6" }
   },
   "limits": { "monthly_requests": 5000, "requests_per_minute": 60, "monthly_budget_cents": null },
   "tools": { "enabled": true, "denied": ["files.delete"], "approval_required": ["files.rename"] },
