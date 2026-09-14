@@ -227,6 +227,10 @@ export interface FileRow {
   content_type: string
   uploaded_by: string
   uploaded_at: string
+  /** When the assistant's index took the file's text; null while pending or when it could not. */
+  indexed_at: string | null
+  /** Why it was not indexed, or how many chunks it became. */
+  index_note: string | null
 }
 
 export interface FileList {
@@ -318,6 +322,8 @@ export interface AiMessage {
   content: string
   tool_name: string | null
   created_at: string
+  /** The passages a document search returned, on the answer that used them. */
+  citations: { file_id: string; title: string; snippet: string; score: number }[]
 }
 
 export interface AiAction {

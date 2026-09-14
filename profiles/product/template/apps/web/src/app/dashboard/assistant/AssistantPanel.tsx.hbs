@@ -43,6 +43,7 @@ function toItem(message: AiMessage): AIMessageItem {
     role,
     content: message.content,
     toolName: message.tool_name,
+    citations: (message.citations ?? []).map((c) => ({ title: c.title, snippet: c.snippet })),
     createdAt: message.created_at,
   }
 }
