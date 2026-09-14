@@ -139,6 +139,12 @@ class StatusView(BaseModel):
     monthly_limit: int | None
     resolved: bool
     agents: list[str]
+    #: Pay as you go: whether it is on, whether this month is past the
+    #: allowance, what has been charged so far and the month's limit on it.
+    overage_enabled: bool = False
+    over_allowance: bool = False
+    billable_this_month_micros: int = 0
+    overage_cap_micros: int | None = None
 
 
 # ── what the API accepts ──────────────────────────────────────────────────────
@@ -283,6 +289,10 @@ async def ai_status(ai: AiDep) -> StatusView:
         monthly_limit=state.monthly_limit,
         resolved=ai.grant.resolved,
         agents=list(state.agents),
+        overage_enabled=state.overage_enabled,
+        over_allowance=state.over_allowance,
+        billable_this_month_micros=state.billable_this_month_micros,
+        overage_cap_micros=state.overage_cap_micros,
     )
 
 

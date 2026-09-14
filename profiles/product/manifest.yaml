@@ -106,6 +106,7 @@ template_map:
       - supabase/migrations/00008_ai_retention.sql
       - supabase/migrations/00009_ai_audit.sql
       - supabase/migrations/00010_ai_knowledge.sql
+      - supabase/migrations/00012_ai_overage.sql
       - supabase/tests/060_ai_isolation.sql
       - supabase/tests/070_ai_usage_platform_read.sql
       - supabase/tests/080_ai_retention.sql

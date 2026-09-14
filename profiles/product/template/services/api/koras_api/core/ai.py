@@ -96,6 +96,11 @@ from .tenant import TenantDep
 AI_ENTITLEMENT = "ai.assistant"
 AI_TOOLS_ENTITLEMENT = "ai.tools"
 AI_REQUESTS_ENTITLEMENT = "ai.requests"
+#: Pay as you go beyond the allowance: `enabled` is the customer's consent,
+#: `limit_value` the month's charge limit in US cents, and the row's
+#: `config.rate_percent` the staff multiplier (400 is four times cost).
+AI_OVERAGE_ENTITLEMENT = "ai.overage"
+DEFAULT_OVERAGE_RATE_PERCENT = 400
 
 _bearer = HTTPBearer(auto_error=True)
 
@@ -159,6 +164,9 @@ class AiGrant:
     monthly_requests: int | None
     #: False when no platform is configured, so the product runs on its own.
     resolved: bool
+    overage_enabled: bool = False
+    overage_rate_percent: int = DEFAULT_OVERAGE_RATE_PERCENT
+    overage_cap_micros: int | None = None
 
 
 def grant_from(answer: platform.PortalAnswer | None, *, configured: bool) -> AiGrant:
@@ -182,6 +190,11 @@ def grant_from(answer: platform.PortalAnswer | None, *, configured: bool) -> AiG
     tools = rows.get(AI_TOOLS_ENTITLEMENT, {})
     requests = rows.get(AI_REQUESTS_ENTITLEMENT, {})
     limit = requests.get("limit_value")
+    overage = rows.get(AI_OVERAGE_ENTITLEMENT, {})
+    cap_cents = overage.get("limit_value")
+    raw_config = overage.get("config")
+    config: dict[str, Any] = raw_config if isinstance(raw_config, dict) else {}
+    rate = config.get("rate_percent")
     return AiGrant(
         enabled=bool(assistant.get("enabled")),
         tools=bool(tools.get("enabled")),
@@ -189,6 +202,13 @@ def grant_from(answer: platform.PortalAnswer | None, *, configured: bool) -> AiG
         if bool(requests.get("enabled")) and isinstance(limit, int) and limit >= 0
         else None,
         resolved=True,
+        overage_enabled=bool(overage.get("enabled")),
+        overage_rate_percent=int(rate)
+        if isinstance(rate, int) and rate > 0
+        else DEFAULT_OVERAGE_RATE_PERCENT,
+        overage_cap_micros=int(cap_cents) * 10_000
+        if isinstance(cap_cents, int) and cap_cents > 0
+        else None,
     )
 
 
@@ -573,13 +593,17 @@ class SqlStore:
                 "insert into public.ai_usage_events "
                 "(tenant_id, user_id, conversation_id, agent_id, model_alias, provider, model, "
                 " input_tokens, output_tokens, total_tokens, latency_ms, status, error_code, "
-                " estimated_cost_micros) "
+                " estimated_cost_micros, over_allowance, billable_micros, overage_rate_percent) "
                 "values (:tenant_id, :user_id, cast(:conversation_id as uuid), :agent_id, "
                 " :model_alias, :provider, :model, :input_tokens, :output_tokens, :total_tokens, "
-                " :latency_ms, :status, :error_code, :estimated_cost_micros)"
+                " :latency_ms, :status, :error_code, :estimated_cost_micros, :over_allowance, "
+                " :billable_micros, :overage_rate_percent)"
             ),
             {
                 "estimated_cost_micros": event.estimated_cost_micros,
+                "over_allowance": event.over_allowance,
+                "billable_micros": event.billable_micros,
+                "overage_rate_percent": event.overage_rate_percent,
                 "tenant_id": event.tenant_id,
                 "user_id": event.user_id,
                 "conversation_id": event.conversation_id,
@@ -601,6 +625,16 @@ class SqlStore:
         result = await self._session.execute(
             text(
                 "select count(*) from public.ai_usage_events "
+                "where tenant_id = :tenant_id and created_at >= :since and status = 'ok'"
+            ),
+            {"tenant_id": tenant_id, "since": since},
+        )
+        return int(result.scalar_one())
+
+    async def billable_since(self, tenant_id: str, since: datetime) -> int:
+        result = await self._session.execute(
+            text(
+                "select coalesce(sum(billable_micros), 0) from public.ai_usage_events "
                 "where tenant_id = :tenant_id and created_at >= :since"
             ),
             {"tenant_id": tenant_id, "since": since},
@@ -727,7 +761,13 @@ async def assemble_tenant_ai(
         catalogue=registries.catalogue,
         routing=ControlPlaneRouting(organization_id=tenant.organization_id, token=token),
         fail_closed=configured,
-        limits=Limits(monthly_requests=grant.monthly_requests, tools_enabled=grant.tools),
+        limits=Limits(
+            monthly_requests=grant.monthly_requests,
+            tools_enabled=grant.tools,
+            overage_enabled=grant.overage_enabled,
+            overage_rate_percent=grant.overage_rate_percent,
+            overage_cap_micros=grant.overage_cap_micros,
+        ),
     )
     embed = embedder(configuration, providers)
     scope = RetrievalScope(tenant_id=tenant.id, product_code=PRODUCT_CODE)
@@ -1149,7 +1189,9 @@ _USAGE_DAYS = text(
     " coalesce(sum(input_tokens), 0)::bigint as input_tokens, "
     " coalesce(sum(output_tokens), 0)::bigint as output_tokens, "
     " coalesce(sum(total_tokens), 0)::bigint as total_tokens, "
-    " coalesce(sum(estimated_cost_micros), 0)::bigint as estimated_cost_micros "
+    " coalesce(sum(estimated_cost_micros), 0)::bigint as estimated_cost_micros, "
+    " (count(*) filter (where over_allowance and status = 'ok'))::int as overage_calls, "
+    " coalesce(sum(billable_micros), 0)::bigint as billable_micros "
     "from public.ai_usage_events "
     "where created_at >= cast(:since as date) "
     "group by 1, 2, 3, 4, 5 "

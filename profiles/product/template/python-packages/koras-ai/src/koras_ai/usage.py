@@ -37,15 +37,31 @@ class UsageEvent:
     #: List-price cost in millionths of a US dollar, or None when the route
     #: carried no price. Never zero for "unknown": zero is a number.
     estimated_cost_micros: int | None = None
+    #: Made after the month's allowance was spent, under pay as you go.
+    over_allowance: bool = False
+    #: What the customer is charged for it: the cost times the rate in
+    #: force when the call was made, both copied here so a later rate
+    #: never rewrites a past month. None on a call inside the allowance.
+    billable_micros: int | None = None
+    overage_rate_percent: int | None = None
 
 
 class UsageRecorder(Protocol):
     async def record(self, event: UsageEvent) -> None: ...
 
+    async def billable_since(self, tenant_id: str, since: datetime) -> int:
+        """What this tenant has been charged beyond its allowance since `since`,
+        in micro-dollars. The cap on pay as you go is checked against this.
+        """
+        ...
+
     async def requests_since(self, tenant_id: str, since: datetime) -> int:
         """How many model calls this tenant has made since `since`, successful or not.
 
-        Failed attempts count too. A caller who can spend the provider's time
+        Successful calls only: a provider that failed did not serve the
+        customer, and a spent allowance should not be the provider's doing.
+        (Failed attempts are still recorded, with their error, for the
+        operator.) A caller who can spend the provider's time
         without spending their own allowance has an allowance that does not
         bound anything.
         """

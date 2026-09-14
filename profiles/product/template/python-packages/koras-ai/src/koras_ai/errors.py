@@ -70,6 +70,14 @@ def usage_exceeded(limit: int) -> AIError:
     )
 
 
+def overage_cap_reached(cap_micros: int) -> AIError:
+    dollars = cap_micros / 1_000_000
+    return AIError(
+        ErrorCode.USAGE_EXCEEDED,
+        f"this month's pay-as-you-go limit of ${dollars:,.2f} is reached",
+    )
+
+
 def invalid_alias(alias: str) -> AIError:
     return AIError(ErrorCode.INVALID_MODEL_ALIAS, f"{alias!r} is not a model alias")
 

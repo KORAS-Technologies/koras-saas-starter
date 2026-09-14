@@ -235,10 +235,16 @@ export function AssistantPanel({
           ? fill(labels.usage.unlimited, {
               used: String(status.requests_this_month),
             })
-          : fill(labels.usage.withLimit, {
-              used: String(status.requests_this_month),
-              limit: String(status.monthly_limit),
-            })
+          : status.over_allowance
+            ? fill(labels.usage.overage, {
+                used: String(status.requests_this_month),
+                limit: String(status.monthly_limit),
+                charges: (status.billable_this_month_micros / 1_000_000).toFixed(2),
+              })
+            : fill(labels.usage.withLimit, {
+                used: String(status.requests_this_month),
+                limit: String(status.monthly_limit),
+              })
 
   const footer = (
     <>

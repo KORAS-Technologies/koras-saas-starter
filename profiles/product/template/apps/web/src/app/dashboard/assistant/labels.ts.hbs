@@ -25,7 +25,7 @@ export interface AssistantLabels {
   }
   composer: { label: string; placeholder: string; send: string; sending: string }
   suggestions: { title: string; items: string[] }
-  usage: { withLimit: string; unlimited: string; unknown: string }
+  usage: { withLimit: string; unlimited: string; overage: string; unknown: string }
   approval: {
     title: string
     hint: string
@@ -75,6 +75,7 @@ export function assistantLabels(t: Translator): AssistantLabels {
     usage: {
       withLimit: t('assistant.usage'),
       unlimited: t('assistant.usageUnlimited'),
+      overage: t('assistant.usageOverage'),
       unknown: t('assistant.usageUnknown'),
     },
     approval: {

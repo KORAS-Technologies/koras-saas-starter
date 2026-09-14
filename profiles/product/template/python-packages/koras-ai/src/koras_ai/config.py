@@ -70,6 +70,13 @@ class Limits:
 
     monthly_requests: int | None = None
     tools_enabled: bool = True
+    #: Pay as you go beyond the allowance. Off, the allowance is a stop; on,
+    #: a call past it is made and stamped billable at `overage_rate_percent`
+    #: of its list-price cost (400 is four times), until the month's
+    #: billable total reaches `overage_cap_micros`, which is then the stop.
+    overage_enabled: bool = False
+    overage_rate_percent: int = 400
+    overage_cap_micros: int | None = None
 
 
 @dataclass(frozen=True)

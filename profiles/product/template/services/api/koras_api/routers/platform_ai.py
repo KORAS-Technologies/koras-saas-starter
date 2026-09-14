@@ -32,6 +32,10 @@ class AiUsageDay(BaseModel):
     input_tokens: int
     output_tokens: int
     total_tokens: int
+    #: Successful calls made beyond the plan's allowance under pay as you go,
+    #: and what they are billable at: cost times the rate stamped on each.
+    overage_calls: int = 0
+    billable_micros: int = 0
     #: List-price cost in millionths of a US dollar; rows with no estimate add nothing.
     estimated_cost_micros: int
 

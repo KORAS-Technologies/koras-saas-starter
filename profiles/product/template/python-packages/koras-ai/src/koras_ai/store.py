@@ -199,7 +199,18 @@ class InMemoryStore:
         self.usage.append(event)
 
     async def requests_since(self, tenant_id: str, since: datetime) -> int:
-        return sum(1 for e in self.usage if e.tenant_id == tenant_id and e.created_at >= since)
+        return sum(
+            1
+            for e in self.usage
+            if e.tenant_id == tenant_id and e.created_at >= since and e.status == "ok"
+        )
+
+    async def billable_since(self, tenant_id: str, since: datetime) -> int:
+        return sum(
+            e.billable_micros or 0
+            for e in self.usage
+            if e.tenant_id == tenant_id and e.created_at >= since
+        )
 
 
 def action_for(

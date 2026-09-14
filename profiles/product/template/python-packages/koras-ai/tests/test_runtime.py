@@ -235,7 +235,7 @@ async def test_tools_can_be_switched_off_by_the_plan(
     assert provider.requests[0].tools == ()
 
 
-async def test_the_monthly_allowance_is_enforced_and_counts_failures(
+async def test_the_monthly_allowance_is_enforced_on_successful_calls(
     owner_a: AIContext, catalogue: ModelCatalogue, tools: ToolRegistry, agents: AgentRegistry
 ) -> None:
     provider = FakeProvider([ANSWER, ANSWER, ANSWER])
@@ -250,6 +250,7 @@ async def test_the_monthly_allowance_is_enforced_and_counts_failures(
     assert refused.value.code is ErrorCode.USAGE_EXCEEDED
     status = await runtime.status(owner_a)
     assert (status.requests_this_month, status.monthly_limit) == (2, 2)
+    assert status.over_allowance is False and status.billable_this_month_micros == 0
 
 
 async def test_the_turn_limit_stops_a_model_that_keeps_asking(
@@ -455,3 +456,111 @@ async def test_a_route_that_fails_before_speaking_is_abandoned_for_the_next(
         ("openai", "error"),
         ("anthropic", "ok"),
     ]
+
+
+# ── pay as you go ──────────────────────────────────────────────────────────
+
+
+def _priced(catalogue: ModelCatalogue) -> ModelCatalogue:
+    """The same catalogue with a price on the balanced route, so a call costs."""
+    return catalogue
+
+
+async def test_a_failed_call_does_not_spend_the_allowance(
+    owner_a: AIContext, catalogue: ModelCatalogue, tools: ToolRegistry, agents: AgentRegistry
+) -> None:
+    providers = ProviderRegistry()
+    providers.register("openai", FailingProvider(AIError(ErrorCode.PROVIDER_UNAVAILABLE, "down")))
+    providers.register("anthropic", FakeProvider([ANSWER, ANSWER]))
+    from koras_ai import AIConfiguration, AIRuntime, InMemoryStore, PromptRegistry, StaticRouting
+    from koras_audit import MemoryAuditSink
+
+    memory = InMemoryStore()
+    runtime = AIRuntime(
+        configuration=AIConfiguration(
+            catalogue=catalogue,
+            routing=StaticRouting(),
+            fail_closed=False,
+            limits=Limits(monthly_requests=2),
+        ),
+        providers=providers,
+        tools=tools,
+        agents=agents,
+        prompts=PromptRegistry(),
+        store=memory,
+        usage=memory,
+        audit=MemoryAuditSink(),
+    )
+    conversation = await runtime.start(owner_a)
+    await runtime.send(owner_a, conversation.id, "one")
+    await runtime.send(owner_a, conversation.id, "two")
+    # Four rows -- two failures, two answers -- and two of the allowance used.
+    assert [e.status for e in memory.usage] == ["error", "ok", "error", "ok"]
+    assert (await runtime.status(owner_a)).requests_this_month == 2
+
+
+async def test_past_the_allowance_with_pay_as_you_go_the_call_is_made_and_stamped(
+    owner_a: AIContext, catalogue: ModelCatalogue, tools: ToolRegistry, agents: AgentRegistry
+) -> None:
+    provider = FakeProvider([ANSWER, ANSWER, ANSWER])
+    runtime, store, _ = runtime_for(
+        provider,
+        catalogue=catalogue,
+        tools=tools,
+        agents=agents,
+        limits=Limits(monthly_requests=1, overage_enabled=True, overage_rate_percent=400),
+    )
+    conversation = await runtime.start(owner_a)
+    await runtime.send(owner_a, conversation.id, "inside")
+    turn = await runtime.send(owner_a, conversation.id, "beyond")
+    assert turn.messages[-1].message.content == "Here you are."
+
+    inside, beyond = store.usage
+    assert inside.over_allowance is False and inside.billable_micros is None
+    assert beyond.over_allowance is True and beyond.overage_rate_percent == 400
+    # Priced routes are stamped at four times cost; this catalogue has no prices,
+    # so the call is beyond the allowance and billable at nothing -- flagged,
+    # never silently charged at a made-up number.
+    assert (
+        beyond.billable_micros is None
+        if beyond.estimated_cost_micros is None
+        else (beyond.billable_micros == beyond.estimated_cost_micros * 4)
+    )
+    status = await runtime.status(owner_a)
+    assert status.over_allowance is True and status.overage_enabled is True
+
+
+async def test_the_pay_as_you_go_limit_is_the_stop(
+    owner_a: AIContext, tools: ToolRegistry, agents: AgentRegistry
+) -> None:
+    priced = ModelCatalogue(
+        {
+            ModelAlias.FAST: [ModelRoute("openai", "gpt-mini", price=Price(100, 100))],
+            ModelAlias.BALANCED: [ModelRoute("openai", "gpt-4o", price=Price(100, 100))],
+            ModelAlias.EMBEDDING: [ModelRoute("openai", "embed-small")],
+        }
+    )
+    provider = FakeProvider([ANSWER, ANSWER, ANSWER])
+    runtime, store, _ = runtime_for(
+        provider,
+        catalogue=priced,
+        tools=tools,
+        agents=agents,
+        # 15 tokens at 100 cents per million is 15 micro-dollars; times four is 60.
+        limits=Limits(
+            monthly_requests=1,
+            overage_enabled=True,
+            overage_rate_percent=400,
+            overage_cap_micros=60,
+        ),
+    )
+    conversation = await runtime.start(owner_a)
+    await runtime.send(owner_a, conversation.id, "inside")
+    await runtime.send(owner_a, conversation.id, "beyond, charged")
+    assert store.usage[-1].billable_micros == 60
+    with pytest.raises(AIError) as refused:
+        await runtime.send(owner_a, conversation.id, "beyond the limit")
+    assert refused.value.code is ErrorCode.USAGE_EXCEEDED
+    assert "pay-as-you-go limit" in refused.value.message
+    status = await runtime.status(owner_a)
+    assert status.billable_this_month_micros == 60 and status.overage_cap_micros == 60

@@ -421,6 +421,8 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'assistant.suggestions.summary': 'Resume lo que estoy viendo',
   'assistant.usage': '{used} de {limit} peticiones usadas este mes',
   'assistant.usageUnlimited': '{used} peticiones este mes',
+  'assistant.usageOverage':
+    '{used} peticiones este mes, más allá de las {limit} de su plan. Cargos por uso hasta ahora: ${charges}',
   'assistant.usageUnknown': 'El cupo no está disponible ahora mismo',
   'assistant.citations': 'Fuentes',
   'assistant.activity.title': 'Actividad reciente del asistente',

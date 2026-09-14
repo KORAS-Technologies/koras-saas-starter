@@ -36,6 +36,8 @@ ROWS = [
         "output_tokens": 90,
         "total_tokens": 390,
         "estimated_cost_micros": 99,
+        "overage_calls": 1,
+        "billable_micros": 132,
     }
 ]
 
@@ -79,6 +81,8 @@ def test_usage_is_aggregated_per_tenant_and_day() -> None:
     assert body["days"][0]["tenant_id"] == ROWS[0]["tenant_id"]
     assert body["days"][0]["calls"] == 3
     assert body["days"][0]["estimated_cost_micros"] == 99
+    assert body["days"][0]["overage_calls"] == 1
+    assert body["days"][0]["billable_micros"] == 132
     # No user, no conversation: aggregates leave the product, rows do not.
     assert "user_id" not in body["days"][0]
 

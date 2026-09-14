@@ -44,6 +44,7 @@ from .errors import (
     configuration,
     invalid_state,
     not_found,
+    overage_cap_reached,
     tool_denied,
     usage_exceeded,
 )
@@ -112,6 +113,13 @@ class RuntimeStatus:
     monthly_limit: int | None
     tools_enabled: bool
     agents: tuple[str, ...]
+    #: Past the allowance this month, and pay as you go is on.
+    over_allowance: bool = False
+    overage_enabled: bool = False
+    #: Charged beyond the allowance this month, in micro-dollars, and the
+    #: month's limit on it.
+    billable_this_month_micros: int = 0
+    overage_cap_micros: int | None = None
 
 
 @dataclass
@@ -145,13 +153,44 @@ class AIRuntime:
         )
 
     async def status(self, context: AIContext) -> RuntimeStatus:
+        limits = self.configuration.limits
         used = await self.usage.requests_since(context.tenant_id, month_start())
+        billable = await self.usage.billable_since(context.tenant_id, month_start())
         return RuntimeStatus(
             requests_this_month=used,
-            monthly_limit=self.configuration.limits.monthly_requests,
-            tools_enabled=self.configuration.limits.tools_enabled,
+            monthly_limit=limits.monthly_requests,
+            tools_enabled=limits.tools_enabled,
             agents=self.agents.ids(),
+            over_allowance=limits.monthly_requests is not None
+            and used >= limits.monthly_requests
+            and limits.overage_enabled,
+            overage_enabled=limits.overage_enabled,
+            billable_this_month_micros=billable,
+            overage_cap_micros=limits.overage_cap_micros,
         )
+
+    async def _allowance(self, context: AIContext) -> bool:
+        """Whether the next call is beyond the allowance, or a refusal.
+
+        Inside the allowance: false. Past it with pay as you go off: the
+        stop the plan promised. Past it with pay as you go on: true, so the
+        call is made and stamped billable -- unless the month's charges have
+        reached the limit the customer set, which is then the stop.
+        Successful calls are what is counted, on both sides.
+        """
+        limits = self.configuration.limits
+        if limits.monthly_requests is None:
+            return False
+        used = await self.usage.requests_since(context.tenant_id, month_start())
+        if used < limits.monthly_requests:
+            return False
+        if not limits.overage_enabled:
+            raise usage_exceeded(limits.monthly_requests)
+        if limits.overage_cap_micros is not None:
+            spent = await self.usage.billable_since(context.tenant_id, month_start())
+            if spent >= limits.overage_cap_micros:
+                raise overage_cap_reached(limits.overage_cap_micros)
+        return True
 
     # ── the turn ───────────────────────────────────────────────────────────
 
@@ -504,11 +543,7 @@ class AIRuntime:
         route is tried. The monthly ceiling is checked once, before the first
         attempt, against everything recorded so far this month.
         """
-        limit = self.configuration.limits.monthly_requests
-        if limit is not None:
-            used = await self.usage.requests_since(context.tenant_id, month_start())
-            if used >= limit:
-                raise usage_exceeded(limit)
+        over = await self._allowance(context)
 
         routes = await self.configuration.routes_for(request.model)
         last: AIError | None = None
@@ -521,14 +556,14 @@ class AIRuntime:
                 result = await provider.generate(request, route=route)
             except AIError as error:
                 await self._record(
-                    context, agent_id, conversation_id, request.model, route, None, error
+                    context, agent_id, conversation_id, request.model, route, None, error, over
                 )
                 last = error
                 if error.code in _RETRY_NEXT_ROUTE and position < len(routes) - 1:
                     continue
                 raise
             await self._record(
-                context, agent_id, conversation_id, request.model, route, result, None
+                context, agent_id, conversation_id, request.model, route, result, None, over
             )
             return result
 
@@ -555,11 +590,7 @@ class AIRuntime:
         second answer stitched onto the first is not an answer anybody asked
         for.
         """
-        limit = self.configuration.limits.monthly_requests
-        if limit is not None:
-            used = await self.usage.requests_since(context.tenant_id, month_start())
-            if used >= limit:
-                raise usage_exceeded(limit)
+        over = await self._allowance(context)
 
         routes = await self.configuration.routes_for(request.model)
         last: AIError | None = None
@@ -583,12 +614,13 @@ class AIRuntime:
                             route,
                             event.result,
                             None,
+                            over,
                         )
                         yield event
                         return
             except AIError as error:
                 await self._record(
-                    context, agent_id, conversation_id, request.model, route, None, error
+                    context, agent_id, conversation_id, request.model, route, None, error, over
                 )
                 last = error
                 if not spoke and error.code in _RETRY_NEXT_ROUTE and position < len(routes) - 1:
@@ -639,7 +671,15 @@ class AIRuntime:
         route: ModelRoute,
         result: GenerateResult | None,
         error: AIError | None,
+        over_allowance: bool = False,
     ) -> None:
+        cost = (
+            estimated_cost_micros(result.usage, route.price)
+            if result is not None and route.price is not None
+            else None
+        )
+        rate = self.configuration.limits.overage_rate_percent
+        billable = cost * rate // 100 if over_allowance and cost is not None else None
         await self.usage.record(
             UsageEvent(
                 tenant_id=context.tenant_id,
@@ -654,11 +694,10 @@ class AIRuntime:
                 status="ok" if result else "error",
                 error_code=error.code.value if error else None,
                 created_at=now(),
-                estimated_cost_micros=(
-                    estimated_cost_micros(result.usage, route.price)
-                    if result is not None and route.price is not None
-                    else None
-                ),
+                estimated_cost_micros=cost,
+                over_allowance=over_allowance,
+                billable_micros=billable,
+                overage_rate_percent=rate if over_allowance else None,
             )
         )
 

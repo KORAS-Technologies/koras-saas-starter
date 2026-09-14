@@ -315,6 +315,11 @@ export interface AiStatus {
   monthly_limit: number | null
   resolved: boolean
   agents: string[]
+  /** Pay as you go beyond the allowance: on, past it this month, charged so far. */
+  overage_enabled: boolean
+  over_allowance: boolean
+  billable_this_month_micros: number
+  overage_cap_micros: number | null
 }
 
 export interface AiConversation {

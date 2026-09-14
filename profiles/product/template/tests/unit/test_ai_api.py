@@ -162,6 +162,8 @@ def test_status_reports_the_grant_and_the_allowance(harness: Harness, client: Te
     assert body["requests_this_month"] == 0
     assert body["monthly_limit"] is None
     assert body["agents"] == ["assistant"]
+    assert body["overage_enabled"] is False and body["over_allowance"] is False
+    assert body["billable_this_month_micros"] == 0 and body["overage_cap_micros"] is None
 
 
 def test_a_conversation_is_started_and_answered(harness: Harness, client: TestClient) -> None:
@@ -573,3 +575,66 @@ def test_the_stream_route_refuses_without_a_bearer() -> None:
     client = TestClient(app)
     answer = client.post("/api/v1/ai/conversations/x/messages/stream", json={"text": "hi"})
     assert answer.status_code in (401, 403)
+
+
+# ── pay as you go ──────────────────────────────────────────────────────────
+
+
+def test_the_grant_reads_pay_as_you_go_from_the_entitlements() -> None:
+    from koras_api.core.ai import grant_from
+    from koras_api.core.platform import PortalAnswer
+
+    body = {
+        "entitlements": [
+            {"code": "ai.assistant", "enabled": True},
+            {"code": "ai.requests", "enabled": True, "limit_value": 100},
+            {
+                "code": "ai.overage",
+                "enabled": True,
+                "limit_value": 2500,
+                "config": {"rate_percent": 300},
+            },
+        ]
+    }
+    grant = grant_from(PortalAnswer(body=body), configured=True)
+    assert grant.monthly_requests == 100
+    assert grant.overage_enabled is True
+    assert grant.overage_rate_percent == 300
+    # The limit is in cents on the platform and in micro-dollars in the runtime.
+    assert grant.overage_cap_micros == 25_000_000
+
+    # Absent, or present without consent: off, at the default rate, no limit.
+    plain = grant_from(
+        PortalAnswer(body={"entitlements": body["entitlements"][:2]}),
+        configured=True,
+    )
+    assert (plain.overage_enabled, plain.overage_rate_percent, plain.overage_cap_micros) == (
+        False,
+        400,
+        None,
+    )
+
+
+def test_past_the_allowance_with_pay_as_you_go_the_turn_answers_and_status_says_so(
+    client: TestClient,
+) -> None:
+    built = Harness(
+        [Message("assistant", "one"), Message("assistant", "two")],
+        limits=Limits(monthly_requests=1, overage_enabled=True),
+    )
+    app.dependency_overrides[tenant_ai] = built.tenant_ai
+    app.dependency_overrides[require_auth] = built.claims
+    try:
+        conversation = client.post("/api/v1/ai/conversations", json={}, headers=AUTH).json()
+        for text in ("one", "two"):
+            answer = client.post(
+                f"/api/v1/ai/conversations/{conversation['id']}/messages",
+                json={"text": text},
+                headers=AUTH,
+            )
+            assert answer.status_code == 200, answer.text
+        status = client.get("/api/v1/ai/status", headers=AUTH).json()
+        assert status["over_allowance"] is True and status["overage_enabled"] is True
+        assert [e.over_allowance for e in built.store.usage] == [False, True]
+    finally:
+        app.dependency_overrides.clear()

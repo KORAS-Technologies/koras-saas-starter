@@ -423,6 +423,8 @@ export const en = {
   'assistant.suggestions.summary': 'Summarise what I am looking at',
   'assistant.usage': '{used} of {limit} requests used this month',
   'assistant.usageUnlimited': '{used} requests this month',
+  'assistant.usageOverage':
+    '{used} requests this month, beyond your plan\'s {limit}. Pay-as-you-go charges so far: ${charges}',
   'assistant.usageUnknown': 'Usage allowance not available right now',
   'assistant.citations': 'Sources',
   'assistant.activity.title': 'Recent assistant activity',

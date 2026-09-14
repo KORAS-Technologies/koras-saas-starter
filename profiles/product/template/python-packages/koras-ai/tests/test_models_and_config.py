@@ -136,3 +136,7 @@ async def test_a_platform_policy_wins_over_the_catalogue(catalogue: ModelCatalog
 def test_limits_default_to_no_ceiling_and_tools_on() -> None:
     assert Limits().monthly_requests is None
     assert Limits().tools_enabled is True
+    # Pay as you go is off until a customer agrees to it, at four times cost.
+    assert Limits().overage_enabled is False
+    assert Limits().overage_rate_percent == 400
+    assert Limits().overage_cap_micros is None

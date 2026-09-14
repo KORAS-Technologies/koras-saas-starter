@@ -430,6 +430,8 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'assistant.suggestions.summary': 'Fasse zusammen, was ich gerade sehe',
   'assistant.usage': '{used} von {limit} Anfragen in diesem Monat genutzt',
   'assistant.usageUnlimited': '{used} Anfragen in diesem Monat',
+  'assistant.usageOverage':
+    '{used} Anfragen in diesem Monat, über die {limit} Ihres Tarifs hinaus. Bisherige nutzungsabhängige Kosten: ${charges}',
   'assistant.usageUnknown': 'Das Kontingent ist gerade nicht verfügbar',
   'assistant.citations': 'Quellen',
   'assistant.activity.title': 'Letzte Aktivitäten des Assistenten',
