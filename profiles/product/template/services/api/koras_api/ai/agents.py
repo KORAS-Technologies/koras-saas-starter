@@ -17,7 +17,7 @@ AGENTS: tuple[AgentDefinition, ...] = (
         model=ModelAlias.BALANCED,
         prompt_id="assistant.system",
         capabilities=("chat", "tools"),
-        tools=("files.list", "knowledge.search", "files.delete"),
+        tools=("files.list", "knowledge.search", "files.rename", "files.delete"),
         max_turns=4,
     ),
 )

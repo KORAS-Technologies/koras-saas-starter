@@ -21,6 +21,8 @@ export interface AIMessageItem {
 export interface AIActionItem {
   id: string
   toolId: string
+  /** The action in words, for the person deciding. */
+  summary?: { title: string; detail: string } | null
   operation: 'read' | 'write' | 'destructive' | 'external'
   status: string
   input: Record<string, unknown>

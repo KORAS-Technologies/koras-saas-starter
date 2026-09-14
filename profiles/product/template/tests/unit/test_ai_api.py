@@ -316,6 +316,9 @@ def test_a_delete_proposal_waits_for_approval_and_a_member_cannot_make_one(
         assert [a["tool_id"] for a in turn["pending"]] == ["files.delete"]
         assert turn["pending"][0]["status"] == "awaiting_approval"
         assert turn["pending"][0]["operation"] == "destructive"
+        # In words, for the person deciding. No session here, so the file
+        # cannot be named; the shape is still the shape.
+        assert turn["pending"][0]["summary"]["title"] == "Delete a file"
         # Nothing was deleted: the tool has not run.
         assert built.store.usage[0].status == "ok"
 

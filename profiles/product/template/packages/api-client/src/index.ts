@@ -324,6 +324,8 @@ export interface AiAction {
   id: string
   conversation_id: string
   tool_id: string
+  /** What it will do, in words, while it waits: "Delete the file x (46 KB, ...)". */
+  summary: { title: string; detail: string } | null
   operation: string
   status: string
   input: Record<string, unknown>

@@ -69,6 +69,9 @@ class FileRow(BaseModel):
     content_type: str
     uploaded_by: str
     uploaded_at: datetime
+    #: When the assistant's index took the file's text, or why it did not.
+    indexed_at: datetime | None = None
+    index_note: str | None = None
 
 
 class FileList(BaseModel):
@@ -131,7 +134,8 @@ async def list_files(tenant: TenantDep, storage: StorageDep, session: DbSession)
     """
     rows = await session.execute(
         text(
-            "select id, name, size_bytes, content_type, uploaded_by, ready_at "
+            "select id, name, size_bytes, content_type, uploaded_by, ready_at, "
+            " indexed_at, index_note "
             "from public.files where tenant_id = :tenant_id and status = 'ready' "
             "order by ready_at desc"
         ),
@@ -146,6 +150,8 @@ async def list_files(tenant: TenantDep, storage: StorageDep, session: DbSession)
                 content_type=row.content_type,
                 uploaded_by=row.uploaded_by,
                 uploaded_at=row.ready_at,
+                indexed_at=row.indexed_at,
+                index_note=row.index_note,
             )
             for row in rows.fetchall()
         ],
