@@ -632,6 +632,10 @@ class TenantAI:
     #: runtime is done. None in tests that run without a database.
     audit: SqlAuditSink | None = None
     session: AsyncSession | None = None
+    #: Who is asking, as the token said, for a notice that names a person
+    #: rather than a subject id.
+    requester_name: str | None = None
+    requester_email: str | None = None
 
 
 async def tenant_ai(
@@ -730,7 +734,14 @@ async def tenant_ai(
         services={"embed": embed, "retrieve": retrieve, "storage": object_store},
     )
     return TenantAI(
-        runtime=runtime, context=context, grant=grant, token=token, audit=sink, session=session
+        runtime=runtime,
+        context=context,
+        grant=grant,
+        token=token,
+        audit=sink,
+        session=session,
+        requester_name=claims.name,
+        requester_email=claims.email,
     )
 
 
