@@ -65,12 +65,16 @@ class EmailSender(Protocol):
         """
         ...
 
-    async def send(self, *, to: str, subject: str, body: str, tag: str) -> Sent:
-        """Deliver one plain-text message.
+    async def send(
+        self, *, to: str, subject: str, body: str, tag: str, html: str | None = None
+    ) -> Sent:
+        """Deliver one message: plain text, with an HTML twin when given.
 
         `tag` names the kind of message -- "welcome", "invite" -- and goes into
         the Message-ID, so a duplicate in somebody's inbox is recognisable as a
-        duplicate rather than looking like a second event.
+        duplicate rather than looking like a second event. `html` is an
+        alternative to `body`, never a replacement: a client that shows no
+        HTML shows the text, so the two say the same thing.
         """
         ...
 
@@ -86,14 +90,16 @@ class RecordingEmailSender:
     pass its tests.
     """
 
-    sent: list[dict[str, str]] = field(default_factory=list)
+    sent: list[dict[str, str | None]] = field(default_factory=list)
 
     @property
     def simulated(self) -> bool:
         return True
 
-    async def send(self, *, to: str, subject: str, body: str, tag: str) -> Sent:
-        self.sent.append({"to": to, "subject": subject, "body": body, "tag": tag})
+    async def send(
+        self, *, to: str, subject: str, body: str, tag: str, html: str | None = None
+    ) -> Sent:
+        self.sent.append({"to": to, "subject": subject, "body": body, "tag": tag, "html": html})
         return Sent(message_id=f"recorded-{len(self.sent)}", simulated=True)
 
 
@@ -134,7 +140,9 @@ class SmtpEmailSender:
     def simulated(self) -> bool:
         return False
 
-    async def send(self, *, to: str, subject: str, body: str, tag: str) -> Sent:
+    async def send(
+        self, *, to: str, subject: str, body: str, tag: str, html: str | None = None
+    ) -> Sent:
         message = EmailMessage()
         message["From"] = self._sender
         message["To"] = to
@@ -143,6 +151,8 @@ class SmtpEmailSender:
         message_id = self._message_id(to=to, tag=tag, subject=subject)
         message["Message-ID"] = message_id
         message.set_content(body)
+        if html:
+            message.add_alternative(html, subtype="html")
 
         try:
             await asyncio.to_thread(self._deliver, message)

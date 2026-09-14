@@ -29,7 +29,10 @@ async def test_the_recording_sender_says_it_is_simulated() -> None:
     tell that it did. Everything else here is convenience; this is the contract.
     """
     sender = RecordingEmailSender()
-    result = await sender.send(to="a@b.invalid", subject="s", body="b", tag="welcome")
+    result = await sender.send(
+        to="a@b.invalid", subject="s", body="b", tag="welcome", html="<p>b</p>"
+    )
+    assert sender.sent[0]["html"] == "<p>b</p>"
 
     assert sender.simulated is True
     assert result.simulated is True
@@ -46,7 +49,13 @@ async def test_the_recording_sender_keeps_what_it_would_have_sent() -> None:
     await sender.send(to="owner@acme.invalid", subject="Ready", body="Hello", tag="welcome")
 
     assert sender.sent == [
-        {"to": "owner@acme.invalid", "subject": "Ready", "body": "Hello", "tag": "welcome"}
+        {
+            "to": "owner@acme.invalid",
+            "subject": "Ready",
+            "body": "Hello",
+            "tag": "welcome",
+            "html": None,
+        }
     ]
 
 

@@ -10,20 +10,27 @@ carries `ai.approve` -- owners and administrators. The platform is asked
 with the caller's own token, so a product learns its own members and no
 other organization's; without a platform the owner alone is told.
 
-What is sent: which tool, proposed by whom, and where to go. Never the
-proposal's input and never a message: the mail crosses a boundary the
-conversation does not, and a file name in an inbox is a leak nobody meant.
+What is sent: who asked, in their own words, and what the assistant proposed
+to do about it, in plain words -- "Delete the file AI_FOUNDATION_PLAN.md
+(16 KB)", not a tool id and an argument map -- with a button to the place
+where it is decided. The approver is in the same organization as the person
+who asked, so the request and the file's name are theirs to see; what the
+model said in between is not sent, because an inbox is not the
+conversation.
 
-How it is sent: through `koras_email`, over SMTP to whichever provider the
-environment's SMTP_* settings name, and recorded rather than sent when no
-host is set -- so a product without a provider still runs and the log says
-what it would have sent.
+How it is sent: through `koras_email`, as HTML with a plain-text twin, over
+SMTP to whichever provider the environment's SMTP_* settings name, and
+recorded rather than sent when no host is set -- so a product without a
+provider still runs and the log says what it would have sent.
 """
 
 from __future__ import annotations
 
+import html
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from koras_ai import ActionStatus, ProposedAction
@@ -38,6 +45,43 @@ from .settings import settings
 logger = logging.getLogger(__name__)
 
 _OWNER_EMAIL = text("select owner_email from public.tenants where id = :tenant_id")
+
+_FILE_BY_ID = text(
+    "select name, size_bytes, ready_at from public.files "
+    "where id = cast(:id as uuid) and tenant_id = :tenant_id and status = 'ready'"
+)
+
+#: How an operation class reads to a person.
+_OPERATION_WORDS = {
+    "read": "reads",
+    "write": "changes something",
+    "destructive": "deletes something",
+    "external": "sends something outside",
+}
+
+
+@dataclass(frozen=True)
+class Requester:
+    """Who asked, as the token said: the name if it carried one, else the address."""
+
+    id: str
+    name: str | None = None
+    email: str | None = None
+
+    def display(self) -> str:
+        if self.name and self.email:
+            return f"{self.name} ({self.email})"
+        return self.name or self.email or "a member of the organization"
+
+
+@dataclass(frozen=True)
+class ActionSummary:
+    """One proposed action, in the words an approver needs."""
+
+    tool_id: str
+    operation: str
+    title: str
+    detail: str
 
 
 def mail_sender() -> EmailSender:
@@ -100,48 +144,205 @@ async def approvers(
     return unique
 
 
-def compose(actions: Sequence[ProposedAction], *, product: str, app_url: str) -> tuple[str, str]:
-    """Subject and body. Tool ids and who proposed; nothing the model wrote."""
-    count = len(actions)
-    subject = (
-        f"[{product}] The assistant is waiting for approval"
-        if count == 1
-        else f"[{product}] The assistant is waiting for {count} approvals"
-    )
-    where = f"{app_url.rstrip('/')}/dashboard/assistant" if app_url else "the assistant page"
-    lines = [
-        "The assistant proposed an action that runs only after somebody approves it."
-        if count == 1
-        else f"The assistant proposed {count} actions that run only after somebody approves them.",
-        "",
-    ]
+def _size(size_bytes: object) -> str:
+    if not isinstance(size_bytes, int):
+        return ""
+    if size_bytes >= 1_000_000:
+        return f"{size_bytes / 1_000_000:.1f} MB"
+    if size_bytes >= 1_000:
+        return f"{size_bytes / 1_000:.0f} KB"
+    return f"{size_bytes} bytes"
+
+
+async def summarize(
+    session: AsyncSession | None, *, tenant_id: str, actions: Sequence[ProposedAction]
+) -> list[ActionSummary]:
+    """Each action as a sentence, looking up what its arguments point at.
+
+    A file id becomes the file's name and size; anything else is the tool's
+    id with its arguments shown as plain `key: value` pairs, strings only,
+    so an approver of a tool this module does not know still sees what was
+    asked for.
+    """
+    summaries: list[ActionSummary] = []
     for action in actions:
-        lines.append(
-            f"- {action.tool_id} ({action.operation.value}), proposed by {action.proposed_by}"
+        title, detail = await _describe(session, tenant_id, action)
+        summaries.append(
+            ActionSummary(
+                tool_id=action.tool_id,
+                operation=action.operation.value,
+                title=title,
+                detail=detail,
+            )
         )
-    lines += ["", f"Approve or reject it at {where}.", "", "Nothing runs until you decide."]
-    return subject, "\n".join(lines)
+    return summaries
+
+
+async def _describe(
+    session: AsyncSession | None, tenant_id: str, action: ProposedAction
+) -> tuple[str, str]:
+    arguments: Mapping[str, Any] = action.input
+    if action.tool_id == "files.delete":
+        file_id = str(arguments.get("file_id") or "")
+        if session is not None and file_id:
+            try:
+                row = (
+                    await session.execute(_FILE_BY_ID, {"id": file_id, "tenant_id": tenant_id})
+                ).first()
+            except Exception:
+                logger.info("the file behind an approval notice could not be read")
+                row = None
+            if row is not None:
+                when = row.ready_at.strftime("%d %b %Y") if row.ready_at else ""
+                detail = f"{_size(row.size_bytes)}, uploaded {when}".strip(", ")
+                return f"Delete the file {row.name}", detail
+        return "Delete a file", f"file id {file_id or 'unknown'}"
+    pairs = ", ".join(
+        f"{key}: {value}" for key, value in arguments.items() if isinstance(value, str | int)
+    )
+    verb = _OPERATION_WORDS.get(action.operation.value, action.operation.value)
+    return f"Run {action.tool_id}, which {verb}", pairs[:300]
+
+
+def compose(
+    summaries: Sequence[ActionSummary],
+    *,
+    product: str,
+    app_url: str,
+    requester: Requester,
+    request_text: str,
+    requested_at: datetime,
+) -> tuple[str, str, str]:
+    """Subject, plain text, and HTML. The same words in both bodies."""
+    first = summaries[0].title if summaries else "an action"
+    subject = (
+        f"[{product}] Approval needed: {first}"
+        if len(summaries) == 1
+        else f"[{product}] Approval needed: {len(summaries)} actions"
+    )
+    where = f"{app_url.rstrip('/')}/dashboard/assistant" if app_url else ""
+    who = requester.display()
+    when = requested_at.astimezone(UTC).strftime("%d %b %Y, %H:%M UTC")
+    asked = request_text.strip()[:300]
+
+    lines = [
+        f"{who} asked the assistant in {product}:",
+        f'  "{asked}"' if asked else "  (no message)",
+        "",
+        "The assistant proposed:" if len(summaries) > 1 else "The assistant proposed to:",
+    ]
+    for summary in summaries:
+        lines.append(f"  - {summary.title}" + (f" ({summary.detail})" if summary.detail else ""))
+    lines += [
+        "",
+        "It has not run. It runs only if an owner or administrator approves it.",
+        f"Review and decide: {where}" if where else "Review and decide on the assistant page.",
+        "",
+        f"Requested {when}.",
+    ]
+    text_body = "\n".join(lines)
+
+    e = html.escape
+    items = "".join(
+        f'<li style="margin:0 0 8px 0;"><strong>{e(s.title)}</strong>'
+        + (f'<br><span style="color:#5b6470;">{e(s.detail)}</span>' if s.detail else "")
+        + "</li>"
+        for s in summaries
+    )
+    button = (
+        f'<a href="{e(where)}" style="display:inline-block;background:#3b5bdb;color:#ffffff;'
+        'text-decoration:none;padding:12px 20px;border-radius:6px;font-weight:600;">'
+        "Review and decide</a>"
+        if where
+        else "<strong>Open the assistant page to review and decide.</strong>"
+    )
+    html_body = _html_document(
+        product=product,
+        who=who,
+        asked=asked,
+        items=items,
+        button=button,
+        when=when,
+    )
+    return subject, text_body, html_body
+
+
+_FONT = "-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif"
+_MUTED = "color:#5b6470;"
+_CELL = "padding:18px 28px 0 28px;font-size:15px;line-height:1.5;"
+
+
+def _html_document(
+    *, product: str, who: str, asked: str, items: str, button: str, when: str
+) -> str:
+    """The notice as a small table-based page every mail client renders alike."""
+    e = html.escape
+    quote = (
+        "margin:10px 0 0 0;padding:10px 14px;background:#f4f5f7;"
+        "border-left:3px solid #3b5bdb;border-radius:4px;font-style:italic;"
+    )
+    card = (
+        "max-width:560px;width:100%;background:#ffffff;border-radius:8px;border:1px solid #e3e6ea;"
+    )
+    rows = [
+        f'<tr><td style="padding:20px 28px 0 28px;font-size:13px;{_MUTED}'
+        'letter-spacing:.04em;text-transform:uppercase;">'
+        f"{e(product)} &middot; Assistant</td></tr>",
+        '<tr><td style="padding:8px 28px 0 28px;font-size:22px;font-weight:700;">'
+        "Approval needed</td></tr>",
+        f'<tr><td style="{_CELL}"><strong>{e(who)}</strong> asked the assistant:'
+        f'<blockquote style="{quote}">{e(asked) if asked else "(no message)"}</blockquote>'
+        "</td></tr>",
+        f'<tr><td style="{_CELL}">The assistant proposed to:'
+        f'<ul style="margin:8px 0 0 0;padding-left:20px;">{items}</ul></td></tr>',
+        f'<tr><td style="{_CELL}font-size:14px;{_MUTED}">'
+        "It has not run. It runs only if an owner or administrator approves it.</td></tr>",
+        f'<tr><td style="padding:22px 28px 0 28px;">{button}</td></tr>',
+        '<tr><td style="padding:22px 28px 24px 28px;font-size:12px;color:#8a929c;'
+        'border-top:1px solid #e3e6ea;">'
+        f"Requested {e(when)}. Nothing runs until somebody decides.</td></tr>",
+    ]
+    return (
+        "<!doctype html>\n"
+        f'<html><body style="margin:0;padding:0;background:#f4f5f7;font-family:{_FONT};'
+        'color:#1f2933;">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" '
+        'style="background:#f4f5f7;padding:24px 0;"><tr><td align="center">'
+        f'<table role="presentation" width="560" cellspacing="0" cellpadding="0" style="{card}">'
+        + "".join(rows)
+        + "</table></td></tr></table></body></html>"
+    )
 
 
 async def notify_awaiting_approval(
     *,
     recipients: Sequence[str],
-    actions: Sequence[ProposedAction],
+    summaries: Sequence[ActionSummary],
     product: str,
     app_url: str,
+    requester: Requester,
+    request_text: str,
+    requested_at: datetime | None = None,
+    tag: str = "ai-approval",
     sender: EmailSender | None = None,
 ) -> int:
     """Send one notice per recipient. Returns how many were sent or recorded."""
-    waiting = awaiting(actions)
-    if not waiting or not recipients:
+    if not summaries or not recipients:
         return 0
-    subject, body = compose(waiting, product=product, app_url=app_url)
+    subject, body, html_body = compose(
+        summaries,
+        product=product,
+        app_url=app_url,
+        requester=requester,
+        request_text=request_text,
+        requested_at=requested_at or datetime.now(UTC),
+    )
     mailer = sender or mail_sender()
     sent = 0
     for address in recipients:
         try:
             outcome = await mailer.send(
-                to=address, subject=subject, body=body, tag=f"ai-approval:{waiting[0].id}"
+                to=address, subject=subject, body=body, tag=tag, html=html_body
             )
         except Exception:
             logger.exception("approval notice to one approver could not be sent")
@@ -150,6 +351,6 @@ async def notify_awaiting_approval(
         if outcome.simulated:
             logger.info(
                 "approval notice recorded, not sent (no mail host): %d action(s) waiting",
-                len(waiting),
+                len(summaries),
             )
     return sent

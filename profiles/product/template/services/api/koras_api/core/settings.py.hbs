@@ -7,6 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # of the repository rather than a setting: nobody should be able to point a
 # deployed API at another product's policies by editing Doppler.
 PRODUCT_CODE = "{{projectSlug}}"
+#: The product as a person reads it, for a subject line or a heading.
+PRODUCT_NAME = "{{projectName}}"
 
 
 class Settings(BaseSettings):

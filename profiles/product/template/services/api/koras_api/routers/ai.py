@@ -33,7 +33,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..core import notify
 from ..core.ai import AiDep, TenantAI, refusal
-from ..core.settings import PRODUCT_CODE, settings
+from ..core.settings import PRODUCT_NAME, settings
 
 _log = logging.getLogger(__name__)
 
@@ -243,13 +243,16 @@ async def _flush(ai: TenantAI) -> None:
         await ai.audit.flush()
 
 
-async def _tell_approvers(ai: TenantAI, background: BackgroundTasks, turn: Turn) -> None:
+async def _tell_approvers(
+    ai: TenantAI, background: BackgroundTasks, turn: Turn, request_text: str
+) -> None:
     """Queue the approval notice for the actions this turn left waiting.
 
-    Recipients are resolved here, on the request's session, and the mail is
-    sent after the response. A failure to find or tell anybody is logged and
-    never fails the turn: the action still waits in the assistant, which is
-    where it waited before there was a notice at all.
+    Recipients and the words describing each action are resolved here, on
+    the request's session, and the mail is sent after the response. A
+    failure to find or tell anybody is logged and never fails the turn: the
+    action still waits in the assistant, which is where it waited before
+    there was a notice at all.
     """
     waiting = notify.awaiting(turn.actions)
     if not waiting:
@@ -261,15 +264,23 @@ async def _tell_approvers(ai: TenantAI, background: BackgroundTasks, turn: Turn)
             organization_id=ai.context.organization_id,
             token=ai.token,
         )
+        summaries = await notify.summarize(
+            ai.session, tenant_id=ai.context.tenant_id, actions=waiting
+        )
     except Exception:
         _log.exception("approvers could not be resolved; the action waits unannounced")
         return
     background.add_task(
         notify.notify_awaiting_approval,
         recipients=recipients,
-        actions=list(waiting),
-        product=PRODUCT_CODE,
+        summaries=summaries,
+        product=PRODUCT_NAME,
         app_url=settings.next_public_app_url,
+        requester=notify.Requester(
+            id=ai.context.user_id, name=ai.requester_name, email=ai.requester_email
+        ),
+        request_text=request_text,
+        tag=f"ai-approval:{waiting[0].id}",
     )
 
 
@@ -284,7 +295,7 @@ async def send_message(
         await _flush(ai)
         raise refusal(error) from error
     await _flush(ai)
-    await _tell_approvers(ai, background, turn)
+    await _tell_approvers(ai, background, turn, body.text)
     return TurnView(
         conversation=_conversation(turn.conversation),
         messages=[_message(m) for m in turn.messages],
