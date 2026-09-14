@@ -1853,14 +1853,17 @@ reason rather than for lack of time:
 Built 2026-09-13: `docs/AI_ARCHITECTURE.md`. Every line below is a decision
 rather than an omission, and each names the seam it plugs into.
 
-- [ ] **A real model call.** The runtime has answered a scripted provider,
-      the routes a stubbed dependency, the page a build with no API, and the
-      tables the RLS suite. Nothing here has reached a deployed gateway, and
-      `koras-e2e-shop` was generated before the capability existed. Regenerate
-      it with `--with ai,ai_gateway`, author `ai.assistant`, `ai.tools` and
-      `ai.requests` in the Control Plane's catalogue, grant them to a plan, and
-      hold one conversation. Every design in this repository says to run the
-      flow once before extending it, and this is that run.
+- [x] **A real model call.** Held on dev on 2026-09-14, from `koras-e2e-shop`
+      through its deployed gateway to OpenAI, and it found two defects the
+      scripted provider could not: OpenAI refuses a function named
+      `files.list`, so tool ids now cross the gateway with the dot as a
+      hyphen; and the usage row was refused by row-level security, because
+      the store committed mid-request and the tenant setting is
+      transaction-local, so the store re-binds the tenant after every commit.
+      The three entitlements are in the Control Plane's catalogue, granted to
+      Pro and above, and a routing template per tier is written at
+      provisioning; an organization that predates it gets its rows from one
+      button on the admin's AI page.
 - [ ] **Streaming.** `GatewayProvider` streams and the runtime does not use
       it: a Next server action cannot stream, and the product surface is
       request and response. A streaming route needs a route handler that
@@ -1876,9 +1879,24 @@ rather than an omission, and each names the seam it plugs into.
       The event shape is final; the sink behind it is the next implementation.
 - [ ] **Retention.** Messages hold content and nothing deletes them. The
       tables carry `created_at` so a sweep needs no second migration.
-- [ ] **Usage reporting to the platform.** Metered per call in the product's
-      database and read there. Reporting it needs a machine identity a product
-      does not hold at runtime, which is F2b's question again.
+- [x] **Usage reporting to the platform.** Built 2026-09-14 the other way
+      round: the platform pulls. The private platform router answers every
+      tenant's usage per day, aggregated, on the provisioning session, which
+      migration 00007 admits for reading and the 070 isolation test bounds to
+      it; the Control Plane collects hourly through the identity it already
+      holds toward every product, keeps daily rows per organization, and shows
+      staff the calls, tokens and list-price estimate, and the customer the
+      calls and tokens. Cost is the platform's price list in code, carried in
+      each routing policy as `prices` and stamped on each usage row as
+      `estimated_cost_micros`. Still open beside it: billing by usage through
+      Stripe (overage or credit packs, a pricing decision first), tracing
+      spans on the gateway call, and a "last collected" component on platform
+      health so a silent product is visible without a query.
+- [ ] **The gateway's unauthenticated answer.** A request to the deployed
+      gateway with no bearer gets a 500, not a 401, because LiteLLM's
+      authentication error handler imports Prisma to classify the error and
+      the image has none. Harmless to the product, which always sends the
+      key, and misleading to anyone probing the gateway by hand.
 - [ ] **A per-minute AI quota.** The API's tier-2 limiter and the monthly
       allowance bound abuse today; a finer ceiling is a field on `Limits`.
 - [ ] **The local gateway.** `make dev` starts the gateway through uvicorn,
