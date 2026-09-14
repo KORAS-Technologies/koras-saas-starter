@@ -29,7 +29,9 @@ from fastapi.testclient import TestClient  # noqa: E402
 from koras_ai import (  # noqa: E402
     AIConfiguration,
     AIContext,
+    AIError,
     AIRuntime,
+    ErrorCode,
     FakeProvider,
     InMemoryStore,
     Limits,
@@ -330,3 +332,33 @@ def test_no_ai_response_schema_carries_a_forbidden_field_name() -> None:
         for field in schema.get("properties", {}):
             assert "token" not in field.lower(), f"{name}.{field}"
             assert "secret" not in field.lower(), f"{name}.{field}"
+
+
+def test_a_refusal_on_our_side_puts_its_detail_in_the_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The page says "the reason is in the server log"; this is that reason.
+
+    Only a 5xx is logged. A customer's own refusal -- no entitlement, quota
+    spent -- is theirs to read on the page, and logging it at warning would
+    page an operator about a plan.
+    """
+    from koras_api.core.ai import refusal
+
+    with caplog.at_level("WARNING", logger="koras_api.core.ai"):
+        answered = refusal(
+            AIError(
+                ErrorCode.CONFIGURATION_ERROR,
+                "AI routing is not configured for this organization",
+                detail="no routing policy for koras-balanced and a platform is configured",
+            )
+        )
+        refusal(AIError(ErrorCode.ENTITLEMENT_MISSING, "The plan does not include AI"))
+    assert answered.status_code == 503
+    assert answered.detail == {
+        "code": "configuration_error",
+        "message": "AI routing is not configured for this organization",
+    }
+    logged = [record.getMessage() for record in caplog.records]
+    assert len(logged) == 1
+    assert "koras-balanced" in logged[0] and "503" in logged[0]

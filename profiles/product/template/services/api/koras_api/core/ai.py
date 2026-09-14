@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -82,6 +83,8 @@ AI_REQUESTS_ENTITLEMENT = "ai.requests"
 
 _bearer = HTTPBearer(auto_error=True)
 
+_log = logging.getLogger(__name__)
+
 #: How an AI refusal is answered. One status per code, decided here and read
 #: by the router; the web tier turns the code into a sentence.
 STATUS_FOR: dict[ErrorCode, int] = {
@@ -104,9 +107,26 @@ STATUS_FOR: dict[ErrorCode, int] = {
 
 
 def refusal(error: AIError) -> HTTPException:
-    """An AI error as the API answers it: the code and the safe sentence, never the detail."""
+    """An AI error as the API answers it: the code and the safe sentence, never the detail.
+
+    The detail goes to the log instead, and only for a failure on this side
+    of the customer -- a 5xx. The page tells them "the reason is in the server
+    log", and for the first conversation on dev the log held only a status
+    line: an alias nobody had routed, and nothing said which one. A refusal
+    the customer caused (a missing entitlement, a quota, a bad alias) is
+    theirs to read on the page and is not an operator's problem.
+    """
+    code = STATUS_FOR.get(error.code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+    if code >= 500:
+        _log.warning(
+            "AI refused with %s (%s): %s -- %s",
+            code,
+            error.code.value,
+            error.message,
+            error.detail or "no further detail",
+        )
     return HTTPException(
-        status_code=STATUS_FOR.get(error.code, status.HTTP_500_INTERNAL_SERVER_ERROR),
+        status_code=code,
         detail={"code": error.code.value, "message": error.message},
     )
 
@@ -527,6 +547,7 @@ class SqlStore:
 
 
 # ── the dependency ────────────────────────────────────────────────────────────
+
 
 @functools.lru_cache(maxsize=1)
 def gateway() -> GatewayProvider:
