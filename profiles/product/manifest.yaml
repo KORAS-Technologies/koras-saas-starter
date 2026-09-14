@@ -95,11 +95,27 @@ template_map:
     # catalogue names, the components in `packages/ui` and the translations.
     ai:
       - services/api/koras_api/core/ai.py
+      - services/api/koras_api/core/notify.py
+      - services/api/koras_api/core/knowledge.py
       - services/api/koras_api/routers/ai.py
       - services/api/koras_api/ai
       - supabase/migrations/00006_ai.sql
+      - supabase/migrations/00007_ai_usage_cost.sql
+      - supabase/migrations/00008_ai_retention.sql
+      - supabase/migrations/00009_ai_audit.sql
+      - supabase/migrations/00010_ai_knowledge.sql
       - supabase/tests/060_ai_isolation.sql
+      - supabase/tests/070_ai_usage_platform_read.sql
+      - supabase/tests/080_ai_retention.sql
+      - supabase/tests/090_ai_audit.sql
+      - supabase/tests/100_ai_knowledge_isolation.sql
       - tests/unit/test_ai_api.py
+      - tests/unit/test_ai_notify.py
+      - tests/unit/test_ai_audit.py
+      - tests/unit/test_ai_knowledge.py
+      - tests/unit/test_platform_ai_usage.py
+      - tests/unit/test_ai_retention.py
+      - services/worker/koras_worker/tasks/ai_retention.py
       - apps/web/src/app/dashboard/assistant
       - e2e/assistant.spec.ts
 

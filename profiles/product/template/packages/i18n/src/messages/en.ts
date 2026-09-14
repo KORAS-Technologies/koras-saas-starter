@@ -420,6 +420,9 @@ export const en = {
   'assistant.usage': '{used} of {limit} requests used this month',
   'assistant.usageUnlimited': '{used} requests this month',
   'assistant.usageUnknown': 'Usage allowance not available right now',
+  'assistant.activity.title': 'Recent assistant activity',
+  'assistant.activity.hint': 'What the assistant proposed, ran, was refused and was decided, for the people who approve. Never the content of a conversation.',
+  'assistant.activity.empty': 'Nothing recorded yet.',
   'assistant.pending.title': 'Waiting for approval',
   'assistant.pending.hint':
     'The assistant proposed this and it will not run until somebody approves it.',

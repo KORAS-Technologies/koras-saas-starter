@@ -4,12 +4,20 @@ import {
   ApiError,
   approveAiAction,
   fetchAiConversation,
+  fetchAiAudit,
   fetchAiStatus,
   rejectAiAction,
   sendAiMessage,
   startAiConversation,
 } from '@{{projectSlug}}/api-client'
-import type { AiAction, AiConversation, AiConversationDetail, AiStatus, AiTurn } from '@{{projectSlug}}/api-client'
+import type {
+  AiAction,
+  AiAuditEvent,
+  AiConversation,
+  AiConversationDetail,
+  AiStatus,
+  AiTurn,
+} from '@{{projectSlug}}/api-client'
 import { can, signedInContext } from '../../../lib/access'
 import { translator } from '../../../lib/locale'
 import { apiBaseUrl, providerToken } from '../../../lib/session'
@@ -70,6 +78,16 @@ async function explain(error: unknown): Promise<string> {
     if (error.status === 504) return t('assistant.error.timeout')
   }
   return t('assistant.error.generic')
+}
+
+export async function getActivity(): Promise<ActionResult<AiAuditEvent[]>> {
+  const auth = await session('ai.approve')
+  if (auth === null) return forbidden()
+  try {
+    return { status: 'ok', value: (await fetchAiAudit(auth)).events }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
 }
 
 export async function getStatus(): Promise<ActionResult<AiStatus>> {

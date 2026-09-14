@@ -418,6 +418,9 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'assistant.usage': '{used} de {limit} peticiones usadas este mes',
   'assistant.usageUnlimited': '{used} peticiones este mes',
   'assistant.usageUnknown': 'El cupo no está disponible ahora mismo',
+  'assistant.activity.title': 'Actividad reciente del asistente',
+  'assistant.activity.hint': 'Lo que el asistente propuso, ejecutó, se le rechazó y se decidió, para las personas que aprueban. Nunca el contenido de una conversación.',
+  'assistant.activity.empty': 'Aún no hay nada registrado.',
   'assistant.pending.title': 'Pendiente de aprobación',
   'assistant.pending.hint':
     'El asistente lo ha propuesto y no se ejecutará hasta que alguien lo apruebe.',

@@ -34,6 +34,8 @@ _PROVISIONING = text("select set_config('app.provisioning', 'on', true)")
 
 _PURGE = text("delete from public.ai_conversations where updated_at < :before returning id")
 
+_PURGE_AUDIT = text("delete from public.ai_audit_events where created_at < :before returning id")
+
 
 async def purge_conversations(session: AsyncSession, *, retention_days: int) -> int:
     """Remove every conversation not touched for `retention_days`; return how many."""
@@ -42,6 +44,17 @@ async def purge_conversations(session: AsyncSession, *, retention_days: int) -> 
     before = datetime.now(UTC) - timedelta(days=retention_days)
     await session.execute(_PROVISIONING)
     removed = len((await session.execute(_PURGE, {"before": before})).all())
+    await session.commit()
+    return removed
+
+
+async def purge_audit(session: AsyncSession, *, retention_days: int) -> int:
+    """Remove audit rows older than `retention_days`; return how many."""
+    if retention_days < 1:
+        raise ValueError("AI_AUDIT_RETENTION_DAYS must be at least 1")
+    before = datetime.now(UTC) - timedelta(days=retention_days)
+    await session.execute(_PROVISIONING)
+    removed = len((await session.execute(_PURGE_AUDIT, {"before": before})).all())
     await session.commit()
     return removed
 
@@ -57,6 +70,9 @@ async def purge_ai_history(ctx: dict[str, Any]) -> dict[str, Any]:
     try:
         async with async_sessionmaker(engine, expire_on_commit=False)() as session:
             removed = await purge_conversations(session, retention_days=settings.ai_retention_days)
+            audit_removed = await purge_audit(
+                session, retention_days=settings.ai_audit_retention_days
+            )
     finally:
         await engine.dispose()
     logger.info(
@@ -64,4 +80,9 @@ async def purge_ai_history(ctx: dict[str, Any]) -> dict[str, Any]:
         removed,
         settings.ai_retention_days,
     )
-    return {"status": "ok", "removed": removed, "retention_days": settings.ai_retention_days}
+    return {
+        "status": "ok",
+        "removed": removed,
+        "audit_removed": audit_removed,
+        "retention_days": settings.ai_retention_days,
+    }

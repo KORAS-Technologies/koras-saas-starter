@@ -23,21 +23,32 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from koras_platform import OrganizationRole
 from koras_storage import object_key, safe_filename
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.engine import Row
 
+from ..core import knowledge
 from ..core.auth import AuthDep
 from ..core.database import DbSession
+from ..core.settings import settings
 from ..core.storage import STORAGE_ENTITLEMENT, StorageDep
 from ..core.tenant import TenantDep
 
 router = APIRouter(tags=["files"])
+
+_bearer = HTTPBearer(auto_error=False)
+CredentialsDep = Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)]
+
+#: Retrieval indexes uploads only where the product has an AI gateway; a
+#: product generated without the capability has neither the setting nor the
+#: tables, and this reads as False there.
+_RETRIEVAL = bool(getattr(settings, "ai_gateway_url", ""))
 
 #: Signed URLs live this long. Long enough for a slow connection to finish
 #: a large upload, short enough that a leaked URL is worth little.
@@ -201,7 +212,12 @@ async def request_upload(
 
 @router.post("/files/{file_id}/complete", response_model=FileRow)
 async def complete_upload(
-    file_id: str, tenant: TenantDep, storage: StorageDep, session: DbSession
+    file_id: str,
+    tenant: TenantDep,
+    storage: StorageDep,
+    session: DbSession,
+    background: BackgroundTasks,
+    credentials: CredentialsDep,
 ) -> FileRow:
     """The browser says it finished; the API checks the bucket agrees.
 
@@ -231,6 +247,25 @@ async def complete_upload(
         {"now": now, "id": file_id},
     )
     await session.commit()
+    if (
+        _RETRIEVAL
+        and credentials is not None
+        and knowledge.extract_text(b"x", content_type=row.content_type)
+    ):
+        # Text-like, so worth reading back and indexing after the response.
+        # Import here: the AI core exists only with the capability.
+        from ..core.ai import index_uploaded_file
+
+        background.add_task(
+            index_uploaded_file,
+            tenant_id=tenant.id,
+            organization_id=tenant.organization_id,
+            token=credentials.credentials,
+            file_id=file_id,
+            name=row.name,
+            content_type=row.content_type,
+            url=storage.store.presign_download(row.storage_key, row.name, DOWNLOAD_URL_SECONDS),
+        )
     return FileRow(
         id=file_id,
         name=row.name,
@@ -269,6 +304,10 @@ async def delete_file(
         )
     row = await _ready(session, tenant.id, file_id)
     storage.store.delete(row.storage_key)
+    if _RETRIEVAL:
+        await knowledge.delete_resource(
+            session, tenant_id=tenant.id, resource_type="file", resource_id=file_id
+        )
     await session.execute(text("delete from public.files where id = :id"), {"id": file_id})
     await session.commit()
 

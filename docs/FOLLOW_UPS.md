@@ -1868,15 +1868,26 @@ rather than an omission, and each names the seam it plugs into.
       it: a Next server action cannot stream, and the product surface is
       request and response. A streaming route needs a route handler that
       forwards the caller's token to the API, which is a design of its own.
-- [ ] **Approval notification.** A waiting action is visible in the assistant
-      and nowhere else. Mail is sent server-side in Python only (F12), and
-      nothing sends it for this yet.
-- [ ] **A vector store.** `koras_ai.knowledge` is contracts, a chunker and an
-      embedder. No index ships and no source is declared. A product that needs
-      retrieval writes the index, the ingestion pipeline and the design
-      document that chooses the store.
-- [ ] **A durable audit table.** `koras_audit` writes a structured log line.
-      The event shape is final; the sink behind it is the next implementation.
+- [x] **Approval notification.** Built 2026-09-14: the owner and every
+      active member whose role carries `ai.approve` are told, after the
+      response, which tool waits and who proposed it -- never the input. A
+      deployed product has no mail host, so there the notice is recorded and
+      logged; see the mail provider entry below.
+- [ ] **A mail provider for products.** SMTP_* is declared for the local
+      stack only, so a deployed product sends no mail; the approval notice is
+      the first thing that wants to. Choosing a provider -- SMTP credentials
+      in Doppler, or an API such as Resend -- is a decision, then a manifest
+      change and nothing else: `koras_email.sender_for` already takes it.
+- [x] **A vector store.** Built 2026-09-14 on pgvector in the product's own
+      database: `ai_knowledge_chunks` under the tenant policies, text uploads
+      indexed after completion and removed with the file, `knowledge.search`
+      on the reference agent, the 100 isolation test. Not text -- PDFs,
+      images, spreadsheets -- is not indexed; an extractor per type is the
+      follow-up, and the CI Postgres is now the pgvector image.
+- [x] **A durable audit table.** Built 2026-09-14: `ai_audit_events`,
+      insert-only per tenant, flushed by every AI route after answer or
+      refusal, read at `/api/v1/ai/audit` by anyone with `ai.approve` and shown
+      on the assistant page, swept after `AI_AUDIT_RETENTION_DAYS`.
 - [x] **Retention.** Built 2026-09-14: the worker's nightly sweep, on the
       provisioning context, removes conversations untouched for
       `AI_RETENTION_DAYS` with their messages and actions and keeps the usage

@@ -93,7 +93,12 @@ Every refusal, proposal, execution, approval and rejection emits an
 `AuditEvent` through `koras_audit`, with actor, tenant, target and outcome
 and no content. The action row is the durable record of a proposal's life.
 Usage rows carry dimensions and counts and no content, and no policy lets
-anyone the policies apply to change or delete one. Messages hold content and
+anyone the policies apply to change or delete one. Audit events are durable
+in `ai_audit_events` since 2026-09-14, insert-only for a tenant and deleted
+only by the retention sweep; `supabase/tests/090_ai_audit.sql` proves it.
+Retrieval chunks in `ai_knowledge_chunks` hold customer content under the
+tenant policies, and `supabase/tests/100_ai_knowledge_isolation.sql` proves
+the nearest chunk in the table is never another tenant's. Messages hold content and
 are the one place it lives. The worker's nightly sweep removes conversations
 untouched for `AI_RETENTION_DAYS`, messages and actions with them, on the
 provisioning context, which migration 00008 admits for that delete and nothing

@@ -427,6 +427,9 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'assistant.usage': '{used} von {limit} Anfragen in diesem Monat genutzt',
   'assistant.usageUnlimited': '{used} Anfragen in diesem Monat',
   'assistant.usageUnknown': 'Das Kontingent ist gerade nicht verfügbar',
+  'assistant.activity.title': 'Letzte Aktivitäten des Assistenten',
+  'assistant.activity.hint': 'Was der Assistent vorgeschlagen, ausgeführt, verweigert bekommen und entschieden hat – für die Personen, die freigeben. Nie der Inhalt eines Gesprächs.',
+  'assistant.activity.empty': 'Noch nichts aufgezeichnet.',
   'assistant.pending.title': 'Wartet auf Freigabe',
   'assistant.pending.hint':
     'Der Assistent hat dies vorgeschlagen; es wird erst ausgeführt, wenn jemand es freigibt.',

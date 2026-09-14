@@ -175,8 +175,19 @@ error are on the row.
 `koras_audit` gained its first implementation: an `AuditEvent` that refuses a
 detail named like a secret, and a logging sink. The runtime emits an event
 for every proposal it refuses, every action it parks, executes, approves or
-rejects, denials included. A durable audit table is the next sink behind the
-same protocol.
+rejects, denials included. Since 2026-09-14 that sink is durable:
+`SqlAuditSink` in `services/api/koras_api/core/ai.py` keeps the request's
+events and writes them to `ai_audit_events` when the route flushes -- after
+the answer and after a refusal alike -- and `GET /api/v1/ai/audit` reads
+them back for anyone with `ai.approve`; the assistant page shows the list
+to those people. Rows are never updated or deleted by anyone the policies
+apply to; the nightly sweep removes them after `AI_AUDIT_RETENTION_DAYS`.
+
+An action that waits for approval is also announced: `core/notify.py` tells
+the organization's owner and every active member whose role carries
+`ai.approve`, after the response, naming the tool and who proposed it and
+never the proposal's input. Where the product has no mail host the notice
+is recorded and logged; a deployed product has none yet.
 
 ## Usage
 
@@ -199,7 +210,18 @@ Migration `supabase/migrations/00006_ai.sql`: four tables, every one with a
 tenant column, RLS enabled and forced, and a policy per verb scoped on the
 tenant helper; usage rows have no update or delete policy. The isolation
 test `supabase/tests/060_ai_isolation.sql` proves a second tenant sees,
-writes and approves nothing.
+writes and approves nothing. Later migrations add the cost column and the
+platform read (00007), the retention policies (00008), the audit table
+(00009) and the knowledge table (00010, pgvector); the isolation tests 070
+to 100 bound each.
+
+Retrieval is pgvector in this database. `ai_knowledge_chunks` holds one row
+per chunk of one document, 1536-wide, under the tenant policies; a file
+that finishes uploading and is text-like and under a megabyte is read back,
+chunked, embedded under the embedding alias and stored after the upload's
+response, and its chunks go when the file goes. `knowledge.search` is the
+tool the assistant calls; `core/knowledge.py` is the index. Files that are
+not text -- PDFs, images, spreadsheets -- are not indexed yet.
 
 ## The web tier
 
