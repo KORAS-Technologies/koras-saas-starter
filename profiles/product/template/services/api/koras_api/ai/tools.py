@@ -20,6 +20,8 @@ from koras_ai import Operation, ToolContext, ToolDefinition, define_tool
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from ..core import knowledge
+
 
 class ListFilesInput(BaseModel):
     """What the model may ask for: how many, and nothing about whose."""
@@ -57,7 +59,39 @@ async def list_files(ctx: ToolContext, args: ListFilesInput) -> dict[str, Any]:
     }
 
 
+class SearchInput(BaseModel):
+    """What the model may ask for: a question, and how many passages."""
+
+    query: str = Field(min_length=1, max_length=500, description="What to look for")
+    limit: int = Field(default=5, ge=1, le=10, description="How many passages to return")
+
+
+async def search_knowledge(ctx: ToolContext, args: SearchInput) -> dict[str, Any]:
+    """Passages from this organization's own files that best match the question.
+
+    The retriever is handed in by name: the API builds it for the tenant of
+    the request, so the tool never chooses whose documents to search. Each
+    result names the file it came from, so the answer can cite it.
+    """
+    retrieve = ctx.services.get("retrieve")
+    if retrieve is None or ctx.session is None:
+        return {"results": [], "note": "retrieval is not available here"}
+    citations = await retrieve(args.query, args.limit)
+    return {"results": knowledge.citations_view(citations)}
+
+
 TOOLS: tuple[ToolDefinition, ...] = (
+    define_tool(
+        id="knowledge.search",
+        description=(
+            "Search the documents this organization has uploaded and return the passages "
+            "that best match a question, each with the file it came from."
+        ),
+        permission="files.read",
+        operation=Operation.READ,
+        input_model=SearchInput,
+        execute=search_knowledge,
+    ),
     define_tool(
         id="files.list",
         description="List the files stored in this organization, newest first.",

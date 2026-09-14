@@ -347,6 +347,22 @@ export interface AiUsage {
   total: number
 }
 
+/** One thing the assistant did, or was refused, in this organization. No content. */
+export interface AiAuditEvent {
+  id: string
+  actor_id: string
+  action: string
+  target_type: string
+  target_id: string
+  outcome: string
+  details: Record<string, unknown>
+  at: string
+}
+
+export interface AiAuditList {
+  events: AiAuditEvent[]
+}
+
 export interface AiTurn {
   conversation: AiConversation
   messages: AiMessage[]
@@ -359,6 +375,11 @@ const AI_TIMEOUT_MS = 90_000
 
 export function fetchAiStatus(options: RequestOptions): Promise<AiStatus> {
   return request<AiStatus>('/api/v1/ai/status', options)
+}
+
+/** The assistant's recent activity, for those who may approve. 403 for anyone else. */
+export function fetchAiAudit(options: RequestOptions, limit = 30): Promise<AiAuditList> {
+  return request<AiAuditList>(`/api/v1/ai/audit?limit=${limit}`, options)
 }
 
 export function fetchAiConversations(

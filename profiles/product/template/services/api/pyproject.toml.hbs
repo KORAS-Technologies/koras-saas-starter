@@ -40,6 +40,8 @@ dependencies = [
 {{#if capability.ai}}  # The AI foundation: the runtime the assistant routes run. Generated only
   # with the `ai` capability, which also requires the gateway service.
   "koras-ai",
+  # The approval notice, which is the first mail this service sends.
+  "koras-email",
 {{/if}}]
 
 [tool.uv.sources]
@@ -54,4 +56,5 @@ koras-audit = { workspace = true }
 koras-storage = { workspace = true }
 koras-queue = { workspace = true }
 {{#if capability.ai}}koras-ai = { workspace = true }
+koras-email = { workspace = true }
 {{/if}}

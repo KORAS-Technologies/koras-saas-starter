@@ -16,6 +16,12 @@ A declaration looks like this, for a product with a documents area:
 
 from __future__ import annotations
 
-from koras_ai import KnowledgeSourceDefinition
+from koras_ai import KnowledgeSourceDefinition, define_knowledge_source
 
-SOURCES: tuple[KnowledgeSourceDefinition, ...] = ()
+SOURCES: tuple[KnowledgeSourceDefinition, ...] = (
+    define_knowledge_source(
+        id="files",
+        resource_type="file",
+        description="The files this organization has uploaded, where they are text",
+    ),
+)

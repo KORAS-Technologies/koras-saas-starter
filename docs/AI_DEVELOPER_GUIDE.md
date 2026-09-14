@@ -210,12 +210,15 @@ SOURCES = (
 )
 ```
 
-A source is a declaration. Retrieval needs a `KnowledgeIndex` behind it,
-which the starter does not ship; `python-packages/koras-ai/src/koras_ai/knowledge.py`
-has the protocols, a chunker and an embedder. A product that builds one
-writes the index, an ingestion pipeline that fills it under a
-`RetrievalScope`, and a tool or an agent step that asks it and renders the
-citations with `AICitations`.
+A source is a declaration; the index behind it is pgvector, shipped since
+2026-09-14 as `services/api/koras_api/core/knowledge.py` with the `files`
+source declared and the `knowledge.search` tool on the reference agent.
+Uploaded text files are indexed after their upload completes and removed
+with the file. A product that indexes another resource declares a source
+here, builds a `Document` for it with `file_document` as the model, calls
+`index_document` under the tenant's `RetrievalScope` where the resource
+changes, and `delete_resource` where it goes. `python-packages/koras-ai/src/koras_ai/knowledge.py`
+still holds the protocols, the chunker and the embedder.
 
 ## Requiring approval on a read
 

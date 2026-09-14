@@ -29,5 +29,9 @@ class Settings(BaseSettings):
     #: the nightly sweep removes it, messages and actions with it.
     ai_retention_days: int = 90
 
+    #: Days an assistant audit row is kept. Longer than the conversations it
+    #: describes: the record of what was decided outlives what was said.
+    ai_audit_retention_days: int = 365
+
 
 settings = Settings()  # type: ignore[call-arg]

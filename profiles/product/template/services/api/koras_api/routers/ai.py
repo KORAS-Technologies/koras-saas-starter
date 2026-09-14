@@ -13,10 +13,11 @@ code answers which status is decided in `core/ai.py`.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from koras_ai import (
     OPEN,
     AIError,
@@ -25,11 +26,16 @@ from koras_ai import (
     PageContext,
     ProposedAction,
     StoredMessage,
+    Turn,
     Usage,
 )
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..core.ai import AiDep, refusal
+from ..core import notify
+from ..core.ai import AiDep, TenantAI, refusal
+from ..core.settings import PRODUCT_CODE, settings
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["ai"])
 
@@ -231,13 +237,54 @@ async def get_conversation(conversation_id: str, ai: AiDep) -> ConversationDetai
     )
 
 
+async def _flush(ai: TenantAI) -> None:
+    """Write the request's audit events. After the answer and after a refusal alike."""
+    if ai.audit is not None:
+        await ai.audit.flush()
+
+
+async def _tell_approvers(ai: TenantAI, background: BackgroundTasks, turn: Turn) -> None:
+    """Queue the approval notice for the actions this turn left waiting.
+
+    Recipients are resolved here, on the request's session, and the mail is
+    sent after the response. A failure to find or tell anybody is logged and
+    never fails the turn: the action still waits in the assistant, which is
+    where it waited before there was a notice at all.
+    """
+    waiting = notify.awaiting(turn.actions)
+    if not waiting:
+        return
+    try:
+        recipients = await notify.approvers(
+            ai.session,
+            tenant_id=ai.context.tenant_id,
+            organization_id=ai.context.organization_id,
+            token=ai.token,
+        )
+    except Exception:
+        _log.exception("approvers could not be resolved; the action waits unannounced")
+        return
+    background.add_task(
+        notify.notify_awaiting_approval,
+        recipients=recipients,
+        actions=list(waiting),
+        product=PRODUCT_CODE,
+        app_url=settings.next_public_app_url,
+    )
+
+
 @router.post("/ai/conversations/{conversation_id}/messages", response_model=TurnView)
-async def send_message(conversation_id: str, body: SendMessage, ai: AiDep) -> TurnView:
+async def send_message(
+    conversation_id: str, body: SendMessage, ai: AiDep, background: BackgroundTasks
+) -> TurnView:
     """One turn of the agent. Ends at an answer, or at an action waiting for a person."""
     try:
         turn = await ai.runtime.send(ai.context, conversation_id, body.text)
     except AIError as error:
+        await _flush(ai)
         raise refusal(error) from error
+    await _flush(ai)
+    await _tell_approvers(ai, background, turn)
     return TurnView(
         conversation=_conversation(turn.conversation),
         messages=[_message(m) for m in turn.messages],
@@ -253,6 +300,8 @@ async def approve_action(action_id: str, ai: AiDep) -> ActionView:
         return _action(await ai.runtime.approve(ai.context, action_id))
     except AIError as error:
         raise refusal(error) from error
+    finally:
+        await _flush(ai)
 
 
 @router.post("/ai/actions/{action_id}/reject", response_model=ActionView)
@@ -261,3 +310,41 @@ async def reject_action(action_id: str, ai: AiDep) -> ActionView:
         return _action(await ai.runtime.reject(ai.context, action_id))
     except AIError as error:
         raise refusal(error) from error
+    finally:
+        await _flush(ai)
+
+
+class AuditEventView(BaseModel):
+    id: str
+    actor_id: str
+    action: str
+    target_type: str
+    target_id: str
+    outcome: str
+    details: dict[str, Any]
+    at: datetime
+
+
+class AuditList(BaseModel):
+    events: list[AuditEventView]
+
+
+@router.get("/ai/audit", response_model=AuditList)
+async def recent_audit(ai: AiDep, limit: int = 50) -> AuditList:
+    """What the assistant proposed, ran, was refused and was decided, newest first.
+
+    For the people who decide: the same permission that approves. Nothing
+    here is content -- actor, action, target, outcome and the event's own
+    detail map, which refuses anything named like a secret at construction.
+    """
+    if "ai.approve" not in ai.context.permissions:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "tool_denied",
+                "message": "reading the assistant's activity needs ai.approve",
+            },
+        )
+    if ai.audit is None:
+        return AuditList(events=[])
+    return AuditList(events=[AuditEventView(**row) for row in await ai.audit.recent(limit)])

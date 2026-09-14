@@ -34,11 +34,12 @@ from __future__ import annotations
 import functools
 import json
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Annotated, Any
 
+import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from koras_ai import (
@@ -48,21 +49,25 @@ from koras_ai import (
     AIError,
     AIRuntime,
     AliasPolicy,
+    Citation,
     Conversation,
     ErrorCode,
     GatewayProvider,
     Limits,
     Message,
+    ModelAlias,
     Operation,
     PageContext,
     Price,
     ProposedAction,
+    ProviderEmbedder,
     ProviderRegistry,
+    RetrievalScope,
     StoredMessage,
     ToolCall,
     UsageEvent,
 )
-from koras_audit import LoggingAuditSink
+from koras_audit import AuditEvent
 from koras_auth.permissions import permissions_for
 from koras_database import set_rls_context
 from sqlalchemy import text
@@ -70,9 +75,11 @@ from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ai import registries
+from . import knowledge as knowledge_store
 from . import platform
 from .auth import AuthDep
 from .database import DbSession
+from .engine import SessionLocal
 from .settings import PRODUCT_CODE, settings
 from .tenant import TenantDep
 
@@ -616,6 +623,13 @@ class TenantAI:
     runtime: AIRuntime
     context: AIContext
     grant: AiGrant
+    #: The caller's own token, for the platform reads a turn may need after
+    #: the runtime has answered -- who may approve, for one.
+    token: str = ""
+    #: The durable audit for this request, flushed by the route once the
+    #: runtime is done. None in tests that run without a database.
+    audit: SqlAuditSink | None = None
+    session: AsyncSession | None = None
 
 
 async def tenant_ai(
@@ -664,26 +678,199 @@ async def tenant_ai(
         providers.register(name, provider)
 
     store = SqlStore(session, tenant.id)
+    configuration = AIConfiguration(
+        catalogue=registries.catalogue,
+        routing=ControlPlaneRouting(organization_id=tenant.organization_id, token=token),
+        fail_closed=configured,
+        limits=Limits(monthly_requests=grant.monthly_requests, tools_enabled=grant.tools),
+    )
+    embed = embedder(configuration, providers)
+    scope = RetrievalScope(tenant_id=tenant.id, product_code=PRODUCT_CODE)
+
+    async def retrieve(query: str, limit: int) -> list[Citation]:
+        return await knowledge_store.search(
+            session, scope=scope, query=query, embed=embed, limit=limit
+        )
+
+    sink = SqlAuditSink(session, tenant.id)
     runtime = AIRuntime(
-        configuration=AIConfiguration(
-            catalogue=registries.catalogue,
-            routing=ControlPlaneRouting(organization_id=tenant.organization_id, token=token),
-            fail_closed=configured,
-            limits=Limits(monthly_requests=grant.monthly_requests, tools_enabled=grant.tools),
-        ),
+        configuration=configuration,
         providers=providers,
         tools=registries.tools,
         agents=registries.agents,
         prompts=registries.prompts,
         store=store,
         usage=store,
-        audit=LoggingAuditSink(),
+        audit=sink,
         session=session,
+        services={"embed": embed, "retrieve": retrieve},
     )
-    return TenantAI(runtime=runtime, context=context, grant=grant)
+    return TenantAI(
+        runtime=runtime, context=context, grant=grant, token=token, audit=sink, session=session
+    )
+
+
+def embedder(configuration: AIConfiguration, providers: ProviderRegistry) -> knowledge_store.Embed:
+    """Embeds under the embedding alias, through whichever provider the
+    routing names first and the registry holds."""
+
+    async def embed(texts: Sequence[str]) -> list[tuple[float, ...]]:
+        if not texts:
+            return []
+        for route in await configuration.routes_for(ModelAlias.EMBEDDING):
+            provider_for = providers.get(route.provider)
+            if provider_for is None:
+                continue
+            return await ProviderEmbedder(provider_for, route).embed(texts)
+        raise AIError(
+            ErrorCode.CONFIGURATION_ERROR,
+            "no provider is registered for the routes the embedding alias resolves to",
+        )
+
+    return embed
+
+
+async def index_uploaded_file(
+    *,
+    tenant_id: str,
+    organization_id: str,
+    token: str,
+    file_id: str,
+    name: str,
+    content_type: str,
+    url: str,
+) -> int:
+    """Read a finished upload back from the bucket and index it for retrieval.
+
+    Runs after the upload's response, on a session of its own scoped to the
+    tenant. Anything that goes wrong is logged and leaves no chunks: a file
+    that could not be indexed is a file the assistant answers about from its
+    name, not an upload that failed.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            raw = response.content
+    except httpx.HTTPError:
+        _log.warning("file %s could not be read back for indexing", file_id)
+        return 0
+    text_content = knowledge_store.extract_text(raw, content_type=content_type)
+    if text_content is None:
+        _log.info("file %s is not indexed: not text, or past the size ceiling", file_id)
+        return 0
+    providers = ProviderRegistry()
+    try:
+        provider = gateway()
+    except AIError:
+        _log.info("file %s is not indexed: no AI gateway configured", file_id)
+        return 0
+    for provider_name in registries.PROVIDER_NAMES:
+        providers.register(provider_name, provider)
+    configuration = AIConfiguration(
+        catalogue=registries.catalogue,
+        routing=ControlPlaneRouting(organization_id=organization_id, token=token),
+        fail_closed=platform.configured(),
+        limits=Limits(),
+    )
+    document = knowledge_store.file_document(
+        tenant_id=tenant_id, file_id=file_id, name=name, text_content=text_content
+    )
+    try:
+        async with SessionLocal() as session:
+            await set_rls_context(session, tenant_id)
+            count = await knowledge_store.index_document(
+                session,
+                scope=RetrievalScope(tenant_id=tenant_id, product_code=PRODUCT_CODE),
+                document=document,
+                embed=embedder(configuration, providers),
+            )
+    except AIError as error:
+        _log.warning("file %s is not indexed: %s", file_id, error)
+        return 0
+    _log.info("file %s indexed as %d chunk(s)", file_id, count)
+    return count
 
 
 AiDep = Annotated[TenantAI, Depends(tenant_ai)]
+
+
+# ── the durable audit ─────────────────────────────────────────────────────────
+
+_AUDIT_INSERT = text(
+    "insert into public.ai_audit_events "
+    "(tenant_id, actor_id, action, target_type, target_id, outcome, details, created_at) "
+    "values (:tenant_id, :actor_id, :action, :target_type, :target_id, :outcome, "
+    " cast(:details as jsonb), :created_at)"
+)
+
+_AUDIT_RECENT = text(
+    "select id::text as id, actor_id, action, target_type, target_id, outcome, details, "
+    " created_at "
+    "from public.ai_audit_events where tenant_id = :tenant_id "
+    "order by created_at desc limit :limit"
+)
+
+
+class SqlAuditSink:
+    """`AuditSink` that keeps the request's events and writes them on the tenant session.
+
+    The runtime emits synchronously and the database is asynchronous, so the
+    events wait in a list until the route calls `flush`, once the runtime has
+    answered or refused. A refusal is audited too, which is why the routes
+    flush in a `finally`. Every event must name this tenant: the sink refuses
+    one that does not, because the session it writes on could not store it
+    anyway and a silent drop is the wrong way to learn that.
+    """
+
+    def __init__(self, session: AsyncSession, tenant_id: str) -> None:
+        self._session = session
+        self._tenant_id = tenant_id
+        self._pending: list[AuditEvent] = []
+
+    def emit(self, event: AuditEvent) -> None:
+        if event.tenant_id != self._tenant_id:
+            raise ValueError("an audit event for another tenant cannot be recorded here")
+        self._pending.append(event)
+
+    async def flush(self) -> int:
+        events, self._pending = self._pending, []
+        for event in events:
+            await self._session.execute(
+                _AUDIT_INSERT,
+                {
+                    "tenant_id": event.tenant_id,
+                    "actor_id": event.actor_id,
+                    "action": event.action,
+                    "target_type": event.target_type,
+                    "target_id": event.target_id,
+                    "outcome": str(event.outcome),
+                    "details": json.dumps(dict(event.details)),
+                    "created_at": event.at,
+                },
+            )
+        if events:
+            await self._session.commit()
+            await set_rls_context(self._session, self._tenant_id)
+        return len(events)
+
+    async def recent(self, limit: int = 50) -> list[dict[str, Any]]:
+        rows = await self._session.execute(
+            _AUDIT_RECENT, {"tenant_id": self._tenant_id, "limit": max(1, min(limit, 200))}
+        )
+        return [
+            {
+                "id": row.id,
+                "actor_id": row.actor_id,
+                "action": row.action,
+                "target_type": row.target_type,
+                "target_id": row.target_id,
+                "outcome": row.outcome,
+                "details": _json(row.details),
+                "at": _dt(row.created_at),
+            }
+            for row in rows.fetchall()
+        ]
 
 
 # ── what the platform collects ────────────────────────────────────────────────
