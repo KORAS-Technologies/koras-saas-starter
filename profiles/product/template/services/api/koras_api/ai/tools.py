@@ -17,12 +17,12 @@ from __future__ import annotations
 from typing import Any
 
 from koras_ai import Operation, ToolContext, ToolDefinition, define_tool
-from koras_database import set_rls_context
 from koras_storage import safe_filename
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from ..core import knowledge
+from ..core.database import rebind_tenant
 
 
 class ListFilesInput(BaseModel):
@@ -125,7 +125,7 @@ async def delete_file(ctx: ToolContext, args: DeleteFileInput) -> dict[str, Any]
     await ctx.session.commit()
     # A commit ends the transaction the tenant was bound to; the runtime still
     # has the action's result to record on this session.
-    await set_rls_context(ctx.session, ctx.context.tenant_id)
+    await rebind_tenant(ctx.session, ctx.context.tenant_id)
     return {"deleted": row.name}
 
 
@@ -167,7 +167,7 @@ async def rename_file(ctx: ToolContext, args: RenameFileInput) -> dict[str, Any]
         {"name": new_name, "tenant_id": ctx.context.tenant_id, "file_id": str(row.id)},
     )
     await ctx.session.commit()
-    await set_rls_context(ctx.session, ctx.context.tenant_id)
+    await rebind_tenant(ctx.session, ctx.context.tenant_id)
     return {"renamed": row.name, "to": new_name}
 
 

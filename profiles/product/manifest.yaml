@@ -97,7 +97,9 @@ template_map:
       - services/api/koras_api/core/ai.py
       - services/api/koras_api/core/notify.py
       - services/api/koras_api/core/knowledge.py
+      - services/api/koras_api/core/file_indexing.py
       - services/api/koras_api/routers/ai.py
+      - services/api/koras_api/routers/platform_ai.py
       - services/api/koras_api/ai
       - supabase/migrations/00006_ai.sql
       - supabase/migrations/00007_ai_usage_cost.sql
@@ -115,6 +117,10 @@ template_map:
       - tests/unit/test_ai_knowledge.py
       - tests/unit/test_platform_ai_usage.py
       - tests/unit/test_ai_retention.py
+      - tests/unit/test_ai_file_tools.py
+      - tests/unit/test_ai_citations.py
+      - tests/unit/test_ai_ocr.py
+      - tests/unit/test_ai_gateway_guard.py
       - services/worker/koras_worker/tasks/ai_retention.py
       - apps/web/src/app/dashboard/assistant
       - e2e/assistant.spec.ts

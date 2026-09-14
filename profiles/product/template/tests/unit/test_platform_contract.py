@@ -21,22 +21,37 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ROUTER = REPO_ROOT / "services" / "api" / "koras_api" / "routers" / "platform.py"
 
+
+def _capability_router(capability: str) -> Path:
+    """A capability's half of the contract lives beside the platform router,
+    generated only with the capability: `platform_ai.py` for `ai`."""
+    return ROUTER.with_name(f"platform_{capability}.py")
+
+
 # Read, not restated. This list existed here, in the router, and again in the
 # Control Plane's reference implementation -- three copies of one contract, and
 # three chances for two of them to agree while the third ships.
 CONTRACT = json.loads(
     (REPO_ROOT / "contracts" / "product-platform.v1.json").read_text(encoding="utf-8")
 )
-REQUIRED_ROUTES = tuple((r["method"], r["path"]) for r in CONTRACT["routes"])
+REQUIRED_ROUTES = tuple((r["method"], r["path"], r.get("capability")) for r in CONTRACT["routes"])
+CAPABILITIES = sorted({r["capability"] for r in CONTRACT["routes"] if r.get("capability")})
 
 
 def _router_source() -> str:
     assert ROUTER.is_file(), "the private platform router is missing"
-    return ROUTER.read_text(encoding="utf-8")
+    sources = [ROUTER.read_text(encoding="utf-8")]
+    for capability in CAPABILITIES:
+        extra = _capability_router(capability)
+        if extra.is_file():
+            sources.append(extra.read_text(encoding="utf-8"))
+    return "\n".join(sources)
 
 
-@pytest.mark.parametrize(("method", "path"), REQUIRED_ROUTES)
-def test_the_contract_routes_exist(method: str, path: str) -> None:
+@pytest.mark.parametrize(("method", "path", "capability"), REQUIRED_ROUTES)
+def test_the_contract_routes_exist(method: str, path: str, capability: str | None) -> None:
+    if capability is not None and not _capability_router(capability).is_file():
+        pytest.skip(f"the {capability} capability is not generated here")
     source = _router_source()
     assert f'@router.{method}("{path}"' in source, f"{method.upper()} {path} is not exposed"
 

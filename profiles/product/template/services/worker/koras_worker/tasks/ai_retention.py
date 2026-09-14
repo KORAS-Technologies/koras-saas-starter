@@ -23,10 +23,33 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from ..settings import settings
+
+
+class RetentionSettings(BaseSettings):
+    """The sweep's own two settings, read here rather than by every worker.
+
+    A Control Plane worker has no assistant and must not read a setting
+    its manifest never declares; this file is generated with the
+    capability, so the settings travel with the sweep.
+    """
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
+    #: Days an assistant conversation is kept after it was last touched before
+    #: the nightly sweep removes it, messages and actions with it.
+    ai_retention_days: int = 90
+
+    #: Days an assistant audit row is kept. Longer than the conversations it
+    #: describes: the record of what was decided outlives what was said.
+    ai_audit_retention_days: int = 365
+
+
+retention = RetentionSettings()
 
 logger = logging.getLogger(__name__)
 
@@ -69,20 +92,20 @@ async def purge_ai_history(ctx: dict[str, Any]) -> dict[str, Any]:
     )
     try:
         async with async_sessionmaker(engine, expire_on_commit=False)() as session:
-            removed = await purge_conversations(session, retention_days=settings.ai_retention_days)
+            removed = await purge_conversations(session, retention_days=retention.ai_retention_days)
             audit_removed = await purge_audit(
-                session, retention_days=settings.ai_audit_retention_days
+                session, retention_days=retention.ai_audit_retention_days
             )
     finally:
         await engine.dispose()
     logger.info(
         "AI retention removed %d conversation(s) older than %d days",
         removed,
-        settings.ai_retention_days,
+        retention.ai_retention_days,
     )
     return {
         "status": "ok",
         "removed": removed,
         "audit_removed": audit_removed,
-        "retention_days": settings.ai_retention_days,
+        "retention_days": retention.ai_retention_days,
     }

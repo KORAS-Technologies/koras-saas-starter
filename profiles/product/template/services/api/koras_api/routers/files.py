@@ -33,10 +33,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.engine import Row
 
-from ..core import knowledge
 from ..core.auth import AuthDep
 from ..core.database import DbSession
-from ..core.settings import settings
+from ..core.file_hooks import hooks
 from ..core.storage import STORAGE_ENTITLEMENT, StorageDep
 from ..core.tenant import TenantDep
 
@@ -48,7 +47,6 @@ CredentialsDep = Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)
 #: Retrieval indexes uploads only where the product has an AI gateway; a
 #: product generated without the capability has neither the setting nor the
 #: tables, and this reads as False there.
-_RETRIEVAL = bool(getattr(settings, "ai_gateway_url", ""))
 
 #: Signed URLs live this long. Long enough for a slow connection to finish
 #: a large upload, short enough that a leaked URL is worth little.
@@ -254,14 +252,11 @@ async def complete_upload(
         {"now": now, "id": file_id},
     )
     await session.commit()
-    if _RETRIEVAL and credentials is not None and knowledge.is_indexable(row.content_type):
+    if hooks.index is not None and credentials is not None and hooks.indexable(row.content_type):
         # A type with text in it, or pages a vision model can read, so worth
         # reading back and indexing after the response.
-        # Import here: the AI core exists only with the capability.
-        from ..core.ai import index_uploaded_file
-
         background.add_task(
-            index_uploaded_file,
+            hooks.index,
             tenant_id=tenant.id,
             organization_id=tenant.organization_id,
             token=credentials.credentials,
@@ -309,10 +304,8 @@ async def delete_file(
         )
     row = await _ready(session, tenant.id, file_id)
     storage.store.delete(row.storage_key)
-    if _RETRIEVAL:
-        await knowledge.delete_resource(
-            session, tenant_id=tenant.id, resource_type="file", resource_id=file_id
-        )
+    if hooks.remove is not None:
+        await hooks.remove(session, tenant.id, file_id)
     await session.execute(text("delete from public.files where id = :id"), {"id": file_id})
     await session.commit()
 
