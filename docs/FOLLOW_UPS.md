@@ -1873,17 +1873,19 @@ rather than an omission, and each names the seam it plugs into.
       response, which tool waits and who proposed it -- never the input. A
       deployed product has no mail host, so there the notice is recorded and
       logged; see the mail provider entry below.
-- [ ] **A mail provider for products.** SMTP_* is declared for the local
-      stack only, so a deployed product sends no mail; the approval notice is
-      the first thing that wants to. Choosing a provider -- SMTP credentials
-      in Doppler, or an API such as Resend -- is a decision, then a manifest
-      change and nothing else: `koras_email.sender_for` already takes it.
+- [x] **A mail provider for products.** Done 2026-09-14 the way the Control
+      Plane did it: SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_FROM, SMTP_USERNAME
+      and SMTP_PASSWORD are optional settings a product's Doppler config may
+      hold for any provider that speaks SMTP, and an unset host still records
+      and logs the notice rather than failing. Nothing is sent until an
+      estate's config names a provider.
 - [x] **A vector store.** Built 2026-09-14 on pgvector in the product's own
       database: `ai_knowledge_chunks` under the tenant policies, text uploads
       indexed after completion and removed with the file, `knowledge.search`
-      on the reference agent, the 100 isolation test. Not text -- PDFs,
-      images, spreadsheets -- is not indexed; an extractor per type is the
-      follow-up, and the CI Postgres is now the pgvector image.
+      on the reference agent, the 100 isolation test. PDFs with a text layer
+      and workbooks are indexed too since the same day (pypdf, openpyxl);
+      images and scanned PDFs are not, because reading those is OCR. The CI
+      Postgres is now the pgvector image.
 - [x] **A durable audit table.** Built 2026-09-14: `ai_audit_events`,
       insert-only per tenant, flushed by every AI route after answer or
       refusal, read at `/api/v1/ai/audit` by anyone with `ai.approve` and shown

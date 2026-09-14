@@ -90,13 +90,15 @@ class Settings(BaseSettings):
     # first AI request with a sentence naming the setting.
     ai_gateway_url: str = ""
     # Mail the product sends itself: the notice that an assistant action is
-    # waiting for approval. The local stack has a mail catcher; a deployed
-    # environment has no host yet, and then the notice is recorded and logged
-    # rather than sent. Choosing a provider is a decision in the follow-ups.
+    # waiting for approval. Any SMTP provider, declared optional in the
+    # manifest; with no host the notice is recorded and logged rather than
+    # sent, so a product without a provider still runs and says so.
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_from: str = ""
     smtp_secure: bool = True
+    smtp_username: str = ""
+    smtp_password: str = ""
     # Where the notice sends people: the web application's public address.
     next_public_app_url: str = ""
     litellm_master_key: str = ""

@@ -186,8 +186,9 @@ apply to; the nightly sweep removes them after `AI_AUDIT_RETENTION_DAYS`.
 An action that waits for approval is also announced: `core/notify.py` tells
 the organization's owner and every active member whose role carries
 `ai.approve`, after the response, naming the tool and who proposed it and
-never the proposal's input. Where the product has no mail host the notice
-is recorded and logged; a deployed product has none yet.
+never the proposal's input, over SMTP to whichever provider the
+environment's SMTP_* settings name. Where none is set the notice is recorded
+and logged.
 
 ## Usage
 
@@ -220,8 +221,9 @@ per chunk of one document, 1536-wide, under the tenant policies; a file
 that finishes uploading and is text-like and under a megabyte is read back,
 chunked, embedded under the embedding alias and stored after the upload's
 response, and its chunks go when the file goes. `knowledge.search` is the
-tool the assistant calls; `core/knowledge.py` is the index. Files that are
-not text -- PDFs, images, spreadsheets -- are not indexed yet.
+tool the assistant calls; `core/knowledge.py` is the index. PDFs give their
+text layer and workbooks their cells; images and scanned PDFs are not
+indexed, because reading those is OCR.
 
 ## The web tier
 
