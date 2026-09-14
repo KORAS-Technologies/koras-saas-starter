@@ -81,6 +81,7 @@ from .auth import AuthDep
 from .database import DbSession
 from .engine import SessionLocal
 from .settings import PRODUCT_CODE, settings
+from .storage import StorageDep
 from .tenant import TenantDep
 
 #: The platform entitlements that gate the assistant. Named once here and once
@@ -637,6 +638,7 @@ async def tenant_ai(
     claims: AuthDep,
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
     session: DbSession,
+    storage: StorageDep,
 ) -> TenantAI:
     """Everything one AI request needs, or a refusal saying which part is missing."""
     token = credentials.credentials
@@ -703,7 +705,10 @@ async def tenant_ai(
         usage=store,
         audit=sink,
         session=session,
-        services={"embed": embed, "retrieve": retrieve},
+        # The object store, so a tool that deletes a file never builds a
+        # credentialed client of its own; resolved for this tenant the way the
+        # Files page resolves it.
+        services={"embed": embed, "retrieve": retrieve, "storage": storage.store},
     )
     return TenantAI(
         runtime=runtime, context=context, grant=grant, token=token, audit=sink, session=session

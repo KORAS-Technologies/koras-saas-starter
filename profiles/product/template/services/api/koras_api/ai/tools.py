@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 from koras_ai import Operation, ToolContext, ToolDefinition, define_tool
+from koras_database import set_rls_context
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
@@ -40,7 +41,7 @@ async def list_files(ctx: ToolContext, args: ListFilesInput) -> dict[str, Any]:
         return {"files": [], "note": "no database session is available"}
     rows = await ctx.session.execute(
         text(
-            "select name, size_bytes, content_type, ready_at from public.files "
+            "select id, name, size_bytes, content_type, ready_at from public.files "
             "where tenant_id = :tenant_id and status = 'ready' "
             "order by ready_at desc limit :limit"
         ),
@@ -49,6 +50,7 @@ async def list_files(ctx: ToolContext, args: ListFilesInput) -> dict[str, Any]:
     return {
         "files": [
             {
+                "id": str(row.id),
                 "name": row.name,
                 "size_bytes": row.size_bytes,
                 "content_type": row.content_type,
@@ -80,7 +82,63 @@ async def search_knowledge(ctx: ToolContext, args: SearchInput) -> dict[str, Any
     return {"results": knowledge.citations_view(citations)}
 
 
+class DeleteFileInput(BaseModel):
+    """Which file, by the id `files.list` gave. Never by name: two files may share one."""
+
+    file_id: str = Field(min_length=36, max_length=36, description="The file's id, from files.list")
+
+
+async def delete_file(ctx: ToolContext, args: DeleteFileInput) -> dict[str, Any]:
+    """Remove one of the tenant's files: the object, its search chunks, its row.
+
+    The reference destructive tool. It runs only after a person with
+    `files.manage` approved the proposal -- the runtime holds it until then --
+    and it does the same three things the Files page's delete does, in the
+    same order: object first, then the knowledge chunks, then the row, so a
+    row is never left pointing at nothing.
+    """
+    if ctx.session is None:
+        return {"deleted": None, "note": "no database session is available"}
+    store = ctx.services.get("storage")
+    if store is None:
+        return {"deleted": None, "note": "the object store is not available here"}
+    found = await ctx.session.execute(
+        text(
+            "select id, storage_key, name from public.files "
+            "where id = cast(:id as uuid) and tenant_id = :tenant_id and status = 'ready'"
+        ),
+        {"id": args.file_id, "tenant_id": ctx.context.tenant_id},
+    )
+    row = found.first()
+    if row is None:
+        return {"deleted": None, "note": "no such file in this organization"}
+    store.delete(row.storage_key)
+    await knowledge.delete_resource(
+        ctx.session, tenant_id=ctx.context.tenant_id, resource_type="file", resource_id=str(row.id)
+    )
+    await ctx.session.execute(
+        text("delete from public.files where id = :id and tenant_id = :tenant_id"),
+        {"id": row.id, "tenant_id": ctx.context.tenant_id},
+    )
+    await ctx.session.commit()
+    # A commit ends the transaction the tenant was bound to; the runtime still
+    # has the action's result to record on this session.
+    await set_rls_context(ctx.session, ctx.context.tenant_id)
+    return {"deleted": row.name}
+
+
 TOOLS: tuple[ToolDefinition, ...] = (
+    define_tool(
+        id="files.delete",
+        description=(
+            "Delete one of this organization's files for good, by the id files.list gave. "
+            "A person has to approve this before it runs."
+        ),
+        permission="files.manage",
+        operation=Operation.DESTRUCTIVE,
+        input_model=DeleteFileInput,
+        execute=delete_file,
+    ),
     define_tool(
         id="knowledge.search",
         description=(
