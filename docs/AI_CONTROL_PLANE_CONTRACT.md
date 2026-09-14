@@ -132,19 +132,33 @@ without the product redeploying. The seam is `visible_tools` and `decide` in
 policy as a further input and never a weaker one: the platform can add
 approval and cannot remove it.
 
-### Usage reporting
+### Usage reporting -- built, in the other direction
 
-A write from the product, per calendar month or per day, of what
-`ai_usage_events` holds aggregated by alias and provider, so the platform
-can bill and show a customer their consumption:
+The proposal was a write from the product. A product holds no machine
+identity toward the platform by decision (FOLLOW_UPS F2b), so it was built
+the way round that needs no new identity: the platform already calls each
+product's private router as a machine during provisioning and on its
+reconciliation sweep, and now also reads
 
 ```text
-POST /api/platform/v1/products/{code}/organizations/{org}/ai-usage
+GET /internal/platform/v1/ai-usage?since=YYYY-MM-DD
 ```
 
-This is the one call that would need a machine identity, which a product
-does not hold at runtime by decision (FOLLOW_UPS F2b). Until that is
-resolved, usage stays in the product's database and is read there.
+which answers every tenant's usage per UTC day, alias, provider and model --
+calls, errors, tokens and the list-price estimate -- and nothing per user or
+per conversation. The route is in `contracts/product-platform.v1.json` like
+the others; `usage_days_since` in `services/api/koras_api/core/ai.py` is the
+read, on the provisioning session, which the `070_ai_usage_platform_read.sql`
+isolation test proves can read across tenants and write nothing. The
+platform's collector runs hourly, maps each tenant to its organization, and
+keeps daily aggregates it shows to staff and, without cost, to the customer.
+
+Cost is the price list's doing. The platform's catalogue carries a vendor
+list price per model, the routing policy carries the prices of the models it
+names under `prices` in its configuration, and the product stamps
+`estimated_cost_micros` on each usage row at write time from the price the
+route carried. A row written under a policy with no price holds null, not
+zero, and a later price never applies backwards.
 
 ### A budget
 

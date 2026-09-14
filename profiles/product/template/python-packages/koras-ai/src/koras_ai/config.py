@@ -16,11 +16,13 @@ live, and locally there is never one.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from .errors import configuration
 from .models import ModelCatalogue, ModelRoute
+from .types import Price
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,10 @@ class AliasPolicy:
     #: A model name belongs to one provider, so this belongs to the fallback
     #: alone the way `model` belongs to the primary alone.
     fallback_model: str | None = None
+    #: List price per model the policy names, so the product can estimate
+    #: cost without a price list of its own. Empty when the platform sent
+    #: none, and then every usage row's estimate is null rather than zero.
+    prices: Mapping[str, Price] = field(default_factory=dict)
 
 
 class RoutingSource(Protocol):
@@ -84,5 +90,9 @@ class AIConfiguration:
                 )
             return self.catalogue.routes_for(alias)
         return self.catalogue.resolve(
-            alias, policy.providers, policy.model, fallback_model=policy.fallback_model
+            alias,
+            policy.providers,
+            policy.model,
+            fallback_model=policy.fallback_model,
+            prices=policy.prices,
         )

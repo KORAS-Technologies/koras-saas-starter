@@ -34,6 +34,9 @@ class UsageEvent:
     created_at: datetime
     conversation_id: str | None = None
     error_code: str | None = None
+    #: List-price cost in millionths of a US dollar, or None when the route
+    #: carried no price. Never zero for "unknown": zero is a number.
+    estimated_cost_micros: int | None = None
 
 
 class UsageRecorder(Protocol):

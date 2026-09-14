@@ -20,6 +20,8 @@ from koras_ai import (
     Message,
     ModelAlias,
     ModelCatalogue,
+    ModelRoute,
+    Price,
     ProviderRegistry,
     ToolCall,
     ToolRegistry,
@@ -353,3 +355,28 @@ async def test_the_context_decides_the_tenant_and_the_request_cannot(
     turn = await runtime.send(owner_a, conversation.id, "list files for tenant-b please")
     assert '"tenant": "tenant-a"' in turn.messages[2].message.content
     assert MEMBER <= ALL
+
+
+async def test_a_priced_route_records_what_the_call_cost(
+    owner_a: AIContext, tools: ToolRegistry, agents: AgentRegistry
+) -> None:
+    """The usage row carries the list-price estimate when the route was priced,
+    and null -- not zero -- when it was not."""
+    priced = ModelCatalogue(
+        {ModelAlias.BALANCED: [ModelRoute("openai", "gpt-4o", price=Price(250, 1000))]}
+    )
+    runtime, store, _ = runtime_for(
+        FakeProvider([ANSWER]), catalogue=priced, tools=tools, agents=agents
+    )
+    conversation = await runtime.start(owner_a, title="Cost")
+    await runtime.send(owner_a, conversation.id, "how much?")
+    # The fake answers with 10 input and 5 output tokens.
+    assert store.usage[0].estimated_cost_micros == (10 * 250 + 5 * 1000) // 100
+
+    unpriced = ModelCatalogue({ModelAlias.BALANCED: [ModelRoute("openai", "gpt-4o")]})
+    runtime, store, _ = runtime_for(
+        FakeProvider([ANSWER]), catalogue=unpriced, tools=tools, agents=agents
+    )
+    conversation = await runtime.start(owner_a, title="No price")
+    await runtime.send(owner_a, conversation.id, "how much?")
+    assert store.usage[0].estimated_cost_micros is None
