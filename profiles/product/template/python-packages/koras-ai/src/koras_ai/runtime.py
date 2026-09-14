@@ -28,9 +28,9 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Any, Literal
 
 from koras_audit import AuditEvent, AuditSink, Outcome
 
@@ -56,6 +56,7 @@ from .tools import ToolContext, ToolDefinition, ToolRegistry
 from .types import (
     EmbedRequest,
     EmbedResult,
+    GenerateEvent,
     GenerateRequest,
     GenerateResult,
     Message,
@@ -86,6 +87,23 @@ class Turn:
     #: The actions this turn left waiting for a person.
     actions: list[ProposedAction]
     usage: Usage
+
+
+@dataclass(frozen=True)
+class TurnEvent:
+    """One step of a turn as it happens, for a caller that shows progress.
+
+    `delta` is text as the model produces it; `message` is a message the
+    store now holds, the caller's own first; `action` is one left waiting
+    for a person; `done` carries the finished turn, the same one `send`
+    returns.
+    """
+
+    kind: Literal["delta", "message", "action", "done"]
+    text: str = ""
+    message: StoredMessage | None = None
+    action: ProposedAction | None = None
+    turn: Turn | None = None
 
 
 @dataclass(frozen=True)
@@ -138,6 +156,24 @@ class AIRuntime:
     # ── the turn ───────────────────────────────────────────────────────────
 
     async def send(self, context: AIContext, conversation_id: str, text: str) -> Turn:
+        """One turn, whole: the same steps as `stream`, kept until the end."""
+        async for event in self.stream(context, conversation_id, text):
+            if event.kind == "done" and event.turn is not None:
+                return event.turn
+        raise AIError(ErrorCode.UPSTREAM_ERROR, "the turn ended without an answer")
+
+    async def stream(
+        self, context: AIContext, conversation_id: str, text: str
+    ) -> AsyncIterator[TurnEvent]:
+        """One turn, told as it happens.
+
+        Text reaches the caller as the model produces it; every message is
+        announced once the store holds it; an action is announced when it is
+        parked; and the last event carries the finished turn, which is what
+        `send` returns. Nothing is announced that the store does not have,
+        so a caller that shows the events and a caller that reloads the
+        conversation see the same thing.
+        """
         conversation = await self.store.get_conversation(context, conversation_id)
         if conversation is None:
             raise not_found("conversation")
@@ -153,7 +189,9 @@ class AIRuntime:
         waiting: list[ProposedAction] = []
         spent = Usage()
 
-        added.append(await self.store.add_message(context, conversation.id, Message("user", text)))
+        asked = await self.store.add_message(context, conversation.id, Message("user", text))
+        added.append(asked)
+        yield TurnEvent("message", message=asked)
         history = [
             stored.message for stored in await self.store.list_messages(context, conversation.id)
         ]
@@ -168,7 +206,8 @@ class AIRuntime:
         specs = tuple(tool.spec() for tool in offered)
 
         for _ in range(agent.max_turns):
-            result = await self.generate(
+            result: GenerateResult | None = None
+            async for event in self._generate_events(
                 context,
                 GenerateRequest(
                     model=agent.model,
@@ -179,11 +218,18 @@ class AIRuntime:
                 ),
                 agent_id=agent.id,
                 conversation_id=conversation.id,
-            )
+            ):
+                if event.kind == "delta":
+                    yield TurnEvent("delta", text=event.text)
+                elif event.kind == "done":
+                    result = event.result
+            if result is None:
+                raise AIError(ErrorCode.UPSTREAM_ERROR, "the model's stream ended without a result")
             spent = spent + result.usage
             assistant = await self.store.add_message(context, conversation.id, result.message)
             added.append(assistant)
             history.append(result.message)
+            yield TurnEvent("message", message=assistant)
 
             if not result.message.tool_calls:
                 break
@@ -196,15 +242,23 @@ class AIRuntime:
                 stored = await self.store.add_message(context, conversation.id, reply)
                 added.append(stored)
                 history.append(reply)
+                yield TurnEvent("message", message=stored)
                 if action is not None:
                     waiting.append(action)
                     halted = True
+                    yield TurnEvent("action", action=action)
             if halted:
                 break
 
         refreshed = await self.store.get_conversation(context, conversation.id)
-        return Turn(
-            conversation=refreshed or conversation, messages=added, actions=waiting, usage=spent
+        yield TurnEvent(
+            "done",
+            turn=Turn(
+                conversation=refreshed or conversation,
+                messages=added,
+                actions=waiting,
+                usage=spent,
+            ),
         )
 
     def _instructions(self, agent: AgentDefinition, context: AIContext) -> str:
@@ -477,6 +531,70 @@ class AIRuntime:
                 context, agent_id, conversation_id, request.model, route, result, None
             )
             return result
+
+        if last is not None:
+            raise last
+        raise configuration(
+            "no provider is registered for the routes this alias resolves to",
+            detail=f"alias {request.model}; routes {[r.provider for r in routes]!r}; "
+            f"providers {self.providers.names()!r}",
+        )
+
+    async def _generate_events(
+        self,
+        context: AIContext,
+        request: GenerateRequest,
+        *,
+        agent_id: str,
+        conversation_id: str | None = None,
+    ) -> AsyncIterator[GenerateEvent]:
+        """`generate`, as events: the same ceiling, the same routes, the same records.
+
+        A route is abandoned for the next only before it has said anything.
+        Once text has reached the caller a failure is the turn's failure: a
+        second answer stitched onto the first is not an answer anybody asked
+        for.
+        """
+        limit = self.configuration.limits.monthly_requests
+        if limit is not None:
+            used = await self.usage.requests_since(context.tenant_id, month_start())
+            if used >= limit:
+                raise usage_exceeded(limit)
+
+        routes = await self.configuration.routes_for(request.model)
+        last: AIError | None = None
+        for position, route in enumerate(routes):
+            provider = self.providers.get(route.provider)
+            if provider is None:
+                _log.warning("no provider is registered for %r; route skipped", route.provider)
+                continue
+            spoke = False
+            try:
+                async for event in provider.stream(request, route=route):
+                    if event.kind == "delta":
+                        spoke = True
+                        yield event
+                    elif event.kind == "done" and event.result is not None:
+                        await self._record(
+                            context,
+                            agent_id,
+                            conversation_id,
+                            request.model,
+                            route,
+                            event.result,
+                            None,
+                        )
+                        yield event
+                        return
+            except AIError as error:
+                await self._record(
+                    context, agent_id, conversation_id, request.model, route, None, error
+                )
+                last = error
+                if not spoke and error.code in _RETRY_NEXT_ROUTE and position < len(routes) - 1:
+                    continue
+                raise
+            raise AIError(ErrorCode.UPSTREAM_ERROR, "the model's stream ended without a result")
 
         if last is not None:
             raise last

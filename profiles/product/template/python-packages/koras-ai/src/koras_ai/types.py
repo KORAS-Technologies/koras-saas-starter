@@ -42,6 +42,10 @@ class Message:
     tool_call_id: str | None = None
     #: Set on a `tool` message: which tool answered.
     name: str | None = None
+    #: Images shown beside the text, as data or https URLs, for a vision
+    #: model. Never stored: a conversation keeps text, and the one caller
+    #: that sends images -- the indexer reading a scanned page -- keeps none.
+    images: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

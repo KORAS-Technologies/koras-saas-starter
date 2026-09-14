@@ -9,7 +9,8 @@ query: this module depends on a resolved tenant, resolving one needs a session,
 and a module cannot import what imports it.
 """
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends
@@ -22,14 +23,27 @@ from .settings import settings
 from .tenant import TenantDep
 
 
+@asynccontextmanager
+async def tenant_session(tenant_id: str) -> AsyncIterator[AsyncSession]:
+    """A session scoped to one tenant, for the request and for what outlives it.
+
+    `get_db` is this for a request. A route that answers over time -- the
+    assistant's stream -- opens one of its own here, because the request's
+    session is closed on the framework's schedule and a stream outlives
+    it. One place binds the tenant, so the two cannot bind it differently.
+    """
+    async with SessionLocal() as session:
+        declare(Tenant(tenant_id=tenant_id))
+        yield session
+
+
 async def get_db(tenant: TenantDep) -> AsyncGenerator[AsyncSession, None]:
     """A session with this request's tenant context set.
 
     The context is transaction-local, so it cannot outlive the request on a
     pooled connection and be inherited by whoever gets that connection next.
     """
-    async with SessionLocal() as session:
-        declare(Tenant(tenant_id=tenant.id))
+    async with tenant_session(tenant.id) as session:
         yield session
 
 

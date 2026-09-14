@@ -1,0 +1,81 @@
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { streamAiMessage } from '@{{projectSlug}}/api-client'
+import { can, signedInContext } from '../../../../lib/access'
+import { assistantErrorKey } from '../../../../lib/assistant-errors'
+import { translator } from '../../../../lib/locale'
+import { apiBaseUrl, providerToken } from '../../../../lib/session'
+
+/**
+ * The assistant's answer, as it arrives.
+ *
+ * A server action returns one value, so it cannot stream. This handler does
+ * what the actions do -- decide again who is calling and what they may do,
+ * then talk to the API with the caller's own token -- and pipes the API's
+ * server-sent events to the browser byte for byte. The token and the API's
+ * address stay on this side; the browser sees `/api/assistant/stream` and
+ * nothing behind it.
+ *
+ * A refusal before the stream begins is JSON with a sentence in the reader's
+ * language and the status the API gave. A refusal inside the stream arrives
+ * as an `error` event, which the panel translates from its labels: by then
+ * the response is a 200 and there is nothing else to change it into.
+ *
+ * POST only, same origin only: a page elsewhere cannot spend a customer's
+ * assistant allowance through their browser.
+ */
+export async function POST(request: NextRequest): Promise<Response> {
+  const origin = request.headers.get('origin')
+  if (origin !== null && origin !== request.nextUrl.origin) {
+    return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
+  }
+  const t = await translator()
+  const context = await signedInContext()
+  if (context === null || !can(context.access, 'ai.use')) {
+    return NextResponse.json({ message: t('assistant.error.forbidden') }, { status: 403 })
+  }
+  const token = await providerToken()
+  const baseUrl = apiBaseUrl()
+  if (!token || !baseUrl) {
+    return NextResponse.json({ message: t('assistant.error.unavailable') }, { status: 503 })
+  }
+
+  const body: unknown = await request.json().catch(() => null)
+  const conversationId =
+    body !== null && typeof body === 'object' && 'conversationId' in body
+      ? body.conversationId
+      : undefined
+  const text = body !== null && typeof body === 'object' && 'text' in body ? body.text : undefined
+  if (
+    typeof conversationId !== 'string' ||
+    conversationId.length === 0 ||
+    typeof text !== 'string' ||
+    text.length === 0 ||
+    text.length > 8000
+  ) {
+    return NextResponse.json({ message: t('assistant.error.generic') }, { status: 400 })
+  }
+
+  let upstream: Response
+  try {
+    upstream = await streamAiMessage({ baseUrl, token, conversationId, text })
+  } catch (error) {
+    const status = error instanceof Error && 'status' in error ? Number(error.status) : 502
+    const code = error instanceof Error && 'code' in error ? String(error.code ?? '') : null
+    return NextResponse.json(
+      { message: t(`assistant.error.${assistantErrorKey(code, status)}`) },
+      { status: status >= 400 && status < 600 ? status : 502 },
+    )
+  }
+  if (upstream.body === null) {
+    return NextResponse.json({ message: t('assistant.error.unavailable') }, { status: 502 })
+  }
+  return new Response(upstream.body, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Accel-Buffering': 'no',
+    },
+  })
+}

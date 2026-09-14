@@ -16,9 +16,11 @@ chunks, and the assistant answers about it from its name alone.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from koras_ai import Chunk, Citation, Document, RetrievalScope, SimpleChunker
@@ -45,8 +47,13 @@ SPREADSHEET_TYPES: frozenset[str] = frozenset(
     {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
 )
 
+IMAGE_TYPES: frozenset[str] = frozenset({"image/png", "image/jpeg", "image/webp"})
+
 #: Every content type that can be indexed. A type not here is not.
-INDEXABLE_TYPES: frozenset[str] = TEXT_TYPES | {PDF_TYPE} | SPREADSHEET_TYPES
+INDEXABLE_TYPES: frozenset[str] = TEXT_TYPES | {PDF_TYPE} | SPREADSHEET_TYPES | IMAGE_TYPES
+#: Types whose text may have to be seen rather than read: an image, or a
+#: PDF whose pages are pictures of a page.
+OCR_TYPES: frozenset[str] = IMAGE_TYPES | {PDF_TYPE}
 
 #: Past this, a file is skipped rather than embedded in hundreds of calls.
 #: A PDF or a workbook is mostly not text, so its ceiling is higher; what
@@ -57,10 +64,32 @@ MAX_DOCUMENT_BYTES = 25_000_000
 #: thousand tokens, or eighty pages of dense prose; the rest is not indexed.
 MAX_TEXT_CHARS = 400_000
 
+#: Pages a scanned document is read for. Each is one vision call, so this
+#: bounds what one upload can cost; the rest of a longer scan is not indexed.
+MAX_OCR_PAGES = 20
+#: Render scale for a PDF page: 1.0 is 72 dpi, 1.5 is enough for body text
+#: and keeps a page under the size vision models accept.
+OCR_RENDER_SCALE = 1.5
+MAX_IMAGE_BYTES = 10_000_000
+
 #: Chunks per query. Enough to answer from, few enough to fit a prompt.
 DEFAULT_LIMIT = 5
 
 Embed = Callable[[Sequence[str]], Awaitable[list[tuple[float, ...]]]]
+#: One page as an encoded image and its content type.
+Page = tuple[bytes, str]
+#: Reads pages back as text, one string per page, through a vision model.
+ReadPages = Callable[[Sequence[Page]], Awaitable[list[str]]]
+
+
+@dataclass(frozen=True)
+class Extracted:
+    """What a file gave for indexing and how: its text layer, or its pages read."""
+
+    text: str | None
+    #: "text" from a text layer or cells, "ocr" from its pages, "none" for nothing.
+    method: str
+    pages: int = 0
 
 
 def content_kind(content_type: str) -> str:
@@ -98,6 +127,72 @@ def extract_text(raw: bytes, *, content_type: str) -> str | None:
         return None
     stripped = text_content.strip()[:MAX_TEXT_CHARS]
     return stripped or None
+
+
+def page_images(raw: bytes, *, content_type: str) -> list[Page]:
+    """The file as images, one per page, for a model that reads pictures.
+
+    An image is its own single page. A PDF is rendered page by page, up to
+    MAX_OCR_PAGES. Anything else, or anything past its size ceiling, is no
+    pages. CPU-bound for a PDF; call it off the event loop.
+    """
+    kind = content_kind(content_type)
+    if kind in IMAGE_TYPES:
+        return [(raw, kind)] if len(raw) <= MAX_IMAGE_BYTES else []
+    if kind == PDF_TYPE:
+        return _pdf_pages(raw) if len(raw) <= MAX_DOCUMENT_BYTES else []
+    return []
+
+
+def _pdf_pages(raw: bytes) -> list[Page]:
+    """Each page rendered to a PNG, in order, up to the page ceiling."""
+    from io import BytesIO
+
+    import pypdfium2 as pdfium  # type: ignore[import-untyped]
+
+    try:
+        document = pdfium.PdfDocument(raw)
+    except Exception:
+        logger.info("a PDF could not be opened for rendering")
+        return []
+    pages: list[Page] = []
+    try:
+        for index in range(min(len(document), MAX_OCR_PAGES)):
+            page = document[index]
+            try:
+                bitmap = page.render(scale=OCR_RENDER_SCALE)
+                buffer = BytesIO()
+                bitmap.to_pil().save(buffer, format="PNG")
+                pages.append((buffer.getvalue(), "image/png"))
+            finally:
+                page.close()
+    except Exception:
+        logger.info("a PDF page could not be rendered; the pages before it are read")
+    finally:
+        document.close()
+    return pages
+
+
+async def text_for_index(raw: bytes, *, content_type: str, read: ReadPages | None) -> Extracted:
+    """The file's text, read from its text layer first and its pages second.
+
+    The text layer costs nothing and is exact, so it always wins. Pages are
+    read only when there is no text layer to read, only for the types that
+    have pages, and only when a reader was given -- an indexer with no
+    vision route reads nothing rather than failing the upload.
+    """
+    text_content = extract_text(raw, content_type=content_type)
+    if text_content is not None:
+        return Extracted(text_content, "text")
+    if read is None or content_kind(content_type) not in OCR_TYPES:
+        return Extracted(None, "none")
+    pages = await asyncio.to_thread(page_images, raw, content_type=content_type)
+    if not pages:
+        return Extracted(None, "none")
+    transcribed = await read(pages)
+    joined = "\n\n".join(page.strip() for page in transcribed if page and page.strip())
+    stripped = joined[:MAX_TEXT_CHARS].strip()
+    return Extracted(stripped or None, "ocr", len(pages))
 
 
 def _pdf_text(raw: bytes) -> str | None:

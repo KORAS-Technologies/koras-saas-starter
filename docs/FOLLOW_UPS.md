@@ -1864,10 +1864,19 @@ rather than an omission, and each names the seam it plugs into.
       Pro and above, and a routing template per tier is written at
       provisioning; an organization that predates it gets its rows from one
       button on the admin's AI page.
-- [ ] **Streaming.** `GatewayProvider` streams and the runtime does not use
-      it: a Next server action cannot stream, and the product surface is
-      request and response. A streaming route needs a route handler that
-      forwards the caller's token to the API, which is a design of its own.
+- [x] **Tracing spans on the gateway call.** Built 2026-09-14: a client
+      span per call with provider, model, alias and tokens, trace context
+      forwarded to the gateway, and the exporter chosen by
+      `OTEL_EXPORTER_OTLP_PROTOCOL` -- which fixed the dev collector, whose
+      every export had failed with "missing selected ALPN property" because
+      the gRPC exporter was talking to Grafana Cloud's HTTP gateway.
+- [x] **Streaming.** Built 2026-09-14: the runtime tells a turn as events
+      and `send` is the same stream kept to the end; the API writes them as
+      server-sent events on a session of its own; the web tier's
+      `/api/assistant/stream` route handler decides who is calling the way
+      the server actions do and pipes the bytes to the panel, which shows
+      the answer as it arrives. A refusal mid-stream is an `error` event
+      with the status the whole-answer route would have given.
 - [x] **Approval notification.** Built 2026-09-14: the owner and every
       active member whose role carries `ai.approve` are told, after the
       response, which tool waits and who proposed it -- never the input. A
@@ -1883,9 +1892,11 @@ rather than an omission, and each names the seam it plugs into.
       database: `ai_knowledge_chunks` under the tenant policies, text uploads
       indexed after completion and removed with the file, `knowledge.search`
       on the reference agent, the 100 isolation test. PDFs with a text layer
-      and workbooks are indexed too since the same day (pypdf, openpyxl);
-      images and scanned PDFs are not, because reading those is OCR. The CI
-      Postgres is now the pgvector image.
+      and workbooks are indexed too since the same day (pypdf, openpyxl),
+      and images and scanned PDFs since the evening: pages rendered with
+      pypdfium2 and transcribed by the vision alias, metered per page
+      under `knowledge.ocr`, twenty pages a file at most. The CI Postgres
+      is now the pgvector image.
 - [x] **A durable audit table.** Built 2026-09-14: `ai_audit_events`,
       insert-only per tenant, flushed by every AI route after answer or
       refusal, read at `/api/v1/ai/audit` by anyone with `ai.approve` and shown
@@ -1905,8 +1916,7 @@ rather than an omission, and each names the seam it plugs into.
       calls and tokens. Cost is the platform's price list in code, carried in
       each routing policy as `prices` and stamped on each usage row as
       `estimated_cost_micros`. Still open beside it: billing by usage through
-      Stripe (overage or credit packs, a pricing decision first), tracing
-      spans on the gateway call, and a "last collected" component on platform
+      Stripe (overage or credit packs, a pricing decision first), a "last collected" component on platform
       health so a silent product is visible without a query.
 - [x] **The gateway's unauthenticated answer.** Fixed 2026-09-14 with a
       middleware in front of the proxy that answers 401 itself. It was a 500, because LiteLLM's

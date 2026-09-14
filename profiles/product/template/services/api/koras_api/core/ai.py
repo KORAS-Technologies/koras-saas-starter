@@ -31,10 +31,11 @@ setting rather than at the first model call with a connection error.
 
 from __future__ import annotations
 
+import base64
 import functools
 import json
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Annotated, Any
@@ -53,6 +54,7 @@ from koras_ai import (
     Conversation,
     ErrorCode,
     GatewayProvider,
+    GenerateRequest,
     Limits,
     Message,
     ModelAlias,
@@ -65,17 +67,22 @@ from koras_ai import (
     RetrievalScope,
     StoredMessage,
     ToolCall,
+    Usage,
     UsageEvent,
+    estimated_cost_micros,
 )
 from koras_audit import AuditEvent
+from koras_auth import JWTClaims
 from koras_auth.permissions import permissions_for
 from koras_database import set_rls_context
 from koras_storage import ObjectStore
+from koras_tenant import TenantContext
 from sqlalchemy import text
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ai import registries
+from ..ai.prompts import OCR_INSTRUCTIONS
 from . import knowledge as knowledge_store
 from . import platform
 from .auth import AuthDep
@@ -645,6 +652,40 @@ async def tenant_ai(
     session: DbSession,
 ) -> TenantAI:
     """Everything one AI request needs, or a refusal saying which part is missing."""
+    return await assemble_tenant_ai(tenant, claims, credentials, session)
+
+
+@dataclass(frozen=True)
+class AiAssembly:
+    """`tenant_ai` with the session left open, for a route that answers over time.
+
+    A streamed answer outlives the request's own session, which the
+    framework closes on its own schedule, so the route opens one of its
+    own and builds the runtime on it. The tenant is here so the route can
+    declare it for that session before anything is read.
+    """
+
+    tenant_id: str
+    build: Callable[[AsyncSession], Awaitable[TenantAI]]
+
+
+async def tenant_ai_factory(
+    tenant: TenantDep,
+    claims: AuthDep,
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
+) -> AiAssembly:
+    async def build(session: AsyncSession) -> TenantAI:
+        return await assemble_tenant_ai(tenant, claims, credentials, session)
+
+    return AiAssembly(tenant_id=tenant.id, build=build)
+
+
+async def assemble_tenant_ai(
+    tenant: TenantContext,
+    claims: JWTClaims,
+    credentials: HTTPAuthorizationCredentials,
+    session: AsyncSession,
+) -> TenantAI:
     token = credentials.credentials
     configured = platform.configured()
     try:
@@ -765,6 +806,112 @@ def embedder(configuration: AIConfiguration, providers: ProviderRegistry) -> kno
     return embed
 
 
+#: The agent id a page read for indexing is metered under. Not a
+#: conversation: the usage row has none, and the audit names the file.
+OCR_AGENT = "knowledge.ocr"
+#: The vision call is bounded: one page, one transcription.
+OCR_MAX_OUTPUT = 4000
+_TRY_NEXT_ROUTE = frozenset(
+    {ErrorCode.PROVIDER_UNAVAILABLE, ErrorCode.TIMEOUT, ErrorCode.UPSTREAM_ERROR}
+)
+
+
+def page_reader(
+    configuration: AIConfiguration,
+    providers: ProviderRegistry,
+    *,
+    tenant_id: str,
+    user_id: str,
+    record: Callable[[UsageEvent], Awaitable[None]],
+) -> knowledge_store.ReadPages:
+    """Reads pages through the vision alias, one call per page, each metered.
+
+    Routes are tried in the order the routing names them, the way the
+    runtime tries them for a turn, and every attempt is recorded before the
+    next: a page that cost tokens and failed still cost them.
+    """
+
+    async def read_page(request: GenerateRequest) -> str:
+        last: AIError | None = None
+        for position, route in enumerate(
+            routes := await configuration.routes_for(ModelAlias.VISION)
+        ):
+            provider = providers.get(route.provider)
+            if provider is None:
+                continue
+            started = datetime.now(UTC)
+            try:
+                result = await provider.generate(request, route=route)
+            except AIError as error:
+                await record(
+                    UsageEvent(
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        agent_id=OCR_AGENT,
+                        model_alias=ModelAlias.VISION.value,
+                        provider=route.provider,
+                        model=route.model,
+                        usage=Usage(),
+                        latency_ms=0,
+                        status="error",
+                        error_code=error.code.value,
+                        created_at=started,
+                    )
+                )
+                last = error
+                if error.code in _TRY_NEXT_ROUTE and position < len(routes) - 1:
+                    continue
+                raise
+            await record(
+                UsageEvent(
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    agent_id=OCR_AGENT,
+                    model_alias=ModelAlias.VISION.value,
+                    provider=result.provider,
+                    model=result.model,
+                    usage=result.usage,
+                    latency_ms=result.latency_ms,
+                    status="ok",
+                    created_at=datetime.now(UTC),
+                    estimated_cost_micros=(
+                        estimated_cost_micros(result.usage, route.price)
+                        if route.price is not None
+                        else None
+                    ),
+                )
+            )
+            return result.message.content
+        if last is not None:
+            raise last
+        raise AIError(
+            ErrorCode.CONFIGURATION_ERROR,
+            "no provider is registered for the routes the vision alias resolves to",
+        )
+
+    async def read(pages: Sequence[knowledge_store.Page]) -> list[str]:
+        texts: list[str] = []
+        for image, kind in pages:
+            data_url = f"data:{kind};base64,{base64.b64encode(image).decode('ascii')}"
+            texts.append(
+                await read_page(
+                    GenerateRequest(
+                        model=ModelAlias.VISION.value,
+                        messages=(
+                            Message("system", OCR_INSTRUCTIONS),
+                            Message("user", "Transcribe this page.", images=(data_url,)),
+                        ),
+                        temperature=0.0,
+                        max_output=OCR_MAX_OUTPUT,
+                        metadata={"agent": OCR_AGENT},
+                    )
+                )
+            )
+        return texts
+
+    return read
+
+
 async def index_uploaded_file(
     *,
     tenant_id: str,
@@ -774,6 +921,7 @@ async def index_uploaded_file(
     name: str,
     content_type: str,
     url: str,
+    user_id: str = "",
 ) -> int:
     """Read a finished upload back from the bucket and index it for retrieval.
 
@@ -791,6 +939,7 @@ async def index_uploaded_file(
             name=name,
             content_type=content_type,
             url=url,
+            user_id=user_id,
         )
     except Exception:
         _log.exception("file %s could not be indexed", file_id)
@@ -832,6 +981,7 @@ async def _index_uploaded_file(
     name: str,
     content_type: str,
     url: str,
+    user_id: str = "",
 ) -> int:
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -844,16 +994,6 @@ async def _index_uploaded_file(
         )
         await _record_index(
             tenant_id, file_id, indexed=False, note="could not be read back from the bucket"
-        )
-        return 0
-    text_content = knowledge_store.extract_text(raw, content_type=content_type)
-    if text_content is None:
-        _log.info("file %s is not indexed: not text, or past the size ceiling", file_id)
-        await _record_index(
-            tenant_id,
-            file_id,
-            indexed=False,
-            note="no text to index: not a text type, no text layer, or past the size ceiling",
         )
         return 0
     providers = ProviderRegistry()
@@ -871,12 +1011,36 @@ async def _index_uploaded_file(
         fail_closed=platform.configured(),
         limits=Limits(),
     )
-    document = knowledge_store.file_document(
-        tenant_id=tenant_id, file_id=file_id, name=name, text_content=text_content
-    )
     try:
         async with SessionLocal() as session:
             await set_rls_context(session, tenant_id)
+            # Pages are read on this session so each vision call is metered
+            # under the tenant, the way a turn's calls are.
+            read = page_reader(
+                configuration,
+                providers,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                record=SqlStore(session, tenant_id).record,
+            )
+            extracted = await knowledge_store.text_for_index(
+                raw, content_type=content_type, read=read
+            )
+            if extracted.text is None:
+                _log.info("file %s is not indexed: nothing readable in it", file_id)
+                await _record_index(
+                    tenant_id,
+                    file_id,
+                    indexed=False,
+                    note=(
+                        "no text to index: not a text type, nothing readable on its "
+                        "pages, or past the size ceiling"
+                    ),
+                )
+                return 0
+            document = knowledge_store.file_document(
+                tenant_id=tenant_id, file_id=file_id, name=name, text_content=extracted.text
+            )
             count = await knowledge_store.index_document(
                 session,
                 scope=RetrievalScope(tenant_id=tenant_id, product_code=PRODUCT_CODE),
@@ -887,12 +1051,18 @@ async def _index_uploaded_file(
         _log.warning("file %s is not indexed: %s", file_id, error)
         await _record_index(tenant_id, file_id, indexed=False, note=error.message)
         return 0
-    _log.info("file %s indexed as %d chunk(s)", file_id, count)
-    await _record_index(tenant_id, file_id, indexed=True, note=f"{count} chunk(s)")
+    how = (
+        f"read with OCR: {extracted.pages} page(s), {count} chunk(s)"
+        if extracted.method == "ocr"
+        else f"{count} chunk(s)"
+    )
+    _log.info("file %s indexed: %s", file_id, how)
+    await _record_index(tenant_id, file_id, indexed=True, note=how)
     return count
 
 
 AiDep = Annotated[TenantAI, Depends(tenant_ai)]
+AiFactoryDep = Annotated[AiAssembly, Depends(tenant_ai_factory)]
 
 
 # ── the durable audit ─────────────────────────────────────────────────────────

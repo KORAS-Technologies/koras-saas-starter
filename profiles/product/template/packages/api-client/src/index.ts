@@ -199,9 +199,7 @@ export function fetchEntitlements(
  * `404`; a `404` means the organization holds no such product, which is the
  * same thing it means for a wrong product code.
  */
-export function fetchBranding(
-  options: RequestOptions & { productCode: string },
-): Promise<unknown> {
+export function fetchBranding(options: RequestOptions & { productCode: string }): Promise<unknown> {
   return request<unknown>(
     `/api/portal/v1/products/${encodeURIComponent(options.productCode)}/branding`,
     options,
@@ -259,11 +257,19 @@ export function fetchFiles(options: RequestOptions): Promise<FileList> {
 }
 
 export function requestUpload(
-  options: RequestOptions & { name: string; sizeBytes: number; contentType: string },
+  options: RequestOptions & {
+    name: string
+    sizeBytes: number
+    contentType: string
+  },
 ): Promise<UploadTicket> {
   return request<UploadTicket>('/api/v1/files/uploads', options, {
     method: 'POST',
-    body: { name: options.name, size_bytes: options.sizeBytes, content_type: options.contentType },
+    body: {
+      name: options.name,
+      size_bytes: options.sizeBytes,
+      content_type: options.contentType,
+    },
   })
 }
 
@@ -273,8 +279,13 @@ export function completeUpload(options: RequestOptions & { fileId: string }): Pr
   })
 }
 
-export function fetchDownloadUrl(options: RequestOptions & { fileId: string }): Promise<DownloadTicket> {
-  return request<DownloadTicket>(`/api/v1/files/${encodeURIComponent(options.fileId)}/download`, options)
+export function fetchDownloadUrl(
+  options: RequestOptions & { fileId: string },
+): Promise<DownloadTicket> {
+  return request<DownloadTicket>(
+    `/api/v1/files/${encodeURIComponent(options.fileId)}/download`,
+    options,
+  )
 }
 
 export function deleteFile(options: RequestOptions & { fileId: string }): Promise<void> {
@@ -323,7 +334,12 @@ export interface AiMessage {
   tool_name: string | null
   created_at: string
   /** The passages a document search returned, on the answer that used them. */
-  citations: { file_id: string; title: string; snippet: string; score: number }[]
+  citations: {
+    file_id: string
+    title: string
+    snippet: string
+    score: number
+  }[]
 }
 
 export interface AiAction {
@@ -434,9 +450,7 @@ export function sendAiMessage(
   )
 }
 
-export function approveAiAction(
-  options: RequestOptions & { actionId: string },
-): Promise<AiAction> {
+export function approveAiAction(options: RequestOptions & { actionId: string }): Promise<AiAction> {
   return request<AiAction>(
     `/api/v1/ai/actions/${encodeURIComponent(options.actionId)}/approve`,
     { timeoutMs: AI_TIMEOUT_MS, ...options },
@@ -450,4 +464,123 @@ export function rejectAiAction(options: RequestOptions & { actionId: string }): 
     options,
     { method: 'POST' },
   )
+}
+
+/** One event of a streamed turn, in the order the API tells them. */
+export type AiStreamEvent =
+  | { type: 'delta'; text: string }
+  | { type: 'message'; message: AiMessage }
+  | { type: 'pending'; actions: AiAction[] }
+  | { type: 'done'; turn: AiTurn }
+  | { type: 'error'; status: number; code: string | null; message: string }
+
+/**
+ * The streamed form of `sendAiMessage`.
+ *
+ * Resolves once the API has accepted the turn, with a response whose body is
+ * server-sent events; read it with `readAiStream`. A refusal before the
+ * stream begins is an `ApiError`, as it is for the whole-answer call. No
+ * timeout here: the body is read for as long as the model talks, and the
+ * API bounds that on its side.
+ */
+export async function streamAiMessage(
+  options: RequestOptions & { conversationId: string; text: string },
+): Promise<Response> {
+  const base = options.baseUrl.replace(/\/$/, '')
+  if (!base) throw new ApiError('no API base URL is configured', 0)
+  const path = `/api/v1/ai/conversations/${encodeURIComponent(options.conversationId)}/messages/stream`
+  const response = await (options.fetchImpl ?? fetch)(`${base}${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${options.token}`,
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ text: options.text }),
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    throw new ApiError(
+      `${path} answered ${response.status}`,
+      response.status,
+      await errorCode(response),
+    )
+  }
+  return response
+}
+
+/**
+ * Read a stream of turn events to the end, handing each to `onEvent`.
+ *
+ * Frames are `event:` and `data:` lines ended by a blank line, as the API
+ * writes them. A frame that is not one of the five events, or whose data is
+ * not JSON, is skipped rather than ending the read: the `done` or `error`
+ * frame that follows is what the caller is waiting for.
+ */
+export async function readAiStream(
+  body: ReadableStream<Uint8Array>,
+  onEvent: (event: AiStreamEvent) => void,
+): Promise<void> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
+    let boundary = buffer.indexOf('\n\n')
+    while (boundary !== -1) {
+      const event = parseStreamFrame(buffer.slice(0, boundary))
+      buffer = buffer.slice(boundary + 2)
+      if (event !== null) onEvent(event)
+      boundary = buffer.indexOf('\n\n')
+    }
+    if (done) break
+  }
+}
+
+export function parseStreamFrame(frame: string): AiStreamEvent | null {
+  let name = ''
+  const data: string[] = []
+  for (const line of frame.split('\n')) {
+    if (line.startsWith('event:')) name = line.slice(6).trim()
+    else if (line.startsWith('data:')) data.push(line.slice(5).trimStart())
+  }
+  if (name === '' || data.length === 0) return null
+  let payload: unknown
+  try {
+    payload = JSON.parse(data.join('\n'))
+  } catch {
+    return null
+  }
+  if (payload === null || typeof payload !== 'object') return null
+  switch (name) {
+    case 'delta': {
+      const text = (payload as { text?: unknown }).text
+      return { type: 'delta', text: typeof text === 'string' ? text : '' }
+    }
+    case 'message':
+      return { type: 'message', message: payload as AiMessage }
+    case 'pending':
+      return {
+        type: 'pending',
+        actions: Array.isArray(payload) ? (payload as AiAction[]) : [],
+      }
+    case 'done':
+      return { type: 'done', turn: payload as AiTurn }
+    case 'error': {
+      const refusal = payload as {
+        status?: unknown
+        code?: unknown
+        message?: unknown
+      }
+      return {
+        type: 'error',
+        status: typeof refusal.status === 'number' ? refusal.status : 500,
+        code: typeof refusal.code === 'string' ? refusal.code : null,
+        message: typeof refusal.message === 'string' ? refusal.message : '',
+      }
+    }
+    default:
+      return null
+  }
 }

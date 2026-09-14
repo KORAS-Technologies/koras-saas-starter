@@ -28,6 +28,8 @@ dependencies = [
   # Imported by src/core/observability.py. Absent from the manifest,
   # which made the service unimportable.
   "opentelemetry-exporter-otlp-proto-grpc>=1.25.0",
+  # For a hosted collector that speaks OTLP over HTTP (Grafana Cloud does).
+  "opentelemetry-exporter-otlp-proto-http>=1.25.0",
   "koras-auth",
   "koras-tenant",
   "koras-database",
@@ -45,6 +47,11 @@ dependencies = [
   # Text out of PDFs and workbooks, for retrieval. Pure Python, both.
   "pypdf>=4.0.0",
   "openpyxl>=3.1.0",
+  # A scanned PDF has no text layer; its pages are rendered and read by the
+  # vision alias. pypdfium2 ships pdfium in the wheel, so the image needs
+  # no system package for it.
+  "pypdfium2>=4.30.0",
+  "pillow>=10.0.0",
 {{/if}}]
 
 [tool.uv.sources]
