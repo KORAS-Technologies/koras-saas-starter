@@ -99,9 +99,10 @@ async def delete_file(ctx: ToolContext, args: DeleteFileInput) -> dict[str, Any]
     """
     if ctx.session is None:
         return {"deleted": None, "note": "no database session is available"}
-    store = ctx.services.get("storage")
-    if store is None:
+    store_for = ctx.services.get("storage")
+    if store_for is None:
         return {"deleted": None, "note": "the object store is not available here"}
+    store = await store_for()
     found = await ctx.session.execute(
         text(
             "select id, storage_key, name from public.files "

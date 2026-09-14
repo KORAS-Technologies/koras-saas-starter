@@ -70,6 +70,7 @@ from koras_ai import (
 from koras_audit import AuditEvent
 from koras_auth.permissions import permissions_for
 from koras_database import set_rls_context
+from koras_storage import ObjectStore
 from sqlalchemy import text
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -81,7 +82,7 @@ from .auth import AuthDep
 from .database import DbSession
 from .engine import SessionLocal
 from .settings import PRODUCT_CODE, settings
-from .storage import StorageDep
+from .storage import tenant_storage
 from .tenant import TenantDep
 
 #: The platform entitlements that gate the assistant. Named once here and once
@@ -638,7 +639,6 @@ async def tenant_ai(
     claims: AuthDep,
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
     session: DbSession,
-    storage: StorageDep,
 ) -> TenantAI:
     """Everything one AI request needs, or a refusal saying which part is missing."""
     token = credentials.credentials
@@ -690,9 +690,28 @@ async def tenant_ai(
     scope = RetrievalScope(tenant_id=tenant.id, product_code=PRODUCT_CODE)
 
     async def retrieve(query: str, limit: int) -> list[Citation]:
-        return await knowledge_store.search(
-            session, scope=scope, query=query, embed=embed, limit=limit
-        )
+        try:
+            return await knowledge_store.search(
+                session, scope=scope, query=query, embed=embed, limit=limit
+            )
+        except AIError:
+            raise
+        except Exception as error:
+            # A failed statement leaves the session in an aborted transaction,
+            # and the runtime still has the action's outcome to record on it.
+            # Roll back, bind the tenant again, and hand the runtime a named
+            # failure it turns into a tool result rather than a 500.
+            await session.rollback()
+            await set_rls_context(session, tenant.id)
+            _log.warning("retrieval failed: %s", type(error).__name__)
+            raise AIError(
+                ErrorCode.RETRIEVAL_FAILED, "the organization's documents could not be searched"
+            ) from error
+
+    async def object_store() -> ObjectStore:
+        # Resolved only when a tool asks for it: the storage policy is one
+        # more platform read, and most turns never touch a file.
+        return (await tenant_storage(tenant, credentials)).store
 
     sink = SqlAuditSink(session, tenant.id)
     runtime = AIRuntime(
@@ -708,7 +727,7 @@ async def tenant_ai(
         # The object store, so a tool that deletes a file never builds a
         # credentialed client of its own; resolved for this tenant the way the
         # Files page resolves it.
-        services={"embed": embed, "retrieve": retrieve, "storage": storage.store},
+        services={"embed": embed, "retrieve": retrieve, "storage": object_store},
     )
     return TenantAI(
         runtime=runtime, context=context, grant=grant, token=token, audit=sink, session=session
