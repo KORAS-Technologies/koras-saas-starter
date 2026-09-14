@@ -259,11 +259,14 @@ outlived the work by four days, in the one file every session reads first.
 green: the docs tests on identifiers the billing switch and the sign-in page
 introduced, mypy on a worker settings class that never subclassed arq's base,
 and CodeQL unable to check out a repository that had gone private. The first
-two are fixed and green again. The third is half fixed -- the checkout works --
-but a private repository also needs GitHub Code Security enabled before CodeQL
-may upload its results, a paid setting nobody has decided on. Security stays
-red until it is decided, and R-030's premise, that the repository is public, no
-longer holds. Generator Integration generates both profiles and
+two are fixed and green again. The third was decided on 2026-09-14: Code
+Security was enabled on the private repository, CodeQL uploads its results,
+and the `continue-on-error` a Copilot pull request had put on the job the same
+afternoon was removed the same evening, because a job that stays green while
+its upload fails is R-030 again with a different cause. Generator Integration
+was red from the afternoon of 2026-09-14 until that evening, on the AI
+capability's files leaking into products generated without it; the four
+fixes are in commit 2b8fbb3 and after. Generator Integration generates both profiles and
 lints, builds, typechecks and tests each, runs the row-level security suite
 against a real Postgres, mutation-tests that suite by removing `force` and
 requiring it to fail, and — since 2026-09-01 — **opens a browser**: the product
