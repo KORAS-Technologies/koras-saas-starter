@@ -114,6 +114,17 @@ FORBIDDEN_FIELD = (
     "salt",
 )
 
+# Fields whose name matches a word above but which carry nothing sensitive.
+#
+# An entry is a claim about one field of one schema, never a word this test
+# stops noticing: a blanket exemption for "token" would have covered every
+# field that ever carried one. Each says what leaves the API.
+ALLOWED_FIELD: dict[tuple[str, str], str] = {
+    ("AiUsageDay", "input_tokens"): "a count of model tokens read, the unit AI vendors bill in",
+    ("AiUsageDay", "output_tokens"): "a count of model tokens written, the unit AI vendors bill in",
+    ("AiUsageDay", "total_tokens"): "a count of model tokens, read and written together",
+}
+
 
 def response_schemas() -> list[tuple[str, dict[str, Any]]]:
     """Every schema a response can be shaped by, keyed by its name."""
@@ -137,9 +148,22 @@ def test_no_schema_serialises_a_secret(name: str, schema: dict[str, Any]) -> Non
         field
         for field in schema.get("properties", {})
         if any(word in field.lower() for word in FORBIDDEN_FIELD)
+        and (name, field) not in ALLOWED_FIELD
     ]
 
     assert not offenders, (
         f"{name} would serialise {offenders}. A response model is a published "
         "contract; keep internal and secret columns out of it."
     )
+
+
+def test_the_allowlist_names_only_fields_that_exist() -> None:
+    """An entry for a field that was renamed or removed is a claim about
+    nothing, and the next field to take that name would inherit it."""
+    published = {
+        (name, field)
+        for name, schema in response_schemas()
+        for field in schema.get("properties", {})
+    }
+    stale = sorted(set(ALLOWED_FIELD) - published)
+    assert not stale, f"allowlisted but absent from any schema: {stale}"
