@@ -47,13 +47,84 @@ async def _embed(texts: Sequence[str]) -> list[tuple[float, ...]]:
     return [(float(len(text)), 0.5) for text in texts]
 
 
+def _pdf_with(text_line: str) -> bytes:
+    """The smallest PDF with a text layer: one page, one line, Helvetica."""
+    stream = f"BT /F1 12 Tf 72 720 Td ({text_line}) Tj ET".encode()
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += f"{number} 0 obj\n".encode() + body + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode()
+    for offset in offsets:
+        out += f"{offset:010d} 00000 n \n".encode()
+    out += (
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    )
+    return bytes(out)
+
+
+def _workbook_with(rows: list[list[object]]) -> bytes:
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    book = Workbook()
+    sheet = book.active
+    assert sheet is not None
+    sheet.title = "Invoices"
+    for row in rows:
+        sheet.append(row)
+    book.create_sheet("Empty")
+    buffer = BytesIO()
+    book.save(buffer)
+    return buffer.getvalue()
+
+
+def test_a_pdf_gives_its_text_layer_and_a_scan_gives_nothing() -> None:
+    text = knowledge.extract_text(
+        _pdf_with("Invoice 42 is due Friday"), content_type="application/pdf"
+    )
+    assert text is not None and "Invoice 42 is due Friday" in text
+    assert knowledge.extract_text(_pdf_with(""), content_type="application/pdf") is None
+    assert knowledge.extract_text(b"not a pdf at all", content_type="application/pdf") is None
+
+
+def test_a_workbook_gives_its_cells_as_lines_per_sheet() -> None:
+    text = knowledge.extract_text(
+        _workbook_with([["Customer", "Amount"], ["Acme", 1200], [None, None], ["Globex", 80.5]]),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    assert text is not None
+    assert text.startswith("Sheet: Invoices")
+    assert "Customer\tAmount" in text and "Acme\t1200" in text and "Globex\t80.5" in text
+    # The empty sheet and the empty row add nothing.
+    assert "Empty" not in text and "\n\n\n" not in text
+
+
+def test_the_indexable_check_is_by_type_alone() -> None:
+    assert knowledge.is_indexable("application/pdf")
+    assert knowledge.is_indexable("text/markdown; charset=utf-8")
+    assert not knowledge.is_indexable("image/png")
+    assert not knowledge.is_indexable("application/vnd.ms-excel")
+
+
 def test_only_small_text_like_files_are_read_as_text() -> None:
     assert knowledge.extract_text(b"hello  world", content_type="text/plain") == "hello  world"
     assert (
         knowledge.extract_text(b"<p>Hi <b>there</b></p>", content_type="text/html") == "Hi  there"
     )
     assert knowledge.extract_text(b'{"a": 1}', content_type="application/json; charset=utf-8")
-    assert knowledge.extract_text(b"%PDF-1.4", content_type="application/pdf") is None
+    assert knowledge.extract_text(b"\x89PNG", content_type="image/png") is None
     assert knowledge.extract_text(b"\xff\xfe", content_type="text/plain") is None
     assert knowledge.extract_text(b"   ", content_type="text/plain") is None
     assert (

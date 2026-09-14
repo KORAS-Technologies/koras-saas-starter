@@ -20,6 +20,8 @@ dev = [
   "httpx>=0.27.0",
   "pyyaml>=6.0",
   "types-PyYAML>=6.0",
+  # Stubs for the workbook reader the API's retrieval uses; pypdf ships its own.
+  "types-openpyxl>=3.1",
   # The API itself, so the root test suite can import the app and assert things
   # about the surface it actually serves. It is a workspace *member*, which
   # makes it buildable; without also being a dependency here it is not installed

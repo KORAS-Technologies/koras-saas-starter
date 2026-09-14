@@ -189,6 +189,7 @@ derived and 8 asked.
 | `KORAS_CONTROL_PLANE_URL` | the Control Plane's address. Empty if there is none. It cannot be derived: the Control Plane is a separate estate with its own state |
 | `STORAGE_BUCKET` | a name you pick. The storage module provisions no buckets, so there is nothing to derive it from |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | only when `ai_gateway` is enabled |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_FROM`, `SMTP_USERNAME`, `SMTP_PASSWORD` | optional: any provider that speaks SMTP, for the mail the product sends itself (the assistant's approval notice). Empty means the notice is recorded and logged, not sent |
 | `GEMINI_API_KEY`, `OPENROUTER_API_KEY` | only when `ai_gateway` is enabled, and optional: an empty answer leaves that provider unkeyed, and a routing policy naming it is answered with the provider's refusal |
 
 **An empty answer is not recorded.** Pressing enter prints `skipped, still

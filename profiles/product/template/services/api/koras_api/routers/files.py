@@ -247,12 +247,8 @@ async def complete_upload(
         {"now": now, "id": file_id},
     )
     await session.commit()
-    if (
-        _RETRIEVAL
-        and credentials is not None
-        and knowledge.extract_text(b"x", content_type=row.content_type)
-    ):
-        # Text-like, so worth reading back and indexing after the response.
+    if _RETRIEVAL and credentials is not None and knowledge.is_indexable(row.content_type):
+        # A type with text in it, so worth reading back and indexing after the response.
         # Import here: the AI core exists only with the capability.
         from ..core.ai import index_uploaded_file
 

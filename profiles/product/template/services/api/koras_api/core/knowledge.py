@@ -5,13 +5,13 @@ that stores vectors and answers a query with citations. This is the store:
 one table, `ai_knowledge_chunks`, under the same row-level security as
 everything else the tenant owns, queried by cosine distance.
 
-Ingestion is here too. A file that finished uploading and is text-like and
-small enough is read back from the bucket, split with the runtime's chunker,
+Ingestion is here too. A file that finished uploading and has text in it --
+plain text, Markdown, CSV, HTML, JSON, a PDF, a spreadsheet -- is read back
+from the bucket, its text extracted, split with the runtime's chunker,
 embedded through the gateway under the embedding alias, and written as
-chunks. Anything else -- a PDF, an image, a spreadsheet, a file past the
-size ceiling -- is skipped with a log line and no chunks, and the assistant
-answers about it from its name alone. Extracting those is a follow-up with
-a dependency of its own.
+chunks. Anything else -- an image, an archive, a scanned PDF with no text
+layer, a file past the size ceiling -- is skipped with a log line and no
+chunks, and the assistant answers about it from its name alone.
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
-#: What is read as text. A content type not here is not indexed.
-INDEXABLE_TYPES: frozenset[str] = frozenset(
+#: Content types read as text as they are.
+TEXT_TYPES: frozenset[str] = frozenset(
     {
         "text/plain",
         "text/markdown",
@@ -40,8 +40,22 @@ INDEXABLE_TYPES: frozenset[str] = frozenset(
     }
 )
 
+PDF_TYPE = "application/pdf"
+SPREADSHEET_TYPES: frozenset[str] = frozenset(
+    {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+)
+
+#: Every content type that can be indexed. A type not here is not.
+INDEXABLE_TYPES: frozenset[str] = TEXT_TYPES | {PDF_TYPE} | SPREADSHEET_TYPES
+
 #: Past this, a file is skipped rather than embedded in hundreds of calls.
+#: A PDF or a workbook is mostly not text, so its ceiling is higher; what
+#: bounds the embedding calls for those is MAX_TEXT_CHARS below.
 MAX_INDEX_BYTES = 1_000_000
+MAX_DOCUMENT_BYTES = 25_000_000
+#: The most text one file contributes, whatever it holds. Roughly a hundred
+#: thousand tokens, or eighty pages of dense prose; the rest is not indexed.
+MAX_TEXT_CHARS = 400_000
 
 #: Chunks per query. Enough to answer from, few enough to fit a prompt.
 DEFAULT_LIMIT = 5
@@ -49,21 +63,92 @@ DEFAULT_LIMIT = 5
 Embed = Callable[[Sequence[str]], Awaitable[list[tuple[float, ...]]]]
 
 
+def content_kind(content_type: str) -> str:
+    return content_type.split(";", 1)[0].strip().lower()
+
+
+def is_indexable(content_type: str) -> bool:
+    """Whether a file of this type is worth reading back for its text."""
+    return content_kind(content_type) in INDEXABLE_TYPES
+
+
 def extract_text(raw: bytes, *, content_type: str) -> str | None:
-    """The file as text, or None when it is not the kind of file that is text."""
-    base = content_type.split(";", 1)[0].strip().lower()
-    if base not in INDEXABLE_TYPES:
+    """The file as text, or None when it has none to give.
+
+    None for a type that is not indexed, a file past its size ceiling, a
+    text file that is not UTF-8, a PDF with no text layer, a workbook with
+    no cells. The text is bounded by MAX_TEXT_CHARS whatever the source.
+    """
+    kind = content_kind(content_type)
+    if kind in TEXT_TYPES:
+        if len(raw) > MAX_INDEX_BYTES:
+            return None
+        try:
+            decoded = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+        text_content: str | None = _strip_tags(decoded) if kind == "text/html" else decoded
+    elif kind == PDF_TYPE:
+        text_content = _pdf_text(raw) if len(raw) <= MAX_DOCUMENT_BYTES else None
+    elif kind in SPREADSHEET_TYPES:
+        text_content = _workbook_text(raw) if len(raw) <= MAX_DOCUMENT_BYTES else None
+    else:
         return None
-    if len(raw) > MAX_INDEX_BYTES:
+    if text_content is None:
         return None
-    try:
-        decoded = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return None
-    if base == "text/html":
-        decoded = _strip_tags(decoded)
-    stripped = decoded.strip()
+    stripped = text_content.strip()[:MAX_TEXT_CHARS]
     return stripped or None
+
+
+def _pdf_text(raw: bytes) -> str | None:
+    """Every page's text layer, pages separated by a blank line.
+
+    A scanned PDF has no text layer and answers empty, which is None here:
+    reading it needs OCR, which is a dependency and a cost of its own and
+    not something to do to every upload unasked.
+    """
+    from io import BytesIO
+
+    from pypdf import PdfReader
+
+    try:
+        reader = PdfReader(BytesIO(raw))
+        pages = [page.extract_text() or "" for page in reader.pages]
+    except Exception:
+        logger.info("a PDF could not be read for indexing")
+        return None
+    joined = "\n\n".join(page.strip() for page in pages if page.strip())
+    return joined or None
+
+
+def _workbook_text(raw: bytes) -> str | None:
+    """Every sheet as lines of tab-separated cell values, headed by its name.
+
+    Values, not formulas: what a person sees in the cell is what a question
+    is about. Empty rows and empty sheets are left out.
+    """
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    try:
+        workbook = load_workbook(BytesIO(raw), read_only=True, data_only=True)
+    except Exception:
+        logger.info("a workbook could not be read for indexing")
+        return None
+    sections: list[str] = []
+    try:
+        for sheet in workbook.worksheets:
+            lines: list[str] = []
+            for row in sheet.iter_rows(values_only=True):
+                cells = ["" if value is None else str(value).strip() for value in row]
+                if any(cells):
+                    lines.append("\t".join(cells).rstrip())
+            if lines:
+                sections.append(f"Sheet: {sheet.title}\n" + "\n".join(lines))
+    finally:
+        workbook.close()
+    return "\n\n".join(sections) or None
 
 
 def _strip_tags(html: str) -> str:

@@ -14,11 +14,10 @@ What is sent: which tool, proposed by whom, and where to go. Never the
 proposal's input and never a message: the mail crosses a boundary the
 conversation does not, and a file name in an inbox is a leak nobody meant.
 
-How it is sent: through `koras_email`, which records rather than sends when
-no mail host is configured. A deployed product has no mail host today (the
-manifest declares SMTP_* for the local stack only), so in a deployed
-environment this logs the notice it would have sent. Wiring a provider is a
-decision recorded in the follow-ups, not something this module guesses at.
+How it is sent: through `koras_email`, over SMTP to whichever provider the
+environment's SMTP_* settings name, and recorded rather than sent when no
+host is set -- so a product without a provider still runs and the log says
+what it would have sent.
 """
 
 from __future__ import annotations
@@ -46,6 +45,8 @@ def mail_sender() -> EmailSender:
     return sender_for(
         host=settings.smtp_host,
         port=settings.smtp_port,
+        username=settings.smtp_username or None,
+        password=settings.smtp_password or None,
         sender=settings.smtp_from,
         use_tls=settings.smtp_secure,
     )
