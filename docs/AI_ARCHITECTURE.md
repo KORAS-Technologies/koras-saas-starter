@@ -221,7 +221,11 @@ per chunk of one document, 1536-wide, under the tenant policies; a file
 that finishes uploading and is text-like and under a megabyte is read back,
 chunked, embedded under the embedding alias and stored after the upload's
 response, and its chunks go when the file goes. `knowledge.search` is the
-tool the assistant calls; `core/knowledge.py` is the index. PDFs give their
+tool the assistant calls; `core/knowledge.py` is the index. The reference
+agent also carries `files.delete`, the one destructive tool, so the approval
+flow has something real to approve: proposed by the model, parked by the
+runtime, decided by a person with `files.manage`, and then run the way the
+Files page deletes. PDFs give their
 text layer and workbooks their cells; images and scanned PDFs are not
 indexed, because reading those is OCR.
 

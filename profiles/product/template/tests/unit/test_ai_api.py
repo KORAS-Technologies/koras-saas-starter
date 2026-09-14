@@ -294,6 +294,48 @@ def _proposal(name: str, arguments: dict[str, object]) -> Message:
     return Message("assistant", "", tool_calls=(ToolCall("c1", name, arguments),))
 
 
+def test_a_delete_proposal_waits_for_approval_and_a_member_cannot_make_one(
+    client: TestClient,
+) -> None:
+    """The reference destructive tool: proposed by the model, parked by the
+    runtime, decided by a person. A member has no files.manage, so the same
+    proposal from them is refused rather than parked."""
+    file_id = "0f9c1a3e-2b4d-4c6e-8f10-1234567890ab"
+    built = Harness(
+        [_proposal("files.delete", {"file_id": file_id}), Message("assistant", "Waiting.")]
+    )
+    app.dependency_overrides[tenant_ai] = built.tenant_ai
+    app.dependency_overrides[require_auth] = built.claims
+    try:
+        conversation = client.post("/api/v1/ai/conversations", json={}, headers=AUTH).json()
+        turn = client.post(
+            f"/api/v1/ai/conversations/{conversation['id']}/messages",
+            json={"text": "delete that file"},
+            headers=AUTH,
+        ).json()
+        assert [a["tool_id"] for a in turn["pending"]] == ["files.delete"]
+        assert turn["pending"][0]["status"] == "awaiting_approval"
+        assert turn["pending"][0]["operation"] == "destructive"
+        # Nothing was deleted: the tool has not run.
+        assert built.store.usage[0].status == "ok"
+
+        member = Harness(
+            [_proposal("files.delete", {"file_id": file_id}), Message("assistant", "I cannot.")]
+        )
+        member.as_member()
+        app.dependency_overrides[tenant_ai] = member.tenant_ai
+        app.dependency_overrides[require_auth] = member.claims
+        conversation = client.post("/api/v1/ai/conversations", json={}, headers=AUTH).json()
+        turn = client.post(
+            f"/api/v1/ai/conversations/{conversation['id']}/messages",
+            json={"text": "delete that file"},
+            headers=AUTH,
+        ).json()
+        assert turn["pending"] == []
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_a_read_tool_runs_without_a_session_and_says_so(client: TestClient) -> None:
     # The reference tool reads the database; without a session it answers
     # honestly rather than failing, and the model gets the note as data.
