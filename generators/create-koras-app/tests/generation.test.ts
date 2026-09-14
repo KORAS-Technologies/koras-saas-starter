@@ -1107,9 +1107,12 @@ describe.each(['product', 'control-plane'] as const)('%s secret scaffold', (prof
         .find((line) => line.startsWith(`${key} `))
         ?.split(/\s+/)[1]
 
-    for (const key of ['SMTP_HOST', 'NODE_ENV']) {
-      expect(classOf(key)).toBe('local')
-    }
+    expect(classOf('NODE_ENV')).toBe('local')
+    // Mail is the one thing a product sends itself since 2026-09-14 -- the
+    // assistant's approval notice -- so its SMTP settings are optional and
+    // deployable there, the move the Control Plane made for its own mail.
+    // The Control Plane profile's template still keeps them local.
+    expect(classOf('SMTP_HOST')).toBe(profile === 'product' ? 'optional' : 'local')
     if (profile === 'product') {
       for (const key of ['MINIO_ROOT_PASSWORD', 'GRAFANA_PASSWORD', 'ZITADEL_MASTERKEY']) {
         expect(classOf(key)).toBe('local')
