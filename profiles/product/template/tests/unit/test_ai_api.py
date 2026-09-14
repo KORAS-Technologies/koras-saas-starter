@@ -431,17 +431,29 @@ class _NoRows:
         return 0
 
 
-async def test_the_store_binds_the_tenant_again_after_every_commit() -> None:
+async def test_the_store_binds_the_tenant_again_after_every_commit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Row-level security reads a transaction-local setting; a commit ends
     the transaction. A store that committed and carried on would make its
     next statement as nobody, and the policies would refuse it -- which is
-    how the first real usage row on dev was lost."""
+    how the first real usage row on dev was lost. What binding it again
+    means is the database module's business (a statement, or a
+    declaration the engine replays); the store's is to ask, after every
+    commit, on the same session, for the same tenant."""
     from datetime import UTC, datetime
 
     from koras_ai import Usage, UsageEvent
+    from koras_api.core import ai as core_ai
     from koras_api.core.ai import SqlStore
 
     session = _RecordingSession()
+
+    async def rebind(bound: object, tenant_id: str) -> None:
+        assert bound is session and tenant_id == "tenant-1"
+        session.calls.append("rebind")
+
+    monkeypatch.setattr(core_ai, "rebind_tenant", rebind)
     store = SqlStore(session, "tenant-1")  # type: ignore[arg-type]
     await store.record(
         UsageEvent(
@@ -458,7 +470,7 @@ async def test_the_store_binds_the_tenant_again_after_every_commit() -> None:
             error_code="upstream_error",
         )
     )
-    assert session.calls == ["insert into public.ai_usage_events", "commit", "select set_config"]
+    assert session.calls == ["insert into public.ai_usage_events", "commit", "rebind"]
 
 
 # ── the streamed turn ──────────────────────────────────────────────────────

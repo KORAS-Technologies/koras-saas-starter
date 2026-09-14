@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+import pytest
+
 os.environ.setdefault("ENVIRONMENT", "dev")
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/db")
 os.environ.setdefault("ZITADEL_DOMAIN", "https://example.invalid")
@@ -66,7 +68,15 @@ def _ctx(session: _Session, store: _Store | None = None) -> ToolContext:
     )
 
 
-async def test_a_rename_changes_the_name_and_the_index_title_and_nothing_else() -> None:
+async def test_a_rename_changes_the_name_and_the_index_title_and_nothing_else(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from koras_api.ai import tools as tools_module
+
+    async def rebind(bound: object, tenant_id: str) -> None:
+        session.calls.append(("rebind", None))
+
+    monkeypatch.setattr(tools_module, "rebind_tenant", rebind)
     session = _Session(_Row())
     answer = await rename_file(
         _ctx(session), RenameFileInput(file_id=FILE_ID, new_name="Invoice vercel/sept.pdf")
@@ -77,10 +87,10 @@ async def test_a_rename_changes_the_name_and_the_index_title_and_nothing_else() 
     assert any(s.startswith("update public.ai_knowledge_chunks set title") for s in statements)
     assert not any("delete" in s for s in statements)
     assert session.committed == 1
-    # Every statement names the tenant; the last one binds it again after the commit.
+    # Every statement names the tenant; the tenant is bound again after the commit.
     tenant = context("owner", OWNER, frozenset({"organization_owner"})).tenant_id
     assert all(c[1] is None or c[1].get("tenant_id") == tenant for c in session.calls[:-1])
-    assert statements[-1].startswith("select set_config")
+    assert statements[-1] == "rebind"
 
 
 async def test_a_delete_removes_the_object_the_chunks_and_the_row_in_that_order() -> None:

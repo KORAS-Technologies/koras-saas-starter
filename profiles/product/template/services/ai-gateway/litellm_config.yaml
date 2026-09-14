@@ -73,29 +73,6 @@ model_list:
       model: openrouter/deepseek/deepseek-r1
       api_key: os.environ/OPENROUTER_API_KEY
 
-  # Compatibility names. Routing rows saved before 2026-09-14 name these; they
-  # answer as the current models above and are not offered by the platform's
-  # catalogue. Remove once no policy names them.
-  - model_name: claude-3-5-sonnet
-    litellm_params:
-      model: anthropic/claude-sonnet-4-6
-      api_key: os.environ/ANTHROPIC_API_KEY
-
-  - model_name: claude-3-5-haiku
-    litellm_params:
-      model: anthropic/claude-haiku-4-5-20251001
-      api_key: os.environ/ANTHROPIC_API_KEY
-
-  - model_name: gemini-2.5-flash
-    litellm_params:
-      model: gemini/gemini-3.5-flash
-      api_key: os.environ/GEMINI_API_KEY
-
-  - model_name: gemini-2.5-pro
-    litellm_params:
-      model: gemini/gemini-3.1-pro-preview
-      api_key: os.environ/GEMINI_API_KEY
-
 general_settings:
   # Every call presents this key; without it the proxy is open to anyone who
   # can reach it. The product holds the same value and sends it as the bearer.

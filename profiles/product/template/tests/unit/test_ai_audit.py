@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+import pytest
+
 os.environ.setdefault("ENVIRONMENT", "dev")
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/db")
 os.environ.setdefault("ZITADEL_DOMAIN", "https://example.invalid")
@@ -47,8 +49,17 @@ def _event(action: str = "ai.action.approved") -> AuditEvent:
     )
 
 
-async def test_events_are_buffered_then_written_in_order_and_the_tenant_rebound() -> None:
+async def test_events_are_buffered_then_written_in_order_and_the_tenant_rebound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     session = _Session()
+    from koras_api.core import ai as core_ai
+
+    async def rebind(bound: object, tenant_id: str) -> None:
+        assert tenant_id == "tenant-1"
+        session.calls.append(("rebind", None))
+
+    monkeypatch.setattr(core_ai, "rebind_tenant", rebind)
     sink = SqlAuditSink(session, "tenant-1")  # type: ignore[arg-type]
     sink.emit(_event("ai.tool.proposed"))
     sink.emit(_event("ai.action.approved"))
@@ -61,7 +72,7 @@ async def test_events_are_buffered_then_written_in_order_and_the_tenant_rebound(
         "insert into public.ai_audit_events",
         "insert into public.ai_audit_events",
         "commit",
-        "select set_config",
+        "rebind",
     ]
     first = session.calls[0][1]
     assert first is not None
