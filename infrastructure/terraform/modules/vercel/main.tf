@@ -79,6 +79,21 @@ resource "vercel_project" "apps" {
     production_branch = each.value.branch
   }
 
+  # GitHub Actions owns deployment. deploy.yml runs `vercel build` on the
+  # runner and ships the result with `vercel deploy --prebuilt`, which costs no
+  # Vercel build minutes at all. Connecting the repository above, on its own,
+  # also makes Vercel build every push itself -- so every commit was deployed
+  # twice, once from CI and once by Vercel, and only the second one was billed.
+  # One month of that was 16,108 build minutes on a single dev project.
+  #
+  # The connection stays, because it is what links a deployment to its commit
+  # in the dashboard and lets CI's deploy carry git metadata. Only the
+  # deployments Vercel would create from it are switched off. This attribute
+  # needs provider >= 4.2.0, which is why providers.tf pins the major it does.
+  git_provider_options = {
+    create_deployments = false
+  }
+
   build_command    = coalesce(var.build_command, "pnpm turbo run build --filter=${local.package_names[each.value.app]}")
   output_directory = ".next"
   install_command  = "pnpm install --frozen-lockfile"

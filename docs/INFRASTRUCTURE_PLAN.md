@@ -185,8 +185,15 @@ output "client_ids"    { value = { for k, v in zitadel_application_oidc.apps: k 
 ### `modules/vercel`
 
 **Creates:**
-- One Vercel project per enabled application
+- One Vercel project per enabled application per environment
 - Environment variables linked to Doppler
+
+The repository is connected to each project, and Vercel's own deployments from
+it are switched off (`git_provider_options.create_deployments = false`).
+GitHub Actions is the only thing that deploys: it builds on the runner and
+ships with `vercel deploy --prebuilt`, which costs no build minutes. Leaving
+Git deployments on made Vercel build every push a second time, and that second
+build was the billed one (R-043).
 
 **Variables:**
 ```hcl

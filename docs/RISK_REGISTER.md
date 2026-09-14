@@ -245,6 +245,7 @@ branding" there.
 | R-040 | Teardown missed a whole provider silently    | 16       | Resolved                 |
 | R-041 | Teardown made the operator write secrets to disk | 20   | Resolved                 |
 | R-042 | Prose is the only untested part of the repository | 12  | Partly closed            |
+| R-043 | Vercel built every push itself, beside CI's deploy | 12  | Resolved                 |
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
 | R-017 | Control-plane env contract was the product one | 10     | Resolved                 |
 | R-018 | Queue polling billed per command             | 8        | Resolved                 |
@@ -2177,3 +2178,40 @@ manifest reasoning — is not. The only defence there is that an explanation of
 why something is absent should be treated as the least trustworthy sentence in
 any file, because it is the one thing nothing can verify. Prefer building the
 thing to explaining why it is missing.
+
+## R-043 — Vercel built every push itself, beside CI's deploy
+
+**Found:** 2026-09-14, on a Vercel invoice: 16,108 build minutes, $39.02, for
+one billing month on `koras-e2e-shop-web-dev`. The deployments list showed
+every commit twice — once with the CLI icon, once with the commit icon.
+
+**Severity:** 12 (likelihood 4 × impact 3) · **Status:** Resolved 2026-09-14
+
+`deploy.yml` builds on the GitHub runner and ships with `vercel deploy
+--prebuilt`. Those deployments cost no build minutes, and that was the
+design: GitHub Actions owns deployment. But `modules/vercel` connects the
+repository to every project with `git_repository`, and a connected repository
+deploys on push unless told not to. Nothing told it not to. So every push to
+`develop` produced two production deployments of the dev project: CI's, free,
+and Vercel's, billed. The same happened on every other project that received
+a push.
+
+**Why it survived.** Both deployments succeeded and both served the same
+commit, so nothing on the site or in CI ever looked wrong. The only symptom
+was the Build CPU Minutes line on an invoice.
+
+**What changed.** `git_provider_options = { create_deployments = false }` on
+every project. The connection itself stays: it is what links a deployment to
+its commit in the dashboard. The attribute needs provider 4.2.0, so the
+shared `providers.tf` now pins `~> 5.0` instead of `~> 2.0`; the majors in
+between changed only `vercel_team_config.saml` and the project OIDC flag,
+neither of which the modules use. A generation test asserts the attribute
+inside the resource block and the pin in the template.
+
+**On an existing estate.** The operator disconnected every project by hand on
+2026-09-14 before this fix existed. Until the estate's `providers.tf` and
+`modules/vercel` are brought level and `terraform init -upgrade` has run,
+a plan against that estate will show the connection being *restored* with
+deployments on — the old configuration re-applied. Sync first, plan second.
+The Control Plane's and the shop's lock files both held 2.15.1 at the time.
+

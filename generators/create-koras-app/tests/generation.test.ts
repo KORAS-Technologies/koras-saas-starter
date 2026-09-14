@@ -1681,6 +1681,39 @@ describe('application hostnames', () => {
     expect(vercel).not.toContain('git_branch')
   })
 
+  it('never lets Vercel deploy from the connected repository', () => {
+    // deploy.yml builds on the runner and ships with `deploy --prebuilt`, so
+    // CI's deployments cost no Vercel build minutes. A connected repository
+    // with deployments left on builds every push a second time, and that
+    // second build is the one that is billed: 16,108 minutes in one month on
+    // one dev project. Asserted inside the resource, not on the file, so a
+    // comment quoting the attribute cannot satisfy it.
+    const vercel = moduleFile('vercel')
+    const project = vercel.slice(vercel.indexOf('resource "vercel_project" "apps"'))
+    const resource = project.slice(0, project.indexOf('\nresource '))
+    expect(resource).toMatch(/git_provider_options\s*=\s*\{\s*create_deployments\s*=\s*false/)
+
+    // The attribute arrived in provider 4.2.0; a 2.x pin would reject the plan.
+    const providers = readFileSync(
+      join(__dirname, '..', '..', '..', 'profiles', '_shared', 'template', 'infrastructure', 'terraform', 'providers.tf.hbs'),
+      'utf8',
+    )
+    const vercelPin = providers.slice(providers.indexOf('vercel/vercel'))
+    expect(vercelPin.slice(0, vercelPin.indexOf('}'))).toMatch(/version\s*=\s*"~> 5\.0"/)
+
+    // The two modules carry their own pins, and Terraform intersects all
+    // three. A 2.x pin left in either module makes the root's 5.x pin
+    // unsatisfiable, and init fails before a plan can say why.
+    for (const name of ['vercel', 'project-bootstrap']) {
+      const modulePins = readFileSync(
+        join(__dirname, '..', '..', '..', 'infrastructure', 'terraform', 'modules', name, 'providers.tf'),
+        'utf8',
+      )
+      const pin = modulePins.slice(modulePins.indexOf('vercel/vercel'))
+      expect(pin.slice(0, pin.indexOf('}'))).toContain('version = "~> 5.0"')
+    }
+  })
+
   it('ships no Terraform working files with the shared modules', () => {
     // The engine skipped a directory named `.terraform` and said so in a
     // comment, which did nothing about `.terraform.lock.hcl` sitting beside it:
