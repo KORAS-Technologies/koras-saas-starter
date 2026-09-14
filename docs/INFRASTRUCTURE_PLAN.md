@@ -189,11 +189,13 @@ output "client_ids"    { value = { for k, v in zitadel_application_oidc.apps: k 
 - Environment variables linked to Doppler
 
 The repository is connected to each project, and Vercel's own deployments from
-it are switched off (`git_provider_options.create_deployments = false`).
-GitHub Actions is the only thing that deploys: it builds on the runner and
-ships with `vercel deploy --prebuilt`, which costs no build minutes. Leaving
-Git deployments on made Vercel build every push a second time, and that second
-build was the billed one (R-043).
+it are switched off by `git.deploymentEnabled: false` in the `vercel.json`
+every template app ships at its root directory. GitHub Actions is the only
+thing that deploys: it builds on the runner and ships with `vercel deploy
+--prebuilt`, which costs no build minutes. With Git deployments on, one push
+built on every project of the estate at once, and those builds were the billed
+ones (R-043). No project attribute controls this; `create_deployments` in the
+provider is the GitHub `deployment_status` toggle and was tried first.
 
 **Variables:**
 ```hcl

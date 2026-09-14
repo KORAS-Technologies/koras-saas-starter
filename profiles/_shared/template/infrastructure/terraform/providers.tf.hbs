@@ -20,10 +20,10 @@ terraform {
     }
     vercel = {
       source  = "vercel/vercel"
-      # 4.2.0 added `git_provider_options.create_deployments`, which is what
-      # keeps a connected repository from building on every push. The majors
-      # between 2 and 5 changed only `vercel_team_config.saml` and the project
-      # OIDC flag, neither of which the modules use. Do not lower this.
+      # Moved from ~> 2.0 on 2026-09-14 (R-043); both estates run 5.x now.
+      # The majors between 2 and 5 changed only `vercel_team_config.saml` and
+      # the project OIDC flag, neither of which the modules use. Do not lower
+      # this: an estate whose lock holds 5.x cannot init against a 2.x pin.
       version = "~> 5.0"
     }
     fly = {

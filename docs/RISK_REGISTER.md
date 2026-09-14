@@ -2181,37 +2181,55 @@ thing to explaining why it is missing.
 
 ## R-043 — Vercel built every push itself, beside CI's deploy
 
-**Found:** 2026-09-14, on a Vercel invoice: 16,108 build minutes, $39.02, for
-one billing month on `koras-e2e-shop-web-dev`. The deployments list showed
-every commit twice — once with the CLI icon, once with the commit icon.
+**Found:** 2026-09-14, on a Vercel invoice: 16,108 build CPU minutes, $39.02,
+for one billing month. The deployments list for `koras-e2e-shop-web-dev`
+showed every commit twice — once with the CLI icon, once with the commit icon.
 
-**Severity:** 12 (likelihood 4 × impact 3) · **Status:** Resolved 2026-09-14
+**Severity:** 12 (likelihood 4 × impact 3) · **Status:** Resolved 2026-09-14,
+on the second attempt
 
 `deploy.yml` builds on the GitHub runner and ships with `vercel deploy
 --prebuilt`. Those deployments cost no build minutes, and that was the
 design: GitHub Actions owns deployment. But `modules/vercel` connects the
 repository to every project with `git_repository`, and a connected repository
-deploys on push unless told not to. Nothing told it not to. So every push to
-`develop` produced two production deployments of the dev project: CI's, free,
-and Vercel's, billed. The same happened on every other project that received
-a push.
+deploys on push unless told not to. Nothing told it not to.
 
-**Why it survived.** Both deployments succeeded and both served the same
-commit, so nothing on the site or in CI ever looked wrong. The only symptom
-was the Build CPU Minutes line on an invoice.
+**It was worse than one duplicate.** A push does not deploy the project for
+its branch; it deploys *every* project connected to the repository, because
+each of them sees the push as a preview of some other branch. One push to the
+shop's `develop` built eight projects — web and admin, times four
+environments — and one push to the Control Plane built six. Listing the
+team's deployments for the invoice window put 3,100 of 3,703 at `source: git`,
+and 1,050 of the 1,121 wall-clock build minutes. The invoice line is about
+fourteen times that, which is the `elastic` build machine multiplying each
+wall minute by its vCPUs. `acme-web-*` and `korastech-enterprise` are in the
+same team, outside these estates, and deploy from Git the same way.
 
-**What changed.** `git_provider_options = { create_deployments = false }` on
-every project. The connection itself stays: it is what links a deployment to
-its commit in the dashboard. The attribute needs provider 4.2.0, so the
-shared `providers.tf` now pins `~> 5.0` instead of `~> 2.0`; the majors in
-between changed only `vercel_team_config.saml` and the project OIDC flag,
-neither of which the modules use. A generation test asserts the attribute
-inside the resource block and the pin in the template.
+**Why it survived.** Every deployment succeeded and served the right commit,
+so nothing on any site or in CI ever looked wrong. The only symptom was the
+Build CPU Minutes line on an invoice.
 
-**On an existing estate.** The operator disconnected every project by hand on
-2026-09-14 before this fix existed. Until the estate's `providers.tf` and
-`modules/vercel` are brought level and `terraform init -upgrade` has run,
-a plan against that estate will show the connection being *restored* with
-deployments on — the old configuration re-applied. Sync first, plan second.
-The Control Plane's and the shop's lock files both held 2.15.1 at the time.
+**The first fix was wrong, and the push after it proved so.** The provider's
+`git_provider_options.create_deployments` is documented as "whether to create
+deployments". It was set to `false`, the provider was moved from `~> 2.0` to
+`~> 5.0` to reach it, both estates were applied, and the next push built on
+all fourteen projects exactly as before. Vercel's own documentation places
+that toggle under *silence deployment notifications on pull requests*: it
+controls the GitHub `deployment_status` events Vercel posts about a
+deployment, not whether the deployment happens. A one-line attribute
+description read as the thing it was needed to be. The attribute is gone
+from the module; the provider bump stays, because both estates already run
+5.x and a lock at 5.x cannot init against a 2.x pin.
 
+**What changed.** No project setting turns push deployments off. The switch
+Vercel documents is `git.deploymentEnabled: false` in a `vercel.json` at the
+project's root directory, which is `apps/<app>`, so every template app ships
+one. The connection stays: it is what links CI's deployment to its commit in
+the dashboard. A generation test reads every template app directory and
+requires the file with that value, and requires the module not to claim
+`create_deployments` does the job.
+
+**Verified how.** The commit carrying the `vercel.json` was pushed to both
+estates and the team's deployment list read back: CI's `cli` deployment for
+that commit, and no `git` one on any project. The commit before it, without
+the file, had produced fourteen.

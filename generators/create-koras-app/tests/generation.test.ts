@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { rmSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs'
+import { join, basename } from 'node:path'
+import { rmSync, existsSync, readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs'
 import { templatePath } from './template-path.js'
 import { loadProfile } from '../src/profiles/index.js'
 import type { ProfileName } from '../src/profiles/loader.js'
@@ -1684,26 +1684,43 @@ describe('application hostnames', () => {
   it('never lets Vercel deploy from the connected repository', () => {
     // deploy.yml builds on the runner and ships with `deploy --prebuilt`, so
     // CI's deployments cost no Vercel build minutes. A connected repository
-    // with deployments left on builds every push a second time, and that
-    // second build is the one that is billed: 16,108 minutes in one month on
-    // one dev project. Asserted inside the resource, not on the file, so a
-    // comment quoting the attribute cannot satisfy it.
-    const vercel = moduleFile('vercel')
-    const project = vercel.slice(vercel.indexOf('resource "vercel_project" "apps"'))
-    const resource = project.slice(0, project.indexOf('\nresource '))
-    expect(resource).toMatch(/git_provider_options\s*=\s*\{\s*create_deployments\s*=\s*false/)
+    // builds every push on every project unless told not to, and those builds
+    // are the billed ones: 16,108 CPU minutes in one month (R-043).
+    //
+    // The switch is not a project attribute. `create_deployments = false` was
+    // applied first and the next push still built on all fourteen projects;
+    // it toggles GitHub deployment_status events. What Vercel documents is
+    // `git.deploymentEnabled: false` in a vercel.json at the root directory,
+    // so every template app directory must ship one.
+    const templateRoot = join(__dirname, '..', '..', '..', 'profiles')
+    const appDirs = readdirSync(templateRoot)
+      .flatMap((profile) => {
+        const apps = join(templateRoot, profile, 'template', 'apps')
+        return existsSync(apps) ? readdirSync(apps).map((app) => join(apps, app)) : []
+      })
+      .filter((dir) => statSync(dir).isDirectory())
+    expect(appDirs.length).toBeGreaterThan(0)
+    for (const dir of appDirs) {
+      // The shared layer is walked first, so an app that both profiles carry
+      // (apps/admin) ships the file once, from _shared, not once per profile.
+      const shared = join(templateRoot, '_shared', 'template', 'apps', basename(dir), 'vercel.json')
+      const file = existsSync(join(dir, 'vercel.json')) ? join(dir, 'vercel.json') : shared
+      const config = JSON.parse(readFileSync(file, 'utf8'))
+      expect(config.git?.deploymentEnabled, dir).toBe(false)
+    }
 
-    // The attribute arrived in provider 4.2.0; a 2.x pin would reject the plan.
+    // And the module must not claim otherwise.
+    expect(moduleFile('vercel')).not.toMatch(/create_deployments\s*=/)
+
+    // The provider pin moved to 5.x with the same change; an estate whose lock
+    // holds 5.x cannot init against a 2.x pin, and Terraform intersects the
+    // root pin with both module pins.
     const providers = readFileSync(
       join(__dirname, '..', '..', '..', 'profiles', '_shared', 'template', 'infrastructure', 'terraform', 'providers.tf.hbs'),
       'utf8',
     )
     const vercelPin = providers.slice(providers.indexOf('vercel/vercel'))
-    expect(vercelPin.slice(0, vercelPin.indexOf('}'))).toMatch(/version\s*=\s*"~> 5\.0"/)
-
-    // The two modules carry their own pins, and Terraform intersects all
-    // three. A 2.x pin left in either module makes the root's 5.x pin
-    // unsatisfiable, and init fails before a plan can say why.
+    expect(vercelPin.slice(0, vercelPin.indexOf('}'))).toContain('version = "~> 5.0"')
     for (const name of ['vercel', 'project-bootstrap']) {
       const modulePins = readFileSync(
         join(__dirname, '..', '..', '..', 'infrastructure', 'terraform', 'modules', name, 'providers.tf'),
