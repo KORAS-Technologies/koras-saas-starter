@@ -203,8 +203,12 @@ _QUERY = text(
     " 1 - (embedding <=> cast(:embedding as vector)) as score "
     "from public.ai_knowledge_chunks "
     "where tenant_id = :tenant_id "
-    " and (:resource_type is null or resource_type = :resource_type) "
-    " and (:resource_id is null or resource_id = :resource_id) "
+    # Cast, because asyncpg cannot type a parameter that is only ever compared
+    # with `is null`: the first real search on dev died on exactly that, with
+    # "could not determine data type of parameter", and the session it left
+    # behind was in an aborted transaction.
+    " and (cast(:resource_type as text) is null or resource_type = cast(:resource_type as text)) "
+    " and (cast(:resource_id as text) is null or resource_id = cast(:resource_id as text)) "
     "order by embedding <=> cast(:embedding as vector) "
     "limit :limit"
 )
