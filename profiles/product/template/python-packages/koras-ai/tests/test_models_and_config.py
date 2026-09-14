@@ -12,7 +12,10 @@ from koras_ai import (
     ModelAlias,
     ModelCatalogue,
     ModelRoute,
+    Price,
     StaticRouting,
+    Usage,
+    estimated_cost_micros,
     is_alias,
 )
 
@@ -60,6 +63,28 @@ def test_a_fallback_model_for_a_provider_the_catalogue_lacks_goes_with_it(
         ModelAlias.FAST, ["anthropic", "private-llama", "openai"], fallback_model="llama-70b"
     )
     assert routes == (ModelRoute("anthropic", "claude-mini"), ModelRoute("openai", "gpt-mini"))
+
+
+def test_a_policy_price_binds_to_the_model_it_names(catalogue: ModelCatalogue) -> None:
+    # The price travels with the model name, whichever position the model
+    # sits in; a model the policy did not price answers with none.
+    routes = catalogue.resolve(
+        ModelAlias.FAST,
+        ["anthropic", "openai"],
+        prices={"claude-mini": Price(80, 400)},
+    )
+    assert routes[0].price == Price(80, 400)
+    assert routes[1].price is None
+    assert catalogue.resolve(ModelAlias.FAST)[0].price is None
+
+
+def test_a_cost_estimate_is_tokens_times_list_price_in_micro_dollars() -> None:
+    # 1000 input tokens at 250 cents per million is 0.25 cents, which is
+    # 2500 micro-dollars; 200 output tokens at 1000 is 0.2 cents, 2000.
+    assert (
+        estimated_cost_micros(Usage(input=1000, output=200, total=1200), Price(250, 1000)) == 4500
+    )
+    assert estimated_cost_micros(Usage(), Price(250, 1000)) == 0
 
 
 def test_a_policy_naming_only_unknown_providers_is_a_configuration_error(

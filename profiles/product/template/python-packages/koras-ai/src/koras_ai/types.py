@@ -117,3 +117,30 @@ class EmbedResult:
     usage: Usage
     provider: str
     model: str
+
+
+@dataclass(frozen=True)
+class Price:
+    """A vendor's list price for one model, in US cents per million tokens.
+
+    Carried by the platform's routing policy beside the model it prices, so a
+    product estimates what a call cost without holding a price list of its
+    own. Integers, because a price is a published number and not the result
+    of arithmetic; the arithmetic happens once, in `estimated_cost_micros`.
+    """
+
+    input_cents_per_million: int
+    output_cents_per_million: int
+
+
+def estimated_cost_micros(usage: Usage, price: Price) -> int:
+    """What a call cost at list price, in millionths of a US dollar.
+
+    Cents per million tokens times tokens is cents times a millionth; a cent
+    is ten thousand micro-dollars, so the whole thing is tokens times price
+    over a hundred. Integer division: a fraction of a micro-dollar is not
+    worth carrying, and a sum of many calls stays exact.
+    """
+    return (
+        usage.input * price.input_cents_per_million + usage.output * price.output_cents_per_million
+    ) // 100

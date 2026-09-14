@@ -61,9 +61,11 @@ from .types import (
     GenerateRequest,
     GenerateResult,
     Message,
+    Price,
     ToolCall,
     ToolSpec,
     Usage,
+    estimated_cost_micros,
 )
 from .usage import UsageEvent, UsageRecorder, month_start
 
@@ -130,8 +132,10 @@ __all__ = [
     "ToolRegistry",
     "ToolSpec",
     "Turn",
+    "Price",
     "Usage",
     "UsageEvent",
+    "estimated_cost_micros",
     "UsageRecorder",
     "citations_as_text",
     "decide",

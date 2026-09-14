@@ -126,9 +126,7 @@ class AiRouting:
     config: dict[str, Any]
 
 
-async def ai_routing(
-    capability: str, *, organization_id: str, token: str
-) -> AiRouting | None:
+async def ai_routing(capability: str, *, organization_id: str, token: str) -> AiRouting | None:
     """How this customer's product should route one AI capability, or None.
 
     None means the capability is not available for this customer, and the

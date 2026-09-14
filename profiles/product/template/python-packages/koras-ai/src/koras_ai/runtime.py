@@ -61,6 +61,7 @@ from .types import (
     Message,
     ToolCall,
     Usage,
+    estimated_cost_micros,
 )
 from .usage import UsageEvent, UsageRecorder, month_start
 
@@ -535,6 +536,11 @@ class AIRuntime:
                 status="ok" if result else "error",
                 error_code=error.code.value if error else None,
                 created_at=now(),
+                estimated_cost_micros=(
+                    estimated_cost_micros(result.usage, route.price)
+                    if result is not None and route.price is not None
+                    else None
+                ),
             )
         )
 

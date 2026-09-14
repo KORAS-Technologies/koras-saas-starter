@@ -17,10 +17,11 @@ meet.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from .errors import configuration, invalid_alias
+from .types import Price
 
 
 class ModelAlias(StrEnum):
@@ -51,6 +52,9 @@ class ModelRoute:
 
     provider: str
     model: str
+    #: The list price the routing policy carried for this model, when it did.
+    #: The catalogue's own routes carry none: a product holds no price list.
+    price: Price | None = None
 
 
 class ModelCatalogue:
@@ -82,6 +86,7 @@ class ModelCatalogue:
         model: str | None = None,
         *,
         fallback_model: str | None = None,
+        prices: Mapping[str, Price] | None = None,
     ) -> tuple[ModelRoute, ...]:
         """The routes to try, in order, for this alias under this policy.
 
@@ -109,6 +114,8 @@ class ModelCatalogue:
                 continue
             if named.get(position):
                 route = ModelRoute(provider=provider, model=named[position] or route.model)
+            if prices and route.model in prices:
+                route = replace(route, price=prices[route.model])
             chosen.append(route)
 
         if not chosen:

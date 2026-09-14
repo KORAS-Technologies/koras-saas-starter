@@ -36,7 +36,7 @@ import json
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, status
@@ -55,6 +55,7 @@ from koras_ai import (
     Message,
     Operation,
     PageContext,
+    Price,
     ProposedAction,
     ProviderRegistry,
     StoredMessage,
@@ -197,12 +198,40 @@ class ControlPlaneRouting:
             providers=tuple(routing.providers),
             model=_name(routing.config.get("model")),
             fallback_model=_name(routing.config.get("fallback_model")),
+            prices=_prices(routing.config.get("prices")),
         )
 
 
 def _name(value: object) -> str | None:
     """A model name out of the policy's configuration, or nothing."""
     return value if isinstance(value, str) and value else None
+
+
+def _prices(value: object) -> dict[str, Price]:
+    """The list price per model the policy carried, or nothing.
+
+    A malformed entry is dropped rather than guessed: a price that cannot be
+    read is a usage row with no estimate, which the platform can see and
+    correct, where a price read wrongly is a wrong number nobody questions.
+    """
+    if not isinstance(value, dict):
+        return {}
+    prices: dict[str, Price] = {}
+    for model, entry in value.items():
+        if not (isinstance(model, str) and model and isinstance(entry, dict)):
+            continue
+        cents_in = entry.get("input_cents_per_million")
+        cents_out = entry.get("output_cents_per_million")
+        if (
+            isinstance(cents_in, int)
+            and isinstance(cents_out, int)
+            and not isinstance(cents_in, bool)
+            and not isinstance(cents_out, bool)
+            and cents_in >= 0
+            and cents_out >= 0
+        ):
+            prices[model] = Price(cents_in, cents_out)
+    return prices
 
 
 # ── the rows ──────────────────────────────────────────────────────────────────
@@ -529,12 +558,14 @@ class SqlStore:
             text(
                 "insert into public.ai_usage_events "
                 "(tenant_id, user_id, conversation_id, agent_id, model_alias, provider, model, "
-                " input_tokens, output_tokens, total_tokens, latency_ms, status, error_code) "
+                " input_tokens, output_tokens, total_tokens, latency_ms, status, error_code, "
+                " estimated_cost_micros) "
                 "values (:tenant_id, :user_id, cast(:conversation_id as uuid), :agent_id, "
                 " :model_alias, :provider, :model, :input_tokens, :output_tokens, :total_tokens, "
-                " :latency_ms, :status, :error_code)"
+                " :latency_ms, :status, :error_code, :estimated_cost_micros)"
             ),
             {
+                "estimated_cost_micros": event.estimated_cost_micros,
                 "tenant_id": event.tenant_id,
                 "user_id": event.user_id,
                 "conversation_id": event.conversation_id,
@@ -653,3 +684,34 @@ async def tenant_ai(
 
 
 AiDep = Annotated[TenantAI, Depends(tenant_ai)]
+
+
+# ── what the platform collects ────────────────────────────────────────────────
+
+_USAGE_DAYS = text(
+    "select tenant_id::text as tenant_id, "
+    " (created_at at time zone 'UTC')::date as day, model_alias, provider, model, "
+    " count(*)::int as calls, "
+    " (count(*) filter (where status <> 'ok'))::int as errors, "
+    " coalesce(sum(input_tokens), 0)::bigint as input_tokens, "
+    " coalesce(sum(output_tokens), 0)::bigint as output_tokens, "
+    " coalesce(sum(total_tokens), 0)::bigint as total_tokens, "
+    " coalesce(sum(estimated_cost_micros), 0)::bigint as estimated_cost_micros "
+    "from public.ai_usage_events "
+    "where created_at >= cast(:since as date) "
+    "group by 1, 2, 3, 4, 5 "
+    "order by 2, 1, 3, 4, 5"
+)
+
+
+async def usage_days_since(session: AsyncSession, since: date) -> list[dict[str, Any]]:
+    """Every tenant's usage per UTC day, alias, provider and model, from `since`.
+
+    Read on the provisioning session, which the policy on `ai_usage_events`
+    admits for select and nothing else -- so this is the one place the
+    product hands usage across tenants, and it hands it to a machine identity
+    only. Aggregates, never rows: the platform bills and shows totals, and a
+    conversation id or a user id has no business leaving the product.
+    """
+    result = await session.execute(_USAGE_DAYS, {"since": since})
+    return [dict(row) for row in result.mappings().all()]

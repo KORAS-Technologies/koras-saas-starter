@@ -185,6 +185,14 @@ with the tenant, the user, the agent, the alias, the provider and model that
 answered, the counts, the latency and the status. No content. The monthly
 allowance is a count over this table by tenant and calendar month.
 
+Each row also carries `estimated_cost_micros`, the vendor's list price for
+its tokens in millionths of a dollar, when the route that answered carried a
+price from the platform's routing policy, and null when it did not. The
+platform collects this table as daily aggregates through the private
+router's read on the provisioning session, which the `070_ai_usage_platform_read.sql`
+isolation test bounds to reading; `AI_CONTROL_PLANE_CONTRACT.md` describes
+that half.
+
 ## Data
 
 Migration `supabase/migrations/00006_ai.sql`: four tables, every one with a
