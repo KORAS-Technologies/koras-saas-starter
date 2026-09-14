@@ -322,7 +322,7 @@ jobs:
           PYTHONUTF8: "1"
           PYTHONUNBUFFERED: "1"
         run: |
-          uv run python koras_ai_gateway/main.py &
+          uv run python -m koras_ai_gateway.main &
           pid=$!
           trap 'kill "$pid" 2>/dev/null || true' EXIT
           for i in $(seq 1 60); do
