@@ -37,6 +37,19 @@ async def tenant_session(tenant_id: str) -> AsyncIterator[AsyncSession]:
         yield session
 
 
+async def rebind_tenant(session: AsyncSession, tenant_id: str) -> None:
+    """Bind the tenant again after a commit, where the binding is a statement.
+
+    The tenant setting is transaction-local and a commit ends the
+    transaction; a store that commits mid-request still has rows to write
+    on the same session. Here the engine re-declares the caller at the
+    start of every transaction from the task's declaration, so there is
+    nothing to do -- the function exists so the AI core, which runs on
+    repositories with either design, has one name to call.
+    """
+    del session, tenant_id
+
+
 async def get_db(tenant: TenantDep) -> AsyncGenerator[AsyncSession, None]:
     """A session with this request's tenant context set.
 

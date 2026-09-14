@@ -74,7 +74,6 @@ from koras_ai import (
 from koras_audit import AuditEvent
 from koras_auth import JWTClaims
 from koras_auth.permissions import permissions_for
-from koras_database import set_rls_context
 from koras_storage import ObjectStore
 from koras_tenant import TenantContext
 from sqlalchemy import text
@@ -86,8 +85,7 @@ from ..ai.prompts import OCR_INSTRUCTIONS
 from . import knowledge as knowledge_store
 from . import platform
 from .auth import AuthDep
-from .database import DbSession
-from .engine import SessionLocal
+from .database import DbSession, rebind_tenant, tenant_session
 from .settings import PRODUCT_CODE, settings
 from .storage import tenant_storage
 from .tenant import TenantDep
@@ -292,7 +290,7 @@ class SqlStore:
         tenant" true across the several transactions a turn takes.
         """
         await self._session.commit()
-        await set_rls_context(self._session, self._tenant_id)
+        await rebind_tenant(self._session, self._tenant_id)
 
     async def create_conversation(
         self, context: AIContext, *, agent_id: str, title: str, page: PageContext | None
@@ -747,7 +745,7 @@ async def assemble_tenant_ai(
             # Roll back, bind the tenant again, and hand the runtime a named
             # failure it turns into a tool result rather than a 500.
             await session.rollback()
-            await set_rls_context(session, tenant.id)
+            await rebind_tenant(session, tenant.id)
             _log.warning("retrieval failed: %s", type(error).__name__)
             raise AIError(
                 ErrorCode.RETRIEVAL_FAILED, "the organization's documents could not be searched"
@@ -956,8 +954,7 @@ _INDEX_STATE = text(
 async def _record_index(tenant_id: str, file_id: str, *, indexed: bool, note: str) -> None:
     """Write the outcome on the file row, so it can be read rather than guessed."""
     try:
-        async with SessionLocal() as session:
-            await set_rls_context(session, tenant_id)
+        async with tenant_session(tenant_id) as session:
             await session.execute(
                 _INDEX_STATE,
                 {
@@ -1012,8 +1009,7 @@ async def _index_uploaded_file(
         limits=Limits(),
     )
     try:
-        async with SessionLocal() as session:
-            await set_rls_context(session, tenant_id)
+        async with tenant_session(tenant_id) as session:
             # Pages are read on this session so each vision call is metered
             # under the tenant, the way a turn's calls are.
             read = page_reader(
@@ -1121,7 +1117,7 @@ class SqlAuditSink:
             )
         if events:
             await self._session.commit()
-            await set_rls_context(self._session, self._tenant_id)
+            await rebind_tenant(self._session, self._tenant_id)
         return len(events)
 
     async def recent(self, limit: int = 50) -> list[dict[str, Any]]:

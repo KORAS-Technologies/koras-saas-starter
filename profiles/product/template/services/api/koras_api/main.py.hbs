@@ -10,7 +10,7 @@ from .core.observability import setup_telemetry
 from .core.ratelimit import limit_anonymous, limit_authenticated
 from .core.security import SecurityHeadersMiddleware
 from .core.settings import settings
-from .routers import {{#if capability.ai}}ai, {{/if}}files, health, platform, tenant
+from .routers import {{#if capability.ai}}ai, {{/if}}files, health, platform, {{#if capability.ai}}platform_ai, {{/if}}tenant
 
 
 @asynccontextmanager
@@ -131,4 +131,16 @@ app.include_router(
     # limiting a load balancer probe takes the service out of rotation.
     dependencies=[Depends(limit_anonymous)],
 )
+{{#if capability.ai}}# The same contract's AI half: usage per tenant per day, for the
+# platform's collector. Same prefix, same limiter, generated with the capability.
+app.include_router(
+    platform_ai.router,
+    prefix="/internal/platform/v1",
+    dependencies=[Depends(limit_anonymous)],
+)
+# Files index on upload and forget on delete only with the assistant present
+# and a gateway to embed through; see core/file_hooks.py.
+from .core.file_indexing import install as _install_file_indexing  # noqa: E402
 
+_install_file_indexing()
+{{/if}}

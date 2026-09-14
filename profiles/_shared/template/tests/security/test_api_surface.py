@@ -165,5 +165,14 @@ def test_the_allowlist_names_only_fields_that_exist() -> None:
         for name, schema in response_schemas()
         for field in schema.get("properties", {})
     }
-    stale = sorted(set(ALLOWED_FIELD) - published)
+    # An entry for a schema this repository does not publish at all is a
+    # capability that was not generated here, not a stale claim: the
+    # allowlist is shared by every profile and the AI usage schema exists
+    # only where the assistant does.
+    models = {name for name, _ in published}
+    stale = sorted(
+        (name, field)
+        for name, field in ALLOWED_FIELD
+        if name in models and (name, field) not in published
+    )
     assert not stale, f"allowlisted but absent from any schema: {stale}"
