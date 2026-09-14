@@ -222,7 +222,10 @@ plain, translated data and know nothing of the API.
   Mail is sent server-side in Python only, and nothing sends it yet.
 - **A vector store.** Contracts only. A product that needs retrieval writes
   the index and its design document.
-- **Retention.** The tables carry timestamps; the sweep is a product decision.
+- **Retention.** Built 2026-09-14: the worker's nightly sweep removes
+  conversations untouched for `AI_RETENTION_DAYS` (ninety unless set),
+  messages and actions cascading, usage rows kept, on the provisioning
+  context that migration 00008 admits for that delete alone.
 - **A real call.** This repository cannot make one. The first product to
   enable the capability with keys in Doppler runs the assistant once before
   building on it, which is the rule every design here follows.

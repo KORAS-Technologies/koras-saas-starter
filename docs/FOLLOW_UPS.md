@@ -1877,8 +1877,11 @@ rather than an omission, and each names the seam it plugs into.
       document that chooses the store.
 - [ ] **A durable audit table.** `koras_audit` writes a structured log line.
       The event shape is final; the sink behind it is the next implementation.
-- [ ] **Retention.** Messages hold content and nothing deletes them. The
-      tables carry `created_at` so a sweep needs no second migration.
+- [x] **Retention.** Built 2026-09-14: the worker's nightly sweep, on the
+      provisioning context, removes conversations untouched for
+      `AI_RETENTION_DAYS` with their messages and actions and keeps the usage
+      rows. It needed a second migration after all -- a delete policy for that
+      context -- and the 080 isolation test bounds it.
 - [x] **Usage reporting to the platform.** Built 2026-09-14 the other way
       round: the platform pulls. The private platform router answers every
       tenant's usage per day, aggregated, on the provisioning session, which
@@ -1892,8 +1895,8 @@ rather than an omission, and each names the seam it plugs into.
       Stripe (overage or credit packs, a pricing decision first), tracing
       spans on the gateway call, and a "last collected" component on platform
       health so a silent product is visible without a query.
-- [ ] **The gateway's unauthenticated answer.** A request to the deployed
-      gateway with no bearer gets a 500, not a 401, because LiteLLM's
+- [x] **The gateway's unauthenticated answer.** Fixed 2026-09-14 with a
+      middleware in front of the proxy that answers 401 itself. It was a 500, because LiteLLM's
       authentication error handler imports Prisma to classify the error and
       the image has none. Harmless to the product, which always sends the
       key, and misleading to anyone probing the gateway by hand.

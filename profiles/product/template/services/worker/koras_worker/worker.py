@@ -1,12 +1,17 @@
+from arq import cron
 from arq.connections import RedisSettings
 from arq.typing import WorkerSettingsBase
 
 from .settings import settings
 from .tasks import example_task
+from .tasks.ai_retention import purge_ai_history
 
 
 class WorkerSettings(WorkerSettingsBase):
     functions = [example_task]
+    # Nightly, at a quiet hour, on the worker's own clock: no scheduler
+    # service is needed for a sweep that runs once a day.
+    cron_jobs = [cron(purge_ai_history, hour=3, minute=17)]
     # Derived from REDIS_URL rather than hardcoded. A fixed localhost:6379 is
     # not merely wrong once deployed -- the worker starts, stays up, and quietly
     # consumes an empty local queue while the real one fills elsewhere. On a

@@ -36,13 +36,18 @@ dev = [
   # every product, whether or not the API was generated with the `ai`
   # capability that would otherwise be the only thing installing it.
   "koras-ai",
-]
+{{#if service.worker}}  # The worker, for the same reason again: its sweeps -- AI retention among
+  # them -- have tests in `tests/unit`, and a member that is not also a
+  # dependency here is buildable and not importable.
+  "{{projectSlug}}-worker",
+{{/if}}]
 
 [tool.uv.sources]
 "{{projectSlug}}-api" = { workspace = true }
 koras-email = { workspace = true }
 koras-ai = { workspace = true }
-
+{{#if service.worker}}"{{projectSlug}}-worker" = { workspace = true }
+{{/if}}
 [tool.ruff]
 line-length = 100
 target-version = "py312"

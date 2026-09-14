@@ -94,8 +94,11 @@ Every refusal, proposal, execution, approval and rejection emits an
 and no content. The action row is the durable record of a proposal's life.
 Usage rows carry dimensions and counts and no content, and no policy lets
 anyone the policies apply to change or delete one. Messages hold content and
-are the one place it lives; retention is a product decision and the tables
-carry the timestamps a sweep needs.
+are the one place it lives. The worker's nightly sweep removes conversations
+untouched for `AI_RETENTION_DAYS`, messages and actions with them, on the
+provisioning context, which migration 00008 admits for that delete and nothing
+else on the AI tables; `supabase/tests/080_ai_retention.sql` proves a tenant
+session cannot delete across tenants and that usage rows outlive the content.
 
 ## What is not yet covered
 
