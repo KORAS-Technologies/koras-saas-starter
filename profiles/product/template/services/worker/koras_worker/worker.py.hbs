@@ -1,11 +1,12 @@
-from arq import cron
-from arq.connections import RedisSettings
+{{#if capability.ai}}from arq import cron
+{{/if}}from arq.connections import RedisSettings
 from arq.typing import WorkerSettingsBase
 
 from .settings import settings
 from .tasks import example_task
 {{#if capability.ai}}from .tasks.ai_retention import purge_ai_history
 {{/if}}
+
 
 class WorkerSettings(WorkerSettingsBase):
     functions = [example_task]
