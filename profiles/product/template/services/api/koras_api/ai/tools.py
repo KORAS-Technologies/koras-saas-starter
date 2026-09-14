@@ -18,6 +18,7 @@ from typing import Any
 
 from koras_ai import Operation, ToolContext, ToolDefinition, define_tool
 from koras_database import set_rls_context
+from koras_storage import safe_filename
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
@@ -128,7 +129,60 @@ async def delete_file(ctx: ToolContext, args: DeleteFileInput) -> dict[str, Any]
     return {"deleted": row.name}
 
 
+class RenameFileInput(BaseModel):
+    """Which file, by id, and the new name. The name is cleaned the way an upload's is."""
+
+    file_id: str = Field(min_length=36, max_length=36, description="The file's id, from files.list")
+    new_name: str = Field(min_length=1, max_length=180, description="The new file name")
+
+
+async def rename_file(ctx: ToolContext, args: RenameFileInput) -> dict[str, Any]:
+    """Give one of the tenant's files a new name. The object and its text index stay.
+
+    The reference write tool, so a request to rename is never answered with
+    the only tool that exists. Waits for approval like every write.
+    """
+    if ctx.session is None:
+        return {"renamed": None, "note": "no database session is available"}
+    new_name = safe_filename(args.new_name)
+    found = await ctx.session.execute(
+        text(
+            "select id, name from public.files "
+            "where id = cast(:id as uuid) and tenant_id = :tenant_id and status = 'ready'"
+        ),
+        {"id": args.file_id, "tenant_id": ctx.context.tenant_id},
+    )
+    row = found.first()
+    if row is None:
+        return {"renamed": None, "note": "no such file in this organization"}
+    await ctx.session.execute(
+        text("update public.files set name = :name where id = :id and tenant_id = :tenant_id"),
+        {"name": new_name, "id": row.id, "tenant_id": ctx.context.tenant_id},
+    )
+    await ctx.session.execute(
+        text(
+            "update public.ai_knowledge_chunks set title = :name "
+            "where tenant_id = :tenant_id and resource_type = 'file' and resource_id = :file_id"
+        ),
+        {"name": new_name, "tenant_id": ctx.context.tenant_id, "file_id": str(row.id)},
+    )
+    await ctx.session.commit()
+    await set_rls_context(ctx.session, ctx.context.tenant_id)
+    return {"renamed": row.name, "to": new_name}
+
+
 TOOLS: tuple[ToolDefinition, ...] = (
+    define_tool(
+        id="files.rename",
+        description=(
+            "Rename one of this organization's files, by the id files.list gave. "
+            "A person has to approve this before it runs."
+        ),
+        permission="files.manage",
+        operation=Operation.WRITE,
+        input_model=RenameFileInput,
+        execute=rename_file,
+    ),
     define_tool(
         id="files.delete",
         description=(

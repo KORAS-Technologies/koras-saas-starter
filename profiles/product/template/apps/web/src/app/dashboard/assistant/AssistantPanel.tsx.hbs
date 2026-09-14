@@ -55,6 +55,7 @@ function toAction(action: AiAction): AIActionItem {
   return {
     id: action.id,
     toolId: action.tool_id,
+    summary: action.summary,
     operation,
     status: action.status,
     input: action.input,

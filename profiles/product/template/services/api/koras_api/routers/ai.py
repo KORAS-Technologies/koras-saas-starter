@@ -14,6 +14,7 @@ code answers which status is decided in `core/ai.py`.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
@@ -67,6 +68,13 @@ class MessageView(BaseModel):
     created_at: datetime
 
 
+class ActionSummaryView(BaseModel):
+    """What the action will do, in words: "Delete the file x (46 KB, uploaded ...)"."""
+
+    title: str
+    detail: str
+
+
 class ActionView(BaseModel):
     id: str
     conversation_id: str
@@ -80,6 +88,9 @@ class ActionView(BaseModel):
     decided_by: str | None
     created_at: datetime
     decided_at: datetime | None
+    #: Present while the action waits, so the person deciding reads words,
+    #: not a tool id and an argument map.
+    summary: ActionSummaryView | None = None
 
 
 class ConversationDetail(BaseModel):
@@ -159,8 +170,9 @@ def _message(stored: StoredMessage) -> MessageView:
     )
 
 
-def _action(action: ProposedAction) -> ActionView:
+def _action(action: ProposedAction, summary: ActionSummaryView | None = None) -> ActionView:
     return ActionView(
+        summary=summary,
         id=action.id,
         conversation_id=action.conversation_id,
         tool_id=action.tool_id,
@@ -233,8 +245,27 @@ async def get_conversation(conversation_id: str, ai: AiDep) -> ConversationDetai
     return ConversationDetail(
         conversation=_conversation(conversation),
         messages=[_message(m) for m in messages],
-        pending=[_action(a) for a in pending],
+        pending=await _pending_views(ai, pending),
     )
+
+
+async def _pending_views(ai: TenantAI, actions: Sequence[ProposedAction]) -> list[ActionView]:
+    """The waiting actions, each with its summary. A summary that cannot be
+    built is left off rather than failing the turn that produced the action."""
+    waiting = notify.awaiting(actions)
+    summaries: dict[str, ActionSummaryView] = {}
+    if waiting:
+        try:
+            built = await notify.summarize(
+                ai.session, tenant_id=ai.context.tenant_id, actions=waiting
+            )
+            summaries = {
+                action.id: ActionSummaryView(title=s.title, detail=s.detail)
+                for action, s in zip(waiting, built, strict=True)
+            }
+        except Exception:
+            _log.exception("an action's summary could not be built")
+    return [_action(a, summaries.get(a.id)) for a in actions]
 
 
 async def _flush(ai: TenantAI) -> None:
@@ -299,7 +330,7 @@ async def send_message(
     return TurnView(
         conversation=_conversation(turn.conversation),
         messages=[_message(m) for m in turn.messages],
-        pending=[_action(a) for a in turn.actions],
+        pending=await _pending_views(ai, turn.actions),
         usage=_usage(turn.usage),
     )
 

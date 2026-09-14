@@ -36,7 +36,7 @@ import json
 import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Annotated, Any
 
 import httpx
@@ -783,22 +783,85 @@ async def index_uploaded_file(
     name, not an upload that failed.
     """
     try:
+        return await _index_uploaded_file(
+            tenant_id=tenant_id,
+            organization_id=organization_id,
+            token=token,
+            file_id=file_id,
+            name=name,
+            content_type=content_type,
+            url=url,
+        )
+    except Exception:
+        _log.exception("file %s could not be indexed", file_id)
+        await _record_index(tenant_id, file_id, indexed=False, note="indexing failed unexpectedly")
+        return 0
+
+
+_INDEX_STATE = text(
+    "update public.files set indexed_at = :indexed_at, index_note = :note "
+    "where id = cast(:id as uuid) and tenant_id = :tenant_id"
+)
+
+
+async def _record_index(tenant_id: str, file_id: str, *, indexed: bool, note: str) -> None:
+    """Write the outcome on the file row, so it can be read rather than guessed."""
+    try:
+        async with SessionLocal() as session:
+            await set_rls_context(session, tenant_id)
+            await session.execute(
+                _INDEX_STATE,
+                {
+                    "indexed_at": datetime.now(UTC) if indexed else None,
+                    "note": note,
+                    "id": file_id,
+                    "tenant_id": tenant_id,
+                },
+            )
+            await session.commit()
+    except Exception:
+        _log.exception("the indexing outcome for file %s could not be recorded", file_id)
+
+
+async def _index_uploaded_file(
+    *,
+    tenant_id: str,
+    organization_id: str,
+    token: str,
+    file_id: str,
+    name: str,
+    content_type: str,
+    url: str,
+) -> int:
+    try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(url)
             response.raise_for_status()
             raw = response.content
-    except httpx.HTTPError:
-        _log.warning("file %s could not be read back for indexing", file_id)
+    except httpx.HTTPError as error:
+        _log.warning(
+            "file %s could not be read back for indexing: %s", file_id, type(error).__name__
+        )
+        await _record_index(
+            tenant_id, file_id, indexed=False, note="could not be read back from the bucket"
+        )
         return 0
     text_content = knowledge_store.extract_text(raw, content_type=content_type)
     if text_content is None:
         _log.info("file %s is not indexed: not text, or past the size ceiling", file_id)
+        await _record_index(
+            tenant_id,
+            file_id,
+            indexed=False,
+            note="no text to index: not a text type, no text layer, or past the size ceiling",
+        )
         return 0
     providers = ProviderRegistry()
     try:
         provider = gateway()
     except AIError:
         _log.info("file %s is not indexed: no AI gateway configured", file_id)
+        await _record_index(tenant_id, file_id, indexed=False, note="no AI gateway configured")
         return 0
     for provider_name in registries.PROVIDER_NAMES:
         providers.register(provider_name, provider)
@@ -822,8 +885,10 @@ async def index_uploaded_file(
             )
     except AIError as error:
         _log.warning("file %s is not indexed: %s", file_id, error)
+        await _record_index(tenant_id, file_id, indexed=False, note=error.message)
         return 0
     _log.info("file %s indexed as %d chunk(s)", file_id, count)
+    await _record_index(tenant_id, file_id, indexed=True, note=f"{count} chunk(s)")
     return count
 
 

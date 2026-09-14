@@ -13,6 +13,11 @@ import type { AIActionItem } from './types'
  *
  * The operation is named in words rather than a colour: "Deletes something"
  * is what the person is agreeing to, and it has to survive a screen reader.
+ *
+ * The summary leads. "Delete the file Invoice-0008.pdf (46 KB)" is what a
+ * person can check against what they asked for; a tool id and a file id are
+ * not, and a delete was once approved for a rename because that was all the
+ * card said. The arguments stay, behind a disclosure, for whoever wants them.
  */
 export function AIActionApproval({
   action,
@@ -49,6 +54,14 @@ export function AIActionApproval({
         {labels.title}
       </h3>
       <p className="mt-1 text-xs leading-5 text-ink-muted">{labels.hint}</p>
+      {action.summary ? (
+        <p className="mt-3 text-base font-semibold text-ink" data-testid="assistant-approval-summary">
+          {action.summary.title}
+          {action.summary.detail ? (
+            <span className="block text-sm font-normal text-ink-muted">{action.summary.detail}</span>
+          ) : null}
+        </p>
+      ) : null}
       <dl className="mt-3 space-y-1 text-sm">
         <div className="flex gap-2">
           <dt className="w-24 shrink-0 text-ink-muted">Tool</dt>
@@ -59,9 +72,12 @@ export function AIActionApproval({
           <dd className="text-ink">{labels.operation[action.operation]}</dd>
         </div>
       </dl>
-      <pre className="mt-3 max-h-40 overflow-auto rounded-brand bg-surface-muted p-2 font-mono text-xs text-ink">
-        {input}
-      </pre>
+      <details className="mt-3">
+        <summary className="cursor-pointer text-xs text-ink-muted">Arguments</summary>
+        <pre className="mt-2 max-h-40 overflow-auto rounded-brand bg-surface-muted p-2 font-mono text-xs text-ink">
+          {input}
+        </pre>
+      </details>
       {canDecide ? (
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
