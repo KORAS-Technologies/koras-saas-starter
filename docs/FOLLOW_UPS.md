@@ -1915,9 +1915,18 @@ rather than an omission, and each names the seam it plugs into.
       staff the calls, tokens and list-price estimate, and the customer the
       calls and tokens. Cost is the platform's price list in code, carried in
       each routing policy as `prices` and stamped on each usage row as
-      `estimated_cost_micros`. Still open beside it: billing by usage through
-      Stripe (overage or credit packs, a pricing decision first), a "last collected" component on platform
-      health so a silent product is visible without a query.
+      `estimated_cost_micros`. Still open beside it: a "last collected"
+      component on platform health so a silent product is visible without
+      a query.
+- [x] **Pay as you go beyond the allowance.** Built 2026-09-15, decided
+      against packs (a dispute per pack) and against daily billing (thirty
+      invoices a month): an owner or administrator agrees in the portal to
+      a rate card and sets a monthly charge limit; the product meters each
+      call past the allowance at cost times the staff rate and stops at the
+      limit; the platform sums, shows and warns. `AI_ARCHITECTURE.md` has
+      the shape. **Still open:** reporting the month's charges to Stripe,
+      behind the check that Managed Payments carries metered lines or
+      invoice items at all.
 - [x] **The gateway's unauthenticated answer.** Fixed 2026-09-14 with a
       middleware in front of the proxy that answers 401 itself. It was a 500, because LiteLLM's
       authentication error handler imports Prisma to classify the error and

@@ -246,6 +246,39 @@ panel the page renders, with the page context the current screen declared
 through `AIPageScope`. The eleven components in `packages/ui/src/ai/` take
 plain, translated data and know nothing of the API.
 
+## Pay as you go beyond the allowance
+
+Built 2026-09-15. The monthly allowance stays the plan's; what changes is
+what happens when it is spent. An owner or administrator turns pay as you
+go on in the portal from a consent screen that is the whole contract: the
+approximate price of a hundred requests (from their own last thirty days,
+or from the plan's routing template and a typical message while there is
+not enough history, and the card says which), the rate per alias, a
+monthly limit on charges they choose, and the sentence that says actual
+charges depend on the model and the message. The rate card they saw is
+copied onto the row with who agreed and when. Staff set the rate
+(`rate_percent`, 400 is four times list-price cost) and may block it; a
+customer cannot price their own plan, and staff cannot agree on a
+customer's behalf.
+
+The product learns of it through the entitlements it already reads:
+`ai.overage` with the limit in cents and the rate in `config`. Past the
+allowance the runtime makes the call and stamps the usage row -- over the
+allowance, the list-price cost, the rate in force, and the billable
+amount -- so a later rate never rewrites a past month; the customer's
+limit is then the stop, with a refusal that names it. Successful calls are
+what count toward the allowance; a provider that failed did not serve the
+customer. The assistant page shows the charges so far beside the
+allowance, the platform's daily aggregate carries overage calls and the
+billable sum, the customer's billing page shows charges as they accrue,
+staff see cost, rate and margin, and the owners are mailed once per
+level at 80% and 100% of the limit by the hourly collection.
+
+Not built: reporting the month's charges to Stripe. The Control Plane's
+billing branch uses Stripe Managed Payments and has not been run live,
+and whether metered lines or invoice items work through it is the check
+that comes before that design.
+
 ## What is deferred, and where it goes
 
 - **Streaming.** Built 2026-09-14. The runtime tells a turn as events --

@@ -46,6 +46,13 @@ another. The product reads three codes:
 ai.assistant   boolean   the assistant may be used at all
 ai.tools       boolean   proposals may become actions
 ai.requests    quota     model calls per calendar month; limit_value is the ceiling
+ai.overage     quota     pay as you go beyond the ceiling. Not a plan tier: the
+                         customer's own consent, appended by the platform's resolver
+                         when an owner or administrator agreed and staff have not
+                         blocked it. limit_value is the month's charge limit in US
+                         cents; config.rate_percent is the staff multiplier on
+                         list-price cost (400 is four times). Absent means stop at
+                         the ceiling.
 ```
 
 They are ordinary entries in the commercial catalogue, authored the way
