@@ -27,6 +27,9 @@ from collections.abc import AsyncIterator, Callable, Iterable, Mapping, Sequence
 from typing import Any, Protocol
 
 import httpx
+from opentelemetry import trace
+from opentelemetry.propagate import inject
+from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 from .errors import AIError, ErrorCode
 from .models import ModelRoute
@@ -111,6 +114,13 @@ def _tool_id(wire_name: str) -> str:
 
 def _message_to_wire(message: Message) -> dict[str, Any]:
     wire: dict[str, Any] = {"role": message.role, "content": message.content}
+    if message.images:
+        # The OpenAI content-parts shape, which the gateway translates for
+        # every vision provider it fronts.
+        wire["content"] = [
+            {"type": "text", "text": message.content},
+            *({"type": "image_url", "image_url": {"url": url}} for url in message.images),
+        ]
     if message.tool_calls:
         wire["tool_calls"] = [
             {
@@ -197,6 +207,53 @@ def _parse_usage(raw: object) -> Usage:
     return Usage(
         input=prompt, output=completion, total=count("total_tokens") or prompt + completion
     )
+
+
+_tracer = trace.get_tracer("koras_ai")
+
+
+def _span(operation: str, alias: str, route: ModelRoute) -> Span:
+    """One span per gateway call, named by the OpenTelemetry GenAI conventions.
+
+    Started rather than made current: `stream` yields while the call is
+    open, and a span attached to the context across a generator's suspension
+    is the one OpenTelemetry cannot reliably detach. The trace context still
+    reaches the gateway, through `_traced_headers`.
+    """
+    return _tracer.start_span(
+        f"ai.{operation}",
+        kind=SpanKind.CLIENT,
+        attributes={
+            "gen_ai.operation.name": operation,
+            "gen_ai.system": route.provider,
+            "gen_ai.request.model": route.model,
+            "koras.ai.alias": alias,
+        },
+    )
+
+
+def _traced_headers(span: Span) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    inject(headers, context=trace.set_span_in_context(span))
+    return headers
+
+
+def _finish(
+    span: Span,
+    *,
+    usage: Usage | None = None,
+    model: str | None = None,
+    error: AIError | None = None,
+) -> None:
+    if usage is not None:
+        span.set_attribute("gen_ai.usage.input_tokens", usage.input)
+        span.set_attribute("gen_ai.usage.output_tokens", usage.output)
+    if model:
+        span.set_attribute("gen_ai.response.model", model)
+    if error is not None:
+        span.set_attribute("error.type", error.code.value)
+        span.set_status(Status(StatusCode.ERROR, error.code.value))
+    span.end()
 
 
 def _safe_error(status: int, body: str) -> AIError:
@@ -286,9 +343,11 @@ class GatewayProvider:
             body["metadata"] = dict(request.metadata)
         return body
 
-    async def _post(self, path: str, body: Mapping[str, Any]) -> dict[str, Any]:
+    async def _post(
+        self, path: str, body: Mapping[str, Any], *, headers: Mapping[str, str]
+    ) -> dict[str, Any]:
         try:
-            response = await self._client.post(path, json=dict(body))
+            response = await self._client.post(path, json=dict(body), headers=dict(headers))
         except httpx.TimeoutException as error:
             raise AIError(
                 ErrorCode.TIMEOUT,
@@ -322,7 +381,16 @@ class GatewayProvider:
 
     async def generate(self, request: GenerateRequest, *, route: ModelRoute) -> GenerateResult:
         started = time.monotonic()
-        parsed = await self._post("/v1/chat/completions", self._body(request, route, stream=False))
+        span = _span("chat", request.model, route)
+        try:
+            parsed = await self._post(
+                "/v1/chat/completions",
+                self._body(request, route, stream=False),
+                headers=_traced_headers(span),
+            )
+        except AIError as error:
+            _finish(span, error=error)
+            raise
         latency = int((time.monotonic() - started) * 1000)
 
         choices = parsed.get("choices")
@@ -338,7 +406,7 @@ class GatewayProvider:
         )
         finish = first.get("finish_reason") if isinstance(first, dict) else None
         answered_as = parsed.get("model")
-        return GenerateResult(
+        result = GenerateResult(
             message=message,
             usage=_parse_usage(parsed.get("usage")),
             provider=route.provider,
@@ -346,6 +414,8 @@ class GatewayProvider:
             latency_ms=latency,
             finish_reason=finish if isinstance(finish, str) else "stop",
         )
+        _finish(span, usage=result.usage, model=result.model)
+        return result
 
     async def stream(
         self, request: GenerateRequest, *, route: ModelRoute
@@ -365,8 +435,11 @@ class GatewayProvider:
         pending: dict[int, dict[str, Any]] = {}
         usage = Usage()
         finish = "stop"
+        span = _span("chat", request.model, route)
         try:
-            async with self._client.stream("POST", "/v1/chat/completions", json=body) as response:
+            async with self._client.stream(
+                "POST", "/v1/chat/completions", json=body, headers=_traced_headers(span)
+            ) as response:
                 if response.status_code >= 400:
                     raise _safe_error(response.status_code, (await response.aread()).decode())
                 async for line in response.aiter_lines():
@@ -400,17 +473,27 @@ class GatewayProvider:
                         yield GenerateEvent(kind="delta", text=piece)
                     _merge_tool_fragments(pending, delta.get("tool_calls"))
         except httpx.TimeoutException as error:
-            raise AIError(
+            timeout = AIError(
                 ErrorCode.TIMEOUT,
                 "the model did not answer in time",
                 detail=f"{type(error).__name__} while streaming",
-            ) from error
+            )
+            _finish(span, error=timeout)
+            raise timeout from error
         except httpx.HTTPError as error:
-            raise AIError(
+            unreachable = AIError(
                 ErrorCode.PROVIDER_UNAVAILABLE,
                 "the AI gateway could not be reached",
                 detail=f"{type(error).__name__} while streaming",
-            ) from error
+            )
+            _finish(span, error=unreachable)
+            raise unreachable from error
+        except AIError as error:
+            _finish(span, error=error)
+            raise
+        except BaseException:
+            span.end()
+            raise
 
         calls = tuple(
             ToolCall(
@@ -432,12 +515,20 @@ class GatewayProvider:
             latency_ms=int((time.monotonic() - started) * 1000),
             finish_reason=finish,
         )
+        _finish(span, usage=usage, model=route.model)
         yield GenerateEvent(kind="done", result=result)
 
     async def embed(self, request: EmbedRequest, *, route: ModelRoute) -> EmbedResult:
-        parsed = await self._post(
-            "/v1/embeddings", {"model": route.model, "input": list(request.inputs)}
-        )
+        span = _span("embeddings", request.model, route)
+        try:
+            parsed = await self._post(
+                "/v1/embeddings",
+                {"model": route.model, "input": list(request.inputs)},
+                headers=_traced_headers(span),
+            )
+        except AIError as error:
+            _finish(span, error=error)
+            raise
         data = parsed.get("data")
         vectors: list[tuple[float, ...]] = []
         if isinstance(data, list):
@@ -447,12 +538,14 @@ class GatewayProvider:
                 embedding = entry.get("embedding")
                 if isinstance(embedding, list):
                     vectors.append(tuple(float(value) for value in embedding))
-        return EmbedResult(
+        result = EmbedResult(
             vectors=tuple(vectors),
             usage=_parse_usage(parsed.get("usage")),
             provider=route.provider,
             model=route.model,
         )
+        _finish(span, usage=result.usage, model=result.model)
+        return result
 
 
 def _merge_tool_fragments(pending: dict[int, dict[str, Any]], raw: object) -> None:

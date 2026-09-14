@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     trust_forwarded_for: bool = False
 
     otel_exporter_otlp_endpoint: str = "http://localhost:4317"
+    #: "grpc" for the local collector, "http/protobuf" for a hosted gateway
+    #: such as Grafana Cloud. Chosen in code; see core/observability.py.
+    otel_exporter_otlp_protocol: str = "grpc"
 
 
     @field_validator("database_url", mode="after")

@@ -114,7 +114,8 @@ def test_a_workbook_gives_its_cells_as_lines_per_sheet() -> None:
 def test_the_indexable_check_is_by_type_alone() -> None:
     assert knowledge.is_indexable("application/pdf")
     assert knowledge.is_indexable("text/markdown; charset=utf-8")
-    assert not knowledge.is_indexable("image/png")
+    assert knowledge.is_indexable("image/png")
+    assert not knowledge.is_indexable("image/gif")
     assert not knowledge.is_indexable("application/vnd.ms-excel")
 
 

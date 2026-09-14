@@ -13,6 +13,9 @@ requires-python = ">=3.12"
 dependencies = [
   "httpx>=0.27.0",
   "pydantic>=2.0.0",
+  # The API only: a span per gateway call, a no-op until the service
+  # installs an SDK and an exporter. The SDK is deliberately not here.
+  "opentelemetry-api>=1.25.0",
   "koras-platform",
   "koras-audit",
 ]

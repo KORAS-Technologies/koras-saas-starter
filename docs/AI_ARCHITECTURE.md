@@ -226,8 +226,13 @@ agent also carries `files.delete`, the one destructive tool, so the approval
 flow has something real to approve: proposed by the model, parked by the
 runtime, decided by a person with `files.manage`, and then run the way the
 Files page deletes. PDFs give their
-text layer and workbooks their cells; images and scanned PDFs are not
-indexed, because reading those is OCR.
+text layer and workbooks their cells. An image, or a PDF with no text
+layer, is read instead: its pages are rendered (pypdfium2) and each is
+transcribed by the vision alias, one metered call per page under the
+agent id `knowledge.ocr`, up to twenty pages a file. The text layer
+always wins when there is one, because it is exact and costs nothing.
+The Files page says which happened: *searchable*, *pending*, or *no*
+with the reason the indexer recorded.
 
 ## The web tier
 
@@ -243,13 +248,27 @@ plain, translated data and know nothing of the API.
 
 ## What is deferred, and where it goes
 
-- **Streaming.** The provider protocol and the gateway adapter stream; the
-  API answers request and response. A streaming route needs a Next route
-  handler that forwards the caller's token, which is a design of its own.
-- **Approval notification.** A waiting action is visible in the assistant.
-  Mail is sent server-side in Python only, and nothing sends it yet.
-- **A vector store.** Contracts only. A product that needs retrieval writes
-  the index and its design document.
+- **Streaming.** Built 2026-09-14. The runtime tells a turn as events --
+  text as it is produced, each message once stored, an action when parked,
+  the finished turn last -- and `send` is that stream kept to the end, so
+  the two routes cannot disagree. `POST .../messages/stream` writes them as
+  server-sent events on a session of its own, declared for the tenant,
+  because a stream outlives the request session. The web tier reaches it
+  through its own `/api/assistant/stream` route handler, which decides who
+  is calling the way the server actions do and pipes the bytes through;
+  the browser never sees the API's address or the token. A refusal inside
+  the stream is an `error` event carrying the status the whole-answer
+  route would have had.
+- **Tracing.** Every gateway call is a client span named by the GenAI
+  conventions (`ai.chat`, `ai.embeddings`; provider, model, alias, tokens)
+  with the trace context forwarded to the gateway. The exporter is chosen
+  by `OTEL_EXPORTER_OTLP_PROTOCOL`, which the SDK does not read when the
+  exporter is built in code; the dev API spent eight days sending gRPC to
+  Grafana's HTTP gateway for that reason.
+- **Approval notification.** Built 2026-09-14: the approvers are mailed
+  after the response, with the requester and the action in words.
+- **A vector store.** Built 2026-09-14 on pgvector; see the knowledge
+  section above.
 - **Retention.** Built 2026-09-14: the worker's nightly sweep removes
   conversations untouched for `AI_RETENTION_DAYS` (ninety unless set),
   messages and actions cascading, usage rows kept, on the provisioning

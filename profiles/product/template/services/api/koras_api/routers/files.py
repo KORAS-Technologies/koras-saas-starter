@@ -220,6 +220,7 @@ async def request_upload(
 async def complete_upload(
     file_id: str,
     tenant: TenantDep,
+    claims: AuthDep,
     storage: StorageDep,
     session: DbSession,
     background: BackgroundTasks,
@@ -254,7 +255,8 @@ async def complete_upload(
     )
     await session.commit()
     if _RETRIEVAL and credentials is not None and knowledge.is_indexable(row.content_type):
-        # A type with text in it, so worth reading back and indexing after the response.
+        # A type with text in it, or pages a vision model can read, so worth
+        # reading back and indexing after the response.
         # Import here: the AI core exists only with the capability.
         from ..core.ai import index_uploaded_file
 
@@ -267,6 +269,7 @@ async def complete_upload(
             name=row.name,
             content_type=row.content_type,
             url=storage.store.presign_download(row.storage_key, row.name, DOWNLOAD_URL_SECONDS),
+            user_id=claims.sub,
         )
     return FileRow(
         id=file_id,

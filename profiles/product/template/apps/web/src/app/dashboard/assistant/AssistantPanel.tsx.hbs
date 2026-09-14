@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from 'react'
 import type { AiAction, AiMessage, AiStatus } from '@{{projectSlug}}/api-client'
+import { readAiStream } from '@{{projectSlug}}/api-client'
 import {
   AIActionApproval,
   AIComposer,
@@ -12,8 +13,9 @@ import {
 } from '@{{projectSlug}}/ui'
 import type { AIActionItem, AIMessageItem } from '@{{projectSlug}}/ui'
 import type { ActionResult } from './actions'
-import { approveAction, loadConversation, rejectAction, sendMessage, startConversation } from './actions'
+import { approveAction, loadConversation, rejectAction, startConversation } from './actions'
 import type { AssistantLabels } from './labels'
+import { assistantErrorKey } from '../../../lib/assistant-errors'
 
 /**
  * The conversation, the composer, the approvals and the errors, in one column.
@@ -26,7 +28,10 @@ import type { AssistantLabels } from './labels'
  * did not execute did not happen.
  *
  * No credential and no address reaches this file. Every call is a server
- * action, and the server action decides again who is calling.
+ * action, and the server action decides again who is calling. The one
+ * exception in shape is the turn itself, which is read from this
+ * application's own `/api/assistant/stream` so the answer can be shown as
+ * it arrives; that handler decides the same way the actions do.
  */
 
 function fill(template: string, values: Record<string, string>): string {
@@ -43,14 +48,19 @@ function toItem(message: AiMessage): AIMessageItem {
     role,
     content: message.content,
     toolName: message.tool_name,
-    citations: (message.citations ?? []).map((c) => ({ title: c.title, snippet: c.snippet })),
+    citations: (message.citations ?? []).map((c) => ({
+      title: c.title,
+      snippet: c.snippet,
+    })),
     createdAt: message.created_at,
   }
 }
 
 function toAction(action: AiAction): AIActionItem {
   const operation =
-    action.operation === 'write' || action.operation === 'destructive' || action.operation === 'external'
+    action.operation === 'write' ||
+    action.operation === 'destructive' ||
+    action.operation === 'external'
       ? action.operation
       : 'read'
   return {
@@ -91,6 +101,9 @@ export function AssistantPanel({
     initialStatus?.status === 'error' ? initialStatus.message : null,
   )
   const [busy, setBusy] = useState(false)
+  // The answer so far, while the model is still talking. Replaced by the
+  // stored message the moment the API announces it.
+  const [draft, setDraft] = useState('')
   const [lastText, setLastText] = useState<string | null>(null)
 
   const refresh = useCallback(async (id: string) => {
@@ -123,24 +136,65 @@ export function AssistantPanel({
           id = started.value.id
           setConversationId(id)
         }
-        const answer = await sendMessage(id, text)
-        if (answer.status === 'error') {
-          setError(answer.message)
+        const response = await fetch('/api/assistant/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId: id, text }),
+        })
+        if (!response.ok || response.body === null) {
+          const refusal: unknown = await response.json().catch(() => null)
+          const message =
+            refusal !== null &&
+            typeof refusal === 'object' &&
+            'message' in refusal &&
+            typeof refusal.message === 'string'
+              ? refusal.message
+              : labels.errors.generic
+          setError(message)
           return
         }
-        setMessages((current) => [...current, ...answer.value.messages.map(toItem)])
-        setPending((current) => [...current, ...answer.value.pending.map(toAction)])
-        setStatus((current) =>
-          current === null
-            ? null
-            : { ...current, requests_this_month: current.requests_this_month + 1 },
-        )
-        setLastText(null)
+        let finished = false
+        let refused = false
+        await readAiStream(response.body, (event) => {
+          switch (event.type) {
+            case 'delta':
+              setDraft((current) => current + event.text)
+              break
+            case 'message':
+              setDraft('')
+              setMessages((current) => [...current, toItem(event.message)])
+              break
+            case 'pending':
+              setPending((current) => [...current, ...event.actions.map(toAction)])
+              break
+            case 'done':
+              finished = true
+              setStatus((current) =>
+                current === null
+                  ? null
+                  : {
+                      ...current,
+                      requests_this_month: current.requests_this_month + 1,
+                    },
+              )
+              break
+            case 'error':
+              refused = true
+              setError(labels.errors[assistantErrorKey(event.code, event.status)])
+              break
+          }
+        })
+        setDraft('')
+        if (finished) setLastText(null)
+        else if (!refused) setError(labels.errors.generic)
+      } catch {
+        setDraft('')
+        setError(labels.errors.generic)
       } finally {
         setBusy(false)
       }
     },
-    [conversationId, pageType, pageId],
+    [conversationId, pageType, pageId, labels.errors],
   )
 
   const decide = useCallback(
@@ -167,6 +221,7 @@ export function AssistantPanel({
     setConversationId(null)
     setMessages([])
     setPending([])
+    setDraft('')
     setError(null)
     setLastText(null)
   }, [])
@@ -177,7 +232,9 @@ export function AssistantPanel({
       : !status.resolved
         ? null
         : status.monthly_limit === null
-          ? fill(labels.usage.unlimited, { used: String(status.requests_this_month) })
+          ? fill(labels.usage.unlimited, {
+              used: String(status.requests_this_month),
+            })
           : fill(labels.usage.withLimit, {
               used: String(status.requests_this_month),
               limit: String(status.monthly_limit),
@@ -208,12 +265,28 @@ export function AssistantPanel({
 
   return (
     <div
-      className={compact ? 'flex min-h-0 flex-1 flex-col' : 'flex h-[70vh] min-h-96 flex-col rounded-brand border border-line bg-surface shadow-card'}
+      className={
+        compact
+          ? 'flex min-h-0 flex-1 flex-col'
+          : 'flex h-[70vh] min-h-96 flex-col rounded-brand border border-line bg-surface shadow-card'
+      }
       data-testid="assistant-panel"
     >
       <AIUsageNotice text={usage} />
       <AIConversation
-        messages={messages}
+        messages={
+          draft === ''
+            ? messages
+            : [
+                ...messages,
+                {
+                  id: 'draft',
+                  role: 'assistant',
+                  content: draft,
+                  createdAt: '',
+                },
+              ]
+        }
         labels={labels.conversation}
         footer={pending.length > 0 || error !== null ? footer : undefined}
       />

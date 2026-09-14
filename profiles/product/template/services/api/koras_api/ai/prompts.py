@@ -15,6 +15,17 @@ from __future__ import annotations
 
 from koras_ai import PromptDefinition, define_prompt
 
+#: What the vision model is told when a scanned page or an image is read
+#: for indexing. Not a registered prompt: it has no variables and no agent,
+#: and it is sent by the indexer rather than by a conversation.
+OCR_INSTRUCTIONS = (
+    "Transcribe every piece of text in this image exactly as written, in "
+    "reading order. Keep line breaks between paragraphs and table rows. "
+    "Output only the transcription: no commentary, no description of the "
+    "image, and nothing that is not in it. If the image holds no text, "
+    "output nothing."
+)
+
 PROMPTS: tuple[PromptDefinition, ...] = (
     define_prompt(
         id="assistant.system",

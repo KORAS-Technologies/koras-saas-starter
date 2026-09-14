@@ -16,7 +16,7 @@ so the limiter still runs and keys on the stand-in caller.
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
 
@@ -459,3 +459,105 @@ async def test_the_store_binds_the_tenant_again_after_every_commit() -> None:
         )
     )
     assert session.calls == ["insert into public.ai_usage_events", "commit", "select set_config"]
+
+
+# ── the streamed turn ──────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def streaming(harness: Harness, monkeypatch: pytest.MonkeyPatch) -> Harness:
+    """The stream route's assembly, built around the harness like `tenant_ai`.
+
+    The route opens a session of its own; there is no database here, so the
+    opener is replaced with one that yields nothing and the assembly
+    ignores what it is handed, as the in-memory runtime does.
+    """
+    from contextlib import asynccontextmanager
+
+    from koras_api.core.ai import AiAssembly, tenant_ai_factory
+    from koras_api.routers import ai as ai_router
+
+    @asynccontextmanager
+    async def no_session(tenant_id: str) -> AsyncIterator[None]:
+        assert tenant_id == harness.context.tenant_id
+        yield None
+
+    async def build(session: object) -> TenantAI:
+        return harness.tenant_ai()
+
+    monkeypatch.setattr(ai_router, "tenant_session", no_session)
+    app.dependency_overrides[tenant_ai_factory] = lambda: AiAssembly(
+        tenant_id=harness.context.tenant_id, build=build
+    )
+    return harness
+
+
+def _frames(raw: str) -> list[tuple[str, object]]:
+    import json
+
+    frames: list[tuple[str, object]] = []
+    for block in raw.split("\n\n"):
+        name, data = "", []
+        for line in block.split("\n"):
+            if line.startswith("event:"):
+                name = line[6:].strip()
+            elif line.startswith("data:"):
+                data.append(line[5:].strip())
+        if name:
+            frames.append((name, json.loads("\n".join(data))))
+    return frames
+
+
+def test_a_turn_is_streamed_as_events_and_ends_with_the_turn(
+    streaming: Harness, client: TestClient
+) -> None:
+    started = client.post("/api/v1/ai/conversations", json={"title": "Files"}, headers=AUTH)
+    conversation_id = started.json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/api/v1/ai/conversations/{conversation_id}/messages/stream",
+        json={"text": "what do I have?"},
+        headers=AUTH,
+    ) as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        frames = _frames("".join(response.iter_text()))
+
+    assert [name for name, _ in frames] == ["message", "delta", "message", "done"]
+    user, delta, assistant, done = (payload for _, payload in frames)
+    assert isinstance(user, dict) and user["role"] == "user"
+    assert delta == {"text": "Hello from the assistant."}
+    assert isinstance(assistant, dict) and assistant["content"] == "Hello from the assistant."
+    assert isinstance(done, dict)
+    assert [m["role"] for m in done["messages"]] == ["user", "assistant"]
+    assert done["usage"] == {"input": 10, "output": 5, "total": 15}
+
+    # What was streamed is what a reload shows.
+    detail = client.get(f"/api/v1/ai/conversations/{conversation_id}", headers=AUTH)
+    assert [m["id"] for m in detail.json()["messages"]] == [user["id"], assistant["id"]]
+
+
+def test_a_refusal_inside_the_stream_is_an_error_event_with_its_status(
+    streaming: Harness, client: TestClient
+) -> None:
+    with client.stream(
+        "POST",
+        "/api/v1/ai/conversations/no-such-conversation/messages/stream",
+        json={"text": "hi"},
+        headers=AUTH,
+    ) as response:
+        assert response.status_code == 200
+        frames = _frames("".join(response.iter_text()))
+    assert len(frames) == 1
+    name, payload = frames[0]
+    assert name == "error"
+    assert isinstance(payload, dict)
+    assert payload["status"] == 404 and payload["code"] == "not_found"
+
+
+def test_the_stream_route_refuses_without_a_bearer() -> None:
+    app.dependency_overrides.clear()
+    client = TestClient(app)
+    answer = client.post("/api/v1/ai/conversations/x/messages/stream", json={"text": "hi"})
+    assert answer.status_code in (401, 403)

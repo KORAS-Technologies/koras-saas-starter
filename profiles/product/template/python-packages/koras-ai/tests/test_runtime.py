@@ -380,3 +380,78 @@ async def test_a_priced_route_records_what_the_call_cost(
     conversation = await runtime.start(owner_a, title="No price")
     await runtime.send(owner_a, conversation.id, "how much?")
     assert store.usage[0].estimated_cost_micros is None
+
+
+# ── the turn as events ─────────────────────────────────────────────────────
+
+
+async def test_a_turn_can_be_followed_as_it_happens(
+    owner_a: AIContext, catalogue: ModelCatalogue, tools: ToolRegistry, agents: AgentRegistry
+) -> None:
+    runtime, store, _ = runtime_for(
+        FakeProvider([ANSWER]), catalogue=catalogue, tools=tools, agents=agents
+    )
+    conversation = await runtime.start(owner_a, title="Files")
+    events = [e async for e in runtime.stream(owner_a, conversation.id, "what do I have?")]
+
+    assert [e.kind for e in events] == ["message", "delta", "message", "done"]
+    assert events[0].message is not None and events[0].message.message.role == "user"
+    assert events[1].text == "Here you are."
+    assert events[2].message is not None and events[2].message.message.content == "Here you are."
+    turn = events[3].turn
+    assert turn is not None
+    assert [m.message.role for m in turn.messages] == ["user", "assistant"]
+    assert turn.usage.total == 15
+    # Metered once, as a whole turn is; and the store holds what was announced.
+    assert len(store.usage) == 1
+    stored = await store.list_messages(owner_a, conversation.id)
+    assert [m.id for m in stored] == [m.id for m in turn.messages]
+
+
+async def test_a_parked_action_is_announced_when_it_is_parked(
+    owner_a: AIContext, catalogue: ModelCatalogue, tools: ToolRegistry, agents: AgentRegistry
+) -> None:
+    provider = FakeProvider([proposes("files.delete", {"file_id": "f1"})])
+    runtime, _, _ = runtime_for(provider, catalogue=catalogue, tools=tools, agents=agents)
+    conversation = await runtime.start(owner_a)
+    events = [e async for e in runtime.stream(owner_a, conversation.id, "delete f1")]
+
+    assert [e.kind for e in events] == ["message", "message", "message", "action", "done"]
+    action = events[3].action
+    assert action is not None and action.tool_id == "files.delete"
+    assert action.status is ActionStatus.AWAITING_APPROVAL
+    turn = events[4].turn
+    assert turn is not None and [a.id for a in turn.actions] == [action.id]
+
+
+async def test_a_route_that_fails_before_speaking_is_abandoned_for_the_next(
+    owner_a: AIContext, catalogue: ModelCatalogue, tools: ToolRegistry, agents: AgentRegistry
+) -> None:
+    from koras_ai import AIConfiguration, AIRuntime, InMemoryStore, PromptRegistry, StaticRouting
+    from koras_audit import MemoryAuditSink
+
+    providers = ProviderRegistry()
+    providers.register("openai", FailingProvider(AIError(ErrorCode.PROVIDER_UNAVAILABLE, "down")))
+    providers.register("anthropic", FakeProvider([ANSWER]))
+    memory = InMemoryStore()
+    runtime = AIRuntime(
+        configuration=AIConfiguration(
+            catalogue=catalogue, routing=StaticRouting(), fail_closed=False, limits=Limits()
+        ),
+        providers=providers,
+        tools=tools,
+        agents=agents,
+        prompts=PromptRegistry(),
+        store=memory,
+        usage=memory,
+        audit=MemoryAuditSink(),
+    )
+    conversation = await runtime.start(owner_a)
+    events = [e async for e in runtime.stream(owner_a, conversation.id, "hi")]
+
+    assert [e.kind for e in events] == ["message", "delta", "message", "done"]
+    # Both attempts are on the meter: the one that failed and the one that answered.
+    assert [(e.provider, e.status) for e in memory.usage] == [
+        ("openai", "error"),
+        ("anthropic", "ok"),
+    ]

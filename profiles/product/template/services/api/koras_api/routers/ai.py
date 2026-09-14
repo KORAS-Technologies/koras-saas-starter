@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi.responses import StreamingResponse
 from koras_ai import (
     OPEN,
     AIError,
@@ -34,7 +35,8 @@ from koras_ai import (
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..core import notify
-from ..core.ai import AiDep, TenantAI, refusal
+from ..core.ai import AiDep, AiFactoryDep, TenantAI, refusal
+from ..core.database import tenant_session
 from ..core.settings import PRODUCT_NAME, settings
 
 _log = logging.getLogger(__name__)
@@ -405,6 +407,75 @@ async def send_message(
         messages=_messages(turn.messages),
         pending=await _pending_views(ai, turn.actions),
         usage=_usage(turn.usage),
+    )
+
+
+def _sse(event: str, data: dict[str, object] | list[dict[str, object]]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+def _refused(error: HTTPException) -> dict[str, Any]:
+    detail = error.detail if isinstance(error.detail, dict) else {"message": str(error.detail)}
+    return {"status": error.status_code, **detail}
+
+
+@router.post("/ai/conversations/{conversation_id}/messages/stream")
+async def stream_message(
+    conversation_id: str, body: SendMessage, assembly: AiFactoryDep
+) -> StreamingResponse:
+    """The same turn as `send_message`, told as it happens.
+
+    Server-sent events: `delta` carries text as the model produces it,
+    `message` each message once the store holds it (with its citations),
+    `pending` an action parked for a person, `done` the finished turn as
+    `send_message` would have answered it, and `error` the refusal
+    `send_message` would have raised -- with the status it would have had,
+    since the stream itself is already a 200.
+
+    The turn runs on a session of its own, bound to the tenant the way the
+    request session is, because that one is closed on the framework's
+    schedule and a stream outlives it. The audit is flushed and
+    the approvers told at the end, exactly as after a whole answer.
+    """
+    after = BackgroundTasks()
+
+    async def events() -> AsyncIterator[str]:
+        async with tenant_session(assembly.tenant_id) as session:
+            try:
+                ai = await assembly.build(session)
+            except HTTPException as error:
+                yield _sse("error", _refused(error))
+                return
+            shown: list[StoredMessage] = []
+            try:
+                async for event in ai.runtime.stream(ai.context, conversation_id, body.text):
+                    if event.kind == "delta":
+                        yield _sse("delta", {"text": event.text})
+                    elif event.kind == "message" and event.message is not None:
+                        shown.append(event.message)
+                        yield _sse("message", _messages(shown)[-1].model_dump(mode="json"))
+                    elif event.kind == "action" and event.action is not None:
+                        views = await _pending_views(ai, [event.action])
+                        yield _sse("pending", [view.model_dump(mode="json") for view in views])
+                    elif event.kind == "done" and event.turn is not None:
+                        await _flush(ai)
+                        await _tell_approvers(ai, after, event.turn, body.text)
+                        finished = TurnView(
+                            conversation=_conversation(event.turn.conversation),
+                            messages=_messages(event.turn.messages),
+                            pending=await _pending_views(ai, event.turn.actions),
+                            usage=_usage(event.turn.usage),
+                        )
+                        yield _sse("done", finished.model_dump(mode="json"))
+            except AIError as error:
+                await _flush(ai)
+                yield _sse("error", _refused(refusal(error)))
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        background=after,
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
 
 

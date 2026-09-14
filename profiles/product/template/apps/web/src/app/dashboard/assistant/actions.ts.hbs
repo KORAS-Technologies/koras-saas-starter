@@ -19,6 +19,7 @@ import type {
   AiTurn,
 } from '@{{projectSlug}}/api-client'
 import { can, signedInContext } from '../../../lib/access'
+import { assistantErrorKey } from '../../../lib/assistant-errors'
 import { translator } from '../../../lib/locale'
 import { apiBaseUrl, providerToken } from '../../../lib/session'
 
@@ -48,34 +49,17 @@ async function session(permission: 'ai.use' | 'ai.approve') {
 }
 
 async function forbidden<T>(): Promise<ActionResult<T>> {
-  return { status: 'error', message: (await translator())('assistant.error.forbidden') }
+  return {
+    status: 'error',
+    message: (await translator())('assistant.error.forbidden'),
+  }
 }
 
 /** Turn the API's refusal into a sentence in the reader's language. */
 async function explain(error: unknown): Promise<string> {
   const t = await translator()
   if (error instanceof ApiError) {
-    switch (error.code) {
-      case 'entitlement_missing':
-        return t('assistant.error.plan')
-      case 'tool_denied':
-        return t('assistant.error.forbidden')
-      case 'usage_exceeded':
-        return t('assistant.error.limit')
-      case 'timeout':
-        return t('assistant.error.timeout')
-      case 'provider_unavailable':
-      case 'configuration_error':
-      case 'upstream_error':
-        return t('assistant.error.unavailable')
-      default:
-        break
-    }
-    if (error.status === 402) return t('assistant.error.plan')
-    if (error.status === 403) return t('assistant.error.forbidden')
-    if (error.status === 429) return t('assistant.error.limit')
-    if (error.status === 502 || error.status === 503) return t('assistant.error.unavailable')
-    if (error.status === 504) return t('assistant.error.timeout')
+    return t(`assistant.error.${assistantErrorKey(error.code, error.status)}`)
   }
   return t('assistant.error.generic')
 }
@@ -128,7 +112,10 @@ export async function loadConversation(
   const auth = await session('ai.use')
   if (auth === null) return forbidden()
   try {
-    return { status: 'ok', value: await fetchAiConversation({ ...auth, conversationId }) }
+    return {
+      status: 'ok',
+      value: await fetchAiConversation({ ...auth, conversationId }),
+    }
   } catch (error) {
     return { status: 'error', message: await explain(error) }
   }
@@ -143,7 +130,10 @@ export async function sendMessage(
   const trimmed = text.trim()
   if (trimmed.length === 0 || trimmed.length > 8000) return forbidden()
   try {
-    return { status: 'ok', value: await sendAiMessage({ ...auth, conversationId, text: trimmed }) }
+    return {
+      status: 'ok',
+      value: await sendAiMessage({ ...auth, conversationId, text: trimmed }),
+    }
   } catch (error) {
     return { status: 'error', message: await explain(error) }
   }
@@ -153,7 +143,10 @@ export async function approveAction(actionId: string): Promise<ActionResult<AiAc
   const auth = await session('ai.approve')
   if (auth === null) return forbidden()
   try {
-    return { status: 'ok', value: await approveAiAction({ ...auth, actionId }) }
+    return {
+      status: 'ok',
+      value: await approveAiAction({ ...auth, actionId }),
+    }
   } catch (error) {
     return { status: 'error', message: await explain(error) }
   }

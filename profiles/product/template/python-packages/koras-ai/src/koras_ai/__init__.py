@@ -44,7 +44,7 @@ from .providers import (
     GatewayProvider,
     ProviderRegistry,
 )
-from .runtime import AIRuntime, RuntimeStatus, Turn
+from .runtime import AIRuntime, RuntimeStatus, Turn, TurnEvent
 from .store import Conversation, ConversationStore, InMemoryStore, StoredMessage
 from .tools import (
     NEEDS_APPROVAL,
@@ -132,6 +132,7 @@ __all__ = [
     "ToolRegistry",
     "ToolSpec",
     "Turn",
+    "TurnEvent",
     "Price",
     "Usage",
     "UsageEvent",
