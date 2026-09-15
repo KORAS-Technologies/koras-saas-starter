@@ -46,7 +46,9 @@ product settings and the route gate. This document stays authoritative for the
 public surface and for the design tokens both surfaces share.
 
 `apps/marketing`, when generated, serves the same homepage from the same
-components. It is a separate deployment with no session.
+components. It is a separate deployment with no session, and — unlike
+`apps/web` — its language is in the URL, so every page of it is a static
+document; see **The marketing site: the language is in the URL** below.
 
 Every one of those pages is served in the visitor's language. A generated
 product offers English, German and Spanish, complete in all three, with a
@@ -165,12 +167,16 @@ and point `brand.fontFamily` / `brand.displayFontFamily` at it.
 
 One component, `<ProductLogo />`. Resolution order:
 
-1. a customer's logo, when a `tenant` is passed (signed-in surfaces only)
-2. `brand.logoDarkUrl` on a dark surface, when the product has supplied one
-3. `brand.logoUrl`
-4. the built-in mark
+1. the customer's logo set in the Control Plane's portal, when a `tenant` is
+   passed and holds one (signed-in surfaces only) — asked for at
+   `/api/branding/logo` or `/api/branding/logo-dark`, never at the platform's
+   own URL; see *The platform's logos* below
+2. a customer's logo from this product's own column, when `tenant` carries one
+3. `brand.logoDarkUrl` on a dark surface, when the product has supplied one
+4. `brand.logoUrl`
+5. the built-in mark
 
-**Step 4 is a finished state, not a placeholder to be embarrassed about.** It
+**Step 5 is a finished state, not a placeholder to be embarrassed about.** It
 draws a neutral geometric mark in the product's own primary colour beside the
 product's own name. It is drawn rather than fetched, so it needs no asset, makes
 no request, and cannot render broken.
@@ -307,8 +313,8 @@ with a slash), no remote origins (a logo fetched from somewhere a tenant
 controls is a beacon on every page). Unknown keys are dropped, and one bad value
 costs one token rather than the whole brand.
 
-`packages/branding/src/branding.test.ts` is that argument, in eighteen tests that
-run as part of the generated project's own `pnpm test`.
+`packages/branding/src/branding.test.ts` is that argument, in twenty-two
+tests that run as part of the generated project's own `pnpm test`.
 
 ### Where it is read from
 
@@ -344,12 +350,46 @@ which the customer simply appears to have set nothing. `mergeTenantBranding`
 layers the platform's answer over the column's, because the platform's is the
 one the customer can see and change.
 
-**The platform's logos are not rendered.** The portal stores them as `https`
-URLs on the platform's storage, and this product's Content-Security-Policy is
-`img-src 'self'`; a remote logo would be a broken image in every header. Until
-a product serves the platform's assets itself, a logo set in the portal is
-dropped by the parser, deliberately and testably, rather than left to the
-browser to refuse. FOLLOW_UPS F19 holds the decision.
+### The platform's logos
+
+**Decided 2026-09-15: the product serves the platform's images from its own
+origin, and the Content-Security-Policy stays `img-src 'self'`.** The portal
+stores a customer's `logo_light`, `logo_dark` and `favicon` as `https` URLs on
+the platform's storage, and from 2026-09-04 until this decision the parser
+dropped all three, deliberately and testably, because a remote URL in a `src`
+was a broken image in every header. FOLLOW_UPS F19 left the box open with two
+ways to close it, and the one not taken is worth recording: a policy exception
+naming the storage origin. That is a decision about *where a customer's logo
+may load from*, made by editing a header nobody reads and widened every time
+the platform's storage moves — R-042 territory, a claim about the system
+living in a line nothing checks. Serving the bytes from here keeps the policy
+saying one thing and keeps every image on the page subject to it.
+
+`parsePlatformBranding` now keeps the three URLs in `assets`, apart from the
+tokens, under this product's names — `logo`, `logo-dark`, `icon` — and
+`isPlatformAssetUrl` decides what is worth keeping: `https` only, which the
+platform validates too; no credentials in the URL; no raw addresses and no
+`localhost`, `.local` or `.internal` hosts, because the fetch is made from this
+product's network on a value a customer typed into a form, and a customer's
+logo is not a way to make this product's server read its neighbours.
+
+`apps/web/src/app/api/branding/[asset]/route.ts` is the route. The only input
+it takes from the browser is the asset's name, one of three. It resolves the
+caller's branding the way every signed-in page does — session, `tenantBranding`,
+parser, cached per request — and only then fetches the URL the platform
+answered for that caller's own organization, through `fetchPlatformAsset` in
+`packages/api-client`: five seconds, two megabytes, image content types only,
+no redirects followed, `https` checked again. The bytes come back with the
+upstream content type and ETag, `Cache-Control: private, max-age=3600` and
+`nosniff`; a customer who set no such image is a 404, and an upstream that
+fails is a 502 with the reason in the server log. `ProductLogo` renders
+`/api/branding/logo` where the parser kept one and the product's own mark
+where it did not, so nothing asks for an image it was not told exists.
+
+The middleware needs no exemption: the route requires a signed-in session, and
+a stranger asking for a logo is sent to sign in like a stranger asking for
+anything else. `e2e/branding.spec.ts` checks that in a browser;
+`packages/api-client/src/assets.test.ts` hands the fetch a server that lies.
 
 ### How the column is read
 
@@ -433,16 +473,41 @@ offered list and every switcher disappears.
 ### How a request gets its language
 
 ```
-cookie `koras-locale`   ->   Accept-Language   ->   productConfig.i18n.defaultLocale
-      set by the switcher        the browser's own       the product's choice
+stored choice  ->  cookie `koras-locale`  ->  tenant default  ->  Accept-Language  ->  productConfig.i18n.defaultLocale
+ the member's,        set by the switcher      the organisation's,   the browser's own     the product's choice
+ signed in only                                signed in only
 ```
 
-Never the URL. A locale in a query string is a locale somebody can put in a
-link. `apps/web/src/lib/locale.ts` resolves it once per request, through
+Never the URL, in `apps/web` and `apps/admin`: a locale in a query string is
+a locale somebody can put in a link, and these are signed-in surfaces. (The
+marketing site is a public document and follows a different rule for a
+different reason; its section below says why.) `apps/web/src/lib/locale.ts`
+resolves it once per request, through
 React's `cache`, and the layout, every page and every server component read
 that one answer — which is what stops a heading rendering in one language and
-the footer in another. The cookie value is validated against the offered list
-before it reaches `lang` or a catalogue lookup.
+the footer in another. Every value is validated against the offered list
+before it reaches `lang` or a catalogue lookup — the cookie because a browser
+sent it, the stored values because the API holds them to the longer list of
+catalogues that *exist*, and a product can stop offering one.
+
+**The two stored sources (F20 phase 2, 2026-09-15).** A signed-in member's
+choice is kept with their account, in `member_preferences` — one row per
+tenant and subject, written by `PUT /api/v1/me/locale` under the member's own
+token and read under a policy keyed to `current_user_id()` as well as the
+tenant, so a colleague in the same tenant cannot read it. The organisation's
+default is `tenant_settings.locale`, written by `PUT /api/v1/tenant/settings/locale`
+by whoever holds `settings.manage`. Both ride on the `GET /api/v1/tenant/settings`
+response the shell already reads for branding and features, so a signed-in
+page pays no extra request for its language; a visitor with no session reads
+neither and gets the public order. The stored choice outranks the cookie
+because it is the more deliberate of the two — it follows the person to every
+device, and a cookie set on a shared machine last month should not win. The
+tenant default sits below the cookie because it is a default: what a member
+sees before they choose, and a visitor who has chosen, even only on this
+device, has chosen. `apps/admin` calls the product's API for nothing, so it
+keeps the three-source order; `apps/marketing` has no session either, reads
+the language from its URL, and keeps the three-source order only for deciding
+where the bare path sends a visitor.
 
 The switcher is a form, and on the public pages it sits in the footer rather
 than the header -- the header is the product's name and its links, and the
@@ -452,9 +517,78 @@ a submit button labelled in
 itself — the German button says "Deutsch", and carries `lang="de"` — posting
 to `POST /api/locale`, which sets the cookie and redirects back. No script is
 needed, which matters most for the visitor who cannot read the current
-language. Both applications serve the route, because `apps/marketing` is
-another origin. The route refuses a cross-origin post, ignores a locale the
-product does not offer, and sends an unsafe return path to `/`.
+language. All three applications serve the route, because each is its own
+origin. The route refuses a cross-origin post, ignores a locale the product
+does not offer, and sends an unsafe return path to `/`.
+
+In `apps/web` the same route also keeps a signed-in member's choice with their
+account (`lib/locale-preference.ts`), after the cookie is set and inside the
+validated branch — so a value that failed the offered list is never sent to
+the API, and the cookie is set whatever the API answers. That is done in the
+route handler rather than a server action on purpose: the switcher is a plain
+form so it works with no script attached, and the handler is the one place
+every form that changes the language arrives at. A failed write is logged
+server-side and never shown; the next request that can read the stored value
+will, and until then the cookie says the same thing.
+
+The organisation's default is a different write with a different authority,
+and it is a server action (`dashboard/settings/actions.ts`) behind a client
+form, because it changes nothing the person saving it can see — their own
+choice outranks it — so the form has to say that it worked. The page shows it
+to `settings.manage`, the action checks the same permission, and the API
+refuses the write for anyone else with the same token.
+
+### The marketing site: the language is in the URL
+
+```
+/          the default language (productConfig.i18n.defaultLocale), bare
+/de  /es   every other offered language, prefixed
+/en        redirected to / permanently — one document, one address
+/fr        404 — not a fallback; the product does not offer French
+```
+
+`apps/marketing` is a public document that search engines and shared links
+address by language, and a document whose language depends on a cookie
+cannot be cached as one. So the site lives under `src/app/[locale]/`:
+`generateStaticParams` names the offered locales, `dynamicParams = false`
+refuses every other value at the router, and the layout validates the
+segment again against `productConfig.i18n.locales` — the *offered* list, not
+everything `packages/i18n` can speak — before it reaches `lang`. Each page is
+built once per language at deploy time and served from the edge. The plans
+the pricing section shows are fetched with `next: { revalidate: 600 }` rather
+than as a no-store fetch, because a no-store fetch would make the page render
+per request again; a price ten minutes stale on a marketing page is not a
+defect.
+
+**The default language is bare** (`/`, not `/en`) because the address a
+product prints is the address its page should have, and because a site that
+redirects `/` to `/en` on every visit pays a round trip for its most common
+request. `/en` is redirected to `/` with a 308 so no document has two
+addresses. `<link rel="canonical">` and one `hreflang` link per offered
+language (plus `x-default` at `/`) come from `generateMetadata`, resolved
+against `product.url` when the product has one.
+
+**What still varies per request is where the bare path sends a visitor**, and
+that lives in `src/middleware.ts`, the one part of the site that runs per
+request. The order is the public one: the cookie the switcher set, then
+`Accept-Language`, then the default. The default is a *rewrite* (the visitor
+stays on `/` and is served the default document); any other language is a 307
+redirect to its address, with `Vary: Cookie, Accept-Language` so a cache in
+front never hands one visitor's redirect to the next. A language spelled out
+in the URL wins over both, and is written to the cookie: the logo and the
+in-page anchors link to `/`, and a visitor reading `/es` should come back to
+Spanish rather than to their browser's language.
+
+The footer switcher posts to this site's own `/api/locale`, which sets the
+cookie exactly as the web route does and then sends the visitor to the chosen
+language's copy of the page they were on — `/` becomes `/de`, `/de` becomes
+`/` for English — because on this site "German" is an address, not only a
+cookie. `apps/web` still learns the choice through `Accept-Language`, as it
+did before: the two sites are two origins and the cookie is scoped to one.
+
+`e2e/language.spec.ts` starts the marketing site as a second Playwright
+server (when the product has one) and proves the four rows of the table
+above in a browser, plus the switcher and the alternates.
 
 ### How a component gets its language
 
@@ -481,6 +615,8 @@ maps each tag to an element and never sets `innerHTML`.
 | Kind of string                       | Lives in                                   |
 |--------------------------------------|--------------------------------------------|
 | Interface chrome, errors, legal pages | `packages/i18n/src/messages/<locale>.ts`   |
+| An API refusal (`errors.<code>`)     | `packages/i18n`, mapped by `apps/web/src/lib/api-errors.ts` |
+| Mail the API and the worker send     | `python-packages/koras-email/src/koras_email/i18n.py` |
 | Homepage copy, tagline, description  | `productConfig.translations.<locale>`      |
 | Sidebar module and group labels      | `productConfig.translations.<locale>.navigation` |
 | The product's name, slug, addresses  | not translated; a product has one name     |
@@ -494,22 +630,70 @@ put the wrong word on the wrong entry — and the middleware still reads
 `productConfig.navigation` directly, so the route gate and the translated
 sidebar describe one registry.
 
+### API refusals and mail
+
+Every route of the product API answers a refusal as `{ code, message }`
+(`services/api/koras_api/core/errors.py`, `ApiErrorCode`). The `code` is the
+contract and the only part a person's screen is built from; `message` is
+English, for the log, and may change. The web tier maps each code to
+`errors.<code>` (camelCase) in `apps/web/src/lib/api-errors.ts`, falling back
+to the status-based sentences it already had for a refusal without a code,
+and the structural test in the starter asserts that every person-facing code
+has a sentence in every catalogue and a branch in the mapping.
+
+Mail is composed in Python, so it has a catalogue of its own:
+`koras_email.i18n`, the same three languages, typed as a `TypedDict` so a
+line missing from one language fails `mypy --strict`. The assistant's
+approval notice is written in the language of the request that produced it
+(`Accept-Language`, `core/locale.py`); a scheduled report's delivery in the
+language the schedule names (`locale` on the schedule, migration 00016),
+defaulting to the request's. The web tier's API client does not yet send
+`Accept-Language`, so today both default to English until it does.
+
 ### What it costs, and what is not done
 
-The marketing homepage was a cached static document; reading a cookie makes it
-render per request. A locale in the URL (`/de/`) would make it static again and
-is recorded as a follow-up, along with the choice following a person across
-devices (a stored preference, which needs the API's first write route), the
-admin application, and email templates. `docs/FOLLOW_UPS.md` F20 has the
-reasoning for each.
+The marketing homepage is a cached static document again, one per language
+(above); what it cost is the `[locale]` segment and a middleware that runs
+per request to decide where `/` goes. `docs/FOLLOW_UPS.md` F20 has the
+reasoning, and records which of its boxes are closed: the stored preference
+and the tenant default, the admin application, the marketing URL, and the
+email and API-error text, closed on 2026-09-15. What remains English is the
+description of each proposed action inside the approval notice ("Delete the
+file X"), which `summarize` composes because a per-tool catalogue is the
+assistant's to grow, and the report names and column headings inside a
+delivered report, which are the definition's.
+
+**`apps/admin` speaks the same languages.** It depends on `packages/i18n` and
+`packages/branding` (apps may depend on packages; `i18n` stays a leaf), resolves
+the locale the public way in its own `lib/locale.ts`, serves its own
+`/api/locale` named in its middleware's `PUBLIC_PATHS`, sets `lang` and `dir`
+from the resolved locale, carries the switcher in a footer on every page
+including sign-in, and reads every sentence — the two middleware refusals
+included, resolved from the same cookie and header at the edge — from the
+catalogues under the `admin.*` keys. This profile ships its own
+`apps/admin/src/app/globals.css`, overriding the shared one, because the
+switcher is drawn in the brand tokens and the shared stylesheet imported
+Tailwind alone. `product-i18n.test.ts` holds it to the same rules as
+`apps/web`.
 
 The tests worth knowing: `packages/i18n` asserts every translation keeps its
-placeholders and tags; `packages/branding` asserts a translated list keeps its
-shape and its links; `product-i18n.test.ts` in the starter asserts no layout
-hardcodes `lang="en"`, every page resolves the locale, every catalogue key is
-used and every used key exists, and no component carries a sentence of English
-prose; and `e2e/language.spec.ts` presses the button in a browser and reads
-`html[lang]` back.
+placeholders and tags, and that the resolver ranks the stored choice, the
+cookie and the tenant default in that order; `packages/branding` asserts a
+translated list keeps its shape and its links; `product-i18n.test.ts` in the
+starter asserts no layout in any of the three applications hardcodes
+`lang="en"`, every page resolves the locale, every catalogue key is used and
+every used key exists, no component carries a sentence of English prose, the
+web resolver reads its five sources in the documented order and the other two
+read only three, the tenant default is gated on `settings.manage` at the page,
+the action and the router, and the router's `SUPPORTED_LOCALES` is the same
+list as the package's; `tests/unit/test_tenant_locale.py` asserts the two
+writes refuse a language outside the catalogues before anything is written
+and key on the verified subject; `supabase/tests/160_member_preferences_isolation.sql`
+asserts a preference is readable and writable by its own subject in its own
+tenant and by nobody else, including a colleague and a request with no subject;
+every person-facing API error code has a sentence in every catalogue and a
+branch in the web mapping; and `e2e/language.spec.ts` presses the button in a
+browser and reads `html[lang]` back, on both sites.
 
 ---
 
@@ -696,6 +880,7 @@ Rules 3 to 6 are asserted by `tests/product-frontend.test.ts` in the generator.
 profiles/product/template/
   packages/branding/src/index.ts.hbs        the configuration
   packages/branding/src/branding.test.ts    the customer-branding parser tests
+  packages/api-client/src/index.ts          the JSON client, and fetchPlatformAsset for the platform's images
   packages/branding/src/i18n-config.test.ts the translation-merge tests
   packages/i18n/src/index.ts                Locale, negotiation, createTranslator
   packages/i18n/src/messages/               en.ts (source of truth), de.ts, es.ts
@@ -714,7 +899,7 @@ profiles/product/template/
                     ProductNavigation, ProductProfileMenu, WorkspaceBadge,
                     AccessDenied  -- see docs/PRODUCT_APP_SHELL.md
   apps/web/src/app/     page, dashboard, dashboard/settings, login, signin,
-                        signup, not-found, api/locale
+                        signup, not-found, api/locale, api/branding/[asset]
   apps/web/src/lib/locale.ts.hbs            currentLocale, translator -- once per request
   apps/marketing/src/app/                   the same homepage, api/locale
   apps/marketing/src/lib/locale.ts.hbs

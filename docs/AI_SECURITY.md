@@ -105,7 +105,7 @@ provisioning context, which migration 00008 admits for that delete and nothing
 else on the AI tables; `supabase/tests/080_ai_retention.sql` proves a tenant
 session cannot delete across tenants and that usage rows outlive the content.
 
-## What is not yet covered
+## What is not yet covered, as of 2026-09-15
 
 - Rate limiting per tenant beyond the API's tier-2 limiter and the monthly
   allowance. A per-minute AI quota is an extension point on `Limits`.

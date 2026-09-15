@@ -504,18 +504,25 @@ forbids.
 Every settings area is a module in the registry like any other, so it is subject
 to the same resolution and the same middleware gate.
 
-General carries exactly one control, the language, and the exception is
+General carries two controls, both about language, and the exception is
 instructive. Everything else on that page is a description of configuration
 that lives in `packages/branding/src/index.ts` and is changed there, in a
 reviewed commit, because a settings screen that wrote it at runtime would put
-a second authority beside the one the frontend already reads from. The language
-is a choice about *this person on this device*: it changes nothing for anybody
-else, and the product already has to honour it from a cookie. So the form posts
-to the same `POST /api/locale` the public footer's switcher uses, and stores
-nothing anywhere else. The appearance control sits beside it on the same
-page. Neither is in the header: both are choices about this person on this
-device, made once and rarely, and a header that carried them had two
-controls competing with the product's own actions.
+a second authority beside the one the frontend already reads from. A person's
+language is a choice about *themselves*: it changes nothing for anybody else,
+and the product already has to honour it from a cookie. So that form posts to
+the same `POST /api/locale` the public footer's switcher uses, which sets the
+cookie and — since 2026-09-15 — keeps the choice with the member's account
+through `PUT /api/v1/me/locale`, so it follows them to the next device. The
+organisation's default is a choice about *other people*, what a member sees
+before they choose, so it is shown to `settings.manage`, sent through a server
+action that checks the same permission, and written by
+`PUT /api/v1/tenant/settings/locale`, which refuses anyone else with the same
+token. The appearance control sits beside them on the same page. None of the
+three is in the header: they are choices made once and rarely, and a header
+that carried them had controls competing with the product's own actions.
+`docs/PRODUCT_FRONTEND.md` has the resolution order and why the stored choice
+outranks the cookie while the default sits below it.
 
 The sidebar's labels and the locked-module reasons are translated; its ids,
 routes and gates are not. `navigationFor(locale)` changes labels and nothing

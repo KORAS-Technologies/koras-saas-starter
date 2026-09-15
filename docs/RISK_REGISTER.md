@@ -237,14 +237,14 @@ branding" there.
 | R-033 | Token checks loosest on external input       | 9        | Resolved                 |
 | R-034 | No rate limiting in the generated API        | 12       | Resolved                 |
 | R-035 | `pnpm test` reported a cached pass           | 16       | Resolved                 |
-| R-031 | vitest advisories; the fix breaks the suite  | 12       | Accepted with mitigation |
+| R-031 | vitest advisories; the fix breaks the suite  | 12       | Resolved 2026-09-15      |
 | R-036 | A live acceptance run cannot be cleaned up   | 12       | Reopened — Cloudflare was never in the inventory |
 | R-037 | Typecheck ignored the error it needed to report | 12    | Resolved                 |
 | R-038 | Drift reported every optional component      | 9        | Resolved                 |
 | R-039 | ZITADEL module could not create a new project | 16      | Resolved                 |
 | R-040 | Teardown missed a whole provider silently    | 16       | Resolved                 |
 | R-041 | Teardown made the operator write secrets to disk | 20   | Resolved                 |
-| R-042 | Prose is the only untested part of the repository | 12  | Partly closed            |
+| R-042 | Prose is the only untested part of the repository | 12  | Partly closed — fourth class automated 2026-09-15 |
 | R-043 | Vercel built every push itself, beside CI's deploy | 12  | Resolved                 |
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
 | R-017 | Control-plane env contract was the product one | 10     | Resolved                 |
@@ -1109,6 +1109,85 @@ having done it rather than by having estimated it.
 
 ---
 
+## R-031 closed, 2026-09-15 — and the upgrade was the smaller half of the work
+
+`vitest` is on **4.1.11**, `vite` on **7.3.6**, `esbuild` on **0.28.2**, and
+`js-yaml` on **4.3.2**. `pnpm audit --audit-level moderate` answers **"No known
+vulnerabilities found"**. All eight Dependabot alerts across the four manifests
+that declare vitest are closed by the versions themselves rather than by an
+exemption, and Phase 12's exit criterion no longer has a reading under which it
+is open.
+
+**What the two earlier attempts got wrong.** Both concluded that the blocker was
+synchronous filesystem work starving vitest's RPC, and that clearing it meant
+making `writeFiles` — the generator's own write path — asynchronous, "changing
+`create-koras-app`'s internals and every call site". The first half of that was
+right and the second half was an overestimate: `writeFiles` is one function,
+`mkdirSync`/`writeFileSync`/`renameSync` became their `fs/promises` twins, and
+the call sites are the CLI, `refreshSharedAssets`, `refreshRenderedPaths` and
+the test helpers. Sequential and atomic exactly as before; only the waiting
+changed.
+
+**Three things had to be true, and only one of them was in the risk.**
+
+1. *The write path stops blocking.* As above.
+
+2. *Suites that start real processes get a budget that matches them.* Nine of
+   the generator's test files spawn `bash`, `git`, a stubbed `doppler` or a
+   whole generation, and `registration-lifecycle.test.ts` carries a comment
+   saying the script it runs "takes tens of seconds" — under a five-second
+   default, which it met by luck of scheduling under vitest 2 and stopped
+   meeting under vitest 4, which runs more files at once. `testTimeout` and
+   `hookTimeout` are 60 seconds in `generators/create-koras-app` and
+   `tooling/koras-cli` now. This is not a weakening: the run that proved it
+   shows individual tests taking 10 to 18 seconds of real work, so five was
+   never the right number, and a test that genuinely hangs still fails.
+
+3. *Nothing leaves an unhandled rejection.* `writeFiles` returning a promise
+   turned three assertions of the form `await expect(await generate(…))
+   .rejects.toThrow(…)` into rejections that escaped the assertion entirely —
+   the inner `await` resolves the promise before `expect` can catch it. Those
+   three unhandled rejections were destabilising their workers, and three
+   *other* tests, in three other files, timed out because of them. Fixing the
+   three assertions is what took the suite from 7 failures to 0; before it, no
+   timeout was large enough, which is exactly the shape that made the earlier
+   attempts read the whole thing as unfixable.
+
+**What was tried and reverted, because it made things worse.** The Terraform
+doctor check copies the whole modules tree into a temporary root on every run,
+with `cpSync`. Converting that to the promise-based copy in `node:fs/promises` looked like
+the same fix as `writeFiles` and is not: measured on this tree — 36 files, 146 KB — `cpSync`
+takes **153 ms** and `cp` takes **4,466 ms**, twenty-nine times slower. That
+would have been a real regression in `bootstrap:doctor` for every operator, to
+remove 153 ms of blocking that was never the problem. Reverted. The lesson is
+worth more than the diff: "make it async" is not a synonym for "make it
+faster", and 153 ms of blocking is not what starves a reporter — 175 seconds is.
+
+**What the earlier notes got right, and why they still cost three weeks.** The
+diagnosis was correct and the estimate of the fix was not, and the estimate is
+what stopped the work. The two attempts recorded here are why this one took an
+afternoon: both had already proved the upgrade resolves the advisories and
+already named the blocking as the cause. What neither had was a run where the
+unhandled rejections were fixed *first*, and without that the timeouts look
+like an unbounded problem rather than a bounded one.
+
+**Verified.** `pnpm test` in a worktree at `develop` with the upgrade applied:
+the generator's own 47 files and 1,311 tests pass, including
+`generated-builds.test.ts` and `fly-machines.test.ts`, the two this repository
+had recorded as failing locally for environment reasons — they were not
+environment reasons. `pnpm audit` is clean. `pnpm lint` and `pnpm typecheck`
+pass.
+
+**One thing to know before the next `pnpm install`.** A newer pnpm on the
+machine warns that `pnpm.overrides` in `package.json` "is no longer read". CI
+and this repository pin `pnpm@9.15.0` through `packageManager`, which does read
+it, and the resolved tree is patched either way because vitest 4 requires the
+patched vite. The overrides stay as the belt to that brace; if this repository
+ever moves to pnpm 10 they have to move to `pnpm-workspace.yaml`, and the audit
+is what would notice.
+
+---
+
 ## R-032 — row-level security was enforced against nobody
 
 **Severity:** 20 (likelihood 4 × impact 5) · **Status:** Resolved 2026-08-25
@@ -1558,7 +1637,7 @@ project's outputs with `KORAS_E2E_TEARDOWN=1` set, all eight resources are
 refused by name. Given an acceptance project's outputs with the flag unset, it
 reports a dry run and issues nothing.
 
-**What is still open:**
+**What is still open, as of 2026-09-15:**
 
 1. ~~**ZITADEL has no deleter.** Its API needs a service-account JWT exchange
    rather than a bearer token.~~ **Wrong, and built 2026-08-27.**
@@ -1707,8 +1786,8 @@ reports a dry run and issues nothing.
    That is the estate being gone, not the teardown being proven. Cloudflare and
    the workspace were removed by hand and by API call while the deleters for
    them were being written, so what has run end to end is six providers, not
-   eight. The second live run is still owed, and it is the only thing this risk
-   is still open on.
+   eight. The second live run is still owed as of 2026-09-15, and it is the
+   only thing this risk is still open on.
 
 4. **A general form of R-040 is now closed.** `parseTerraformOutputs` reads
    each value by name and returns empty when it is absent — correct, because a
@@ -1725,8 +1804,9 @@ reports a dry run and issues nothing.
    for branch protection. Checked against the token's settings. This was
    recorded as a blocker for several hours and was never one.
 
-So a live apply is closer to reversible than it was, and is not yet reversible.
-Point 3 is what stands between the two: nothing here has met a real API.
+So a live apply is closer to reversible than it was, and as of 2026-09-15 is
+not yet reversible. Point 3 is what stands between the two: nothing here has
+met a real API.
 
 **A confirmation was added on top of the guards (2026-08-25).** With deletion
 enabled and a plan that is not empty, the command names the project and the
@@ -2063,7 +2143,8 @@ disclosure.
 
 ## R-042 — prose is the only part of this repository that can be wrong quietly
 
-**Severity 12 (likelihood 4 × impact 3). Partly closed 2026-08-27.**
+**Severity 12 (likelihood 4 × impact 3). Partly closed 2026-08-27; the
+fourth mechanical class automated 2026-09-15.**
 
 Three defects inside one session came from documentation and comments rather
 than from code, and none of them could have been caught by the test suite:
@@ -2135,23 +2216,48 @@ filters are narrow — SCREAMING_SNAKE, or lower_snake with an underscore, and
 never a bare lowercase word, because `microservice` is prose and matching it
 would flag English.
 
-**A fourth class, swept but not automated: hedged claims.** "does not yet",
+**A fourth class, closed 2026-09-15: hedged claims.** "does not yet",
 "currently", "for now" — sentences true when written that decay silently. D1
 said the generator-integration workflow "does not yet build what it generates"
 for days after it did, and ranked itself the highest-leverage work outstanding
 on the strength of it.
 
-A sweep found seven across every document. One was false:
-IMPLEMENTATION_ROADMAP said "a live apply is not currently reversible", written
-2026-08-25 and untrue since teardown was built. Corrected, with the dated
-account kept. Two more were true and are now dated. The remaining two are
-legitimately undated — a risk *description*, and a quotation of old text inside
-its own correction.
+The first sweep, on 2026-08-27, found seven across every document. One was
+false: IMPLEMENTATION_ROADMAP said "a live apply is not currently reversible",
+written 2026-08-25 and untrue since teardown was built. Corrected, with the
+dated account kept. Two more were true and were dated. The class was then left
+unautomated, and the measurement was the argument: seven instances is too few
+to justify a test that would mostly assert nothing, and the phrase list would
+need maintaining.
 
-Not automated, and the measurement is why: seven instances is too few to justify
-a test that would mostly assert nothing, and the phrase list would need
-maintaining. The class is recorded here so the next sweep is a `grep` rather
-than a rediscovery.
+**That argument did not survive the second count.** On 2026-09-15 the same
+`grep` found 38 lines rather than seven — the documents grew by the AI
+foundation, the reporting framework, the sign-in page and the billing work,
+and each arrived with its own sentences about what it did not do yet. Seven is
+a sweep; 38 is a habit, and a habit is what a test is for.
+
+`tests/docs/hedged-claims.test.ts` is the fourth mechanical check, beside
+paths, lists and identifiers. The rule is not "never hedge" — a document that
+says what is undone is more useful than one that does not, and FOLLOW_UPS is
+nothing but such claims. The rule is that **a hedge must sit in a dated
+context**: a date in its own paragraph, its nearest heading, or — for a table —
+its own row, so a reader knows the claim's age without asking and a stale one
+reads as stale. Fenced code is skipped, because a quoted command output is not
+a claim this repository makes, and one dated row does not date its whole table.
+
+Sixteen lines were undated when the rule was applied. Four in SYNC_BACKLOG were
+dated or reworded in the same pass; the rest were exempted with a reason each
+and then, that afternoon, dated one file at a time until only the permanent
+exemptions were left. Two kinds are permanent: a risk *description* in a table,
+which describes a condition rather than a moment — "if the Control Plane is not
+yet deployed" is true whenever it is true — and a quotation of old text inside
+its own correction, where dating the hedge would say the correction was made
+when the mistake was.
+
+Mutation-checked in both directions, like its three siblings: an undated hedge
+in a document fails with its `file:line`, an exemption whose phrase no longer
+appears fails as stale, a dated paragraph, heading or row passes, one dated row
+does not date its neighbours, and a hedge inside a fence is ignored.
 
 **Two classes are accepted rather than pending, because nothing can reach them.**
 

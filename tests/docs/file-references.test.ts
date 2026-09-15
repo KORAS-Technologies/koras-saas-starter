@@ -78,6 +78,14 @@ const MOVED: Record<string, string> = {
   // what the entry is about.
   'services/api/src/routers/platform.py':
     'profiles/product/template/services/api/koras_api/routers/platform.py',
+  // Named by FOLLOW_UPS F20, in the dated account of what phase 1 cost: the
+  // marketing homepage stopped being a cached static document because the
+  // language came from a cookie, and the comment saying so lived at this
+  // path. Phase 2 moved the page under a `[locale]` segment on 2026-09-15 --
+  // which is the repair that entry named -- so the comment is at the new
+  // path and the sentence about 2026-09-05 keeps the old one.
+  'apps/marketing/src/app/page.tsx':
+    'profiles/product/template/apps/marketing/src/app/[locale]/page.tsx.hbs',
 }
 
 function tracked(): string[] {

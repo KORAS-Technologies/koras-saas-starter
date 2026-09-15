@@ -33,8 +33,8 @@ had replaced. D3 owns that.
 what catches template-side breakage independently of whether anyone synced —
 that is D1, and it matters for the same reason it always did.
 
-A fix applied downstream — in `koras-control-plane`, by hand, at the moment it
-was needed — is invisible to the factory. A fix applied to one profile template
+A fix applied downstream — in `koras-control-plane`, by hand, when it was
+needed — is invisible to the factory. A fix applied to one profile template
 is invisible to the other. Both have happened repeatedly, and neither shows up
 in a review of the repository that was changed.
 
@@ -64,8 +64,8 @@ Tiers are ordered by what breaks if the item is left alone:
 control-plane `9546623`, sample-product `27f2949`.
 
 **Closed since:** A1–A7, B1–B6, C1–C4, D1, D3, D4, D5, E1, E2, E3. **D6 is the
-only entry still open**, and it is the oldest kind: `koras-control-plane` has
-never been re-synced against any of this.
+only entry still open** as of 2026-09-15, and it is the oldest kind:
+`koras-control-plane` has never been re-synced against any of this.
 
 B6 was found and closed on 2026-09-01. It is this document's own subject
 arriving somewhere new — a browser harness promoted one file at a time that
@@ -512,9 +512,10 @@ that attaches the domains — and these settings are needed by the bootstrap
 that runs before it. The hostname labels match the vercel module's
 `application_hostnames` default, so `web` resolves to `app` in both places.
 
-**Still open downstream:** the Doppler configs stay at 11/31 and 1/31 until
-`output/sample-product` applies. The outputs are computed but not in state, and
-`doppler-bootstrap` reads state.
+**Still open downstream when this was written, 2026-08-23, and moot since
+2026-08-30, when `output/sample-product` was deleted (D4):** the Doppler configs
+stayed at 11/31 and 1/31 until `output/sample-product` applied. The outputs
+were computed but not in state, and `doppler-bootstrap` reads state.
 
 **Applies to:** `profiles/product/template`
 
@@ -842,7 +843,8 @@ knowledge of the blindness: the comments in `.gitignore.hbs` and in `ci.yml`
 state it, so the next person to raise the archive depth knows what it does not
 buy them.
 
-**Still open, and not closable from this repository.**
+**Still open on 2026-08-28, when this was written, and not closable from this
+repository** — closed two days later by deleting the estate, above.
 
 The eight credentials were published. Deleting a file does not unpublish it, and
 nothing in the factory can rotate them.

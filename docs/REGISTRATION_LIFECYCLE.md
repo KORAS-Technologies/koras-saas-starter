@@ -180,8 +180,61 @@ is runnable by hand for the same purpose:
 bash local/scripts/register-with-control-plane.sh prod
 ```
 
+## What a registration proves
+
+Until 2026-09-15: that the payload was *accepted*. `POST /api/platform/v1/products`
+answered `ProductResponse`, whose `environments` was a list of environment
+*names*, so a 201 said the Control Plane had understood the request and nothing
+about what the registry then held. The identity that registers -- the
+`registrar` machine account -- cannot read `GET /products` to find out, by
+design. A payload stored wrongly and one stored correctly were therefore
+indistinguishable to the caller, which is what kept F7's last box open and, on
+its own evidence, could not be closed by the caller even in principle.
+
+The response now carries `stored_environments`: what the registry holds for
+each environment the request named, **read back from the tables inside the
+registration's own transaction** rather than copied from the request, in the
+request's shape. The contract describes it; the generator compares it.
+
+| The response | `runRegistration` reports |
+|---|---|
+| carries `stored_environments`, and every reference sent is stored as sent | `registered`, *Registry confirmed* |
+| carries it, and something differs | `failed`, not retryable, naming the differing paths -- `dev.infrastructure.fly_apps`, `prod.services` -- and never a value from either side |
+| does not carry it -- a Control Plane deployed before 2026-09-15 | `registered`, *Accepted, not confirmed* |
+
+The comparison runs one way. Every reference *sent* must be stored as sent; a
+reference the registry holds and this payload did not send is not a difference,
+because references upsert and never prune (the table above), so a value
+registered last time and omitted this time is meant to survive. Services are
+compared whole, because the Control Plane prunes them.
+
+The third row is the bootstrap order (R-001) left intact. A response that says
+less is not a response that is wrong, and a generator that failed on it would
+fail the first product in every estate whose Control Plane predates the field.
+It is reported in words -- *not confirmed* -- rather than silently, so the
+operator knows which of the two they were given.
+
+A mismatch is not retryable because re-sending the same payload stores it the
+same way. The estate is intact and the registry describing it is not, which is
+exactly what the step exists to say; `--register-only` is the retry once the
+cause is found.
+
+**What adding the read-back found the same day.** `supabase_api_url` and
+`zitadel_instance` were accepted by the Control Plane's request schema and
+stored by nothing -- registration answered 201 and dropped both, and the
+generator sends `zitadel_instance` on every registration. Invisible for as long
+as nothing compared the two sides; a mismatch on every registration the moment
+something did. Both are stored now. Read the other way: a Control Plane
+deployed with the read-back but without that fix would fail every generator
+registration on `zitadel_instance`, which is the correct answer to a registry
+that discards what it accepts.
+
 ## What is not covered
 
+- **The deploy-time script does not compare the echo.** It sends one
+  environment and reads the status code, as before; only generation-time
+  registration and `--register-only` confirm the registry. Extending the script
+  is a shell-side port of `verify.ts` and is not done here.
 - **Deregistration.** Nothing removes a product from the registry when its
   repository is deleted. The Control Plane's teardown owns that question; see
   R-036 and the provisioning runbook.

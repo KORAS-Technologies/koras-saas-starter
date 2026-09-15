@@ -22,12 +22,12 @@ recommendation rather than a record — revise it, do not preserve it.
 
 | Order | Entry | Why here | Rough cost |
 |-------|-------|----------|------------|
-| 1 | **F21** | The first work with a customer on the other end of it. Phases 1 and 2 shipped 2026-09-05; Phase 3 is the signup with a card, and it is the first change that puts a price in front of somebody. Do the recorded-fixture and database halves of Phase 1 before starting it. | ~3 days for Phase 3 |
-| 2 | **F7** | The last unverified link before anything is sold. Its remaining box needs a staff read — or the smaller Control Plane change described in F2c, which would make every registration verify itself. | ~1h with a staff identity |
-| 3 | **F3 + F2b** | One question from two sides. Not urgent while there is one product — the risk it names is one product's CI holding write access to *other* products' registry entries, and the blast radius is currently itself. | ½ day to decide, more to build |
-| 4 | **F23** | Built 2026-09-11 as the product's own sign-in page rather than a self-hosted copy of ZITADEL's (`docs/PRODUCT_SIGN_IN.md`). What is left is the first live sign-in on `koras-e2e-shop` dev, which needs one `terraform apply`, and belongs in the live sitting below. | ~1h, in the live sitting |
-| 5 | **F25** | The reporting framework shipped 2026-09-14 with CSV only, scheduled delivery scaffolded, and `reporting.api` declared and not enforced. What is left is listed in the entry; none of it blocks a product registering reports today, and the first product to need scheduled delivery is the one to build it. | ~1 day per item, none urgent |
-| 6 | **F24** | The assistant has answered a fake provider and a stubbed platform and never a real model. One conversation through a deployed gateway, with the three entitlements authored in the Control Plane's catalogue, before anything is built on top of it. Belongs in the live sitting too: it needs `koras-e2e-shop` regenerated with `--with ai,ai_gateway` and the keys that are already in its Doppler. | ~2h, in the live sitting |
+| 1 | **F21** | The first work with a customer on the other end of it. Every phase is built and, since 2026-09-15, every test-mode box is ticked or recorded: fixtures are recorded, six checkouts completed in a browser, the schedule seen on a real subscription. What is left is live mode — the account's activation, a live key, a real card once — and one run of the live Playwright journey to its end, which an operator has to drive past Stripe's pay button. | ~½ day, with the Stripe dashboard open |
+| 2 | **F7** | Closed 2026-09-15 by the smaller change F2c described: the Control Plane echoes what the registry stores, and the generator compares. What is left is one `--register-only` against dev to see the first confirmed registration, which belongs in the live sitting. | ~10 min, in the live sitting |
+| 3 | **F3 + F2b** | One question from two sides. Not urgent while there is one product — the risk it names is one product's CI holding write access to *other* products' registry entries, and as of 2026-09-15 the blast radius is still itself. | ½ day to decide, more to build |
+| 4 | **F23** | Built 2026-09-11 as the product's own sign-in page rather than a self-hosted copy of ZITADEL's (`docs/PRODUCT_SIGN_IN.md`), and signed a customer in on dev in a real browser the same evening. What is left is test, stg and prod, which need two ZITADEL writes per instance that only a person can make, and second-factor enrolment on a product page. | ~1h per environment |
+| 5 | **F25** | The reporting framework shipped 2026-09-14, and the second wave the same day took scheduled delivery, XLSX and PDF, background exports and product activity. What is left is three things nothing needs yet: `reporting.api` enforcement, which becomes real with the first machine caller; pre-aggregation, which becomes real when a table outgrows a range scan; and report names in the customer's language. | ~1 day per item, none urgent |
+| 6 | **F24** | Closed 2026-09-15: the real model call was held on 2026-09-14, and the last two boxes — a "last collected" component on platform health, and whether overage charges can reach Stripe under Managed Payments — were built and decided respectively on 2026-09-15. Kept in the table for one revision so the row's disappearance is not read as an omission. | — |
 
 F13's prerequisite sat at the top of this table for part of one day and is
 built: `koras-control-plane` R-93, which made `subscriptions.status` mean
@@ -94,7 +94,7 @@ otherwise stops at F6, and why there is no F0.
 | F5 | `apps/marketing` declares Tailwind and imports no stylesheet | closed 2026-08-30 | Decisions |
 | F5a | `doppler-bootstrap` cannot express a legitimately empty setting | closed 2026-08-29 | Decisions |
 | F6 | the two references deploy-time registration cannot carry | decided 2026-09-01 — no, with a stated trigger | Decisions |
-| F7 | nothing has exercised the register job in a real pipeline | **open** — a product deployed 2026-08-30 and found seven defects | Verification |
+| F7 | nothing has exercised the register job in a real pipeline | closed 2026-09-15 — every registration verifies itself | Verification |
 | F8 | the `--with` / `--without` generation paths remain untested | closed — *the entry was wrong* | Verification |
 | F9 | the plan catalogue could not be authored | closed 2026-08-29 | Onboarding |
 | F10 | the tenant store was in memory | closed 2026-08-29 | Onboarding |
@@ -107,17 +107,18 @@ otherwise stops at F6, and why there is no F0.
 | F17 | a product cannot read its customers' entitlements | closed 2026-09-01 | Decisions |
 | F18 | no test in this repository opens a browser | closed 2026-09-01 | Decisions |
 | F19 | a customer's platform branding was stored and never rendered | closed 2026-09-04 — logos still open | Decisions |
-| F20 | a product speaks one language | phase 1 closed 2026-09-05 — persistence, admin app, emails and locale URLs open | Decisions |
-| F21 | somebody can now be billed, and nothing yet asks them to be | phases 1 and 2 closed 2026-09-05 — checkout, portal, reconciliation open | Onboarding |
+| F20 | a product speaks one language | closed 2026-09-15 — phase 2 took the last four boxes | Decisions |
+| F21 | somebody can now be billed, and nothing yet asks them to be | every phase built by 2026-09-07; test mode verified 2026-09-15 — live mode open | Onboarding |
 | F22 | Files: what the first storage module leaves out | shipped 2026-09-08 | Verification |
 | F23 | the sign-in page, on a host of ours | built 2026-09-11 | Verification |
 | F24 | the AI foundation: what the first shared AI layer leaves out | shipped 2026-09-13 | Verification |
 | F25 | the reporting framework: what the first shared reporting layer leaves out | shipped 2026-09-14 | Verification |
 
 **Two are open**: F2b and F3 — one Control Plane authorization decision arriving
-from two sides — plus **F7**, which is open in a different sense: its remaining
-box cannot be closed by the identity that registers, for a reason recorded
-below. None of the three is this repository's to close alone. F2b and F3 are one Control Plane authorization decision arriving
+from two sides. Neither is this repository's to close alone. F7 was the third
+until 2026-09-15, open because its remaining box could not be closed by the
+identity that registers; the Control Plane change that closes it is recorded
+in the entry. F2b and F3 are one Control Plane authorization decision arriving
 from two sides. F7 needs a staff read, and as of 2026-09-01 it is known that the
 registering identity cannot perform it *even in principle*: the registration
 response returns environment names rather than stored references, so a payload
@@ -439,7 +440,8 @@ The flag is not new as an idea. `client.ts` has described "the operator's
 `--register-only`" since it was written; it simply did not exist, which is its
 own small instance of R-042 — a comment naming a flag nobody had built.
 
-**Why the last box is still open, and why it may never close as written.**
+**Why the last box was still open on 2026-08-30, and why it never closed as
+written.**
 Running it is an operator action against a live estate. But as of 2026-08-30
 there is no estate to run it against: `koras-e2e-atlas` was torn down that day,
 and `output/sample-product` was destroyed earlier the same day (F1). **No
@@ -988,7 +990,10 @@ wrong: see below.
 
 - [x] Read the Control Plane's portal branding from `apps/web/src/lib/tenant-branding.ts`
 - [x] Parse it in the platform's names, and assert them
-- [ ] Decide how a product renders the platform's logos under `img-src 'self'`
+- [x] Decide how a product renders the platform's logos under `img-src 'self'` —
+      decided and built 2026-09-15: the product serves them from its own origin
+- [ ] Resolve the host before fetching it, and connect to the address rather
+      than the name — the one thing the two gates below do not stop
 
 F16 closed with the product reading `tenant_settings.branding` — its own
 column, which nothing writes. The place a customer actually sets their branding
@@ -1034,6 +1039,55 @@ product serving the platform's assets from its own origin, or a policy
 exception for one named origin — and the second is a decision about what a
 customer's logo is allowed to load from, which is R-042 territory if it is made
 by editing a header and not writing it down.
+
+**Closed 2026-09-15, by the first of the two.** `/api/branding/logo`,
+`/logo-dark` and `/icon` on the product's own web tier are the platform's
+images, so the policy stays `'self'` and no origin is named anywhere. The
+route takes one thing from the browser — which of three names — and resolves
+the URL itself from the caller's own session, so there is no parameter to
+point it anywhere; the fetch is `https` only, refuses redirects rather than
+following them, times out, caps what it will read both by the declared length
+and by counting, and admits only image types. It is served back
+`private, max-age=3600` with `nosniff`, because a path every customer's page
+asks for must never be held in a shared cache. `parsePlatformBranding` keeps
+the three URLs apart from the tokens now, which the six tests that asserted
+they were dropped were rewritten to say.
+
+The argument for it over the second way out is the one the box was written
+with: a policy exception is a decision about where a customer's logo may load
+from, made in a header nobody reads and widened every time the platform's
+storage moves. The route is the same decision made once, in a file with tests
+around it.
+
+**What the gates stop, and the one thing they do not.** The URL is a value a
+customer typed into the platform's portal, and the fetch is made from inside
+this product's network, so it is checked twice: once when the branding answer
+is parsed, and again inside `fetchPlatformAsset`, which is where the socket is
+opened. `https` only, no credentials in the URL, not `localhost`, `.local` or
+`.internal`, and never a raw IPv4 or IPv6 literal — an address is how a server
+gets pointed at something a browser could never reach.
+
+An automated review on 2026-09-15 is why both of those are true. The fetch had
+documented itself as "the second gate ... because a function reachable from
+more than one caller cannot know the first gate was passed" and then checked
+only the scheme; the host rules lived in the parser alone. `api-client` is a
+leaf and cannot import `branding`, so the rule is written twice now and a
+shared table of cases in `assets.test.ts` is what keeps the two from drifting.
+Reading it again found a second thing: `https://localhost./logo.png` keeps its
+trailing dot through URL parsing, means exactly `localhost` to every resolver,
+and matched none of the string comparisons. Both gates strip it now, and
+`localhost.`, `vault.internal.`, the cloud metadata address and a unique-local
+IPv6 literal are in the attack table.
+
+**The open box above is what is left.** A name is resolved by the runtime
+after the check, so a hostname whose DNS answers a private address still
+passes. Closing it means resolving the host here, refusing every loopback,
+RFC1918, link-local and unique-local answer, and connecting to the address
+rather than the name so the two cannot differ between the check and the
+request — which needs the socket rather than `fetch`. What stands in front of
+it meanwhile: the platform stores only assets on its own storage, the response
+must be an image under two megabytes, and no redirect is followed, so a blind
+request is most of what an attacker would get.
 
 ### F17 — a product cannot read its customers' entitlements — opened 2026-08-31, closed 2026-09-01
 
@@ -1164,10 +1218,11 @@ interaction, which is the part that was only ever claimed.
 - [x] `productConfig.i18n` and `productConfig.translations`; the homepage copy in German and Spanish
 - [x] A cookie-backed switcher, in the footer of every public page, on the sign-in frame, and in Settings beside the appearance control
 - [x] `lang` and `dir` on the document from the resolved locale
-- [ ] Persist the choice per member, and a tenant default (phase 2)
-- [ ] `apps/admin`
-- [ ] Email templates and API error text
-- [ ] A locale in the marketing site's URL, so it can be a cached document again
+- [x] Persist the choice per member, and a tenant default (phase 2) - 2026-09-15
+- [x] `apps/admin` - 2026-09-15
+- [x] Email templates and API error text - 2026-09-15
+- [x] A locale in the marketing site's URL, so it can be a cached document again
+      - 2026-09-15
 
 Every generated product was English, three times over: `lang="en"` in each
 layout, the homepage copy in `productConfig.marketing` with no locale
@@ -1226,6 +1281,67 @@ and that `packages/i18n` imports nothing from the workspace. The last of those
 is the dependency direction — `i18n` is a leaf, `branding` reads it for the
 type, `ui` reads both — and a reversed edge would make the catalogue depend on
 the copy it translates.
+
+**Phase 2, 2026-09-15.** All four boxes, and each one was a different kind of
+work.
+
+**A choice that follows the person, not the device.** `member_preferences`
+(migration 00017) holds one row per person per tenant, and `tenant_settings`
+gains a default for everyone who has not chosen. A table of its own rather than
+a column on `tenant_members`, for two reasons worth keeping: a member who signed
+in through their organisation's identity provider has no `tenant_members` row,
+so a preference stored there would exist for one person per tenant; and that
+table carries `role`, so a policy letting a member write their own row would be
+a policy letting them write their own role unless something else stopped it. A
+table holding only preferences has nothing a policy has to protect.
+
+This is **the first policy keyed to the caller rather than the tenant**.
+`current_user_id()` had existed since migration 00001 and nothing read it: every
+policy scoped rows to a tenant and the API set `app.tenant_id` alone. A request
+now declares who is asking as well as which tenant, and the policy checks both.
+On the user alone, a member of two tenants of this product would read their
+preference from the wrong one; on the tenant alone, a member would read a
+colleague's. `160_member_preferences_isolation.sql` is those two sentences as
+three tests, and it fails closed with no subject.
+
+Resolution for a signed-in member is now the stored choice, then the cookie,
+then the tenant default, then `Accept-Language`, then the product's default, and
+still never the URL inside the application.
+
+**`apps/admin` speaks the three languages**, resolving cookie then
+`Accept-Language` then default. Deliberately *not* the signed-in order: the
+admin application is staff-facing, renders no tenant's branding, and asking the
+product's API for a two-letter code would be the first thing it ever asked it
+for.
+
+**Mail and error text.** The mail catalogues are Python, typed so a missing key
+fails mypy, and the locale travels with the send. The API's `detail` strings are
+replaced by an `ApiErrorCode` on every route a person can reach from the shell,
+which the web tier maps to its own catalogue, so nothing English reaches a
+person even where the API is the thing that refused.
+
+**The marketing homepage is a static document again**, under a `[locale]`
+segment with `generateStaticParams`, `hreflang` alternates and a canonical. The
+middleware stays dynamic and does the redirecting; the pages do not. That is
+what the box asked for on 2026-09-05, when phase 1 made the homepage render per
+request and said so in a comment at the path it then lived at.
+
+**Two defects the verification found, neither visible in the diff.** The
+marketing middleware stamped the locale cookie on *every* request it redirected,
+and Next prefetches the header and footer links, so a prefetch issued moments
+earlier under the previous language overwrote the language the visitor had just
+chosen: choosing Spanish and then English left the cookie on Spanish. A guard on
+`Sec-Fetch-Dest` fixes it, and a guard on Next's own router headers does *not*,
+because Next strips those before middleware runs. And the F19 browser spec used
+Playwright's `request` fixture, which keeps its own cookie jar: both of its
+tests were strangers after signing in, followed the redirect to `/login`, and
+read 200 where they asserted 404. A spec that asserted nothing, while passing.
+
+**Verified** by generating a product with the full capability row and running
+the chain CI runs: build, lint, typecheck and test across 34 tasks, 453 tests
+passed in pytest, mypy over 111 source files, the row-level security suite
+including the new isolation file and its mutation check, and Playwright at 375
+and 1440 with 101 passed.
 
 ## The customer-onboarding sequence
 
@@ -1537,14 +1653,14 @@ something to land on.
 
 - [x] Phase 1 — the provider adapter, a Paddle implementation, the signed webhook, `billing_events`, and status driven from outside (`koras-control-plane` 9cfee99)
 - [x] Phase 2 — price references and seat bounds on plans, in the API, the public catalogue, the client and the console form
-- [ ] Phase 1's other half: recorded sandbox events replacing the authored fixtures. The database half is done — the suites ran green with 00028 and 00029 applied, locally and in dev, on 2026-09-05
+- [x] Phase 1's other half: recorded sandbox events replacing the authored fixtures — recorded 2026-09-15 from the test account's events API, see the note below. The database half was done on 2026-09-05 — the suites ran green with 00028 and 00029 applied, locally and in dev
 - [x] Phase 3 — interval and seats on the signup form, Paddle.js on the verify page, provisioning started by `subscription.created`, the abandoned-checkout reminder (built 2026-09-05, both repositories)
-- [ ] Phase 3's browser run: a sandbox signup with a test card, from a product deployed with the client-side token, ending signed in — and the Playwright journey that records it
+- [~] Phase 3's browser run: a sandbox signup with a test card, from a product deployed with the client-side token, ending signed in — **done six times by hand between 2026-09-10 and 2026-09-13**, found on 2026-09-15 by reading the Stripe account rather than the documents; the Playwright journey that records it ships since 2026-09-15 at `e2e/live/signup-card.spec.ts` in the product template and has not yet run to completion, see below
 - [x] Phase 4 — the portal's billing section, plan and seat changes, the trial-ended and past-due states; the first module with `requiredEntitlements` had already shipped with the shell (built 2026-09-05, both repositories)
 - [x] Phase 5's code — the `billing.subscription` check in the estate sweep, repaired toward the provider (built 2026-09-06)
 - [x] **The provider switched from Paddle to Stripe Managed Payments on 2026-09-09**, before any customer existed to migrate. The adapter, the webhook, the checkout and the pricing page were rewritten in both repositories; the Paddle adapter was deleted rather than kept behind a flag. See the note below
-- [ ] Phase 5's rest — the Stripe account with Managed Payments enabled, the test-mode catalogue with eligible tax codes, keys and webhook endpoint in Doppler, the customer portal configured, the first real cycle: `koras-control-plane/docs/runbooks/stripe-go-live.md`
-- [ ] The two paths the stand-in provider cannot exercise: the hosted checkout completed in a browser against test mode, and a period-end change observed as a subscription schedule on a real subscription
+- [~] Phase 5's rest — the Stripe account with Managed Payments enabled, the test-mode catalogue with eligible tax codes, keys and webhook endpoint in Doppler: **all existed in test mode by 2026-09-13**, recorded 2026-09-15 in `koras-control-plane/docs/BILLING.md`. Still ahead: live-mode activation, the live key, the customer portal check, the first real cycle — `koras-control-plane/docs/runbooks/stripe-go-live.md` steps 1, 3, 5 and 7
+- [x] The two paths the stand-in provider cannot exercise: the hosted checkout completed in a browser against test mode (six times, above), and a period-end change observed as a subscription schedule on a real subscription — run 2026-09-15 through the adapter against a test-mode subscription made for it: two phases, three seats to the period's end and two from that second, `end_behavior` `release`; released and cancelled afterwards
 
 The design is `BILLING_DESIGN.md`, decided 2026-09-05: card at signup, charge
 at trial end, a Merchant of Record behind an adapter, and the Control Plane
@@ -1640,6 +1756,43 @@ is a reason to wait on Phase 3, but both are cheaper than Phase 3 and turn the
 code that shipped into evidence — which is why the first open box is the
 half-finished Phase 1 rather than the next phase.
 
+**Read back from Stripe on 2026-09-15, and what it changed.** The four boxes
+above were worked in the order the table recommends, and the first thing the
+work found was that three of them were already done and nobody had written it
+down: the test account, the catalogue with `txcd_10103001` on it, the price
+ids on the `dev` plans, the webhook endpoint at the dev API, and six hosted
+checkouts completed in a browser from real signups on `koras-e2e-shop` --
+four of which had gone `trialing` to `active` at trial end, because `dev`
+runs a one-day trial. `koras-control-plane/docs/BILLING.md` said none of it
+existed. That is R-042 landing on a document about money, and the reason the
+correction there opens by saying so.
+
+What the sitting then did, rather than found: the fixtures under
+`koras-control-plane/tests/fixtures/stripe/` are Stripe's own deliveries
+now -- three read from the account's events, two (`past_due`, `deleted`)
+made for the purpose on a test clock with metadata nothing holds -- and the
+sixty-six tests over them assert the recorded ids and times rather than the
+authored ones. The period-end schedule was exercised through the adapter
+against a subscription created for it and cleaned up after. And the
+product template gained `e2e/live/signup-card.spec.ts`, the journey from the
+emailed link through Stripe's checkout to the dashboard, skipped unless an
+operator supplies the links a mailbox holds.
+
+**What stopped, and where.** The seventh signup, `F21 Card Run`, was driven
+in a browser as far as Stripe's hosted page -- Sandbox, "sold through Link",
+$38 a month after a one-day trial for two Starter seats -- and stopped at
+the pay button by the policy that stops an agent from completing a payment,
+test card or not. The checkout is open for a day at the address the
+registration's `checkout=cancelled` link offers, and the reminder job has a
+subject. Someone with hands on the keyboard finishes it, then runs the live
+spec with the two emailed links to tick the last test-mode box.
+
+**One small thing the run showed.** The signup form says "your 14-day
+trial" and the checkout said "1 day free": the number is `BILLING_TRIAL_DAYS`
+on the platform, per environment, and the product's copy had it typed in.
+The copy now says "your trial", and the length is Stripe's page's to state,
+since it is the page that reads it from the session.
+
 ---
 
 ## Verification that has not happened
@@ -1655,8 +1808,9 @@ half-finished Phase 1 rather than the next phase.
 - [~] Observe the `register` job run in a generated project's deployment —
       **cannot be closed as written**, see below
 - [x] Observe *generation-time* registration send a real payload — 2026-08-30
-- [ ] Confirm the Control Plane's stored references change as a result — needs a
-      staff read, which the registrar identity cannot perform
+- [x] Confirm the Control Plane's stored references change as a result — the
+      registration answers what it stored since 2026-09-15, and the generator
+      compares; see the closing note at the end of this entry
 
 What has been checked: the payload validates against the Control Plane's real
 request model; the script refuses on a generated control-plane project with a
@@ -1704,7 +1858,8 @@ to retry with `--provision-only` — a full plan across eight providers and an
 apply — to recover from one failed HTTP request. `--register-only` had been
 added that morning and the recovery guidance was never pointed at it. Fixed.
 
-**Why the last box is still open.** Confirming the *stored* references means
+**Why the last box was still open until 2026-09-15.** Confirming the *stored*
+references means
 reading the registry, and `GET /api/platform/v1/products` answers `403 This
 endpoint is restricted to platform staff` to the registrar. That is correct —
 the registrar is a machine identity that registers and cannot read — so this
@@ -1800,6 +1955,34 @@ F2b's condition, visibly. That is what the change was for.
 
 **Why not done here:** deploying and provisioning are out of scope for this
 session by instruction.
+
+**Closed 2026-09-15, by making every registration self-verifying.** The last
+box could not be closed by the caller because `POST /api/platform/v1/products`
+answered environment *names*. F2c named two ways out and this takes the
+smaller: the Control Plane now reads the registry back inside the
+registration's own transaction and answers `stored_environments` -- what the
+tables hold, in the request's shape, not an echo of the request -- and
+`runRegistration` compares it with what it sent, key for key. A match prints
+*Registry confirmed*; a difference fails the step, not retryable, naming the
+differing paths and never a value; a response without the field is an older
+Control Plane and is reported as *accepted, not confirmed*, so R-001 is
+untouched. Asserted by `registration-verify.test.ts` (match, mismatch, older
+shape) here and `test_product_registration.py` there, the latter against a
+real Postgres.
+
+**What the read-back found on its first day.** `supabase_api_url` and
+`zitadel_instance` were accepted by the request schema and stored by nothing
+-- registration answered 201 and dropped both, and the generator sends
+`zitadel_instance` every time. Invisible while nothing compared the two
+sides; a mismatch on every registration the moment something did. Both are
+stored now.
+
+**Still open on 2026-09-15, elsewhere.** The deploy-time script does not
+compare the echo (`REGISTRATION_LIFECYCLE.md`, not covered), and it stays off
+by F2b's default. The first box stands unsatisfiable as written, as recorded above.
+Nothing in this closure has been run against the live dev Control Plane; the
+next `--register-only` for `koras-e2e-shop` will be the first confirmed
+registration in the estate.
 
 ### F8 — the `--with` / `--without` generation paths remain untested — closed 2026-08-29, the entry was wrong
 
@@ -1923,18 +2106,29 @@ rather than an omission, and each names the seam it plugs into.
       staff the calls, tokens and list-price estimate, and the customer the
       calls and tokens. Cost is the platform's price list in code, carried in
       each routing policy as `prices` and stamped on each usage row as
-      `estimated_cost_micros`. Still open beside it: a "last collected"
-      component on platform health so a silent product is visible without
-      a query.
+      `estimated_cost_micros`. The "last collected" component landed
+      2026-09-15 as `collectors` on platform health: the worker records
+      every attempt per collector and product in `collection_runs`
+      (Control Plane migration 00043), success or failure, so a product
+      with nothing to report still reads as collected and one that has
+      stopped answering reads as stale after two sweeps, with the last
+      error beside it. The console's health page lists it per product.
 - [x] **Pay as you go beyond the allowance.** Built 2026-09-15, decided
       against packs (a dispute per pack) and against daily billing (thirty
       invoices a month): an owner or administrator agrees in the portal to
       a rate card and sets a monthly charge limit; the product meters each
       call past the allowance at cost times the staff rate and stops at the
       limit; the platform sums, shows and warns. `AI_ARCHITECTURE.md` has
-      the shape. **Still open:** reporting the month's charges to Stripe,
-      behind the check that Managed Payments carries metered lines or
-      invoice items at all.
+      the shape. Reporting the month's charges to Stripe was decided
+      against on 2026-09-15, on the documentation: Managed Payments lists
+      attaching invoice items to one of its subscriptions, and a one-off
+      invoice outside the billing period, as unsupported
+      (https://docs.stripe.com/payments/managed-payments), and a metered
+      line is neither named as supported nor creatable after the Checkout
+      that makes the subscription. The charges stay a summed, shown, capped
+      number nobody is billed for; `koras-control-plane/docs/BILLING.md`
+      records the decision and the three alternatives, the first of which
+      is to sell larger allowances as plan tiers.
 - [x] **The gateway's unauthenticated answer.** Fixed 2026-09-14 with a
       middleware in front of the proxy that answers 401 itself. It was a 500, because LiteLLM's
       authentication error handler imports Prisma to classify the error and

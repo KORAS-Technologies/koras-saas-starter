@@ -125,6 +125,18 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   identity_users: 'a Control Plane identity table; no product repository has one',
   IAM_OWNER: 'a ZITADEL instance role, granted in the Console rather than by any file here',
   IAM_LOGIN_CLIENT: 'a ZITADEL instance role, granted in the Console rather than by any file here',
+  // Read out of Stripe and the Control Plane on 2026-09-15, while closing
+  // F21 and F24, and named in FOLLOW_UPS because what was verified is only
+  // checkable if the thing verified is named. All three belong elsewhere by
+  // the same rule as the billing columns above: `collection_runs` is the
+  // Control Plane's table recording each hourly collection, `end_behavior`
+  // and `txcd_10103001` are Stripe's own vocabulary -- a subscription
+  // schedule's release behaviour and the SaaS tax code Managed Payments
+  // admits. A product repository naming any of them would mean it had
+  // started holding the platform's commercial state.
+  collection_runs: 'a Control Plane table recording each collection attempt; no product has one',
+  end_behavior: "a Stripe subscription-schedule field the Control Plane's adapter sends",
+  txcd_10103001: 'a Stripe tax code, set on the product in the Stripe dashboard rather than in any file',
 }
 
 function tracked(): string[] {

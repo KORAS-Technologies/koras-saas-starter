@@ -197,9 +197,18 @@ external skills, and bring an existing project back into alignment.
 
 **Open risks:** R-036 (a second live teardown, now that Cloudflare is in the
 inventory) and R-042 (documentation and comments are the one part of the
-repository that can be wrong without anything going red — claims about *where*
-are checked now, claims about *why* are not). R-031 stands accepted with
-mitigation.
+repository that can be wrong without anything going red). R-042 shrank on
+2026-09-15: hedged claims — "not yet", "currently", "for now" — are now checked
+by `tests/docs/hedged-claims.test.ts`, which requires a date in the hedge's own
+paragraph, heading or table row. That is the fourth mechanical class, after
+paths, lists and identifiers. What is left of R-042 is claims about *why*, which
+nothing can reach.
+
+**R-031 closed on 2026-09-15.** `vitest` is on 4.x with `vite` and `esbuild`
+patched, `pnpm audit` finds nothing, and the suite passes. The upgrade was
+blocked for three weeks by workers blocked on synchronous filesystem work; what
+actually fixed it was making the generator's `writeFiles` path asynchronous and
+giving the suites that spawn real processes a budget that matches them.
 
 R-030 was reopened for products on 2026-08-30 and **re-closed the same evening**,
 when Actions billing was resolved; this line said otherwise for two days, which
@@ -241,8 +250,19 @@ point over a shop domain that repository now has. `docs/REPORTING_ARCHITECTURE.m
 is the description; F25 in `FOLLOW_UPS.md` is what it leaves out.
 
 **Next step:** `FOLLOW_UPS.md` opens with the order rather than leaving it to be
-re-derived. Two entries are left, F7 and the F3/F2b pair, and neither is this
-repository's to close alone.
+re-derived. One entry is left — the F3/F2b pair, a Control Plane authorization
+decision arriving from two sides — plus the live sitting below.
+
+**2026-09-15 closed six of them.** F7 (the registration now answers what the
+registry stored, and the generator compares, which found two fields accepted and
+stored by nothing), F19 (the platform's logos served from the product's own
+origin, so the policy stays `img-src 'self'`), F20 (a member's stored language
+and a tenant default, `apps/admin`, translated mail and API error codes, and a
+`[locale]` segment that makes the marketing homepage a static document again),
+F21's test-mode half (recorded fixtures, six browser checkouts found already
+done, a subscription schedule exercised on a real subscription), F24 (the
+collectors component on platform health, and the decision that Managed Payments
+cannot carry the AI overage), and R-042's fourth class.
 
 F13 was decided on 2026-09-01 — trial-only, which was already the behaviour —
 and deciding it found that `koras-control-plane`'s entitlement resolver ignored
@@ -252,14 +272,19 @@ expired it either. Fixed there as R-93, awaiting review on PR #2. Nothing was
 wrongly ungated, because no product gates on a plan yet — which is exactly why
 it had survived since the resolver was written.
 
-Then one live sitting: F7's staff read, R-036's second teardown now that
-Cloudflare is in the inventory, and the F17 token audience, which have never
-been exercised together and need the same credentials.
+Then one live sitting, which is now four things needing the same estate and the
+same credentials: R-036's second teardown now that Cloudflare is in the
+inventory; the F17 token audience; one `--register-only` for `koras-e2e-shop`,
+which would be the estate's first *confirmed* registration; and the F21 live
+Playwright journey, whose only unrun step is a human completing Stripe's
+test-mode checkout — an agent is refused at the pay button.
 
-F7 gained a constraint on 2026-09-01 worth knowing before attempting it: the
-registration response returns environment *names*, not stored references, so the
-identity that registers cannot confirm what the registry holds — a payload
-stored wrongly and one stored correctly are indistinguishable to the caller.
+F7 carried a constraint from 2026-09-01 until 2026-09-15: the registration
+response returned environment *names*, not stored references, so the identity
+that registers could not confirm what the registry held — a payload stored
+wrongly and one stored correctly were indistinguishable to the caller. The
+Control Plane now answers `stored_environments`, read back inside the
+registration's own transaction, and the generator compares it key for key.
 
 This said the `--with` / `--without` paths were untested. They have been tested
 since 2026-08-25: `generator-integration.yml` carries an
