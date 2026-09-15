@@ -5,6 +5,7 @@ import { decideRegistration, registrationEndpoint, type SkipReason } from './gua
 import { resolveRegistrationConfig } from './config.js'
 import { resolveBearer } from './token.js'
 import { registerProduct, type RegisterOptions } from './client.js'
+import { compareRegistration } from './verify.js'
 
 /**
  * The whole registration step, as one call the CLI can make and print.
@@ -20,8 +21,19 @@ export type Reason = SkipReason | 'not-configured'
 export type RegistrationReport =
   /** Nothing was sent, and nothing is wrong. */
   | { kind: 'skipped'; reason: Reason; detail: string }
-  /** The Control Plane knows about this product. */
-  | { kind: 'registered'; correlationId: string }
+  /**
+   * The Control Plane knows about this product. `confirmed` means it also
+   * reported what it stored and every reference sent is stored as sent;
+   * `unconfirmed` means it accepted the payload and did not say what it
+   * holds, which is a Control Plane older than 2026-09-15. `detail` says
+   * which, in words an operator can read.
+   */
+  | {
+      kind: 'registered'
+      correlationId: string
+      confirmation: 'confirmed' | 'unconfirmed'
+      detail: string
+    }
   /**
    * Something was wrong. `retryable` separates "try again later" from "this
    * will fail again the same way until a human changes something", which is
@@ -119,11 +131,46 @@ export async function runRegistration(
     return { kind: 'failed', retryable: bearer.retryable, detail: bearer.detail }
   }
 
-  const outcome = await registerProduct(bearer.config, buildRegistration(ctx, outputs), options)
+  const payload = buildRegistration(ctx, outputs)
+  const outcome = await registerProduct(bearer.config, payload, options)
 
   switch (outcome.status) {
-    case 'registered':
-      return { kind: 'registered', correlationId: outcome.correlationId }
+    case 'registered': {
+      // Accepted is not stored. Until the Control Plane echoed its registry a
+      // payload stored wrongly and one stored correctly were indistinguishable
+      // here (F7), so the echo is compared rather than trusted, and a
+      // difference fails the step: the estate is intact, and the registry
+      // describing it is not, which is exactly what this step exists to say.
+      if (outcome.stored === undefined) {
+        return {
+          kind: 'registered',
+          correlationId: outcome.correlationId,
+          confirmation: 'unconfirmed',
+          detail:
+            'Accepted, not confirmed: this Control Plane did not report what it ' +
+            'stored, so the registry has not been checked against what was sent.',
+        }
+      }
+      const verification = compareRegistration(payload, outcome.stored)
+      if (!verification.confirmed) {
+        return {
+          kind: 'failed',
+          retryable: false,
+          correlationId: outcome.correlationId,
+          detail:
+            'The Control Plane accepted the registration but what it stored ' +
+            'differs from what was sent: ' +
+            verification.differences.join(', ') +
+            '. The registry cannot be relied on for this product until the cause is found.',
+        }
+      }
+      return {
+        kind: 'registered',
+        correlationId: outcome.correlationId,
+        confirmation: 'confirmed',
+        detail: 'Registry confirmed: every reference sent is stored as sent.',
+      }
+    }
     case 'rejected':
       return {
         kind: 'failed',
@@ -153,3 +200,4 @@ export {
 } from './config.js'
 export { mintToken, parseServiceAccountKey, resolveBearer } from './token.js'
 export { registerProduct } from './client.js'
+export { compareRegistration, parseStoredEnvironments } from './verify.js'

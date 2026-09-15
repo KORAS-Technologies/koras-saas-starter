@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { redact } from '../redact.js'
 import { registrationUrl, type RegistrationConfig } from './config.js'
 import type { ProductRegistration } from './contract.js'
+import { parseStoredEnvironments, type StoredEnvironment } from './verify.js'
 
 /**
  * POST the registration payload to the Control Plane.
@@ -61,8 +62,12 @@ export type FetchLike = (
 export const DEFAULT_TIMEOUT_MS = 60_000
 
 export type RegistrationOutcome =
-  /** The Control Plane accepted the product. */
-  | { status: 'registered'; correlationId: string }
+  /**
+   * The Control Plane accepted the product. `stored` is what it says the
+   * registry now holds, read back from its tables -- absent when the response
+   * did not carry it, which is a Control Plane older than 2026-09-15.
+   */
+  | { status: 'registered'; correlationId: string; stored?: StoredEnvironment[] }
   /** It understood the request and refused it. Retrying unchanged will not help. */
   | { status: 'rejected'; httpStatus: number; detail: string; correlationId: string }
   /** It could not be reached, or did not answer in time. Worth retrying. */
@@ -170,7 +175,20 @@ export async function registerProduct(
     clearTimeout(timer)
   }
 
-  if (response.ok) return { status: 'registered', correlationId }
+  if (response.ok) {
+    // The body is read for one field, `stored_environments`, and never logged: a 201 body is the
+    // registry's own contents, non-secret by construction, but the rule about
+    // response bodies is simpler to keep if it has no exceptions.
+    let stored: StoredEnvironment[] | undefined
+    try {
+      stored = parseStoredEnvironments(await response.text())
+    } catch {
+      // An unreadable body on a 201 changes nothing about the acceptance; it
+      // only means the registry was not confirmed, which the caller reports.
+      stored = undefined
+    }
+    return { status: 'registered', correlationId, stored }
+  }
 
   let body = ''
   try {

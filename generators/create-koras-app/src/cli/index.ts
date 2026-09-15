@@ -714,6 +714,7 @@ function printRegistrationReport(
   switch (report.kind) {
     case 'registered':
       console.log('\n✓ Registered with the Control Plane.')
+      console.log(`  ${report.detail}`)
       console.log(`  Correlation id: ${report.correlationId}`)
       break
 
