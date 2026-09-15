@@ -188,9 +188,9 @@ Five, in the Control Plane's commercial catalogue, dotted like `ai.*` and
 ```text
 reporting.basic      Analytics at all: Overview, Usage, Subscription      Starter and above
 reporting.export     CSV download                                          Pro and above
-reporting.advanced   the reports that name it: Users, Activity, AI Usage, Premium and above
+reporting.advanced   the reports that name it: Users, Activity, AI Usage, Business and above
                      and any product report declared advanced
-reporting.scheduled  scheduled delivery — scaffolded, not delivered        Premium and above
+reporting.scheduled  scheduled delivery — scaffolded, not delivered        Business and above
 reporting.api        the reports API called by something other than the   Enterprise
                      product's own web tier — declared, not yet enforced
 ```

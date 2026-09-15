@@ -33,7 +33,7 @@ product inherits, and a navigation registry resolved from them.
 5. *Filters are typed, declared and bound.* A report names the filters it
    accepts and their kinds; anything else is refused; values reach a query
    only as bound parameters. There is no free-text filter.
-6. *Entitlements control premium reporting.* Five dotted codes in the
+6. *Entitlements control paid reporting.* Five dotted codes in the
    platform's catalogue, read the way every entitlement is read. An
    unresolved plan shows the basic reports and refuses export.
 7. *Calculations are never in React.* The API answers numbers with units;
