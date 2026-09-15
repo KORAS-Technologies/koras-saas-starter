@@ -1113,10 +1113,19 @@ having done it rather than by having estimated it.
 
 `vitest` is on **4.1.11**, `vite` on **7.3.6**, `esbuild` on **0.28.2**, and
 `js-yaml` on **4.3.2**. `pnpm audit --audit-level moderate` answers **"No known
-vulnerabilities found"**. All eight Dependabot alerts across the four manifests
-that declare vitest are closed by the versions themselves rather than by an
-exemption, and Phase 12's exit criterion no longer has a reading under which it
-is open.
+vulnerabilities found"**, and GitHub agrees: every Dependabot alert on this
+repository reads `fixed` within a minute of the push. Closed by the versions
+themselves rather than by an exemption, so Phase 12's exit criterion no longer
+has a reading under which it is open.
+
+**Twelve alerts, not eight.** This entry counted eight when it was written on
+2026-08-25, and the count was never going to hold still: five critical against
+`vitest`, one moderate against it, one high and two moderate against `vite`,
+one moderate each against `esbuild` and `@vitest/mocker`, and one high against
+`js-yaml` -- which is a different package on a different chain and was carried
+along because the same upgrade touched its range. Four extra alerts accrued in
+three weeks against a dependency nobody was changing, which is the argument for
+closing this class rather than re-accepting it every month.
 
 **What the two earlier attempts got wrong.** Both concluded that the blocker was
 synchronous filesystem work starving vitest's RPC, and that clearing it meant
