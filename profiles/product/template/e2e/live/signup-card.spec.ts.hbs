@@ -1,0 +1,119 @@
+import { expect, test } from '@playwright/test'
+
+/**
+ * The signup with a card, against a deployed product and Stripe's test mode.
+ *
+ * Everything else under `e2e/` runs against a server Playwright starts with no
+ * platform behind it. This file is the exception: it drives the one journey
+ * that cannot be proved without the platform, the payment provider and a
+ * mailbox -- a stranger confirming an address, entering a test card on Stripe's
+ * hosted checkout, waiting for provisioning, setting a password and landing on
+ * the dashboard signed in.
+ *
+ * It is skipped unless the operator supplies what only a mailbox can: the two
+ * links the platform emails. Nothing here reads mail, on purpose -- a suite
+ * with a mailbox credential is a suite with a credential.
+ *
+ * ```
+ * KORAS_LIVE_VERIFY_URL="https://app-dev.<product>/signup/verify?token=..." \
+ *   pnpm exec playwright test e2e/live --project desktop
+ * ```
+ *
+ * `KORAS_LIVE_VERIFY_URL` is the link from "Confirm your account", or -- once
+ * that token is spent and the checkout was left -- the
+ * `/signup/verify?registration=<id>&checkout=cancelled` address the checkout's
+ * back link carries, which offers the checkout again. When the first test has
+ * finished, the welcome email carries the activation link; run again with
+ * `KORAS_LIVE_ACTIVATE_URL` and `KORAS_LIVE_PASSWORD` set for the second.
+ *
+ * The card is Stripe's `4242 4242 4242 4242`, which test mode accepts and
+ * live mode refuses, so this file cannot charge anybody: a live key on the
+ * platform fails the checkout rather than completing it.
+ */
+
+const VERIFY_URL = process.env.KORAS_LIVE_VERIFY_URL
+const ACTIVATE_URL = process.env.KORAS_LIVE_ACTIVATE_URL
+const PASSWORD = process.env.KORAS_LIVE_PASSWORD
+
+// Provisioning is minutes, not seconds: an organisation, an identity project,
+// a tenant, a welcome email. The status page polls; this waits with it.
+const PROVISIONING_TIMEOUT = 15 * 60 * 1000
+
+test.describe('signup with a card, live', () => {
+  test.skip(!VERIFY_URL, 'KORAS_LIVE_VERIFY_URL is not set; nothing to drive')
+  test.setTimeout(PROVISIONING_TIMEOUT + 60_000)
+
+  test('a confirmed address, a test card, a provisioned organisation', async ({ page }) => {
+    await page.goto(VERIFY_URL!)
+
+    // Either a fresh token or a reopened checkout ends on Stripe's page.
+    // Every step below is on Stripe's hosted checkout, whose markup is
+    // Stripe's; the selectors are the ones its checkout has carried for
+    // years, and a change there fails here rather than in a customer's hand.
+    if (page.url().includes('checkout=cancelled')) {
+      await page.getByTestId('checkout-reopen').click()
+    }
+    await page.waitForURL(/checkout\.stripe\.com/, { timeout: 60_000 })
+
+    const cardAccordion = page.getByTestId('card-accordion-item-button')
+    if (await cardAccordion.isVisible().catch(() => false)) {
+      await cardAccordion.click()
+    }
+    await page.locator('#cardNumber').fill('4242424242424242')
+    await page.locator('#cardExpiry').fill('12 / 34')
+    await page.locator('#cardCvc').fill('123')
+    await page.locator('#billingName').fill('Test Card')
+    const country = page.locator('#billingCountry')
+    if (await country.isVisible().catch(() => false)) {
+      await country.selectOption('US')
+    }
+    const postal = page.locator('#billingPostalCode')
+    if (await postal.isVisible().catch(() => false)) {
+      await postal.fill('94103')
+    }
+    await page.getByTestId('hosted-payment-submit-button').click()
+
+    // Stripe sends the browser back with `checkout=done` and no token. The
+    // page shows the provisioning wait, and the webhook Stripe delivers to the
+    // platform is what ends it -- `done` is a hint, never a fact about money.
+    await page.waitForURL(/\/signup\/verify\?registration=[0-9a-f-]+&checkout=done/, {
+      timeout: 120_000,
+    })
+    await expect(page.getByTestId('verify-ok')).toBeVisible()
+
+    // Ready is a redirect to the sign-in with `next=/dashboard`; failed and
+    // slow are the two other cards, and both are wrong here.
+    await page.waitForURL(/\/login\?next=%2Fdashboard/, { timeout: PROVISIONING_TIMEOUT })
+    await expect(page.getByTestId('sign-in-form')).toBeVisible()
+  })
+})
+
+test.describe('the owner sets a password and signs in, live', () => {
+  test.skip(!ACTIVATE_URL || !PASSWORD, 'KORAS_LIVE_ACTIVATE_URL and KORAS_LIVE_PASSWORD are not set')
+
+  test('the welcome link, a password, the dashboard', async ({ page }) => {
+    await page.goto(ACTIVATE_URL!)
+    await expect(page.getByTestId('activate-form')).toBeVisible()
+    await page.getByLabel(/password/i).first().fill(PASSWORD!)
+    const confirm = page.getByLabel(/confirm|repeat|again/i)
+    if (await confirm.isVisible().catch(() => false)) {
+      await confirm.fill(PASSWORD!)
+    }
+    await page.getByTestId('activate-submit').click()
+    await expect(page.getByTestId('activate-done')).toBeVisible({ timeout: 30_000 })
+
+    // Signed in means the dashboard answers 200 on this origin, with the
+    // session cookie the sign-in set -- not a page that merely says so.
+    await page.getByRole('link', { name: /sign in/i }).first().click()
+    await page.waitForURL(/\/login/)
+    const email = page.getByTestId('sign-in-form').getByLabel(/email/i)
+    if (await email.isVisible().catch(() => false)) {
+      await email.fill(process.env.KORAS_LIVE_EMAIL ?? '')
+    }
+    await page.getByTestId('sign-in-form').getByLabel(/password/i).fill(PASSWORD!)
+    await page.getByTestId('sign-in').click()
+    await page.waitForURL(/\/dashboard/, { timeout: 60_000 })
+    const dashboard = await page.goto(new URL('/dashboard', page.url()).toString())
+    expect(dashboard?.status()).toBe(200)
+  })
+})
