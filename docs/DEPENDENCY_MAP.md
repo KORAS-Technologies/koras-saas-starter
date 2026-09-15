@@ -98,6 +98,8 @@ koras-queue ◄── koras-logging, koras-database
 koras-audit ◄── koras-auth, koras-tenant, koras-logging
        │
 koras-ai ◄── koras-auth, koras-logging
+
+koras-reporting ◄── (pydantic only; shared by both profiles)
        │
 koras-observability ◄── koras-logging
 ```
@@ -115,6 +117,7 @@ koras-observability ◄── koras-logging
 | `koras-queue`        | `koras-logging`, `koras-database`                 |
 | `koras-audit`        | `koras-auth`, `koras-tenant`, `koras-logging`     |
 | `koras-ai`           | `koras-auth`, `koras-logging`                     |
+| `koras-reporting`    | nothing internal; pydantic only                   |
 | `koras-observability`| `koras-logging`                                   |
 
 ---
@@ -202,6 +205,7 @@ koras-observability ◄── koras-logging
 - `koras-auth` — validate caller identity
 - `koras-tenant` — per-tenant rate limits
 - `koras-ai` — model routing, provider abstraction
+- `koras-reporting` — report and metric definitions, registries, typed filters, the visibility rule, CSV
 - `koras-logging`, `koras-observability`
 - `koras-audit` — AI request/response audit
 

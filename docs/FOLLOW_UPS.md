@@ -26,7 +26,8 @@ recommendation rather than a record — revise it, do not preserve it.
 | 2 | **F7** | The last unverified link before anything is sold. Its remaining box needs a staff read — or the smaller Control Plane change described in F2c, which would make every registration verify itself. | ~1h with a staff identity |
 | 3 | **F3 + F2b** | One question from two sides. Not urgent while there is one product — the risk it names is one product's CI holding write access to *other* products' registry entries, and the blast radius is currently itself. | ½ day to decide, more to build |
 | 4 | **F23** | Built 2026-09-11 as the product's own sign-in page rather than a self-hosted copy of ZITADEL's (`docs/PRODUCT_SIGN_IN.md`). What is left is the first live sign-in on `koras-e2e-shop` dev, which needs one `terraform apply`, and belongs in the live sitting below. | ~1h, in the live sitting |
-| 5 | **F24** | The assistant has answered a fake provider and a stubbed platform and never a real model. One conversation through a deployed gateway, with the three entitlements authored in the Control Plane's catalogue, before anything is built on top of it. Belongs in the live sitting too: it needs `koras-e2e-shop` regenerated with `--with ai,ai_gateway` and the keys that are already in its Doppler. | ~2h, in the live sitting |
+| 5 | **F25** | The reporting framework shipped 2026-09-14 with CSV only, scheduled delivery scaffolded, and `reporting.api` declared and not enforced. What is left is listed in the entry; none of it blocks a product registering reports today, and the first product to need scheduled delivery is the one to build it. | ~1 day per item, none urgent |
+| 6 | **F24** | The assistant has answered a fake provider and a stubbed platform and never a real model. One conversation through a deployed gateway, with the three entitlements authored in the Control Plane's catalogue, before anything is built on top of it. Belongs in the live sitting too: it needs `koras-e2e-shop` regenerated with `--with ai,ai_gateway` and the keys that are already in its Doppler. | ~2h, in the live sitting |
 
 F13's prerequisite sat at the top of this table for part of one day and is
 built: `koras-control-plane` R-93, which made `subscriptions.status` mean
@@ -62,6 +63,9 @@ Control Plane's session routes; the self-hosted ZITADEL login planned on
 
 F24 — the AI foundation shipped on 2026-09-13 as the `ai` capability; what it
 deliberately leaves out is below, and the first item is a real model call.
+
+F25 — the reporting framework shipped on 2026-09-14 as the `reporting`
+capability; what it deliberately leaves out is below.
 
 Entries are grouped below by *why they are undone*, and numbered by *when they
 were opened*. Those two orders cannot both run in sequence, so this is the
@@ -105,6 +109,10 @@ otherwise stops at F6, and why there is no F0.
 | F19 | a customer's platform branding was stored and never rendered | closed 2026-09-04 — logos still open | Decisions |
 | F20 | a product speaks one language | phase 1 closed 2026-09-05 — persistence, admin app, emails and locale URLs open | Decisions |
 | F21 | somebody can now be billed, and nothing yet asks them to be | phases 1 and 2 closed 2026-09-05 — checkout, portal, reconciliation open | Onboarding |
+| F22 | Files: what the first storage module leaves out | shipped 2026-09-08 | Verification |
+| F23 | the sign-in page, on a host of ours | built 2026-09-11 | Verification |
+| F24 | the AI foundation: what the first shared AI layer leaves out | shipped 2026-09-13 | Verification |
+| F25 | the reporting framework: what the first shared reporting layer leaves out | shipped 2026-09-14 | Verification |
 
 **Two are open**: F2b and F3 — one Control Plane authorization decision arriving
 from two sides — plus **F7**, which is open in a different sense: its remaining
@@ -1938,6 +1946,48 @@ rather than an omission, and each names the seam it plugs into.
       which imports the proxy without initialising it, so it serves with no
       models loaded. A local model call needs the service started with
       `python -m` the way the container does. Unchanged by this work.
+
+### F25 — the reporting framework: what the first shared reporting layer leaves out
+
+Built 2026-09-14: `docs/REPORTING_ARCHITECTURE.md`. Every line below is a
+decision rather than an omission, and each names the seam it plugs into.
+
+- [ ] **Scheduled delivery.** `reporting.scheduled` is in the catalogue and
+      the worker carries `deliver_scheduled_reports` as an hourly task that
+      logs that nothing is scheduled. What is missing is a tenant-scoped
+      table of schedules, a renderer through the same resolver and `to_csv`,
+      and mail through `koras_email` the way approval notices go. The first
+      product that needs a weekly report builds it there.
+- [ ] **XLSX and PDF.** Declared as `ExportFormat` members with no writer.
+      CSV is what a spreadsheet opens and what a customer asks for first; a
+      PDF is a design question about a branded document before it is a
+      library choice.
+- [ ] **Asynchronous export.** A synchronous export is bounded to
+      `EXPORT_ROW_LIMIT` rows and refuses past it. The larger export is a
+      worker task writing into the tenant's bucket through the storage
+      module and a download ticket the way Files mints one.
+- [ ] **`reporting.api` enforcement.** Declared in the catalogue and
+      granted to Enterprise; every call today carries a person's token and
+      the product's own web tier is the only caller, so there is nothing to
+      refuse yet. It becomes real with the first machine caller.
+- [ ] **Pre-aggregation.** Every resolver runs an indexed query bounded by a
+      date range of at most 366 days, which is right for one product and
+      one tenant. A daily aggregate per metric and dimension -- the shape
+      the platform's AI usage table already has for one metric -- is the
+      answer when a table grows past what a range scan should read.
+- [ ] **Report names in the customer's language.** A report's name and
+      description come from its definition in English; the page's own
+      strings are translated, the definitions are not. A `translations`
+      field on `ReportDefinition` keyed by locale is the seam.
+- [ ] **Sign-in and product activity on the platform.** The Control Plane's
+      Usage & Adoption and Security reports read what the platform holds --
+      organization users, audit entries, sign-ins awaiting a factor -- and
+      say so. Activity inside a product reaches the platform only as AI
+      usage today; a second collector for audit counts would follow the
+      same pull.
+- [ ] **A retention setting for the shop's domain.** `AUDIT_RETENTION_DAYS`
+      sweeps `audit_events`; the shop's orders are business records and are
+      kept.
 
 ### F23 — the sign-in page, on a host of ours — opened 2026-09-09, built 2026-09-11 as the product's own page
 

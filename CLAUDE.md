@@ -49,6 +49,8 @@ All planning and reference documents live in `docs/`, matching
 | `docs/AI_SECURITY.md`            | The assistant as an untrusted subsystem: tenant, authorization, tools, injection, secrets, audit |
 | `docs/AI_CONTROL_PLANE_CONTRACT.md` | What a product reads from the platform today, and what the platform would need to offer |
 | `docs/adr/0001-koras-shared-ai-foundation.md` | The decision record for the shared AI foundation |
+| `docs/REPORTING_ARCHITECTURE.md` | Reporting and analytics: one registry, three levels, every report server-authorized |
+| `docs/adr/0002-koras-reporting-framework.md` | The decision record for the reporting framework |
 
 ## Repository layout (target state)
 
@@ -226,6 +228,17 @@ read, usage metered per call, and an assistant page and drawer in the shell.
 `docs/AI_ARCHITECTURE.md` is the description; F24 in `FOLLOW_UPS.md` is what it
 leaves out, the first of which is that no model has yet been called through a
 deployed gateway.
+
+**The reporting framework shipped on 2026-09-14** as a product capability,
+`reporting`, on by default: the `koras-reporting` package in the shared layer
+(definitions, registries, typed filters, the visibility rule, CSV), six
+standard tenant reports over the tables the starter creates, a general
+`audit_events` table, an `analytics` module that replaced the `reports`
+placeholder, five `reporting.*` entitlements in the Control Plane's catalogue,
+a platform Analytics section in the Control Plane built on the same package,
+and seven shop reports in `koras-e2e-shop` registered through the extension
+point over a shop domain that repository now has. `docs/REPORTING_ARCHITECTURE.md`
+is the description; F25 in `FOLLOW_UPS.md` is what it leaves out.
 
 **Next step:** `FOLLOW_UPS.md` opens with the order rather than leaving it to be
 re-derived. Two entries are left, F7 and the F3/F2b pair, and neither is this

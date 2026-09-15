@@ -566,7 +566,7 @@ Whether the tenant may store anything, and how much, is the `storage.files`
 entitlement: granted from Starter upward with a per-plan limit in gigabytes,
 enforced by the API at upload with a 402, locked in the sidebar and refused
 on the page with the plan named. An unreachable platform is no gate rather
-than a closed one, the same decision the Reports page makes.
+than a closed one, the same decision the Analytics page makes.
 
 Permissions: `files.read` and `files.upload` for every role in the tenant,
 `files.manage` -- deletion -- for owners and administrators. The API mirrors
@@ -697,11 +697,17 @@ render as siblings in one flat list, so `/dashboard/settings/team` lit up both
 thing to the eye and another to a screen reader.
 
 **Two plan gates ship in the default registry**, one of each behaviour, so both
-are visible in a running product before anyone designs one. `Reports` locks —
+are visible in a running product before anyone designs one. `Analytics` locks —
 greyed, with a lock and a reason in its accessible name. `Insights` hides —
 absent entirely. The choice between them is commercial: lock what a customer
 could buy, hide what would only confuse them. Both pages refuse on their own as
 well, because hiding a link is navigation and not a boundary.
+
+**Changed 2026-09-14:** the locking example used to be a placeholder called
+`Reports`, gated on `advanced_reporting` and rendering a sentence. The
+reporting framework replaced it with the real `analytics` module, gated on
+`reports.read`, `reporting.basic` and the `reporting` capability; see
+`docs/REPORTING_ARCHITECTURE.md`. `Insights` stays as the hidden example.
 
 **Added 2026-09-01:** `e2e/shell.spec.ts`, driven by Playwright at 375 and 1440.
 It covers the claims this document makes that no text search can check — the
