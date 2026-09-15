@@ -114,7 +114,10 @@ describe('the names the sides share', () => {
     }
     const everyone = names(/_EVERYONE: tuple\[str, \.\.\.\] = \(([^)]*)\)/.exec(pyPermissions)?.[1] ?? '')
     const pyRole = (role: string) => {
-      const match = new RegExp(`OrganizationRole\\.${role}: \\(\\*_EVERYONE, ([^)]*)\\)`).exec(pyPermissions)
+      // Whitespace-tolerant, so a tuple the formatter wrapped still reads.
+      const match = new RegExp(
+        `OrganizationRole\\.${role}: \\(\\s*\\*_EVERYONE,\\s*([^)]*)\\)`,
+      ).exec(pyPermissions)
       return [...everyone, ...names(match?.[1] ?? '')].sort()
     }
     expect(pyRole('SECURITY_ADMIN')).toEqual(tsRole('security_admin'))

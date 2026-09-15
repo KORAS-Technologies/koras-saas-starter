@@ -721,8 +721,8 @@ export const productConfig: ProductConfig = {
         modules: {
           home: 'Start',
           files: 'Dateien',
-          reports: 'Berichte',
-          insights: 'Einblicke',
+{{#if capability.reporting}}          analytics: 'Auswertungen',
+{{/if}}          insights: 'Einblicke',
           team: 'Team & Zugriff',
           settings: 'Einstellungen',
         },
@@ -971,8 +971,8 @@ export const productConfig: ProductConfig = {
         modules: {
           home: 'Inicio',
           files: 'Archivos',
-          reports: 'Informes',
-          insights: 'Análisis',
+{{#if capability.reporting}}          analytics: 'Analíticas',
+{{/if}}          insights: 'Análisis',
           team: 'Equipo y acceso',
           settings: 'Configuración',
         },
@@ -1497,27 +1497,38 @@ export const productConfig: ProductConfig = {
         group: 'primary',
         order: 0,
       },
-      // Two plan gates, one of each behaviour, so both are visible in a running
-      // product before anybody has to design one.
-      //
-      // `Reports` locks: the customer sees it greyed with a lock, because it is
-      // something they could buy. `Insights` hides: absent entirely, no hint.
-      // The choice is commercial, and it is the only difference between them.
-      //
-      // Both pages refuse on their own as well. Hiding a link is navigation,
-      // not a boundary -- the middleware passes `NO_ENTITLEMENTS` deliberately
-      // and does not gate routes on the plan, so either URL is reachable by
-      // typing it and the page is what actually decides.
+{{#if capability.reporting}}
+      // Analytics. Generated with the `reporting` capability, gated on the
+      // permission every member holds and locked when the plan lacks it --
+      // `reporting.basic` is the entitlement the API enforces too, and the
+      // generator's test keeps the two names level. One module for every
+      // report: the page lists whatever the API's catalogue holds, so a
+      // product that registers a report in its extension point needs no
+      // entry here. The page checks the plan again server-side, and the
+      // API decides per report with the same token.
       {
-        id: 'reports',
-        label: 'Reports',
+        id: 'analytics',
+        label: 'Analytics',
         icon: 'chart',
-        href: '/dashboard/reports',
+        href: '/dashboard/analytics',
         group: 'primary',
         order: 10,
-        requiredEntitlements: ['advanced_reporting'],
+        requiredPermissions: ['reports.read'],
+        requiredEntitlements: ['reporting.basic'],
+        requiredCapabilities: ['reporting'],
         lockedBehavior: 'lock',
       },
+{{/if}}
+      // A plan gate that hides rather than locks, so both behaviours are
+      // visible in a running product before anybody has to design one.
+      // `Insights` is absent entirely when the plan lacks it, no hint; the
+      // Analytics module above locks instead. The choice is commercial, and
+      // it is the only difference between them.
+      //
+      // The page refuses on its own as well. Hiding a link is navigation,
+      // not a boundary -- the middleware passes `NO_ENTITLEMENTS` deliberately
+      // and does not gate routes on the plan, so the URL is reachable by
+      // typing it and the page is what actually decides.
       {
         id: 'insights',
         label: 'Insights',

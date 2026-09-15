@@ -314,15 +314,54 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'insights.title': 'Análisis',
   'insights.notInPlan': 'Análisis no forma parte de su plan. Hable con nosotros para añadirlo.',
 
-  'reports.title': 'Informes',
-  'reports.notIncluded.title': 'No incluido en su plan',
-  'reports.notIncluded.description':
-    'Los informes avanzados forman parte de un plan superior. Su plan actual es <strong>{plan}</strong>.',
-  'reports.notIncluded.notRecorded': 'no registrado',
-  'reports.unresolved':
-    'No se ha podido leer su plan desde la plataforma KORAS en este momento, así que puede que esto esté disponible para usted. El motivo está en el registro del servidor de esta instalación.',
-  'reports.included':
-    'Incluido en su plan. Construya aquí lo real: esta página existe para que la comprobación del plan lleve a algún sitio y para que el patrón sea visible antes de que alguien lo necesite.',
+  /* ------------------------------------------------------------ analytics */
+  'analytics.title': 'Analíticas',
+  'analytics.unresolved':
+    'No se ha podido leer su plan desde la plataforma KORAS en este momento, así que solo se muestran los informes que incluyen todos los planes. El motivo está en el registro del servidor de esta instalación.',
+  'analytics.notIncluded.title': 'No incluido en su plan',
+  'analytics.notIncluded.description':
+    'Las analíticas forman parte de un plan superior. Su plan actual es <strong>{plan}</strong>. Un administrador de su organización puede cambiar el plan en el portal de la cuenta.',
+  'analytics.notIncluded.notRecorded': 'no registrado',
+  'analytics.of': '{used} de {limit}',
+  'analytics.previousPeriod': 'respecto al periodo anterior',
+  'analytics.trend.up': 'Sube',
+  'analytics.trend.down': 'Baja',
+  'analytics.trend.unchanged': 'Sin cambios',
+  'analytics.kind.estimated': 'Estimado',
+  'analytics.kind.derived': 'Derivado',
+  'analytics.kind.unavailable': 'No disponible',
+  'analytics.chart.asTable': 'Mostrar como tabla',
+  'analytics.chart.noData': 'Nada en este periodo.',
+  'analytics.chart.value': 'Valor',
+  'analytics.chart.period': 'Periodo',
+  'analytics.table.empty': 'No hay nada que mostrar para este periodo.',
+  'analytics.table.truncated':
+    'Solo se muestran las primeras filas. Acote el periodo para verlo todo.',
+  'analytics.filters.period': 'Periodo',
+  'analytics.filters.from': 'Desde',
+  'analytics.filters.to': 'Hasta',
+  'analytics.filters.apply': 'Aplicar',
+  'analytics.export.download': 'Descargar CSV',
+  'analytics.export.notAllowed': 'La descarga no está incluida en su plan o en su rol.',
+  'analytics.list.heading': 'Informes',
+  'analytics.category.overview': 'Resumen',
+  'analytics.category.usage': 'Uso',
+  'analytics.category.people': 'Personas',
+  'analytics.category.billing': 'Facturación',
+  'analytics.category.ai': 'IA',
+  'analytics.category.activity': 'Actividad',
+  'analytics.category.product': 'Este producto',
+  'analytics.loading': 'Cargando el informe…',
+  'analytics.retry': 'Reintentar',
+  'analytics.error.plan': 'Su plan no incluye este informe.',
+  'analytics.error.forbidden': 'Su cuenta no puede abrir este informe.',
+  'analytics.error.filters': 'Este informe no acepta esos filtros.',
+  'analytics.error.export': 'Su plan no incluye la descarga de informes.',
+  'analytics.error.tooLarge':
+    'La descarga sería demasiado grande. Acote el periodo y vuelva a intentarlo.',
+  'analytics.error.unavailable':
+    'Las analíticas no están disponibles en este momento. El motivo está en el registro del servidor.',
+  'analytics.error.generic': 'Algo ha salido mal. Vuelva a intentarlo.',
 
   /* ------------------------------------------------------------- settings */
   'settings.title': 'Configuración',

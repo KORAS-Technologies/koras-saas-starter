@@ -108,7 +108,11 @@ test('navigation labels translate by id and nothing else moves', () => {
 
 test('a translated registry resolves to the same modules as the default', () => {
   const context: AccessContext = {
-    access: { granted: true, role: 'product_admin', permissions: ['settings.read', 'team.read'] },
+    access: {
+      granted: true,
+      role: 'product_admin',
+      permissions: ['reports.read', 'settings.read', 'team.read'],
+    },
     capabilities: productConfig.product.capabilities,
     entitlements: { resolved: true, plan: 'starter', features: {} },
     features: {},
@@ -126,8 +130,12 @@ test('a translated registry resolves to the same modules as the default', () => 
 
   // The locked reason is carried as a gate name, which is what the shell
   // translates. The English sentence is still there for whoever reads it.
-  const reports = english.flatMap((group) => group.items).find((item) => item.id === 'reports')
-  assert.equal(reports?.state, 'locked')
-  assert.equal(reports?.lockedBy, 'entitlement')
-  assert.equal(reports?.lockedReason, 'Not included in your plan')
+  // Analytics is the shipped locking module; a product generated without
+  // the reporting capability has no locked module in its registry to check.
+  if (productConfig.product.capabilities.includes('reporting')) {
+    const analytics = english.flatMap((group) => group.items).find((item) => item.id === 'analytics')
+    assert.equal(analytics?.state, 'locked')
+    assert.equal(analytics?.lockedBy, 'entitlement')
+    assert.equal(analytics?.lockedReason, 'Not included in your plan')
+  }
 })

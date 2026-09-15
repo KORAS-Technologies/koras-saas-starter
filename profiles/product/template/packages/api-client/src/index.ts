@@ -589,3 +589,162 @@ export function parseStreamFrame(frame: string): AiStreamEvent | null {
       return null
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Reporting                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The reports router's answers, as the API declares them.
+ *
+ * The same shapes `packages/ui` renders; declared twice so neither package
+ * depends on the other, the way the AI types are. Every call takes no tenant
+ * and no organization: the API resolves both from the token.
+ */
+export interface ReportSummary {
+  key: string
+  name: string
+  description: string
+  category: string
+  visibility: 'available' | 'locked' | 'hidden'
+  entitlement: string | null
+  default_visualization: 'kpi' | 'line' | 'bar' | 'table'
+  sensitive: boolean
+  order: number
+}
+
+export interface ReportList {
+  reports: ReportSummary[]
+  resolved: boolean
+  plan: string | null
+}
+
+export interface ReportFilter {
+  key: string
+  kind: 'date_range' | 'choice' | 'integer'
+  label: string
+  options: string[]
+  default: string | number | null
+  minimum: number | null
+  maximum: number | null
+}
+
+export interface ReportView extends ReportSummary {
+  metrics: string[]
+  dimensions: string[]
+  filters: ReportFilter[]
+  visualizations: ('kpi' | 'line' | 'bar' | 'table')[]
+  export_formats: string[]
+  can_export: boolean
+  cache_seconds: number
+  status: string
+  version: number
+}
+
+export interface ReportMetric {
+  key: string
+  label: string
+  value: number | null
+  unit: 'count' | 'bytes' | 'micros' | 'milliseconds' | 'seconds' | 'percent'
+  format: 'integer' | 'decimal' | 'bytes' | 'money' | 'duration' | 'percent'
+  kind: 'actual' | 'estimated' | 'derived' | 'unavailable'
+  limit: number | null
+  previous: number | null
+  note: string | null
+}
+
+export interface ReportSeries {
+  key: string
+  label: string
+  unit: ReportMetric['unit']
+  format: ReportMetric['format']
+  points: { x: string; y: number | null }[]
+  kind: ReportMetric['kind']
+}
+
+export interface ReportTable {
+  columns: { key: string; label: string; format: ReportMetric['format'] | null; align: 'left' | 'right' }[]
+  rows: Record<string, string | number | null>[]
+  truncated: boolean
+}
+
+export interface ReportData {
+  key: string
+  generated_at: string
+  range: { start: string; end: string; bucket: 'day' | 'week' | 'month' } | null
+  metrics: ReportMetric[]
+  series: ReportSeries[]
+  table: ReportTable | null
+  notes: string[]
+  visualization: 'kpi' | 'line' | 'bar' | 'table'
+  resolved: boolean
+}
+
+export interface MetricDefinition {
+  key: string
+  name: string
+  description: string
+  unit: string
+  format: string
+  aggregation: string
+  dimensions: string[]
+}
+
+/** The filters a page carries in its URL, as the API receives them. */
+export type ReportQuery = Readonly<Record<string, string>>
+
+function reportPath(key: string, suffix = ''): string {
+  return `/api/v1/reports/${encodeURIComponent(key)}${suffix}`
+}
+
+function withQuery(path: string, query: ReportQuery): string {
+  const params = new URLSearchParams()
+  for (const [name, value] of Object.entries(query)) {
+    if (value !== '') params.set(name, value)
+  }
+  const encoded = params.toString()
+  return encoded === '' ? path : `${path}?${encoded}`
+}
+
+export function fetchReports(options: RequestOptions): Promise<ReportList> {
+  return request<ReportList>('/api/v1/reports', options)
+}
+
+export function fetchReport(options: RequestOptions & { key: string }): Promise<ReportView> {
+  return request<ReportView>(reportPath(options.key), options)
+}
+
+export function fetchReportData(
+  options: RequestOptions & { key: string; query?: ReportQuery },
+): Promise<ReportData> {
+  return request<ReportData>(withQuery(reportPath(options.key, '/data'), options.query ?? {}), options)
+}
+
+export function fetchMetrics(options: RequestOptions): Promise<{ metrics: MetricDefinition[] }> {
+  return request<{ metrics: MetricDefinition[] }>('/api/v1/metrics', options)
+}
+
+/**
+ * A report's rows as CSV, as the raw response.
+ *
+ * Not through `request`, which parses JSON: the body is the file, streamed
+ * on to the browser by the route handler that called this. A refusal is an
+ * `ApiError` with the status the API gave -- 402 for a plan without export,
+ * 403 for a caller without the permission -- so the handler can say which.
+ */
+export async function exportReport(
+  options: RequestOptions & { key: string; query?: ReportQuery },
+): Promise<Response> {
+  const base = options.baseUrl.replace(/\/$/, '')
+  if (!base) throw new ApiError('no API base URL is configured', 0)
+  const path = withQuery(reportPath(options.key, '/export'), options.query ?? {})
+  const response = await (options.fetchImpl ?? fetch)(`${base}${path}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${options.token}`, Accept: 'text/csv' },
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    throw new ApiError(`${path} answered ${response.status}`, response.status, await errorCode(response))
+  }
+  return response
+}

@@ -1,0 +1,70 @@
+import { expect, test } from '@playwright/test'
+import { signInAs } from './support/session'
+
+/**
+ * Analytics, in a browser without an API.
+ *
+ * The suite runs against `next start` with a session secret and no API and
+ * no Control Plane, so the plan is unresolved and every report read fails.
+ * That is the state worth proving here: the page must say the plan could
+ * not be read, say the report could not be produced, and offer a way to try
+ * again -- never a blank frame or a spinner that stays. The reports
+ * themselves are exercised by the API's own tests against a scripted
+ * session and by the generator's structural test.
+ *
+ * With no plan resolved the sidebar's Analytics entry is locked, so the
+ * page is reached by URL, which is exactly the path the page's own gate
+ * exists for.
+ */
+
+test('the page names its state when nothing behind it answers', async ({ page, context }) => {
+  await signInAs(context)
+  await page.goto('/dashboard/analytics')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Analytics')
+  await expect(page.getByTestId('analytics-unresolved')).toBeVisible()
+  const report = page.getByTestId('report')
+  await expect(report.getByRole('alert')).toBeVisible()
+  await expect(report.getByRole('link', { name: 'Try again' })).toBeVisible()
+  await expect(page.locator('#main-content')).toHaveCount(1)
+})
+
+test('a report by key renders the same frame and the same honesty', async ({ page, context }) => {
+  await signInAs(context)
+  await page.goto('/dashboard/analytics/usage.quotas?from=2026-09-01&to=2026-09-14')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Analytics')
+  await expect(page.getByTestId('report').getByRole('alert')).toBeVisible()
+  // The retry keeps the filters: a person who narrowed the period and hit an
+  // outage should not have to narrow it again.
+  await expect(page.getByRole('link', { name: 'Try again' })).toHaveAttribute(
+    'href',
+    /from=2026-09-01/,
+  )
+})
+
+test('a member without the reporting permission is refused, not shown a frame', async ({
+  page,
+  context,
+}) => {
+  // Every recognised role holds `reports.read`; a session with no recognised
+  // role holds nothing, and the page refuses before it reads anything.
+  await signInAs(context, { roles: [] })
+  await page.goto('/dashboard/analytics')
+  await expect(page.getByTestId('report')).toHaveCount(0)
+})
+
+test('the export handler refuses a caller without the permission', async ({ page, context }) => {
+  // A plain member may read reports and may not download them.
+  await signInAs(context, { roles: ['member'] })
+  const answer = await page.request.get('/api/reports/usage.quotas/export')
+  expect(answer.status()).toBe(403)
+})
+
+test('the page is translated with the rest of the shell', async ({ page, context }) => {
+  await signInAs(context)
+  await page.goto('/dashboard/settings')
+  await page.getByLabel(/Show .* in/).selectOption('de')
+  await page.getByRole('button', { name: 'Change language' }).click()
+  await page.goto('/dashboard/analytics')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Auswertungen')
+  await expect(page.getByRole('link', { name: 'Erneut versuchen' })).toBeVisible()
+})

@@ -45,14 +45,30 @@ import type { AccessContext, NavigationConfig, ProductModule } from './index.js'
 const ADMIN = {
   granted: true,
   role: 'product_admin',
-  permissions: ['product.access', 'settings.manage', 'settings.read', 'team.manage', 'team.read'],
+  permissions: [
+    'product.access',
+    'reports.read',
+    'settings.manage',
+    'settings.read',
+    'team.manage',
+    'team.read',
+  ],
 } as const
 
 const MEMBER = {
   granted: true,
   role: 'product_member',
-  permissions: ['product.access'],
+  permissions: ['product.access', 'reports.read'],
 } as const
+
+/**
+ * The Analytics module is generated with the `reporting` capability and
+ * absent without it. The shipped-registry assertions below say what the
+ * sidebar holds either way, so a product generated `--without reporting`
+ * runs the same file and still proves the same thing about what it has.
+ */
+const REPORTING = productConfig.product.capabilities.includes('reporting')
+const PRIMARY = REPORTING ? ['home', 'analytics'] : ['home']
 
 const DENIED = { granted: false, role: null, permissions: [] } as const
 
@@ -347,11 +363,11 @@ test('a plain member sees the product but not its administration', () => {
     productConfig.navigation,
     context({ access: MEMBER, capabilities: productConfig.product.capabilities }),
   )
-  // `reports` is here and `insights` is not, with no entitlements resolved:
+  // `analytics` is here and `insights` is not, with no entitlements resolved:
   // that is the two lock behaviours, in the shipped registry rather than in a
   // fixture. A member is refused the administration group by permission, which
   // is a different gate and hides regardless of behaviour.
-  assert.deepEqual(ids(resolved), ['home', 'reports'])
+  assert.deepEqual(ids(resolved), PRIMARY)
 })
 
 test('an administrator sees the administration group', () => {
@@ -359,7 +375,7 @@ test('an administrator sees the administration group', () => {
     productConfig.navigation,
     context({ access: ADMIN, capabilities: productConfig.product.capabilities }),
   )
-  assert.deepEqual(ids(resolved), ['home', 'reports', 'team', 'settings'])
+  assert.deepEqual(ids(resolved), [...PRIMARY, 'team', 'settings'])
 })
 
 test('the two shipped plan gates demonstrate one behaviour each', () => {
@@ -374,13 +390,15 @@ test('the two shipped plan gates demonstrate one behaviour each', () => {
   )
   const modules = resolved.flatMap((group) => group.items)
 
-  const reports = modules.find((module) => module.id === 'reports')
-  assert.ok(reports, 'reports should still be listed when the plan excludes it')
-  assert.equal(reports.state, 'locked')
-  assert.ok(
-    (reports.lockedReason ?? '') !== '',
-    'a locked module needs a reason: collapsed, it is the whole accessible name',
-  )
+  if (REPORTING) {
+    const analytics = modules.find((module) => module.id === 'analytics')
+    assert.ok(analytics, 'analytics should still be listed when the plan excludes it')
+    assert.equal(analytics.state, 'locked')
+    assert.ok(
+      (analytics.lockedReason ?? '') !== '',
+      'a locked module needs a reason: collapsed, it is the whole accessible name',
+    )
+  }
 
   assert.equal(
     modules.find((module) => module.id === 'insights'),

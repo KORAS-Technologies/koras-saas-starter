@@ -1,0 +1,100 @@
+import 'server-only'
+import { cache } from 'react'
+import {
+  ApiError,
+  fetchReport,
+  fetchReportData,
+  fetchReports,
+} from '@{{projectSlug}}/api-client'
+import type { ReportData, ReportList, ReportQuery, ReportView } from '@{{projectSlug}}/api-client'
+import { can, signedInContext } from '../../../lib/access'
+import { translator } from '../../../lib/locale'
+import { apiBaseUrl, providerToken } from '../../../lib/session'
+
+/**
+ * The analytics pages' server half.
+ *
+ * Every read re-establishes who is calling and what they may do before it
+ * talks to the API, and the API decides again with the same token. Nothing
+ * here reaches the browser: not the API's address, not the token, and not
+ * a resolver's detail -- a refusal arrives as a status and leaves as a
+ * sentence in the reader's language.
+ *
+ * Plain server functions rather than server actions: a page reads a report
+ * while rendering, and a form that changes the filters submits to the page
+ * itself. Nothing on this surface needs a client to call back.
+ */
+
+export type Loaded<T> =
+  | { status: 'ok'; value: T }
+  | { status: 'locked'; message: string }
+  | { status: 'error'; message: string }
+
+const session = cache(async () => {
+  const context = await signedInContext()
+  if (context === null || !can(context.access, 'reports.read')) return null
+  const token = await providerToken()
+  const baseUrl = apiBaseUrl()
+  if (!token || !baseUrl) return null
+  return { baseUrl, token }
+})
+
+/** Turn the API's refusal into a sentence, and a plan gate into its own state. */
+async function explain<T>(error: unknown): Promise<Loaded<T>> {
+  const t = await translator()
+  if (error instanceof ApiError) {
+    if (error.status === 402) return { status: 'locked', message: t('analytics.error.plan') }
+    if (error.status === 403 || error.status === 404) {
+      return { status: 'error', message: t('analytics.error.forbidden') }
+    }
+    if (error.status === 422) return { status: 'error', message: t('analytics.error.filters') }
+    if (error.status === 0 || error.status >= 500) {
+      return { status: 'error', message: t('analytics.error.unavailable') }
+    }
+  }
+  return { status: 'error', message: t('analytics.error.generic') }
+}
+
+export const loadReports = cache(async (): Promise<Loaded<ReportList>> => {
+  const auth = await session()
+  if (auth === null) return { status: 'error', message: (await translator())('analytics.error.forbidden') }
+  try {
+    return { status: 'ok', value: await fetchReports(auth) }
+  } catch (error) {
+    return explain(error)
+  }
+})
+
+export async function loadReport(key: string): Promise<Loaded<ReportView>> {
+  const auth = await session()
+  if (auth === null) return { status: 'error', message: (await translator())('analytics.error.forbidden') }
+  try {
+    return { status: 'ok', value: await fetchReport({ ...auth, key }) }
+  } catch (error) {
+    return explain(error)
+  }
+}
+
+export async function loadReportData(key: string, query: ReportQuery): Promise<Loaded<ReportData>> {
+  const auth = await session()
+  if (auth === null) return { status: 'error', message: (await translator())('analytics.error.forbidden') }
+  try {
+    return { status: 'ok', value: await fetchReportData({ ...auth, key, query }) }
+  } catch (error) {
+    return explain(error)
+  }
+}
+
+/**
+ * The query a page received, as the API accepts it: string values only,
+ * the last of a repeated key, and nothing the URL did not carry. The API
+ * refuses what the report did not declare; this only shapes the mapping.
+ */
+export function queryFrom(params: Record<string, string | string[] | undefined>): ReportQuery {
+  const query: Record<string, string> = {}
+  for (const [name, value] of Object.entries(params)) {
+    const last = Array.isArray(value) ? value[value.length - 1] : value
+    if (typeof last === 'string' && last !== '') query[name] = last
+  }
+  return query
+}

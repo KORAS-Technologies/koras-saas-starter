@@ -88,12 +88,13 @@ test('a plan-gated module is offered, not merely missing', async ({ page }, test
   // No entitlements resolve in this suite -- no Control Plane runs -- so both
   // plan gates are closed, and the two behaviours are visible side by side.
   //
-  // `Reports` locks: present, disabled, and its accessible name carries the
+{{#if capability.reporting}}  // `Analytics` locks: present, disabled, and its accessible name carries the
   // reason, because collapsed that name is the only thing distinguishing it
   // from an available icon.
-  const reports = page.getByRole('button', { name: /Reports/ })
-  await expect(reports).toBeVisible()
-  await expect(reports).toBeDisabled()
+  const analytics = page.getByRole('button', { name: /Analytics/ })
+  await expect(analytics).toBeVisible()
+  await expect(analytics).toBeDisabled()
+{{/if}}
 
   // `Insights` hides: absent entirely. Asserting the absence is the point --
   // "hidden" and "never added to the registry" look identical on a screenshot.

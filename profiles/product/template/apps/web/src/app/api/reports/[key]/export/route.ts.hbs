@@ -1,0 +1,71 @@
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { ApiError, exportReport } from '@{{projectSlug}}/api-client'
+import { can, signedInContext } from '../../../../../lib/access'
+import { translator } from '../../../../../lib/locale'
+import { apiBaseUrl, providerToken } from '../../../../../lib/session'
+
+/**
+ * A report's rows as a file.
+ *
+ * A server function returns a value and a download is a body, so this is a
+ * route handler, the way the assistant's stream is. It does what the
+ * analytics pages do -- decide again who is calling and what they may do,
+ * then ask the API with the caller's own token -- and streams the CSV to
+ * the browser byte for byte with the filename the API chose. The API is
+ * what decides whether this caller may export; a 402 or 403 from it is
+ * answered here as a sentence in the reader's language.
+ *
+ * Same-site only. A page elsewhere cannot make a customer's browser export
+ * their organization's data, and the fact of an export is recorded on the
+ * API's side under the person who asked.
+ */
+export async function GET(request: NextRequest, context: { params: Promise<{ key: string }> }) {
+  const site = request.headers.get('sec-fetch-site')
+  if (site !== null && site !== 'same-origin' && site !== 'none') {
+    return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
+  }
+  const t = await translator()
+  const signedIn = await signedInContext()
+  if (signedIn === null || !can(signedIn.access, 'reports.export')) {
+    return NextResponse.json({ message: t('analytics.error.forbidden') }, { status: 403 })
+  }
+  const token = await providerToken()
+  const baseUrl = apiBaseUrl()
+  if (!token || !baseUrl) {
+    return NextResponse.json({ message: t('analytics.error.unavailable') }, { status: 503 })
+  }
+
+  const { key } = await context.params
+  const query: Record<string, string> = {}
+  request.nextUrl.searchParams.forEach((value, name) => {
+    if (value !== '') query[name] = value
+  })
+
+  let upstream: Response
+  try {
+    upstream = await exportReport({ baseUrl, token, key, query })
+  } catch (error) {
+    const status = error instanceof ApiError ? error.status : 502
+    const message =
+      status === 402
+        ? t('analytics.error.export')
+        : status === 403 || status === 404
+          ? t('analytics.error.forbidden')
+          : status === 413
+            ? t('analytics.error.tooLarge')
+            : status === 422
+              ? t('analytics.error.filters')
+              : t('analytics.error.unavailable')
+    return NextResponse.json({ message }, { status: status >= 400 && status < 600 ? status : 502 })
+  }
+  return new Response(upstream.body, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition':
+        upstream.headers.get('content-disposition') ?? `attachment; filename="${key.replace(/\./g, '-')}.csv"`,
+      'Cache-Control': 'no-store',
+    },
+  })
+}

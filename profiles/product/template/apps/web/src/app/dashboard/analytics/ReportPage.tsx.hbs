@@ -1,0 +1,224 @@
+import { isEntitled } from '@{{projectSlug}}/branding'
+import {
+  AccessDenied,
+  Card,
+  Container,
+  ExportMenu,
+  MetricCard,
+  MetricGrid,
+  ReportChart,
+  ReportErrorState,
+  ReportFilters,
+  ReportHeader,
+  ReportList,
+  ReportTable,
+  rich,
+  strongTag,
+} from '@{{projectSlug}}/ui'
+import type { ReportResultData, ReportingLabels } from '@{{projectSlug}}/ui'
+import type { ReportQuery } from '@{{projectSlug}}/api-client'
+import { can, signedInContext } from '../../../lib/access'
+import type { Locale } from '@{{projectSlug}}/i18n'
+import { translator } from '../../../lib/locale'
+import { reportingLabels } from './labels'
+import { loadReport, loadReportData, loadReports } from './reporting'
+
+/**
+ * One report, beside the list of every report this caller may open.
+ *
+ * Shared by the landing page and the per-report route, so both render the
+ * same frame: three gates answered on the server -- the permission, the
+ * plan, the API's own answer -- then the list, the header, the filters,
+ * the cards, the chart and the rows, each rendered from what the API said
+ * and nothing computed here. A product that registers a report in its
+ * extension point gets this page for it with no page of its own.
+ */
+export const ANALYTICS_PATH = '/dashboard/analytics'
+
+export function reportHref(key: string, query: ReportQuery = {}): string {
+  const params = new URLSearchParams()
+  for (const [name, value] of Object.entries(query)) params.set(name, value)
+  const encoded = params.toString()
+  const base = key === 'usage.overview' ? ANALYTICS_PATH : `${ANALYTICS_PATH}/${encodeURIComponent(key)}`
+  return encoded === '' ? base : `${base}?${encoded}`
+}
+
+export async function ReportPage({
+  reportKey,
+  query,
+  locale,
+}: {
+  reportKey: string
+  query: ReportQuery
+  /** Resolved by the page, once, the way every page resolves it. */
+  locale: Locale
+}) {
+  const [context, t] = await Promise.all([signedInContext(), translator()])
+  if (context === null || !can(context.access, 'reports.read')) {
+    return <AccessDenied locale={locale} />
+  }
+
+  const { entitlements } = context.access
+  if (entitlements.resolved && !isEntitled(entitlements, 'reporting.basic')) {
+    const plan = { plan: entitlements.plan ?? t('analytics.notIncluded.notRecorded') }
+    const tags = { strong: strongTag }
+    return (
+      <div className="py-12">
+        <Container>
+          <h1 className="font-display text-2xl font-bold text-ink">{t('analytics.title')}</h1>
+          <Card className="mt-6 max-w-3xl">
+            <h2 className="font-display text-lg font-bold text-ink">
+              {t('analytics.notIncluded.title')}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-ink-muted">
+              {rich(t('analytics.notIncluded.description', plan), tags)}
+            </p>
+          </Card>
+        </Container>
+      </div>
+    )
+  }
+
+  const labels = reportingLabels(t)
+  const [list, report, data] = await Promise.all([
+    loadReports(),
+    loadReport(reportKey),
+    loadReportData(reportKey, query),
+  ])
+  const pagePath = reportHref(reportKey)
+  const retryHref = reportHref(reportKey, query)
+
+  return (
+    <div className="py-8 sm:py-12">
+      <Container>
+        {!entitlements.resolved && (
+          <p className="mb-6 max-w-2xl text-sm leading-6 text-ink-muted" data-testid="analytics-unresolved">
+            {t('analytics.unresolved')}
+          </p>
+        )}
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[14rem_minmax(0,1fr)]">
+          <aside className="min-w-0">
+            {list.status === 'ok' ? (
+              <ReportList
+                reports={list.value.reports}
+                current={reportKey}
+                hrefFor={(key) => reportHref(key)}
+                labels={labels}
+              />
+            ) : (
+              <p className="text-sm text-ink-muted" data-testid="report-list-unavailable">
+                {list.message}
+              </p>
+            )}
+          </aside>
+          <section className="min-w-0" data-testid="report">
+            {report.status !== 'ok' ? (
+              <>
+                <h1 className="font-display text-2xl font-bold text-ink">{t('analytics.title')}</h1>
+                <div className="mt-6">
+                  <ReportErrorState message={report.message} retryHref={retryHref} labels={labels} />
+                </div>
+              </>
+            ) : (
+              <>
+                <ReportHeader
+                  title={report.value.name}
+                  description={report.value.description}
+                  range={data.status === 'ok' ? data.value.range : null}
+                  locale={locale}
+                  notes={data.status === 'ok' ? data.value.notes : undefined}
+                  actions={
+                    report.value.export_formats.includes('csv') ? (
+                      <ExportMenu
+                        href={`/api/reports/${encodeURIComponent(reportKey)}/export${queryString(query)}`}
+                        allowed={report.value.can_export}
+                        labels={labels}
+                      />
+                    ) : undefined
+                  }
+                />
+                <div className="mt-6">
+                  <ReportFilters
+                    action={pagePath}
+                    filters={report.value.filters}
+                    values={query}
+                    labels={labels}
+                  />
+                </div>
+                <div className="mt-6">
+                  {data.status === 'ok' ? (
+                    <ReportBody data={data.value} locale={locale} labels={labels} caption={report.value.name} />
+                  ) : (
+                    <ReportErrorState message={data.message} retryHref={retryHref} labels={labels} />
+                  )}
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      </Container>
+    </div>
+  )
+}
+
+function queryString(query: ReportQuery): string {
+  const params = new URLSearchParams()
+  for (const [name, value] of Object.entries(query)) params.set(name, value)
+  const encoded = params.toString()
+  return encoded === '' ? '' : `?${encoded}`
+}
+
+function ReportBody({
+  data,
+  locale,
+  labels,
+  caption,
+}: {
+  data: ReportResultData
+  locale: string
+  labels: ReportingLabels
+  caption: string
+}) {
+  const timeSeries = data.series.filter((s) => s.points.some((p) => /^\d{4}-\d{2}-\d{2}$/.test(p.x)))
+  const categorical = data.series.filter((s) => !timeSeries.includes(s))
+  return (
+    <div className="space-y-8">
+      {data.metrics.length > 0 && (
+        <MetricGrid testId="report-metrics">
+          {data.metrics.map((metric) => (
+            <MetricCard key={metric.key} metric={metric} locale={locale} labels={labels} />
+          ))}
+        </MetricGrid>
+      )}
+      {timeSeries.length > 0 && data.visualization !== 'table' && (
+        <Card>
+          <ReportChart
+            series={timeSeries}
+            kind="line"
+            locale={locale}
+            labels={labels}
+            title={timeSeries.map((s) => s.label).join(', ')}
+            testId="report-chart"
+          />
+        </Card>
+      )}
+      {categorical.map((series) => (
+        <Card key={series.key}>
+          <ReportChart
+            series={[series]}
+            kind="bar"
+            locale={locale}
+            labels={labels}
+            title={series.label}
+            testId={`report-chart-${series.key}`}
+          />
+        </Card>
+      ))}
+      {data.table !== null && (
+        <Card>
+          <ReportTable table={data.table} caption={caption} locale={locale} labels={labels} testId="report-table" />
+        </Card>
+      )}
+    </div>
+  )
+}

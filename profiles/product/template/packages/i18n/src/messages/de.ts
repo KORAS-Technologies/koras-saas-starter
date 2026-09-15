@@ -323,15 +323,55 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'insights.notInPlan':
     'Einblicke sind nicht Teil Ihres Tarifs. Sprechen Sie uns an, wenn Sie sie hinzufügen möchten.',
 
-  'reports.title': 'Berichte',
-  'reports.notIncluded.title': 'Nicht in Ihrem Tarif enthalten',
-  'reports.notIncluded.description':
-    'Erweiterte Berichte gehören zu einem höheren Tarif. Ihr aktueller Tarif ist <strong>{plan}</strong>.',
-  'reports.notIncluded.notRecorded': 'nicht erfasst',
-  'reports.unresolved':
-    'Ihr Tarif konnte gerade nicht von der KORAS-Plattform gelesen werden; möglicherweise steht Ihnen dies also zur Verfügung. Der Grund steht im Serverprotokoll dieser Installation.',
-  'reports.included':
-    'In Ihrem Tarif enthalten. Bauen Sie hier das Eigentliche — diese Seite existiert, damit die Tarifprüfung irgendwohin führt und das Muster sichtbar ist, bevor jemand es braucht.',
+  /* ------------------------------------------------------------ analytics */
+  'analytics.title': 'Auswertungen',
+  'analytics.unresolved':
+    'Ihr Tarif konnte gerade nicht von der KORAS-Plattform gelesen werden; es werden nur die Berichte gezeigt, die jeder Tarif enthält. Der Grund steht im Serverprotokoll dieser Installation.',
+  'analytics.notIncluded.title': 'Nicht in Ihrem Tarif enthalten',
+  'analytics.notIncluded.description':
+    'Auswertungen gehören zu einem höheren Tarif. Ihr aktueller Tarif ist <strong>{plan}</strong>. Ein Administrator Ihrer Organisation kann den Tarif im Kontoportal ändern.',
+  'analytics.notIncluded.notRecorded': 'nicht erfasst',
+  'analytics.of': '{used} von {limit}',
+  'analytics.previousPeriod': 'gegenüber dem Vorzeitraum',
+  'analytics.trend.up': 'Gestiegen',
+  'analytics.trend.down': 'Gesunken',
+  'analytics.trend.unchanged': 'Unverändert',
+  'analytics.kind.estimated': 'Geschätzt',
+  'analytics.kind.derived': 'Abgeleitet',
+  'analytics.kind.unavailable': 'Nicht verfügbar',
+  'analytics.chart.asTable': 'Als Tabelle anzeigen',
+  'analytics.chart.noData': 'Nichts in diesem Zeitraum.',
+  'analytics.chart.value': 'Wert',
+  'analytics.chart.period': 'Zeitraum',
+  'analytics.table.empty': 'Für diesen Zeitraum gibt es nichts anzuzeigen.',
+  'analytics.table.truncated':
+    'Nur die ersten Zeilen werden gezeigt. Grenzen Sie den Zeitraum ein, um alles zu sehen.',
+  'analytics.filters.period': 'Zeitraum',
+  'analytics.filters.from': 'Von',
+  'analytics.filters.to': 'Bis',
+  'analytics.filters.apply': 'Anwenden',
+  'analytics.export.download': 'CSV herunterladen',
+  'analytics.export.notAllowed':
+    'Das Herunterladen ist in Ihrem Tarif oder Ihrer Rolle nicht enthalten.',
+  'analytics.list.heading': 'Berichte',
+  'analytics.category.overview': 'Überblick',
+  'analytics.category.usage': 'Nutzung',
+  'analytics.category.people': 'Personen',
+  'analytics.category.billing': 'Abrechnung',
+  'analytics.category.ai': 'KI',
+  'analytics.category.activity': 'Aktivität',
+  'analytics.category.product': 'Dieses Produkt',
+  'analytics.loading': 'Der Bericht wird geladen…',
+  'analytics.retry': 'Erneut versuchen',
+  'analytics.error.plan': 'Ihr Tarif enthält diesen Bericht nicht.',
+  'analytics.error.forbidden': 'Ihr Konto darf diesen Bericht nicht öffnen.',
+  'analytics.error.filters': 'Diese Filter akzeptiert dieser Bericht nicht.',
+  'analytics.error.export': 'Ihr Tarif enthält das Herunterladen von Berichten nicht.',
+  'analytics.error.tooLarge':
+    'Der Download wäre zu groß. Grenzen Sie den Zeitraum ein und versuchen Sie es erneut.',
+  'analytics.error.unavailable':
+    'Auswertungen sind gerade nicht verfügbar. Der Grund steht im Serverprotokoll.',
+  'analytics.error.generic': 'Etwas ist schiefgelaufen. Versuchen Sie es erneut.',
 
   /* ------------------------------------------------------------- settings */
   'settings.title': 'Einstellungen',

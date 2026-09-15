@@ -1,0 +1,52 @@
+import type { Translator } from '@{{projectSlug}}/i18n'
+import type { ReportingLabels } from '@{{projectSlug}}/ui'
+
+/**
+ * Every string the reporting components render, in the caller's language.
+ *
+ * Built once on the server from the request's translator and handed down as
+ * plain data, the way the assistant's labels are. The components know
+ * nothing of the catalogue.
+ */
+export function reportingLabels(t: Translator): ReportingLabels {
+  return {
+    of: t('analytics.of'),
+    previousPeriod: t('analytics.previousPeriod'),
+    up: t('analytics.trend.up'),
+    down: t('analytics.trend.down'),
+    unchanged: t('analytics.trend.unchanged'),
+    kinds: {
+      estimated: t('analytics.kind.estimated'),
+      derived: t('analytics.kind.derived'),
+      unavailable: t('analytics.kind.unavailable'),
+    },
+    chart: {
+      asTable: t('analytics.chart.asTable'),
+      noData: t('analytics.chart.noData'),
+      value: t('analytics.chart.value'),
+      period: t('analytics.chart.period'),
+    },
+    table: { empty: t('analytics.table.empty'), truncated: t('analytics.table.truncated') },
+    filters: {
+      period: t('analytics.filters.period'),
+      from: t('analytics.filters.from'),
+      to: t('analytics.filters.to'),
+      apply: t('analytics.filters.apply'),
+    },
+    export: { download: t('analytics.export.download'), notAllowed: t('analytics.export.notAllowed') },
+    list: {
+      heading: t('analytics.list.heading'),
+      locked: t('shell.lockedPlan'),
+      categories: {
+        overview: t('analytics.category.overview'),
+        usage: t('analytics.category.usage'),
+        people: t('analytics.category.people'),
+        billing: t('analytics.category.billing'),
+        ai: t('analytics.category.ai'),
+        activity: t('analytics.category.activity'),
+        product: t('analytics.category.product'),
+      },
+    },
+    states: { loading: t('analytics.loading'), retry: t('analytics.retry') },
+  }
+}

@@ -1,0 +1,20 @@
+import { currentLocale } from '../../../lib/locale'
+import { ReportPage } from './ReportPage'
+import { queryFrom } from './reporting'
+
+/**
+ * Analytics: the landing report, which is the Overview, beside the list of
+ * every report this caller may open. `[report]/page.tsx` beside this file
+ * renders any other; both share `ReportPage`, so the frame, the gates and
+ * the states are decided once.
+ */
+export const dynamic = 'force-dynamic'
+
+export default async function AnalyticsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const [locale, params] = await Promise.all([currentLocale(), searchParams])
+  return <ReportPage reportKey="usage.overview" query={queryFrom(params)} locale={locale} />
+}

@@ -238,6 +238,63 @@ describe('the ai capability', () => {
   })
 })
 
+// ── the reporting capability ─────────────────────────────────────────────────
+
+describe('the reporting capability', () => {
+  /**
+   * On by default, and off means absent: a product generated without it
+   * carries no router, no pages, no audit migration and no test for them.
+   * The framework package ships regardless, as `koras-ai` does, and so do
+   * the components and the translations, which are inert.
+   */
+  it('generates analytics by default', () => {
+    const gen = generate('product', 'sampleapp-reporting')
+    for (const path of [
+      'services/api/koras_api/routers/reporting.py',
+      'services/api/koras_api/core/reporting.py',
+      'services/api/koras_api/reporting/__init__.py',
+      'services/api/koras_api/reporting/standard.py',
+      'services/api/koras_api/reporting/reports.py',
+      'supabase/migrations/00013_audit_events.sql',
+      'supabase/tests/110_audit_isolation.sql',
+      'apps/web/src/app/dashboard/analytics/page.tsx',
+      'apps/web/src/app/dashboard/analytics/[report]/page.tsx',
+      'apps/web/src/app/api/reports/[key]/export/route.ts',
+      'e2e/analytics.spec.ts',
+      'tests/unit/test_reporting_api.py',
+      'python-packages/koras-reporting/pyproject.toml',
+    ]) {
+      expect(gen.has(path), `${path} missing`).toBe(true)
+    }
+    expect(gen.read('services/api/koras_api/main.py')).toContain('reporting.router')
+    expect(gen.read('services/api/pyproject.toml')).toContain('koras-reporting = { workspace = true }')
+    expect(gen.read('packages/branding/src/index.ts')).toContain("id: 'analytics'")
+    expect(gen.read('services/worker/koras_worker/worker.py')).toContain('purge_audit_history')
+    expect(gen.read(PROJECT_MANIFEST_PATH)).toMatch(/capabilities:[\s\S]*- reporting\n/)
+    // The generated capability list the API reads agrees with the registry's.
+    expect(gen.read('services/api/koras_api/core/reporting.py')).toContain('"reporting",')
+  })
+
+  it('generates none of it without the capability, and the rest still stands', () => {
+    const gen = generate('product', 'sampleapp-noreporting', { without: ['reporting'] })
+    expect(gen.has('services/api/koras_api/routers/reporting.py')).toBe(false)
+    expect(gen.has('services/api/koras_api/core/reporting.py')).toBe(false)
+    expect(gen.has('services/api/koras_api/reporting')).toBe(false)
+    expect(gen.has('supabase/migrations/00013_audit_events.sql')).toBe(false)
+    expect(gen.has('apps/web/src/app/dashboard/analytics')).toBe(false)
+    expect(gen.has('apps/web/src/app/api/reports')).toBe(false)
+    expect(gen.has('e2e/analytics.spec.ts')).toBe(false)
+    expect(gen.has('tests/unit/test_reporting_api.py')).toBe(false)
+    expect(gen.has('python-packages/koras-reporting')).toBe(true)
+    expect(gen.read('services/api/koras_api/main.py')).not.toContain('reporting.router')
+    expect(gen.read('services/api/pyproject.toml')).not.toContain('koras-reporting')
+    expect(gen.read('packages/branding/src/index.ts')).not.toContain("id: 'analytics'")
+    expect(gen.read('services/worker/koras_worker/worker.py')).not.toContain('purge_audit_history')
+    expect(gen.read('services/worker/koras_worker/worker.py')).not.toContain('from arq import cron')
+    expect(gen.read('local/config/secrets.manifest')).not.toContain('AUDIT_RETENTION_DAYS')
+  })
+})
+
 // ── control-plane profile ────────────────────────────────────────────────────
 
 describe('generate control-plane', () => {

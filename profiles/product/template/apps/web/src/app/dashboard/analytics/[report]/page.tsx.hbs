@@ -1,0 +1,21 @@
+import { currentLocale } from '../../../../lib/locale'
+import { ReportPage } from '../ReportPage'
+import { queryFrom } from '../reporting'
+
+/**
+ * Any report by key, from the catalogue the API answers. A key the caller
+ * may not have is a 404 from the API and an error state here -- the list
+ * never offered it, so the page does not pretend it exists.
+ */
+export const dynamic = 'force-dynamic'
+
+export default async function AnalyticsReportPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ report: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const [{ report }, query, locale] = await Promise.all([params, searchParams, currentLocale()])
+  return <ReportPage reportKey={report} query={queryFrom(query)} locale={locale} />
+}

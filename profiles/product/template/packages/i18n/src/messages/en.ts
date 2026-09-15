@@ -316,15 +316,53 @@ export const en = {
   'insights.title': 'Insights',
   'insights.notInPlan': 'Insights is not part of your plan. Speak to us about adding it.',
 
-  'reports.title': 'Reports',
-  'reports.notIncluded.title': 'Not included in your plan',
-  'reports.notIncluded.description':
-    'Advanced reporting is part of a higher plan. Your current plan is <strong>{plan}</strong>.',
-  'reports.notIncluded.notRecorded': 'not recorded',
-  'reports.unresolved':
-    "Your plan could not be read from the KORAS platform just now, so this may be available to you. The reason is in this deployment's server log.",
-  'reports.included':
-    'Included in your plan. Build the real thing here — this page exists so the plan gate has somewhere to lead, and so the pattern is visible before anyone needs it.',
+  /* ------------------------------------------------------------ analytics */
+  'analytics.title': 'Analytics',
+  'analytics.unresolved':
+    "Your plan could not be read from the KORAS platform just now, so only the reports every plan includes are shown. The reason is in this deployment's server log.",
+  'analytics.notIncluded.title': 'Not included in your plan',
+  'analytics.notIncluded.description':
+    'Analytics is part of a higher plan. Your current plan is <strong>{plan}</strong>. An administrator of your organisation can change the plan in the account portal.',
+  'analytics.notIncluded.notRecorded': 'not recorded',
+  'analytics.of': '{used} of {limit}',
+  'analytics.previousPeriod': 'vs the previous period',
+  'analytics.trend.up': 'Up',
+  'analytics.trend.down': 'Down',
+  'analytics.trend.unchanged': 'Unchanged',
+  'analytics.kind.estimated': 'Estimated',
+  'analytics.kind.derived': 'Derived',
+  'analytics.kind.unavailable': 'Not available',
+  'analytics.chart.asTable': 'Show as a table',
+  'analytics.chart.noData': 'Nothing in this period.',
+  'analytics.chart.value': 'Value',
+  'analytics.chart.period': 'Period',
+  'analytics.table.empty': 'Nothing to show for this period.',
+  'analytics.table.truncated':
+    'Only the first rows are shown. Narrow the period to see everything.',
+  'analytics.filters.period': 'Period',
+  'analytics.filters.from': 'From',
+  'analytics.filters.to': 'To',
+  'analytics.filters.apply': 'Apply',
+  'analytics.export.download': 'Download CSV',
+  'analytics.export.notAllowed': 'Downloading is not included in your plan or your role.',
+  'analytics.list.heading': 'Reports',
+  'analytics.category.overview': 'Overview',
+  'analytics.category.usage': 'Usage',
+  'analytics.category.people': 'People',
+  'analytics.category.billing': 'Billing',
+  'analytics.category.ai': 'AI',
+  'analytics.category.activity': 'Activity',
+  'analytics.category.product': 'This product',
+  'analytics.loading': 'Loading the report…',
+  'analytics.retry': 'Try again',
+  'analytics.error.plan': 'Your plan does not include this report.',
+  'analytics.error.forbidden': 'Your account may not open this report.',
+  'analytics.error.filters': 'Those filters are not ones this report accepts.',
+  'analytics.error.export': 'Your plan does not include downloading reports.',
+  'analytics.error.tooLarge': 'The download would be too large. Narrow the period and try again.',
+  'analytics.error.unavailable':
+    'Analytics is not available right now. The reason is in the server log.',
+  'analytics.error.generic': 'Something went wrong. Try again.',
 
   /* ------------------------------------------------------------- settings */
   'settings.title': 'Settings',
