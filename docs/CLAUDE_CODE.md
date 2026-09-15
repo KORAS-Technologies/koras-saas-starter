@@ -21,8 +21,14 @@ koras-saas-starter/
     external-skills.yaml                     what is vendored, and from where
     external-skills.lock.json                the exact commit of each
 
-  profiles/product/template/.claude/skills/
-      koras-profile-product/                 ← OVERLAY. Product only.
+  profiles/product/template/.claude/           ← OVERLAY. Product only.
+      skills/koras-profile-product/            the profile skill
+      orchestration/                           the multi-agent framework
+      agents/<category>/                       40 engineering agent definitions
+      commands/                                5 orchestration commands
+      domain/                                  domain contract, template, example
+      templates/feature/                       feature documentation templates
+      AGENT-INVENTORY.md MASTER-PROMPT.md PRODUCT-USAGE-EXAMPLES.md
 
   profiles/control-plane/template/.claude/skills/
       koras-profile-control-plane/           ← OVERLAY. Control Plane only.
@@ -32,6 +38,26 @@ koras-saas-starter/
 copy of the common tree per profile. That duplication is the mechanism behind
 most of this repository's recurring defects — a fix lands in one profile and the
 other keeps the old version — and `docs/SYNC_BACKLOG.md` exists because of it.
+
+### The multi-agent framework is product-only, and that is why it is an overlay
+
+The 40-agent engineering framework belongs to the `product` profile. It could
+not be placed in the root `.claude`: that directory is a `shared_asset`, copied
+verbatim and **unconditionally into both profiles**, so anything put there
+reaches the Control Plane too. A Control Plane repository carrying a
+customer-product orchestration contract looks entirely normal until an agent
+follows it.
+
+So it is template-owned, exactly like the profile skills, and both directions
+are asserted by `generators/create-koras-app/tests/orchestration.test.ts`: a
+product must have it, and the Control Plane must not.
+
+The same test also checks what nothing else can — that the registry's agent
+count matches the number of definition files, that every id named in
+`workflow.yaml`, `activation-rules.yaml` and `quality-gates.yaml` resolves to a
+registered agent, that every documented file has a template, and that the 40
+definitions are not 40 copies of one file. Configuration describing other
+configuration fails silently; this is what makes it fail loudly.
 
 ### Why the skills are flat
 

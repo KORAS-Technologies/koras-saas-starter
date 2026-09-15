@@ -1,0 +1,104 @@
+schema_version: 1
+
+# The gates a feature passes through, and the four points at which a human -
+# not an agent - decides.
+
+human_gates:
+  start_planner_recommended_feature:
+    required: true
+    description: The Product Planner recommends; a human authorizes the start. A recommendation is never an approval.
+  material_architecture_change:
+    required: true
+    description: A new pattern, framework, boundary or incompatible contract change is a human decision.
+  merge_to_protected_branch:
+    required: true
+    description: No agent merges to a protected branch. Final Acceptance READY enables this gate; it does not satisfy it.
+  production_deployment:
+    required: true
+    description: No agent deploys to production.
+
+blocking_severities: [CRITICAL, HIGH]
+
+# Each gate names the agent that reports it. `independent: true` means the
+# agent that implemented the work may never be the one that closes the gate.
+feature_gates:
+  - id: requirements_ready
+    owner: business-analyst
+    applies: always
+  - id: impact_analyzed
+    owner: impact-analysis
+    applies: always
+  - id: architecture_ready
+    owner: solution-architect
+    applies: always
+  - id: implementation_complete
+    owner: developer_pool
+    applies: always
+  - id: automated_tests_pass
+    owner: unit-test
+    applies: always
+    evidence: Actual executed results. A claim is not a result.
+  - id: api_integration_tests_pass
+    owner: api-integration-test
+    applies: api_or_integration_or_database
+  - id: e2e_pass
+    owner: e2e-test
+    applies: user_facing
+  - id: manual_qa_pass
+    owner: manual-qa
+    applies: user_facing
+    independent: true
+    evidence: Per-case PASS/FAIL/BLOCKED against a real environment, with build and account context.
+  - id: screenshot_evidence_complete
+    owner: test-documentation
+    applies: user_facing
+    evidence: Genuine screenshots from executed steps, at the canonical paths.
+  - id: accessibility_pass
+    owner: accessibility-qa
+    applies: user_facing
+  - id: independent_code_review
+    owner: code-reviewer
+    applies: always
+    independent: true
+  - id: architecture_review
+    owner: architecture-reviewer
+    applies: architecture_impact
+    independent: true
+  - id: security_review
+    owner: security-reviewer
+    applies: security_risk_triggered
+    independent: true
+  - id: privacy_review
+    owner: privacy-compliance-reviewer
+    applies: sensitive_or_regulated_data
+    independent: true
+  - id: ai_evaluation
+    owner: ai-evaluation
+    applies: ai
+    independent: true
+  - id: domain_review
+    owner: domain_registry
+    applies: domain_feature
+    independent: true
+    note: Resolved from .claude/domain/domain-registry.yaml, which each product owns.
+  - id: qa_evidence_audit
+    owner: qa-reviewer
+    applies: user_facing
+    independent: true
+  - id: documentation_complete
+    owner: technical-writer
+    applies: user_or_operator_visible_change
+  - id: regression_pass
+    owner: integration-regression
+    applies: cross_feature_or_shared_contract_or_release
+  - id: final_acceptance
+    owner: final-acceptance
+    applies: always
+    independent: true
+
+rules:
+  - An implementation agent never closes a gate marked independent for its own work.
+  - A CRITICAL or HIGH finding blocks its gate until fixed and independently reverified.
+  - A gate whose evidence was not produced is not passed; it is incomplete.
+  - BLOCKED is a valid manual QA outcome. It is never counted as a pass.
+  - Final Acceptance reports READY or NOT READY. READY is not authorization to merge or deploy.

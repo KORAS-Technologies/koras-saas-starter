@@ -1,0 +1,49 @@
+schema_version: 1
+
+# EXAMPLE configuration. Copy to `product-profile.yaml` in this directory and
+# edit it for the product. This `.example` file ships with the starter and is
+# never read at runtime; `product-profile.yaml` is product-created and is not
+# provided, because its values are per-product decisions.
+
+engineering:
+  orchestration:
+    enabled: true
+    max_parallel_developers: 3
+    isolated_worktrees: true
+    # Relative to the repository parent. See WORKTREE-STANDARD.md.
+    worktree_root: ../.koras-worktrees
+
+  planning:
+    recommend_next_features: 3
+    generate_implementation_prompt: true
+    # Turning this off means an agent may start work a human has not approved.
+    # The starter ships it on, and turning it off is a deliberate product
+    # decision with a documented reason.
+    require_human_approval_to_start: true
+
+  testing:
+    unit: true
+    api_integration: true
+    e2e: true
+    manual: true
+    screenshot_evidence: true
+    accessibility: true
+
+  review:
+    independent_code_review: true
+    architecture_by_impact: true
+    security_by_risk: true
+    privacy_by_data_class: true
+    domain_by_feature: true
+    ai_evaluation_by_capability: true
+
+  gates:
+    start_planner_recommended_feature: human
+    material_architecture_change: human
+    merge_to_protected_branch: human
+    production_deployment: human
+
+product_domain:
+  # Product-created. The starter ships `domain-registry.example.yaml` and the
+  # agent template; it ships no domain facts. See .claude/domain/README.md.
+  registry: .claude/domain/domain-registry.yaml

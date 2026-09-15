@@ -113,6 +113,42 @@ registry. Both are inherited from the starter; neither is a component to fork.
 
 See `docs/PRODUCT_APP_SHELL.md` in the starter for the full standard.
 
+## Multi-agent engineering
+
+This repository carries the Koras multi-agent engineering framework, in
+`.claude/orchestration/`. The Control Plane does not, and must not: it is a
+product-profile capability, template-owned here rather than shared.
+
+- **Forty agents, almost all dormant.** `.claude/orchestration/agent-registry.yaml`
+  is a catalog of reusable role definitions, not a set of running processes.
+  `activation-rules.yaml` decides which of them a given feature needs.
+  Activating all forty for one feature is a defect in orchestration.
+- **The Planner recommends; a human authorizes.** `/plan-next` returns three
+  ranked ready features and an implementation prompt, and stops. Starting
+  planner-recommended work is one of four human gates, alongside material
+  architecture changes, merging to a protected branch, and production release.
+- **Three workers, three worktrees.** DEV-1, DEV-2 and DEV-3 may implement up
+  to three features concurrently, each in its own Git worktree and branch at
+  the canonical location in `.claude/orchestration/WORKTREE-STANDARD.md` —
+  which is deliberately *outside* the repository. Two workers never share a
+  working directory. Before parallelizing, the Orchestrator computes file,
+  contract and migration overlap; features that overlap are sequenced.
+- **No agent approves its own work.** The gates marked `independent` in
+  `quality-gates.yaml` must be closed by an agent that did not implement the
+  change.
+- **Evidence is executed, never composed.** Manual QA runs against a real
+  environment and reports PASS, FAIL or BLOCKED. A screenshot comes from the
+  step it documents. BLOCKED, with a reason, is the correct answer when
+  execution is impossible; an invented PASS never is.
+- **Domain knowledge stays in `.claude/domain/`.** The forty shared agents are
+  identical in every KORAS product and carry no product business rules. This
+  product's rules live in its own domain overlay, and a rule copied into a
+  shared agent is a defect.
+
+`.claude/orchestration/definition-of-done.md` is what "done" means here, and
+`documentation-policy.yaml` is authoritative for where feature documentation
+and QA evidence go.
+
 ## Testing
 
 Alongside the common expectations in `koras-testing`, a product change is not

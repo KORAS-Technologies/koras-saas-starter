@@ -2,6 +2,8 @@ import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   CLAUDE_CONFIG_PATHS,
+  PRODUCT_ORCHESTRATION_PATHS,
+  PROFILE_CARRIES_ORCHESTRATION,
   claudeProfileSkillPath,
 } from './claude-config.js'
 import {
@@ -95,15 +97,42 @@ export function validateGeneratedProject(params: {
  * failure this exists to catch.
  */
 function missingClaudeConfig(projectRoot: string, profile: string): string | undefined {
-  const required = [...CLAUDE_CONFIG_PATHS, claudeProfileSkillPath(profile)]
-  const missing = required.filter((path) => !existsSync(join(projectRoot, path)))
-  if (missing.length === 0) return undefined
+  const carriesOrchestration = PROFILE_CARRIES_ORCHESTRATION[profile] === true
 
-  return [
-    'The generated project is missing its Claude Code configuration:',
-    ...missing.map((path) => `  ${path}`),
-    '  The common tree is a shared_asset (`.claude`) declared in ' +
-      `profiles/${profile}/manifest.yaml;`,
-    `  the profile skill is template-owned at profiles/${profile}/template/.claude/skills/.`,
-  ].join('\n')
+  const required = [
+    ...CLAUDE_CONFIG_PATHS,
+    claudeProfileSkillPath(profile),
+    ...(carriesOrchestration ? PRODUCT_ORCHESTRATION_PATHS : []),
+  ]
+  const missing = required.filter((path) => !existsSync(join(projectRoot, path)))
+  if (missing.length > 0) {
+    return [
+      'The generated project is missing its Claude Code configuration:',
+      ...missing.map((path) => `  ${path}`),
+      '  The common tree is a shared_asset (`.claude`) declared in ' +
+        `profiles/${profile}/manifest.yaml;`,
+      `  the profile skill and the orchestration framework are template-owned at`,
+      `  profiles/${profile}/template/.claude/.`,
+    ].join('\n')
+  }
+
+  // The other direction, and the one that fails quietly. `.claude` is copied
+  // verbatim into both profiles, so anything that leaked into the shared tree
+  // reaches the Control Plane as well -- where a customer-product
+  // orchestration contract looks entirely normal until an agent follows it.
+  if (!carriesOrchestration) {
+    const leaked = PRODUCT_ORCHESTRATION_PATHS.filter((path) =>
+      existsSync(join(projectRoot, path)),
+    )
+    if (leaked.length > 0) {
+      return [
+        `A "${profile}" project carries the product multi-agent framework, which is product-only:`,
+        ...leaked.map((path) => `  ${path}`),
+        '  It must live in profiles/product/template/.claude/, never in the',
+        '  starter root `.claude`, which is a shared_asset copied to both profiles.',
+      ].join('\n')
+    }
+  }
+
+  return undefined
 }

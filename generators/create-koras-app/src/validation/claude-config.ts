@@ -52,6 +52,49 @@ export const CLAUDE_PROFILE_SKILLS: Record<string, string> = {
   'control-plane': 'koras-profile-control-plane',
 }
 
+/**
+ * The multi-agent engineering framework, which belongs to the product profile
+ * alone.
+ *
+ * It cannot travel as part of the `.claude` shared asset: that directory is
+ * copied verbatim and unconditionally into *both* profiles, so anything placed
+ * there reaches the Control Plane too. It is template-owned at
+ * `profiles/product/template/.claude/` instead — the same mechanism that keeps
+ * the profile skills apart, and for the same reason.
+ *
+ * Both halves are asserted. A product missing the framework is a generation
+ * failure; a Control Plane carrying it is the quieter one, and the one worth
+ * catching — a Control Plane repository with a customer-product orchestration
+ * contract in it looks entirely normal until an agent follows it.
+ */
+export const PRODUCT_ORCHESTRATION_PATHS = [
+  '.claude/orchestration/agent-registry.yaml',
+  '.claude/orchestration/activation-rules.yaml',
+  '.claude/orchestration/workflow.yaml',
+  '.claude/orchestration/quality-gates.yaml',
+  '.claude/orchestration/documentation-policy.yaml',
+  '.claude/orchestration/definition-of-done.md',
+  '.claude/orchestration/WORKTREE-STANDARD.md',
+  '.claude/AGENT-INVENTORY.md',
+  '.claude/MASTER-PROMPT.md',
+  // One agent from each end of the registry, and the domain contract. Proof
+  // the trees arrived rather than the directories; the orchestration test is
+  // what checks all forty.
+  '.claude/agents/orchestration/engineering-orchestrator.md',
+  '.claude/agents/development/developer-3.md',
+  '.claude/agents/testing/manual-qa.md',
+  '.claude/domain/DOMAIN-AGENT-TEMPLATE.md',
+] as const
+
+/** The three parallel implementation worker slots. Exactly three, by design. */
+export const DEVELOPER_WORKERS = ['developer-1', 'developer-2', 'developer-3'] as const
+
+/** Profile name -> orchestration framework expected, or expected absent. */
+export const PROFILE_CARRIES_ORCHESTRATION: Record<string, boolean> = {
+  product: true,
+  'control-plane': false,
+}
+
 export function claudeSkillPath(skill: string): string {
   return `.claude/skills/${skill}/SKILL.md`
 }

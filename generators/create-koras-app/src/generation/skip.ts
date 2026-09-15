@@ -51,4 +51,22 @@ export const SKIP_ENTRIES: ReadonlySet<string> = new Set([
   // tests are the mild version of this; the real one is a product shipping
   // with somebody's half-finished branch in it.
   'worktrees',
+  // The canonical Koras worktree location, named in
+  // `.claude/orchestration/WORKTREE-STANDARD.md`. That standard puts worktrees
+  // outside the repository, where no walk can reach them -- so this entry is
+  // defence in depth rather than the primary control. It matters because the
+  // standard is a rule an agent can break and this is a mechanism it cannot:
+  // a worker that creates `.koras-worktrees/` in the wrong place still cannot
+  // ship it into a customer's repository.
+  '.koras-worktrees',
 ])
+
+/**
+ * Path segments that mean "a git worktree lives here", in any position.
+ *
+ * `SKIP_ENTRIES` stops the walk from descending into one. This set exists for
+ * the assertion afterwards: a generated project must contain no such path, by
+ * whatever route it arrived. Kept beside the skip list because the two answer
+ * the same question and must not drift.
+ */
+export const WORKTREE_SEGMENTS: ReadonlySet<string> = new Set(['worktrees', '.koras-worktrees'])

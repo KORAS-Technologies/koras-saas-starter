@@ -1,0 +1,93 @@
+schema_version: 1
+
+# The canonical feature documentation structure for a KORAS product.
+#
+# This file is authoritative. Where an agent definition, a command, a template
+# or an example disagrees with it, this file wins and the other is the defect.
+# The V2 package shipped two incompatible layouts -- a flat one here and a
+# numbered-directory one in the usage examples -- which is how QA evidence ends
+# up in two places and the evidence reviewer cannot find it.
+
+documentation:
+  root_pattern: docs/features/<feature-id>-<slug>
+
+  # Six sections, named rather than numbered. Numbering encodes an order that
+  # the work does not actually follow: security review and documentation both
+  # run more than once, and a numbered prefix makes every such directory look
+  # out of sequence.
+  sections:
+    requirements: requirements/
+    design: design/
+    testing: testing/
+    security: security/
+    documentation: documentation/
+    release: release/
+
+  required_for_all_features:
+    - requirements/user-story.md
+    - design/technical-design.md
+    - testing/test-plan.md
+    - release/release-notes.md
+
+  required_for_user_facing_features:
+    - design/ux-design.md
+    - testing/manual/manual-test-guide.md
+    - testing/manual/manual-test-results.md
+    - testing/manual/screenshots/
+    - documentation/user-guide.md
+
+  conditional:
+    design/functional-design.md: business_workflow_or_ui_change
+    documentation/admin-guide.md: configurable_or_operational_feature
+    security/threat-model.md: security_or_sensitive_data
+    security/security-review.md: security_or_sensitive_data
+    testing/regression-results.md: cross_feature_or_shared_contract_or_release
+    testing/automated-test-results.md: any_automated_verification_executed
+
+  # One path shape for evidence, so `qa-reviewer` can check it mechanically.
+  #   testing/manual/screenshots/<test-case-id>/step-01-<description>.png
+  screenshot_path: testing/manual/screenshots/<test-case-id>/
+  screenshot_naming: step-<nn>-<description>.png
+
+  templates:
+    root: .claude/templates/feature
+    map:
+      requirements/user-story.md: user-story.md
+      design/technical-design.md: technical-design.md
+      design/functional-design.md: functional-design.md
+      design/ux-design.md: ux-design.md
+      testing/test-plan.md: test-plan.md
+      testing/automated-test-results.md: automated-test-results.md
+      testing/regression-results.md: regression-results.md
+      testing/manual/manual-test-guide.md: manual-test-guide.md
+      testing/manual/manual-test-results.md: manual-test-results.md
+      security/threat-model.md: threat-model.md
+      security/security-review.md: security-review.md
+      documentation/user-guide.md: user-guide.md
+      documentation/admin-guide.md: admin-guide.md
+      release/release-notes.md: release-notes.md
+
+  # Every manual test case carries all of these. `test-documentation` writes
+  # them; `qa-reviewer` checks that none is missing.
+  test_case_fields:
+    - test_case_id
+    - objective
+    - priority
+    - preconditions
+    - test_data
+    - numbered_steps
+    - expected_result
+    - actual_result
+    - verdict          # PASS | FAIL | BLOCKED, and nothing else
+    - evidence_reference
+
+  evidence_rules:
+    actual_execution_only: true
+    no_fabricated_screenshots: true
+    screenshots_from_executed_steps_only: true
+    expected_and_actual_required: true
+    verdicts: [PASS, FAIL, BLOCKED]
+    blocked_requires_documented_reason: true
+    commit_and_environment_required: true
+    tester_and_run_date_required: true
+    automated_results_do_not_satisfy_manual_gate: true

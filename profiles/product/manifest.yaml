@@ -177,5 +177,14 @@ shared_assets:
   # The profile overlay is NOT here. Each profile's template carries its own
   # `.claude/skills/koras-profile-<profile>/`, which is how a product never
   # receives control-plane instructions and vice versa.
+  #
+  # Neither is the multi-agent engineering framework — the 40-agent registry,
+  # the orchestration contract, the domain framework and the feature
+  # documentation templates. Those are product-only, and this mechanism copies
+  # unconditionally into both profiles, so placing them here would hand the
+  # Control Plane a customer-product orchestration contract. They live in
+  # `profiles/product/template/.claude/` instead, and
+  # `tests/orchestration.test.ts` asserts both that a product receives them and
+  # that the Control Plane does not.
   - source: .claude
     target: .claude

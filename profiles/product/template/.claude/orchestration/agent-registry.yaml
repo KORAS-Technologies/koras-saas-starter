@@ -1,0 +1,248 @@
+schema_version: 1
+
+# The shared engineering agent catalog for a KORAS product repository.
+#
+# These are reusable role definitions, not persistent processes. Almost all of
+# them are dormant for any given feature: the Engineering Orchestrator selects
+# the minimum set that the feature type, its risk and the Definition of Done
+# actually require. Invoking all 40 is a defect in orchestration.
+#
+# Product-specific domain agents are NOT listed here. They are product-owned
+# overlays under `.claude/domain/`, registered in that directory's own
+# registry, so that the shared catalog stays domain-neutral and identical
+# across every KORAS product.
+#
+# `agent_count` is asserted against the number of entries below and against
+# the number of files on disk by the orchestration validation test. It cannot
+# drift from either without a test failing.
+
+developer_pool:
+  workers: [developer-1, developer-2, developer-3]
+  max_parallel: 3
+  isolation: git-worktree
+  # The canonical Koras worktree location, deliberately OUTSIDE the repository.
+  # A worktree created inside the repository -- and `.claude/` in particular --
+  # is copied into every generated project as part of a shared asset. One
+  # existed on 2026-09-15 and shipped a second copy of the starter, .git file
+  # and half-finished branch included.
+  worktree_root: ../.koras-worktrees
+  worktree_path: ../.koras-worktrees/<repository>/<feature-id>
+  branch_pattern: feature/<feature-id>-<slug>
+  rules:
+    - One worker, one worktree, one branch, one feature at a time.
+    - Two workers never share a working directory or a branch.
+    - The Orchestrator performs file-overlap and contract-overlap analysis before assigning concurrent work.
+    - Features that overlap on files, contracts or migrations are sequenced, not parallelized.
+    - A worker never merges, rebases onto a protected branch, force-pushes or deploys.
+
+agents:
+  - id: engineering-orchestrator
+    category: orchestration
+    title: Engineering Orchestrator
+    definition: .claude/agents/orchestration/engineering-orchestrator.md
+    modifies_production_code: no
+  - id: product-planner
+    category: planning
+    title: Product & Feature Planner
+    definition: .claude/agents/planning/product-planner.md
+    modifies_production_code: no
+  - id: business-analyst
+    category: planning
+    title: Business Analyst
+    definition: .claude/agents/planning/business-analyst.md
+    modifies_production_code: no
+  - id: solution-architect
+    category: planning
+    title: Solution Architect
+    definition: .claude/agents/planning/solution-architect.md
+    modifies_production_code: no
+  - id: data-architect
+    category: planning
+    title: Data Architect
+    definition: .claude/agents/planning/data-architect.md
+    modifies_production_code: no
+  - id: security-architect
+    category: planning
+    title: Security Architect
+    definition: .claude/agents/planning/security-architect.md
+    modifies_production_code: no
+  - id: ux-ui-designer
+    category: planning
+    title: UX/UI Designer
+    definition: .claude/agents/planning/ux-ui-designer.md
+    modifies_production_code: no
+  - id: impact-analysis
+    category: planning
+    title: Dependency & Impact Analyst
+    definition: .claude/agents/planning/impact-analysis.md
+    modifies_production_code: no
+  - id: developer-1
+    category: development
+    title: Developer Worker 1 (DEV-1)
+    definition: .claude/agents/development/developer-1.md
+    modifies_production_code: yes
+  - id: developer-2
+    category: development
+    title: Developer Worker 2 (DEV-2)
+    definition: .claude/agents/development/developer-2.md
+    modifies_production_code: yes
+  - id: developer-3
+    category: development
+    title: Developer Worker 3 (DEV-3)
+    definition: .claude/agents/development/developer-3.md
+    modifies_production_code: yes
+  - id: frontend-specialist
+    category: development
+    title: Frontend Specialist
+    definition: .claude/agents/development/frontend-specialist.md
+    modifies_production_code: yes
+  - id: backend-specialist
+    category: development
+    title: Backend / API Specialist
+    definition: .claude/agents/development/backend-specialist.md
+    modifies_production_code: yes
+  - id: database-specialist
+    category: development
+    title: Database Specialist
+    definition: .claude/agents/development/database-specialist.md
+    modifies_production_code: yes
+  - id: integration-specialist
+    category: development
+    title: Integration Specialist
+    definition: .claude/agents/development/integration-specialist.md
+    modifies_production_code: yes
+  - id: ai-specialist
+    category: development
+    title: AI / LLM Specialist
+    definition: .claude/agents/development/ai-specialist.md
+    modifies_production_code: yes
+  - id: workflow-specialist
+    category: development
+    title: Workflow & Automation Specialist
+    definition: .claude/agents/development/workflow-specialist.md
+    modifies_production_code: yes
+  - id: test-data
+    category: testing
+    title: Test Data Agent
+    definition: .claude/agents/testing/test-data.md
+    modifies_production_code: limited
+  - id: unit-test
+    category: testing
+    title: Unit & Component Test Agent
+    definition: .claude/agents/testing/unit-test.md
+    modifies_production_code: limited
+  - id: api-integration-test
+    category: testing
+    title: API & Integration Test Agent
+    definition: .claude/agents/testing/api-integration-test.md
+    modifies_production_code: limited
+  - id: e2e-test
+    category: testing
+    title: E2E Automation Agent
+    definition: .claude/agents/testing/e2e-test.md
+    modifies_production_code: limited
+  - id: manual-qa
+    category: testing
+    title: Manual QA Agent
+    definition: .claude/agents/testing/manual-qa.md
+    modifies_production_code: no
+  - id: accessibility-qa
+    category: testing
+    title: Accessibility QA Agent
+    definition: .claude/agents/testing/accessibility-qa.md
+    modifies_production_code: limited
+  - id: performance-qa
+    category: testing
+    title: Performance QA Agent
+    definition: .claude/agents/testing/performance-qa.md
+    modifies_production_code: limited
+  - id: security-test
+    category: testing
+    title: Security Testing Agent
+    definition: .claude/agents/testing/security-test.md
+    modifies_production_code: limited
+  - id: ai-evaluation
+    category: testing
+    title: AI Evaluation Agent
+    definition: .claude/agents/testing/ai-evaluation.md
+    modifies_production_code: limited
+  - id: bug-triage
+    category: testing
+    title: Bug & Failure Triage Agent
+    definition: .claude/agents/testing/bug-triage.md
+    modifies_production_code: no
+  - id: code-reviewer
+    category: review
+    title: Code Reviewer
+    definition: .claude/agents/review/code-reviewer.md
+    modifies_production_code: no
+  - id: architecture-reviewer
+    category: review
+    title: Architecture Reviewer
+    definition: .claude/agents/review/architecture-reviewer.md
+    modifies_production_code: no
+  - id: security-reviewer
+    category: review
+    title: Security Reviewer
+    definition: .claude/agents/review/security-reviewer.md
+    modifies_production_code: no
+  - id: qa-reviewer
+    category: review
+    title: QA Evidence Reviewer
+    definition: .claude/agents/review/qa-reviewer.md
+    modifies_production_code: no
+  - id: privacy-compliance-reviewer
+    category: review
+    title: Privacy & Compliance Reviewer
+    definition: .claude/agents/review/privacy-compliance-reviewer.md
+    modifies_production_code: no
+  - id: test-documentation
+    category: documentation
+    title: Test Documentation Agent
+    definition: .claude/agents/documentation/test-documentation.md
+    modifies_production_code: limited
+  - id: technical-writer
+    category: documentation
+    title: Technical Writer
+    definition: .claude/agents/documentation/technical-writer.md
+    modifies_production_code: limited
+  - id: migration-upgrade
+    category: delivery
+    title: Migration & Upgrade Agent
+    definition: .claude/agents/delivery/migration-upgrade.md
+    modifies_production_code: limited
+  - id: devops-cicd
+    category: delivery
+    title: DevOps & CI/CD Agent
+    definition: .claude/agents/delivery/devops-cicd.md
+    modifies_production_code: yes
+  - id: observability-sre
+    category: delivery
+    title: Observability & SRE Agent
+    definition: .claude/agents/delivery/observability-sre.md
+    modifies_production_code: yes
+  - id: release-manager
+    category: delivery
+    title: Release Manager
+    definition: .claude/agents/delivery/release-manager.md
+    modifies_production_code: limited
+  - id: integration-regression
+    category: delivery
+    title: Integration & Regression Agent
+    definition: .claude/agents/delivery/integration-regression.md
+    modifies_production_code: limited
+  - id: final-acceptance
+    category: delivery
+    title: Final Acceptance Agent
+    definition: .claude/agents/delivery/final-acceptance.md
+    modifies_production_code: no
+
+agent_count: 40
+category_counts:
+  orchestration: 1
+  planning: 7
+  development: 9
+  testing: 10
+  review: 5
+  documentation: 2
+  delivery: 6

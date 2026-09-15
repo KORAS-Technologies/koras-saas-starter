@@ -1,0 +1,63 @@
+schema_version: 1
+
+# How an approved feature moves through the agents. Every agent id below is
+# validated against agent-registry.yaml by the orchestration test, so a rename
+# cannot leave a dangling reference here.
+
+workflow:
+  planning:
+    sequence: [product-planner, impact-analysis, business-analyst, solution-architect]
+    # The Planner recommends. It does not authorize, and it does not start.
+    human_gate: start_planner_recommended_feature
+
+  execution:
+    coordinator: engineering-orchestrator
+    developer_pool: [developer-1, developer-2, developer-3]
+    max_parallel_developers: 3
+    isolation: git-worktree
+    # Required before any concurrent assignment. Two features that touch the
+    # same files, contracts or migrations are sequenced, not parallelized.
+    pre_parallel_checks:
+      - dependency_graph
+      - file_overlap_analysis
+      - contract_overlap_analysis
+      - migration_ordering
+
+  verification:
+    # Always run, for every feature.
+    default:
+      - unit-test
+      - code-reviewer
+      - final-acceptance
+    # Added by feature shape. See activation-rules.yaml.
+    conditional_from: .claude/orchestration/activation-rules.yaml
+    # Never satisfied by the agent that implemented the work.
+    independence_required:
+      - code-reviewer
+      - architecture-reviewer
+      - security-reviewer
+      - qa-reviewer
+      - ai-evaluation
+      - final-acceptance
+
+  rework:
+    failed_gate_route: bug-triage
+    # The agent that fixed a defect does not confirm the fix. Re-verification
+    # returns to the agent that originally found it.
+    require_independent_reverification: true
+    blocking_severities: [CRITICAL, HIGH]
+
+  integration:
+    # Run before Final Acceptance whenever scope is wider than one feature.
+    agent: integration-regression
+    required_when:
+      - concurrent_features_converging
+      - shared_contract_changed
+      - migration_included
+      - release_assembly
+
+  completion:
+    acceptance: final-acceptance
+    human_gates:
+      - merge_to_protected_branch
+      - production_deployment

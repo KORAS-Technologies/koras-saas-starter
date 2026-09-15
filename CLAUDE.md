@@ -177,6 +177,18 @@ top of it each profile template carries exactly one overlay skill:
 Common configuration plus one profile overlay — never two duplicate trees. A
 generated project identifies its own profile from `.koras/project.yaml`.
 
+**The product profile carries one thing more.** The multi-agent engineering
+framework — 40 agent definitions, the orchestration contract, the domain
+framework and the feature documentation templates — is product-only, at
+`profiles/product/template/.claude/`. It cannot be a `shared_asset`: that
+mechanism copies unconditionally into both profiles, and a Control Plane
+repository carrying a customer-product orchestration contract looks entirely
+normal until an agent follows it. `generators/create-koras-app/tests/orchestration.test.ts`
+asserts both directions, plus the things that otherwise fail silently — that the
+registry count matches the files on disk, that every agent id named in the
+workflow, activation rules and gates resolves, that every documented file has a
+template, and that the 40 definitions are not 40 copies of one file.
+
 This starter is the factory, not a generated project: it carries the common
 configuration and no overlay. Profile rules are *authored* here, not applied
 here.
