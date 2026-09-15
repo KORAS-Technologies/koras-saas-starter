@@ -1952,20 +1952,26 @@ rather than an omission, and each names the seam it plugs into.
 Built 2026-09-14: `docs/REPORTING_ARCHITECTURE.md`. Every line below is a
 decision rather than an omission, and each names the seam it plugs into.
 
-- [ ] **Scheduled delivery.** `reporting.scheduled` is in the catalogue and
-      the worker carries `deliver_scheduled_reports` as an hourly task that
-      logs that nothing is scheduled. What is missing is a tenant-scoped
-      table of schedules, a renderer through the same resolver and `to_csv`,
-      and mail through `koras_email` the way approval notices go. The first
-      product that needs a weekly report builds it there.
-- [ ] **XLSX and PDF.** Declared as `ExportFormat` members with no writer.
-      CSV is what a spreadsheet opens and what a customer asks for first; a
-      PDF is a design question about a branded document before it is a
-      library choice.
-- [ ] **Asynchronous export.** A synchronous export is bounded to
-      `EXPORT_ROW_LIMIT` rows and refuses past it. The larger export is a
-      worker task writing into the tenant's bucket through the storage
-      module and a download ticket the way Files mints one.
+- [x] **Scheduled delivery.** Built 2026-09-14: `report_schedules`
+      (migration 00014), `routers/reporting_schedules.py`, the hourly
+      `deliver_scheduled_reports` in the worker, mail through `koras_email`
+      with the file attached. What it leaves: the plan is not resolved at
+      delivery time -- the worker renders with `UNRESOLVED_PLAN`, so a
+      schedule made while the plan included a report keeps delivering after
+      the plan lapses. Refusing at delivery needs the worker to hold the
+      platform's entitlement contract.
+- [x] **XLSX and PDF.** Built 2026-09-14: `to_xlsx` through `openpyxl`,
+      `to_pdf` through `fpdf2`, one `render()` over the three. The PDF is a
+      plain landscape table with the title and the range; a branded document
+      with the tenant's mark is still a design question.
+- [x] **Asynchronous export.** Built 2026-09-14, in the API rather than the
+      worker: past `EXPORT_ROW_LIMIT`, or on request, the router answers 202
+      and writes the file after the response into the tenant's bucket, the
+      Exports list mints the download, and `REPORT_EXPORT_RETENTION_DAYS`
+      retires old ones on the way to listing. In the API because the worker
+      holds no storage credentials and the resolver already ran; a worker
+      task is the shape to move to when an export outgrows a request's
+      lifetime.
 - [ ] **`reporting.api` enforcement.** Declared in the catalogue and
       granted to Enterprise; every call today carries a person's token and
       the product's own web tier is the only caller, so there is nothing to
@@ -1979,15 +1985,21 @@ decision rather than an omission, and each names the seam it plugs into.
       description come from its definition in English; the page's own
       strings are translated, the definitions are not. A `translations`
       field on `ReportDefinition` keyed by locale is the seam.
-- [ ] **Sign-in and product activity on the platform.** The Control Plane's
-      Usage & Adoption and Security reports read what the platform holds --
-      organization users, audit entries, sign-ins awaiting a factor -- and
-      say so. Activity inside a product reaches the platform only as AI
-      usage today; a second collector for audit counts would follow the
-      same pull.
-- [ ] **A retention setting for the shop's domain.** `AUDIT_RETENTION_DAYS`
-      sweeps `audit_events`; the shop's orders are business records and are
-      kept.
+- [x] **Product activity on the platform.** Built 2026-09-14: the product
+      answers `GET /internal/platform/v1/activity` with counts per tenant,
+      day, action and outcome; the Control Plane's product-activity
+      collector pulls hourly into its daily activity table (its migration
+      00041, the AI usage table's twin) and
+      Usage & Adoption reports actions, customers with activity, actions by
+      product, and the busiest day's people per action. Sign-ins are still
+      not among them: the product records no sign-in event yet, so there is
+      nothing to count.
+- [x] **A retention setting for the shop's domain.** Built 2026-09-14 in
+      `koras-e2e-shop`: a shop retention setting in days, unset by default so
+      orders are kept, a nightly sweep of orders on the provisioning context,
+      the shop's migration 00015 for the one delete policy it needs, and a
+      row-level security test proving a tenant cannot reach another's orders
+      through it.
 
 ### F23 — the sign-in page, on a host of ours — opened 2026-09-09, built 2026-09-11 as the product's own page
 

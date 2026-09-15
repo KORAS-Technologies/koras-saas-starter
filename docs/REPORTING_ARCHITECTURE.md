@@ -312,35 +312,80 @@ date range.
 
 ## Export strategy
 
-CSV first, synchronously, bounded. `to_csv` in the package writes the
-report's rows with a header of column labels, quoting through the standard
-library's writer, and a leading apostrophe on any cell that begins with a
-formula character so a spreadsheet does not execute a tenant's data. The
-route handler in `apps/web/src/app/api/reports/[key]/export/route.ts`
-decides who is calling, asks the API, and streams the bytes with a
-filename naming the report and the range. XLSX and PDF are declared formats
-with no writer; the asynchronous export through the worker and the tenant's
-bucket is described under follow-ups.
+Three formats, one renderer. `render(result, format, title)` in the
+package's `export.py` answers CSV, XLSX or PDF as bytes with a media type:
+CSV through the standard library's writer with a leading apostrophe on any
+cell that begins with a formula character, XLSX through `openpyxl` with the
+same escaping, PDF through `fpdf2` as a landscape table with the report's
+title and range. A definition's `export_formats` defaults to all three; a
+report that should not be a PDF says so.
+
+An export is decided once, in the router: the export permission, the
+export entitlement, a resolved plan, a format the report offers. Up to
+`EXPORT_ROW_LIMIT` rows it is rendered and streamed. Past the bound, or
+when the caller asks with `background=1`, the router inserts a row in
+`report_exports`, answers 202 with the export's id, and writes the file
+after the response into the tenant's bucket at
+`tenants/<tenant>/exports/<id>/<filename>` through the storage module's
+`put`. The Exports list on the report page shows each export's state and
+mints a five-minute download URL for a ready one, the way Files does.
+Exports are retired on the way to listing, once older than
+`REPORT_EXPORT_RETENTION_DAYS` (seven unless set): the object first, then
+the row. The route handler in `apps/web/src/app/api/reports/[key]/export/`
+streams a foreground export and redirects a queued one back to the page
+with a notice.
 
 ## Scheduled reporting
 
-Scaffolded, not delivered. `reporting.scheduled` exists in the catalogue;
-the worker carries `deliver_scheduled_reports` as a registered cron task
-that logs that nothing is scheduled; there is no table of schedules and no
-mail. When a product needs it, the schedule is a tenant-scoped table, the
-task renders through the same resolver and `to_csv`, and the mail goes
-through `koras_email` the way approval notices do.
+A schedule is a tenant-scoped row in `report_schedules` -- the report, a
+cadence of daily, weekly or monthly, a format, up to ten recipients, and
+the report's declared filters other than the period. Creating one takes
+the export permission, the export entitlement and `reporting.scheduled`,
+and validates at creation everything the worker later trusts: the report
+exists and is open to the caller, the format is one it offers, the
+filters are ones it declared, the addresses are shaped like addresses.
+Removing one takes the permission alone, so a customer whose plan lapsed
+can still stop what it sends.
+
+The worker's `deliver_scheduled_reports` runs hourly. On the provisioning
+context it reads the schedules that are due; for each it binds the
+tenant's `app.tenant_id` for one transaction, resolves the report through
+the product's own catalogue for the period the cadence names -- yesterday,
+the last seven days, the previous calendar month, never today -- renders
+it, mails it to each recipient as an attachment through `koras_email`,
+records `report.delivered` in the tenant's audit table, and records the
+run and the next due time on the schedule. A schedule that fails keeps its
+error and its next time. The catalogue reaches the worker by name: the
+worker image carries the API's `koras_api/reporting` package and nothing
+else of the API, and imports it through `importlib` so the dependency
+check does not read it as an undeclared dependency on the API.
+
+What the worker cannot know is the plan at delivery time: it resolves with
+`UNRESOLVED_PLAN`, which the standard reports answer, so a schedule created
+while the plan included a report keeps delivering it if the plan later
+lapses. Refusing at delivery is the next step and needs the worker to hold
+the platform's entitlement contract.
 
 ## Audit
 
 `audit_events`, a general tenant-scoped table added by migration
 `00013_audit_events.sql`, is the second implementation of `AuditSink`.
 `SqlAuditSink` in `core/reporting.py` writes to it; the reporting router
-records `report.exported` for every export and `report.viewed` for every
-sensitive report, with the report key and the range and never the rows. The
+records `report.exported` for every export, `report.export_failed` when a
+background write fails, `report.scheduled` and `report.schedule_removed`,
+and `report.viewed` for every sensitive report, with the report key and
+the range and never the rows; the worker records `report.delivered`. The
 Activity report reads `audit_events` and `ai_audit_events` together. Rows
 are insert-only for a tenant, swept by the worker after
 `AUDIT_RETENTION_DAYS`.
+
+The same table is what the platform collects. `routers/platform_reporting.py`
+answers `GET /internal/platform/v1/activity?since=` on the private contract
+with events and distinct actors per tenant, day, action and outcome for up
+to 92 days -- counts only, no actor ids, targets or details -- and the
+Control Plane's hourly collector keeps them in its daily activity table,
+attributed to the organization each tenant belongs to, for its Usage &
+Adoption report.
 
 ## Control Plane integration
 
@@ -385,7 +430,11 @@ lacks it.
 | registry refusals, filter parsing, visibility, CSV escaping | `python-packages/koras-reporting/tests/` |
 | the six standard resolvers against a stubbed session | `tests/unit/test_reporting_standard.py` |
 | the router: list, definition, data, export, refusals, audit | `tests/unit/test_reporting_api.py` |
+| the three formats, background exports, schedules and their refusals | `tests/unit/test_reporting_schedules.py` |
+| delivery: the period, the tenant binding, the attachment, the recorded run | `tests/unit/test_reporting_delivery.py` |
+| the activity contract's shape and window | `tests/unit/test_platform_activity.py` |
 | the audit table's isolation and insert-only rule | `supabase/tests/110_audit_isolation.sql` |
+| the schedules and exports tables' isolation | `supabase/tests/130_report_schedules_isolation.sql` |
 | the names the sides share, the gated paths, the workflow | `generators/create-koras-app/tests/product-reporting.test.ts` |
 | the module, the locked state, the pages with no API | `e2e/analytics.spec.ts` |
 | platform reports and their role gates | the Control Plane's analytics integration test |
