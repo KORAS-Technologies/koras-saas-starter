@@ -255,6 +255,13 @@ test('a platform asset must be an https URL to a named host', () => {
     'https://api.internal/logo.png',
     'https://printer.local/logo.png',
     'https://user:secret@assets.platform.example/light.svg',
+    // A fully-qualified name: the same host to a resolver, a different string
+    // to a comparison. Both of these reached the fetch until 2026-09-15.
+    'https://localhost./logo.png',
+    'https://vault.internal./logo.png',
+    // The address every cloud puts its instance credentials on.
+    'https://169.254.169.254/latest/meta-data/',
+    'https://[fd00::1]/logo.png',
     '',
     42,
     null,

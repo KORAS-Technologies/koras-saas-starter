@@ -381,7 +381,11 @@ export function isPlatformAssetUrl(value: unknown): value is string {
   }
   if (url.protocol !== 'https:') return false
   if (url.username !== '' || url.password !== '') return false
-  const host = url.hostname.toLowerCase()
+  // The trailing dot is stripped first. `https://localhost./x` keeps it through
+  // URL parsing, means exactly `localhost` to every resolver, and compared as a
+  // string matches none of the rules below -- so without this line the two
+  // cheapest names to reach are the two this list exists to refuse.
+  const host = url.hostname.toLowerCase().replace(/\.$/, '')
   if (host === '' || host === 'localhost' || host.endsWith('.localhost')) return false
   if (host.endsWith('.local') || host.endsWith('.internal')) return false
   // A dotted quad or a bracketed IPv6 literal. A hostname the platform's

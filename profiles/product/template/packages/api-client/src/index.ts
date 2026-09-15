@@ -909,13 +909,31 @@ export function fetchExportDownload(
  *
  * The URL arrives from the Control Plane's branding answer, already through
  * `isPlatformAssetUrl` in the branding package. This is the second gate, at
- * fetch time: `https` again, because a function reachable from more than one
- * caller cannot know the first gate was passed; no redirects, because a
- * redirect is a second URL nobody validated; a size cap, because a logo is not
- * a way to fill a serverless function's memory; and an allowlist of image
- * types, because what is served from this product's origin is trusted by
- * every browser policy this product sets, and an `https` URL a customer typed
- * into a form is not.
+ * fetch time, and it repeats the host rules rather than trusting that the
+ * first one ran: `https`; no credentials in the URL; not `localhost`, `.local`
+ * or `.internal`; and not a raw IPv4 or IPv6 literal, because an address is
+ * how a server gets pointed at something it can reach and a browser cannot.
+ * Then no redirects, because a redirect is a second URL nobody validated; a
+ * size cap, because a logo is not a way to fill a serverless function's
+ * memory; and an allowlist of image types, because what is served from this
+ * product's origin is trusted by every browser policy this product sets, and
+ * an `https` URL a customer typed into a form is not.
+ *
+ * The rules are stated twice on purpose. `api-client` is a leaf and cannot
+ * import `branding`, so the predicate cannot be shared; and a gate that
+ * delegates to a caller having checked is not a gate. `platformAssetHostAllowed`
+ * below and `isPlatformAssetUrl` there are asserted to agree in
+ * `assets.test.ts`.
+ *
+ * **What this does not stop, stated rather than implied.** A name is resolved
+ * by the runtime after this check, so `https://logos.example.com` whose DNS
+ * answers 10.0.0.5 passes it. Closing that means resolving the host here,
+ * refusing every loopback, RFC1918, link-local and unique-local answer, and
+ * connecting to the address rather than the name so the two cannot differ --
+ * which needs the socket, not `fetch`. It is not done here, and what stands in
+ * front of it is that the platform stores only assets on its own storage, the
+ * response must be an image under two megabytes, and no redirect is followed.
+ * FOLLOW_UPS F19 carries it as the open box.
  *
  * Decided 2026-09-15 (FOLLOW_UPS F19). `docs/PRODUCT_FRONTEND.md` has the
  * alternative that was not taken and why.
@@ -923,6 +941,27 @@ export function fetchExportDownload(
 
 /** A logo is small. Two megabytes is generous for one and hostile to nothing. */
 export const PLATFORM_ASSET_MAX_BYTES = 2 * 1024 * 1024
+
+/**
+ * Whether this is a host a product will fetch a customer's logo from.
+ *
+ * The same rules as `isPlatformAssetUrl` in the branding package, which cannot
+ * be imported here: `api-client` is a leaf and gains no workspace dependency
+ * for one predicate. `assets.test.ts` asserts the two agree on a shared table
+ * of cases, so a rule added to one and not the other fails rather than
+ * quietly leaving this side open.
+ *
+ * A name that resolves to a private address still passes; see the note on
+ * `fetchPlatformAsset`.
+ */
+export function platformAssetHostAllowed(url: URL): boolean {
+  if (url.username !== '' || url.password !== '') return false
+  const host = url.hostname.toLowerCase().replace(/\.$/, '')
+  if (host === '' || host === 'localhost' || host.endsWith('.localhost')) return false
+  if (host.endsWith('.local') || host.endsWith('.internal')) return false
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.startsWith('[')) return false
+  return true
+}
 
 /** The same ceiling every JSON call has: a hung fetch is a hung image. */
 export const PLATFORM_ASSET_TIMEOUT_MS = 5_000
@@ -950,6 +989,10 @@ export const PLATFORM_ASSET_TYPES = [
 
 export type PlatformAssetRefusal =
   | 'not-https'
+  // A host this product will not fetch from: a raw address, a private suffix,
+  // or credentials in the URL. Separate from `not-https` so a refusal says
+  // which rule stood between a customer and their logo.
+  | 'not-allowed'
   | 'redirect'
   | 'upstream-status'
   | 'content-type'
@@ -992,6 +1035,9 @@ export async function fetchPlatformAsset(
   }
   if (target.protocol !== 'https:') {
     throw new PlatformAssetError('not-https', `refusing ${target.protocol}`)
+  }
+  if (!platformAssetHostAllowed(target)) {
+    throw new PlatformAssetError('not-allowed', `refusing host ${target.hostname}`)
   }
 
   const maxBytes = options.maxBytes ?? PLATFORM_ASSET_MAX_BYTES

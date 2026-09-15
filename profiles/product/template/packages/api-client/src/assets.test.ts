@@ -5,6 +5,7 @@ import {
   PLATFORM_ASSET_MAX_BYTES,
   PlatformAssetError,
   fetchPlatformAsset,
+  platformAssetHostAllowed,
 } from './index.js'
 
 /**
@@ -173,4 +174,57 @@ test('a network failure is a network failure, not a timeout', async () => {
   }
   const error = await refusal(fetchPlatformAsset(URL_OK, { fetchImpl }))
   assert.equal(error.reason, 'network')
+})
+
+
+/**
+ * The hosts this product refuses, at the gate that actually makes the request.
+ *
+ * These cases are duplicated in `branding`'s `isPlatformAssetUrl` tests on
+ * purpose: `api-client` is a leaf and cannot import `branding`, so the rule is
+ * written twice and this table is what keeps the two from drifting. A rule
+ * added there and not here fails there; added here and not there, fails here.
+ *
+ * The threat is not a customer with a logo. It is a customer who can put any
+ * `https` URL where a logo goes, and a server that will fetch it from inside
+ * the estate -- so an address the browser could never reach, or a name that
+ * only means something on this network, is refused before a socket is opened.
+ */
+const REFUSED_HOSTS = [
+  'https://127.0.0.1/logo.png',
+  'https://10.0.0.5/logo.png',
+  'https://169.254.169.254/latest/meta-data/',
+  'https://192.168.1.1/logo.png',
+  'https://[::1]/logo.png',
+  'https://[fd00::1]/logo.png',
+  'https://localhost/logo.png',
+  'https://api.localhost/logo.png',
+  'https://vault.internal/logo.png',
+  'https://printer.local/logo.png',
+  // A trailing dot is the same name to a resolver and a different string to a
+  // naive comparison.
+  'https://localhost./logo.png',
+  // Credentials in the URL are a way to make a fetch mean something else.
+  'https://user:pass@assets.platform.example/logo.png',
+]
+
+for (const candidate of REFUSED_HOSTS) {
+  test(`refuses ${candidate}`, async () => {
+    assert.equal(platformAssetHostAllowed(new URL(candidate)), false)
+
+    // And the refusal happens before anything is sent.
+    let called = false
+    const fetchImpl: typeof fetch = async () => {
+      called = true
+      return new Response(null, { status: 200 })
+    }
+    const error = await refusal(fetchPlatformAsset(candidate, { fetchImpl }))
+    assert.equal(error.reason, 'not-allowed')
+    assert.equal(called, false, 'no request may be made to a refused host')
+  })
+}
+
+test('an ordinary storage hostname is allowed', () => {
+  assert.equal(platformAssetHostAllowed(new URL(URL_OK)), true)
+  assert.equal(platformAssetHostAllowed(new URL('https://cdn.example.com/a.svg')), true)
 })
