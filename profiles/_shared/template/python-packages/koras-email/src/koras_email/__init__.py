@@ -6,7 +6,10 @@ to contact somebody all belong to the API. `packages/email` on the TypeScript
 side is empty for that reason and points here.
 
 Two implementations and one protocol, and the protocol exists for the second
-implementation rather than for testing. A deployment without SMTP configured
+implementation rather than for testing. The words a message is written in
+live in `i18n.py`, one catalogue per language the product can offer, so a
+notice reaches its reader in the language they chose rather than in English
+whatever they chose. A deployment without SMTP configured
 must not silently drop mail, so the stand-in *records* what it would have sent
 and declares itself simulated -- which the caller is expected to surface. A mock
 that quietly stands in for a provider is the failure this platform keeps finding.
@@ -21,6 +24,19 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from email.message import EmailMessage
 from typing import Protocol
+
+from .i18n import (
+    DEFAULT_LOCALE,
+    MESSAGES,
+    SUPPORTED_LOCALES,
+    Locale,
+    MessageKey,
+    Messages,
+    is_locale,
+    negotiate_locale,
+    resolve_locale,
+    translate,
+)
 
 
 class EmailError(RuntimeError):
@@ -269,12 +285,23 @@ def sender_for(
 
 
 __all__ = [
+    "DEFAULT_LOCALE",
+    "MESSAGES",
+    "SUPPORTED_LOCALES",
+    "Attachment",
     "EmailError",
     "EmailSender",
+    "Locale",
+    "MessageKey",
+    "Messages",
     "PermanentEmailError",
     "RecordingEmailSender",
     "Sent",
     "SmtpEmailSender",
     "TransientEmailError",
+    "is_locale",
+    "negotiate_locale",
+    "resolve_locale",
     "sender_for",
+    "translate",
 ]

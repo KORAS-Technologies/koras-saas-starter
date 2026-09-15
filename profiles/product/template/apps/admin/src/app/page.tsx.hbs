@@ -1,7 +1,29 @@
-export default function AdminPage() {
+import { productConfig } from '@{{projectSlug}}/branding'
+import { translator } from '../lib/locale'
+import { currentMember } from '../lib/session'
+
+/**
+ * The staff landing page.
+ *
+ * Nothing to operate yet -- the product decides what its staff do here -- so
+ * this says who is signed in and stops. It still resolves the locale and reads
+ * its words from the catalogue, so the first real page added beside it
+ * inherits a frame that already speaks the product's languages.
+ */
+export default async function AdminPage() {
+  const [t, member] = await Promise.all([translator(), currentMember()])
+  const params = { product: productConfig.product.name }
+
   return (
-    <main className="p-8">
-      <h1 className="text-2xl font-bold">{{projectName}} — Admin</h1>
+    <main id="main-content" className="p-8">
+      <h1 className="font-display text-2xl font-bold tracking-tight text-ink">
+        {t('admin.title', params)}
+      </h1>
+      {member !== null && (
+        <p className="mt-3 text-ink-muted">
+          {t('admin.home.signedInAs', { name: member.name ?? member.email ?? member.userId })}
+        </p>
+      )}
     </main>
   )
 }

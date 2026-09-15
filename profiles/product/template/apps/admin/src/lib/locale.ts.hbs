@@ -1,0 +1,40 @@
+import { cache } from 'react'
+import { cookies, headers } from 'next/headers'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { LOCALE_COOKIE, createTranslator, resolveLocale } from '@{{projectSlug}}/i18n'
+import type { Locale, Translator } from '@{{projectSlug}}/i18n'
+
+/**
+ * Which language this request is answered in.
+ *
+ * The same resolution `apps/web` makes for a visitor with no session: the
+ * cookie this device set, then the browser's `Accept-Language`, then the
+ * product's default -- validated against the languages the product offers,
+ * read once per render through React's `cache`, and never from the URL.
+ *
+ * Deliberately not the signed-in order. The web application also reads a
+ * member's stored choice and their organisation's default, through the tenant
+ * settings call its shell already makes. This application makes no such call:
+ * it is staff-facing, it renders no tenant's branding, and a request to the
+ * product's API on every page for a two-letter code would be the first thing
+ * it asked the API for. The cookie is shared with the web application when
+ * both are served from one site, and is set from the switcher here otherwise.
+ *
+ * Server-side only. A client component receives the result as a prop.
+ */
+export const currentLocale = cache(async (): Promise<Locale> => {
+  const [store, requestHeaders] = await Promise.all([cookies(), headers()])
+  return resolveLocale(
+    {
+      cookie: store.get(LOCALE_COOKIE)?.value,
+      acceptLanguage: requestHeaders.get('accept-language'),
+    },
+    productConfig.i18n.locales,
+    productConfig.i18n.defaultLocale,
+  )
+})
+
+/** A translator for the current request's language. */
+export async function translator(): Promise<Translator> {
+  return createTranslator(await currentLocale())
+}

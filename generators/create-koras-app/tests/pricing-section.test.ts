@@ -74,9 +74,16 @@ describe('the section', () => {
 })
 
 describe('the pages', () => {
-  for (const [app, page] of [
-    ['web', join('apps', 'web', 'src', 'app', 'page.tsx.hbs')],
-    ['marketing', join('apps', 'marketing', 'src', 'app', 'page.tsx.hbs')],
+  // The freshness rule differs by application and is meant to: the dashboard
+  // reads per request, while the marketing homepage is a cached document that
+  // revalidates. Asserting one string for both would forbid that difference.
+  for (const [app, page, freshness] of [
+    ['web', join('apps', 'web', 'src', 'app', 'page.tsx.hbs'), "cache: 'no-store'"],
+    [
+      'marketing',
+      join('apps', 'marketing', 'src', 'app', '[locale]', 'page.tsx.hbs'),
+      'next: { revalidate: PLANS_REVALIDATE_SECONDS }',
+    ],
   ] as const) {
     it(`${app} renders the section from the platform's catalogue, read on the server`, () => {
       const source = read(page)
@@ -88,7 +95,7 @@ describe('the pages', () => {
     it(`${app} keeps the platform's address on the server`, () => {
       const loader = read('apps', app, 'src', 'lib', 'plans.ts.hbs')
       expect(loader).toContain('process.env.KORAS_CONTROL_PLANE_URL')
-      expect(loader).toContain("cache: 'no-store'")
+      expect(loader).toContain(freshness)
       expect(loader).toContain('parsePublicPlans(')
     })
   }

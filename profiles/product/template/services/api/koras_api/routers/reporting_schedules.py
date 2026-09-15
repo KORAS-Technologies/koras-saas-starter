@@ -24,12 +24,15 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, status
+from koras_email import Locale, is_locale
 from koras_reporting import ExportFormat, FilterError, FilterKind, resolve_filters
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.engine import Row
 
+from ..core.errors import ApiErrorCode, api_error
+from ..core.locale import RequestLocale
 from ..core.reporting import ReportingDep
 from ..core.settings import settings
 from ..core.storage import StorageDep
@@ -58,6 +61,10 @@ class ScheduleCreate(BaseModel):
     recipients: list[str] = Field(min_length=1, max_length=MAX_RECIPIENTS)
     #: The report's declared filters other than the period.
     filters: dict[str, str] = Field(default_factory=dict)
+    #: The language the deliveries are written in. The recipients may not be
+    #: the person creating the schedule, so it is named rather than inferred;
+    #: absent, the request's own language is used.
+    locale: Locale | None = None
 
 
 class ScheduleView(BaseModel):
@@ -67,6 +74,7 @@ class ScheduleView(BaseModel):
     format: str
     recipients: list[str]
     filters: dict[str, str]
+    locale: str
     active: bool
     next_run_at: datetime
     last_run_at: datetime | None
@@ -121,9 +129,10 @@ def _validate_recipients(recipients: list[str]) -> list[str]:
     for raw in recipients:
         address = raw.strip().lower()
         if not _EMAIL.match(address) or len(address) > 254:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"{raw!r} is not an email address",
+            raise api_error(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                ApiErrorCode.RECIPIENT_INVALID,
+                f"{raw!r} is not an email address",
             )
         if address not in cleaned:
             cleaned.append(address)
@@ -131,7 +140,7 @@ def _validate_recipients(recipients: list[str]) -> list[str]:
 
 
 _SCHEDULES = text(
-    "select id::text as id, report_key, cadence, format, recipients, filters, active, "
+    "select id::text as id, report_key, cadence, format, recipients, filters, locale, active, "
     " next_run_at, last_run_at, last_error, created_by, created_at "
     "from public.report_schedules "
     "where tenant_id = :tenant_id and report_key = :report_key "
@@ -140,10 +149,11 @@ _SCHEDULES = text(
 
 _SCHEDULE_INSERT = text(
     "insert into public.report_schedules "
-    " (tenant_id, report_key, cadence, format, recipients, filters, created_by, next_run_at) "
+    " (tenant_id, report_key, cadence, format, recipients, filters, locale, created_by, "
+    "  next_run_at) "
     "values (:tenant_id, :report_key, :cadence, :format, :recipients, cast(:filters as jsonb), "
-    " :created_by, :next_run_at) "
-    "returning id::text as id, report_key, cadence, format, recipients, filters, active, "
+    " :locale, :created_by, :next_run_at) "
+    "returning id::text as id, report_key, cadence, format, recipients, filters, locale, active, "
     " next_run_at, last_run_at, last_error, created_by, created_at"
 )
 
@@ -162,6 +172,7 @@ def _schedule(row: Row[Any]) -> ScheduleView:
         format=row.format,
         recipients=list(row.recipients),
         filters={str(k): str(v) for k, v in filters.items()},
+        locale=str(row.locale) if is_locale(getattr(row, "locale", None)) else "en",
         active=bool(row.active),
         next_run_at=row.next_run_at,
         last_run_at=row.last_run_at,
@@ -183,27 +194,31 @@ async def list_schedules(key: str, reporting: ReportingDep) -> ScheduleList:
 @router.post(
     "/reports/{key}/schedules", response_model=ScheduleView, status_code=status.HTTP_201_CREATED
 )
-async def create_schedule(key: str, body: ScheduleCreate, reporting: ReportingDep) -> ScheduleView:
+async def create_schedule(
+    key: str, body: ScheduleCreate, reporting: ReportingDep, request_locale: RequestLocale
+) -> ScheduleView:
     definition, visibility = lookup(reporting, key)
     require_available(definition, visibility)
     require_exporter(reporting)
     if not reporting.grant.can_schedule:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="this organization's plan does not include reporting.scheduled",
+        raise api_error(
+            status.HTTP_402_PAYMENT_REQUIRED,
+            ApiErrorCode.ENTITLEMENT_MISSING,
+            "this organization's plan does not include reporting.scheduled",
         )
     fmt = export_format(definition, body.format)
     recipients = _validate_recipients(body.recipients)
     if any(name in ("from", "to") for name in body.filters):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="the period is decided by the cadence, not by a filter",
+        raise api_error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            ApiErrorCode.PERIOD_NOT_A_FILTER,
+            "the period is decided by the cadence, not by a filter",
         )
     try:
         resolved = resolve_filters(definition, body.filters)
     except FilterError as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+        raise api_error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, ApiErrorCode.FILTER_INVALID, str(error)
         ) from error
     kept = {
         f.key: str(resolved.values[f.key])
@@ -222,6 +237,7 @@ async def create_schedule(key: str, body: ScheduleCreate, reporting: ReportingDe
                     "format": fmt.value,
                     "recipients": recipients,
                     "filters": json.dumps(kept, sort_keys=True),
+                    "locale": body.locale or request_locale,
                     "created_by": reporting.context.user_id,
                     "next_run_at": next_run(body.cadence, reporting.context.now),
                 },
@@ -250,7 +266,9 @@ async def delete_schedule(schedule_id: str, reporting: ReportingDep) -> None:
             )
         ).first()
         if row is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such schedule")
+            raise api_error(
+                status.HTTP_404_NOT_FOUND, ApiErrorCode.SCHEDULE_NOT_FOUND, "no such schedule"
+            )
         await session.commit()
         reporting.record(
             "report.schedule_removed", report_key=str(row.report_key), details={"id": schedule_id}
@@ -265,8 +283,10 @@ def require_exporter_or_none(reporting: ReportingDep) -> None:
     from ..core.reporting import EXPORT_PERMISSION
 
     if EXPORT_PERMISSION not in reporting.context.permissions:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="managing schedules needs reports.export"
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            ApiErrorCode.PERMISSION_MISSING,
+            "managing schedules needs reports.export",
         )
 
 
@@ -358,7 +378,7 @@ async def download_export(
         )
     ).first()
     if row is None or row.status != "ready" or not row.storage_key:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such export")
+        raise api_error(status.HTTP_404_NOT_FOUND, ApiErrorCode.EXPORT_NOT_FOUND, "no such export")
     return DownloadTicket(
         url=storage.store.presign_download(
             str(row.storage_key), str(row.filename), DOWNLOAD_URL_SECONDS

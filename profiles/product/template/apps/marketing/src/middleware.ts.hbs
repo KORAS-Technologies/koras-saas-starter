@@ -1,0 +1,120 @@
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { LOCALE_COOKIE } from '@{{projectSlug}}/i18n'
+import {
+  DEFAULT_LOCALE,
+  localeFromSegment,
+  localizedPath,
+  preferredLocale,
+  stripLocale,
+} from './lib/locale'
+
+/**
+ * The one part of the marketing site that runs per request.
+ *
+ * Every page is a static document built once per language; what varies by
+ * visitor is only *which* of those documents the bare path should answer
+ * with, and that is decided here from the cookie and `Accept-Language`,
+ * exactly as `apps/web` decides it for every request. The decision is a
+ * redirect rather than a rewrite when it changes the address, so the visitor
+ * sees `/de` and can share it; it is a rewrite when it does not, so `/` is
+ * served from the English document without a second round trip.
+ *
+ * Four cases, in the order they are checked:
+ *
+ *   /en, /en/…    the default language spelled out -- redirected to the bare
+ *                 path permanently, so every document has one address
+ *   /de, /de/…    an offered language, in the URL -- served as is, and
+ *                 remembered in the cookie so the logo, the anchors and the
+ *                 next visit to `/` come back here rather than to the browser's
+ *                 language
+ *   /, /pricing   no language in the URL -- the visitor's preferred language
+ *                 decides: the default is a rewrite, any other a redirect
+ *   /fr, /xyz     nothing offered is spelled that way -- treated as a path
+ *                 in the default language and left to the router, which has no
+ *                 page for it and answers 404. Never a fallback: an address
+ *                 that claims a language the product does not offer must not
+ *                 quietly serve another
+ *
+ * `/api/*`, `/_next/*` and anything with an extension are not matched at all.
+ * The locale route sets the cookie itself, and a static asset has no language.
+ */
+export const config = {
+  matcher: ['/((?!api/|_next/|.*\\..*).*)'],
+}
+
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+
+/**
+ * Whether this request is somebody arriving at a page, rather than the router
+ * filling its cache behind them.
+ *
+ * It matters because of what the cookie means. Next prefetches the links on
+ * every page, so a visitor reading `/es` still prefetches the bare `/` and
+ * `/terms` from the header and footer; each of those is redirected here like
+ * any other request and lands on a language document. A language document
+ * that stamped the cookie unconditionally would let a prefetch issued moments
+ * earlier, under the *previous* language, overwrite the one the visitor had
+ * just chosen. It did: choosing Spanish and then English left the cookie on
+ * Spanish, and the next visit to `/` went to Spanish -- with nothing on the
+ * page to show why, and no way to tell from the code, because the request
+ * that wrote the cookie was never one the visitor made.
+ *
+ * `Sec-Fetch-Dest` is the signal, not Next's own `Next-Router-Prefetch`: the
+ * framework strips its router headers before middleware runs, so a guard
+ * written on those reads `null` for every request and never fires. A document
+ * navigation is `document`; a prefetch and every other router fetch is
+ * `empty`. A client that sends no Fetch Metadata at all is not the router
+ * prefetching, so it is treated as an arrival.
+ *
+ * The redirect itself still happens either way, so the router caches the
+ * right document; only the writing of the cookie waits for a real visit.
+ */
+function isArrival(request: NextRequest): boolean {
+  const destination = request.headers.get('sec-fetch-dest')
+  return destination === null || destination === 'document'
+}
+
+export function middleware(request: NextRequest): NextResponse {
+  const { pathname } = request.nextUrl
+  const [, first = ''] = pathname.split('/')
+  const inUrl = localeFromSegment(first)
+
+  if (inUrl === DEFAULT_LOCALE) {
+    const url = request.nextUrl.clone()
+    url.pathname = stripLocale(pathname)
+    return NextResponse.redirect(url, 308)
+  }
+
+  if (inUrl !== null) {
+    const response = NextResponse.next()
+    if (isArrival(request) && request.cookies.get(LOCALE_COOKIE)?.value !== inUrl) {
+      response.cookies.set(LOCALE_COOKIE, inUrl, {
+        path: '/',
+        maxAge: COOKIE_MAX_AGE,
+        sameSite: 'lax',
+        httpOnly: true,
+        secure: request.nextUrl.protocol === 'https:',
+      })
+    }
+    return response
+  }
+
+  const preferred = preferredLocale(
+    request.cookies.get(LOCALE_COOKIE)?.value,
+    request.headers.get('accept-language'),
+  )
+  const url = request.nextUrl.clone()
+  if (preferred === DEFAULT_LOCALE) {
+    // Served from the default language's document at its internal address;
+    // the visitor's address bar keeps the bare path.
+    url.pathname = `/${DEFAULT_LOCALE}${pathname === '/' ? '' : pathname}`
+    return NextResponse.rewrite(url)
+  }
+  url.pathname = localizedPath(preferred, pathname)
+  const response = NextResponse.redirect(url, 307)
+  // Temporary, and it depends on the request: a cache in front of this site
+  // must not hand one visitor's redirect to the next.
+  response.headers.set('Vary', 'Cookie, Accept-Language')
+  return response
+}

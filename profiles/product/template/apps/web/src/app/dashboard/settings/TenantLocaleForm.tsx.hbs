@@ -1,0 +1,82 @@
+'use client'
+
+import { useActionState } from 'react'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { LOCALE_NAMES, createTranslator } from '@{{projectSlug}}/i18n'
+import type { Locale } from '@{{projectSlug}}/i18n'
+import { SelectField, SubmitButton } from '@{{projectSlug}}/ui'
+import { setTenantLocale } from './actions'
+import { IDLE } from './state'
+
+/**
+ * The organisation's default language: one select and a button.
+ *
+ * A client component where the personal form beside it is a plain server
+ * form, and the difference is the answer each needs. The personal choice
+ * changes the page it lands on, so the page *is* the confirmation. This
+ * changes nothing the person saving it can see -- their own choice outranks
+ * the default -- so it has to say that it worked, and a sentence that
+ * appears after a submission needs `useActionState`.
+ *
+ * `defaultValue` is what the tenant row holds. The empty option is the
+ * absence of a default, which the action sends as null.
+ */
+export function TenantLocaleForm({
+  locale,
+  current,
+}: {
+  locale: Locale
+  /** The stored default, or null for none. Already validated by the page. */
+  current: Locale | null
+}) {
+  const [state, action] = useActionState(setTenantLocale, IDLE)
+  const t = createTranslator(locale)
+
+  return (
+    <form
+      action={action}
+      data-testid="tenant-locale-form"
+      className="mt-4 flex max-w-sm flex-col gap-4"
+    >
+      <SelectField
+        id="tenant-locale"
+        name="locale"
+        label={t('settings.language.tenantLabel')}
+        defaultValue={current ?? ''}
+      >
+        <option value="">{t('settings.language.tenantFollowBrowser')}</option>
+        {productConfig.i18n.locales.map((option) => (
+          <option key={option} value={option} lang={option}>
+            {LOCALE_NAMES[option]}
+          </option>
+        ))}
+      </SelectField>
+
+      <div aria-live="polite">
+        {state.status === 'error' ? (
+          <p
+            role="alert"
+            data-testid="tenant-locale-error"
+            className="rounded-brand border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800"
+          >
+            {state.message}
+          </p>
+        ) : null}
+        {state.status === 'saved' ? (
+          <p data-testid="tenant-locale-saved" className="text-sm font-medium text-ink-muted">
+            {state.message}
+          </p>
+        ) : null}
+      </div>
+
+      <SubmitButton
+        variant="secondary"
+        busy={t('settings.language.tenantSaving')}
+        className="self-start"
+        testId="tenant-locale-save"
+      >
+        {t('settings.language.tenantSave')}
+      </SubmitButton>
+    </form>
+  )
+}

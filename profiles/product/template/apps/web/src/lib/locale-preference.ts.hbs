@@ -1,0 +1,36 @@
+import { updateMyLocale } from '@{{projectSlug}}/api-client'
+import type { Locale } from '@{{projectSlug}}/i18n'
+import { apiBaseUrl, currentMember, providerToken } from './session'
+
+/**
+ * Keep a signed-in member's language choice with their account.
+ *
+ * Called by the locale route after it has validated the value and decided to
+ * set the cookie. The cookie is still set whatever happens here: the choice
+ * has to work on this device before any script attaches and before the API
+ * has answered, and a member who switches during an outage should see the
+ * page change language rather than an error about a preference.
+ *
+ * **Never throws, and says nothing to the browser.** A failure to persist is
+ * logged server-side and the visitor is sent on their way with the cookie. The
+ * next request that can read the stored value will, and until then the
+ * cookie says the same thing -- the two only disagree when the choice was
+ * made elsewhere, which is the case the stored value exists for.
+ *
+ * Nobody signed in, or no API to reach, is a return rather than an error:
+ * that is the public switcher working as it always has.
+ */
+export async function rememberLocale(locale: Locale): Promise<void> {
+  const member = await currentMember()
+  if (member === null) return
+
+  const [token, baseUrl] = [await providerToken(), apiBaseUrl()]
+  if (!token || !baseUrl) return
+
+  try {
+    await updateMyLocale({ baseUrl, token, locale })
+  } catch (error) {
+    // Server-side, so this reaches the service log and never the browser.
+    console.error('[locale] the language choice could not be stored:', error)
+  }
+}

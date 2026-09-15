@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { productConfig } from '@{{projectSlug}}/branding'
 import { LOCALE_COOKIE, isLocale, safeReturnPath } from '@{{projectSlug}}/i18n'
+import { localizedPath } from '../../../lib/locale'
 
 /**
  * Remember the language a visitor chose, on the marketing site.
@@ -13,6 +14,14 @@ import { LOCALE_COOKIE, isLocale, safeReturnPath } from '@{{projectSlug}}/i18n'
  * cookie it sets is scoped to this host, so a visitor who switches here and
  * then signs in is offered the same language there through `Accept-Language`
  * rather than through this cookie -- which is the right answer for two origins.
+ *
+ * One difference: where the visitor is sent back to. On this site the
+ * language is in the URL, so "German" is not a cookie and the same page but a
+ * cookie and *the German page*: the return path is rewritten to the chosen
+ * language's address (`/` becomes `/de`, `/de` becomes `/` for English). The
+ * cookie is still set, so the bare path keeps answering in the chosen
+ * language on the next visit and the two applications agree on what the
+ * visitor asked for.
  *
  * Everything the web route says about what it refuses applies here.
  */
@@ -26,17 +35,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const requested = form.get('locale')
   const next = safeReturnPath(form.get('next'))
 
-  const response = NextResponse.redirect(new URL(next, request.url), 303)
-
-  if (isLocale(requested) && productConfig.i18n.locales.includes(requested)) {
-    response.cookies.set(LOCALE_COOKIE, requested, {
-      path: '/',
-      maxAge: 60 * 60 * 24 * 365,
-      sameSite: 'lax',
-      httpOnly: true,
-      secure: request.nextUrl.protocol === 'https:',
-    })
+  if (!(isLocale(requested) && productConfig.i18n.locales.includes(requested))) {
+    return NextResponse.redirect(new URL(next, request.url), 303)
   }
 
+  const response = NextResponse.redirect(new URL(localizedPath(requested, next), request.url), 303)
+  response.cookies.set(LOCALE_COOKIE, requested, {
+    path: '/',
+    maxAge: 60 * 60 * 24 * 365,
+    sameSite: 'lax',
+    httpOnly: true,
+    secure: request.nextUrl.protocol === 'https:',
+  })
   return response
 }

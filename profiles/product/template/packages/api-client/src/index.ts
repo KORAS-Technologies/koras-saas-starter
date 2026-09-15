@@ -73,6 +73,16 @@ export interface TenantSettings {
   slug: string
   branding: unknown
   features: unknown
+  /**
+   * The language the organisation's members start in, or null for none.
+   *
+   * A string rather than a `Locale`: the API holds it to the catalogues that
+   * exist, and the caller holds it again to the list the product offers
+   * before it reaches `lang`. This client makes no claim in between.
+   */
+  locale: string | null
+  /** The caller's own stored choice, read under their own subject. Null until they choose. */
+  member_locale: string | null
 }
 
 export interface RequestOptions {
@@ -93,7 +103,7 @@ export interface RequestOptions {
 }
 
 interface Call {
-  method?: 'GET' | 'POST' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   /** Sent as JSON. */
   body?: unknown
   /** True for a 204. */
@@ -151,6 +161,37 @@ async function request<T>(path: string, options: RequestOptions, call: Call = {}
  */
 export function fetchTenantSettings(options: RequestOptions): Promise<TenantSettings> {
   return request<TenantSettings>('/api/v1/tenant/settings', options)
+}
+
+/**
+ * Remember the language this caller chose, for every device they sign in on.
+ *
+ * No user identifier, and there is nowhere to put one: the API keys the row
+ * on the subject of the token it verified. `null` clears the choice, so the
+ * cookie and the organisation's default apply again.
+ */
+export function updateMyLocale(options: RequestOptions & { locale: string | null }): Promise<void> {
+  return request<void>('/api/v1/me/locale', options, {
+    method: 'PUT',
+    body: { locale: options.locale },
+    empty: true,
+  })
+}
+
+/**
+ * Set the language this caller's organisation starts its members in.
+ *
+ * Refused with 403 for a caller without `settings.manage`; the page hides
+ * the form for the same people, and the API decides again with the token.
+ */
+export function updateTenantLocale(
+  options: RequestOptions & { locale: string | null },
+): Promise<void> {
+  return request<void>('/api/v1/tenant/settings/locale', options, {
+    method: 'PUT',
+    body: { locale: options.locale },
+    empty: true,
+  })
 }
 
 /**

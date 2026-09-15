@@ -86,9 +86,31 @@ async def test_a_due_schedule_is_delivered_as_the_tenant_and_recorded() -> None:
     # Two mails, one attachment each, named for the report and the period.
     assert [m["to"] for m in sender.sent] == ["ada@example.com", "bob@example.com"]
     assert sender.sent[0]["subject"] == "Usage: 2026-09-07 to 2026-09-13"
+    assert sender.sent[0]["body"].startswith("Your scheduled report is attached.")
     attachment = sender.attachments[0][0]
     assert attachment.filename == "usage-quotas-2026-09-07-to-2026-09-13.csv"
     assert attachment.content.splitlines()[0] == b"Quota,Used,Included,Remaining,Used %"
+
+    # A German schedule is delivered in German: the same file, other words
+    # around it. The report's own name is the definition's and stays.
+    german = ScheduleSession(
+        [
+            {
+                "id": "s2",
+                "tenant_id": TENANT,
+                "report_key": "usage.quotas",
+                "cadence": "weekly",
+                "format": "csv",
+                "recipients": ["ada@example.com"],
+                "filters": {},
+                "locale": "de",
+            }
+        ]
+    )
+    german_sender = RecordingEmailSender()
+    await deliver_due(german, catalogue=catalogue, sender=german_sender, now=NOW)  # type: ignore[arg-type]
+    assert german_sender.sent[0]["subject"] == "Usage: 2026-09-07 bis 2026-09-13"
+    assert german_sender.sent[0]["body"].startswith("Ihr geplanter Bericht ist angehängt.")
 
     # The tenant was bound before the first read, and every read bound it too.
     sqls = [sql for sql, _ in session.statements]

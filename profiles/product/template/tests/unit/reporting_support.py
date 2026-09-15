@@ -96,6 +96,7 @@ class ScriptedSession:
                 "format": params["format"],
                 "recipients": list(params["recipients"]),
                 "filters": json.loads(params["filters"]),
+                "locale": params.get("locale", "en"),
                 "active": True,
                 "next_run_at": params["next_run_at"],
                 "last_run_at": None,

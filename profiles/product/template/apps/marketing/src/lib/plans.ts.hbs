@@ -1,10 +1,19 @@
 import { parsePublicPlans } from '@{{projectSlug}}/branding'
 import type { PublicPlan } from '@{{projectSlug}}/branding'
 
+/** How long a built page keeps the plans before asking the platform again. */
+export const PLANS_REVALIDATE_SECONDS = 600
+
 /**
  * What this product sells to somebody without an account.
  *
- * Read on the server when a page renders, not chosen at generation time. An
+ * Read on the server when a page is built, and again at most every ten
+ * minutes after that -- `next: { revalidate }` on the fetch rather than a
+ * no-store fetch, because the latter makes every page that calls this
+ * render per request, and the homepage is meant to be a cached document. A
+ * price that is ten minutes stale on a marketing page is not a defect; a
+ * homepage that asks the platform on every visit is the cost FOLLOW_UPS F20
+ * recorded. Not chosen at generation time either. An
  * empty list is the common answer and a meaningful one: no plan is self-serve
  * until somebody marks it so, and a page that receives none should say so --
  * the pricing section renders nothing, the signup page says signup is not
@@ -31,7 +40,7 @@ export async function loadPublicPlans(): Promise<PublicPlan[]> {
   try {
     const response = await fetch(
       `${base.replace(/\/$/, '')}/api/signup/v1/plans?product_code={{projectSlug}}`,
-      { cache: 'no-store' },
+      { next: { revalidate: PLANS_REVALIDATE_SECONDS } },
     )
     if (!response.ok) {
       // Server-side only: this reaches the service log and never the browser.

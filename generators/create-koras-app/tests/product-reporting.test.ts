@@ -122,7 +122,9 @@ describe('the boundary', () => {
 
   it('decides visibility before a resolver runs and hides as 404', () => {
     expect(router).toContain('visibility is Visibility.HIDDEN')
-    expect(router).toContain('status_code=status.HTTP_404_NOT_FOUND, detail="no such report"')
+    expect(router).toContain(
+      'api_error(status.HTTP_404_NOT_FOUND, ApiErrorCode.REPORT_NOT_FOUND, "no such report")',
+    )
     expect(router).toContain('HTTP_402_PAYMENT_REQUIRED')
   })
 

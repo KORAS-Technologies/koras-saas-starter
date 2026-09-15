@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Annotated, Any
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from koras_storage import (
     ObjectStore,
@@ -34,6 +34,7 @@ from koras_storage import (
 )
 
 from . import platform
+from .errors import ApiErrorCode, api_error
 from .settings import PRODUCT_CODE, settings
 from .tenant import TenantDep
 
@@ -144,8 +145,8 @@ async def tenant_storage(
             _policy_from(policy.body if policy is not None else None), _settings()
         )
     except Unsupported as reason:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(reason)
+        raise api_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE, ApiErrorCode.STORAGE_UNAVAILABLE, str(reason)
         ) from reason
 
     return TenantStorage(

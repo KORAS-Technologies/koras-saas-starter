@@ -13,10 +13,11 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from koras_auth import JWKSCache, JWTClaims, TokenVerificationError, verify_token
 
+from .errors import ApiErrorCode, api_error
 from .settings import settings
 
 _bearer = HTTPBearer(auto_error=True)
@@ -58,16 +59,18 @@ async def require_platform_machine(
             project_id=settings.zitadel_project_id,
         )
     except TokenVerificationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
+        raise api_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ApiErrorCode.TOKEN_INVALID,
+            "Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
     if claims.email:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This endpoint requires a machine identity",
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            ApiErrorCode.MACHINE_IDENTITY_REQUIRED,
+            "This endpoint requires a machine identity",
         )
 
     expected = settings.zitadel_platform_caller_sub
@@ -76,18 +79,20 @@ async def require_platform_machine(
         # them they are forbidden would send an operator looking at the wrong
         # side. This is the product being unconfigured, which is a condition
         # that can be fixed by setting ZITADEL_PLATFORM_CALLER_SUB.
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The platform caller is not configured for this environment",
+        raise api_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            ApiErrorCode.PLATFORM_CALLER_UNCONFIGURED,
+            "The platform caller is not configured for this environment",
         )
 
     if claims.sub != expected:
         # The subject presented is deliberately not echoed. It is not secret,
         # but this response goes to whoever asked, and confirming which account
         # was seen turns a refusal into an oracle for enumerating the instance.
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This endpoint requires the platform caller",
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            ApiErrorCode.PLATFORM_CALLER_REQUIRED,
+            "This endpoint requires the platform caller",
         )
 
     return claims

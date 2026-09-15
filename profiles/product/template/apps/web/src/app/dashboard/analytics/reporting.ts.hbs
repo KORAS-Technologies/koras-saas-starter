@@ -17,6 +17,7 @@ import type {
   ReportView,
 } from '@{{projectSlug}}/api-client'
 import { can, signedInContext } from '../../../lib/access'
+import { apiErrorMessage } from '../../../lib/api-errors'
 import { translator } from '../../../lib/locale'
 import { apiBaseUrl, providerToken } from '../../../lib/session'
 
@@ -53,6 +54,8 @@ async function explain<T>(error: unknown): Promise<Loaded<T>> {
   const t = await translator()
   if (error instanceof ApiError) {
     if (error.status === 402) return { status: 'locked', message: t('analytics.error.plan') }
+    const coded = apiErrorMessage(t, error.code)
+    if (coded !== null) return { status: 'error', message: coded }
     if (error.status === 403 || error.status === 404) {
       return { status: 'error', message: t('analytics.error.forbidden') }
     }

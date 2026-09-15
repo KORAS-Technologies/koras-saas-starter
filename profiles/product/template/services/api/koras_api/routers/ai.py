@@ -32,11 +32,14 @@ from koras_ai import (
     Turn,
     Usage,
 )
+from koras_email import resolve_locale
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..core import notify
 from ..core.ai import AiDep, AiFactoryDep, AiTurnLimit, TenantAI, refusal
 from ..core.database import tenant_session
+from ..core.errors import ApiErrorCode, api_error
+from ..core.locale import RequestLocale
 from ..core.settings import PRODUCT_NAME, settings
 
 _log = logging.getLogger(__name__)
@@ -360,7 +363,7 @@ async def _flush(ai: TenantAI) -> None:
 
 
 async def _tell_approvers(
-    ai: TenantAI, background: BackgroundTasks, turn: Turn, request_text: str
+    ai: TenantAI, background: BackgroundTasks, turn: Turn, request_text: str, locale: str
 ) -> None:
     """Queue the approval notice for the actions this turn left waiting.
 
@@ -369,6 +372,10 @@ async def _tell_approvers(
     failure to find or tell anybody is logged and never fails the turn: the
     action still waits in the assistant, which is where it waited before
     there was a notice at all.
+
+    `locale` is the request's, from `Accept-Language`: the language the
+    person was reading when they asked, and the best a product knows of the
+    organization's until members carry a stored preference.
     """
     waiting = notify.awaiting(turn.actions)
     if not waiting:
@@ -397,6 +404,7 @@ async def _tell_approvers(
         ),
         request_text=request_text,
         tag=f"ai-approval:{waiting[0].id}",
+        locale=resolve_locale(locale),
     )
 
 
@@ -407,6 +415,7 @@ async def send_message(
     ai: AiDep,
     background: BackgroundTasks,
     _ceiling: AiTurnLimit,
+    locale: RequestLocale,
 ) -> TurnView:
     """One turn of the agent. Ends at an answer, or at an action waiting for a person."""
     try:
@@ -415,7 +424,7 @@ async def send_message(
         await _flush(ai)
         raise refusal(error) from error
     await _flush(ai)
-    await _tell_approvers(ai, background, turn, body.text)
+    await _tell_approvers(ai, background, turn, body.text, locale)
     return TurnView(
         conversation=_conversation(turn.conversation),
         messages=_messages(turn.messages),
@@ -439,6 +448,7 @@ async def stream_message(
     body: SendMessage,
     assembly: AiFactoryDep,
     _ceiling: AiTurnLimit,
+    locale: RequestLocale,
 ) -> StreamingResponse:
     """The same turn as `send_message`, told as it happens.
 
@@ -476,7 +486,7 @@ async def stream_message(
                         yield _sse("pending", [view.model_dump(mode="json") for view in views])
                     elif event.kind == "done" and event.turn is not None:
                         await _flush(ai)
-                        await _tell_approvers(ai, after, event.turn, body.text)
+                        await _tell_approvers(ai, after, event.turn, body.text, locale)
                         finished = TurnView(
                             conversation=_conversation(event.turn.conversation),
                             messages=_messages(event.turn.messages),
@@ -541,12 +551,10 @@ async def recent_audit(ai: AiDep, limit: int = 50) -> AuditList:
     detail map, which refuses anything named like a secret at construction.
     """
     if "ai.approve" not in ai.context.permissions:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": "tool_denied",
-                "message": "reading the assistant's activity needs ai.approve",
-            },
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            ApiErrorCode.TOOL_DENIED,
+            "reading the assistant's activity needs ai.approve",
         )
     if ai.audit is None:
         return AuditList(events=[])

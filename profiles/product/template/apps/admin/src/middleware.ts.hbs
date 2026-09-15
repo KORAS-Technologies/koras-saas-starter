@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { readSession } from '@{{projectSlug}}/auth'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { LOCALE_COOKIE, createTranslator, resolveLocale } from '@{{projectSlug}}/i18n'
 import { canAdminister } from '@{{projectSlug}}/permissions'
 
 /**
@@ -9,7 +11,32 @@ import { canAdminister } from '@{{projectSlug}}/permissions'
  * Gating happens here rather than per page so that a new page is protected by
  * default: forgetting to add a check is the failure this shape prevents.
  */
-const PUBLIC_PATHS = ['/login', '/api/auth']
+const PUBLIC_PATHS = [
+  '/login',
+  '/api/auth',
+  // The language switcher on the sign-in page posts here. Gated, an
+  // administrator choosing German before signing in would be redirected to
+  // the sign-in page. It sets one cookie that authorises nothing.
+  '/api/locale',
+]
+
+/**
+ * The two refusals below are sentences a person reads, so they are said in
+ * the language the person asked for. The same cookie and header the pages
+ * read, resolved the same way; `packages/i18n` has no dependency, which is
+ * what lets it run at the edge beside the session check.
+ */
+function refusalTranslator(request: NextRequest) {
+  const locale = resolveLocale(
+    {
+      cookie: request.cookies.get(LOCALE_COOKIE)?.value,
+      acceptLanguage: request.headers.get('accept-language'),
+    },
+    productConfig.i18n.locales,
+    productConfig.i18n.defaultLocale,
+  )
+  return createTranslator(locale)
+}
 
 /**
  * A per-request nonce, and the policy that makes it worth having.
@@ -86,10 +113,8 @@ async function authorize(
   }
 
   if (outcome.status === 'mfa-required') {
-    return new NextResponse(
-      'Multi-factor authentication is required. Enrol a second factor, then sign in again.',
-      { status: 403 },
-    )
+    const t = refusalTranslator(request)
+    return new NextResponse(t('admin.mfaRequired'), { status: 403 })
   }
 
   // Signed in and holding at least one recognised role. 403 rather than a
@@ -100,10 +125,8 @@ async function authorize(
   // includes a platform role, which this profile's permissions package
   // deliberately does not define.
   if (!canAdminister(outcome.session.organizationRoles)) {
-    return new NextResponse(
-      'This application is for organization owners and administrators.',
-      { status: 403 },
-    )
+    const t = refusalTranslator(request)
+    return new NextResponse(t('admin.forbidden'), { status: 403 })
   }
 
   return withNonce(request, nonce, policy)

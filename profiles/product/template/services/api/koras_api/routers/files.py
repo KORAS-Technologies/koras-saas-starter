@@ -25,7 +25,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from koras_platform import OrganizationRole
 from koras_storage import object_key, safe_filename
@@ -35,6 +35,7 @@ from sqlalchemy.engine import Row
 
 from ..core.auth import AuthDep
 from ..core.database import DbSession
+from ..core.errors import ApiErrorCode, api_error
 from ..core.file_hooks import hooks
 from ..core.storage import STORAGE_ENTITLEMENT, StorageDep
 from ..core.tenant import TenantDep
@@ -105,9 +106,10 @@ class DownloadTicket(BaseModel):
 
 def _require_grant(storage: StorageDep) -> None:
     if not storage.grant.enabled:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=f"this organization's plan does not include {STORAGE_ENTITLEMENT}",
+        raise api_error(
+            status.HTTP_402_PAYMENT_REQUIRED,
+            ApiErrorCode.ENTITLEMENT_MISSING,
+            f"this organization's plan does not include {STORAGE_ENTITLEMENT}",
         )
 
 
@@ -179,9 +181,10 @@ async def request_upload(
     if limit is not None:
         used = await _used_bytes(session, tenant.id)
         if used + body.size_bytes > limit:
-            raise HTTPException(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail="this upload would exceed the storage included in the plan",
+            raise api_error(
+                status.HTTP_402_PAYMENT_REQUIRED,
+                ApiErrorCode.STORAGE_LIMIT_EXCEEDED,
+                "this upload would exceed the storage included in the plan",
             )
 
     file_id = str(uuid.uuid4())
@@ -234,16 +237,18 @@ async def complete_upload(
     row = await _pending(session, tenant.id, file_id)
     actual = storage.store.head(row.storage_key)
     if actual is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="the object has not arrived in the bucket yet",
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            ApiErrorCode.UPLOAD_NOT_ARRIVED,
+            "the object has not arrived in the bucket yet",
         )
     if actual != row.size_bytes:
         await session.execute(text("delete from public.files where id = :id"), {"id": file_id})
         await session.commit()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="the object in the bucket is not the size that was announced",
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            ApiErrorCode.UPLOAD_SIZE_MISMATCH,
+            "the object in the bucket is not the size that was announced",
         )
 
     now = datetime.now(UTC)
@@ -298,9 +303,10 @@ async def delete_file(
     """Object first, then row: a row without an object is a pending upload the
     list already hides, and an object without a row is what the sweep finds."""
     if not claims.has_role(*_MANAGERS):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="deleting files needs an owner or administrator",
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            ApiErrorCode.ROLE_REQUIRED,
+            "deleting files needs an owner or administrator",
         )
     row = await _ready(session, tenant.id, file_id)
     storage.store.delete(row.storage_key)
@@ -322,7 +328,9 @@ async def _one(session: DbSession, tenant_id: str, file_id: str, state: str) -> 
     try:
         uuid.UUID(file_id)
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such file") from None
+        raise api_error(
+            status.HTTP_404_NOT_FOUND, ApiErrorCode.FILE_NOT_FOUND, "no such file"
+        ) from None
     result = await session.execute(
         text(
             "select id, storage_key, name, size_bytes, content_type, uploaded_by "
@@ -332,5 +340,5 @@ async def _one(session: DbSession, tenant_id: str, file_id: str, state: str) -> 
     )
     row = result.first()
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such file")
+        raise api_error(status.HTTP_404_NOT_FOUND, ApiErrorCode.FILE_NOT_FOUND, "no such file")
     return row

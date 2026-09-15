@@ -10,10 +10,11 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from koras_auth import JWKSCache, JWTClaims, TokenVerificationError, verify_token
 
+from .errors import ApiErrorCode, api_error
 from .settings import settings
 
 _log = logging.getLogger(__name__)
@@ -51,9 +52,10 @@ async def require_auth(
         # no logger was even imported -- so an application answered 401 on
         # every page with no way to find out why.
         _log.warning("token rejected: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
+        raise api_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ApiErrorCode.TOKEN_INVALID,
+            "Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 

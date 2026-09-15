@@ -1,0 +1,93 @@
+import type { Metadata, Viewport } from 'next'
+import { notFound } from 'next/navigation'
+import { productConfig, productFor } from '@{{projectSlug}}/branding'
+import { createTranslator, localeDirection } from '@{{projectSlug}}/i18n'
+import { brandStyle } from '@{{projectSlug}}/ui'
+import { OFFERED_LOCALES, alternatesFor, localeFromSegment, localizedPath } from '../../lib/locale'
+import '../globals.css'
+
+const { brand } = productConfig
+
+/**
+ * The marketing site's root layout, one per language.
+ *
+ * Identical in shape to the web application's, and for the same reason: both
+ * read their metadata and their brand tokens from `productConfig`, so the two
+ * sites cannot describe the same product differently. What differs is what
+ * has to -- this application has no session and therefore no session gate,
+ * and its language comes from the `[locale]` segment rather than from the
+ * request, which is what lets every page under it be a static document.
+ *
+ * `generateStaticParams` names the languages the product offers, and
+ * `dynamicParams = false` refuses every other value at the router, so `/fr`
+ * on a product without French is a 404 before this file runs. The segment is
+ * validated here as well, against the same offered list, because a guarantee
+ * that lives only in a router option is one a future edit can switch off
+ * without anything in this file noticing.
+ *
+ * Metadata carries the canonical address and an `hreflang` link for every
+ * language, so a search engine indexes `/de` as the German page rather than
+ * as a duplicate of `/`.
+ */
+export const dynamicParams = false
+
+export function generateStaticParams(): { locale: string }[] {
+  return OFFERED_LOCALES.map((locale) => ({ locale }))
+}
+
+type Params = Promise<{ locale: string }>
+
+export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
+  const locale = localeFromSegment((await params).locale)
+  if (locale === null) notFound()
+  const product = productFor(locale)
+  return {
+    ...(product.url ? { metadataBase: new URL(product.url) } : {}),
+    title: {
+      default: `${product.name} — ${product.tagline}`,
+      template: `%s · ${product.name}`,
+    },
+    description: product.description,
+    applicationName: product.name,
+    icons: { icon: brand.faviconUrl },
+    alternates: {
+      canonical: localizedPath(locale),
+      languages: alternatesFor(),
+    },
+    openGraph: {
+      type: 'website',
+      siteName: product.name,
+      title: `${product.name} — ${product.tagline}`,
+      description: product.description,
+      locale,
+    },
+    twitter: { card: 'summary_large_image', title: product.name, description: product.description },
+  }
+}
+
+export const viewport: Viewport = {
+  themeColor: brand.secondaryColor,
+}
+
+export default async function RootLayout({
+  children,
+  params,
+}: {
+  children: React.ReactNode
+  params: Params
+}) {
+  const locale = localeFromSegment((await params).locale)
+  if (locale === null) notFound()
+  const t = createTranslator(locale)
+
+  return (
+    <html lang={locale} dir={localeDirection(locale)}>
+      <body style={brandStyle(brand)} className="flex min-h-screen flex-col font-sans">
+        <a href="#main-content" className="skip-link">
+          {t('common.skipToMain')}
+        </a>
+        {children}
+      </body>
+    </html>
+  )
+}

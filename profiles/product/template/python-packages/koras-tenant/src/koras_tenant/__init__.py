@@ -20,12 +20,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 @dataclass
 class TenantContext:
-    """A resolved tenant. `id` is the primary key row-level security scopes on."""
+    """A resolved tenant. `id` is the primary key row-level security scopes on.
+
+    `user_id` is the verified subject the request acts for, filled in by the
+    API's tenant dependency after the lookup. The lookup itself knows only the
+    organization, which is why the field is optional here and set once the
+    caller is known -- a context resolved for a job that acts for nobody in
+    particular carries none, and the policies keyed to a person then admit
+    nothing.
+    """
 
     id: str
     slug: str
     name: str
     organization_id: str
+    user_id: str | None = None
 
 
 # ── What a transaction may be for, in this profile's vocabulary ──────────────
@@ -42,9 +51,18 @@ class TenantContext:
 
 @dataclass(frozen=True)
 class Tenant:
-    """One tenant's rows, and nothing else. What a customer request runs as."""
+    """One tenant's rows, and nothing else. What a customer request runs as.
+
+    `user_id` names the person the request acts for, where there is one. It is
+    what `current_user_id()` reads, and the only rows that consult it are the
+    ones a person may write about themselves and nobody else may read --
+    their language preference, first (migration 00017). A task with no person
+    behind it -- a scheduled job, the platform's collector -- declares none,
+    and those policies then admit nothing, which is the fail-closed answer.
+    """
 
     tenant_id: str
+    user_id: str | None = None
 
     def settings(self) -> Mapping[str, str]:
         # `app.provisioning` is cleared as well as `app.tenant_id` being set.
@@ -53,7 +71,17 @@ class Tenant:
         # happen to be opened today. A tenant request that ran with the
         # provisioning flag still set would read every tenant's rows, and the
         # cost of not relying on that is one entry in a dictionary.
-        return {"app.tenant_id": self.tenant_id, "app.provisioning": "off"}
+        #
+        # `app.user_id` is set to the empty string rather than left alone when
+        # there is no person, for the same reason: `current_user_id()` turns
+        # the empty string into null, and a value inherited from an earlier
+        # transaction on this connection is exactly what a transaction-local
+        # setting is meant to make impossible.
+        return {
+            "app.tenant_id": self.tenant_id,
+            "app.user_id": self.user_id or "",
+            "app.provisioning": "off",
+        }
 
 
 @dataclass(frozen=True)

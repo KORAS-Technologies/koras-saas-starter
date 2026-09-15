@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+/*
+ * The product design tokens and the Tailwind theme built on them.
+ *
+ * The shared layer ships this application a stylesheet that imports Tailwind
+ * and nothing else, which was right while it rendered nothing from the design
+ * system. It renders the language switcher now, and that component is drawn
+ * in the brand tokens -- `border-line`, `text-ink-muted`, `rounded-brand` --
+ * so this profile carries its own copy of the file and imports the one
+ * stylesheet `apps/web` and `apps/marketing` import. Three applications, one
+ * set of tokens.
+ */
+@import "@{{projectSlug}}/ui/styles.css";
+
+/*
+ * Tell Tailwind where the class names are.
+ *
+ * Automatic detection starts at this application's root and skips
+ * `node_modules` -- and `packages/ui` reaches this application through a
+ * workspace symlink inside `node_modules`, so every class used by a shared
+ * component is invisible to it. Without this line the pages compile, render,
+ * and arrive with no styling whatsoever.
+ */
+@source "../../../../packages/ui/src";

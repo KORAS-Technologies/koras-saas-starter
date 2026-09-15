@@ -138,6 +138,32 @@ def test_the_notice_says_who_asked_what_and_where_to_decide() -> None:
     assert html.startswith("<!doctype html>") and "Review and decide" in html
 
 
+def test_the_notice_is_written_in_the_language_asked_for() -> None:
+    """The same notice, in German: the sentences change, the facts do not."""
+    summary = notify.ActionSummary(
+        "files.delete", "destructive", "Delete the file AI_FOUNDATION_PLAN.md", "17 KB"
+    )
+    subject, body, html = notify.compose(
+        [summary],
+        product="Koras E2E Shop",
+        app_url="https://app.example.test/",
+        requester=REQUESTER,
+        request_text="delete the file AI_FOUNDATION_PLAN.md",
+        requested_at=WHEN,
+        locale="de",
+    )
+    assert subject == (
+        "[Koras E2E Shop] Freigabe erforderlich: Delete the file AI_FOUNDATION_PLAN.md"
+    )
+    for text in (body, html):
+        assert "Kora K (kora@acme.test)" in text
+        assert "https://app.example.test/dashboard/assistant" in text
+        assert "Es wurde nicht ausgeführt" in text
+        assert "14.09.2026, 15:06 UTC" in text
+        assert "Approval needed" not in text and "has not run" not in text
+    assert "Prüfen und entscheiden</a>" in html and "Freigabe erforderlich</td>" in html
+
+
 def test_html_escapes_what_a_person_typed() -> None:
     summary = notify.ActionSummary("files.delete", "destructive", "Delete the file <x>.md", "")
     _subject, _body, html = notify.compose(

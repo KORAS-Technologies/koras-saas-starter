@@ -6,13 +6,15 @@ it. Migration 00004 explains at length why that is a policy on the caller's
 verified organization rather than a `security definer` function.
 """
 
+from dataclasses import replace
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, status
 from koras_tenant import TenantContext, resolve_tenant
 
 from .auth import AuthDep
 from .engine import SessionLocal
+from .errors import ApiErrorCode, api_error
 
 
 async def require_tenant(claims: AuthDep) -> TenantContext:
@@ -28,20 +30,26 @@ async def require_tenant(claims: AuthDep) -> TenantContext:
     403, not 404. The caller is authenticated; what they lack is a tenant here.
     A 404 would be a small lie that reads as "wrong URL" and sends people to
     check their address instead of their access.
+
+    The subject travels with the tenant from here. The request's session
+    declares both, so a policy keyed to `current_user_id()` sees the person the
+    token names -- and nothing else in the request can put a different one
+    there, because nothing else sets it.
     """
     async with SessionLocal() as session:
         tenant = await resolve_tenant(session, claims.organization_id)
 
     if tenant is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            ApiErrorCode.TENANT_INACTIVE,
             # Says nothing about whether the organization exists, is suspended,
             # or was never provisioned here. Those need different fixes and the
             # difference belongs in the service log, not in an answer to
             # somebody who may be guessing.
-            detail="No active tenant for this account",
+            "No active tenant for this account",
         )
-    return tenant
+    return replace(tenant, user_id=claims.sub)
 
 
 TenantDep = Annotated[TenantContext, Depends(require_tenant)]

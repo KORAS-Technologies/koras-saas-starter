@@ -1,5 +1,8 @@
 /**
- * Mail is sent server-side, by `python-packages/koras-email`.
+ * Mail is sent server-side, by `python-packages/koras-email`, and written in
+ * the reader's language from the catalogue in `koras_email.i18n` -- the same
+ * three languages `packages/i18n` speaks, typed the same way, kept on the
+ * side that composes the message.
  *
  * This package is empty on purpose rather than unfinished. The address, the
  * transport credential and the decision to contact somebody all belong to the

@@ -23,6 +23,16 @@ import { defineConfig, devices } from '@playwright/test'
  */
 
 const PORT = Number(process.env.E2E_PORT ?? 3210)
+{{#if apps.marketing}}
+/**
+ * The marketing site is a second application on a second origin, and the
+ * language suite has claims about it that the web application cannot stand
+ * in for: that `/de` is a static document, that `/` sends a German browser
+ * there, that `/fr` is a 404. Its tests set `baseURL` to this server.
+ */
+const MARKETING_PORT = Number(process.env.E2E_MARKETING_PORT ?? 3211)
+const MARKETING_URL = `http://localhost:${MARKETING_PORT}`
+{{/if}}
 
 export default defineConfig({
   testDir: './e2e',
@@ -48,17 +58,28 @@ export default defineConfig({
     { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } },
     { name: 'mobile', use: { ...devices['Desktop Chrome'], viewport: { width: 375, height: 812 } } },
   ],
-  webServer: {
-    command: `pnpm --filter @{{projectSlug}}/web exec next start -p ${PORT}`,
-    url: `http://localhost:${PORT}/login`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-    env: {
-      // The application refuses a signing key shorter than 32 characters, so a
-      // test value has to be a real one. The suite signs its cookies with this
-      // and the application verifies them: nothing is bypassed, and a test that
-      // skipped verification would pass however broken authorisation became.
-      SESSION_SECRET: process.env.SESSION_SECRET ?? 'e2e-session-secret-at-least-32-characters-long',
+  webServer: [
+    {
+      command: `pnpm --filter @{{projectSlug}}/web exec next start -p ${PORT}`,
+      url: `http://localhost:${PORT}/login`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      env: {
+        // The application refuses a signing key shorter than 32 characters, so a
+        // test value has to be a real one. The suite signs its cookies with this
+        // and the application verifies them: nothing is bypassed, and a test that
+        // skipped verification would pass however broken authorisation became.
+        SESSION_SECRET:
+          process.env.SESSION_SECRET ?? 'e2e-session-secret-at-least-32-characters-long',
+      },
     },
-  },
+{{#if apps.marketing}}
+    {
+      command: `pnpm --filter @{{projectSlug}}/marketing exec next start -p ${MARKETING_PORT}`,
+      url: `${MARKETING_URL}/`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+{{/if}}
+  ],
 })

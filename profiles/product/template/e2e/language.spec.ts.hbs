@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { signInAs } from './support/session'
+{{#if apps.marketing}}
+
+/** The marketing server `playwright.config.ts` starts; the same default port. */
+const MARKETING_URL = `http://localhost:${process.env.E2E_MARKETING_PORT ?? 3211}`
+{{/if}}
 
 /**
  * The language, in a browser.
@@ -97,3 +102,102 @@ test('the return path cannot leave the site', async ({ request }) => {
   expect(new URL(location).pathname).toBe('/')
   expect(new URL(location).host).toBe(new URL(response.url()).host)
 })
+{{#if apps.marketing}}
+
+/**
+ * The marketing site: the language is in the URL.
+ *
+ * `/` is the default language, `/de` and `/es` are the others, and every one
+ * of them is a static document. What the middleware decides per request is
+ * only where the bare path sends a visitor -- the cookie, then the browser's
+ * language, then the default -- and that is what these prove, together with
+ * the two refusals that keep the design honest: `/en` has no address of its
+ * own, and `/fr` is a 404 rather than a quiet fallback.
+ */
+test.describe('the marketing site', () => {
+  test.use({ baseURL: MARKETING_URL })
+
+  test('the bare path sends a German browser to /de, and an English one nowhere', async ({
+    browser,
+  }) => {
+    const german = await browser.newContext({ locale: 'de-DE' })
+    const page = await german.newPage()
+    await page.goto('/')
+    await expect(page).toHaveURL(/\/de$/)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'de')
+    await expect(page.getByRole('link', { name: 'Anmelden' }).first()).toBeVisible()
+    await german.close()
+
+    const english = await browser.newContext({ locale: 'en-GB' })
+    const home = await english.newPage()
+    await home.goto('/')
+    await expect(home).toHaveURL(/\/$/)
+    await expect(home.locator('html')).toHaveAttribute('lang', 'en')
+    await english.close()
+  })
+
+  test('each language has one address: /en is /, and /fr does not exist', async ({
+    request,
+  }) => {
+    const spelledOut = await request.get('/en', { maxRedirects: 0 })
+    expect(spelledOut.status()).toBe(308)
+    expect(new URL(spelledOut.headers()['location'] ?? '', MARKETING_URL).pathname).toBe('/')
+
+    // Not a fallback to English: an address that claims a language the
+    // product does not offer must not serve another.
+    const french = await request.get('/fr', { maxRedirects: 0 })
+    expect(french.status()).toBe(404)
+  })
+
+  test('a language in the URL wins, is remembered, and names its alternates', async ({
+    page,
+  }) => {
+    // An English browser opening a shared Spanish link reads Spanish.
+    await page.goto('/es')
+    await expect(page).toHaveURL(/\/es$/)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'es')
+
+    const canonical = page.locator('link[rel="canonical"]')
+    await expect(canonical).toHaveAttribute('href', /\/es$/)
+    for (const [hreflang, path] of [
+      ['en', '/'],
+      ['de', '/de'],
+      ['es', '/es'],
+      ['x-default', '/'],
+    ]) {
+      const href = await page.locator(`link[rel="alternate"][hreflang="${hreflang}"]`).getAttribute('href')
+      expect(href, `hreflang ${hreflang}`).not.toBeNull()
+      expect(new URL(href!, MARKETING_URL).pathname).toBe(path)
+    }
+
+    // The visit set the cookie, so the logo and the anchors -- which link to
+    // `/` -- come back to Spanish rather than to the browser's language.
+    await page.goto('/')
+    await expect(page).toHaveURL(/\/es$/)
+  })
+
+  test('the footer switcher changes the address and the cookie together', async ({
+    browser,
+  }) => {
+    const german = await browser.newContext({ locale: 'de-DE' })
+    const page = await german.newPage()
+    await page.goto('/de')
+    await expect(page.locator('html')).toHaveAttribute('lang', 'de')
+
+    await page.getByRole('contentinfo').getByRole('button', { name: 'Español' }).click()
+    await expect(page).toHaveURL(/\/es$/)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'es')
+
+    await page.getByRole('contentinfo').getByRole('button', { name: 'English' }).click()
+    await expect(page).toHaveURL(/\/$/)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+
+    // A German browser that chose English stays in English: the cookie beats
+    // the header, on this site as on the other.
+    await page.goto('/')
+    await expect(page).toHaveURL(/\/$/)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+    await german.close()
+  })
+})
+{{/if}}

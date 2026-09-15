@@ -1,31 +1,85 @@
-import { cache } from 'react'
-import { cookies, headers } from 'next/headers'
 import { productConfig } from '@{{projectSlug}}/branding'
-import { LOCALE_COOKIE, resolveLocale } from '@{{projectSlug}}/i18n'
+import { isLocale, resolveLocale } from '@{{projectSlug}}/i18n'
 import type { Locale } from '@{{projectSlug}}/i18n'
 
 /**
- * Which language this request is answered in.
+ * Where each language of this site lives, and how a visitor is sent there.
  *
- * The same resolution as `apps/web/src/lib/locale.ts`, and the same cookie:
- * a visitor who chose German on the marketing site arrives at the sign-in page
- * in German, because both applications read one value under one name. Nothing
- * here is shared through a package because the two lines that differ -- which
- * `next/headers` a build sees -- are the two lines that matter.
+ * On the marketing site the language is in the URL: `/` is the product's
+ * default language, `/de` and `/es` are the others. That is the opposite of
+ * the rule `apps/web` follows -- there the locale is never read from the URL
+ * -- and the difference is deliberate. The web application is a signed-in
+ * surface where a locale in a link would let one person choose another's
+ * language; the marketing site is a public document that search engines and
+ * shared links have to address by language, and a document whose language
+ * depends on a cookie cannot be cached as one. With the language in the path,
+ * every page is built once per language at deploy time and served from the
+ * edge, and `hreflang` can say where the other languages are.
  *
- * Reading the cookie makes this page render per request rather than as a
- * cached document. That is the cost of a language chosen in the browser, and
- * it is paid here rather than hidden: a locale in the URL (`/de/`) would let
- * the page be static again and is the recorded follow-up.
+ * **The default language is bare.** `/` rather than `/en`, because the
+ * address a product prints on its business cards should be the address the
+ * page has, and because a site that redirects `/` to `/en` on every visit
+ * pays a round trip for its most common request. `/en` is redirected to `/`
+ * permanently so a document has one address, not two.
+ *
+ * **An unknown segment is a 404, not a fallback.** `/fr` on a product that
+ * offers no French is not French, and it is not English either: answering
+ * the default language would give a search engine an English page at an
+ * address that claims to be French. The layout validates the segment against
+ * the *offered* list -- `productConfig.i18n.locales`, not everything the
+ * package can speak -- and `dynamicParams = false` refuses anything the
+ * build did not produce.
+ *
+ * The cookie and `Accept-Language` still decide one thing: where a visitor
+ * arriving at the bare path is sent. That decision is made in the middleware,
+ * which is the only part of the site that runs per request; the pages do not.
  */
-export const currentLocale = cache(async (): Promise<Locale> => {
-  const [store, requestHeaders] = await Promise.all([cookies(), headers()])
-  return resolveLocale(
-    {
-      cookie: store.get(LOCALE_COOKIE)?.value,
-      acceptLanguage: requestHeaders.get('accept-language'),
-    },
-    productConfig.i18n.locales,
-    productConfig.i18n.defaultLocale,
-  )
-})
+
+export const OFFERED_LOCALES: readonly Locale[] = productConfig.i18n.locales
+export const DEFAULT_LOCALE: Locale = productConfig.i18n.defaultLocale
+
+/**
+ * The locale a path segment names, or `null` when nothing offered is spelled
+ * that way. Both checks: `isLocale` says the package can speak it, the offered
+ * list says this product does.
+ */
+export function localeFromSegment(segment: string | undefined): Locale | null {
+  if (segment === undefined) return null
+  return isLocale(segment) && OFFERED_LOCALES.includes(segment) ? segment : null
+}
+
+/** `path` without a leading locale segment: `/de/pricing` is `/pricing`, `/de` is `/`. */
+export function stripLocale(path: string): string {
+  const [, first = '', ...rest] = path.split('/')
+  if (localeFromSegment(first) === null) return path
+  const remainder = rest.join('/')
+  return remainder ? `/${remainder}` : '/'
+}
+
+/** Where one locale's copy of `path` lives: bare for the default, prefixed for the rest. */
+export function localizedPath(locale: Locale, path = '/'): string {
+  const bare = stripLocale(path)
+  if (locale === DEFAULT_LOCALE) return bare
+  return bare === '/' ? `/${locale}` : `/${locale}${bare}`
+}
+
+/**
+ * The language a visitor who expressed no preference in the URL should get:
+ * the cookie the switcher set, then the browser's `Accept-Language`, then the
+ * product's default -- the same order `apps/web` uses for every request.
+ */
+export function preferredLocale(cookie: string | undefined, acceptLanguage: string | null): Locale {
+  return resolveLocale({ cookie, acceptLanguage }, OFFERED_LOCALES, DEFAULT_LOCALE)
+}
+
+/**
+ * The `hreflang` set for one path: every offered language at its address, and
+ * `x-default` at the default's, which is where the bare path sends a visitor
+ * whose language is none of them.
+ */
+export function alternatesFor(path = '/'): Record<string, string> {
+  const languages: Record<string, string> = {}
+  for (const locale of OFFERED_LOCALES) languages[locale] = localizedPath(locale, path)
+  languages['x-default'] = localizedPath(DEFAULT_LOCALE, path)
+  return languages
+}

@@ -105,12 +105,32 @@ test('negotiation only ever answers something the product offers', () => {
   assert.equal(negotiateLocale('de', ['en'], 'en'), 'en')
 })
 
-test('the cookie wins, but only when it names an offered locale', () => {
+test('the cookie wins over the browser, but only when it names an offered locale', () => {
   const offered = ['en', 'de'] as const
   assert.equal(resolveLocale({ cookie: 'de', acceptLanguage: 'en' }, offered, 'en'), 'de')
   assert.equal(resolveLocale({ cookie: 'fr', acceptLanguage: 'de' }, offered, 'en'), 'de')
   assert.equal(resolveLocale({ cookie: 'de', acceptLanguage: 'de' }, ['en'], 'en'), 'en')
   assert.equal(resolveLocale({}, offered, 'en'), 'en')
+})
+
+test('a stored choice outranks the cookie, and the tenant default sits below it', () => {
+  const offered = ['en', 'de', 'es'] as const
+  // Chosen on another device last week, and on this one yesterday: the account wins.
+  assert.equal(
+    resolveLocale({ stored: 'es', cookie: 'de', acceptLanguage: 'en' }, offered, 'en'),
+    'es',
+  )
+  // Nothing stored: the cookie still beats the organisation's default.
+  assert.equal(resolveLocale({ cookie: 'de', tenantDefault: 'es' }, offered, 'en'), 'de')
+  // No choice anywhere: the organisation's default beats the browser.
+  assert.equal(resolveLocale({ tenantDefault: 'es', acceptLanguage: 'de' }, offered, 'en'), 'es')
+  // And a stored or default value the product no longer offers falls through
+  // like a stale cookie does, rather than being honoured because it was saved.
+  assert.equal(
+    resolveLocale({ stored: 'es', tenantDefault: 'es', acceptLanguage: 'de' }, ['en', 'de'], 'en'),
+    'de',
+  )
+  assert.equal(resolveLocale({ stored: null, tenantDefault: null, cookie: null }, offered, 'en'), 'en')
 })
 
 test('the return path refuses anything that could leave the site', () => {

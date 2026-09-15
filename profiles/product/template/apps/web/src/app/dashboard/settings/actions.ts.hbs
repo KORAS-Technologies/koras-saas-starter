@@ -1,0 +1,57 @@
+'use server'
+
+import { revalidatePath } from 'next/cache'
+import { ApiError, updateTenantLocale } from '@{{projectSlug}}/api-client'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { isLocale } from '@{{projectSlug}}/i18n'
+import { can, signedInContext } from '../../../lib/access'
+import { translator } from '../../../lib/locale'
+import { apiBaseUrl, providerToken } from '../../../lib/session'
+import type { TenantLocaleState } from './state'
+
+/**
+ * The organisation's default language, saved from Settings.
+ *
+ * Re-establishes who is calling and what they may do before it talks to the
+ * API, and the API decides again with the same token -- the same division the
+ * Files actions keep. `settings.manage` here, because this is a choice about
+ * everybody in the tenant; a member's own language never comes through here,
+ * it goes through the locale route with the cookie.
+ *
+ * The value is held to the list the product offers before it is sent, so the
+ * API is never asked to store a language this product's own switcher would
+ * refuse to show. An empty value clears the default.
+ */
+export async function setTenantLocale(
+  _prev: TenantLocaleState,
+  form: FormData,
+): Promise<TenantLocaleState> {
+  const t = await translator()
+
+  const context = await signedInContext()
+  if (context === null || !can(context.access, 'settings.manage')) {
+    return { status: 'error', message: t('settings.language.tenantForbidden') }
+  }
+  const [token, baseUrl] = [await providerToken(), apiBaseUrl()]
+  if (!token || !baseUrl) return { status: 'error', message: t('settings.language.tenantError') }
+
+  const requested = String(form.get('locale') ?? '')
+  const locale = requested === '' ? null : requested
+  if (locale !== null && !(isLocale(locale) && productConfig.i18n.locales.includes(locale))) {
+    return { status: 'error', message: t('settings.language.tenantError') }
+  }
+
+  try {
+    await updateTenantLocale({ baseUrl, token, locale })
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 403) {
+      return { status: 'error', message: t('settings.language.tenantForbidden') }
+    }
+    return { status: 'error', message: t('settings.language.tenantError') }
+  }
+
+  // Every signed-in page reads the default through the same cached settings
+  // call, so the whole area is stale rather than one route.
+  revalidatePath('/dashboard', 'layout')
+  return { status: 'saved', message: t('settings.language.tenantSaved') }
+}

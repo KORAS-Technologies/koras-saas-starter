@@ -3,31 +3,51 @@ import { cookies, headers } from 'next/headers'
 import { productConfig } from '@{{projectSlug}}/branding'
 import { LOCALE_COOKIE, createTranslator, resolveLocale } from '@{{projectSlug}}/i18n'
 import type { Locale, Translator } from '@{{projectSlug}}/i18n'
+import { currentMember } from './session'
+import { tenantSettings } from './tenant-settings'
 
 /**
  * Which language this request is answered in.
  *
  * Resolved once per render and read by the layout, every page and every server
  * component that renders a string. `cache` from React de-duplicates within one
- * render pass, so the cookie and the header are read once however many callers
- * there are -- and every caller sees the same answer, which is what stops a page
- * rendering its heading in one language and its footer in another.
+ * render pass, so the cookie, the header and the tenant row are read once
+ * however many callers there are -- and every caller sees the same answer,
+ * which is what stops a page rendering its heading in one language and its
+ * footer in another.
  *
- * The order is the one `resolveLocale` documents: the cookie the visitor set,
- * then the browser's `Accept-Language`, then the product's default. Nothing is
- * read from the URL. The value is validated against the languages the product
- * offers before it is used, because a cookie is a value the browser sent and
- * `lang` on the document is where it ends up.
+ * The order is the one `resolveLocale` documents: the choice this person
+ * stored, then the cookie this device set, then the organisation's default,
+ * then the browser's `Accept-Language`, then the product's own. The first and
+ * third exist only for a signed-in member -- they come from the tenant
+ * settings read, which is the same cached call the shell already makes for
+ * branding and features, so a signed-in page pays no extra request for its
+ * language. A visitor with no session skips both and gets the public order.
+ * Nothing is read from the URL. Every value is validated against the languages
+ * the product offers before it is used, because a cookie is a value the
+ * browser sent, a stored value is one the API sent, and `lang` on the document
+ * is where they end up.
+ *
+ * `tenantSettings` never throws and answers null when the API cannot be
+ * reached, so an outage costs a member their stored choice for one page and
+ * nothing else: the cookie the switcher also set carries them through it.
  *
  * Server-side only, like `tenantSettings`: `cookies()` and `headers()` are
  * request-scoped and exist nowhere else. A client component receives the
  * result as a prop.
  */
 export const currentLocale = cache(async (): Promise<Locale> => {
-  const [store, requestHeaders] = await Promise.all([cookies(), headers()])
+  const [store, requestHeaders, member] = await Promise.all([
+    cookies(),
+    headers(),
+    currentMember(),
+  ])
+  const settings = member === null ? null : await tenantSettings()
   return resolveLocale(
     {
+      stored: settings?.member_locale,
       cookie: store.get(LOCALE_COOKIE)?.value,
+      tenantDefault: settings?.locale,
       acceptLanguage: requestHeaders.get('accept-language'),
     },
     productConfig.i18n.locales,

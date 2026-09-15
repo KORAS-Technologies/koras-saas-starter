@@ -124,21 +124,42 @@ export function negotiateLocale(
 /**
  * The locale for one request, in the order the sources are trusted.
  *
- *   1. the cookie the visitor set through the switcher
- *   2. the browser's `Accept-Language`
- *   3. the product's default
+ *   1. the choice this person stored, when they are signed in
+ *   2. the cookie the visitor set through the switcher
+ *   3. the organisation's default, when they are signed in
+ *   4. the browser's `Accept-Language`
+ *   5. the product's default
  *
- * A cookie naming a locale the product does not offer is ignored rather than
- * honoured: the value came from a browser, and a product that stopped offering
- * a language should stop rendering it. Nothing here reads a URL, because a
- * locale in a query string is a locale somebody can put in a link.
+ * The stored choice sits above the cookie because it is the more deliberate
+ * of the two: it follows the person to every device, and a cookie set on a
+ * shared machine last month should not outrank it. The organisation's default
+ * sits below the cookie because it is a default -- what a member sees before
+ * they choose anything -- and a visitor who has chosen, even only on this
+ * device, has chosen.
+ *
+ * Every source is validated against what the product offers, and a value
+ * naming a locale it does not offer is ignored rather than honoured: the
+ * cookie came from a browser, the stored values came from the API, and a
+ * product that stopped offering a language should stop rendering it whoever
+ * remembered it. Nothing here reads a URL, because a locale in a query string
+ * is a locale somebody can put in a link.
+ *
+ * `stored` and `tenantDefault` are simply absent for a visitor with no session,
+ * which is what makes the public pages the same function with fewer inputs.
  */
 export function resolveLocale(
-  input: { cookie?: string | null; acceptLanguage?: string | null },
+  input: {
+    stored?: string | null
+    cookie?: string | null
+    tenantDefault?: string | null
+    acceptLanguage?: string | null
+  },
   available: readonly Locale[],
   fallback: Locale,
 ): Locale {
-  if (isLocale(input.cookie) && available.includes(input.cookie)) return input.cookie
+  for (const candidate of [input.stored, input.cookie, input.tenantDefault]) {
+    if (isLocale(candidate) && available.includes(candidate)) return candidate
+  }
   return negotiateLocale(input.acceptLanguage, available, fallback)
 }
 

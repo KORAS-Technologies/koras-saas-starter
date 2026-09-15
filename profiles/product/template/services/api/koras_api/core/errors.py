@@ -1,0 +1,89 @@
+"""One shape for every refusal: a stable code, and a sentence for the log.
+
+The assistant's routes answered `{"code": ..., "message": ...}` from the day
+they existed, so the page could say *why* in the reader's language -- a
+spent allowance and an unreachable model are both errors and are different
+sentences. Every other route answered a plain English `detail`, and the web
+tier mapped the *status* to its own message, which is coarser than it looks:
+a 402 on the files page is "your plan does not include this" and also "this
+upload would exceed your storage", and only the English string told them
+apart.
+
+This is the same shape for the whole API. `code` is the contract: a short,
+stable, snake_case name the web tier maps to a catalogue key and renders in
+the visitor's language. `message` is for the log, the terminal and the
+engineer reading a response by hand; it is English, it is not shown to a
+person, and it may change without notice. Nothing else goes in `detail`,
+because anything else becomes a second contract by accident.
+
+Codes are listed here rather than typed inline so a route cannot invent
+one that nothing on the web side knows. Adding a code means adding it to
+`packages/i18n` as `errors.<code>` in every language the product offers;
+the structural test in the starter reads both lists.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from enum import StrEnum
+
+from fastapi import HTTPException
+
+
+class ApiErrorCode(StrEnum):
+    """Every refusal a route of this API can answer with, by name."""
+
+    # who is asking
+    TOKEN_INVALID = "token_invalid"  # noqa: S105 - an error code, not a credential
+    TENANT_INACTIVE = "tenant_inactive"
+    ROLE_REQUIRED = "role_required"
+    PERMISSION_MISSING = "permission_missing"
+    # what the plan includes
+    ENTITLEMENT_MISSING = "entitlement_missing"
+    STORAGE_LIMIT_EXCEEDED = "storage_limit_exceeded"
+    # files
+    FILE_NOT_FOUND = "file_not_found"
+    UPLOAD_NOT_ARRIVED = "upload_not_arrived"
+    UPLOAD_SIZE_MISMATCH = "upload_size_mismatch"
+    STORAGE_UNAVAILABLE = "storage_unavailable"
+    # reporting
+    REPORT_NOT_FOUND = "report_not_found"
+    SCHEDULE_NOT_FOUND = "schedule_not_found"
+    EXPORT_NOT_FOUND = "export_not_found"
+    EXPORT_FORMAT_UNKNOWN = "export_format_unknown"
+    EXPORT_FORMAT_UNSUPPORTED = "export_format_unsupported"
+    FILTER_INVALID = "filter_invalid"
+    RECIPIENT_INVALID = "recipient_invalid"
+    PERIOD_NOT_A_FILTER = "period_not_a_filter"
+    REPORT_FAILED = "report_failed"
+    # the assistant (its own errors carry `koras_ai.ErrorCode`; this one is the API's)
+    TOOL_DENIED = "tool_denied"
+    # the platform's private contract: machine callers, never a person
+    ENVIRONMENT_MISMATCH = "environment_mismatch"
+    SLUG_TAKEN = "slug_taken"
+    TENANT_NOT_FOUND = "tenant_not_found"
+    MACHINE_IDENTITY_REQUIRED = "machine_identity_required"
+    PLATFORM_CALLER_REQUIRED = "platform_caller_required"
+    PLATFORM_CALLER_UNCONFIGURED = "platform_caller_unconfigured"
+
+
+def api_error(
+    status_code: int,
+    code: ApiErrorCode,
+    message: str,
+    *,
+    headers: Mapping[str, str] | None = None,
+) -> HTTPException:
+    """The refusal a route raises: `raise api_error(404, ApiErrorCode.FILE_NOT_FOUND, "...")`.
+
+    Returned rather than raised so `raise ... from exc` reads naturally at
+    the call site, and so a test can build one to compare against.
+    """
+    return HTTPException(
+        status_code=status_code,
+        detail={"code": code.value, "message": message},
+        headers=dict(headers) if headers else None,
+    )
+
+
+__all__ = ["ApiErrorCode", "api_error"]

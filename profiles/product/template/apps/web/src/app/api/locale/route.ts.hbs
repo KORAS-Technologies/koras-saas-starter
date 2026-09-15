@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { productConfig } from '@{{projectSlug}}/branding'
 import { LOCALE_COOKIE, isLocale, safeReturnPath } from '@{{projectSlug}}/i18n'
+import { rememberLocale } from '../../../lib/locale-preference'
 
 /**
  * Remember the language a visitor chose.
@@ -33,6 +34,15 @@ import { LOCALE_COOKIE, isLocale, safeReturnPath } from '@{{projectSlug}}/i18n'
  * two-letter code that authorises nothing -- but it is set `HttpOnly` anyway
  * because nothing in the browser needs to read it, and a cookie script cannot
  * see is one fewer thing a script can change.
+ *
+ * **Signed in, the choice is kept with the account as well.** `rememberLocale`
+ * sends it to the API under the member's own token, so the next device they
+ * sign in on starts in the language they chose here. The cookie is still set
+ * first and whatever the API answers, because the public pages read only the
+ * cookie and because a switch made during an outage should still switch.
+ * This is done here rather than in a server action on purpose: the switcher
+ * is a plain form so it works with no script attached, and this handler is
+ * the one place every form that changes the language arrives at.
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const origin = request.headers.get('origin')
@@ -55,6 +65,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       httpOnly: true,
       secure: request.nextUrl.protocol === 'https:',
     })
+    // After the cookie, and awaited so the redirect is not sent before the
+    // API has been told: the page the visitor lands on reads the stored value
+    // first, and a redirect that raced the write could render the old one.
+    await rememberLocale(requested)
   }
 
   return response

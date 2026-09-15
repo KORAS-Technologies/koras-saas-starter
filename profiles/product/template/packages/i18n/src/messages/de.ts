@@ -633,4 +633,56 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'faq.isolation.title': 'Sind die Daten meiner Organisation von denen aller anderen getrennt?',
   'faq.isolation.p1':
     'Ja, und zwar in der Datenbank getrennt, nicht dadurch, dass die Anwendung daran denkt, zu fragen. Eine Abfrage, die Ihre Organisation nicht nennt, liefert gar nichts.',
+
+  // F20 phase 2: persistence and admin
+  /* ------------------------------------------------------ language, stored */
+  'settings.language.remembered':
+    'Da Sie angemeldet sind, wird Ihre Wahl in Ihrem Konto gespeichert und gilt auf jedem Gerät, an dem Sie sich anmelden.',
+  'settings.language.tenantTitle': 'Standard für Ihre Organisation',
+  'settings.language.tenantDescription':
+    'Was ein Mitglied Ihrer Organisation sieht, bevor es selbst eine Sprache wählt. Wer bereits gewählt hat, behält seine Wahl.',
+  'settings.language.tenantLabel': 'Mitglieder beginnen in',
+  'settings.language.tenantFollowBrowser': 'der Sprache ihres Browsers',
+  'settings.language.tenantSave': 'Standard speichern',
+  'settings.language.tenantSaving': 'Wird gespeichert…',
+  'settings.language.tenantSaved': 'Die Standardsprache wurde gespeichert.',
+  'settings.language.tenantError':
+    'Die Standardsprache konnte nicht gespeichert werden. Versuchen Sie es gleich noch einmal.',
+  'settings.language.tenantForbidden':
+    'Nur ein Eigentümer oder Administrator kann die Standardsprache ändern.',
+
+  /* ------------------------------------------------------------- admin */
+  'admin.title': '{product} Admin',
+  'admin.login.audience':
+    'Für Eigentümer und Administratoren der Organisation. Eine Mehrfaktor-Authentifizierung ist erforderlich.',
+  'admin.mfaRequired':
+    'Eine Mehrfaktor-Authentifizierung ist erforderlich. Richten Sie einen zweiten Faktor ein und melden Sie sich erneut an.',
+  'admin.forbidden': 'Diese Anwendung ist für Eigentümer und Administratoren der Organisation.',
+  'admin.home.signedInAs': 'Angemeldet als {name}.',
+
+  /* ------------------------------------------ F20 phase 2: errors and email */
+  'errors.tokenInvalid': 'Ihre Sitzung ist abgelaufen. Melden Sie sich erneut an.',
+  'errors.tenantInactive': 'Ihre Organisation ist in diesem Produkt nicht aktiv.',
+  'errors.roleRequired':
+    'Das können nur Eigentümer oder Administratoren Ihrer Organisation tun.',
+  'errors.permissionMissing': 'Ihre Rolle umfasst das nicht.',
+  'errors.entitlementMissing': 'Ihr Tarif enthält das nicht.',
+  'errors.storageLimitExceeded':
+    'Dieser Upload würde den in Ihrem Tarif enthaltenen Speicher überschreiten.',
+  'errors.fileNotFound': 'Diese Datei existiert nicht mehr.',
+  'errors.uploadNotArrived':
+    'Die Datei ist nicht wie erwartet im Speicher angekommen. Versuchen Sie den Upload erneut.',
+  'errors.uploadSizeMismatch':
+    'Die hochgeladene Datei hat nicht die angekündigte Größe. Versuchen Sie den Upload erneut.',
+  'errors.storageUnavailable': 'Der Dateispeicher ist derzeit nicht verfügbar.',
+  'errors.reportNotFound': 'Diesen Bericht gibt es nicht.',
+  'errors.scheduleNotFound': 'Diesen Zeitplan gibt es nicht mehr.',
+  'errors.exportNotFound': 'Diesen Export gibt es nicht mehr.',
+  'errors.exportFormatUnknown': 'Dieses Exportformat ist unbekannt.',
+  'errors.exportFormatUnsupported': 'Dieser Bericht kann nicht in diesem Format exportiert werden.',
+  'errors.filterInvalid': 'Einer der Filter ist für diesen Bericht nicht gültig.',
+  'errors.recipientInvalid': 'Einer der Empfänger ist keine E-Mail-Adresse.',
+  'errors.periodNotAFilter': 'Den Zeitraum eines geplanten Berichts bestimmt sein Rhythmus.',
+  'errors.reportFailed': 'Der Bericht konnte nicht erstellt werden. Versuchen Sie es später erneut.',
+  'errors.toolDenied': 'Ihre Rolle erlaubt das im Assistenten nicht.',
 }

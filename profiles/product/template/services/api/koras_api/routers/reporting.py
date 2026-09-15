@@ -44,6 +44,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from ..core.database import tenant_session
+from ..core.errors import ApiErrorCode, api_error
 from ..core.reporting import EXPORT_PERMISSION, ReportingDep, SqlAuditSink, TenantReporting
 from ..core.storage import StorageDep, TenantStorage
 
@@ -150,31 +151,35 @@ def lookup(reporting: TenantReporting, key: str) -> tuple[ReportDefinition, Visi
     """
     definition = reporting.catalogue.reports.get(key)
     if definition is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such report")
+        raise api_error(status.HTTP_404_NOT_FOUND, ApiErrorCode.REPORT_NOT_FOUND, "no such report")
     visibility = visible(reporting, definition)
     if visibility is Visibility.HIDDEN:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such report")
+        raise api_error(status.HTTP_404_NOT_FOUND, ApiErrorCode.REPORT_NOT_FOUND, "no such report")
     return definition, visibility
 
 
 def require_available(definition: ReportDefinition, visibility: Visibility) -> None:
     if visibility is Visibility.LOCKED:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=f"this organization's plan does not include {definition.entitlement}",
+        raise api_error(
+            status.HTTP_402_PAYMENT_REQUIRED,
+            ApiErrorCode.ENTITLEMENT_MISSING,
+            f"this organization's plan does not include {definition.entitlement}",
         )
 
 
 def require_exporter(reporting: TenantReporting) -> None:
     """The two gates a download and a schedule share: the permission, then the plan."""
     if EXPORT_PERMISSION not in reporting.context.permissions:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="exporting reports needs reports.export"
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            ApiErrorCode.PERMISSION_MISSING,
+            "exporting reports needs reports.export",
         )
     if not reporting.grant.can_export:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="this organization's plan does not include reporting.export",
+        raise api_error(
+            status.HTTP_402_PAYMENT_REQUIRED,
+            ApiErrorCode.ENTITLEMENT_MISSING,
+            "this organization's plan does not include reporting.export",
         )
 
 
@@ -182,13 +187,16 @@ def export_format(definition: ReportDefinition, raw: str | None) -> ExportFormat
     try:
         fmt = ExportFormat(raw or "csv")
     except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_406_NOT_ACCEPTABLE, detail="unknown export format"
+        raise api_error(
+            status.HTTP_406_NOT_ACCEPTABLE,
+            ApiErrorCode.EXPORT_FORMAT_UNKNOWN,
+            "unknown export format",
         ) from None
     if fmt not in definition.export_formats:
-        raise HTTPException(
-            status_code=status.HTTP_406_NOT_ACCEPTABLE,
-            detail=f"this report cannot be exported as {fmt.value}",
+        raise api_error(
+            status.HTTP_406_NOT_ACCEPTABLE,
+            ApiErrorCode.EXPORT_FORMAT_UNSUPPORTED,
+            f"this report cannot be exported as {fmt.value}",
         )
     return fmt
 
@@ -209,8 +217,8 @@ async def resolve(
     try:
         filters = resolve_filters(definition, query)
     except FilterError as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+        raise api_error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, ApiErrorCode.FILTER_INVALID, str(error)
         ) from error
     try:
         return await definition.resolver(reporting.context, filters)
@@ -221,9 +229,10 @@ async def resolve(
         # resolver's traceback names tables and columns nobody outside
         # should read.
         _log.exception("report %s failed: %s", definition.key, type(error).__name__)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="the report could not be produced; the reason is in the server log",
+        raise api_error(
+            status.HTTP_502_BAD_GATEWAY,
+            ApiErrorCode.REPORT_FAILED,
+            "the report could not be produced; the reason is in the server log",
         ) from error
 
 

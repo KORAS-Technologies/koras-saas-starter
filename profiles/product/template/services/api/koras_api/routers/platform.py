@@ -26,12 +26,13 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Response, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core import tenant_store
 from ..core.database import PlatformSession
+from ..core.errors import ApiErrorCode, api_error
 from ..core.platform_auth import PlatformMachineDep
 from ..core.settings import settings
 
@@ -111,12 +112,11 @@ async def create_tenant(
     # retry policy fails a 4xx immediately, and this input will not become valid
     # by being sent again.
     if body.environment != settings.environment.value:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                f"This service serves the {settings.environment.value!r} environment; "
-                f"the request names {body.environment!r}"
-            ),
+        raise api_error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            ApiErrorCode.ENVIRONMENT_MISMATCH,
+            f"This service serves the {settings.environment.value!r} environment; "
+            f"the request names {body.environment!r}",
         )
 
     try:
@@ -135,9 +135,10 @@ async def create_tenant(
         # Not the retry case, which is answered above with 200. This is a
         # second organization asking for a name the first one holds, and it
         # needs a person to choose a different one.
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Another organization already holds the slug {exc.args[0]!r}",
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            ApiErrorCode.SLUG_TAKEN,
+            f"Another organization already holds the slug {exc.args[0]!r}",
         ) from exc
 
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
@@ -197,7 +198,7 @@ async def sync_plan(
         period_ends_at=body.current_period_end,
     )
     if not recorded:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such tenant")
+        raise api_error(status.HTTP_404_NOT_FOUND, ApiErrorCode.TENANT_NOT_FOUND, "No such tenant")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -234,7 +235,7 @@ async def get_tenant(
 ) -> TenantResponse:
     tenant = await tenant_store.find_by_id(session, tenant_id)
     if tenant is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such tenant")
+        raise api_error(status.HTTP_404_NOT_FOUND, ApiErrorCode.TENANT_NOT_FOUND, "No such tenant")
     return _response(tenant)
 
 
@@ -271,5 +272,5 @@ async def _set_status(session: AsyncSession, tenant_id: str, new_status: str) ->
     """
     tenant = await tenant_store.set_status(session, tenant_id, new_status)
     if tenant is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such tenant")
+        raise api_error(status.HTTP_404_NOT_FOUND, ApiErrorCode.TENANT_NOT_FOUND, "No such tenant")
     return _response(tenant)

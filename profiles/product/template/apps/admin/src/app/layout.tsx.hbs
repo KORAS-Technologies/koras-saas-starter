@@ -1,12 +1,54 @@
 import type { Metadata } from 'next'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { createTranslator, localeDirection } from '@{{projectSlug}}/i18n'
+import { LanguageSwitcher, brandStyle } from '@{{projectSlug}}/ui'
+import { currentLocale } from '../lib/locale'
 import './globals.css'
 
-export const metadata: Metadata = { title: '{{projectName}} Admin' }
+const { brand, product } = productConfig
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+/**
+ * The title, in the visitor's language. The product's name is not translated
+ * -- a product has one name -- but the word beside it is.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const t = createTranslator(await currentLocale())
+  return { title: t('admin.title', { product: product.name }) }
+}
+
+/**
+ * The frame every staff page sits in.
+ *
+ * `lang` and `dir` come from the resolved locale rather than a literal, which
+ * is the one thing a translated application can get wrong without anybody
+ * noticing: every string right, and a screen reader pronouncing them all as
+ * English. The switcher is in the footer so it is on every page, including
+ * the sign-in page -- the one a person with the wrong language is most likely
+ * to be stuck on. The brand tokens are applied here the way the web
+ * application applies them, so the shared components are drawn in this
+ * product's colours rather than in none.
+ */
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const locale = await currentLocale()
+  const t = createTranslator(locale)
+
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang={locale} dir={localeDirection(locale)}>
+      <body
+        style={brandStyle(brand)}
+        className="flex min-h-screen flex-col bg-surface font-sans text-ink"
+      >
+        <a href="#main-content" className="skip-link">
+          {t('common.skipToMain')}
+        </a>
+        <div className="flex flex-1 flex-col">{children}</div>
+        <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-line px-6 py-4 text-xs text-ink-muted">
+          <span>
+            {t('common.copyright', { year: new Date().getFullYear(), product: product.name })}
+          </span>
+          <LanguageSwitcher locale={locale} />
+        </footer>
+      </body>
     </html>
   )
 }

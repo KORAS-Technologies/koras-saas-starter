@@ -248,6 +248,8 @@ def test_a_schedule_is_validated_recorded_and_removable(owner: tuple[Harness, Te
     assert body["filters"] == {"outcome": "ok", "limit": "100"}
     assert body["cadence"] == "weekly" and body["format"] == "pdf"
     assert body["next_run_at"].startswith("2026-09-21T06:00:00")
+    # No language named and no Accept-Language sent: the product's default.
+    assert body["locale"] == "en"
     recorded = harness.session.inserted("audit_events")
     assert [r["action"] for r in recorded][-1] == "report.scheduled"
 
@@ -256,6 +258,32 @@ def test_a_schedule_is_validated_recorded_and_removable(owner: tuple[Harness, Te
     assert [r["action"] for r in harness.session.inserted("audit_events")][
         -1
     ] == "report.schedule_removed"
+
+
+def test_a_schedule_carries_the_language_its_deliveries_are_written_in(
+    owner: tuple[Harness, TestClient],
+) -> None:
+    """Named in the body when the recipients are not the creator; else the request's."""
+    _harness, client = owner
+    body = {"cadence": "daily", "format": "csv", "recipients": ["ada@example.com"]}
+
+    named = client.post("/api/v1/reports/usage.quotas/schedules", json={**body, "locale": "es"})
+    assert named.status_code == 201, named.text
+    assert named.json()["locale"] == "es"
+
+    # No language named: the one the request was made in, from Accept-Language.
+    negotiated = client.post(
+        "/api/v1/reports/usage.quotas/schedules",
+        json=body,
+        headers={"Accept-Language": "de-AT,de;q=0.9,en;q=0.5"},
+    )
+    assert negotiated.status_code == 201, negotiated.text
+    assert negotiated.json()["locale"] == "de"
+
+    # A language the catalogue cannot speak is refused at the boundary, not
+    # stored and delivered in English by surprise.
+    refused = client.post("/api/v1/reports/usage.quotas/schedules", json={**body, "locale": "fr"})
+    assert refused.status_code == 422
 
 
 def test_a_schedule_refuses_what_the_worker_would_have_to_trust(
@@ -319,7 +347,9 @@ def test_a_schedule_needs_the_export_permission_and_the_scheduled_entitlement() 
     app.dependency_overrides[require_auth] = unscheduled.claims
     try:
         answer = TestClient(app).post("/api/v1/reports/usage.quotas/schedules", json=body)
-        assert answer.status_code == 402 and "reporting.scheduled" in answer.json()["detail"]
+        assert answer.status_code == 402
+        assert answer.json()["detail"]["code"] == "entitlement_missing"
+        assert "reporting.scheduled" in answer.json()["detail"]["message"]
         assert TestClient(app).get("/api/v1/reports/usage.quotas").json()["can_schedule"] is False
     finally:
         app.dependency_overrides.clear()

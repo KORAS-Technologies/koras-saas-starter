@@ -22,6 +22,15 @@ How it is sent: through `koras_email`, as HTML with a plain-text twin, over
 SMTP to whichever provider the environment's SMTP_* settings name, and
 recorded rather than sent when no host is set -- so a product without a
 provider still runs and the log says what it would have sent.
+
+In which language: the one the request was made in, which the API learns
+from `Accept-Language` (`core/locale.py`). The approvers are other people,
+and what *they* read is not known to a product yet -- a member's stored
+preference and a tenant default are F20's other half -- so the requester's
+language stands in for the organization's until it is. What is translated
+is the notice's own sentences; the description of each action ("Delete the
+file X") is composed by `summarize` in English, because a per-tool catalogue
+is the assistant's to grow (FOLLOW_UPS F24).
 """
 
 from __future__ import annotations
@@ -35,7 +44,7 @@ from typing import Any
 
 from koras_ai import ActionStatus, ProposedAction
 from koras_auth.permissions import permissions_for
-from koras_email import EmailSender, sender_for
+from koras_email import DEFAULT_LOCALE, EmailSender, Locale, sender_for, translate
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +59,13 @@ _FILE_BY_ID = text(
     "select name, size_bytes, ready_at from public.files "
     "where id = cast(:id as uuid) and tenant_id = :tenant_id and status = 'ready'"
 )
+
+#: How a timestamp reads in each language: English month names are English.
+_WHEN_FORMAT: dict[str, str] = {
+    "en": "%d %b %Y, %H:%M UTC",
+    "de": "%d.%m.%Y, %H:%M UTC",
+    "es": "%d/%m/%Y, %H:%M UTC",
+}
 
 #: How an operation class reads to a person.
 _OPERATION_WORDS = {
@@ -212,33 +228,41 @@ def compose(
     requester: Requester,
     request_text: str,
     requested_at: datetime,
+    locale: Locale = DEFAULT_LOCALE,
 ) -> tuple[str, str, str]:
-    """Subject, plain text, and HTML. The same words in both bodies."""
+    """Subject, plain text, and HTML. The same words in both bodies, in one language."""
     first = summaries[0].title if summaries else "an action"
     subject = (
-        f"[{product}] Approval needed: {first}"
+        translate(locale, "approval_subject_one", product=product, first=first)
         if len(summaries) == 1
-        else f"[{product}] Approval needed: {len(summaries)} actions"
+        else translate(locale, "approval_subject_many", product=product, count=len(summaries))
     )
     where = f"{app_url.rstrip('/')}/dashboard/assistant" if app_url else ""
     who = requester.display()
-    when = requested_at.astimezone(UTC).strftime("%d %b %Y, %H:%M UTC")
+    when = requested_at.astimezone(UTC).strftime(_WHEN_FORMAT.get(locale, _WHEN_FORMAT["en"]))
     asked = request_text.strip()[:300]
+    no_message = translate(locale, "approval_no_message")
+    proposed = translate(
+        locale, "approval_proposed_many" if len(summaries) > 1 else "approval_proposed_one"
+    )
+    not_run = translate(locale, "approval_not_run")
 
     lines = [
-        f"{who} asked the assistant in {product}:",
-        f'  "{asked}"' if asked else "  (no message)",
+        translate(locale, "approval_asked", who=who, product=product),
+        f'  "{asked}"' if asked else f"  {no_message}",
         "",
-        "The assistant proposed:" if len(summaries) > 1 else "The assistant proposed to:",
+        proposed,
     ]
     for summary in summaries:
         lines.append(f"  - {summary.title}" + (f" ({summary.detail})" if summary.detail else ""))
     lines += [
         "",
-        "It has not run. It runs only if an owner or administrator approves it.",
-        f"Review and decide: {where}" if where else "Review and decide on the assistant page.",
+        not_run,
+        translate(locale, "approval_review_at", where=where)
+        if where
+        else translate(locale, "approval_review_on_page"),
         "",
-        f"Requested {when}.",
+        translate(locale, "approval_requested_at", when=when),
     ]
     text_body = "\n".join(lines)
 
@@ -252,9 +276,9 @@ def compose(
     button = (
         f'<a href="{e(where)}" style="display:inline-block;background:#3b5bdb;color:#ffffff;'
         'text-decoration:none;padding:12px 20px;border-radius:6px;font-weight:600;">'
-        "Review and decide</a>"
+        f"{e(translate(locale, 'approval_button'))}</a>"
         if where
-        else "<strong>Open the assistant page to review and decide.</strong>"
+        else f"<strong>{e(translate(locale, 'approval_review_on_page'))}</strong>"
     )
     html_body = _html_document(
         product=product,
@@ -263,6 +287,7 @@ def compose(
         items=items,
         button=button,
         when=when,
+        locale=locale,
     )
     return subject, text_body, html_body
 
@@ -273,10 +298,22 @@ _CELL = "padding:18px 28px 0 28px;font-size:15px;line-height:1.5;"
 
 
 def _html_document(
-    *, product: str, who: str, asked: str, items: str, button: str, when: str
+    *,
+    product: str,
+    who: str,
+    asked: str,
+    items: str,
+    button: str,
+    when: str,
+    locale: Locale = DEFAULT_LOCALE,
 ) -> str:
     """The notice as a small table-based page every mail client renders alike."""
     e = html.escape
+    # `approval_asked` is one sentence with the name inside it; the name is the
+    # bold part, so the sentence is split around the placeholder here.
+    asked_sentence = e(translate(locale, "approval_asked", who="\x00", product=product)).replace(
+        "\x00", f"<strong>{e(who)}</strong>"
+    )
     quote = (
         "margin:10px 0 0 0;padding:10px 14px;background:#f4f5f7;"
         "border-left:3px solid #3b5bdb;border-radius:4px;font-style:italic;"
@@ -287,20 +324,21 @@ def _html_document(
     rows = [
         f'<tr><td style="padding:20px 28px 0 28px;font-size:13px;{_MUTED}'
         'letter-spacing:.04em;text-transform:uppercase;">'
-        f"{e(product)} &middot; Assistant</td></tr>",
+        f"{e(product)} &middot; {e(translate(locale, 'approval_eyebrow'))}</td></tr>",
         '<tr><td style="padding:8px 28px 0 28px;font-size:22px;font-weight:700;">'
-        "Approval needed</td></tr>",
-        f'<tr><td style="{_CELL}"><strong>{e(who)}</strong> asked the assistant:'
-        f'<blockquote style="{quote}">{e(asked) if asked else "(no message)"}</blockquote>'
+        f"{e(translate(locale, 'approval_heading'))}</td></tr>",
+        f'<tr><td style="{_CELL}">{asked_sentence}'
+        f'<blockquote style="{quote}">'
+        f"{e(asked) if asked else e(translate(locale, 'approval_no_message'))}</blockquote>"
         "</td></tr>",
-        f'<tr><td style="{_CELL}">The assistant proposed to:'
+        f'<tr><td style="{_CELL}">{e(translate(locale, "approval_proposed_one"))}'
         f'<ul style="margin:8px 0 0 0;padding-left:20px;">{items}</ul></td></tr>',
         f'<tr><td style="{_CELL}font-size:14px;{_MUTED}">'
-        "It has not run. It runs only if an owner or administrator approves it.</td></tr>",
+        f"{e(translate(locale, 'approval_not_run'))}</td></tr>",
         f'<tr><td style="padding:22px 28px 0 28px;">{button}</td></tr>',
         '<tr><td style="padding:22px 28px 24px 28px;font-size:12px;color:#8a929c;'
         'border-top:1px solid #e3e6ea;">'
-        f"Requested {e(when)}. Nothing runs until somebody decides.</td></tr>",
+        f"{e(translate(locale, 'approval_footer', when=when))}</td></tr>",
     ]
     return (
         "<!doctype html>\n"
@@ -325,8 +363,9 @@ async def notify_awaiting_approval(
     requested_at: datetime | None = None,
     tag: str = "ai-approval",
     sender: EmailSender | None = None,
+    locale: Locale = DEFAULT_LOCALE,
 ) -> int:
-    """Send one notice per recipient. Returns how many were sent or recorded."""
+    """Send one notice per recipient, in `locale`. Returns how many were sent or recorded."""
     if not summaries or not recipients:
         return 0
     subject, body, html_body = compose(
@@ -336,6 +375,7 @@ async def notify_awaiting_approval(
         requester=requester,
         request_text=request_text,
         requested_at=requested_at or datetime.now(UTC),
+        locale=locale,
     )
     mailer = sender or mail_sender()
     sent = 0

@@ -169,7 +169,8 @@ def test_an_owner_sees_advanced_reports_locked_when_the_plan_lacks_them() -> Non
     assert listed["activity.audit"] == "locked"
     answer = client.get("/api/v1/reports/people.users/data")
     assert answer.status_code == 402
-    assert "reporting.advanced" in answer.json()["detail"]
+    assert answer.json()["detail"]["code"] == "entitlement_missing"
+    assert "reporting.advanced" in answer.json()["detail"]["message"]
 
 
 def test_a_report_whose_capability_was_not_generated_does_not_exist() -> None:
@@ -215,12 +216,13 @@ def test_filters_the_report_did_not_declare_are_refused() -> None:
     client = _install(Harness(OWNER, plan("reporting.basic", "reporting.advanced")))
     answer = client.get("/api/v1/reports/usage.overview/data?tenant_id=other")
     assert answer.status_code == 422
-    assert "does not accept: tenant_id" in answer.json()["detail"]
+    assert answer.json()["detail"]["code"] == "filter_invalid"
+    assert "does not accept: tenant_id" in answer.json()["detail"]["message"]
     answer = client.get("/api/v1/reports/activity.audit/data?outcome=ok'%20or%201=1")
     assert answer.status_code == 422
     answer = client.get("/api/v1/reports/usage.overview/data?from=2020-01-01&to=2026-09-14")
     assert answer.status_code == 422
-    assert "366" in answer.json()["detail"]
+    assert "366" in answer.json()["detail"]["message"]
 
 
 def test_opening_a_sensitive_report_is_recorded() -> None:
@@ -248,7 +250,7 @@ def test_export_is_gated_by_permission_then_plan_and_recorded() -> None:
     client = _install(Harness(BILLING, plan("reporting.basic")))
     answer = client.get("/api/v1/reports/usage.quotas/export")
     assert answer.status_code == 402
-    assert "reporting.export" in answer.json()["detail"]
+    assert "reporting.export" in answer.json()["detail"]["message"]
 
     harness = Harness(BILLING, plan("reporting.basic", "reporting.export"))
     client = _install(harness)

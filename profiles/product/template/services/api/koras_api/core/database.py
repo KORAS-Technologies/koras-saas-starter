@@ -24,16 +24,22 @@ from .tenant import TenantDep
 
 
 @asynccontextmanager
-async def tenant_session(tenant_id: str) -> AsyncIterator[AsyncSession]:
+async def tenant_session(
+    tenant_id: str, *, user_id: str | None = None
+) -> AsyncIterator[AsyncSession]:
     """A session scoped to one tenant, for the request and for what outlives it.
 
     `get_db` is this for a request. A route that answers over time -- the
     assistant's stream -- opens one of its own here, because the request's
     session is closed on the framework's schedule and a stream outlives
     it. One place binds the tenant, so the two cannot bind it differently.
+
+    `user_id` is the verified subject, when the work is done for a person.
+    Omitted, the session still sees every row of the tenant's that a tenant
+    policy admits and none of the rows a person-keyed policy guards.
     """
     async with SessionLocal() as session:
-        declare(Tenant(tenant_id=tenant_id))
+        declare(Tenant(tenant_id=tenant_id, user_id=user_id))
         yield session
 
 
@@ -56,7 +62,7 @@ async def get_db(tenant: TenantDep) -> AsyncGenerator[AsyncSession, None]:
     The context is transaction-local, so it cannot outlive the request on a
     pooled connection and be inherited by whoever gets that connection next.
     """
-    async with tenant_session(tenant.id) as session:
+    async with tenant_session(tenant.id, user_id=tenant.user_id) as session:
         yield session
 
 

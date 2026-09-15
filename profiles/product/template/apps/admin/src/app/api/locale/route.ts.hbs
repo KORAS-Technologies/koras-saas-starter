@@ -1,0 +1,46 @@
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { productConfig } from '@{{projectSlug}}/branding'
+import { LOCALE_COOKIE, isLocale, safeReturnPath } from '@{{projectSlug}}/i18n'
+
+/**
+ * Remember the language a visitor chose, for this application.
+ *
+ * The same route `apps/web` serves, because the switcher posts to a relative
+ * `/api/locale` and this application is its own origin. One cookie and a
+ * redirect back; POST only, so a link nobody chose to follow cannot change
+ * somebody's language; a plain form target rather than a server action, so it
+ * works with no script attached. Named in the middleware's `PUBLIC_PATHS` so
+ * an administrator can choose their language on the sign-in page.
+ *
+ * What it refuses, and why each refusal is silent, is the web route's list:
+ * a cross-origin post is a 403, an unoffered locale is ignored, an unsafe
+ * return path becomes `/`. It stores nothing beyond the cookie -- the stored
+ * preference is the web application's, written under a member's token, and
+ * this application does not call the product's API.
+ */
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  const origin = request.headers.get('origin')
+  if (origin !== null && origin !== request.nextUrl.origin) {
+    return new NextResponse('Forbidden', { status: 403 })
+  }
+
+  const form = await request.formData()
+  const requested = form.get('locale')
+  const next = safeReturnPath(form.get('next'))
+
+  // 303, not 302: the browser must follow with GET, whatever method it used.
+  const response = NextResponse.redirect(new URL(next, request.url), 303)
+
+  if (isLocale(requested) && productConfig.i18n.locales.includes(requested)) {
+    response.cookies.set(LOCALE_COOKIE, requested, {
+      path: '/',
+      maxAge: 60 * 60 * 24 * 365,
+      sameSite: 'lax',
+      httpOnly: true,
+      secure: request.nextUrl.protocol === 'https:',
+    })
+  }
+
+  return response
+}

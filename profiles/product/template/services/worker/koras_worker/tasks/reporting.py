@@ -39,7 +39,7 @@ from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol
 
-from koras_email import Attachment, EmailSender, sender_for
+from koras_email import Attachment, EmailSender, resolve_locale, sender_for, translate
 from koras_reporting import (
     UNRESOLVED_PLAN,
     DateRange,
@@ -97,7 +97,7 @@ _PURGE_AUDIT = text("delete from public.audit_events where created_at < :before 
 
 _DUE = text(
     "select id::text as id, tenant_id::text as tenant_id, report_key, cadence, format, "
-    " recipients, filters "
+    " recipients, filters, locale "
     "from public.report_schedules "
     "where active and next_run_at <= :now "
     "order by next_run_at limit :limit"
@@ -285,12 +285,18 @@ async def deliver_one(
         definition.key, period.start.isoformat(), period.end.isoformat(), fmt.value
     )
     recipients: Sequence[str] = list(schedule.get("recipients") or [])
-    subject = f"{definition.name}: {period.start.isoformat()} to {period.end.isoformat()}"
-    body = (
-        f"Your scheduled report is attached.\n\n"
-        f"{definition.name}, {period.start.isoformat()} to {period.end.isoformat()}, "
-        f"as {fmt.value.upper()}.\n"
-    )
+    # The language the schedule was created for. The report's own name and
+    # its column headings come from the definition and are the product's to
+    # translate; the sentences around the attachment are the catalogue's.
+    locale = resolve_locale(schedule.get("locale"))
+    words = {
+        "report": definition.name,
+        "start": period.start.isoformat(),
+        "end": period.end.isoformat(),
+        "format": fmt.value.upper(),
+    }
+    subject = translate(locale, "report_subject", **words)
+    body = translate(locale, "report_body", **words)
     sent = 0
     for to in recipients:
         await sender.send(

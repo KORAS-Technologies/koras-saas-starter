@@ -11,6 +11,7 @@ import {
 } from '@{{projectSlug}}/api-client'
 import type { FileList, UploadTicket } from '@{{projectSlug}}/api-client'
 import { can, signedInContext } from '../../../lib/access'
+import { apiErrorMessage } from '../../../lib/api-errors'
 import { translator } from '../../../lib/locale'
 import { apiBaseUrl, providerToken } from '../../../lib/session'
 
@@ -44,6 +45,8 @@ async function session(permission: 'files.read' | 'files.upload' | 'files.manage
 async function explain(error: unknown): Promise<string> {
   const t = await translator()
   if (error instanceof ApiError) {
+    const coded = apiErrorMessage(t, error.code)
+    if (coded !== null) return coded
     if (error.status === 402) return t('files.error.plan')
     if (error.status === 403) return t('files.error.forbidden')
     if (error.status === 409) return t('files.error.notArrived')

@@ -39,6 +39,10 @@ dependencies = [
   "koras-audit",
   "koras-storage",
   "koras-queue",
+  # Mail, and the language it is written in. Always present: the assistant's
+  # approval notice needs the sender, and every request resolves its locale
+  # through the catalogue (`core/locale.py`) whether or not it sends anything.
+  "koras-email",
 {{#if capability.reporting}}  # The reporting framework: definitions, registries, filters and the CSV
   # writer the reports router runs. Generated only with the `reporting`
   # capability.
@@ -46,8 +50,6 @@ dependencies = [
 {{/if}}{{#if capability.ai}}  # The AI foundation: the runtime the assistant routes run. Generated only
   # with the `ai` capability, which also requires the gateway service.
   "koras-ai",
-  # The approval notice, which is the first mail this service sends.
-  "koras-email",
   # Text out of PDFs and workbooks, for retrieval. Pure Python, both.
   "pypdf>=4.0.0",
   "openpyxl>=3.1.0",
@@ -69,7 +71,7 @@ koras-observability = { workspace = true }
 koras-audit = { workspace = true }
 koras-storage = { workspace = true }
 koras-queue = { workspace = true }
+koras-email = { workspace = true }
 {{#if capability.reporting}}koras-reporting = { workspace = true }
 {{/if}}{{#if capability.ai}}koras-ai = { workspace = true }
-koras-email = { workspace = true }
 {{/if}}

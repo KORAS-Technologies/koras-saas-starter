@@ -622,4 +622,54 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'faq.isolation.title': '¿Los datos de mi organización están separados de los de los demás?',
   'faq.isolation.p1':
     'Sí, y están separados en la base de datos, no porque la aplicación recuerde preguntar. Una consulta que no nombre a su organización no devuelve nada en absoluto.',
+
+  // F20 phase 2: persistence and admin
+  /* ------------------------------------------------------ language, stored */
+  'settings.language.remembered':
+    'Como ha iniciado sesión, su elección se guarda en su cuenta y le acompaña en todos los dispositivos en los que inicie sesión.',
+  'settings.language.tenantTitle': 'Predeterminado para su organización',
+  'settings.language.tenantDescription':
+    'Lo que ve un miembro de su organización antes de elegir un idioma por sí mismo. Quien ya ha elegido conserva su elección.',
+  'settings.language.tenantLabel': 'Los miembros empiezan en',
+  'settings.language.tenantFollowBrowser': 'el idioma de su navegador',
+  'settings.language.tenantSave': 'Guardar predeterminado',
+  'settings.language.tenantSaving': 'Guardando…',
+  'settings.language.tenantSaved': 'Se guardó el idioma predeterminado.',
+  'settings.language.tenantError':
+    'No se pudo guardar el idioma predeterminado. Inténtelo de nuevo en un momento.',
+  'settings.language.tenantForbidden':
+    'Solo un propietario o administrador puede cambiar el idioma predeterminado.',
+
+  /* ------------------------------------------------------------- admin */
+  'admin.title': '{product} Admin',
+  'admin.login.audience':
+    'Para propietarios y administradores de la organización. Se requiere autenticación multifactor.',
+  'admin.mfaRequired':
+    'Se requiere autenticación multifactor. Registre un segundo factor y vuelva a iniciar sesión.',
+  'admin.forbidden': 'Esta aplicación es para propietarios y administradores de la organización.',
+  'admin.home.signedInAs': 'Sesión iniciada como {name}.',
+
+  /* ------------------------------------------ F20 phase 2: errors and email */
+  'errors.tokenInvalid': 'Su sesión ha caducado. Inicie sesión de nuevo.',
+  'errors.tenantInactive': 'Su organización no está activa en este producto.',
+  'errors.roleRequired': 'Solo un propietario o administrador de su organización puede hacer eso.',
+  'errors.permissionMissing': 'Su rol no incluye eso.',
+  'errors.entitlementMissing': 'Su plan no incluye esto.',
+  'errors.storageLimitExceeded': 'Esta subida superaría el almacenamiento incluido en su plan.',
+  'errors.fileNotFound': 'Ese archivo ya no existe.',
+  'errors.uploadNotArrived':
+    'El archivo no llegó al almacenamiento como se esperaba. Intente subirlo de nuevo.',
+  'errors.uploadSizeMismatch':
+    'El archivo subido no tiene el tamaño anunciado. Intente subirlo de nuevo.',
+  'errors.storageUnavailable': 'El almacenamiento de archivos no está disponible en este momento.',
+  'errors.reportNotFound': 'Ese informe no existe.',
+  'errors.scheduleNotFound': 'Esa programación ya no existe.',
+  'errors.exportNotFound': 'Esa exportación ya no existe.',
+  'errors.exportFormatUnknown': 'Ese formato de exportación no se reconoce.',
+  'errors.exportFormatUnsupported': 'Este informe no puede exportarse en ese formato.',
+  'errors.filterInvalid': 'Uno de los filtros no es válido para este informe.',
+  'errors.recipientInvalid': 'Uno de los destinatarios no es una dirección de correo.',
+  'errors.periodNotAFilter': 'El periodo de un informe programado lo decide su cadencia.',
+  'errors.reportFailed': 'No se pudo generar el informe. Inténtelo más tarde.',
+  'errors.toolDenied': 'Su rol no permite eso en el asistente.',
 }

@@ -1,0 +1,71 @@
+import type { Translator } from '@{{projectSlug}}/i18n'
+
+/**
+ * Which sentence a coded refusal from the API gets.
+ *
+ * Every route of the product API answers a refusal as `{ code, message }`
+ * (`services/api/koras_api/core/errors.py`). The `message` is English and
+ * for the log; the `code` is the contract, and this is the one place it is
+ * turned into words a person reads -- in the request's language, through the
+ * translator the caller already holds.
+ *
+ * Returns `null` for a refusal that carries no code, or one this file does
+ * not know, so the caller keeps its status-based fallback: a route that has
+ * not been converted, or a code added on the API side before its sentence
+ * was added here, still says *something* rather than a key.
+ *
+ * Every branch spells its key out rather than building it from the code,
+ * because the structural test in the starter reads `t('…')` literals to prove
+ * that every catalogue key is used and every used key exists. A template
+ * string would compile, and would let a code with no sentence ship.
+ *
+ * The assistant's own refusals (`koras_ai.ErrorCode`) keep their mapping in
+ * `assistant-errors.ts`: they are answered inside a stream as well as by a
+ * route, and the panel maps them without a translator in the bundle.
+ */
+export function apiErrorMessage(t: Translator, code: string | null | undefined): string | null {
+  switch (code) {
+    case 'token_invalid':
+      return t('errors.tokenInvalid')
+    case 'tenant_inactive':
+      return t('errors.tenantInactive')
+    case 'role_required':
+      return t('errors.roleRequired')
+    case 'permission_missing':
+      return t('errors.permissionMissing')
+    case 'entitlement_missing':
+      return t('errors.entitlementMissing')
+    case 'storage_limit_exceeded':
+      return t('errors.storageLimitExceeded')
+    case 'file_not_found':
+      return t('errors.fileNotFound')
+    case 'upload_not_arrived':
+      return t('errors.uploadNotArrived')
+    case 'upload_size_mismatch':
+      return t('errors.uploadSizeMismatch')
+    case 'storage_unavailable':
+      return t('errors.storageUnavailable')
+    case 'report_not_found':
+      return t('errors.reportNotFound')
+    case 'schedule_not_found':
+      return t('errors.scheduleNotFound')
+    case 'export_not_found':
+      return t('errors.exportNotFound')
+    case 'export_format_unknown':
+      return t('errors.exportFormatUnknown')
+    case 'export_format_unsupported':
+      return t('errors.exportFormatUnsupported')
+    case 'filter_invalid':
+      return t('errors.filterInvalid')
+    case 'recipient_invalid':
+      return t('errors.recipientInvalid')
+    case 'period_not_a_filter':
+      return t('errors.periodNotAFilter')
+    case 'report_failed':
+      return t('errors.reportFailed')
+    case 'tool_denied':
+      return t('errors.toolDenied')
+    default:
+      return null
+  }
+}

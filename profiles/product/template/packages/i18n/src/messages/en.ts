@@ -623,4 +623,54 @@ export const en = {
   'faq.isolation.title': "Is my organisation's data separate from everyone else's?",
   'faq.isolation.p1':
     'Yes, and it is separated in the database rather than by the application remembering to ask. A query that does not name your organisation returns nothing at all.',
+
+  // F20 phase 2: persistence and admin
+  /* ------------------------------------------------------ language, stored */
+  'settings.language.remembered':
+    'Because you are signed in, your choice is kept with your account and follows you to every device you sign in on.',
+  'settings.language.tenantTitle': 'Default for your organisation',
+  'settings.language.tenantDescription':
+    'What a member of your organisation sees before they choose a language for themselves. Anyone who has already chosen keeps their choice.',
+  'settings.language.tenantLabel': 'Members start in',
+  'settings.language.tenantFollowBrowser': 'Their browser’s language',
+  'settings.language.tenantSave': 'Save default',
+  'settings.language.tenantSaving': 'Saving…',
+  'settings.language.tenantSaved': 'The default language was saved.',
+  'settings.language.tenantError': 'The default language could not be saved. Try again in a moment.',
+  'settings.language.tenantForbidden': 'Only an owner or administrator can change the default language.',
+
+  /* ------------------------------------------------------------- admin */
+  'admin.title': '{product} Admin',
+  'admin.login.audience':
+    'For organization owners and administrators. Multi-factor authentication is required.',
+  'admin.mfaRequired': 'Multi-factor authentication is required. Enrol a second factor, then sign in again.',
+  'admin.forbidden': 'This application is for organization owners and administrators.',
+  'admin.home.signedInAs': 'Signed in as {name}.',
+
+  /* ------------------------------------------ F20 phase 2: errors and email */
+  // One sentence per `ApiErrorCode` the API can answer with
+  // (services/api/koras_api/core/errors.py). The API's own `message` is for
+  // the log and never shown; these are what a person reads. Mapped by
+  // `apps/web/src/lib/api-errors.ts`.
+  'errors.tokenInvalid': 'Your session has expired. Sign in again.',
+  'errors.tenantInactive': 'Your organisation is not active in this product.',
+  'errors.roleRequired': 'Only an owner or administrator of your organisation can do that.',
+  'errors.permissionMissing': 'Your role does not include that.',
+  'errors.entitlementMissing': 'Your plan does not include this.',
+  'errors.storageLimitExceeded': 'This upload would exceed the storage included in your plan.',
+  'errors.fileNotFound': 'That file no longer exists.',
+  'errors.uploadNotArrived': 'The file did not arrive in storage as expected. Try the upload again.',
+  'errors.uploadSizeMismatch':
+    'The uploaded file is not the size that was announced. Try the upload again.',
+  'errors.storageUnavailable': 'File storage is not available right now.',
+  'errors.reportNotFound': 'That report does not exist.',
+  'errors.scheduleNotFound': 'That schedule no longer exists.',
+  'errors.exportNotFound': 'That export no longer exists.',
+  'errors.exportFormatUnknown': 'That export format is not recognised.',
+  'errors.exportFormatUnsupported': 'This report cannot be exported in that format.',
+  'errors.filterInvalid': 'One of the filters is not valid for this report.',
+  'errors.recipientInvalid': 'One of the recipients is not an email address.',
+  'errors.periodNotAFilter': 'The period of a scheduled report is decided by its cadence.',
+  'errors.reportFailed': 'The report could not be produced. Try again later.',
+  'errors.toolDenied': 'Your role does not allow that in the assistant.',
 } as const
