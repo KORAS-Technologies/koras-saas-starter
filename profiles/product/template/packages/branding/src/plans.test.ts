@@ -78,7 +78,7 @@ test('the platform says which plans a stranger may start, and silence means yes'
 
 test('a price or the flag lets the form offer a plan; neither is a conversation', () => {
   const [priced, trial, sold] = parsePublicPlans([
-    { code: 'premium', name: 'Business', price_id_year: 'pri_year', self_serve: false },
+    { code: 'business', name: 'Business', price_id_year: 'pri_year', self_serve: false },
     { code: 'starter', name: 'Starter', self_serve: true },
     { code: 'enterprise', name: 'Enterprise', self_serve: false },
   ])

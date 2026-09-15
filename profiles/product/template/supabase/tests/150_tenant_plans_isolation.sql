@@ -14,7 +14,7 @@ values
 
 insert into public.tenant_plans (tenant_id, plan_code, status, entitlements)
 values
-  ('00000000-0000-0000-0000-000000000001', 'premium', 'active',
+  ('00000000-0000-0000-0000-000000000001', 'business', 'active',
    '{"reporting.scheduled": {"enabled": true, "limit": null}}'),
   ('00000000-0000-0000-0000-000000000002', 'starter', 'active', '{}');
 
@@ -31,14 +31,14 @@ begin
     raise exception 'tenant plans: tenant alpha sees %, expected its own 1', visible;
   end if;
   select plan_code into seen from public.tenant_plans;
-  if seen <> 'premium' then
+  if seen <> 'business' then
     raise exception 'tenant plans: tenant alpha read plan %', seen;
   end if;
 
   -- A tenant cannot promote itself.
   update public.tenant_plans set plan_code = 'enterprise';
   select plan_code into seen from public.tenant_plans;
-  if seen <> 'premium' then
+  if seen <> 'business' then
     raise exception 'tenant plans: a tenant rewrote its own plan';
   end if;
   begin

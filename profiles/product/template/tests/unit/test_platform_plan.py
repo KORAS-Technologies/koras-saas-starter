@@ -26,7 +26,7 @@ from koras_api.main import app  # noqa: E402
 TENANT = "00000000-0000-0000-0000-000000000001"
 
 SNAPSHOT = {
-    "plan_code": "premium",
+    "plan_code": "business",
     "status": "active",
     "entitlements": [
         {"code": "reporting.export", "enabled": True, "limit_value": None},
@@ -81,7 +81,7 @@ def test_the_snapshot_is_stored_as_codes_to_enabled_and_limit() -> None:
     assert session.commits == 1
     params = session.parameters[-1]
     assert params["tenant_id"] == TENANT
-    assert params["plan_code"] == "premium" and params["status"] == "active"
+    assert params["plan_code"] == "business" and params["status"] == "active"
     assert json.loads(params["entitlements"]) == {
         "reporting.export": {"enabled": True, "limit": None},
         "reporting.scheduled": {"enabled": True, "limit": None},

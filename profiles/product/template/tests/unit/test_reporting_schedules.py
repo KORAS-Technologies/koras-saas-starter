@@ -73,7 +73,7 @@ class FakeStore:
 def plan(*codes: str) -> Plan:
     return Plan(
         resolved=True,
-        code="premium",
+        code="business",
         status="active",
         entitlements={code: Entitlement(enabled=True) for code in codes},
     )
