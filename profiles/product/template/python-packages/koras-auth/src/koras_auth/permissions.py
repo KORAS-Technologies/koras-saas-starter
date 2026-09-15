@@ -33,15 +33,32 @@ PRODUCT_PERMISSIONS: tuple[str, ...] = (
     # people who administer the tenant.
     "ai.use",
     "ai.approve",
+    # Reporting. Every member may open Analytics; reports about people are
+    # the sensitive half; a download leaves the product and is its own
+    # authority.
+    "reports.read",
+    "reports.sensitive",
+    "reports.export",
 )
 
-_EVERYONE: tuple[str, ...] = ("product.access", "files.read", "files.upload", "ai.use")
+_EVERYONE: tuple[str, ...] = (
+    "product.access",
+    "files.read",
+    "files.upload",
+    "ai.use",
+    "reports.read",
+)
 
 ROLE_PERMISSIONS: dict[OrganizationRole, tuple[str, ...]] = {
     OrganizationRole.OWNER: PRODUCT_PERMISSIONS,
     OrganizationRole.ADMIN: PRODUCT_PERMISSIONS,
-    OrganizationRole.SECURITY_ADMIN: (*_EVERYONE, "team.read", "settings.read"),
-    OrganizationRole.BILLING_ADMIN: (*_EVERYONE, "settings.read"),
+    OrganizationRole.SECURITY_ADMIN: (
+        *_EVERYONE,
+        "team.read",
+        "settings.read",
+        "reports.sensitive",
+    ),
+    OrganizationRole.BILLING_ADMIN: (*_EVERYONE, "settings.read", "reports.export"),
     OrganizationRole.MEMBER: _EVERYONE,
 }
 

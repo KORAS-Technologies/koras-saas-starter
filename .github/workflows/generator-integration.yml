@@ -91,10 +91,12 @@ jobs:
           # The other direction. Removing a component must leave a project that
           # still builds -- a workspace reference to something no longer
           # generated fails here rather than for whoever passed the flag.
+          # `reporting` is on by default, so this is the row that proves a
+          # product without it still builds and its registry tests still pass.
           - profile: product
             slug: integration-product-minimal
             rls_flags: ""
-            components: "--without admin,worker"
+            components: "--without admin,worker,reporting"
           - profile: control-plane
             slug: integration-control-plane
             # No tenant model and no policies: RLS is a deny-by-default

@@ -52,6 +52,11 @@ capabilities:
   # tables and the extension point. Off by default in defaults.yaml, and
   # requires the gateway service below, which is where the provider keys live.
   ai: true
+  # Reporting and analytics: the registries, the reports router, the six
+  # standard tenant reports, the general audit table, the Analytics pages
+  # and the extension point a product registers its own reports in. On by
+  # default: it needs no external service.
+  reporting: true
 
 registration:
   registers_as_product: true
@@ -125,6 +130,24 @@ template_map:
       - services/worker/koras_worker/tasks/ai_retention.py
       - apps/web/src/app/dashboard/assistant
       - e2e/assistant.spec.ts
+    # Reporting is spread the same way. What is not listed is generated
+    # always and harmless without it: the `koras-reporting` package, the
+    # permissions the catalogue names, the components in `packages/ui`
+    # and the translations.
+    reporting:
+      - services/api/koras_api/core/reporting.py
+      - services/api/koras_api/routers/reporting.py
+      - services/api/koras_api/reporting
+      - services/worker/koras_worker/tasks/reporting.py
+      - supabase/migrations/00013_audit_events.sql
+      - supabase/tests/110_audit_isolation.sql
+      - tests/unit/test_reporting_api.py
+      - tests/unit/test_reporting_standard.py
+      - tests/unit/test_reporting_retention.py
+      - tests/unit/reporting_support.py
+      - apps/web/src/app/dashboard/analytics
+      - apps/web/src/app/api/reports
+      - e2e/analytics.spec.ts
 
 # Components that need another enabled beside them. See the generator's
 # manifest schema for why this is refused rather than switched on silently.

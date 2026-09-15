@@ -1,19 +1,28 @@
 {{#if capability.ai}}from arq import cron
-{{/if}}from arq.connections import RedisSettings
+{{else}}{{#if capability.reporting}}from arq import cron
+{{/if}}{{/if}}from arq.connections import RedisSettings
 from arq.typing import WorkerSettingsBase
 
 from .settings import settings
 from .tasks import example_task
 {{#if capability.ai}}from .tasks.ai_retention import purge_ai_history
+{{/if}}{{#if capability.reporting}}from .tasks.reporting import deliver_scheduled_reports, purge_audit_history
 {{/if}}
 
 
 class WorkerSettings(WorkerSettingsBase):
     functions = [example_task]
-{{#if capability.ai}}    # Nightly, at a quiet hour, on the worker's own clock: no scheduler
-    # service is needed for a sweep that runs once a day.
-    cron_jobs = [cron(purge_ai_history, hour=3, minute=17)]
-{{/if}}    # Derived from REDIS_URL rather than hardcoded. A fixed localhost:6379 is
+    # Nightly, at a quiet hour, on the worker's own clock: no scheduler
+    # service is needed for a sweep that runs once a day. Each capability
+    # adds its sweeps to the one list.
+    cron_jobs = [
+{{#if capability.ai}}        cron(purge_ai_history, hour=3, minute=17),
+{{/if}}{{#if capability.reporting}}        cron(purge_audit_history, hour=3, minute=23),
+        # The seam for scheduled delivery. Hourly, and it says nothing is
+        # scheduled until a product gives it something to deliver.
+        cron(deliver_scheduled_reports, minute=41),
+{{/if}}    ]
+    # Derived from REDIS_URL rather than hardcoded. A fixed localhost:6379 is
     # not merely wrong once deployed -- the worker starts, stays up, and quietly
     # consumes an empty local queue while the real one fills elsewhere. On a
     # developer machine running more than one KORAS stack it connects to

@@ -39,7 +39,11 @@ dependencies = [
   "koras-audit",
   "koras-storage",
   "koras-queue",
-{{#if capability.ai}}  # The AI foundation: the runtime the assistant routes run. Generated only
+{{#if capability.reporting}}  # The reporting framework: definitions, registries, filters and the CSV
+  # writer the reports router runs. Generated only with the `reporting`
+  # capability.
+  "koras-reporting",
+{{/if}}{{#if capability.ai}}  # The AI foundation: the runtime the assistant routes run. Generated only
   # with the `ai` capability, which also requires the gateway service.
   "koras-ai",
   # The approval notice, which is the first mail this service sends.
@@ -65,6 +69,7 @@ koras-observability = { workspace = true }
 koras-audit = { workspace = true }
 koras-storage = { workspace = true }
 koras-queue = { workspace = true }
-{{#if capability.ai}}koras-ai = { workspace = true }
+{{#if capability.reporting}}koras-reporting = { workspace = true }
+{{/if}}{{#if capability.ai}}koras-ai = { workspace = true }
 koras-email = { workspace = true }
 {{/if}}

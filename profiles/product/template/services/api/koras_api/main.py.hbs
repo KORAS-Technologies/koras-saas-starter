@@ -10,7 +10,7 @@ from .core.observability import setup_telemetry
 from .core.ratelimit import limit_anonymous, limit_authenticated
 from .core.security import SecurityHeadersMiddleware
 from .core.settings import settings
-from .routers import {{#if capability.ai}}ai, {{/if}}files, health, platform, {{#if capability.ai}}platform_ai, {{/if}}tenant
+from .routers import {{#if capability.ai}}ai, {{/if}}files, health, platform, {{#if capability.ai}}platform_ai, {{/if}}{{#if capability.reporting}}reporting, {{/if}}tenant
 
 
 @asynccontextmanager
@@ -119,6 +119,15 @@ app.include_router(
 # lacks the assistant. See core/ai.py.
 app.include_router(
     ai.router,
+    prefix="/api/v1",
+    dependencies=[Depends(limit_authenticated)],
+)
+{{/if}}{{#if capability.reporting}}# Reporting: the catalogue, each report's data and its CSV. The same
+# customer surface and the same limiter; every route resolves the tenant
+# from the token and decides visibility before a resolver runs. See
+# core/reporting.py.
+app.include_router(
+    reporting.router,
     prefix="/api/v1",
     dependencies=[Depends(limit_authenticated)],
 )

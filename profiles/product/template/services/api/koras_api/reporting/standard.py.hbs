@@ -1,0 +1,912 @@
+"""The tenant reports every product ships: what this organization is doing
+in this product, over the tables the starter itself creates.
+
+Six reports, each a resolver over the tenant session with the tenant id
+bound as a parameter -- belt as well as braces, because row-level security
+is forced on every table read here and a reader of a resolver should still
+see what it selects. Nothing here names a product's domain; that is
+`reports.py`, the extension point beside this file.
+
+Every series is drawn in the bucket the range decided -- `day`, `week` or
+`month`, one of three fixed words chosen in `koras_reporting.filters` and
+never by a caller -- which is the one value interpolated into a statement
+rather than bound.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from datetime import date
+from typing import Any
+
+from koras_reporting import (
+    DATE_RANGE,
+    Aggregation,
+    Category,
+    DateRange,
+    FilterDefinition,
+    FilterKind,
+    Format,
+    MetricDefinition,
+    MetricValue,
+    RangeView,
+    ReportContext,
+    ReportDefinition,
+    ReportResult,
+    ResolvedFilters,
+    Series,
+    SeriesPoint,
+    Table,
+    TableColumn,
+    Unit,
+    Visualization,
+)
+from sqlalchemy import text
+
+# ── entitlement and permission names, once ────────────────────────────────────
+#
+# Mirrors of `core/reporting.py`, kept here as literals so this module imports
+# nothing from `core` and a test can register it without an app.
+
+BASIC = "reporting.basic"
+ADVANCED = "reporting.advanced"
+READ = "reports.read"
+SENSITIVE = "reports.sensitive"
+
+SEATS_ENTITLEMENT = "seats"
+STORAGE_ENTITLEMENT = "storage.files"
+AI_REQUESTS_ENTITLEMENT = "ai.requests"
+
+# ── metrics ───────────────────────────────────────────────────────────────────
+
+
+def _metric(
+    key: str,
+    name: str,
+    description: str,
+    unit: Unit,
+    fmt: Format,
+    aggregation: Aggregation,
+    *dimensions: str,
+) -> MetricDefinition:
+    return MetricDefinition(
+        key=key,
+        name=name,
+        description=description,
+        unit=unit,
+        format=fmt,
+        aggregation=aggregation,
+        dimensions=dimensions,
+    )
+
+
+METRICS: list[MetricDefinition] = [
+    _metric(
+        "members_total",
+        "Members",
+        "People with access to this organization's product",
+        Unit.COUNT,
+        Format.INTEGER,
+        Aggregation.LATEST,
+        "role",
+    ),
+    _metric(
+        "members_joined",
+        "New members",
+        "Members added in the period",
+        Unit.COUNT,
+        Format.INTEGER,
+        Aggregation.COUNT,
+    ),
+    _metric(
+        "files_total",
+        "Files",
+        "Files stored and ready",
+        Unit.COUNT,
+        Format.INTEGER,
+        Aggregation.LATEST,
+    ),
+    _metric(
+        "files_uploaded",
+        "Files uploaded",
+        "Files that finished uploading in the period",
+        Unit.COUNT,
+        Format.INTEGER,
+        Aggregation.COUNT,
+    ),
+    _metric(
+        "storage_used_bytes",
+        "Storage used",
+        "Bytes held by ready files",
+        Unit.BYTES,
+        Format.BYTES,
+        Aggregation.LATEST,
+    ),
+    _metric(
+        "activity_events",
+        "Activity",
+        "Audited actions in the period",
+        Unit.COUNT,
+        Format.INTEGER,
+        Aggregation.COUNT,
+        "action",
+        "outcome",
+    ),
+    _metric(
+        "active_users",
+        "Active users",
+        "Distinct people who did something audited in the period",
+        Unit.COUNT,
+        Format.INTEGER,
+        Aggregation.COUNT,
+    ),
+{{#if capability.ai}}
+    _metric(
+        "ai_requests",
+        "AI requests",
+        "Model calls made by the assistant",
+        Unit.COUNT,
+        Format.INTEGER,
+        Aggregation.COUNT,
+        "model_alias",
+        "provider",
+        "model",
+        "status",
+    ),
+    _metric(
+        "ai_errors",
+        "AI errors",
+        "Model calls that failed",
+        Unit.COUNT,
+        Format.INTEGER,
+        Aggregation.COUNT,
+    ),
+    _metric(
+        "ai_tokens",
+        "AI tokens",
+        "Tokens in and out, together",
+        Unit.COUNT,
+        Format.INTEGER,
+        Aggregation.SUM,
+    ),
+    _metric(
+        "ai_estimated_cost",
+        "AI estimated cost",
+        "List-price cost of the calls, where the route carried a price",
+        Unit.MICROS,
+        Format.MONEY,
+        Aggregation.SUM,
+    ),
+    _metric(
+        "ai_latency_average",
+        "AI latency",
+        "Average time to a model's answer",
+        Unit.MILLISECONDS,
+        Format.DURATION,
+        Aggregation.AVERAGE,
+    ),
+    _metric(
+        "ai_billable",
+        "AI pay-as-you-go charges",
+        "What calls past the allowance are billable at",
+        Unit.MICROS,
+        Format.MONEY,
+        Aggregation.SUM,
+    ),
+{{/if}}
+]
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+_BUCKETS = {"day": "day", "week": "week", "month": "month"}
+
+
+def _bucket(period: DateRange) -> str:
+    # A closed lookup rather than the value itself, so the one interpolated
+    # word can only ever be one of three this file names.
+    return _BUCKETS[period.bucket]
+
+
+def _range_view(period: DateRange) -> RangeView:
+    return RangeView(
+        start=period.start.isoformat(), end=period.end.isoformat(), bucket=period.bucket
+    )
+
+
+def _period(filters: ResolvedFilters) -> DateRange:
+    if filters.range is None:
+        return DateRange.last(30)
+    return filters.range
+
+
+def _bound(period: DateRange, tenant_id: str) -> dict[str, Any]:
+    return {"tenant_id": tenant_id, "start": period.start_at, "end": period.end_at}
+
+
+async def _scalar(context: ReportContext, statement: str, parameters: dict[str, Any]) -> int:
+    result = await context.session.execute(text(statement), parameters)
+    value = result.scalar_one()
+    return int(value) if value is not None else 0
+
+
+async def _rows(
+    context: ReportContext, statement: str, parameters: dict[str, Any]
+) -> list[dict[str, Any]]:
+    result = await context.session.execute(text(statement), parameters)
+    return [dict(row) for row in result.mappings().all()]
+
+
+def _series_from(
+    key: str,
+    label: str,
+    rows: Sequence[dict[str, Any]],
+    *,
+    unit: Unit = Unit.COUNT,
+    fmt: Format = Format.INTEGER,
+    value: str = "value",
+) -> Series:
+    points = []
+    for row in rows:
+        bucket = row["bucket"]
+        x = bucket.date().isoformat() if hasattr(bucket, "date") else str(bucket)[:10]
+        raw = row.get(value)
+        points.append(SeriesPoint(x=x, y=float(raw) if raw is not None else None))
+    return Series(key=key, label=label, unit=unit, format=fmt, points=points)
+
+
+def _quota(
+    key: str, label: str, used: int, limit: int | None, *, fmt: Format = Format.INTEGER
+) -> MetricValue:
+    unit = Unit.BYTES if fmt is Format.BYTES else Unit.COUNT
+    return MetricValue(
+        key=key,
+        label=label,
+        value=float(used),
+        unit=unit,
+        format=fmt,
+        limit=float(limit) if limit is not None else None,
+    )
+
+
+def _count(key: str, label: str, value: int, previous: int | None = None) -> MetricValue:
+    return MetricValue(
+        key=key,
+        label=label,
+        value=float(value),
+        unit=Unit.COUNT,
+        format=Format.INTEGER,
+        previous=float(previous) if previous is not None else None,
+    )
+
+
+# ── the statements ────────────────────────────────────────────────────────────
+
+_MEMBERS_TOTAL = "select count(*) from public.tenant_members where tenant_id = :tenant_id"
+_MEMBERS_JOINED = (
+    "select count(*) from public.tenant_members "
+    "where tenant_id = :tenant_id and created_at >= :start and created_at < :end"
+)
+_MEMBERS_BY_ROLE = (
+    "select role, count(*)::int as value from public.tenant_members "
+    "where tenant_id = :tenant_id group by role order by value desc, role"
+)
+_MEMBERS_JOINED_SERIES = (
+    "select date_trunc('{bucket}', created_at at time zone 'UTC') as bucket, "
+    " count(*)::int as value "
+    "from public.tenant_members "
+    "where tenant_id = :tenant_id and created_at >= :start and created_at < :end "
+    "group by 1 order by 1"
+)
+_FILES_TOTAL = (
+    "select count(*)::int as files, coalesce(sum(size_bytes), 0)::bigint as bytes "
+    "from public.files where tenant_id = :tenant_id and status = 'ready'"
+)
+_FILES_UPLOADED = (
+    "select count(*) from public.files "
+    "where tenant_id = :tenant_id and status = 'ready' "
+    "and ready_at >= :start and ready_at < :end"
+)
+_FILES_UPLOADED_SERIES = (
+    "select date_trunc('{bucket}', ready_at at time zone 'UTC') as bucket, "
+    " count(*)::int as value "
+    "from public.files "
+    "where tenant_id = :tenant_id and status = 'ready' and ready_at >= :start and ready_at < :end "
+    "group by 1 order by 1"
+)
+_ACTIVITY_TOTAL = (
+    "select count(*)::int as events, count(distinct actor_id)::int as actors "
+    "from public.audit_events "
+    "where tenant_id = :tenant_id and created_at >= :start and created_at < :end"
+)
+_ACTIVITY_SERIES = (
+    "select date_trunc('{bucket}', created_at at time zone 'UTC') as bucket, "
+    " count(*)::int as value "
+    "from public.audit_events "
+    "where tenant_id = :tenant_id and created_at >= :start and created_at < :end "
+    "group by 1 order by 1"
+)
+_ACTIVITY_BY_ACTION = (
+    "select action, outcome, count(*)::int as value from public.audit_events "
+    "where tenant_id = :tenant_id and created_at >= :start and created_at < :end "
+    "group by action, outcome order by value desc, action, outcome limit 200"
+)
+_ACTIVITY_RECENT = (
+    "select actor_id, action, target_type, target_id, outcome, created_at "
+    "from public.audit_events "
+    "where tenant_id = :tenant_id and created_at >= :start and created_at < :end "
+    "order by created_at desc limit :limit"
+)
+{{#if capability.ai}}
+_AI_TOTALS = (
+    "select count(*)::int as calls, "
+    " (count(*) filter (where status <> 'ok'))::int as errors, "
+    " coalesce(sum(total_tokens), 0)::bigint as tokens, "
+    " coalesce(sum(estimated_cost_micros), 0)::bigint as cost, "
+    " coalesce(sum(billable_micros), 0)::bigint as billable, "
+    " coalesce(avg(latency_ms), 0)::int as latency, "
+    " (count(*) filter (where estimated_cost_micros is null))::int as unpriced "
+    "from public.ai_usage_events "
+    "where tenant_id = :tenant_id and created_at >= :start and created_at < :end"
+)
+_AI_CALLS_THIS_MONTH = (
+    "select count(*) from public.ai_usage_events "
+    "where tenant_id = :tenant_id and status = 'ok' "
+    "and created_at >= date_trunc('month', now() at time zone 'UTC')"
+)
+_AI_SERIES = (
+    "select date_trunc('{bucket}', created_at at time zone 'UTC') as bucket, "
+    " count(*)::int as calls, coalesce(sum(total_tokens), 0)::bigint as tokens "
+    "from public.ai_usage_events "
+    "where tenant_id = :tenant_id and created_at >= :start and created_at < :end "
+    "group by 1 order by 1"
+)
+_AI_BY_MODEL = (
+    "select model_alias, provider, model, count(*)::int as calls, "
+    " (count(*) filter (where status <> 'ok'))::int as errors, "
+    " coalesce(sum(total_tokens), 0)::bigint as tokens, "
+    " coalesce(sum(estimated_cost_micros), 0)::bigint as cost, "
+    " coalesce(avg(latency_ms), 0)::int as latency "
+    "from public.ai_usage_events "
+    "where tenant_id = :tenant_id and created_at >= :start and created_at < :end "
+    "group by 1, 2, 3 order by calls desc limit 100"
+)
+{{/if}}
+
+
+# ── the resolvers ─────────────────────────────────────────────────────────────
+
+
+async def overview(context: ReportContext, filters: ResolvedFilters) -> ReportResult:
+    """The landing report: where the organization stands and what moved."""
+    tenant_id = context.tenant_id or ""
+    period = _period(filters)
+    previous = period.previous
+    now, before = _bound(period, tenant_id), _bound(previous, tenant_id)
+
+    members = await _scalar(context, _MEMBERS_TOTAL, {"tenant_id": tenant_id})
+    joined = await _scalar(context, _MEMBERS_JOINED, now)
+    joined_before = await _scalar(context, _MEMBERS_JOINED, before)
+    files = (await _rows(context, _FILES_TOTAL, {"tenant_id": tenant_id}))[0]
+    uploaded = await _scalar(context, _FILES_UPLOADED, now)
+    uploaded_before = await _scalar(context, _FILES_UPLOADED, before)
+    activity = (await _rows(context, _ACTIVITY_TOTAL, now))[0]
+    activity_before = (await _rows(context, _ACTIVITY_TOTAL, before))[0]
+    series_rows = await _rows(context, _ACTIVITY_SERIES.format(bucket=_bucket(period)), now)
+
+    metrics = [
+        _quota("members_total", "Members", members, context.plan.limit_of(SEATS_ENTITLEMENT)),
+        _count("members_joined", "New members", joined, joined_before),
+        _count("files_total", "Files", int(files["files"])),
+        _count("files_uploaded", "Files uploaded", uploaded, uploaded_before),
+        _quota(
+            "storage_used_bytes",
+            "Storage used",
+            int(files["bytes"]),
+            _gigabytes(context.plan.limit_of(STORAGE_ENTITLEMENT)),
+            fmt=Format.BYTES,
+        ),
+        _count(
+            "activity_events",
+            "Activity",
+            int(activity["events"]),
+            int(activity_before["events"]),
+        ),
+        _count(
+            "active_users",
+            "Active users",
+            int(activity["actors"]),
+            int(activity_before["actors"]),
+        ),
+    ]
+{{#if capability.ai}}
+    ai = (await _rows(context, _AI_TOTALS, now))[0]
+    ai_before = (await _rows(context, _AI_TOTALS, before))[0]
+    metrics.append(_count("ai_requests", "AI requests", int(ai["calls"]), int(ai_before["calls"])))
+{{/if}}
+    notes = []
+    if not context.plan.resolved:
+        notes.append("The plan could not be read, so limits are not shown.")
+    return ReportResult(
+        key="usage.overview",
+        generated_at=context.now,
+        range=_range_view(period),
+        metrics=metrics,
+        series=[_series_from("activity_events", "Activity", series_rows)],
+        notes=notes,
+        visualization=Visualization.KPI,
+        resolved=context.plan.resolved,
+    )
+
+
+def _gigabytes(limit: int | None) -> int | None:
+    return limit * 1024**3 if limit is not None else None
+
+
+async def quotas(context: ReportContext, filters: ResolvedFilters) -> ReportResult:
+    """Used, included and remaining, for every quota the plan names and the
+    product can measure. A quota with no ceiling is unlimited and says so."""
+    tenant_id = context.tenant_id or ""
+    period = _period(filters)
+    members = await _scalar(context, _MEMBERS_TOTAL, {"tenant_id": tenant_id})
+    files = (await _rows(context, _FILES_TOTAL, {"tenant_id": tenant_id}))[0]
+    metrics = [
+        _quota("members_total", "Seats", members, context.plan.limit_of(SEATS_ENTITLEMENT)),
+        _quota(
+            "storage_used_bytes",
+            "Storage",
+            int(files["bytes"]),
+            _gigabytes(context.plan.limit_of(STORAGE_ENTITLEMENT)),
+            fmt=Format.BYTES,
+        ),
+        _count("files_total", "Files", int(files["files"])),
+    ]
+{{#if capability.ai}}
+    calls = await _scalar(context, _AI_CALLS_THIS_MONTH, {"tenant_id": tenant_id})
+    metrics.append(
+        _quota(
+            "ai_requests",
+            "AI requests this month",
+            calls,
+            context.plan.limit_of(AI_REQUESTS_ENTITLEMENT),
+        )
+    )
+{{/if}}
+    rows: list[dict[str, Any]] = []
+    for metric in metrics:
+        used = metric.value or 0.0
+        limit = metric.limit
+        rows.append(
+            {
+                "quota": metric.label,
+                "used": used,
+                "included": limit,
+                "remaining": (limit - used) if limit is not None else None,
+                "percent": round(used / limit * 100, 1) if limit else None,
+            }
+        )
+    uploads = await _rows(
+        context, _FILES_UPLOADED_SERIES.format(bucket=_bucket(period)), _bound(period, tenant_id)
+    )
+    notes = []
+    if not context.plan.resolved:
+        notes.append("The plan could not be read, so what is included is not shown.")
+    return ReportResult(
+        key="usage.quotas",
+        generated_at=context.now,
+        range=_range_view(period),
+        metrics=metrics,
+        series=[_series_from("files_uploaded", "Files uploaded", uploads)],
+        table=Table(
+            columns=[
+                TableColumn(key="quota", label="Quota"),
+                TableColumn(key="used", label="Used", format=Format.DECIMAL, align="right"),
+                TableColumn(key="included", label="Included", format=Format.DECIMAL, align="right"),
+                TableColumn(
+                    key="remaining", label="Remaining", format=Format.DECIMAL, align="right"
+                ),
+                TableColumn(key="percent", label="Used %", format=Format.PERCENT, align="right"),
+            ],
+            rows=rows,
+        ),
+        notes=notes,
+        visualization=Visualization.KPI,
+        resolved=context.plan.resolved,
+    )
+
+
+async def users(context: ReportContext, filters: ResolvedFilters) -> ReportResult:
+    """Who has access, by role, and how membership moved in the period."""
+    tenant_id = context.tenant_id or ""
+    period = _period(filters)
+    now = _bound(period, tenant_id)
+    total = await _scalar(context, _MEMBERS_TOTAL, {"tenant_id": tenant_id})
+    joined = await _scalar(context, _MEMBERS_JOINED, now)
+    joined_before = await _scalar(context, _MEMBERS_JOINED, _bound(period.previous, tenant_id))
+    by_role = await _rows(context, _MEMBERS_BY_ROLE, {"tenant_id": tenant_id})
+    series = await _rows(context, _MEMBERS_JOINED_SERIES.format(bucket=_bucket(period)), now)
+    activity = (await _rows(context, _ACTIVITY_TOTAL, now))[0]
+    return ReportResult(
+        key="people.users",
+        generated_at=context.now,
+        range=_range_view(period),
+        metrics=[
+            _quota("members_total", "Members", total, context.plan.limit_of(SEATS_ENTITLEMENT)),
+            _count("members_joined", "Joined in the period", joined, joined_before),
+            _count("active_users", "Active in the period", int(activity["actors"])),
+        ],
+        series=[
+            _series_from("members_joined", "Members joined", series),
+            Series(
+                key="members_total",
+                label="Members by role",
+                unit=Unit.COUNT,
+                format=Format.INTEGER,
+                points=[SeriesPoint(x=str(r["role"]), y=float(r["value"])) for r in by_role],
+            ),
+        ],
+        table=Table(
+            columns=[
+                TableColumn(key="role", label="Role"),
+                TableColumn(key="value", label="Members", format=Format.INTEGER, align="right"),
+            ],
+            rows=[{"role": str(r["role"]), "value": int(r["value"])} for r in by_role],
+        ),
+        visualization=Visualization.BAR,
+    )
+
+
+async def subscription(context: ReportContext, filters: ResolvedFilters) -> ReportResult:
+    """The plan as the platform resolved it, beside what the product measures
+    against it. Nothing here is a query over money: the product holds none."""
+    tenant_id = context.tenant_id or ""
+    plan = context.plan
+    members = await _scalar(context, _MEMBERS_TOTAL, {"tenant_id": tenant_id})
+    files = (await _rows(context, _FILES_TOTAL, {"tenant_id": tenant_id}))[0]
+    rows: list[dict[str, Any]] = [
+        {"item": "Plan", "value": plan.code or "not recorded"},
+        {"item": "Status", "value": plan.status or "not recorded"},
+        {
+            "item": "Trial ends",
+            "value": plan.trial_ends_at.date().isoformat() if plan.trial_ends_at else None,
+        },
+        {
+            "item": "Current period ends",
+            "value": plan.period_ends_at.date().isoformat() if plan.period_ends_at else None,
+        },
+    ]
+    for code, row in sorted(plan.entitlements.items()):
+        rows.append(
+            {
+                "item": code,
+                "value": ("included" if row.enabled else "not included")
+                + (f", up to {row.limit}" if row.limit is not None else ""),
+            }
+        )
+    metrics = [
+        _quota("members_total", "Seats", members, plan.limit_of(SEATS_ENTITLEMENT)),
+        _quota(
+            "storage_used_bytes",
+            "Storage",
+            int(files["bytes"]),
+            _gigabytes(plan.limit_of(STORAGE_ENTITLEMENT)),
+            fmt=Format.BYTES,
+        ),
+    ]
+    notes = []
+    if not plan.resolved:
+        notes.append("The plan could not be read from the platform just now.")
+    else:
+        notes.append("Invoices and payments are on the customer portal's billing page.")
+    return ReportResult(
+        key="billing.subscription",
+        generated_at=context.now,
+        metrics=metrics,
+        table=Table(
+            columns=[
+                TableColumn(key="item", label="Item"),
+                TableColumn(key="value", label="Value"),
+            ],
+            rows=rows,
+        ),
+        notes=notes,
+        visualization=Visualization.TABLE,
+        resolved=plan.resolved,
+    )
+
+
+OUTCOME = FilterDefinition(
+    key="outcome",
+    kind=FilterKind.CHOICE,
+    label="Outcome",
+    options=("ok", "denied", "failed", "pending"),
+)
+LIMIT = FilterDefinition(
+    key="limit", kind=FilterKind.INTEGER, label="Rows", default=100, minimum=1, maximum=1000
+)
+
+
+async def activity(context: ReportContext, filters: ResolvedFilters) -> ReportResult:
+    """What people did, from the audit table: totals, the shape over time,
+    the breakdown by action, and the most recent rows."""
+    tenant_id = context.tenant_id or ""
+    period = _period(filters)
+    now = _bound(period, tenant_id)
+    totals = (await _rows(context, _ACTIVITY_TOTAL, now))[0]
+    before = (await _rows(context, _ACTIVITY_TOTAL, _bound(period.previous, tenant_id)))[0]
+    series = await _rows(context, _ACTIVITY_SERIES.format(bucket=_bucket(period)), now)
+    by_action = await _rows(context, _ACTIVITY_BY_ACTION, now)
+    outcome = filters.choice("outcome")
+    if outcome is not None:
+        by_action = [row for row in by_action if row["outcome"] == outcome]
+    recent = await _rows(
+        context, _ACTIVITY_RECENT, {**now, "limit": filters.integer("limit") or 100}
+    )
+    if outcome is not None:
+        recent = [row for row in recent if row["outcome"] == outcome]
+    return ReportResult(
+        key="activity.audit",
+        generated_at=context.now,
+        range=_range_view(period),
+        metrics=[
+            _count("activity_events", "Actions", int(totals["events"]), int(before["events"])),
+            _count("active_users", "Active users", int(totals["actors"]), int(before["actors"])),
+        ],
+        series=[
+            _series_from("activity_events", "Actions", series),
+            Series(
+                key="activity_by_action",
+                label="By action",
+                unit=Unit.COUNT,
+                format=Format.INTEGER,
+                points=[
+                    SeriesPoint(x=f"{r['action']} ({r['outcome']})", y=float(r["value"]))
+                    for r in by_action[:12]
+                ],
+            ),
+        ],
+        table=Table(
+            columns=[
+                TableColumn(key="at", label="When"),
+                TableColumn(key="actor", label="Who"),
+                TableColumn(key="action", label="Action"),
+                TableColumn(key="target", label="Target"),
+                TableColumn(key="outcome", label="Outcome"),
+            ],
+            rows=[
+                {
+                    "at": _iso(row["created_at"]),
+                    "actor": str(row["actor_id"]),
+                    "action": str(row["action"]),
+                    "target": f"{row['target_type']} {row['target_id']}",
+                    "outcome": str(row["outcome"]),
+                }
+                for row in recent
+            ],
+        ),
+        visualization=Visualization.LINE,
+    )
+
+
+def _iso(value: object) -> str:
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
+{{#if capability.ai}}
+async def ai_usage(context: ReportContext, filters: ResolvedFilters) -> ReportResult:
+    """The assistant's usage over the period: calls, errors, tokens, latency,
+    the estimate where a price was known, and the breakdown by model.
+    Aggregates only; no conversation, no prompt, no answer."""
+    tenant_id = context.tenant_id or ""
+    period = _period(filters)
+    now = _bound(period, tenant_id)
+    totals = (await _rows(context, _AI_TOTALS, now))[0]
+    before = (await _rows(context, _AI_TOTALS, _bound(period.previous, tenant_id)))[0]
+    series = await _rows(context, _AI_SERIES.format(bucket=_bucket(period)), now)
+    by_model = await _rows(context, _AI_BY_MODEL, now)
+    calls = int(totals["calls"])
+    unpriced = int(totals["unpriced"])
+    notes = []
+    if calls and unpriced:
+        notes.append(
+            f"{unpriced} of {calls} calls carried no price, so the estimate covers "
+            f"{calls - unpriced} calls."
+        )
+    metrics = [
+        _count("ai_requests", "Requests", calls, int(before["calls"])),
+        _count("ai_errors", "Errors", int(totals["errors"]), int(before["errors"])),
+        MetricValue(
+            key="ai_tokens",
+            label="Tokens",
+            value=float(totals["tokens"]),
+            unit=Unit.COUNT,
+            format=Format.INTEGER,
+            previous=float(before["tokens"]),
+        ),
+        MetricValue(
+            key="ai_estimated_cost",
+            label="Estimated cost",
+            value=float(totals["cost"]) if calls else 0.0,
+            unit=Unit.MICROS,
+            format=Format.MONEY,
+            kind="estimated",
+            previous=float(before["cost"]),
+            note="List price, where the route carried one",
+        ),
+        MetricValue(
+            key="ai_latency_average",
+            label="Average latency",
+            value=float(totals["latency"]),
+            unit=Unit.MILLISECONDS,
+            format=Format.DURATION,
+        ),
+        MetricValue(
+            key="ai_billable",
+            label="Pay-as-you-go charges",
+            value=float(totals["billable"]),
+            unit=Unit.MICROS,
+            format=Format.MONEY,
+            kind="actual",
+        ),
+    ]
+    return ReportResult(
+        key="ai.usage",
+        generated_at=context.now,
+        range=_range_view(period),
+        metrics=metrics,
+        series=[
+            _series_from("ai_requests", "Requests", series, value="calls"),
+            _series_from("ai_tokens", "Tokens", series, value="tokens"),
+        ],
+        table=Table(
+            columns=[
+                TableColumn(key="model_alias", label="Alias"),
+                TableColumn(key="provider", label="Provider"),
+                TableColumn(key="model", label="Model"),
+                TableColumn(key="calls", label="Calls", format=Format.INTEGER, align="right"),
+                TableColumn(key="errors", label="Errors", format=Format.INTEGER, align="right"),
+                TableColumn(key="tokens", label="Tokens", format=Format.INTEGER, align="right"),
+                TableColumn(key="cost", label="Estimated cost", format=Format.MONEY, align="right"),
+                TableColumn(key="latency", label="Latency", format=Format.DURATION, align="right"),
+            ],
+            rows=[
+                {
+                    "model_alias": str(r["model_alias"]),
+                    "provider": str(r["provider"]),
+                    "model": str(r["model"]),
+                    "calls": int(r["calls"]),
+                    "errors": int(r["errors"]),
+                    "tokens": int(r["tokens"]),
+                    "cost": int(r["cost"]),
+                    "latency": int(r["latency"]),
+                }
+                for r in by_model
+            ],
+        ),
+        notes=notes,
+        visualization=Visualization.LINE,
+    )
+
+
+{{/if}}
+# ── the definitions ───────────────────────────────────────────────────────────
+
+REPORTS: list[ReportDefinition] = [
+    ReportDefinition(
+        key="usage.overview",
+        name="Overview",
+        description="Where this organization stands in the product, and what moved.",
+        category=Category.OVERVIEW,
+        resolver=overview,
+        permission=READ,
+        entitlement=BASIC,
+        metrics=(
+            "members_total",
+            "members_joined",
+            "files_total",
+            "files_uploaded",
+            "storage_used_bytes",
+            "activity_events",
+            "active_users",
+        ),
+        filters=(DATE_RANGE,),
+        default_visualization=Visualization.KPI,
+        visualizations=(Visualization.KPI, Visualization.LINE, Visualization.TABLE),
+        cache_seconds=60,
+        order=0,
+    ),
+    ReportDefinition(
+        key="usage.quotas",
+        name="Usage",
+        description="What the plan includes and how much of it is used.",
+        category=Category.USAGE,
+        resolver=quotas,
+        permission=READ,
+        entitlement=BASIC,
+        metrics=("members_total", "storage_used_bytes", "files_total", "files_uploaded"),
+        filters=(DATE_RANGE,),
+        default_visualization=Visualization.KPI,
+        visualizations=(Visualization.KPI, Visualization.LINE, Visualization.TABLE),
+        cache_seconds=60,
+        order=10,
+    ),
+    ReportDefinition(
+        key="people.users",
+        name="Users",
+        description="Who has access, by role, and how membership changed.",
+        category=Category.PEOPLE,
+        resolver=users,
+        permission=SENSITIVE,
+        entitlement=ADVANCED,
+        metrics=("members_total", "members_joined", "active_users"),
+        dimensions=("role",),
+        filters=(DATE_RANGE,),
+        default_visualization=Visualization.BAR,
+        visualizations=(Visualization.KPI, Visualization.BAR, Visualization.TABLE),
+        sensitive=True,
+        order=20,
+    ),
+    ReportDefinition(
+        key="billing.subscription",
+        name="Subscription & Billing",
+        description="The plan, its status, and what it includes.",
+        category=Category.BILLING,
+        resolver=subscription,
+        permission=READ,
+        entitlement=BASIC,
+        metrics=("members_total", "storage_used_bytes"),
+        default_visualization=Visualization.TABLE,
+        visualizations=(Visualization.KPI, Visualization.TABLE),
+        cache_seconds=60,
+        order=30,
+    ),
+{{#if capability.ai}}
+    ReportDefinition(
+        key="ai.usage",
+        name="AI Usage",
+        description="What the assistant was asked, what it cost, and how it answered.",
+        category=Category.AI,
+        resolver=ai_usage,
+        permission=READ,
+        entitlement=ADVANCED,
+        metrics=(
+            "ai_requests",
+            "ai_errors",
+            "ai_tokens",
+            "ai_estimated_cost",
+            "ai_latency_average",
+            "ai_billable",
+        ),
+        dimensions=("model_alias", "provider", "model"),
+        filters=(DATE_RANGE,),
+        default_visualization=Visualization.LINE,
+        visualizations=(Visualization.KPI, Visualization.LINE, Visualization.TABLE),
+        capability="ai",
+        order=40,
+    ),
+{{/if}}
+    ReportDefinition(
+        key="activity.audit",
+        name="Activity",
+        description="What people did, from the audit record.",
+        category=Category.ACTIVITY,
+        resolver=activity,
+        permission=SENSITIVE,
+        entitlement=ADVANCED,
+        metrics=("activity_events", "active_users"),
+        dimensions=("action", "outcome"),
+        filters=(DATE_RANGE, OUTCOME, LIMIT),
+        default_visualization=Visualization.LINE,
+        visualizations=(
+            Visualization.KPI,
+            Visualization.LINE,
+            Visualization.BAR,
+            Visualization.TABLE,
+        ),
+        sensitive=True,
+        order=50,
+    ),
+]
+
+
+def today() -> date:  # pragma: no cover - a seam for tests that pin the clock
+    return date.today()  # noqa: DTZ011

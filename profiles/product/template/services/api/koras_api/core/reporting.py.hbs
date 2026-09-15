@@ -1,0 +1,260 @@
+"""Everything one reporting request needs: the tenant, the caller, the plan,
+the catalogue and the audit sink, assembled once and refused where a part is
+missing.
+
+The same shape `core/ai.py` and `core/storage.py` give their modules. The
+plan is read through `core/platform.py` with the caller's own token and
+turned into a `ReportingGrant`; the caller's permissions come from the
+verified roles through the catalogue `koras_auth` mirrors from TypeScript;
+the session is the request's tenant session with row-level security forced.
+Nothing here reads a tenant, a user or a plan from the request.
+
+**An unresolved plan follows the Files rule, not the assistant's.** The
+basic reports answer and the page says the plan could not be read, because
+a report over the customer's own rows is not something an outage should
+hide and nothing is spent by showing it. Export is the exception and is
+refused while unresolved: a download leaves the product.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Annotated
+
+from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from koras_audit import AuditEvent
+from koras_auth.permissions import permissions_for
+from koras_reporting import Entitlement, Plan, ReportContext, ReportingCatalogue, Scope
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..reporting import catalogue
+from . import platform
+from .auth import AuthDep
+from .database import DbSession, rebind_tenant
+from .settings import PRODUCT_CODE
+from .tenant import TenantDep
+
+_log = logging.getLogger(__name__)
+
+#: The platform entitlements that gate reporting. Named once here and once in
+#: `packages/branding`'s navigation registry; the generator's structural test
+#: asserts the two agree.
+REPORTING_ENTITLEMENT = "reporting.basic"
+REPORTING_ADVANCED_ENTITLEMENT = "reporting.advanced"
+REPORTING_EXPORT_ENTITLEMENT = "reporting.export"
+REPORTING_SCHEDULED_ENTITLEMENT = "reporting.scheduled"
+REPORTING_API_ENTITLEMENT = "reporting.api"
+
+#: What an unresolved plan still includes. Basic only: the reports over the
+#: customer's own rows that nothing is spent by showing.
+_INCLUDED_WHEN_UNRESOLVED = frozenset({REPORTING_ENTITLEMENT})
+
+#: The permissions the reporting routes check. The catalogue in
+#: `packages/permissions` names the same three.
+READ_PERMISSION = "reports.read"
+SENSITIVE_PERMISSION = "reports.sensitive"
+EXPORT_PERMISSION = "reports.export"
+
+_bearer = HTTPBearer(auto_error=True)
+
+
+@dataclass(frozen=True)
+class ReportingGrant:
+    """What the plan says about reporting for this organization."""
+
+    plan: Plan
+
+    @property
+    def resolved(self) -> bool:
+        return self.plan.resolved
+
+    def entitled(self, code: str) -> bool:
+        if not self.plan.resolved:
+            return code in _INCLUDED_WHEN_UNRESOLVED
+        return self.plan.includes(code)
+
+    @property
+    def can_export(self) -> bool:
+        return self.plan.resolved and self.plan.includes(REPORTING_EXPORT_ENTITLEMENT)
+
+
+def _dt(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def plan_from(answer: platform.PortalAnswer | None) -> Plan:
+    """The portal's entitlement answer as the plan a resolver reads."""
+    if answer is None:
+        return Plan(resolved=False)
+    body = answer.body
+    if body is None:
+        # The platform answered and this organization holds no subscription
+        # to this product: nothing is granted, and that is a real answer.
+        return Plan(resolved=True, entitlements={})
+    rows: dict[str, Entitlement] = {}
+    for row in body.get("entitlements", []) or []:
+        if not isinstance(row, dict) or not isinstance(row.get("code"), str):
+            continue
+        limit = row.get("limit_value")
+        rows[row["code"]] = Entitlement(
+            enabled=bool(row.get("enabled")),
+            limit=int(limit) if isinstance(limit, int) and limit >= 0 else None,
+        )
+    code = body.get("plan_code")
+    status = body.get("status")
+    return Plan(
+        resolved=True,
+        code=code if isinstance(code, str) else None,
+        status=status if isinstance(status, str) else None,
+        trial_ends_at=_dt(body.get("trial_ends_at")),
+        period_ends_at=_dt(body.get("current_period_end")),
+        entitlements=rows,
+    )
+
+
+# ── the audit sink ─────────────────────────────────────────────────────────────
+
+_AUDIT_INSERT = text(
+    "insert into public.audit_events "
+    " (tenant_id, actor_id, action, target_type, target_id, outcome, details, created_at) "
+    "values (:tenant_id, :actor_id, :action, :target_type, :target_id, :outcome, "
+    " cast(:details as jsonb), :created_at)"
+)
+
+
+class SqlAuditSink:
+    """`AuditSink` on `audit_events`, on the tenant session.
+
+    Events wait until the route flushes, after the answer and after a
+    refusal alike; a sink that wrote mid-request would leave the session in
+    whatever state the write left it. An event for another tenant is refused
+    rather than dropped, for the reason `core/ai.py` gives.
+    """
+
+    def __init__(self, session: AsyncSession, tenant_id: str) -> None:
+        self._session = session
+        self._tenant_id = tenant_id
+        self._pending: list[AuditEvent] = []
+
+    def emit(self, event: AuditEvent) -> None:
+        if event.tenant_id != self._tenant_id:
+            raise ValueError("an audit event for another tenant cannot be recorded here")
+        self._pending.append(event)
+
+    async def flush(self) -> int:
+        events, self._pending = self._pending, []
+        for event in events:
+            await self._session.execute(
+                _AUDIT_INSERT,
+                {
+                    "tenant_id": event.tenant_id,
+                    "actor_id": event.actor_id,
+                    "action": event.action,
+                    "target_type": event.target_type,
+                    "target_id": event.target_id,
+                    "outcome": str(event.outcome),
+                    "details": json.dumps(dict(event.details)),
+                    "created_at": event.at,
+                },
+            )
+        if events:
+            await self._session.commit()
+            await rebind_tenant(self._session, self._tenant_id)
+        return len(events)
+
+
+# ── the dependency ─────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class TenantReporting:
+    context: ReportContext
+    grant: ReportingGrant
+    catalogue: ReportingCatalogue
+    #: The generated capabilities, so a report whose data needs one is
+    #: hidden where it was not generated. Written by the generator.
+    capabilities: frozenset[str]
+    audit: SqlAuditSink | None = None
+
+    def record(
+        self,
+        action: str,
+        *,
+        report_key: str,
+        outcome: str = "ok",
+        details: dict[str, str | int | bool] | None = None,
+    ) -> None:
+        if self.audit is None or self.context.tenant_id is None:
+            return
+        self.audit.emit(
+            AuditEvent(
+                action=action,
+                actor_id=self.context.user_id,
+                tenant_id=self.context.tenant_id,
+                target_type="report",
+                target_id=report_key,
+                outcome=outcome,  # type: ignore[arg-type]
+                details=details or {},
+            )
+        )
+
+    async def flush(self) -> None:
+        if self.audit is not None:
+            await self.audit.flush()
+
+
+#: Written by the generator from the selected components, exactly as
+#: `packages/branding` records them, so the two cannot disagree.
+CAPABILITIES: frozenset[str] = frozenset(
+    [
+{{#each enabledCapabilities}}        "{{this}}",
+{{/each}}    ]
+)
+
+
+async def tenant_reporting(
+    tenant: TenantDep,
+    claims: AuthDep,
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
+    session: DbSession,
+) -> TenantReporting:
+    """Everything one reporting request needs, on the caller's own token."""
+    answer = await platform.read_portal(
+        f"/api/portal/v1/products/{PRODUCT_CODE}/entitlements",
+        organization_id=tenant.organization_id,
+        token=credentials.credentials,
+    )
+    plan = plan_from(answer)
+    if not plan.resolved and platform.configured():
+        _log.warning("reporting: the platform did not answer; basic reports only")
+    context = ReportContext(
+        scope=Scope.TENANT,
+        user_id=claims.sub,
+        permissions=permissions_for(claims.roles),
+        plan=plan,
+        session=session,
+        tenant_id=tenant.id,
+        organization_id=tenant.organization_id,
+        product_code=PRODUCT_CODE,
+    )
+    return TenantReporting(
+        context=context,
+        grant=ReportingGrant(plan),
+        catalogue=catalogue,
+        capabilities=CAPABILITIES,
+        audit=SqlAuditSink(session, tenant.id),
+    )
+
+
+ReportingDep = Annotated[TenantReporting, Depends(tenant_reporting)]

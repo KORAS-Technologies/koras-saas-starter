@@ -22,6 +22,10 @@ capabilities:
   # and the provider keys a deployed gateway is refused without. Enable both
   # together: --with ai,ai_gateway.
   ai: false
+  # Analytics for every product. Nothing external is needed, so it is on;
+  # --without reporting removes the router, the pages, the audit table and
+  # the extension point together.
+  reporting: true
 
 infrastructure:
   supabase_region: "us-east-1"

@@ -89,6 +89,13 @@ export const PRODUCT_PERMISSIONS = [
   // test keeps the two level.
   'ai.use',
   'ai.approve',
+  // Reporting. Every member may open Analytics; reports about people --
+  // Users, Activity -- are the sensitive half; a download leaves the
+  // product and is its own authority. The Python catalogue mirrors all
+  // three, and the starter's structural test keeps the two level.
+  'reports.read',
+  'reports.sensitive',
+  'reports.export',
 ] as const
 
 export type ProductPermission = (typeof PRODUCT_PERMISSIONS)[number]
@@ -118,9 +125,14 @@ export function isProductPermission(value: string): value is ProductPermission {
 export const ROLE_PERMISSIONS: Record<OrganizationRole, readonly ProductPermission[]> = {
   organization_owner: PRODUCT_PERMISSIONS,
   organization_admin: PRODUCT_PERMISSIONS,
-  security_admin: ['product.access', 'team.read', 'settings.read', 'files.read', 'files.upload', 'ai.use'],
-  billing_admin: ['product.access', 'settings.read', 'files.read', 'files.upload', 'ai.use'],
-  member: ['product.access', 'files.read', 'files.upload', 'ai.use'],
+  // One line per role, on purpose: the starter's structural test reads each
+  // role's grant as a line, and a permission wrapped onto the next one reads
+  // as a role that grants nothing.
+  // prettier-ignore
+  security_admin: ['product.access', 'team.read', 'settings.read', 'files.read', 'files.upload', 'ai.use', 'reports.read', 'reports.sensitive'],
+  // prettier-ignore
+  billing_admin: ['product.access', 'settings.read', 'files.read', 'files.upload', 'ai.use', 'reports.read', 'reports.export'],
+  member: ['product.access', 'files.read', 'files.upload', 'ai.use', 'reports.read'],
 }
 
 /**
