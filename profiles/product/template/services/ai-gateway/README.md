@@ -67,3 +67,18 @@ fails on a bad key; do not wire an automated check to it.
   metered by the runtime instead, in the product's own database, per tenant.
 - **Request tracing.** The langfuse callback is not configured; it needs the
   dependency and `LANGFUSE_*` secrets.
+
+## Refusals
+
+A request with no bearer, or with a bearer that is not `LITELLM_MASTER_KEY`,
+is answered 401 by the guard in `koras_ai_gateway/guard.py` before the proxy
+sees it. LiteLLM's own answer to either would be a 500, because its error
+path imports the key store this image does not ship. The health endpoints
+need no key.
+
+## Starting it
+
+`python -m koras_ai_gateway.main [--host] [--port] [--config]` is the one
+entry point, in the container and under `make dev`. It loads
+`litellm_config.yaml` before serving; starting the module through uvicorn's
+import path skips that and serves no models.

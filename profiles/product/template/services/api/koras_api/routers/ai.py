@@ -35,7 +35,7 @@ from koras_ai import (
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..core import notify
-from ..core.ai import AiDep, AiFactoryDep, TenantAI, refusal
+from ..core.ai import AiDep, AiFactoryDep, AiTurnLimit, TenantAI, refusal
 from ..core.database import tenant_session
 from ..core.settings import PRODUCT_NAME, settings
 
@@ -402,7 +402,11 @@ async def _tell_approvers(
 
 @router.post("/ai/conversations/{conversation_id}/messages", response_model=TurnView)
 async def send_message(
-    conversation_id: str, body: SendMessage, ai: AiDep, background: BackgroundTasks
+    conversation_id: str,
+    body: SendMessage,
+    ai: AiDep,
+    background: BackgroundTasks,
+    _ceiling: AiTurnLimit,
 ) -> TurnView:
     """One turn of the agent. Ends at an answer, or at an action waiting for a person."""
     try:
@@ -431,7 +435,10 @@ def _refused(error: HTTPException) -> dict[str, Any]:
 
 @router.post("/ai/conversations/{conversation_id}/messages/stream")
 async def stream_message(
-    conversation_id: str, body: SendMessage, assembly: AiFactoryDep
+    conversation_id: str,
+    body: SendMessage,
+    assembly: AiFactoryDep,
+    _ceiling: AiTurnLimit,
 ) -> StreamingResponse:
     """The same turn as `send_message`, told as it happens.
 

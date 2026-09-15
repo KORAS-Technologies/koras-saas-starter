@@ -1,4 +1,4 @@
-"""An unauthenticated call to the gateway is a 401, not a 500."""
+"""An unauthenticated call to the gateway, or a wrongly authenticated one, is a 401, not a 500."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ RequireBearer = guard.RequireBearer
 is_open = guard.is_open
 
 
-def _app() -> TestClient:
+def _app(key: str | None = None) -> TestClient:
     inner = FastAPI()
 
     @inner.get("/health/liveliness")
@@ -43,7 +43,7 @@ def _app() -> TestClient:
     async def completions() -> dict[str, str]:
         return {"id": "chatcmpl-test"}
 
-    inner.add_middleware(RequireBearer)
+    inner.add_middleware(RequireBearer, key=key)
     return TestClient(inner)
 
 
@@ -54,11 +54,25 @@ def test_a_request_with_no_bearer_is_refused_with_401() -> None:
     assert answer.json()["error"]["type"] == "authentication_error"
 
 
-def test_a_request_with_a_bearer_reaches_the_proxy() -> None:
-    # Any bearer: whether it is the right key is LiteLLM's to decide.
+def test_with_no_key_configured_any_bearer_reaches_the_proxy() -> None:
+    # A smoke test with no master key: whether it is right is LiteLLM's to say.
     answer = _app().post("/v1/chat/completions", headers={"Authorization": "Bearer sk-x"})
     assert answer.status_code == 200
     assert answer.json()["id"] == "chatcmpl-test"
+
+
+def test_the_right_key_reaches_the_proxy_and_the_wrong_one_is_401() -> None:
+    client = _app(key="sk-right")
+    ok = client.post("/v1/chat/completions", headers={"Authorization": "Bearer sk-right"})
+    assert ok.status_code == 200
+    wrong = client.post("/v1/chat/completions", headers={"Authorization": "Bearer sk-wrong"})
+    assert wrong.status_code == 401
+    assert wrong.json()["error"]["message"] == "Invalid gateway key"
+    assert "sk-right" not in wrong.text
+    # Not a bearer at all is the same as none.
+    basic = client.get("/v1/models", headers={"Authorization": "Basic abc"})
+    assert basic.status_code == 401
+    assert client.get("/health/liveliness").status_code == 200
 
 
 def test_liveness_needs_no_credential() -> None:

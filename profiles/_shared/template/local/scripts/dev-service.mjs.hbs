@@ -34,7 +34,11 @@ const COMMANDS = {
   scheduler: () => ['python', '-m', 'koras_scheduler.main'],
 {{/if}}
 {{#if service.ai_gateway}}
-  'ai-gateway': (port) => ['uvicorn', 'koras_ai_gateway.main:app', '--host', '127.0.0.1', '--port', port, '--reload'],
+  // The gateway's own entry point, the way the container starts it: uvicorn's
+  // import path loaded the module without ever calling `initialize`, so the
+  // proxy served with no models while looking configured. No --reload; the
+  // gateway is configuration, and a change to it is a restart.
+  'ai-gateway': (port) => ['python', '-m', 'koras_ai_gateway.main', '--host', '127.0.0.1', '--port', port],
 {{/if}}
 }
 

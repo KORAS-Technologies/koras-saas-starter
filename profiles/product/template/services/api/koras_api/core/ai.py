@@ -41,7 +41,7 @@ from datetime import UTC, date, datetime
 from typing import Annotated, Any
 
 import httpx
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from koras_ai import (
     ActionStatus,
@@ -74,6 +74,7 @@ from koras_ai import (
 from koras_audit import AuditEvent
 from koras_auth import JWTClaims
 from koras_auth.permissions import permissions_for
+from koras_ratelimit import RateLimit, check
 from koras_storage import ObjectStore
 from koras_tenant import TenantContext
 from sqlalchemy import text
@@ -86,6 +87,7 @@ from . import knowledge as knowledge_store
 from . import platform
 from .auth import AuthDep
 from .database import DbSession, rebind_tenant, tenant_session
+from .ratelimit import caller_identity
 from .settings import PRODUCT_CODE, settings
 from .storage import tenant_storage
 from .tenant import TenantDep
@@ -1098,6 +1100,48 @@ async def _index_uploaded_file(
 
 
 AiDep = Annotated[TenantAI, Depends(tenant_ai)]
+
+
+# ── the per-minute ceiling ────────────────────────────────────────────────────
+
+AI_TURN_WINDOW_SECONDS = 60
+
+
+async def limit_ai_turns(request: Request, claims: AuthDep) -> None:
+    """A fixed window per organization on the routes that call a model.
+
+    Between the tier-2 limiter, which bounds one caller's requests, and the
+    plan's monthly allowance, a loop could still make a model call every
+    few milliseconds until the month ran out. `AI_REQUESTS_PER_MINUTE`
+    is the ceiling in between: a setting rather than a plan entitlement,
+    because it exists to stop abuse rather than to sell capacity. Zero
+    switches it off; no Redis degrades to allowing, the way every limiter
+    here does, and says so on the decision. Keyed on the organization the
+    token proved -- one per tenant -- so it costs no read of the tenant.
+    """
+    ceiling = settings.ai_requests_per_minute
+    if ceiling <= 0:
+        return
+    organization, _subject = caller_identity(claims)
+    decision = await check(
+        request.app.state.redis,
+        bucket="ai",
+        identity=organization,
+        limit=RateLimit(limit=ceiling, window_seconds=AI_TURN_WINDOW_SECONDS),
+    )
+    request.state.rate_limit = decision
+    if not decision.allowed:
+        raise refusal(
+            AIError(
+                ErrorCode.USAGE_EXCEEDED,
+                "the assistant is answering as much as it can for this organization right "
+                "now; try again in a minute",
+                detail=f"{ceiling} model calls a minute",
+            )
+        )
+
+
+AiTurnLimit = Annotated[None, Depends(limit_ai_turns)]
 AiFactoryDep = Annotated[AiAssembly, Depends(tenant_ai_factory)]
 
 

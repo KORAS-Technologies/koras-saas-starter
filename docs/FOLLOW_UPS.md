@@ -1940,12 +1940,22 @@ rather than an omission, and each names the seam it plugs into.
       authentication error handler imports Prisma to classify the error and
       the image has none. Harmless to the product, which always sends the
       key, and misleading to anyone probing the gateway by hand.
-- [ ] **A per-minute AI quota.** The API's tier-2 limiter and the monthly
-      allowance bound abuse today; a finer ceiling is a field on `Limits`.
-- [ ] **The local gateway.** `make dev` starts the gateway through uvicorn,
-      which imports the proxy without initialising it, so it serves with no
-      models loaded. A local model call needs the service started with
-      `python -m` the way the container does. Unchanged by this work.
+      A wrong key got the same 500 until 2026-09-15; the guard now compares
+      the bearer to `LITELLM_MASTER_KEY` in constant time where one is
+      configured and answers 401, so the proxy's Prisma-importing error path
+      is never reached for either case.
+- [x] **A per-minute AI quota.** Built 2026-09-15 as a setting rather than
+      a plan field, because it stops abuse rather than sells capacity:
+      `AI_REQUESTS_PER_MINUTE`, thirty unless set, zero to switch off, a
+      fixed window per organization on the two routes that call a model,
+      refused with the 429 the monthly allowance uses (`limit_ai_turns` in
+      `core/ai.py`).
+- [x] **The local gateway.** Fixed 2026-09-15: `dev-service.mjs` starts
+      the gateway through its own entry point, `python -m koras_ai_gateway.main`,
+      the way the container does, with `--host` and `--port` on the command
+      line; the module's `main()` loads the configuration before serving.
+      No `--reload` for it: the gateway is configuration, and a change to it
+      is a restart.
 
 ### F25 — the reporting framework: what the first shared reporting layer leaves out
 

@@ -114,6 +114,10 @@ class Settings(BaseSettings):
     # Where the notice sends people: the web application's public address.
     next_public_app_url: str = ""
     litellm_master_key: str = ""
+    # Model calls one organization may make in a minute, across its users.
+    # The abuse ceiling between the request limiter and the plan's monthly
+    # allowance. Zero switches it off.
+    ai_requests_per_minute: int = 30
 {{/if}}
 
     @field_validator("database_url", mode="after")
