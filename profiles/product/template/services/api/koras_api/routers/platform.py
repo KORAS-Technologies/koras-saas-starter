@@ -23,6 +23,7 @@ on `koras_tenant.Provisioning`.
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Response, status
@@ -141,6 +142,63 @@ async def create_tenant(
 
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
     return _response(tenant)
+
+
+class PlanEntitlement(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    code: str
+    enabled: bool = False
+    limit_value: int | None = None
+
+
+class PlanSnapshot(BaseModel):
+    """The plan as the platform resolved it for this tenant's organization.
+
+    The same fields the portal's entitlement answer carries, so a product
+    stores what a signed-in customer would have been told. A tenant whose
+    organization holds no subscription arrives with no plan and no
+    entitlements: that is a real answer, and it is stored.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    plan_code: str | None = None
+    status: str | None = None
+    entitlements: list[PlanEntitlement] = []
+    trial_ends_at: datetime | None = None
+    current_period_end: datetime | None = None
+
+
+@router.put("/tenants/{tenant_id}/plan", status_code=status.HTTP_204_NO_CONTENT)
+async def sync_plan(
+    tenant_id: str,
+    body: PlanSnapshot,
+    _principal: PlatformMachineDep,
+    session: PlatformSession,
+) -> Response:
+    """Replace what this product knows of the tenant's plan.
+
+    Written by the Control Plane's hourly sync and read by the worker when
+    it delivers a scheduled report -- the one reader with no customer token
+    to resolve the plan live. Every page still resolves it live; this is
+    what stands in where nobody is signed in.
+    """
+    recorded = await tenant_store.record_plan(
+        session,
+        tenant_id,
+        plan_code=body.plan_code,
+        status=body.status,
+        entitlements={
+            row.code: {"enabled": row.enabled, "limit": row.limit_value}
+            for row in body.entitlements
+        },
+        trial_ends_at=body.trial_ends_at,
+        period_ends_at=body.current_period_end,
+    )
+    if not recorded:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such tenant")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 class StorageDefaults(BaseModel):

@@ -360,11 +360,22 @@ worker image carries the API's `koras_api/reporting` package and nothing
 else of the API, and imports it through `importlib` so the dependency
 check does not read it as an undeclared dependency on the API.
 
-What the worker cannot know is the plan at delivery time: it resolves with
-`UNRESOLVED_PLAN`, which the standard reports answer, so a schedule created
-while the plan included a report keeps delivering it if the plan later
-lapses. Refusing at delivery is the next step and needs the worker to hold
-the platform's entitlement contract.
+The plan at delivery time is the one the platform last told the product
+of. The worker holds no customer token to resolve it live and the product
+holds no identity toward the platform to ask, so the direction the estate
+already allows is used: the Control Plane's worker resolves each
+organization's effective entitlements for the product hourly and writes
+them through the private contract, `PUT /internal/platform/v1/tenants/{id}/plan`,
+into `tenant_plans` (migration `00015_tenant_plans.sql`), one row per
+tenant, replaced on every sync. Before rendering, the worker reads that row
+as the tenant and asks it the three gates creating the schedule asked --
+`reporting.scheduled`, `reporting.export`, and the report's own entitlement
+-- and a schedule the plan no longer covers is paused: no mail, the reason
+on the schedule's `last_error`, the next time set, so it resumes by itself
+if the plan does. A tenant the platform has never synced delivers as an
+unresolved customer would, which is the basic reports. Every page still
+resolves the plan live; the snapshot stands in only where nobody is signed
+in.
 
 ## Audit
 

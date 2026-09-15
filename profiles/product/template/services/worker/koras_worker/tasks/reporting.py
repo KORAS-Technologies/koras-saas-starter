@@ -17,6 +17,13 @@ the run and the next due time on the schedule. A schedule that fails keeps
 its error and its next time, so one bad night does not stop the report
 for good and does not repeat it every hour either.
 
+The plan is the one the platform last synced into `tenant_plans`: the
+worker holds no customer token to resolve it live, and the product holds
+no identity toward the platform to ask, so the platform tells it hourly
+through the private contract. A schedule whose plan no longer includes
+scheduling, exporting or the report is paused -- its error says so and
+its next time is set -- rather than delivered on a plan that lapsed.
+
 The catalogue is the API's, imported by name. The worker image carries the
 API's `reporting` package on its path for exactly this; nothing else of the
 API is imported, and the modules under it import only the framework and
@@ -26,6 +33,7 @@ SQLAlchemy.
 from __future__ import annotations
 
 import importlib
+import json
 import logging
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
@@ -35,7 +43,9 @@ from koras_email import Attachment, EmailSender, sender_for
 from koras_reporting import (
     UNRESOLVED_PLAN,
     DateRange,
+    Entitlement,
     ExportFormat,
+    Plan,
     ReportContext,
     ReportDefinition,
     ReportingCatalogue,
@@ -47,6 +57,7 @@ from koras_reporting import (
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import text
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -96,6 +107,11 @@ _RECORD_RUN = text(
     "update public.report_schedules "
     "set last_run_at = :now, next_run_at = :next_run_at, last_error = :error "
     "where id = :id"
+)
+
+_PLAN = text(
+    "select plan_code, status, entitlements, trial_ends_at, period_ends_at, synced_at "
+    "from public.tenant_plans where tenant_id = :tenant_id"
 )
 
 _AUDIT_INSERT = text(
@@ -151,6 +167,67 @@ class Catalogue(Protocol):
     reports: Any
 
 
+class PlanLapsed(Exception):
+    """The plan the platform last told us of no longer includes this delivery."""
+
+
+#: What a delivery needs the plan to include, beside the report's own gate.
+SCHEDULED = "reporting.scheduled"
+EXPORT = "reporting.export"
+
+
+def plan_from_row(row: Row[Any]) -> Plan:
+    """The stored snapshot as the plan a resolver reads."""
+    raw = row.entitlements
+    if isinstance(raw, str):
+        raw = json.loads(raw or "{}")
+    rows: dict[str, Entitlement] = {}
+    for code, value in (raw or {}).items():
+        if not isinstance(value, dict):
+            continue
+        limit = value.get("limit")
+        rows[str(code)] = Entitlement(
+            enabled=bool(value.get("enabled")),
+            limit=int(limit) if isinstance(limit, int) and limit >= 0 else None,
+        )
+    return Plan(
+        resolved=True,
+        code=row.plan_code,
+        status=row.status,
+        trial_ends_at=row.trial_ends_at,
+        period_ends_at=row.period_ends_at,
+        entitlements=rows,
+    )
+
+
+async def tenant_plan(session: AsyncSession, tenant_id: str) -> Plan:
+    """The plan the platform last synced for this tenant, or the unresolved default.
+
+    Unresolved when the platform has never told this product about the
+    tenant -- a product deployed before the sync, or a platform that has not
+    run it yet. The basic reports still deliver then, as they answer a
+    signed-in customer whose plan could not be read.
+    """
+    row = (await session.execute(_PLAN, {"tenant_id": tenant_id})).first()
+    return UNRESOLVED_PLAN if row is None else plan_from_row(row)
+
+
+def refuse_if_lapsed(plan: Plan, definition: ReportDefinition) -> None:
+    """A resolved plan must still include scheduling, exporting and the report.
+
+    The same three gates creating the schedule took, asked again with what
+    the platform said last. Unresolved is not lapsed: nothing is known, and
+    the report answers as it does for an unresolved customer.
+    """
+    if not plan.resolved:
+        return
+    for code in (SCHEDULED, EXPORT, definition.entitlement):
+        if code is not None and not plan.includes(code):
+            raise PlanLapsed(
+                f"the plan no longer includes {code}; delivery is paused until it does"
+            )
+
+
 def load_catalogue() -> ReportingCatalogue | None:
     """The product's catalogue, by name; None where the worker cannot see it.
 
@@ -184,6 +261,8 @@ async def deliver_one(
     """Render one schedule's report as its tenant and mail it. Returns recipients sent to."""
     tenant_id = str(schedule["tenant_id"])
     await session.execute(_AS_TENANT, {"tenant_id": tenant_id})
+    plan = await tenant_plan(session, tenant_id)
+    refuse_if_lapsed(plan, definition)
     period = period_for(str(schedule["cadence"]), today)
     raw_filters = schedule.get("filters") or {}
     if not isinstance(raw_filters, dict):
@@ -194,7 +273,7 @@ async def deliver_one(
         scope=Scope.TENANT,
         user_id="system",
         permissions=frozenset({definition.permission}),
-        plan=UNRESOLVED_PLAN,
+        plan=plan,
         session=session,
         tenant_id=tenant_id,
         now=now,
@@ -260,7 +339,7 @@ async def deliver_due(
         dict(row) for row in (await session.execute(_DUE, {"now": now, "limit": BATCH})).mappings()
     ]
     await session.commit()
-    delivered = failed = 0
+    delivered = failed = paused = 0
     for schedule in due:
         definition = catalogue.reports.get(str(schedule["report_key"]))
         error: str | None = None
@@ -271,6 +350,14 @@ async def deliver_due(
                 session, schedule, definition=definition, sender=sender, today=today, now=now
             )
             delivered += 1
+        except PlanLapsed as lapsed:
+            # Not a failure: nothing broke, the customer's plan changed. The
+            # reason is the customer's to read on the schedule, and the next
+            # time is set, so the report resumes by itself if the plan does.
+            await session.rollback()
+            paused += 1
+            error = str(lapsed)
+            logger.info("scheduled report %s paused: %s", schedule["id"], lapsed)
         except Exception as problem:
             await session.rollback()
             failed += 1
@@ -289,12 +376,10 @@ async def deliver_due(
             },
         )
         await session.commit()
-    return {"due": len(due), "delivered": delivered, "failed": failed}
+    return {"due": len(due), "delivered": delivered, "failed": failed, "paused": paused}
 
 
 def _json(values: dict[str, Any]) -> str:
-    import json
-
     return json.dumps(values, sort_keys=True)
 
 

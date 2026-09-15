@@ -68,7 +68,9 @@ def test_every_contract_route_requires_a_machine_identity() -> None:
     is a mistake or an attack -- even one belonging to an administrator.
     """
     source = _router_source()
-    handlers = re.findall(r"@router\.(?:get|post)\([^)]*\)\s*\nasync def [^(]+\(([^)]*)\)", source)
+    handlers = re.findall(
+        r"@router\.(?:get|post|put)\([^)]*\)\s*\nasync def [^(]+\(([^)]*)\)", source
+    )
     assert handlers, "no route handlers were found to check"
     for signature in handlers:
         assert "PlatformMachineDep" in signature, (

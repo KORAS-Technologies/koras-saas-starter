@@ -226,6 +226,26 @@ describe('scheduled delivery and background exports', () => {
     expect(worker).toContain('UNRESOLVED_PLAN')
   })
 
+  it('asks the synced plan the same three gates before delivering', () => {
+    expect(worker).toContain('from public.tenant_plans where tenant_id = :tenant_id')
+    expect(worker).toContain('class PlanLapsed(Exception)')
+    expect(worker).toContain('for code in (SCHEDULED, EXPORT, definition.entitlement):')
+    const platform = read('services', 'api', 'koras_api', 'routers', 'platform.py')
+    expect(platform).toContain('@router.put("/tenants/{tenant_id}/plan"')
+    const contract = JSON.parse(
+      readFileSync(join(SHARED, 'contracts', 'product-platform.v1.json'), 'utf8'),
+    ) as { routes: { method: string; path: string; capability?: string }[] }
+    expect(contract.routes).toContainEqual(
+      expect.objectContaining({ method: 'put', path: '/tenants/{tenant_id}/plan' }),
+    )
+    expect(contract.routes).toContainEqual(
+      expect.objectContaining({ method: 'get', path: '/activity', capability: 'reporting' }),
+    )
+    const migration = read('supabase', 'migrations', '00015_tenant_plans.sql')
+    expect(migration).toContain('alter table public.tenant_plans force row level security;')
+    expect(migration).not.toMatch(/tenant_plans_(insert|update)_own_tenant/)
+  })
+
   it('reads the catalogue by name and the worker declares no API dependency', () => {
     expect(worker).toContain('importlib.import_module("koras_api.reporting")')
     const pyproject = readFileSync(join(SHARED, 'services', 'worker', 'pyproject.toml.hbs'), 'utf8')

@@ -63,6 +63,8 @@ class ScriptedSession:
         self.schedules: list[dict[str, Any]] = []
         #: Background exports the session answers with, for the exports routes.
         self.exports: list[dict[str, Any]] = []
+        #: The plan snapshot rows the session answers with; none means unresolved.
+        self.plans: list[dict[str, Any]] = []
 
     def clear(self) -> None:
         self.statements.clear()
@@ -116,6 +118,9 @@ class ScriptedSession:
     def _answer(self, sql: str, params: dict[str, Any]) -> tuple[list[dict[str, Any]], object]:
         if "public.report_schedules" in sql:
             return self._schedules_answer(sql, params), None
+        if "public.tenant_plans" in sql:
+            wanted = params.get("tenant_id")
+            return [p for p in self.plans if p.get("tenant_id") in (None, wanted)], None
         if "public.report_exports" in sql:
             if sql.startswith("select id::text as id, storage_key from"):
                 return [], None  # nothing past the retention

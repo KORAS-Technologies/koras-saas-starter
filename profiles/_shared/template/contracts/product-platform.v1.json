@@ -18,12 +18,30 @@
   "version": "v1",
   "prefix": "/internal/platform/v1",
   "routes": [
-    { "method": "post", "path": "/tenants", "summary": "Create a tenant, or return the existing one" },
-    { "method": "get", "path": "/tenants/{tenant_id}", "summary": "Read a tenant" },
-    { "method": "post", "path": "/tenants/{tenant_id}/activate", "summary": "Activate a tenant" },
-    { "method": "post", "path": "/tenants/{tenant_id}/suspend", "summary": "Suspend a tenant" },
-    { "method": "get", "path": "/storage-defaults", "summary": "Where this product keeps files unless a policy says otherwise" },
-    { "method": "get", "path": "/ai-usage", "capability": "ai", "summary": "Every tenant's AI usage per day since a date, aggregated; read by the platform's collector. Present only on a product generated with the assistant; a product without it answers 404 and the collector records nothing." }
+    {"method": "post", "path": "/tenants", "summary": "Create a tenant, or return the existing one"},
+    {
+      "method": "get",
+      "path": "/tenants/{tenant_id}",
+      "summary": "Read a tenant"
+    },
+    {
+      "method": "post",
+      "path": "/tenants/{tenant_id}/activate",
+      "summary": "Activate a tenant"
+    },
+    {
+      "method": "post",
+      "path": "/tenants/{tenant_id}/suspend",
+      "summary": "Suspend a tenant"
+    },
+    {
+      "method": "put",
+      "path": "/tenants/{tenant_id}/plan",
+      "summary": "Replace what the product knows of a tenant's plan: the code, the subscription's status and dates, and the effective entitlements the platform resolved. Written by the platform's hourly sync; read by the product where no customer token exists to resolve the plan live, which today is scheduled delivery. 404 for a tenant the product does not hold."
+    },
+    {"method": "get", "path": "/storage-defaults", "summary": "Where this product keeps files unless a policy says otherwise"},
+    {"method": "get", "path": "/ai-usage", "capability": "ai", "summary": "Every tenant's AI usage per day since a date, aggregated; read by the platform's collector. Present only on a product generated with the assistant; a product without it answers 404 and the collector records nothing."},
+    {"method": "get", "path": "/activity", "capability": "reporting", "summary": "Every tenant's audited activity per day since a date -- events and distinct actors per action and outcome, never a name or a target; read by the platform's collector. Present only on a product generated with reporting; a product without it answers 404 and the collector records nothing."}
   ],
   "rules": {
     "machine_identity_only": {

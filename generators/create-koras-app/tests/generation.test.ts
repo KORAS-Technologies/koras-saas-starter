@@ -274,6 +274,9 @@ describe('the reporting capability', () => {
       'tests/unit/test_reporting_schedules.py',
       'tests/unit/test_reporting_delivery.py',
       'tests/unit/test_platform_activity.py',
+      'supabase/migrations/00015_tenant_plans.sql',
+      'supabase/tests/150_tenant_plans_isolation.sql',
+      'tests/unit/test_platform_plan.py',
     ]) {
       expect(gen.has(path), `${path} missing`).toBe(true)
     }
@@ -313,6 +316,9 @@ describe('the reporting capability', () => {
     expect(gen.read('local/config/secrets.manifest')).not.toContain('AUDIT_RETENTION_DAYS')
     expect(gen.read('local/config/secrets.manifest')).not.toContain('REPORT_EXPORT_RETENTION_DAYS')
     expect(gen.has('supabase/migrations/00014_report_schedules.sql')).toBe(false)
+    // The plan snapshot is the contract's, not reporting's: it stays.
+    expect(gen.has('supabase/migrations/00015_tenant_plans.sql')).toBe(true)
+    expect(gen.read('services/api/koras_api/routers/platform.py')).toContain('/tenants/{tenant_id}/plan')
     expect(gen.read('services/worker/Dockerfile')).not.toContain('koras_api')
     expect(gen.read('services/worker/pyproject.toml')).not.toContain('koras-reporting')
   })

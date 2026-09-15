@@ -81,7 +81,7 @@ async def test_a_due_schedule_is_delivered_as_the_tenant_and_recorded() -> None:
     )
     sender = RecordingEmailSender()
     outcome = await deliver_due(session, catalogue=catalogue, sender=sender, now=NOW)  # type: ignore[arg-type]
-    assert outcome == {"due": 1, "delivered": 1, "failed": 0}
+    assert outcome == {"due": 1, "delivered": 1, "failed": 0, "paused": 0}
 
     # Two mails, one attachment each, named for the report and the period.
     assert [m["to"] for m in sender.sent] == ["ada@example.com", "bob@example.com"]
@@ -136,10 +136,73 @@ async def test_a_schedule_whose_report_vanished_records_its_error_and_moves_on()
     )
     sender = RecordingEmailSender()
     outcome = await deliver_due(session, catalogue=catalogue, sender=sender, now=NOW)  # type: ignore[arg-type]
-    assert outcome == {"due": 2, "delivered": 1, "failed": 1}
+    assert outcome == {"due": 2, "delivered": 1, "failed": 1, "paused": 0}
     runs = [p for sql, p in session.statements if "update public.report_schedules" in sql]
     assert (
         runs[0] is not None and runs[0]["error"] is not None and "LookupError" in runs[0]["error"]
     )
     assert runs[1] is not None and runs[1]["error"] is None
     assert sender.attachments[0][0].content.startswith(b"%PDF")
+
+
+def _schedule(schedule_id: str, report_key: str) -> dict[str, Any]:
+    return {
+        "id": schedule_id,
+        "tenant_id": TENANT,
+        "report_key": report_key,
+        "cadence": "daily",
+        "format": "csv",
+        "recipients": ["ada@example.com"],
+        "filters": {},
+    }
+
+
+def _plan(*codes: str) -> dict[str, Any]:
+    return {
+        "tenant_id": TENANT,
+        "plan_code": "pro",
+        "status": "active",
+        "entitlements": {code: {"enabled": True, "limit": None} for code in codes},
+        "trial_ends_at": None,
+        "period_ends_at": None,
+        "synced_at": NOW,
+    }
+
+
+async def test_a_plan_that_lapsed_pauses_the_schedule_without_a_mail() -> None:
+    # The platform's last word: Pro, which exports but no longer schedules.
+    session = ScheduleSession([_schedule("s1", "usage.quotas")])
+    session.plans = [_plan("reporting.basic", "reporting.export")]
+    sender = RecordingEmailSender()
+    outcome = await deliver_due(session, catalogue=catalogue, sender=sender, now=NOW)  # type: ignore[arg-type]
+    assert outcome == {"due": 1, "delivered": 0, "failed": 0, "paused": 1}
+    assert sender.sent == []
+    assert session.inserted("audit_events") == []
+    run = next(p for sql, p in session.statements if "update public.report_schedules" in sql)
+    assert run is not None and "reporting.scheduled" in str(run["error"])
+    assert run["next_run_at"] == datetime(2026, 9, 15, 6, tzinfo=UTC)
+
+
+async def test_the_report_own_gate_is_asked_again_at_delivery() -> None:
+    # Scheduling and exporting are included; the report needs the advanced tier.
+    session = ScheduleSession([_schedule("s1", "people.users")])
+    session.plans = [_plan("reporting.basic", "reporting.export", "reporting.scheduled")]
+    sender = RecordingEmailSender()
+    outcome = await deliver_due(session, catalogue=catalogue, sender=sender, now=NOW)  # type: ignore[arg-type]
+    assert outcome["paused"] == 1 and sender.sent == []
+    run = next(p for sql, p in session.statements if "update public.report_schedules" in sql)
+    assert run is not None and "reporting.advanced" in str(run["error"])
+
+
+async def test_a_synced_plan_that_still_includes_the_report_delivers_with_it() -> None:
+    session = ScheduleSession([_schedule("s1", "usage.quotas")])
+    session.plans = [_plan("reporting.basic", "reporting.export", "reporting.scheduled")]
+    sender = RecordingEmailSender()
+    outcome = await deliver_due(session, catalogue=catalogue, sender=sender, now=NOW)  # type: ignore[arg-type]
+    assert outcome == {"due": 1, "delivered": 1, "failed": 0, "paused": 0}
+    assert len(sender.sent) == 1
+    # The snapshot was read as the tenant, after the tenant was bound.
+    sqls = [sql for sql, _ in session.statements]
+    bound = next(i for i, sql in enumerate(sqls) if "set_config('app.tenant_id'" in sql)
+    read = next(i for i, sql in enumerate(sqls) if "from public.tenant_plans" in sql)
+    assert bound < read

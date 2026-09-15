@@ -1955,11 +1955,14 @@ decision rather than an omission, and each names the seam it plugs into.
 - [x] **Scheduled delivery.** Built 2026-09-14: `report_schedules`
       (migration 00014), `routers/reporting_schedules.py`, the hourly
       `deliver_scheduled_reports` in the worker, mail through `koras_email`
-      with the file attached. What it leaves: the plan is not resolved at
-      delivery time -- the worker renders with `UNRESOLVED_PLAN`, so a
-      schedule made while the plan included a report keeps delivering after
-      the plan lapses. Refusing at delivery needs the worker to hold the
-      platform's entitlement contract.
+      with the file attached. The plan at delivery time was unresolved for
+      the first hours: the worker rendered with `UNRESOLVED_PLAN`, so a
+      schedule made on Business kept delivering after a move to Starter.
+      Closed the same night in the direction the estate allows: the platform
+      syncs each tenant's effective entitlements into `tenant_plans` hourly
+      through the private contract, and the worker pauses a schedule the
+      plan no longer covers. What that leaves is the hour: a downgrade is
+      honoured at the next sync, not the next second.
 - [x] **XLSX and PDF.** Built 2026-09-14: `to_xlsx` through `openpyxl`,
       `to_pdf` through `fpdf2`, one `render()` over the three. The PDF is a
       plain landscape table with the title and the range; a branded document

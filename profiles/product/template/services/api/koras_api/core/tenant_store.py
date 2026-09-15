@@ -15,7 +15,9 @@ would make the first real feature inherit it by default rather than by choice.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -179,6 +181,54 @@ async def create(
 
     await session.commit()
     return created, True
+
+
+async def record_plan(
+    session: AsyncSession,
+    tenant_id: str,
+    *,
+    plan_code: str | None,
+    status: str | None,
+    entitlements: dict[str, dict[str, object]],
+    trial_ends_at: datetime | None,
+    period_ends_at: datetime | None,
+) -> bool:
+    """Replace the tenant's plan snapshot with what the platform resolved.
+
+    False when the product holds no such tenant, which the route answers as
+    404 rather than inserting a row nothing will ever read. One statement:
+    the insert selects from the tenants table, so a missing tenant yields no
+    row and no conflict.
+    """
+    row = (
+        await session.execute(
+            text(
+                "insert into public.tenant_plans "
+                "  (tenant_id, plan_code, status, entitlements, trial_ends_at, period_ends_at, "
+                "   synced_at) "
+                "select id, :plan_code, :status, cast(:entitlements as jsonb), :trial_ends_at, "
+                "       :period_ends_at, now() "
+                "from public.tenants where id::text = :tenant_id "
+                "on conflict (tenant_id) do update set "
+                "  plan_code = excluded.plan_code, status = excluded.status, "
+                "  entitlements = excluded.entitlements, trial_ends_at = excluded.trial_ends_at, "
+                "  period_ends_at = excluded.period_ends_at, synced_at = now() "
+                "returning tenant_id::text"
+            ),
+            {
+                "tenant_id": tenant_id,
+                "plan_code": plan_code,
+                "status": status,
+                "entitlements": json.dumps(entitlements, sort_keys=True),
+                "trial_ends_at": trial_ends_at,
+                "period_ends_at": period_ends_at,
+            },
+        )
+    ).first()
+    if row is None:
+        return False
+    await session.commit()
+    return True
 
 
 async def set_status(session: AsyncSession, tenant_id: str, new_status: str) -> TenantRow | None:
