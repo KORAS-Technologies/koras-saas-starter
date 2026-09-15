@@ -251,6 +251,19 @@ describe('the template digest covers what a project actually receives', () => {
     }
   })
 
+  it('leaves an agent worktree behind, wherever one is made', () => {
+    // `.claude/` is copied verbatim into every generated project, so a git
+    // worktree created under it -- which is where this repository's own agent
+    // sessions put theirs -- would ship a second copy of the whole starter
+    // inside a customer's repository, `.git` file and half-finished branch
+    // included. One existed on 2026-09-15 and broke three tests by being
+    // there, which is the mild version of the same fault.
+    expect(SKIP_ENTRIES.has('worktrees')).toBe(true)
+    for (const profile of ['product', 'control-plane'] as ProfileName[]) {
+      expect(paths(profile).some((p) => p.includes('/worktrees/'))).toBe(false)
+    }
+  })
+
   it('changes when any single input changes, and only then', () => {
     const base: Array<[string, Buffer]> = [
       ['a.md', Buffer.from('one')],

@@ -41,4 +41,14 @@ export const SKIP_ENTRIES: ReadonlySet<string> = new Set([
   // Present in git.ts's own skip set and absent here, which is the divergence
   // the note above warns about rather than a new decision.
   '.venv',
+  // A Claude Code agent's scratch checkout. `.claude/` is a `shared_asset`,
+  // copied verbatim into every generated project, so a worktree created under
+  // it puts a whole second copy of this repository -- 7 MB, its own `.git`
+  // file, and whatever that agent was working on -- inside a customer's
+  // repository. Found 2026-09-15, when one broke three tests by being there:
+  // `drift` reported every file of it as repo-only and `claude-config` found
+  // unrendered Handlebars tokens in the templates it had copied. The failing
+  // tests are the mild version of this; the real one is a product shipping
+  // with somebody's half-finished branch in it.
+  'worktrees',
 ])
