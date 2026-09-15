@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import type { TenantBranding } from '@{{projectSlug}}/branding'
-import { brandingFor, productConfig } from '@{{projectSlug}}/branding'
+import { brandingFor, platformAssetPath, productConfig } from '@{{projectSlug}}/branding'
 import { cn } from '../lib/cn'
 
 /**
@@ -8,11 +8,19 @@ import { cn } from '../lib/cn'
  *
  * Resolution order, and the reason for each step:
  *
- *   1. `brand.logoDarkUrl` on a dark surface, when the product has supplied one
- *   2. `brand.logoUrl`
- *   3. the built-in mark, drawn from the brand tokens
+ *   1. the customer's logo set in the Control Plane's portal, when a `tenant`
+ *      is passed and holds one -- `logo-dark` on a dark surface, else `logo`
+ *   2. `brand.logoDarkUrl` on a dark surface, when the product has supplied one
+ *   3. `brand.logoUrl`
+ *   4. the built-in mark, drawn from the brand tokens
  *
- * Step 3 is the normal state of a freshly generated product, and it is a
+ * Step 1 is never the platform's URL. The platform stores a logo on its own
+ * storage and this product's policy is `img-src 'self'`, so the image is asked
+ * for at `platformAssetPath(name)` -- this product's own route, which fetches
+ * the platform's copy server-side for a signed-in caller and serves the bytes
+ * from this origin. Since 2026-09-15; FOLLOW_UPS F19 is the decision.
+ *
+ * Step 4 is the normal state of a freshly generated product, and it is a
  * finished state rather than a placeholder to be embarrassed about: a neutral
  * geometric mark in the product's own primary colour, beside the product's own
  * name. Nothing renders broken, nothing invents a brand for somebody, and
@@ -58,7 +66,17 @@ export function ProductLogo({
   const product = tenant?.name
     ? { ...productConfig.product, name: tenant.name }
     : productConfig.product
-  const source = tone === 'dark' && brand.logoDarkUrl ? brand.logoDarkUrl : brand.logoUrl
+  const platformAsset =
+    tenant && tone === 'dark' && tenant.assets['logo-dark']
+      ? 'logo-dark'
+      : tenant?.assets.logo
+        ? 'logo'
+        : undefined
+  const source = platformAsset
+    ? platformAssetPath(platformAsset)
+    : tone === 'dark' && brand.logoDarkUrl
+      ? brand.logoDarkUrl
+      : brand.logoUrl
   const box = size === 'sm' ? 'h-8 w-8' : 'h-9 w-9'
   const text = size === 'sm' ? 'text-base' : 'text-lg'
 

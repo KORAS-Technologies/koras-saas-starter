@@ -851,3 +851,197 @@ export function fetchExportDownload(
     options,
   )
 }
+
+/* -------------------------------------------------------------------------- */
+/* The platform's images                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One of the platform's images, fetched on a signed-in caller's behalf.
+ *
+ * The one call here that is not JSON, and in this file for the same reason
+ * the JSON ones are: one place that knows how such a fetch is made, how long
+ * it may take, and what it refuses, so that the route serving the image holds
+ * none of those opinions itself. (Not a sibling module: this package is read
+ * from source by the web application's bundler and from `dist/` by its own
+ * tests, and a relative import spelled for one is unresolvable by the other.)
+ *
+ * The URL arrives from the Control Plane's branding answer, already through
+ * `isPlatformAssetUrl` in the branding package. This is the second gate, at
+ * fetch time: `https` again, because a function reachable from more than one
+ * caller cannot know the first gate was passed; no redirects, because a
+ * redirect is a second URL nobody validated; a size cap, because a logo is not
+ * a way to fill a serverless function's memory; and an allowlist of image
+ * types, because what is served from this product's origin is trusted by
+ * every browser policy this product sets, and an `https` URL a customer typed
+ * into a form is not.
+ *
+ * Decided 2026-09-15 (FOLLOW_UPS F19). `docs/PRODUCT_FRONTEND.md` has the
+ * alternative that was not taken and why.
+ */
+
+/** A logo is small. Two megabytes is generous for one and hostile to nothing. */
+export const PLATFORM_ASSET_MAX_BYTES = 2 * 1024 * 1024
+
+/** The same ceiling every JSON call has: a hung fetch is a hung image. */
+export const PLATFORM_ASSET_TIMEOUT_MS = 5_000
+
+/**
+ * What may be served from this origin as a branding image.
+ *
+ * SVG is on the list because most logos are SVG, and it is the one entry that
+ * is a document rather than a bitmap. It is served with `nosniff` and inline,
+ * the middleware's Content-Security-Policy applies to the response, and an
+ * `<img>` never runs a document's script in any case -- so the residual is a
+ * person navigating to the route directly, in their own product's origin,
+ * to an image their own organization's administrator set.
+ */
+export const PLATFORM_ASSET_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+  'image/svg+xml',
+  'image/x-icon',
+  'image/vnd.microsoft.icon',
+] as const
+
+export type PlatformAssetRefusal =
+  | 'not-https'
+  | 'redirect'
+  | 'upstream-status'
+  | 'content-type'
+  | 'too-large'
+  | 'timeout'
+  | 'network'
+
+export class PlatformAssetError extends Error {
+  constructor(
+    readonly reason: PlatformAssetRefusal,
+    detail: string,
+  ) {
+    super(`${reason}: ${detail}`)
+    this.name = 'PlatformAssetError'
+  }
+}
+
+export interface PlatformAssetOptions {
+  timeoutMs?: number
+  maxBytes?: number
+  /** The browser's `If-None-Match`, forwarded so an unchanged logo costs nothing. */
+  ifNoneMatch?: string
+  /** Injectable for tests. Defaults to the global. */
+  fetchImpl?: typeof fetch
+}
+
+export type PlatformAssetResult =
+  | { status: 'ok'; body: ArrayBuffer; contentType: string; etag?: string }
+  | { status: 'unchanged'; etag?: string }
+
+export async function fetchPlatformAsset(
+  url: string,
+  options: PlatformAssetOptions = {},
+): Promise<PlatformAssetResult> {
+  let target: URL
+  try {
+    target = new URL(url)
+  } catch {
+    throw new PlatformAssetError('not-https', 'not a URL')
+  }
+  if (target.protocol !== 'https:') {
+    throw new PlatformAssetError('not-https', `refusing ${target.protocol}`)
+  }
+
+  const maxBytes = options.maxBytes ?? PLATFORM_ASSET_MAX_BYTES
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? PLATFORM_ASSET_TIMEOUT_MS)
+
+  try {
+    let response: Response
+    try {
+      response = await (options.fetchImpl ?? fetch)(target.toString(), {
+        method: 'GET',
+        headers: {
+          Accept: 'image/*',
+          ...(options.ifNoneMatch ? { 'If-None-Match': options.ifNoneMatch } : {}),
+        },
+        // A redirect is a URL nobody validated. `manual` makes it a status this
+        // function sees rather than a request it makes.
+        redirect: 'manual',
+        // The route serving this sets its own `Cache-Control`; nothing between
+        // the platform's storage and here may hold a customer's image for
+        // another caller.
+        cache: 'no-store',
+        signal: controller.signal,
+      })
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new PlatformAssetError('timeout', `no answer within the time allowed`)
+      }
+      throw new PlatformAssetError('network', error instanceof Error ? error.message : String(error))
+    }
+
+    const etag = response.headers.get('etag') ?? undefined
+    if (response.status === 304) return { status: 'unchanged', ...(etag ? { etag } : {}) }
+    if (response.status >= 300 && response.status < 400) {
+      throw new PlatformAssetError('redirect', `answered ${response.status}`)
+    }
+    if (!response.ok) {
+      throw new PlatformAssetError('upstream-status', `answered ${response.status}`)
+    }
+
+    const contentType = (response.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? ''
+    if (!(PLATFORM_ASSET_TYPES as readonly string[]).includes(contentType)) {
+      throw new PlatformAssetError('content-type', `refusing ${contentType || 'no content type'}`)
+    }
+
+    // Declared length first, so an honest oversize answer costs no read at
+    // all. A missing or dishonest header is caught by counting below.
+    const declared = Number(response.headers.get('content-length') ?? '')
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      throw new PlatformAssetError('too-large', `${String(declared)} bytes declared`)
+    }
+
+    const body = await readUpTo(response, maxBytes)
+    return { status: 'ok', body, contentType, ...(etag ? { etag } : {}) }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * Read a body into memory, and stop the moment it passes the cap.
+ *
+ * Buffered rather than streamed through to the browser, on purpose. A stream
+ * that hits the cap halfway has already sent a 200 and a content type, and
+ * what the browser gets is a truncated image with no way to say why. The cap
+ * is small enough that holding the whole image is cheaper than explaining a
+ * half of one, and it makes "too large" a clean 502 instead.
+ */
+async function readUpTo(response: Response, maxBytes: number): Promise<ArrayBuffer> {
+  const reader = response.body?.getReader()
+  if (!reader) return new ArrayBuffer(0)
+
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > maxBytes) {
+      await reader.cancel()
+      throw new PlatformAssetError('too-large', `more than ${String(maxBytes)} bytes`)
+    }
+    chunks.push(value)
+  }
+
+  const buffer = new ArrayBuffer(total)
+  const view = new Uint8Array(buffer)
+  let offset = 0
+  for (const chunk of chunks) {
+    view.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return buffer
+}

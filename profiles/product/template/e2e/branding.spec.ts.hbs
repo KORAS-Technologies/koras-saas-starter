@@ -1,0 +1,53 @@
+import { expect, test } from '@playwright/test'
+import { signInAs } from './support/session'
+
+/**
+ * The platform's images, served from this origin.
+ *
+ * No Control Plane is running here and no platform branding is set, so what
+ * this suite can assert is the gate and the absences: a stranger is sent to
+ * sign in, a signed-in caller with no such image gets nothing rather than a
+ * broken image, and a name that is not one of the three is not a route. The
+ * fetch itself -- what is refused, what is streamed -- is the api-client's
+ * unit suite, which can hand it a server that lies.
+ */
+
+test('a stranger asking for a platform image is sent to sign in', async ({ request }) => {
+  const response = await request.get('/api/branding/logo', { maxRedirects: 0 })
+  expect(response.status()).toBe(307)
+  expect(response.headers().location).toContain('/login')
+})
+
+// `context.request` rather than the `request` fixture: the fixture has its own
+// cookie jar, so it is still a stranger after `signInAs` and every call below
+// would follow the redirect to `/login` and read 200 -- a suite that asserts
+// 404 and is handed a sign-in page. The context's own request carries the
+// session cookie the test just set, which is the caller these tests mean.
+test('a signed-in caller with no platform image gets a 404, not a broken image', async ({
+  context,
+}) => {
+  await signInAs(context)
+  for (const asset of ['logo', 'logo-dark', 'icon']) {
+    const response = await context.request.get(`/api/branding/${asset}`)
+    expect(response.status(), asset).toBe(404)
+  }
+})
+
+test('only the three names are assets', async ({ context }) => {
+  await signInAs(context)
+  for (const asset of ['favicon', 'logo_light', '..', 'logo.png']) {
+    const response = await context.request.get(`/api/branding/${asset}`)
+    expect(response.status(), asset).toBe(404)
+  }
+})
+
+test('the shell still draws the product mark when the customer has set no logo', async ({
+  context,
+  page,
+}) => {
+  await signInAs(context)
+  await page.goto('/dashboard')
+  const header = page.locator('header')
+  await expect(header.getByRole('link', { name: '{{projectName}}' })).toBeVisible()
+  await expect(header.locator('img[src^="/api/branding/"]')).toHaveCount(0)
+})

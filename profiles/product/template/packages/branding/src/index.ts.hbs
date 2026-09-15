@@ -202,16 +202,54 @@ export function isCornerStyle(value: unknown): value is CornerStyle {
   return value === 'flat' || value === 'rounded'
 }
 
+/**
+ * The images a customer can set in the Control Plane's portal, by the name
+ * this product serves each one under.
+ *
+ * `logo` is the platform's `logo_light`, `logo-dark` its `logo_dark`, `icon`
+ * its `favicon`. The platform stores each as an `https` URL on its own
+ * storage, and the product's Content-Security-Policy is `img-src 'self'`, so
+ * that URL never reaches a `src` attribute: the product fetches it server-side
+ * and serves the bytes from its own origin, at `platformAssetPath(name)`.
+ * Decided 2026-09-15 (FOLLOW_UPS F19); `docs/PRODUCT_FRONTEND.md` has the why.
+ */
+export const PLATFORM_ASSETS = ['logo', 'logo-dark', 'icon'] as const
+export type PlatformAsset = (typeof PLATFORM_ASSETS)[number]
+
+export function isPlatformAsset(value: unknown): value is PlatformAsset {
+  return typeof value === 'string' && (PLATFORM_ASSETS as readonly string[]).includes(value)
+}
+
+/** Where a browser asks this product for one of the platform's images. */
+export function platformAssetPath(asset: PlatformAsset): string {
+  return `/api/branding/${asset}`
+}
+
 export interface TenantBranding {
   tokens: Partial<Pick<BrandingTokens, TenantBrandingKey>>
   /** White-label display name. Empty means "use the product's own name". */
   name: string
   /** Unset means the product's own radius stands. */
   cornerStyle: CornerStyle | null
+  /**
+   * The platform's storage URLs for the customer's images, `https` only.
+   *
+   * Kept apart from `tokens` on purpose: a token is something a page may put
+   * in a stylesheet or a `src`, and these are not. They are what the product's
+   * own `/api/branding/{asset}` route fetches, server-side, on a signed-in
+   * caller's behalf. A component that wants the image asks for
+   * `platformAssetPath(name)` when the entry exists, and never for the URL.
+   */
+  assets: Partial<Record<PlatformAsset, string>>
 }
 
 /** Nothing configured. Returned rather than null so callers need no branch. */
-export const NO_TENANT_BRANDING: TenantBranding = { tokens: {}, name: '', cornerStyle: null }
+export const NO_TENANT_BRANDING: TenantBranding = {
+  tokens: {},
+  name: '',
+  cornerStyle: null,
+  assets: {},
+}
 
 /**
  * A CSS colour this application is willing to write into a style attribute.
@@ -282,7 +320,9 @@ export function parseTenantBranding(raw: unknown): TenantBranding {
   // this column used to accept -- leaves the product's own radius in place.
   const cornerStyle = isCornerStyle(record.cornerStyle) ? record.cornerStyle : null
 
-  return { tokens, name, cornerStyle }
+  // The column has no platform assets: its images are `logoUrl` and
+  // `logoDarkUrl`, same-origin paths the product already serves.
+  return { tokens, name, cornerStyle, assets: {} }
 }
 
 /**
@@ -297,18 +337,59 @@ export function parseTenantBranding(raw: unknown): TenantBranding {
  * defect `parseEntitlements` shipped with for a day, reading `feature` where
  * the wire said `code`, and the reason `branding.test.ts` asserts these names.
  *
- * The images are deliberately absent. The platform stores them as `https`
- * URLs on its own storage, and this product's Content-Security-Policy is
- * `img-src 'self'`, so a remote logo would be refused by the browser as a
- * broken image. Until a product serves the platform's assets itself, a logo
- * set in the portal is not rendered here -- and that is said rather than
- * left to a broken image to say.
+ * The images are not tokens. Until 2026-09-15 they were dropped here, because
+ * the platform stores them as `https` URLs on its own storage and this
+ * product's Content-Security-Policy is `img-src 'self'`, so a remote logo was
+ * a broken image in every header. They are now kept in `assets`, apart from
+ * the tokens, for the product's own `/api/branding/{asset}` route to fetch
+ * and serve from its own origin -- the policy stays as it is, and no page
+ * ever puts the platform's URL in a `src`.
  */
 const PLATFORM_COLOURS: ReadonlyArray<readonly [string, TenantBrandingKey]> = [
   ['primary_color', 'primaryColor'],
   ['secondary_color', 'secondaryColor'],
   ['accent_color', 'accentColor'],
 ]
+
+const PLATFORM_IMAGES: ReadonlyArray<readonly [string, PlatformAsset]> = [
+  ['logo_light', 'logo'],
+  ['logo_dark', 'logo-dark'],
+  ['favicon', 'icon'],
+]
+
+/**
+ * A URL this product is willing to fetch on a customer's behalf.
+ *
+ * `https` only, which is what the platform validates too; checked again here
+ * because a value the platform stored is not a value this product chose, and
+ * the fetch happens from this product's network. Nothing that names a raw
+ * address or a private hostname: the only input the route takes from a browser
+ * is the asset's name, and this is the other half of the same argument -- the
+ * URL is chosen by a customer in the portal, and a customer's logo is not a
+ * way to make this product's server read its own neighbours.
+ *
+ * The route enforces the rest at fetch time (no redirects, a size cap, image
+ * content types only); this decides what is worth fetching at all.
+ */
+export function isPlatformAssetUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 2048) return false
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return false
+  }
+  if (url.protocol !== 'https:') return false
+  if (url.username !== '' || url.password !== '') return false
+  const host = url.hostname.toLowerCase()
+  if (host === '' || host === 'localhost' || host.endsWith('.localhost')) return false
+  if (host.endsWith('.local') || host.endsWith('.internal')) return false
+  // A dotted quad or a bracketed IPv6 literal. A hostname the platform's
+  // storage answers on is a name, and an address is how a server gets pointed
+  // at something it can reach and a browser cannot.
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.startsWith('[')) return false
+  return true
+}
 
 /**
  * Turn the Control Plane's answer into tokens, or into nothing.
@@ -338,7 +419,13 @@ export function parsePlatformBranding(raw: unknown): TenantBranding {
 
   const cornerStyle = isCornerStyle(record.corner_style) ? record.corner_style : null
 
-  return { tokens, name, cornerStyle }
+  const assets: Partial<Record<PlatformAsset, string>> = {}
+  for (const [wire, asset] of PLATFORM_IMAGES) {
+    const value = record[wire]
+    if (isPlatformAssetUrl(value)) assets[asset] = value
+  }
+
+  return { tokens, name, cornerStyle, assets }
 }
 
 /**
@@ -356,6 +443,7 @@ export function mergeTenantBranding(base: TenantBranding, over: TenantBranding):
     tokens: { ...base.tokens, ...over.tokens },
     name: over.name !== '' ? over.name : base.name,
     cornerStyle: over.cornerStyle ?? base.cornerStyle,
+    assets: { ...base.assets, ...over.assets },
   }
 }
 

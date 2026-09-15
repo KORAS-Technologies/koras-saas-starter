@@ -6,9 +6,11 @@ import {
   brandingFor,
   defaultBranding,
   mergeBranding,
+  isPlatformAssetUrl,
   mergeTenantBranding,
   parsePlatformBranding,
   parseTenantBranding,
+  platformAssetPath,
   productConfig,
 } from './index.js'
 
@@ -94,6 +96,7 @@ test('a corner style becomes a radius, and only at the end', () => {
     tokens: {},
     name: '',
     cornerStyle: 'flat',
+    assets: {},
   })
   assert.equal(flat.radius, '0')
 
@@ -101,6 +104,7 @@ test('a corner style becomes a radius, and only at the end', () => {
     tokens: {},
     name: '',
     cornerStyle: 'rounded',
+    assets: {},
   })
   assert.equal(rounded.radius, '0.75rem')
 })
@@ -203,14 +207,67 @@ test('this package’s own names mean nothing to the platform parser', () => {
   )
 })
 
-test('the platform’s images are not rendered, and the fonts are not reachable', () => {
-  // Remote `https` assets are refused by this product's `img-src 'self'`, so
-  // honouring them would put a broken image in the header. Fonts are not a
-  // customer's to set here any more than they are through the local column.
-  const { tokens } = parsePlatformBranding(PLATFORM_ANSWER)
+test('the platform’s images are assets, never tokens, and the fonts are not reachable', () => {
+  // A remote `https` URL is refused by this product's `img-src 'self'`, so it
+  // must never reach a `src`. It is kept apart from the tokens for the
+  // product's own `/api/branding/{asset}` route to fetch server-side. Fonts
+  // are not a customer's to set here any more than through the local column.
+  const { tokens, assets } = parsePlatformBranding(PLATFORM_ANSWER)
   assert.equal(tokens.logoUrl, undefined)
   assert.equal(tokens.logoDarkUrl, undefined)
   assert.deepEqual(Object.keys(tokens).sort(), ['accentColor', 'primaryColor', 'secondaryColor'])
+  assert.deepEqual(assets, {
+    logo: 'https://assets.platform.example/acme/light.svg',
+    'logo-dark': 'https://assets.platform.example/acme/dark.svg',
+  })
+})
+
+test('the platform’s asset names are read, and this package’s are not', () => {
+  // `logo_light`, `logo_dark` and `favicon` are the portal's names; a rename
+  // on either side must fail here rather than quietly drop every logo.
+  const { assets } = parsePlatformBranding({
+    logo_light: 'https://assets.platform.example/a/light.png',
+    logo_dark: 'https://assets.platform.example/a/dark.png',
+    favicon: 'https://assets.platform.example/a/icon.png',
+  })
+  assert.deepEqual(Object.keys(assets).sort(), ['icon', 'logo', 'logo-dark'])
+  assert.deepEqual(parsePlatformBranding({ logoUrl: 'https://assets.platform.example/x.png' }).assets, {})
+  assert.deepEqual(parseTenantBranding({ logo_light: 'https://assets.platform.example/x.png' }).assets, {})
+})
+
+test('a platform asset must be an https URL to a named host', () => {
+  assert.equal(isPlatformAssetUrl('https://assets.platform.example/acme/light.svg'), true)
+
+  for (const attack of [
+    // The platform validates `https` too; this product checks again because
+    // the fetch is made from its own network on a value a customer typed.
+    'http://assets.platform.example/light.svg',
+    '//assets.platform.example/light.svg',
+    '/brand/light.svg',
+    'data:image/svg+xml;base64,PHN2Zz48c2NyaXB0Pg==',
+    'javascript:alert(1)',
+    'ftp://assets.platform.example/light.svg',
+    // A server can be pointed at what a browser cannot reach.
+    'https://127.0.0.1/latest/meta-data',
+    'https://10.0.0.8/logo.png',
+    'https://[::1]/logo.png',
+    'https://localhost/logo.png',
+    'https://api.internal/logo.png',
+    'https://printer.local/logo.png',
+    'https://user:secret@assets.platform.example/light.svg',
+    '',
+    42,
+    null,
+  ]) {
+    assert.equal(isPlatformAssetUrl(attack), false, String(attack))
+    assert.deepEqual(parsePlatformBranding({ logo_light: attack }).assets, {}, String(attack))
+  }
+})
+
+test('a platform asset is served from this origin, under its own name', () => {
+  assert.equal(platformAssetPath('logo'), '/api/branding/logo')
+  assert.equal(platformAssetPath('logo-dark'), '/api/branding/logo-dark')
+  assert.equal(platformAssetPath('icon'), '/api/branding/icon')
 })
 
 test('the platform parser applies the same colour rule', () => {
@@ -250,6 +307,11 @@ test('the platform’s branding is layered over the local column', () => {
   // What only the local column set still stands.
   assert.equal(merged.tokens.accentColor, '#222222')
   assert.equal(merged.cornerStyle, 'rounded')
+  // The column has no platform assets, so the platform's are carried whole.
+  assert.deepEqual(
+    mergeTenantBranding(local, parsePlatformBranding(PLATFORM_ANSWER)).assets,
+    parsePlatformBranding(PLATFORM_ANSWER).assets,
+  )
   // And nothing anywhere is still nothing.
   assert.deepEqual(mergeTenantBranding(NO_TENANT_BRANDING, NO_TENANT_BRANDING), NO_TENANT_BRANDING)
 })

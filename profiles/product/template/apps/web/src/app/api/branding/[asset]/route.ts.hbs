@@ -1,0 +1,85 @@
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { PlatformAssetError, fetchPlatformAsset } from '@{{projectSlug}}/api-client'
+import { isPlatformAsset } from '@{{projectSlug}}/branding'
+import { currentMember } from '../../../../lib/session'
+import { tenantBranding } from '../../../../lib/tenant-branding'
+
+/**
+ * One of the customer's images from the Control Plane, served from this origin.
+ *
+ * The platform stores a logo a customer uploads as an `https` URL on its own
+ * storage, and this product's Content-Security-Policy is `img-src 'self'`.
+ * Two ways to close that: name the storage origin in the policy, or serve the
+ * bytes from here. This is the second, decided 2026-09-15 (FOLLOW_UPS F19),
+ * because a policy exception is a decision about where a customer's logo may
+ * load from, made in a header nobody reads and widened every time the
+ * platform's storage moves. The policy stays `'self'`, and this route is the
+ * only thing that makes a platform image count as self.
+ *
+ * The only input taken from the browser is the asset's name, and it is one of
+ * three. The URL fetched is the one the platform answered for the caller's own
+ * organization -- resolved the way every signed-in page resolves it, from the
+ * session, through `tenantBranding` and its parser, cached per request -- so
+ * there is no parameter through which this route can be pointed at anything
+ * else. What is fetched, how long it may take, how big it may be and what it
+ * may be are the api-client's decisions, in `fetchPlatformAsset`.
+ *
+ * The middleware already requires a session for `/api/branding`; the check
+ * here is the second copy the export download makes too, for a route reached
+ * some way the middleware did not see.
+ */
+export async function GET(request: NextRequest, context: { params: Promise<{ asset: string }> }) {
+  const site = request.headers.get('sec-fetch-site')
+  if (site !== null && site !== 'same-origin' && site !== 'none') {
+    return new NextResponse(null, { status: 403 })
+  }
+
+  const { asset } = await context.params
+  if (!isPlatformAsset(asset)) return new NextResponse(null, { status: 404 })
+
+  if ((await currentMember()) === null) return new NextResponse(null, { status: 401 })
+
+  const branding = await tenantBranding()
+  const url = branding.assets[asset]
+  // No platform, no branding, or a customer who set no such image: all three
+  // are the same absence to a browser, and `ProductLogo` never asks for an
+  // image it was not told exists.
+  if (url === undefined) return new NextResponse(null, { status: 404 })
+
+  try {
+    const image = await fetchPlatformAsset(url, {
+      ifNoneMatch: request.headers.get('if-none-match') ?? undefined,
+    })
+    if (image.status === 'unchanged') {
+      return new NextResponse(null, { status: 304, headers: headersFor(image.etag) })
+    }
+    return new NextResponse(image.body, {
+      status: 200,
+      headers: {
+        ...headersFor(image.etag),
+        'Content-Type': image.contentType,
+        'Content-Length': String(image.body.byteLength),
+      },
+    })
+  } catch (error) {
+    // Server-side only. The customer sees the product's own mark; the log says
+    // which of the fetch's refusals stood between them and their logo.
+    const reason = error instanceof PlatformAssetError ? error.message : String(error)
+    console.error(`[branding] the platform's '${asset}' could not be served: ${reason}`)
+    return new NextResponse(null, { status: 502 })
+  }
+}
+
+function headersFor(etag: string | undefined): Record<string, string> {
+  return {
+    // `private`: one customer's logo, in one caller's browser, and never in a
+    // shared cache keyed on a path every customer's page asks for.
+    'Cache-Control': 'private, max-age=3600',
+    // A browser is told what this is and told not to guess. What it is was
+    // checked against an allowlist before a byte of it was kept.
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Disposition': 'inline',
+    ...(etag ? { ETag: etag } : {}),
+  }
+}
