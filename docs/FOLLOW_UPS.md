@@ -20,14 +20,23 @@ The index below is ordered by when an entry was opened, which is the one order
 that says nothing about what to do next. This says it, and it is a
 recommendation rather than a record — revise it, do not preserve it.
 
-| Order | Entry | Why here | Rough cost |
-|-------|-------|----------|------------|
-| 1 | **F21** | The first work with a customer on the other end of it. Every phase is built and every test-mode box is closed as of 2026-09-15: recorded fixtures, the subscription schedule on a real subscription, and the signup watched end to end from the form through Stripe's checkout to the owner's password. What is left is live mode alone — activating the account, a live key, and one real card — `koras-control-plane/docs/runbooks/stripe-go-live.md` steps 1, 3, 5 and 7. | ~½ day, with the Stripe dashboard open |
-| 2 | **F7** | Closed 2026-09-15 by the smaller change F2c described: the Control Plane echoes what the registry stores, and the generator compares. What is left is one `--register-only` against dev to see the first confirmed registration, which belongs in the live sitting. | ~10 min, in the live sitting |
-| 3 | **F3 + F2b** | One question from two sides. Not urgent while there is one product — the risk it names is one product's CI holding write access to *other* products' registry entries, and as of 2026-09-15 the blast radius is still itself. | ½ day to decide, more to build |
-| 4 | **F23** | Built 2026-09-11 as the product's own sign-in page rather than a self-hosted copy of ZITADEL's (`docs/PRODUCT_SIGN_IN.md`), and signed a customer in on dev in a real browser the same evening. What is left is test, stg and prod, which need two ZITADEL writes per instance that only a person can make, and second-factor enrolment on a product page. | ~1h per environment |
-| 5 | **F25** | The reporting framework shipped 2026-09-14, and the second wave the same day took scheduled delivery, XLSX and PDF, background exports and product activity. What is left is three things nothing needs yet: `reporting.api` enforcement, which becomes real with the first machine caller; pre-aggregation, which becomes real when a table outgrows a range scan; and report names in the customer's language. | ~1 day per item, none urgent |
-| 6 | **F24** | Closed 2026-09-15: the real model call was held on 2026-09-14, and the last two boxes — a "last collected" component on platform health, and whether overage charges can reach Stripe under Managed Payments — were built and decided respectively on 2026-09-15. Kept in the table for one revision so the row's disappearance is not read as an omission. | — |
+| Order | Entry | What is left, and why it is here | Rough cost |
+|-------|-------|----------------------------------|------------|
+| 1 | **F21 — live mode** | The only entry with money on the other end. Every phase is built and every test-mode box closed on 2026-09-15, including a signup watched from the form through Stripe's checkout to the owner's password. What remains is the walk from test mode to live: activate the account, make the live catalogue, mint a restricted live key, register a prod webhook endpoint, configure the customer portal, and sign up once yourself with a real card and cancel inside the trial. `koras-control-plane/docs/runbooks/stripe-go-live.md` steps 1, 3, 5 and 7, in that order. Nothing here is code. | ~½ day at the Stripe dashboard |
+| 2 | **The live sitting** | Three things needing the same estate and the same credentials, which is why they are one item and not three: **R-036**'s second provision-and-teardown now that Cloudflare is in the inventory; the **F17 token audience**; and one `--register-only` for `koras-e2e-shop`, which would be the estate's first *confirmed* registration now that the Control Plane echoes what it stored. Run separately they pay the setup cost three times. | ~half a day |
+| 3 | **F23 — the other three environments** | dev has the product's own sign-in and a customer has signed in on it. test, stg and prod need two ZITADEL writes per instance that only a person can make — grant the worker `IAM_LOGIN_CLIENT`, set the Console application to Login V2 — and then the instance feature flipped, **and only after the environment is promoted**, because with the feature off ZITADEL sends sign-ins to the application's base URI and `/login` is a 404 there. | ~1h per environment |
+| 4 | **F3 + F2b** | One Control Plane authorization decision arriving from two sides: may a product hold a credential that can rewrite its own registry entry, and if not, what is the narrower machine role. Not urgent while there is one product — the risk is one product's CI holding write access to *other* products' entries, and as of 2026-09-15 the blast radius is still itself. Deploy-time registration stays off until it is answered. | ½ day to decide, more to build |
+| 5 | **F19 — the DNS half of the asset fetch** | The branding route refuses raw addresses and private suffixes at two gates, and a *name* that resolves to a private address still passes both. Closing it needs resolving the host, refusing loopback, RFC1918, link-local and unique-local answers, and connecting to the address rather than the name — which needs the socket rather than `fetch`. | ~half a day |
+| 6 | **F22 — Files** | Six items, each waiting on a real trigger rather than on time: multipart uploads (a file over 5 GB), an orphan sweep, the `customer-owned` and `azure-blob` policies, a real upload in CI, a foreign bucket's origin in the browser policy, and quota by period. | ~1 day per item |
+| 7 | **F25 — reporting** | Three items, none of which blocks a product registering reports today: `reporting.api` enforcement becomes real with the first machine caller, pre-aggregation when a table outgrows a range scan, and report names in the customer's language when somebody asks for one. | ~1 day per item |
+
+**Read the entry before working it.** F2c, F6 and F13 all closed on 2026-09-01,
+and two of them closed by being *checked* rather than built — F2c's backfill had
+no subject, and F13's recommendation was already shipped. F7 closed on
+2026-09-15 the same way round: the work it needed turned out to be a smaller
+change in the other repository than the one this entry had been describing for
+two weeks.
+
 
 F13's prerequisite sat at the top of this table for part of one day and is
 built: `koras-control-plane` R-93, which made `subscriptions.status` mean
@@ -106,29 +115,33 @@ otherwise stops at F6, and why there is no F0.
 | F16 | a customer's own branding has nowhere to be read from | closed 2026-09-01 | Decisions |
 | F17 | a product cannot read its customers' entitlements | closed 2026-09-01 | Decisions |
 | F18 | no test in this repository opens a browser | closed 2026-09-01 | Decisions |
-| F19 | a customer's platform branding was stored and never rendered | closed 2026-09-04 — logos still open | Decisions |
+| F19 | a customer's platform branding was stored and never rendered | logos closed 2026-09-15 — one box left, the DNS half of the fetch | Decisions |
 | F20 | a product speaks one language | closed 2026-09-15 — phase 2 took the last four boxes | Decisions |
 | F21 | somebody can now be billed, and nothing yet asks them to be | every phase built by 2026-09-07; test mode verified 2026-09-15 — live mode open | Onboarding |
-| F22 | Files: what the first storage module leaves out | shipped 2026-09-08 | Verification |
-| F23 | the sign-in page, on a host of ours | built 2026-09-11 | Verification |
-| F24 | the AI foundation: what the first shared AI layer leaves out | shipped 2026-09-13 | Verification |
-| F25 | the reporting framework: what the first shared reporting layer leaves out | shipped 2026-09-14 | Verification |
+| F22 | Files: what the first storage module leaves out | shipped 2026-09-08 — six boxes left, none urgent | Verification |
+| F23 | the sign-in page, on a host of ours | built 2026-09-11, live on dev — test, stg and prod left | Verification |
+| F24 | the AI foundation: what the first shared AI layer leaves out | closed 2026-09-15 | Verification |
+| F25 | the reporting framework: what the first shared reporting layer leaves out | shipped 2026-09-14 — three boxes left, each waiting on a trigger | Verification |
 
-**Two are open**: F2b and F3 — one Control Plane authorization decision arriving
-from two sides. Neither is this repository's to close alone. F7 was the third
-until 2026-09-15, open because its remaining box could not be closed by the
-identity that registers; the Control Plane change that closes it is recorded
-in the entry. F2b and F3 are one Control Plane authorization decision arriving
-from two sides. F7 needs a staff read, and as of 2026-09-01 it is known that the
-registering identity cannot perform it *even in principle*: the registration
-response returns environment names rather than stored references, so a payload
-stored wrongly and one stored correctly are indistinguishable to the caller.
+**What is open, as of 2026-09-15.** Two entries are open in the sense of
+waiting on a decision — **F2b** and **F3**, which are one Control Plane
+authorization question arriving from two sides, and neither is this
+repository's to close alone. Five more are open in the sense of having boxes
+left: **F19** (one, the DNS half of the asset fetch), **F21** (live mode),
+**F22** (six), **F23** (three other environments, plus second-factor
+enrolment and the Control Plane's own portal) and **F25** (three). Two entries
+carry a box that will never close as written, and each says so where it stands:
+F2a's Terraform question and F7's first box.
+
+Nothing is open for lack of a decision here. Every remaining item is waiting on
+a person at a dashboard, a live estate, another repository, or a customer who
+needs the thing.
 
 **F13 was decided on 2026-09-01**: trial-only, which is already what the code
 does. Checking that found the useful half — nothing expires a trial, and
-entitlement resolution ignores `subscriptions.status` altogether, so a cancelled
-customer resolves the same entitlements as a paying one. That is
-`koras-control-plane`'s to fix and it is now the first thing on the list above.
+entitlement resolution ignored `subscriptions.status` altogether, so a
+cancelled customer resolved the same entitlements as a paying one. Fixed in
+`koras-control-plane` as R-93.
 
 Closed on 2026-09-01: F16, F17, F18, F2c, F6 and F13. F2c closed by being run —
 `--register-only` executed against the live Control Plane for the first time —
@@ -2272,8 +2285,20 @@ provider. The design is `docs/PRODUCT_SIGN_IN.md`; the Control Plane's
       the product's page and reached `/dashboard`. This box stood unticked
       for a day after that, which is R-042 landing on the file that lists
       what is undone.
-- [ ] The same on test, stg and prod: the instance feature off, the role on
-      the `worker` user, the Control Plane's Terraform applied so the portal
-      has its base URI. Only dev has any of it.
+- [ ] The same on test, stg and prod. **The Terraform half is already done on
+      all four instances** — the per-application base URI is applied for the
+      Control Plane's portal and for `koras-e2e-shop`, read live on
+      2026-09-12. What is left per instance is three writes a person has to
+      make, in this order: grant the `worker` service user
+      `IAM_LOGIN_CLIENT`; set ZITADEL's own Management Console application to
+      login version V2; and only **after** the environment is promoted, turn
+      the instance's `loginV2.required` off. The order is the whole of it: with
+      the feature off, ZITADEL sends every sign-in to the application's base
+      URI, and the product's `/login` answers 404 on an environment that has
+      not been promoted. All three writes are refused to an agent by the
+      permission classifier, tried on dev and on test; the curl is step 2 of
+      `koras-control-plane/docs/runbooks/zitadel-worker-credential.md` and the
+      token is the environment's own `ZITADEL_SERVICE_TOKEN`, which holds
+      `IAM_OWNER`.
 - [ ] The remaining halves of R-90, unchanged: enrolment of a second factor
       on a product page; the Control Plane's own portal.
