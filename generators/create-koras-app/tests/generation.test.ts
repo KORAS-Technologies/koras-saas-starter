@@ -238,6 +238,126 @@ describe('the ai capability', () => {
   })
 })
 
+// ── capability leakage, derived rather than listed ───────────────────────────
+
+/**
+ * A file generated into a product must not import something the product does
+ * not have.
+ *
+ * The two tests above name the paths a product without `ai` or without
+ * `reporting` must not carry, and each is a list written by hand. A list is
+ * correct on the day it is written and has no way of noticing the world moved:
+ * `tests/unit/test_ai_turn_quota.py` arrived with the per-minute ceiling on
+ * 2026-09-15, nobody added it to the manifest's `template_map` or to the list
+ * above, and it shipped into every product generated without an assistant --
+ * where it fails at import, because `koras_api.core.ai` is not there. That is
+ * the third capability leak in two days and the second found by CI rather than
+ * here.
+ *
+ * So this one is derived from a source that cannot drift: the template tree
+ * itself. If a module exists in the templates, is absent from this generated
+ * project, and some file that *is* in this project imports it, the manifest
+ * gated one and not the other. It needs no list and cannot go stale -- a
+ * capability added tomorrow is covered by having been written.
+ */
+describe('nothing generated imports what was not generated', () => {
+  /**
+   * Whether a path exists in either template layer, without throwing.
+   *
+   * `templatePath` raises when it finds nothing, which is right for a test
+   * reading a file it expects and wrong here: not finding it is the answer
+   * this asks for.
+   */
+  const TEMPLATES = join(__dirname, '..', '..', '..', 'profiles')
+  function inTemplateTree(relative: string): boolean {
+    const segments = relative.split('/')
+    return (
+      existsSync(join(TEMPLATES, 'product', 'template', ...segments)) ||
+      existsSync(join(TEMPLATES, '_shared', 'template', ...segments)) ||
+      existsSync(join(TEMPLATES, 'product', 'template', `${relative}.hbs`.split('/').join('/'))) ||
+      existsSync(join(TEMPLATES, '_shared', 'template', `${relative}.hbs`.split('/').join('/')))
+    )
+  }
+
+  /** `koras_api.core.ai` -> the paths a module of that name could occupy. */
+  function candidates(module: string): string[] {
+    const relative = module.split('.').slice(1).join('/')
+    if (relative === '') return []
+    return [
+      `services/api/koras_api/${relative}.py`,
+      `services/api/koras_api/${relative}/__init__.py`,
+    ]
+  }
+
+  /**
+   * Every `koras_api` module a Python file refers to.
+   *
+   * Both spellings, because the leak used the second: `import koras_api.core.ai`
+   * names the module, and `from koras_api.core import ai` names the package and
+   * leaves the module in the import list -- which reads as a symbol and is a
+   * file on disk.
+   */
+  function imported(source: string): string[] {
+    const found = new Set<string>()
+    for (const [, module] of source.matchAll(/^\s*import\s+(koras_api[\w.]*)/gm)) {
+      found.add(module)
+    }
+    for (const [, pkg, names] of source.matchAll(
+      /^\s*from\s+(koras_api[\w.]*)\s+import\s+([^\n(]+|\([^)]*\))/gm,
+    )) {
+      found.add(pkg)
+      for (const raw of names.replace(/[()]/g, '').split(',')) {
+        const name = raw.trim().split(/\s+as\s+/)[0]?.trim()
+        if (name && /^[a-z_][\w]*$/.test(name)) found.add(`${pkg}.${name}`)
+      }
+    }
+    return [...found]
+  }
+
+  it.each([
+    ['sampleapp-leak-default', {}],
+    ['sampleapp-leak-minimal', { without: ['admin', 'worker', 'reporting'] }],
+    ['sampleapp-leak-ai', { with: ['ai', 'ai_gateway'] }],
+  ] as Array<[string, Overrides]>)('in a product generated as %s', async (slug, overrides) => {
+    const gen = await generate('product', slug, overrides)
+    const generated = new Set(gen.fileList)
+    const offences: string[] = []
+
+    for (const file of gen.fileList) {
+      if (!file.endsWith('.py')) continue
+      if (!file.startsWith('services/') && !file.startsWith('tests/')) continue
+
+      for (const module of imported(gen.read(file))) {
+        const options = candidates(module)
+        if (options.length === 0) continue
+        // Present here: nothing to say.
+        if (options.some((candidate) => generated.has(candidate))) continue
+        // Absent here and absent from the templates too: not a module at all,
+        // but a symbol defined inside one. Only the templates can tell the
+        // difference, and only their answer makes this a leak.
+        if (options.some(inTemplateTree)) offences.push(`${file} imports ${module}`)
+      }
+    }
+
+    expect(
+      offences.sort(),
+      'These files were generated into a product that does not carry what they ' +
+        'import, so a capability gated one and not the other. Add the importing ' +
+        "file to the same entry of the manifest's `template_map`.",
+    ).toEqual([])
+  })
+
+  it('catches a leak, given one', async () => {
+    // The mutation: the check is only worth having if an ungated file that
+    // imports a gated module fails it. `test_ai_turn_quota.py` is the real
+    // one, so the template's own gating is what this asserts -- remove it from
+    // `template_map` and the case above fails rather than this one.
+    const gated = readFileSync(join(__dirname, '..', '..', '..', 'profiles', 'product', 'manifest.yaml'), 'utf8')
+    expect(gated).toContain('tests/unit/test_ai_turn_quota.py')
+    expect(inTemplateTree('services/api/koras_api/core/ai.py')).toBe(true)
+  })
+})
+
 // ── the reporting capability ─────────────────────────────────────────────────
 
 describe('the reporting capability', () => {

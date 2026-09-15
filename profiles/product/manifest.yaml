@@ -127,6 +127,7 @@ template_map:
       - tests/unit/test_ai_citations.py
       - tests/unit/test_ai_ocr.py
       - tests/unit/test_ai_gateway_guard.py
+      - tests/unit/test_ai_turn_quota.py
       - services/worker/koras_worker/tasks/ai_retention.py
       - apps/web/src/app/dashboard/assistant
       - e2e/assistant.spec.ts
@@ -143,6 +144,7 @@ template_map:
       - services/worker/koras_worker/tasks/reporting.py
       - supabase/migrations/00013_audit_events.sql
       - supabase/migrations/00014_report_schedules.sql
+      - supabase/migrations/00016_report_schedule_locale.sql
       - supabase/tests/110_audit_isolation.sql
       - supabase/tests/130_report_schedules_isolation.sql
       - tests/unit/test_reporting_api.py
