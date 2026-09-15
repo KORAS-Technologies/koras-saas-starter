@@ -272,12 +272,21 @@ expired it either. Fixed there as R-93, awaiting review on PR #2. Nothing was
 wrongly ungated, because no product gates on a plan yet — which is exactly why
 it had survived since the resolver was written.
 
-Then one live sitting, which is now four things needing the same estate and the
-same credentials: R-036's second teardown now that Cloudflare is in the
-inventory; the F17 token audience; one `--register-only` for `koras-e2e-shop`,
-which would be the estate's first *confirmed* registration; and the F21 live
-Playwright journey, whose only unrun step is a human completing Stripe's
-test-mode checkout — an agent is refused at the pay button.
+Then one live sitting, three things needing the same estate and the same
+credentials: R-036's second teardown now that Cloudflare is in the inventory;
+the F17 token audience; and one `--register-only` for `koras-e2e-shop`, which
+would be the estate's first *confirmed* registration.
+
+F21's test-mode half closed on 2026-09-15. A person paid the checkout an agent
+is refused at, and the rest ran on its own — subscription created, provisioning
+finished, welcome mail sent, owner's password set. What is left there is live
+mode alone.
+
+`koras-e2e-shop` was synced the same day, and by a method worth reusing: a
+product was generated from the starter as it was before the day's commits and
+as it is after, and the two were compared against the repository three ways, so
+a file the shop had written itself could not be silently reverted. Exactly one
+file needed a hand — the manifest digest, which is meant to change.
 
 F7 carried a constraint from 2026-09-01 until 2026-09-15: the registration
 response returned environment *names*, not stored references, so the identity

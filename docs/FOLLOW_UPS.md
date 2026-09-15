@@ -22,7 +22,7 @@ recommendation rather than a record — revise it, do not preserve it.
 
 | Order | Entry | Why here | Rough cost |
 |-------|-------|----------|------------|
-| 1 | **F21** | The first work with a customer on the other end of it. Every phase is built and, since 2026-09-15, every test-mode box is ticked or recorded: fixtures are recorded, six checkouts completed in a browser, the schedule seen on a real subscription. What is left is live mode — the account's activation, a live key, a real card once — and one run of the live Playwright journey to its end, which an operator has to drive past Stripe's pay button. | ~½ day, with the Stripe dashboard open |
+| 1 | **F21** | The first work with a customer on the other end of it. Every phase is built and every test-mode box is closed as of 2026-09-15: recorded fixtures, the subscription schedule on a real subscription, and the signup watched end to end from the form through Stripe's checkout to the owner's password. What is left is live mode alone — activating the account, a live key, and one real card — `koras-control-plane/docs/runbooks/stripe-go-live.md` steps 1, 3, 5 and 7. | ~½ day, with the Stripe dashboard open |
 | 2 | **F7** | Closed 2026-09-15 by the smaller change F2c described: the Control Plane echoes what the registry stores, and the generator compares. What is left is one `--register-only` against dev to see the first confirmed registration, which belongs in the live sitting. | ~10 min, in the live sitting |
 | 3 | **F3 + F2b** | One question from two sides. Not urgent while there is one product — the risk it names is one product's CI holding write access to *other* products' registry entries, and as of 2026-09-15 the blast radius is still itself. | ½ day to decide, more to build |
 | 4 | **F23** | Built 2026-09-11 as the product's own sign-in page rather than a self-hosted copy of ZITADEL's (`docs/PRODUCT_SIGN_IN.md`), and signed a customer in on dev in a real browser the same evening. What is left is test, stg and prod, which need two ZITADEL writes per instance that only a person can make, and second-factor enrolment on a product page. | ~1h per environment |
@@ -1655,7 +1655,7 @@ something to land on.
 - [x] Phase 2 — price references and seat bounds on plans, in the API, the public catalogue, the client and the console form
 - [x] Phase 1's other half: recorded sandbox events replacing the authored fixtures — recorded 2026-09-15 from the test account's events API, see the note below. The database half was done on 2026-09-05 — the suites ran green with 00028 and 00029 applied, locally and in dev
 - [x] Phase 3 — interval and seats on the signup form, Paddle.js on the verify page, provisioning started by `subscription.created`, the abandoned-checkout reminder (built 2026-09-05, both repositories)
-- [~] Phase 3's browser run: a sandbox signup with a test card, from a product deployed with the client-side token, ending signed in — **done six times by hand between 2026-09-10 and 2026-09-13**, found on 2026-09-15 by reading the Stripe account rather than the documents; the Playwright journey that records it ships since 2026-09-15 at `e2e/live/signup-card.spec.ts` in the product template and has not yet run to completion, see below
+- [x] Phase 3's browser run: a sandbox signup with a test card, from a product deployed with the client-side token, ending signed in — done six times by hand between 2026-09-10 and 2026-09-13, and once more on 2026-09-15 watched from the signup form through the checkout to the owner's password. The Playwright journey that records it ships at `e2e/live/signup-card.spec.ts`; running it unattended needs a person at the pay button, see below
 - [x] Phase 4 — the portal's billing section, plan and seat changes, the trial-ended and past-due states; the first module with `requiredEntitlements` had already shipped with the shell (built 2026-09-05, both repositories)
 - [x] Phase 5's code — the `billing.subscription` check in the estate sweep, repaired toward the provider (built 2026-09-06)
 - [x] **The provider switched from Paddle to Stripe Managed Payments on 2026-09-09**, before any customer existed to migrate. The adapter, the webhook, the checkout and the pricing page were rewritten in both repositories; the Paddle adapter was deleted rather than kept behind a flag. See the note below
@@ -1778,14 +1778,22 @@ product template gained `e2e/live/signup-card.spec.ts`, the journey from the
 emailed link through Stripe's checkout to the dashboard, skipped unless an
 operator supplies the links a mailbox holds.
 
-**What stopped, and where.** The seventh signup, `F21 Card Run`, was driven
-in a browser as far as Stripe's hosted page -- Sandbox, "sold through Link",
-$38 a month after a one-day trial for two Starter seats -- and stopped at
-the pay button by the policy that stops an agent from completing a payment,
-test card or not. The checkout is open for a day at the address the
-registration's `checkout=cancelled` link offers, and the reminder job has a
-subject. Someone with hands on the keyboard finishes it, then runs the live
-spec with the two emailed links to tick the last test-mode box.
+**Where it stopped, and who finished it.** The seventh signup,
+`F21 Card Run`, was driven in a browser as far as Stripe's hosted page --
+Sandbox, "sold through Link", $38 a month after a one-day trial for two
+Starter seats -- and stopped at the pay button, by the policy that stops an
+agent from completing a payment, test card or not. A person paid it the same
+afternoon, and the rest ran on its own: the session reads `complete` and
+`paid`, `customer.subscription.created` arrived at 14:28 UTC with the
+registration id in its metadata, provisioning finished, the welcome mail went
+out at 14:29, and the owner's password was set a minute after that.
+
+So **Phase 3's browser run is done end to end**, by hand rather than by the
+spec, on a product deployed with a real key against a real provider. What the
+spec has still not done is drive it unattended: `e2e/live/signup-card.spec.ts`
+exists, is skipped without the two emailed links, and has not been run to
+completion -- and it never can be by an agent, because the pay button is where
+an agent is refused. That is a fact about who runs it rather than a gap in it.
 
 **One small thing the run showed.** The signup form says "your 14-day
 trial" and the checkout said "1 day free": the number is `BILLING_TRIAL_DAYS`
