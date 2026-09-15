@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, renameSync } from 'node:fs'
+import { mkdir, writeFile, rename } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import type { RenderedFile } from './engine.js'
@@ -39,7 +39,18 @@ export function toUnixLineEndings(content: Buffer | string): Buffer | string {
   return content.includes('\r\n') ? Buffer.from(content.toString('utf8').replace(/\r\n/g, '\n')) : content
 }
 
-export function writeFiles(ctx: GenerationContext, files: RenderedFile[]): WriteResult {
+/**
+ * Asynchronous on purpose. A generated project is several hundred files, and
+ * writing them synchronously holds the event loop for as long as the disk
+ * takes -- over a minute on a slow one. A vitest worker that cannot answer
+ * the reporter for that long is torn down and its tests reported failed
+ * (R-031). Writes are still sequential and still atomic; only the waiting
+ * changed.
+ */
+export async function writeFiles(
+  ctx: GenerationContext,
+  files: RenderedFile[],
+): Promise<WriteResult> {
   const projectRoot = join(ctx.outputDir, ctx.projectSlug)
   const fileList: string[] = []
 
@@ -51,7 +62,7 @@ export function writeFiles(ctx: GenerationContext, files: RenderedFile[]): Write
 
     // Atomic write: write to temp file then rename
     const dir = dirname(outputAbsPath)
-    mkdirSync(dir, { recursive: true })
+    await mkdir(dir, { recursive: true })
 
     const content = requiresUnixLineEndings(file.outputPath)
       ? toUnixLineEndings(file.content)
@@ -59,11 +70,11 @@ export function writeFiles(ctx: GenerationContext, files: RenderedFile[]): Write
 
     const tmpPath = `${outputAbsPath}.${randomBytes(4).toString('hex')}.tmp`
     if (typeof content === 'string') {
-      writeFileSync(tmpPath, content, 'utf8')
+      await writeFile(tmpPath, content, 'utf8')
     } else {
-      writeFileSync(tmpPath, content)
+      await writeFile(tmpPath, content)
     }
-    renameSync(tmpPath, outputAbsPath)
+    await rename(tmpPath, outputAbsPath)
   }
 
   return { filesWritten: ctx.dryRun ? 0 : files.length, fileList }

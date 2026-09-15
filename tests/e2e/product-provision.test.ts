@@ -101,9 +101,11 @@ describe('a product is generated and validated', () => {
   const ctx = productContext()
   let fileList: string[]
 
-  beforeAll(() => {
-    fileList = writeFiles(ctx, renderTemplate(ctx)).fileList
-  })
+  // Several hundred files through Handlebars and onto disk. Well over the
+  // default ten seconds on a slow disk, which is not a defect in the project.
+  beforeAll(async () => {
+    fileList = (await writeFiles(ctx, renderTemplate(ctx))).fileList
+  }, 300_000)
 
   it('writes a project that passes the generator own validation', () => {
     // Returns a verdict rather than throwing, so the verdict is what to

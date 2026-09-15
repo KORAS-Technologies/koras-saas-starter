@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -124,17 +124,24 @@ describe('register-with-control-plane.sh', () => {
    * case in point -- so a helper that reads stdout alone on success cannot see
    * the thing worth asserting.
    */
-  function run(): { status: number; output: string } {
-    const result = spawnSync('bash', [join(PROJECT, SCRIPT)], {
-      env: {
-        ...process.env,
-        PATH: `${BIN}:${process.env.PATH ?? ''}`,
-        GITHUB_REPOSITORY: 'KORAS-Technologies/shop',
-        ENVIRONMENT: 'prod',
-      },
-      encoding: 'utf8',
+  function run(): Promise<{ status: number; output: string }> {
+    // Awaited rather than spawnSync: the script takes tens of seconds, and a
+    // worker blocked that long cannot answer vitest's reporter (R-031).
+    return new Promise((resolve, reject) => {
+      const child = spawn('bash', [join(PROJECT, SCRIPT)], {
+        env: {
+          ...process.env,
+          PATH: `${BIN}:${process.env.PATH ?? ''}`,
+          GITHUB_REPOSITORY: 'KORAS-Technologies/shop',
+          ENVIRONMENT: 'prod',
+        },
+      })
+      let output = ''
+      child.stdout.setEncoding('utf8').on('data', (chunk: string) => (output += chunk))
+      child.stderr.setEncoding('utf8').on('data', (chunk: string) => (output += chunk))
+      child.on('error', reject)
+      child.on('close', (status) => resolve({ status: status ?? 1, output }))
     })
-    return { status: result.status ?? 1, output: `${result.stdout ?? ''}${result.stderr ?? ''}` }
   }
 
   beforeAll(() => {
@@ -192,7 +199,7 @@ describe('register-with-control-plane.sh', () => {
     chmodSync(join(BIN, 'curl'), 0o755)
   }
 
-  it('refuses to register the Control Plane, and says nothing was sent', () => {
+  it('refuses to register the Control Plane, and says nothing was sent', async () => {
     if (!runnable) return
     rmSync(PAYLOAD, { force: true })
     setProfile('control-plane')
@@ -201,7 +208,7 @@ describe('register-with-control-plane.sh', () => {
       KORAS_CONTROL_PLANE_TOKEN: 'tok',
     })
 
-    const { status, output } = run()
+    const { status, output } = await run()
 
     // Not a failure: the Control Plane's pipeline is correct and should stay
     // green. It simply has nothing to register.
@@ -212,17 +219,17 @@ describe('register-with-control-plane.sh', () => {
     expect(existsSync(PAYLOAD)).toBe(false)
   })
 
-  it('refuses a profile it does not recognise rather than passing silently', () => {
+  it('refuses a profile it does not recognise rather than passing silently', async () => {
     if (!runnable) return
     rmSync(PAYLOAD, { force: true })
     setProfile('something-else')
     stubDoppler({ KORAS_CONTROL_PLANE_URL: 'https://cp.example.com' })
 
-    expect(run().status).toBe(2)
+    expect((await run()).status).toBe(2)
     expect(existsSync(PAYLOAD)).toBe(false)
   })
 
-  it('treats an unconfigured Control Plane as the bootstrap order, not a failure', () => {
+  it('treats an unconfigured Control Plane as the bootstrap order, not a failure', async () => {
     if (!runnable) return
     rmSync(PAYLOAD, { force: true })
     setProfile('product')
@@ -230,24 +237,24 @@ describe('register-with-control-plane.sh', () => {
 
     // R-001: the first product in a new estate is provisioned before the
     // registry it would register with exists.
-    const { status, output } = run()
+    const { status, output } = await run()
     expect(status).toBe(0)
     expect(output).toContain('bootstrap order')
     expect(existsSync(PAYLOAD)).toBe(false)
   })
 
-  it('fails on a Control Plane named with nothing to authorise the call', () => {
+  it('fails on a Control Plane named with nothing to authorise the call', async () => {
     if (!runnable) return
     rmSync(PAYLOAD, { force: true })
     setProfile('product')
     stubDoppler({ KORAS_CONTROL_PLANE_URL: 'https://cp.example.com' })
 
     // A misconfiguration reported as nothing-to-do is one nobody fixes.
-    expect(run().status).toBe(1)
+    expect((await run()).status).toBe(1)
     expect(existsSync(PAYLOAD)).toBe(false)
   })
 
-  it('refuses to send a bearer token over plaintext http', () => {
+  it('refuses to send a bearer token over plaintext http', async () => {
     if (!runnable) return
     rmSync(PAYLOAD, { force: true })
     setProfile('product')
@@ -256,11 +263,11 @@ describe('register-with-control-plane.sh', () => {
       KORAS_CONTROL_PLANE_TOKEN: 'tok',
     })
 
-    expect(run().status).toBe(1)
+    expect((await run()).status).toBe(1)
     expect(existsSync(PAYLOAD)).toBe(false)
   })
 
-  it('builds a payload the Control Plane schema accepts', () => {
+  it('builds a payload the Control Plane schema accepts', async () => {
     if (!runnable) return
     rmSync(PAYLOAD, { force: true })
     setProfile('product')
@@ -271,7 +278,7 @@ describe('register-with-control-plane.sh', () => {
       ZITADEL_CLIENT_ID: 'client-abc',
     })
 
-    expect(run().status).toBe(0)
+    expect((await run()).status).toBe(0)
     const payload = JSON.parse(readFileSync(PAYLOAD, 'utf8'))
 
     // Field-for-field against `ProductRegistrationRequest`, which sets
@@ -321,7 +328,7 @@ describe('register-with-control-plane.sh', () => {
     expect(payload.profile_version).toBe('1.0.0')
   })
 
-  it('sends nothing at all when one of those three cannot be read', () => {
+  it('sends nothing at all when one of those three cannot be read', async () => {
     if (!runnable) return
     rmSync(PAYLOAD, { force: true })
     setProfile('product')
@@ -336,14 +343,14 @@ describe('register-with-control-plane.sh', () => {
     try {
       // A registration that quietly empties a column is worse than one that did
       // not run.
-      expect(run().status).toBe(1)
+      expect((await run()).status).toBe(1)
       expect(existsSync(PAYLOAD)).toBe(false)
     } finally {
       writeFileSync(tfvars, saved)
     }
   })
 
-  it('does not fail a green deployment because the registry was down', () => {
+  it('does not fail a green deployment because the registry was down', async () => {
     if (!runnable) return
     setProfile('product')
     stubDoppler({
@@ -363,7 +370,7 @@ describe('register-with-control-plane.sh', () => {
       // status as `$(curl ... || echo 000)` appends a second value to what curl
       // already printed, so the status matched no case and the tolerated
       // outcome became a hard failure.
-      const { status, output } = run()
+      const { status, output } = await run()
       expect(status).toBe(0)
       expect(output).toContain('could not be reached')
     } finally {
@@ -371,7 +378,7 @@ describe('register-with-control-plane.sh', () => {
     }
   })
 
-  it('carries no field whose name looks like a credential', () => {
+  it('carries no field whose name looks like a credential', async () => {
     if (!runnable) return
     rmSync(PAYLOAD, { force: true })
     setProfile('product')
@@ -381,7 +388,7 @@ describe('register-with-control-plane.sh', () => {
       ZITADEL_PROJECT_ID: '1',
       ZITADEL_CLIENT_ID: 'c',
     })
-    expect(run().status).toBe(0)
+    expect((await run()).status).toBe(0)
 
     const raw = readFileSync(PAYLOAD, 'utf8')
     const names = [...raw.matchAll(/"([^"]+)"\s*:/g)].map((m) => m[1])

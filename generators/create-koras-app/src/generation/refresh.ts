@@ -30,10 +30,10 @@ export interface RefreshResult {
  * assets are touched, so nothing an operator edited in their own project can be
  * overwritten by this: everything else in the tree is theirs.
  */
-export function refreshSharedAssets(
+export async function refreshSharedAssets(
   ctx: GenerationContext,
   projectRoot: string,
-): RefreshResult {
+): Promise<RefreshResult> {
   const assets = collectSharedAssets(ctx)
 
   const changed: string[] = []
@@ -57,7 +57,7 @@ export function refreshSharedAssets(
     return { changed, unchanged, written: false }
   }
 
-  writeFiles(
+  await writeFiles(
     ctx,
     assets.filter((file) => changed.includes(file.outputPath)),
   )
@@ -134,11 +134,11 @@ export interface RefreshPathResult {
  * generator's -- so discovery (`--check-drift --all`) and overwriting stay two
  * decisions rather than one.
  */
-export function refreshRenderedPaths(
+export async function refreshRenderedPaths(
   ctx: GenerationContext,
   projectRoot: string,
   paths: string[],
-): RefreshPathResult {
+): Promise<RefreshPathResult> {
   const rendered = new Map(renderTemplate(ctx).map((file) => [file.outputPath, file]))
 
   const updated: string[] = []
@@ -167,7 +167,7 @@ export function refreshRenderedPaths(
     return { updated, unchanged, unknown, written: false }
   }
 
-  writeFiles(ctx, toWrite)
+  await writeFiles(ctx, toWrite)
   return { updated, unchanged, unknown, written: true }
 }
 

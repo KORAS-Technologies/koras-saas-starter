@@ -42,7 +42,7 @@ afterAll(() => {
   if (existsSync(OUT)) rmSync(OUT, { recursive: true, force: true })
 })
 
-function generate(profile: ProfileName, slug: string) {
+async function generate(profile: ProfileName, slug: string) {
   const { manifest, defaults } = loadProfile(profile)
   const ctx = buildContext({
     projectName: slug,
@@ -55,7 +55,7 @@ function generate(profile: ProfileName, slug: string) {
     dryRun: false,
     provision: false,
   })
-  const { fileList } = writeFiles(ctx, renderTemplate(ctx))
+  const { fileList } = await writeFiles(ctx, renderTemplate(ctx))
   const projectRoot = join(OUT, slug)
   return {
     slug,
@@ -66,10 +66,10 @@ function generate(profile: ProfileName, slug: string) {
   }
 }
 
-const PRODUCT = generate('product', 'claude-product')
-const CONTROL_PLANE = generate('control-plane', 'claude-cp')
+const PRODUCT = await generate('product', 'claude-product')
+const CONTROL_PLANE = await generate('control-plane', 'claude-cp')
 
-const CASES: Array<[ProfileName, ReturnType<typeof generate>]> = [
+const CASES: Array<[ProfileName, Awaited<ReturnType<typeof generate>>]> = [
   ['product', PRODUCT],
   ['control-plane', CONTROL_PLANE],
 ]

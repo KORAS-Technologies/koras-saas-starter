@@ -344,13 +344,13 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   // rather than the copy the project was generated with.
 
   if (args.refreshModules) {
-    console.log(formatRefreshResult(refreshSharedAssets(ctx, projectRoot)))
+    console.log(formatRefreshResult(await refreshSharedAssets(ctx, projectRoot)))
   }
 
   // Template-owned paths, named explicitly. After the shared assets so that a
   // single invocation can do both, and a named path always wins.
   if (args.refresh.length > 0) {
-    console.log(formatRefreshPathResult(refreshRenderedPaths(ctx, projectRoot, args.refresh)))
+    console.log(formatRefreshPathResult(await refreshRenderedPaths(ctx, projectRoot, args.refresh)))
   }
 
   if ((args.refreshModules || args.refresh.length > 0) && !args.provisionOnly) return
@@ -396,7 +396,7 @@ Provisioning the existing project in ${projectSlug}/ — nothing regenerated.`)
   }
 
   const writeCtx = ctx.dryRun ? { ...ctx, dryRun: false } : ctx
-  const result = writeFiles(writeCtx, files)
+  const result = await writeFiles(writeCtx, files)
 
   // ── Validate the generated repository ──────────────────────────────────────
   //

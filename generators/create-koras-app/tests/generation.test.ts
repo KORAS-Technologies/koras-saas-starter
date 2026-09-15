@@ -51,9 +51,9 @@ function makeCtx(profile: ProfileName, slug: string, overrides: Overrides = {}, 
   })
 }
 
-function generate(profile: ProfileName, slug: string, overrides: Overrides = {}) {
+async function generate(profile: ProfileName, slug: string, overrides: Overrides = {}) {
   const ctx = makeCtx(profile, slug, overrides)
-  const { fileList } = writeFiles(ctx, renderTemplate(ctx))
+  const { fileList } = await writeFiles(ctx, renderTemplate(ctx))
   return {
     fileList,
     has: (prefix: string) => fileList.some((f) => f === prefix || f.startsWith(`${prefix}/`)),
@@ -64,9 +64,9 @@ function generate(profile: ProfileName, slug: string, overrides: Overrides = {})
 // ── dry run ──────────────────────────────────────────────────────────────────
 
 describe('dry run', () => {
-  it('lists files without writing any', () => {
+  it('lists files without writing any', async () => {
     const ctx = makeCtx('product', 'dry-run-app', {}, true)
-    const result = writeFiles(ctx, renderTemplate(ctx))
+    const result = await writeFiles(ctx, renderTemplate(ctx))
     expect(result.filesWritten).toBe(0)
     expect(result.fileList.length).toBeGreaterThan(10)
     expect(existsSync(join(OUT, 'dry-run-app'))).toBe(false)
@@ -76,10 +76,10 @@ describe('dry run', () => {
 // ── product profile ──────────────────────────────────────────────────────────
 
 describe('generate product', () => {
-  let gen: ReturnType<typeof generate>
+  let gen: Awaited<ReturnType<typeof generate>>
 
-  beforeAll(() => {
-    gen = generate('product', 'sampleapp')
+  beforeAll(async () => {
+    gen = await generate('product', 'sampleapp')
   })
 
   it('generates required apps and services', () => {
@@ -138,34 +138,34 @@ describe('generate product', () => {
 })
 
 describe('product optional components', () => {
-  it('can enable marketing and the AI Gateway', () => {
-    const gen = generate('product', 'sampleapp-full', { with: ['marketing', 'ai_gateway'] })
+  it('can enable marketing and the AI Gateway', async () => {
+    const gen = await generate('product', 'sampleapp-full', { with: ['marketing', 'ai_gateway'] })
     expect(gen.has('apps/marketing')).toBe(true)
     expect(gen.has('services/ai-gateway')).toBe(true)
   })
 
-  it('can disable optional components without losing required ones', () => {
-    const gen = generate('product', 'sampleapp-min', { without: ['admin', 'worker'] })
+  it('can disable optional components without losing required ones', async () => {
+    const gen = await generate('product', 'sampleapp-min', { without: ['admin', 'worker'] })
     expect(gen.has('apps/admin')).toBe(false)
     expect(gen.has('services/worker')).toBe(false)
     expect(gen.has('apps/web')).toBe(true)
     expect(gen.has('services/api')).toBe(true)
   })
 
-  it('applies the capability matrix to template selection', () => {
-    const gen = generate('product', 'sampleapp-nobilling', { without: ['billing'] })
+  it('applies the capability matrix to template selection', async () => {
+    const gen = await generate('product', 'sampleapp-nobilling', { without: ['billing'] })
     expect(gen.has('packages/billing')).toBe(false)
     expect(gen.has('packages/domains')).toBe(true) // custom_domains still enabled
   })
 
-  it('rejects an unknown component with an actionable error', () => {
-    expect(() => generate('product', 'sampleapp-bad', { with: ['nope'] })).toThrow(
+  it('rejects an unknown component with an actionable error', async () => {
+    await expect(generate('product', 'sampleapp-bad', { with: ['nope'] })).rejects.toThrow(
       /Unknown component "nope".*Known components/s,
     )
   })
 
-  it('rejects disabling a required component', () => {
-    expect(() => generate('product', 'sampleapp-noapi', { without: ['api'] })).toThrow(
+  it('rejects disabling a required component', async () => {
+    await expect(generate('product', 'sampleapp-noapi', { without: ['api'] })).rejects.toThrow(
       /Service "api" is required/,
     )
   })
@@ -180,8 +180,8 @@ describe('the ai capability', () => {
    * The framework package ships regardless -- it is a library nothing imports
    * -- and so do the components and the translations, which are inert.
    */
-  it('generates none of the assistant by default', () => {
-    const gen = generate('product', 'sampleapp-noai')
+  it('generates none of the assistant by default', async () => {
+    const gen = await generate('product', 'sampleapp-noai')
     expect(gen.has('services/api/koras_api/routers/ai.py')).toBe(false)
     expect(gen.has('services/api/koras_api/core/ai.py')).toBe(false)
     expect(gen.has('services/api/koras_api/ai')).toBe(false)
@@ -198,14 +198,14 @@ describe('the ai capability', () => {
     expect(gen.read('apps/web/src/app/dashboard/layout.tsx')).not.toContain('AssistantLauncher')
   })
 
-  it('refuses the capability without the gateway it needs', () => {
-    expect(() => generate('product', 'sampleapp-ai-alone', { with: ['ai'] })).toThrow(
+  it('refuses the capability without the gateway it needs', async () => {
+    await expect(generate('product', 'sampleapp-ai-alone', { with: ['ai'] })).rejects.toThrow(
       /Component "ai" requires "ai_gateway".*--with ai,ai_gateway/s,
     )
   })
 
-  it('generates the whole assistant with the gateway', () => {
-    const gen = generate('product', 'sampleapp-ai', { with: ['ai', 'ai_gateway'] })
+  it('generates the whole assistant with the gateway', async () => {
+    const gen = await generate('product', 'sampleapp-ai', { with: ['ai', 'ai_gateway'] })
     for (const path of [
       'services/api/koras_api/routers/ai.py',
       'services/api/koras_api/core/ai.py',
@@ -247,8 +247,8 @@ describe('the reporting capability', () => {
    * The framework package ships regardless, as `koras-ai` does, and so do
    * the components and the translations, which are inert.
    */
-  it('generates analytics by default', () => {
-    const gen = generate('product', 'sampleapp-reporting')
+  it('generates analytics by default', async () => {
+    const gen = await generate('product', 'sampleapp-reporting')
     for (const path of [
       'services/api/koras_api/routers/reporting.py',
       'services/api/koras_api/core/reporting.py',
@@ -297,8 +297,8 @@ describe('the reporting capability', () => {
     expect(gen.read('services/api/koras_api/core/reporting.py')).toContain('"reporting",')
   })
 
-  it('generates none of it without the capability, and the rest still stands', () => {
-    const gen = generate('product', 'sampleapp-noreporting', { without: ['reporting'] })
+  it('generates none of it without the capability, and the rest still stands', async () => {
+    const gen = await generate('product', 'sampleapp-noreporting', { without: ['reporting'] })
     expect(gen.has('services/api/koras_api/routers/reporting.py')).toBe(false)
     expect(gen.has('services/api/koras_api/core/reporting.py')).toBe(false)
     expect(gen.has('services/api/koras_api/reporting')).toBe(false)
@@ -327,10 +327,10 @@ describe('the reporting capability', () => {
 // ── control-plane profile ────────────────────────────────────────────────────
 
 describe('generate control-plane', () => {
-  let gen: ReturnType<typeof generate>
+  let gen: Awaited<ReturnType<typeof generate>>
 
-  beforeAll(() => {
-    gen = generate('control-plane', 'koras-control-plane')
+  beforeAll(async () => {
+    gen = await generate('control-plane', 'koras-control-plane')
   })
 
   it('generates platform admin and customer portal', () => {
@@ -372,9 +372,9 @@ describe('profile propagation', () => {
 
   for (const [profile, slug] of cases) {
     describe(profile, () => {
-      let gen: ReturnType<typeof generate>
-      beforeAll(() => {
-        gen = generate(profile, slug)
+      let gen: Awaited<ReturnType<typeof generate>>
+      beforeAll(async () => {
+        gen = await generate(profile, slug)
       })
 
       it('writes the profile into CLAUDE.md', () => {
@@ -429,8 +429,8 @@ describe('profile propagation', () => {
     })
   }
 
-  it('excludes deselected services from Terraform inputs', () => {
-    const gen = generate('product', 'prop-tf-min', { without: ['worker'] })
+  it('excludes deselected services from Terraform inputs', async () => {
+    const gen = await generate('product', 'prop-tf-min', { without: ['worker'] })
     const tfvars = gen.read('infrastructure/terraform/terraform.tfvars')
     const services = JSON.parse(/enabled_services = (\[.*\])/.exec(tfvars)![1]) as string[]
     expect(services).toContain('api')
@@ -441,7 +441,7 @@ describe('profile propagation', () => {
 // ── line endings ─────────────────────────────────────────────────────────────
 
 describe('line endings', () => {
-  it('writes shell scripts, Makefiles, and Dockerfiles with LF', () => {
+  it('writes shell scripts, Makefiles, and Dockerfiles with LF', async () => {
     // On Windows with core.autocrlf=true the templates themselves carry CRLF,
     // and copying those bytes verbatim gives a project whose `make bootstrap`
     // dies on `set -euo pipefail\r: invalid option name`.
@@ -449,7 +449,7 @@ describe('line endings', () => {
       ['product', 'eol-product'],
       ['control-plane', 'eol-cp'],
     ] as Array<[ProfileName, string]>) {
-      const gen = generate(profile, slug)
+      const gen = await generate(profile, slug)
       const shellFiles = gen.fileList.filter(
         (f) => /\.(sh|bash|mk)$/.test(f) || /(^|\/)(Makefile|Dockerfile)$/.test(f),
       )
@@ -467,8 +467,8 @@ describe('line endings', () => {
     expect(toUnixLineEndings('a\rb')).toBe('a\rb')
   })
 
-  it('generates a .gitattributes that pins them for later checkouts', () => {
-    const gen = generate('product', 'eol-attributes')
+  it('generates a .gitattributes that pins them for later checkouts', async () => {
+    const gen = await generate('product', 'eol-attributes')
     expect(gen.has('.gitattributes')).toBe(true)
     const attributes = gen.read('.gitattributes')
     expect(attributes).toContain('*.sh        text eol=lf')
@@ -485,9 +485,9 @@ describe('generated project manifest', () => {
   ).version as string
 
   describe('product profile', () => {
-    let gen: ReturnType<typeof generate>
-    beforeAll(() => {
-      gen = generate('product', 'docoris')
+    let gen: Awaited<ReturnType<typeof generate>>
+    beforeAll(async () => {
+      gen = await generate('product', 'docoris')
     })
 
     it('generates the manifest at the canonical path', () => {
@@ -518,9 +518,9 @@ describe('generated project manifest', () => {
   })
 
   describe('control-plane profile', () => {
-    let gen: ReturnType<typeof generate>
-    beforeAll(() => {
-      gen = generate('control-plane', 'koras-control-plane')
+    let gen: Awaited<ReturnType<typeof generate>>
+    beforeAll(async () => {
+      gen = await generate('control-plane', 'koras-control-plane')
     })
 
     it('records the control-plane identity', () => {
@@ -590,9 +590,9 @@ describe('generated project manifest', () => {
     ])
   })
 
-  it('carries no secrets', () => {
+  it('carries no secrets', async () => {
     // The header comment says the file holds no secrets; assert on the data.
-    const data = generate('product', 'manifest-clean')
+    const data = (await generate('product', 'manifest-clean'))
       .read(PROJECT_MANIFEST_PATH)
       .split('\n')
       .filter((line) => !line.trimStart().startsWith('#'))
@@ -616,10 +616,10 @@ describe('generated project manifest', () => {
     expect(() => renderProjectManifest(broken)).toThrow(/not a semantic version/)
   })
 
-  it('is reported by --dry-run without being written', () => {
+  it('is reported by --dry-run without being written', async () => {
     const ctx = makeCtx('product', 'dry-run-manifest', {}, true)
     const files = renderTemplate(ctx)
-    const result = writeFiles(ctx, files)
+    const result = await writeFiles(ctx, files)
     expect(result.fileList).toContain(PROJECT_MANIFEST_PATH)
     expect(result.filesWritten).toBe(0)
     expect(existsSync(join(OUT, 'dry-run-manifest'))).toBe(false)
@@ -682,12 +682,12 @@ describe('dry-run closing message', () => {
 // ── generated project validation ─────────────────────────────────────────────
 
 describe('generated project validation', () => {
-  it('accepts a freshly generated project of either profile', () => {
+  it('accepts a freshly generated project of either profile', async () => {
     for (const [profile, slug] of [
       ['product', 'valid-product'],
       ['control-plane', 'valid-cp'],
     ] as Array<[ProfileName, string]>) {
-      generate(profile, slug)
+      await generate(profile, slug)
       const check = validateGeneratedProject({
         projectRoot: join(OUT, slug),
         expectedSlug: slug,
@@ -698,9 +698,9 @@ describe('generated project validation', () => {
     }
   })
 
-  it('fails when the manifest is missing', () => {
+  it('fails when the manifest is missing', async () => {
     const slug = 'missing-manifest'
-    generate('product', slug)
+    await generate('product', slug)
     rmSync(join(OUT, slug, '.koras', 'project.yaml'))
     const check = validateGeneratedProject({
       projectRoot: join(OUT, slug),
@@ -711,9 +711,9 @@ describe('generated project validation', () => {
     expect(check.error).toMatch(/has no \.koras\/project\.yaml/)
   })
 
-  it('fails when the manifest is not valid YAML', () => {
+  it('fails when the manifest is not valid YAML', async () => {
     const slug = 'broken-manifest'
-    generate('product', slug)
+    await generate('product', slug)
     writeFileSync(join(OUT, slug, '.koras', 'project.yaml'), 'project: [unclosed\n')
     const check = validateGeneratedProject({
       projectRoot: join(OUT, slug),
@@ -724,9 +724,9 @@ describe('generated project validation', () => {
     expect(check.error).toMatch(/not valid YAML/)
   })
 
-  it('fails when the manifest schema version is unsupported', () => {
+  it('fails when the manifest schema version is unsupported', async () => {
     const slug = 'future-manifest'
-    generate('product', slug)
+    await generate('product', slug)
     const path = join(OUT, slug, '.koras', 'project.yaml')
     writeFileSync(path, readFileSync(path, 'utf8').replace('schema_version: 1', 'schema_version: 2'))
     const check = validateGeneratedProject({
@@ -738,9 +738,9 @@ describe('generated project validation', () => {
     expect(check.error).toMatch(/schema_version/)
   })
 
-  it('fails when the recorded profile is not the requested one', () => {
+  it('fails when the recorded profile is not the requested one', async () => {
     const slug = 'profile-drift'
-    generate('control-plane', slug)
+    await generate('control-plane', slug)
     const path = join(OUT, slug, '.koras', 'project.yaml')
     writeFileSync(path, readFileSync(path, 'utf8').replace('control-plane', 'product'))
     const check = validateGeneratedProject({
@@ -752,9 +752,9 @@ describe('generated project validation', () => {
     expect(check.error).toMatch(/records profile "product"/)
   })
 
-  it('fails when the recorded slug is not the requested one', () => {
+  it('fails when the recorded slug is not the requested one', async () => {
     const slug = 'slug-drift'
-    generate('product', slug)
+    await generate('product', slug)
     const path = join(OUT, slug, '.koras', 'project.yaml')
     writeFileSync(path, readFileSync(path, 'utf8').replace(/slug: .*/, 'slug: somethingelse'))
     const check = validateGeneratedProject({
@@ -773,7 +773,7 @@ describe('the generated project can install its dependencies', () => {
   // `services/*` is a uv workspace glob, so a service without a pyproject.toml
   // fails `uv sync` for the whole project — which is step one of
   // `make bootstrap`, before anything else can be tried.
-  it('gives every Python service a pyproject.toml', () => {
+  it('gives every Python service a pyproject.toml', async () => {
     // Enable every service the profile actually has — the AI Gateway exists
     // only for product, and an unknown component is rejected outright.
     const cases: Array<[ProfileName, string, string[]]> = [
@@ -781,7 +781,7 @@ describe('the generated project can install its dependencies', () => {
       ['control-plane', 'install-cp', ['worker', 'scheduler']],
     ]
     for (const [profile, slug, enabled] of cases) {
-      const gen = generate(profile, slug, { with: enabled })
+      const gen = await generate(profile, slug, { with: enabled })
       const services = new Set(
         gen.fileList
           .filter((f) => f.startsWith('services/'))
@@ -794,8 +794,8 @@ describe('the generated project can install its dependencies', () => {
     }
   })
 
-  it('names each service package after the project', () => {
-    const gen = generate('control-plane', 'install-names')
+  it('names each service package after the project', async () => {
+    const gen = await generate('control-plane', 'install-names')
     expect(gen.read('services/worker/pyproject.toml')).toContain('name = "install-names-worker"')
     expect(gen.read('services/api/pyproject.toml')).toContain('name = "install-names-api"')
   })
@@ -803,12 +803,12 @@ describe('the generated project can install its dependencies', () => {
   // The template scripts were copied from the starter, which splits its compose
   // file into shared/product/control-plane and layers them. A generated project
   // has one rendered file, so those paths never resolved.
-  it('points its scripts at the compose file it actually has', () => {
+  it('points its scripts at the compose file it actually has', async () => {
     for (const [profile, slug] of [
       ['product', 'compose-product'],
       ['control-plane', 'compose-cp'],
     ] as Array<[ProfileName, string]>) {
-      const gen = generate(profile, slug)
+      const gen = await generate(profile, slug)
       for (const script of ['bootstrap.sh', 'reset.sh']) {
         const contents = gen.read(`local/scripts/${script}`)
         expect(contents).toContain('local/docker-compose.yml')
@@ -822,12 +822,12 @@ describe('the generated project can install its dependencies', () => {
 // ── shared assets ────────────────────────────────────────────────────────────
 
 describe('shared assets', () => {
-  it('bundles the Terraform modules into both profiles', () => {
+  it('bundles the Terraform modules into both profiles', async () => {
     for (const [profile, slug] of [
       ['product', 'assets-product'],
       ['control-plane', 'assets-cp'],
     ] as Array<[ProfileName, string]>) {
-      const gen = generate(profile, slug)
+      const gen = await generate(profile, slug)
       for (const mod of ['project-bootstrap', 'github', 'doppler', 'supabase', 'zitadel']) {
         expect(gen.has(`infrastructure/terraform/modules/${mod}`)).toBe(true)
       }
@@ -838,8 +838,8 @@ describe('shared assets', () => {
     }
   })
 
-  it('copies shared assets verbatim, without Handlebars rendering', () => {
-    const gen = generate('product', 'assets-verbatim')
+  it('copies shared assets verbatim, without Handlebars rendering', async () => {
+    const gen = await generate('product', 'assets-verbatim')
     const generated = gen.read('infrastructure/terraform/modules/zitadel/main.tf')
     const source = readFileSync(
       join(process.cwd(), '../../infrastructure/terraform/modules/zitadel/main.tf'),
@@ -852,21 +852,21 @@ describe('shared assets', () => {
 // ── infrastructure naming ────────────────────────────────────────────────────
 
 describe('infrastructure naming', () => {
-  it('uses <slug>-<env> for Doppler and Supabase projects', () => {
-    const readme = generate('product', 'naming-app').read('README.md')
+  it('uses <slug>-<env> for Doppler and Supabase projects', async () => {
+    const readme = (await generate('product', 'naming-app')).read('README.md')
     for (const env of ['dev', 'test', 'stg', 'prod']) {
       expect(readme).toContain(`\`naming-app-${env}\``)
     }
   })
 
-  it('uses <slug>-<service>-<env> for Fly apps', () => {
-    const readme = generate('control-plane', 'naming-cp').read('README.md')
+  it('uses <slug>-<service>-<env> for Fly apps', async () => {
+    const readme = (await generate('control-plane', 'naming-cp')).read('README.md')
     expect(readme).toContain('`naming-cp-api-dev`')
     expect(readme).toContain('`naming-cp-scheduler-prod`')
   })
 
-  it('does not suffix the ZITADEL project with the environment', () => {
-    const readme = generate('product', 'naming-zitadel').read('README.md')
+  it('does not suffix the ZITADEL project with the environment', async () => {
+    const readme = (await generate('product', 'naming-zitadel')).read('README.md')
     expect(readme).toContain('ZITADEL project name is `naming-zitadel`')
     expect(readme).not.toMatch(/ZITADEL project name is `naming-zitadel-(dev|test|stg|prod)`/)
   })
@@ -893,8 +893,8 @@ describe('registration behaviour', () => {
     expect(manifest.registration.endpoint).toBeUndefined()
   })
 
-  it('control-plane output contains no registration client or endpoint call', () => {
-    const gen = generate('control-plane', 'reg-cp')
+  it('control-plane output contains no registration client or endpoint call', async () => {
+    const gen = await generate('control-plane', 'reg-cp')
     expect(gen.has('packages/control-plane-client')).toBe(false)
     expect(gen.read('README.md')).toContain('the Control Plane never registers itself')
   })
@@ -923,8 +923,8 @@ describe('profile validation', () => {
 // ── local stack host ports ───────────────────────────────────────────────────
 
 describe('local stack host ports', () => {
-  const composeOf = (profile: ProfileName, slug: string) =>
-    generate(profile, slug).read('local/docker-compose.yml')
+  const composeOf = async (profile: ProfileName, slug: string) =>
+    (await generate(profile, slug)).read('local/docker-compose.yml')
 
   const publishedPorts = (compose: string) =>
     [...compose.matchAll(/- "\$\{(KORAS_PORT_[A-Z_]+):-(\d+)\}:(\d+)"/g)].map((m) => ({
@@ -933,43 +933,43 @@ describe('local stack host ports', () => {
       container: Number(m[3]),
     }))
 
-  it('publishes every port through a resolvable variable', () => {
+  it('publishes every port through a resolvable variable', async () => {
     for (const [profile, slug] of [
       ['product', 'ports-product'],
       ['control-plane', 'ports-cp'],
     ] as Array<[ProfileName, string]>) {
-      const compose = composeOf(profile, slug)
+      const compose = await composeOf(profile, slug)
       // A bare "1234:5432" would be a host port no machine can override.
       expect(compose).not.toMatch(/- "\d+:\d+"/)
       expect(publishedPorts(compose).length).toBeGreaterThan(0)
     }
   })
 
-  it('never asks for a privileged host port', () => {
+  it('never asks for a privileged host port', async () => {
     // Binding <1024 needs root on Linux, and 80 is reserved by http.sys on
     // Windows whenever IIS is installed.
     for (const [profile, slug] of [
       ['product', 'ports-priv-product'],
       ['control-plane', 'ports-priv-cp'],
     ] as Array<[ProfileName, string]>) {
-      for (const p of publishedPorts(composeOf(profile, slug))) {
+      for (const p of publishedPorts(await composeOf(profile, slug))) {
         expect(p.preferred).toBeGreaterThanOrEqual(1024)
       }
     }
   })
 
-  it('gives the two profiles disjoint preferences so they can co-run', () => {
-    const product = publishedPorts(composeOf('product', 'ports-dis-product')).map((p) => p.preferred)
-    const cp = publishedPorts(composeOf('control-plane', 'ports-dis-cp')).map((p) => p.preferred)
+  it('gives the two profiles disjoint preferences so they can co-run', async () => {
+    const product = publishedPorts(await composeOf('product', 'ports-dis-product')).map((p) => p.preferred)
+    const cp = publishedPorts(await composeOf('control-plane', 'ports-dis-cp')).map((p) => p.preferred)
     expect(product.filter((p) => cp.includes(p))).toEqual([])
   })
 
-  it('ships a resolver and wires bootstrap to it', () => {
+  it('ships a resolver and wires bootstrap to it', async () => {
     for (const [profile, slug] of [
       ['product', 'ports-res-product'],
       ['control-plane', 'ports-res-cp'],
     ] as Array<[ProfileName, string]>) {
-      const gen = generate(profile, slug)
+      const gen = await generate(profile, slug)
       expect(gen.has('local/scripts/ports.sh')).toBe(true)
       const bootstrap = gen.read('local/scripts/bootstrap.sh')
       expect(bootstrap).toContain('local/scripts/ports.sh')
@@ -978,14 +978,14 @@ describe('local stack host ports', () => {
     }
   })
 
-  it('healthchecks inside a container use the container port', () => {
+  it('healthchecks inside a container use the container port', async () => {
     // The mail healthcheck runs in the container, where the host mapping is
     // invisible; it only ever worked because host and container ports matched.
     for (const [profile, slug] of [
       ['product', 'ports-hc-product'],
       ['control-plane', 'ports-hc-cp'],
     ] as Array<[ProfileName, string]>) {
-      expect(composeOf(profile, slug)).toContain('http://localhost:8025/')
+      expect(await composeOf(profile, slug)).toContain('http://localhost:8025/')
     }
   })
 })
@@ -993,14 +993,14 @@ describe('local stack host ports', () => {
 // ── host dev-server ports ────────────────────────────────────────────────────
 
 describe('host dev-server ports', () => {
-  it('never hardcodes a dev-server port in package.json', () => {
+  it('never hardcodes a dev-server port in package.json', async () => {
     // `next dev --port 3000` is a host-global claim that collides with any
     // other project running at the same time.
     for (const [profile, slug, apps] of [
       ['product', 'devport-product', ['web', 'admin', 'marketing']],
       ['control-plane', 'devport-cp', ['admin', 'portal']],
     ] as Array<[ProfileName, string, string[]]>) {
-      const gen = generate(profile, slug)
+      const gen = await generate(profile, slug)
       // Only the apps this profile's defaults actually enable are emitted.
       const present = apps.filter((app) => gen.has(`apps/${app}/package.json`))
       expect(present.length).toBeGreaterThan(0)
@@ -1013,12 +1013,12 @@ describe('host dev-server ports', () => {
     }
   })
 
-  it('resolves every app port through the shared resolver', () => {
+  it('resolves every app port through the shared resolver', async () => {
     for (const [profile, slug] of [
       ['product', 'devport-res-product'],
       ['control-plane', 'devport-res-cp'],
     ] as Array<[ProfileName, string]>) {
-      const gen = generate(profile, slug)
+      const gen = await generate(profile, slug)
       const declared = [...gen.read('local/scripts/ports.sh').matchAll(/^(KORAS_PORT_APP_[A-Z]+) /gm)]
         .map((m) => m[1])
       expect(declared.length).toBeGreaterThan(0)
@@ -1028,12 +1028,12 @@ describe('host dev-server ports', () => {
     }
   })
 
-  it('points Caddy at the resolved ports and hands them to the container', () => {
+  it('points Caddy at the resolved ports and hands them to the container', async () => {
     for (const [profile, slug] of [
       ['product', 'devport-caddy-product'],
       ['control-plane', 'devport-caddy-cp'],
     ] as Array<[ProfileName, string]>) {
-      const gen = generate(profile, slug)
+      const gen = await generate(profile, slug)
       const caddy = gen.read('local/proxy/Caddyfile')
       // A literal upstream would proxy to whatever else grabbed that port.
       expect(caddy).not.toMatch(/reverse_proxy host\.docker\.internal:\d+/)
@@ -1054,27 +1054,27 @@ describe('host dev-server ports', () => {
       'python-packages/koras-platform/src/koras_platform/roles.py',
     ]
 
-    it('ships koras-platform to both profiles', () => {
+    it('ships koras-platform to both profiles', async () => {
       for (const profile of ['product', 'control-plane'] as ProfileName[]) {
-        const gen = generate(profile, `platform-pkg-${profile}`)
+        const gen = await generate(profile, `platform-pkg-${profile}`)
         for (const file of SHARED) {
           expect(gen.has(file), `${profile} is missing ${file}`).toBe(true)
         }
       }
     })
 
-    it('ships byte-identical copies to both profiles', () => {
+    it('ships byte-identical copies to both profiles', async () => {
       // The starter has no common template layer, so shared packages are
       // duplicated per profile. Nothing else stops the two drifting apart.
-      const product = generate('product', 'platform-same-product')
-      const cp = generate('control-plane', 'platform-same-cp')
+      const product = await generate('product', 'platform-same-product')
+      const cp = await generate('control-plane', 'platform-same-cp')
       for (const file of SHARED) {
         expect(cp.read(file), `${file} differs between profiles`).toBe(product.read(file))
       }
     })
 
-    it('defines all four environments and no default', () => {
-      const source = generate('product', 'platform-env').read(
+    it('defines all four environments and no default', async () => {
+      const source = (await generate('product', 'platform-env')).read(
         'python-packages/koras-platform/src/koras_platform/environment.py',
       )
       for (const env of ['dev', 'test', 'stg', 'prod']) {
@@ -1086,10 +1086,10 @@ describe('host dev-server ports', () => {
       expect(source).toContain('raise ValueError')
     })
 
-    it('keeps platform roles out of product repositories', () => {
+    it('keeps platform roles out of product repositories', async () => {
       // KORAS staff roles are Control Plane authority. A product that could
       // reference them is a product that could accidentally honour them.
-      const roles = generate('product', 'platform-roles').read(
+      const roles = (await generate('product', 'platform-roles')).read(
         'python-packages/koras-platform/src/koras_platform/roles.py',
       )
       expect(roles).toContain('organization_owner')
@@ -1097,8 +1097,8 @@ describe('host dev-server ports', () => {
       expect(roles).not.toContain('platform_billing')
     })
 
-    it('makes the adapter environment explicit and self-checking', () => {
-      const source = generate('control-plane', 'platform-adapter').read(
+    it('makes the adapter environment explicit and self-checking', async () => {
+      const source = (await generate('control-plane', 'platform-adapter')).read(
         'python-packages/koras-platform/src/koras_platform/adapters.py',
       )
       // Required argument, not an optional one with a default to inherit.
@@ -1108,12 +1108,12 @@ describe('host dev-server ports', () => {
     })
   })
 
-  it('keeps the two profiles on separate dev-server blocks', () => {
-    const portsOf = (profile: ProfileName, slug: string) =>
-      [...generate(profile, slug).read('local/scripts/ports.sh')
+  it('keeps the two profiles on separate dev-server blocks', async () => {
+    const portsOf = async (profile: ProfileName, slug: string) =>
+      [...(await generate(profile, slug)).read('local/scripts/ports.sh')
         .matchAll(/^KORAS_PORT_(?:APP|SERVICE)_[A-Z]+ (\d+)$/gm)].map((m) => Number(m[1]))
-    const product = portsOf('product', 'devport-sep-product')
-    const cp = portsOf('control-plane', 'devport-sep-cp')
+    const product = await portsOf('product', 'devport-sep-product')
+    const cp = await portsOf('control-plane', 'devport-sep-cp')
     expect(product.length).toBeGreaterThan(0)
     expect(cp.length).toBeGreaterThan(0)
     expect(product.filter((p) => cp.includes(p))).toEqual([])
@@ -1126,10 +1126,10 @@ describe('host dev-server ports', () => {
 // Both are shipped closed rather than left to each project to remember.
 
 describe.each(['product', 'control-plane'] as const)('%s secret scaffold', (profile) => {
-  let gen: ReturnType<typeof generate>
+  let gen: Awaited<ReturnType<typeof generate>>
 
-  beforeAll(() => {
-    gen = generate(profile, `${profile}-secretscaffold`)
+  beforeAll(async () => {
+    gen = await generate(profile, `${profile}-secretscaffold`)
   })
 
   it('ignores Terraform plan files', () => {
@@ -1254,8 +1254,8 @@ describe.each(['product', 'control-plane'] as const)('%s secret scaffold', (prof
 // ── recorded selections ──────────────────────────────────────────────────────
 
 describe('the project manifest records its components', () => {
-  it('lists the enabled applications, services and capabilities', () => {
-    const gen = generate('control-plane', 'manifest-cp')
+  it('lists the enabled applications, services and capabilities', async () => {
+    const gen = await generate('control-plane', 'manifest-cp')
     const manifest = parseProjectManifest(gen.read('.koras/project.yaml'), 'test')
 
     expect(manifest.components).toBeDefined()
@@ -1263,19 +1263,19 @@ describe('the project manifest records its components', () => {
     expect(manifest.components!.services).toEqual(['api', 'scheduler', 'worker'])
   })
 
-  it('records only what is enabled', () => {
+  it('records only what is enabled', async () => {
     // marketing is off by default for the product profile.
-    const gen = generate('product', 'manifest-product')
+    const gen = await generate('product', 'manifest-product')
     const manifest = parseProjectManifest(gen.read('.koras/project.yaml'), 'test')
 
     expect(manifest.components!.applications).not.toContain('marketing')
     expect(manifest.components!.applications).toEqual(['admin', 'web'])
   })
 
-  it('still parses a manifest written before the field existed', () => {
+  it('still parses a manifest written before the field existed', async () => {
     // Backward compatible on purpose: schema_version does not move for an
     // added optional field, so existing projects keep validating.
-    const gen = generate('product', 'manifest-old')
+    const gen = await generate('product', 'manifest-old')
     const withoutComponents = gen.read('.koras/project.yaml').replace(/components:[\s\S]*$/, '')
 
     const manifest = parseProjectManifest(withoutComponents, 'test')
@@ -1287,20 +1287,20 @@ describe('the project manifest records its components', () => {
 // ── application security headers ─────────────────────────────────────────────
 
 describe('every generated app ships security headers', () => {
-  it('gives each application a next.config, not just one of them', () => {
+  it('gives each application a next.config, not just one of them', async () => {
     for (const [profile, slug, apps] of [
       ['product', 'hdr-product', ['web', 'admin']],
       ['control-plane', 'hdr-cp', ['admin', 'portal']],
     ] as Array<[ProfileName, string, string[]]>) {
-      const gen = generate(profile, slug)
+      const gen = await generate(profile, slug)
       for (const app of apps.filter((a) => gen.has(`apps/${a}/package.json`))) {
         expect(gen.has(`apps/${app}/next.config.ts`)).toBe(true)
       }
     }
   })
 
-  it('sets the headers that do not vary per request', () => {
-    const config = generate('control-plane', 'hdr-values').read('apps/portal/next.config.ts')
+  it('sets the headers that do not vary per request', async () => {
+    const config = (await generate('control-plane', 'hdr-values')).read('apps/portal/next.config.ts')
 
     for (const header of [
       'X-Content-Type-Options',
@@ -1315,16 +1315,16 @@ describe('every generated app ships security headers', () => {
     expect(config).toContain('poweredByHeader: false')
   })
 
-  it('leaves the CSP to middleware', () => {
+  it('leaves the CSP to middleware', async () => {
     // Next injects an inline bootstrap script, so a static CSP would need
     // `unsafe-inline`; a nonce has to differ per request.
-    const config = generate('product', 'hdr-csp').read('apps/web/next.config.ts')
+    const config = (await generate('product', 'hdr-csp')).read('apps/web/next.config.ts')
     // The comment names the header it deliberately omits, so match the entry.
     expect(config).not.toMatch(/key:\s*'Content-Security-Policy'/)
   })
 
-  it('transpiles the workspace packages the app actually depends on', () => {
-    const gen = generate('product', 'hdr-transpile')
+  it('transpiles the workspace packages the app actually depends on', async () => {
+    const gen = await generate('product', 'hdr-transpile')
     const pkg = JSON.parse(gen.read('apps/web/package.json'))
     const config = gen.read('apps/web/next.config.ts')
 
@@ -1342,10 +1342,10 @@ describe('every generated app ships security headers', () => {
 // claiming to mean "the code is live".
 
 describe.each(['product', 'control-plane'] as const)('%s deployment', (profile) => {
-  let gen: ReturnType<typeof generate>
+  let gen: Awaited<ReturnType<typeof generate>>
 
-  beforeAll(() => {
-    gen = generate(profile, `${profile}-deployscaffold`)
+  beforeAll(async () => {
+    gen = await generate(profile, `${profile}-deployscaffold`)
   })
 
   it('deploys rather than merely building', () => {
@@ -1435,8 +1435,8 @@ describe('a generated project is named after itself', () => {
   const asValue = new RegExp(`(=|:\\s*|["'\`])${SOURCE}(["'\`]|$|\\s)`, 'm')
 
   for (const profile of ['control-plane', 'product'] as const) {
-    it(`${profile}: no generated file carries the source name as a value`, () => {
-      const gen = generate(profile, `named-${profile}`)
+    it(`${profile}: no generated file carries the source name as a value`, async () => {
+      const gen = await generate(profile, `named-${profile}`)
       const offenders: string[] = []
       for (const file of gen.fileList) {
         if (/node_modules|\.lock|pnpm-lock|\.(md|mdx)$/.test(file)) continue
@@ -1454,9 +1454,9 @@ describe('a generated project is named after itself', () => {
 })
 
 describe('a generated control plane can actually sign someone in', () => {
-  let gen: ReturnType<typeof generate>
-  beforeAll(() => {
-    gen = generate('control-plane', 'auth-cp')
+  let gen: Awaited<ReturnType<typeof generate>>
+  beforeAll(async () => {
+    gen = await generate('control-plane', 'auth-cp')
   })
 
   it('ships the routes a sign-in needs', () => {
@@ -1581,9 +1581,9 @@ describe('the deployment pipeline matches the components generated', () => {
 
   for (const [profile, slug, services, apps] of cases) {
     describe(profile, () => {
-      let gen: ReturnType<typeof generate>
-      beforeAll(() => {
-        gen = generate(profile, slug)
+      let gen: Awaited<ReturnType<typeof generate>>
+      beforeAll(async () => {
+        gen = await generate(profile, slug)
       })
 
       it('names no component in the workflow', () => {
