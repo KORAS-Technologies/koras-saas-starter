@@ -31,7 +31,12 @@ const IMAGES = [
 ] as const
 
 function dockerfile(layer: string, service: string): string {
-  const path = join(PROFILES, layer, 'template', 'services', service, 'Dockerfile')
+  // A Dockerfile that gates a layer on a capability is a template; the
+  // worker's is, since the reporting capability copies the API's catalogue
+  // into its image. Read as text either way: what is asserted below is
+  // outside any conditional block.
+  const plain = join(PROFILES, layer, 'template', 'services', service, 'Dockerfile')
+  const path = existsSync(plain) ? plain : `${plain}.hbs`
   expect(existsSync(path), `${layer}/${service} has no Dockerfile`).toBe(true)
   return readFileSync(path, 'utf8')
 }

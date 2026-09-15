@@ -25,7 +25,17 @@ from .definitions import (
     Unit,
     Visualization,
 )
-from .export import EXPORT_ROW_LIMIT, export_filename, to_csv
+from .export import (
+    EXPORT_ROW_LIMIT,
+    MEDIA_TYPES,
+    Rendered,
+    export_filename,
+    render,
+    row_count,
+    to_csv,
+    to_pdf,
+    to_xlsx,
+)
 from .filters import (
     DEFAULT_RANGE_DAYS,
     EMPTY_FILTERS,
@@ -55,6 +65,7 @@ __all__ = [
     "EMPTY_FILTERS",
     "EXPORT_ROW_LIMIT",
     "MAX_RANGE_DAYS",
+    "MEDIA_TYPES",
     "UNRESOLVED_PLAN",
     "Aggregation",
     "Bucket",
@@ -78,6 +89,7 @@ __all__ = [
     "ReportRegistry",
     "ReportResult",
     "ReportingCatalogue",
+    "Rendered",
     "ResolvedFilters",
     "Resolver",
     "Scope",
@@ -91,7 +103,11 @@ __all__ = [
     "Visualization",
     "build_catalogue",
     "export_filename",
+    "render",
     "resolve_filters",
+    "row_count",
     "to_csv",
+    "to_pdf",
+    "to_xlsx",
     "visibility_for",
 ]

@@ -3,6 +3,7 @@ import {
   AccessDenied,
   Card,
   Container,
+  ExportList,
   ExportMenu,
   MetricCard,
   MetricGrid,
@@ -12,16 +13,26 @@ import {
   ReportHeader,
   ReportList,
   ReportTable,
+  ScheduleForm,
+  ScheduleList,
   rich,
   strongTag,
 } from '@{{projectSlug}}/ui'
 import type { ReportResultData, ReportingLabels } from '@{{projectSlug}}/ui'
 import type { ReportQuery } from '@{{projectSlug}}/api-client'
 import { can, signedInContext } from '../../../lib/access'
-import type { Locale } from '@{{projectSlug}}/i18n'
+import type { Locale, Translator } from '@{{projectSlug}}/i18n'
 import { translator } from '../../../lib/locale'
+import { createSchedule, removeSchedule } from './actions'
 import { reportingLabels } from './labels'
-import { loadReport, loadReportData, loadReports } from './reporting'
+import {
+  loadReport,
+  loadReportData,
+  loadReportExports,
+  loadReportSchedules,
+  loadReports,
+} from './reporting'
+import type { Outcome } from './reporting'
 
 /**
  * One report, beside the list of every report this caller may open.
@@ -32,6 +43,10 @@ import { loadReport, loadReportData, loadReports } from './reporting'
  * the cards, the chart and the rows, each rendered from what the API said
  * and nothing computed here. A product that registers a report in its
  * extension point gets this page for it with no page of its own.
+ *
+ * Below the rows, for a caller who may export: the report's schedules and
+ * the tenant's background exports. Both are read from the API on every
+ * render, and both change only through the server actions in `actions.ts`.
  */
 export const ANALYTICS_PATH = '/dashboard/analytics'
 
@@ -46,10 +61,13 @@ export function reportHref(key: string, query: ReportQuery = {}): string {
 export async function ReportPage({
   reportKey,
   query,
+  outcome,
   locale,
 }: {
   reportKey: string
   query: ReportQuery
+  /** What the last export or schedule action said, if the URL carries it. */
+  outcome: Outcome
   /** Resolved by the page, once, the way every page resolves it. */
   locale: Locale
 }) {
@@ -80,13 +98,17 @@ export async function ReportPage({
   }
 
   const labels = reportingLabels(t)
-  const [list, report, data] = await Promise.all([
+  const exporter = can(context.access, 'reports.export')
+  const [list, report, data, schedules, exports] = await Promise.all([
     loadReports(),
     loadReport(reportKey),
     loadReportData(reportKey, query),
+    exporter ? loadReportSchedules(reportKey) : null,
+    exporter ? loadReportExports() : null,
   ])
   const pagePath = reportHref(reportKey)
   const retryHref = reportHref(reportKey, query)
+  const notice = noticeFor(outcome, t, labels)
 
   return (
     <div className="py-8 sm:py-12">
@@ -94,6 +116,15 @@ export async function ReportPage({
         {!entitlements.resolved && (
           <p className="mb-6 max-w-2xl text-sm leading-6 text-ink-muted" data-testid="analytics-unresolved">
             {t('analytics.unresolved')}
+          </p>
+        )}
+        {notice !== null && (
+          <p
+            role="status"
+            className="mb-6 max-w-2xl rounded-md border border-line bg-surface px-4 py-3 text-sm leading-6 text-ink"
+            data-testid="analytics-notice"
+          >
+            {notice}
           </p>
         )}
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[14rem_minmax(0,1fr)]">
@@ -128,9 +159,12 @@ export async function ReportPage({
                   locale={locale}
                   notes={data.status === 'ok' ? data.value.notes : undefined}
                   actions={
-                    report.value.export_formats.includes('csv') ? (
+                    report.value.export_formats.length > 0 ? (
                       <ExportMenu
-                        href={`/api/reports/${encodeURIComponent(reportKey)}/export${queryString(query)}`}
+                        hrefFor={(format, background) =>
+                          exportHref(reportKey, query, format, background)
+                        }
+                        formats={report.value.export_formats}
                         allowed={report.value.can_export}
                         labels={labels}
                       />
@@ -152,6 +186,63 @@ export async function ReportPage({
                     <ReportErrorState message={data.message} retryHref={retryHref} labels={labels} />
                   )}
                 </div>
+                {report.value.can_export && (
+                  <Card className="mt-8" data-testid="report-schedules">
+                    <h2 className="font-display text-lg font-bold text-ink">{labels.schedule.heading}</h2>
+                    <p className="mt-1 text-sm leading-6 text-ink-muted">{labels.schedule.intro}</p>
+                    <div className="mt-4">
+                      {schedules === null || schedules.status !== 'ok' ? (
+                        <p className="text-sm text-ink-muted" role="status">
+                          {schedules === null ? labels.schedule.empty : schedules.message}
+                        </p>
+                      ) : (
+                        <ScheduleList
+                          schedules={schedules.value.schedules}
+                          locale={locale}
+                          labels={labels}
+                          remove={removeSchedule}
+                        />
+                      )}
+                    </div>
+                    <div className="mt-4">
+                      {report.value.can_schedule ? (
+                        <ScheduleForm
+                          action={createSchedule}
+                          reportKey={reportKey}
+                          formats={report.value.export_formats}
+                          hiddenFilters={nonPeriod(query)}
+                          labels={labels}
+                          error={outcome.schedule === 'invalid' ? t('analytics.schedule.invalid') : undefined}
+                        />
+                      ) : (
+                        <p className="text-sm text-ink-muted" data-testid="schedule-not-included">
+                          {labels.schedule.notIncluded}
+                        </p>
+                      )}
+                    </div>
+                  </Card>
+                )}
+                {report.value.can_export && exports !== null && (
+                  <Card className="mt-8" data-testid="report-exports">
+                    <h2 className="font-display text-lg font-bold text-ink">{labels.exports.heading}</h2>
+                    <p className="mt-1 text-sm leading-6 text-ink-muted">{labels.exports.intro}</p>
+                    <div className="mt-4">
+                      {exports.status !== 'ok' ? (
+                        <p className="text-sm text-ink-muted" role="status">
+                          {exports.message}
+                        </p>
+                      ) : (
+                        <ExportList
+                          exports={exports.value.exports}
+                          retentionDays={exports.value.retention_days}
+                          locale={locale}
+                          labels={labels}
+                          downloadHref={(id) => `/api/reports/exports/${encodeURIComponent(id)}/download`}
+                        />
+                      )}
+                    </div>
+                  </Card>
+                )}
               </>
             )}
           </section>
@@ -161,11 +252,39 @@ export async function ReportPage({
   )
 }
 
-function queryString(query: ReportQuery): string {
+function exportHref(key: string, query: ReportQuery, format: string, background: boolean): string {
   const params = new URLSearchParams()
   for (const [name, value] of Object.entries(query)) params.set(name, value)
-  const encoded = params.toString()
-  return encoded === '' ? '' : `?${encoded}`
+  params.set('format', format)
+  if (background) params.set('background', '1')
+  return `/api/reports/${encodeURIComponent(key)}/export?${params.toString()}`
+}
+
+/** The filters a schedule keeps: everything but the period, which its cadence decides. */
+function nonPeriod(query: ReportQuery): Record<string, string> {
+  const kept: Record<string, string> = {}
+  for (const [name, value] of Object.entries(query)) {
+    if (name !== 'from' && name !== 'to' && name !== 'bucket') kept[name] = value
+  }
+  return kept
+}
+
+function noticeFor(outcome: Outcome, t: Translator, labels: ReportingLabels): string | null {
+  if (outcome.export === 'queued') return labels.export.queued
+  switch (outcome.schedule) {
+    case 'created':
+      return t('analytics.schedule.created')
+    case 'removed':
+      return t('analytics.schedule.removed')
+    case 'plan':
+      return t('analytics.error.plan')
+    case 'forbidden':
+      return t('analytics.error.forbidden')
+    case 'failed':
+      return t('analytics.error.generic')
+    default:
+      return null
+  }
 }
 
 function ReportBody({

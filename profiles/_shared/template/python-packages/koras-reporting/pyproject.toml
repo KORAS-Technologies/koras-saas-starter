@@ -2,13 +2,16 @@
 name = "koras-reporting"
 version = "0.1.0"
 requires-python = ">=3.12"
-# pydantic for the result shape the API answers with, and nothing else. The
-# framework runs no query: a resolver is a coroutine the product or the
-# platform supplies, and the session it is handed is theirs. Keeping a
-# database driver out of here is what lets the Control Plane and a product
-# describe a report with one package and read it from two different schemas.
+# pydantic for the result shape the API answers with, and the two writers
+# behind the workbook and the PDF. The framework runs no query: a resolver
+# is a coroutine the product or the platform supplies, and the session it is
+# handed is theirs. Keeping a database driver out of here is what lets the
+# Control Plane and a product describe a report with one package and read
+# it from two different schemas.
 dependencies = [
   "pydantic>=2.0.0",
+  "openpyxl>=3.1.0",
+  "fpdf2>=2.7.0",
 ]
 
 [build-system]

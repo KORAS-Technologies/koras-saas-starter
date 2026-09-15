@@ -171,6 +171,80 @@ describe('the boundary', () => {
     expect(menu).toContain('ButtonLink')
     const handler = read('apps', 'web', 'src', 'app', 'api', 'reports', '[key]', 'export', 'route.ts.hbs')
     expect(handler).toContain("can(signedIn.access, 'reports.export')")
+    const download = read(
+      'apps', 'web', 'src', 'app', 'api', 'reports', 'exports', '[id]', 'download', 'route.ts.hbs',
+    )
+    expect(download).toContain("can(signedIn.access, 'reports.export')")
+  })
+})
+
+// ── schedules, exports and delivery ───────────────────────────────────────────
+
+describe('scheduled delivery and background exports', () => {
+  const schedules = read('services', 'api', 'koras_api', 'routers', 'reporting_schedules.py')
+  const router = read('services', 'api', 'koras_api', 'routers', 'reporting.py')
+  const worker = read('services', 'worker', 'koras_worker', 'tasks', 'reporting.py')
+  const migration = read('supabase', 'migrations', '00014_report_schedules.sql')
+
+  it('gates a schedule on the export permission, the export plan and the scheduled plan', () => {
+    expect(schedules).toContain('require_exporter(reporting)')
+    expect(schedules).toContain('reporting.grant.can_schedule')
+    expect(schedules).toContain('reporting.scheduled')
+    const core = read('services', 'api', 'koras_api', 'core', 'reporting.py.hbs')
+    expect(core).toContain('REPORTING_SCHEDULED_ENTITLEMENT = "reporting.scheduled"')
+  })
+
+  it('validates at creation everything the worker later trusts', () => {
+    expect(schedules).toContain('the period is decided by the cadence, not by a filter')
+    expect(schedules).toContain('resolve_filters(definition, body.filters)')
+    expect(schedules).toContain('export_format(definition, body.format)')
+    expect(schedules).toContain('MAX_RECIPIENTS = 10')
+  })
+
+  it('answers a large export with 202 and writes it after the response', () => {
+    expect(router).toContain('rows > EXPORT_ROW_LIMIT or wanted_background')
+    expect(router).toContain('HTTP_202_ACCEPTED')
+    expect(router).toContain('background.add_task(')
+    expect(router).toContain('write_export,')
+    expect(router).toContain('tenants/{tenant_id}/exports/{export_id}/')
+  })
+
+  it('offers the three formats and names each by its media type', () => {
+    const exp = readFileSync(
+      join(SHARED, 'python-packages', 'koras-reporting', 'src', 'koras_reporting', 'export.py'),
+      'utf8',
+    )
+    expect(exp).toContain('text/csv; charset=utf-8')
+    expect(exp).toContain('spreadsheetml.sheet')
+    expect(exp).toContain('application/pdf')
+  })
+
+  it('delivers as the tenant and records the run either way', () => {
+    expect(worker).toContain("set_config('app.tenant_id', :tenant_id, true)")
+    expect(worker).toContain('"report.delivered"')
+    expect(worker).toContain('last_error = :error')
+    expect(worker).toContain('UNRESOLVED_PLAN')
+  })
+
+  it('reads the catalogue by name and the worker declares no API dependency', () => {
+    expect(worker).toContain('importlib.import_module("koras_api.reporting")')
+    const pyproject = readFileSync(join(SHARED, 'services', 'worker', 'pyproject.toml.hbs'), 'utf8')
+    expect(pyproject).not.toContain('koras-api')
+    const dockerfile = readFileSync(join(SHARED, 'services', 'worker', 'Dockerfile.hbs'), 'utf8')
+    expect(dockerfile).toContain('{{#if capability.reporting}}')
+    expect(dockerfile).toContain('COPY services/api/koras_api/reporting/')
+  })
+
+  it('polices both tables and lets only the worker read every schedule', () => {
+    for (const table of ['report_schedules', 'report_exports']) {
+      expect(migration).toContain(`alter table public.${table} enable row level security;`)
+      expect(migration).toContain(`alter table public.${table} force row level security;`)
+    }
+    expect(migration).toMatch(/report_schedules[\s\S]*?for select[\s\S]*?is_provisioning\(\)/)
+    const exportsPart = migration.slice(migration.indexOf('create table public.report_exports'))
+    expect(exportsPart).not.toContain('is_provisioning')
+    const suite = read('supabase', 'tests', '130_report_schedules_isolation.sql')
+    expect(suite).toContain('set local role koras_rls_test;')
   })
 })
 

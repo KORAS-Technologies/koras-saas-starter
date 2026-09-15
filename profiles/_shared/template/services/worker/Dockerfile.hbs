@@ -37,6 +37,15 @@ COPY services/api/pyproject.toml ./services/api/
 RUN cd services/worker && uv sync --no-dev
 
 COPY services/worker/koras_worker/ ./services/worker/koras_worker/
+{{#if capability.reporting}}
+# The product's report catalogue, for scheduled delivery. Only this package
+# of the API: its modules import the reporting framework and SQLAlchemy and
+# nothing of the API's own settings, routers or session. On the path as a
+# namespace package, so `koras_api.reporting` resolves and nothing else of
+# `koras_api` exists here.
+COPY services/api/koras_api/reporting/ ./services/api/koras_api/reporting/
+ENV PYTHONPATH=/app/services/api
+{{/if}}
 
 # The workspace members again, now that their sources are here.
 #

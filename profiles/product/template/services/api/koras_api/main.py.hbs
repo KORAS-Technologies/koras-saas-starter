@@ -10,7 +10,22 @@ from .core.observability import setup_telemetry
 from .core.ratelimit import limit_anonymous, limit_authenticated
 from .core.security import SecurityHeadersMiddleware
 from .core.settings import settings
-from .routers import {{#if capability.ai}}ai, {{/if}}files, health, platform, {{#if capability.ai}}platform_ai, {{/if}}{{#if capability.reporting}}reporting, {{/if}}tenant
+
+# Wrapped whatever the capabilities render, and exempt from the import
+# formatting rules in pyproject for that reason: a one-line form is too long
+# with every router and a wrapped form is "unformatted" with few, and a
+# template cannot know which it will be.
+from .routers import (
+{{#if capability.ai}}    ai,
+{{/if}}    files,
+    health,
+    platform,
+{{#if capability.ai}}    platform_ai,
+{{/if}}{{#if capability.reporting}}    platform_reporting,
+    reporting,
+    reporting_schedules,
+{{/if}}    tenant,
+)
 
 
 @asynccontextmanager
@@ -32,7 +47,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         if app.state.redis is not None:
             await app.state.redis.aclose()
-
 
 
 app = FastAPI(
@@ -126,6 +140,13 @@ app.include_router(
 # customer surface and the same limiter; every route resolves the tenant
 # from the token and decides visibility before a resolver runs. See
 # core/reporting.py.
+# Schedules and exports first: `/reports/exports` would otherwise be read
+# as the report called "exports" by the route below it.
+app.include_router(
+    reporting_schedules.router,
+    prefix="/api/v1",
+    dependencies=[Depends(limit_authenticated)],
+)
 app.include_router(
     reporting.router,
     prefix="/api/v1",
@@ -140,7 +161,14 @@ app.include_router(
     # limiting a load balancer probe takes the service out of rotation.
     dependencies=[Depends(limit_anonymous)],
 )
-{{#if capability.ai}}# The same contract's AI half: usage per tenant per day, for the
+{{#if capability.reporting}}# The same contract's activity half: audited actions per tenant per day,
+# for the platform's collector. Same prefix, same limiter.
+app.include_router(
+    platform_reporting.router,
+    prefix="/internal/platform/v1",
+    dependencies=[Depends(limit_anonymous)],
+)
+{{/if}}{{#if capability.ai}}# The same contract's AI half: usage per tenant per day, for the
 # platform's collector. Same prefix, same limiter, generated with the capability.
 app.include_router(
     platform_ai.router,

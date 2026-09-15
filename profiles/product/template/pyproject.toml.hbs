@@ -75,6 +75,10 @@ ignore = []
 # still fails.
 "**/tests/**" = ["S101"]
 "**/test_*.py" = ["S101"]
+# The router import is rendered from the selected capabilities and wrapped
+# whatever they are; isort's one-line-when-it-fits rule cannot be satisfied by
+# a template that does not know how many names it will render.
+"services/api/koras_api/main.py" = ["I001", "E501"]
 
 [tool.mypy]
 python_version = "3.12"

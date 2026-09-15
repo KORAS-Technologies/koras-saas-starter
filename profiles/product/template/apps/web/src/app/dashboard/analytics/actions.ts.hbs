@@ -1,0 +1,88 @@
+'use server'
+
+import { redirect } from 'next/navigation'
+import { ApiError, createReportSchedule, deleteReportSchedule } from '@{{projectSlug}}/api-client'
+import type { ExportFormat, ScheduleCadence } from '@{{projectSlug}}/api-client'
+import { can, signedInContext } from '../../../lib/access'
+import { apiBaseUrl, providerToken } from '../../../lib/session'
+import { reportHref } from './ReportPage'
+
+/**
+ * The two things a person changes from the analytics page: a schedule
+ * created, a schedule removed. Server actions, so the token and the API's
+ * address stay here; each re-establishes who is calling and what they may
+ * do, and the API decides again with the same token. The outcome reaches
+ * the page as a query parameter it turns into a sentence, so a refusal is
+ * read on the page the person was on rather than on a blank one.
+ */
+
+const CADENCES: ScheduleCadence[] = ['daily', 'weekly', 'monthly']
+const FORMATS: ExportFormat[] = ['csv', 'xlsx', 'pdf']
+
+async function session() {
+  const context = await signedInContext()
+  if (context === null || !can(context.access, 'reports.export')) return null
+  const token = await providerToken()
+  const baseUrl = apiBaseUrl()
+  if (!token || !baseUrl) return null
+  return { baseUrl, token }
+}
+
+function outcomeOf(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 402) return 'plan'
+    if (error.status === 403 || error.status === 404) return 'forbidden'
+    if (error.status === 422 || error.status === 406) return 'invalid'
+  }
+  return 'failed'
+}
+
+export async function createSchedule(data: FormData): Promise<void> {
+  const key = String(data.get('report') ?? '')
+  const cadence = String(data.get('cadence') ?? '')
+  const format = String(data.get('format') ?? 'csv')
+  const recipients = String(data.get('recipients') ?? '')
+    .split(/[,;\s]+/)
+    .map((address) => address.trim())
+    .filter((address) => address !== '')
+  const filters: Record<string, string> = {}
+  for (const [name, value] of data.entries()) {
+    if (name.startsWith('filter:') && typeof value === 'string' && value !== '') {
+      filters[name.slice('filter:'.length)] = value
+    }
+  }
+  const back = (outcome: string) => redirect(reportHref(key, { ...filters, schedule: outcome }))
+
+  if (!CADENCES.includes(cadence as ScheduleCadence) || !FORMATS.includes(format as ExportFormat)) {
+    back('invalid')
+  }
+  const auth = await session()
+  if (auth === null) back('forbidden')
+  try {
+    await createReportSchedule({
+      ...auth!,
+      key,
+      cadence: cadence as ScheduleCadence,
+      format: format as ExportFormat,
+      recipients,
+      filters,
+    })
+  } catch (error) {
+    back(outcomeOf(error))
+  }
+  back('created')
+}
+
+export async function removeSchedule(data: FormData): Promise<void> {
+  const key = String(data.get('report') ?? '')
+  const scheduleId = String(data.get('schedule') ?? '')
+  const back = (outcome: string) => redirect(reportHref(key, { schedule: outcome }))
+  const auth = await session()
+  if (auth === null) back('forbidden')
+  try {
+    await deleteReportSchedule({ ...auth!, scheduleId })
+  } catch (error) {
+    back(outcomeOf(error))
+  }
+  back('removed')
+}

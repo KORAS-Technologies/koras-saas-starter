@@ -4,9 +4,18 @@ import {
   ApiError,
   fetchReport,
   fetchReportData,
+  fetchReportExports,
+  fetchReportSchedules,
   fetchReports,
 } from '@{{projectSlug}}/api-client'
-import type { ReportData, ReportList, ReportQuery, ReportView } from '@{{projectSlug}}/api-client'
+import type {
+  ReportData,
+  ReportExportList,
+  ReportList,
+  ReportQuery,
+  ReportSchedule,
+  ReportView,
+} from '@{{projectSlug}}/api-client'
 import { can, signedInContext } from '../../../lib/access'
 import { translator } from '../../../lib/locale'
 import { apiBaseUrl, providerToken } from '../../../lib/session'
@@ -85,16 +94,59 @@ export async function loadReportData(key: string, query: ReportQuery): Promise<L
   }
 }
 
+export async function loadReportSchedules(
+  key: string,
+): Promise<Loaded<{ schedules: ReportSchedule[] }>> {
+  const auth = await session()
+  if (auth === null) return { status: 'error', message: (await translator())('analytics.error.forbidden') }
+  try {
+    return { status: 'ok', value: await fetchReportSchedules({ ...auth, key }) }
+  } catch (error) {
+    return explain(error)
+  }
+}
+
+export async function loadReportExports(): Promise<Loaded<ReportExportList>> {
+  const auth = await session()
+  if (auth === null) return { status: 'error', message: (await translator())('analytics.error.forbidden') }
+  try {
+    return { status: 'ok', value: await fetchReportExports(auth) }
+  } catch (error) {
+    return explain(error)
+  }
+}
+
+/** What the last export or schedule action left in the URL for the page to say. */
+export interface Outcome {
+  export?: string
+  schedule?: string
+}
+
+/** The two parameters that are the page's, not the report's. */
+const OUTCOME_KEYS = ['export', 'schedule'] as const
+
 /**
  * The query a page received, as the API accepts it: string values only,
  * the last of a repeated key, and nothing the URL did not carry. The API
  * refuses what the report did not declare; this only shapes the mapping.
+ * The outcome parameters are the page's own and are kept out of it.
  */
 export function queryFrom(params: Record<string, string | string[] | undefined>): ReportQuery {
   const query: Record<string, string> = {}
   for (const [name, value] of Object.entries(params)) {
+    if ((OUTCOME_KEYS as readonly string[]).includes(name)) continue
     const last = Array.isArray(value) ? value[value.length - 1] : value
     if (typeof last === 'string' && last !== '') query[name] = last
   }
   return query
+}
+
+export function outcomeFrom(params: Record<string, string | string[] | undefined>): Outcome {
+  const outcome: Outcome = {}
+  for (const name of OUTCOME_KEYS) {
+    const value = params[name]
+    const last = Array.isArray(value) ? value[value.length - 1] : value
+    if (typeof last === 'string' && last !== '') outcome[name] = last
+  }
+  return outcome
 }

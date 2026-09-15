@@ -58,5 +58,10 @@ async def test_retention_of_nothing_is_refused() -> None:
         await purge_audit_events(_Session(0), retention_days=0)  # type: ignore[arg-type]
 
 
-async def test_scheduled_delivery_is_honest_scaffolding() -> None:
-    assert await deliver_scheduled_reports({}) == {"status": "ok", "delivered": 0}
+async def test_scheduled_delivery_skips_loudly_without_a_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from koras_worker import settings as worker_settings
+
+    monkeypatch.setattr(worker_settings.settings, "database_url", "")
+    assert await deliver_scheduled_reports({}) == {"status": "skipped", "reason": "no database"}

@@ -1,27 +1,32 @@
 """The reporting surface: the catalogue this caller may see, one report's
-definition, its data, its CSV, and the metric registry.
+definition, its data, its export, and the metric registry.
 
-Five routes, every one on the customer surface and the tenant session. The
-decision for each report is made here, before its resolver runs: the
-caller's permissions against the definition's, the plan against its
-entitlement, the build's capabilities against the one it needs. A report
-the caller may not have is 404, not 403, so the list and the URL agree
-about what exists for them; a report the plan lacks is 402, the status
-Files and the assistant use for a commercial gate. Filters the report did
-not declare are 422.
+Every route is on the customer surface and the tenant session. The decision
+for each report is made here, before its resolver runs: the caller's
+permissions against the definition's, the plan against its entitlement, the
+build's capabilities against the one it needs. A report the caller may not
+have is 404, not 403, so the list and the URL agree about what exists for
+them; a report the plan lacks is 402, the status Files and the assistant use
+for a commercial gate. Filters the report did not declare are 422.
 
-An export is the report's rows as CSV, gated by the export permission and
-the export entitlement, refused while the plan is unresolved, bounded, and
-recorded. A sensitive report is recorded when it is opened.
+An export is the report as a file in one of three formats, gated by the
+export permission and the export entitlement, refused while the plan is
+unresolved, and recorded. Past the row bound it is not refused: it is
+written into the tenant's bucket after the response and answered with 202
+and the export's id, which `reporting_schedules.py` lists and mints a
+download for. A sensitive report is recorded when it is opened.
 """
 
 from __future__ import annotations
 
 import logging
+import uuid
+from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status
-from fastapi.responses import Response
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
+from fastapi.responses import JSONResponse, Response
+from koras_audit import AuditEvent
 from koras_reporting import (
     EXPORT_ROW_LIMIT,
     ExportFormat,
@@ -30,13 +35,17 @@ from koras_reporting import (
     ReportResult,
     Visibility,
     export_filename,
+    render,
     resolve_filters,
-    to_csv,
+    row_count,
     visibility_for,
 )
 from pydantic import BaseModel
+from sqlalchemy import text
 
-from ..core.reporting import EXPORT_PERMISSION, ReportingDep, TenantReporting
+from ..core.database import tenant_session
+from ..core.reporting import EXPORT_PERMISSION, ReportingDep, SqlAuditSink, TenantReporting
+from ..core.storage import StorageDep, TenantStorage
 
 router = APIRouter(tags=["reports"])
 
@@ -72,6 +81,8 @@ class ReportView(ReportSummary):
     visualizations: list[str]
     export_formats: list[str]
     can_export: bool
+    #: Whether this caller may have the report delivered on a schedule.
+    can_schedule: bool
     cache_seconds: int
     status: str
     version: int
@@ -99,6 +110,14 @@ class MetricList(BaseModel):
     metrics: list[MetricView]
 
 
+class ExportQueued(BaseModel):
+    """The export is being written; the id to look for in the list."""
+
+    export_id: str
+    rows: int
+    format: str
+
+
 def _summary(definition: ReportDefinition, visibility: Visibility) -> ReportSummary:
     return ReportSummary(
         key=definition.key,
@@ -113,7 +132,7 @@ def _summary(definition: ReportDefinition, visibility: Visibility) -> ReportSumm
     )
 
 
-def _visible(reporting: TenantReporting, definition: ReportDefinition) -> Visibility:
+def visible(reporting: TenantReporting, definition: ReportDefinition) -> Visibility:
     return visibility_for(
         definition,
         permissions=reporting.context.permissions,
@@ -122,7 +141,7 @@ def _visible(reporting: TenantReporting, definition: ReportDefinition) -> Visibi
     )
 
 
-def _lookup(reporting: TenantReporting, key: str) -> tuple[ReportDefinition, Visibility]:
+def lookup(reporting: TenantReporting, key: str) -> tuple[ReportDefinition, Visibility]:
     """The definition and the caller's visibility of it, or 404.
 
     Hidden is 404 rather than 403 on purpose: the list did not offer it, so
@@ -132,13 +151,13 @@ def _lookup(reporting: TenantReporting, key: str) -> tuple[ReportDefinition, Vis
     definition = reporting.catalogue.reports.get(key)
     if definition is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such report")
-    visibility = _visible(reporting, definition)
+    visibility = visible(reporting, definition)
     if visibility is Visibility.HIDDEN:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such report")
     return definition, visibility
 
 
-def _require_available(definition: ReportDefinition, visibility: Visibility) -> None:
+def require_available(definition: ReportDefinition, visibility: Visibility) -> None:
     if visibility is Visibility.LOCKED:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
@@ -146,16 +165,49 @@ def _require_available(definition: ReportDefinition, visibility: Visibility) -> 
         )
 
 
-def _query(request: Request) -> dict[str, str]:
+def require_exporter(reporting: TenantReporting) -> None:
+    """The two gates a download and a schedule share: the permission, then the plan."""
+    if EXPORT_PERMISSION not in reporting.context.permissions:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="exporting reports needs reports.export"
+        )
+    if not reporting.grant.can_export:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="this organization's plan does not include reporting.export",
+        )
+
+
+def export_format(definition: ReportDefinition, raw: str | None) -> ExportFormat:
+    try:
+        fmt = ExportFormat(raw or "csv")
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_406_NOT_ACCEPTABLE, detail="unknown export format"
+        ) from None
+    if fmt not in definition.export_formats:
+        raise HTTPException(
+            status_code=status.HTTP_406_NOT_ACCEPTABLE,
+            detail=f"this report cannot be exported as {fmt.value}",
+        )
+    return fmt
+
+
+def query_of(request: Request) -> dict[str, str]:
     # The last value wins for a repeated key, the way a form would submit it.
-    return {key: value for key, value in request.query_params.items()}
+    # `format` and `background` belong to the export route, not the report.
+    return {
+        key: value
+        for key, value in request.query_params.items()
+        if key not in ("format", "background")
+    }
 
 
-async def _resolve(
-    reporting: TenantReporting, definition: ReportDefinition, request: Request
+async def resolve(
+    reporting: TenantReporting, definition: ReportDefinition, query: dict[str, str]
 ) -> ReportResult:
     try:
-        filters = resolve_filters(definition, _query(request))
+        filters = resolve_filters(definition, query)
     except FilterError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
@@ -175,12 +227,18 @@ async def _resolve(
         ) from error
 
 
+def range_of(result: ReportResult) -> dict[str, Any]:
+    if result.range is None:
+        return {}
+    return {"from": result.range.start, "to": result.range.end}
+
+
 @router.get("/reports", response_model=ReportList)
 async def list_reports(reporting: ReportingDep) -> ReportList:
     """Every report this caller may see, available or locked, in catalogue order."""
     reports = []
     for definition in reporting.catalogue.reports:
-        visibility = _visible(reporting, definition)
+        visibility = visible(reporting, definition)
         if visibility is Visibility.HIDDEN:
             continue
         reports.append(_summary(definition, visibility))
@@ -191,13 +249,13 @@ async def list_reports(reporting: ReportingDep) -> ReportList:
 
 @router.get("/reports/{key}", response_model=ReportView)
 async def get_report(key: str, reporting: ReportingDep) -> ReportView:
-    definition, visibility = _lookup(reporting, key)
+    definition, visibility = lookup(reporting, key)
     summary = _summary(definition, visibility)
-    can_export = (
+    may_export = (
         visibility is Visibility.AVAILABLE
         and EXPORT_PERMISSION in reporting.context.permissions
         and reporting.grant.can_export
-        and ExportFormat.CSV in definition.export_formats
+        and bool(definition.export_formats)
     )
     return ReportView(
         **summary.model_dump(),
@@ -217,7 +275,8 @@ async def get_report(key: str, reporting: ReportingDep) -> ReportView:
         ],
         visualizations=[v.value for v in definition.visualizations],
         export_formats=[e.value for e in definition.export_formats],
-        can_export=can_export,
+        can_export=may_export,
+        can_schedule=may_export and reporting.grant.can_schedule,
         cache_seconds=definition.cache_seconds,
         status=definition.status.value,
         version=definition.version,
@@ -227,61 +286,115 @@ async def get_report(key: str, reporting: ReportingDep) -> ReportView:
 @router.get("/reports/{key}/data", response_model=ReportResult)
 async def report_data(key: str, request: Request, reporting: ReportingDep) -> ReportResult:
     """The report, resolved for this tenant under the filters the URL carries."""
-    definition, visibility = _lookup(reporting, key)
-    _require_available(definition, visibility)
+    definition, visibility = lookup(reporting, key)
+    require_available(definition, visibility)
     try:
-        result = await _resolve(reporting, definition, request)
+        result = await resolve(reporting, definition, query_of(request))
         if definition.sensitive:
-            reporting.record("report.viewed", report_key=definition.key, details=_range_of(result))
+            reporting.record("report.viewed", report_key=definition.key, details=range_of(result))
         return result
     finally:
         await reporting.flush()
 
 
-@router.get("/reports/{key}/export")
-async def export_report(key: str, request: Request, reporting: ReportingDep) -> Response:
-    """The report's rows as CSV. Gated twice, bounded once, recorded always."""
-    definition, visibility = _lookup(reporting, key)
-    _require_available(definition, visibility)
-    if EXPORT_PERMISSION not in reporting.context.permissions:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="exporting reports needs reports.export"
-        )
-    if not reporting.grant.can_export:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="this organization's plan does not include reporting.export",
-        )
-    if ExportFormat.CSV not in definition.export_formats:
-        raise HTTPException(
-            status_code=status.HTTP_406_NOT_ACCEPTABLE, detail="this report cannot be exported"
-        )
+_EXPORT_INSERT = text(
+    "insert into public.report_exports "
+    " (id, tenant_id, report_key, format, filters, status, filename, rows, requested_by) "
+    "values (:id, :tenant_id, :report_key, :format, cast(:filters as jsonb), 'pending', "
+    " :filename, :rows, :requested_by)"
+)
+
+_EXPORT_READY = text(
+    "update public.report_exports set status = 'ready', storage_key = :storage_key, "
+    " size_bytes = :size_bytes, ready_at = now() "
+    "where id = :id and tenant_id = :tenant_id"
+)
+
+_EXPORT_FAILED = text(
+    "update public.report_exports set status = 'failed', error = :error "
+    "where id = :id and tenant_id = :tenant_id"
+)
+
+
+def export_object_key(tenant_id: str, export_id: str, filename: str) -> str:
+    return f"tenants/{tenant_id}/exports/{export_id}/{filename}"
+
+
+@router.get(
+    "/reports/{key}/export",
+    responses={202: {"model": ExportQueued}},
+)
+async def export_report(
+    key: str,
+    request: Request,
+    reporting: ReportingDep,
+    storage: StorageDep,
+    background: BackgroundTasks,
+    format: str | None = None,  # noqa: A002 - the query parameter's name
+) -> Response:
+    """The report as a file. Gated twice, bounded once, recorded always.
+
+    Within the bound the file is the response. Past it the row is written,
+    202 is answered with the export's id, and the file is rendered and put
+    into the tenant's bucket after the response -- the same after-response
+    path uploads use for indexing. The customer finds it in the exports list.
+    """
+    definition, visibility = lookup(reporting, key)
+    require_available(definition, visibility)
+    require_exporter(reporting)
+    fmt = export_format(definition, format)
+    wanted_background = request.query_params.get("background") == "1"
     try:
-        result = await _resolve(reporting, definition, request)
-        rows = len(result.table.rows) if result.table is not None else len(result.metrics)
-        if rows > EXPORT_ROW_LIMIT:
+        result = await resolve(reporting, definition, query_of(request))
+        rows = row_count(result)
+        start = result.range.start if result.range else None
+        end = result.range.end if result.range else None
+        filename = export_filename(definition.key, start, end, fmt.value)
+        if rows > EXPORT_ROW_LIMIT or wanted_background:
+            export_id = str(uuid.uuid4())
+            session = reporting.context.session
+            await session.execute(
+                _EXPORT_INSERT,
+                {
+                    "id": export_id,
+                    "tenant_id": reporting.context.tenant_id,
+                    "report_key": definition.key,
+                    "format": fmt.value,
+                    "filters": _json(query_of(request)),
+                    "filename": filename,
+                    "rows": rows,
+                    "requested_by": reporting.context.user_id,
+                },
+            )
+            await session.commit()
             reporting.record(
                 "report.exported",
                 report_key=definition.key,
-                outcome="denied",
-                details={"rows": rows, "limit": EXPORT_ROW_LIMIT},
+                details={"rows": rows, "format": fmt.value, "background": True, **range_of(result)},
             )
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"the export would carry {rows} rows; narrow the range to "
-                f"{EXPORT_ROW_LIMIT} or fewer",
+            background.add_task(
+                write_export,
+                storage,
+                reporting.context.tenant_id or "",
+                export_id,
+                filename,
+                result,
+                fmt,
+                definition.name,
+            )
+            return JSONResponse(
+                status_code=status.HTTP_202_ACCEPTED,
+                content=ExportQueued(export_id=export_id, rows=rows, format=fmt.value).model_dump(),
             )
         reporting.record(
             "report.exported",
             report_key=definition.key,
-            details={"rows": rows, "format": "csv", **_range_of(result)},
+            details={"rows": rows, "format": fmt.value, **range_of(result)},
         )
-        start = result.range.start if result.range else None
-        end = result.range.end if result.range else None
-        filename = export_filename(definition.key, start, end)
+        rendered = render(result, fmt, title=definition.name)
         return Response(
-            content=to_csv(result),
-            media_type="text/csv; charset=utf-8",
+            content=rendered.content,
+            media_type=rendered.media_type,
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
                 "Cache-Control": "no-store",
@@ -289,6 +402,79 @@ async def export_report(key: str, request: Request, reporting: ReportingDep) -> 
         )
     finally:
         await reporting.flush()
+
+
+async def write_export(
+    storage: TenantStorage,
+    tenant_id: str,
+    export_id: str,
+    filename: str,
+    result: ReportResult,
+    fmt: ExportFormat,
+    title: str,
+) -> None:
+    """Render the file and put it in the bucket, after the response.
+
+    Its own session, because the request's is closed by the time this runs.
+    A failure is recorded on the row and in the audit table rather than
+    lost: a customer who asked for a file and finds a failed row knows to
+    ask again or to narrow the range.
+    """
+    key = export_object_key(tenant_id, export_id, filename)
+    async with tenant_session(tenant_id) as session:
+        audit = SqlAuditSink(session, tenant_id)
+        try:
+            rendered = render(result, fmt, title=title)
+            storage.store.put(key, rendered.content, rendered.media_type)
+            await session.execute(
+                _EXPORT_READY,
+                {
+                    "id": export_id,
+                    "tenant_id": tenant_id,
+                    "storage_key": key,
+                    "size_bytes": len(rendered.content),
+                },
+            )
+            await session.commit()
+        except Exception as error:
+            _log.exception("export %s failed: %s", export_id, type(error).__name__)
+            await session.rollback()
+            await session.execute(
+                _EXPORT_FAILED,
+                {
+                    "id": export_id,
+                    "tenant_id": tenant_id,
+                    "error": "the file could not be written; the reason is in the server log",
+                },
+            )
+            await session.commit()
+            audit.emit(
+                _event(
+                    tenant_id, "report.export_failed", export_id, "failed", {"format": fmt.value}
+                )
+            )
+            await audit.flush()
+
+
+def _event(
+    tenant_id: str, action: str, target_id: str, outcome: str, details: dict[str, Any]
+) -> AuditEvent:
+    return AuditEvent(
+        action=action,
+        actor_id="system",
+        tenant_id=tenant_id,
+        target_type="export",
+        target_id=target_id,
+        outcome=outcome,  # type: ignore[arg-type]
+        details=details,
+        at=datetime.now(UTC),
+    )
+
+
+def _json(values: dict[str, str]) -> str:
+    import json
+
+    return json.dumps(values, sort_keys=True)
 
 
 @router.get("/metrics", response_model=MetricList)
@@ -308,9 +494,3 @@ async def list_metrics(reporting: ReportingDep) -> MetricList:
             for m in reporting.catalogue.metrics
         ]
     )
-
-
-def _range_of(result: ReportResult) -> dict[str, Any]:
-    if result.range is None:
-        return {}
-    return {"from": result.range.start, "to": result.range.end}

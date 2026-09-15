@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import smtplib
 import ssl
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from email.message import EmailMessage
 from typing import Protocol
@@ -37,6 +38,23 @@ class PermanentEmailError(EmailError):
     message to the identical server, so a caller that retries this is only
     slowing down the report of a problem somebody has to fix.
     """
+
+
+@dataclass(frozen=True)
+class Attachment:
+    """A file carried with a message: a report, never a secret."""
+
+    filename: str
+    content: bytes
+    content_type: str = "application/octet-stream"
+
+    @property
+    def maintype(self) -> str:
+        return self.content_type.split("/", 1)[0]
+
+    @property
+    def subtype(self) -> str:
+        return self.content_type.split("/", 1)[1] if "/" in self.content_type else "octet-stream"
 
 
 @dataclass(frozen=True)
@@ -66,7 +84,14 @@ class EmailSender(Protocol):
         ...
 
     async def send(
-        self, *, to: str, subject: str, body: str, tag: str, html: str | None = None
+        self,
+        *,
+        to: str,
+        subject: str,
+        body: str,
+        tag: str,
+        html: str | None = None,
+        attachments: Sequence[Attachment] = (),
     ) -> Sent:
         """Deliver one message: plain text, with an HTML twin when given.
 
@@ -91,15 +116,24 @@ class RecordingEmailSender:
     """
 
     sent: list[dict[str, str | None]] = field(default_factory=list)
+    attachments: list[list[Attachment]] = field(default_factory=list)
 
     @property
     def simulated(self) -> bool:
         return True
 
     async def send(
-        self, *, to: str, subject: str, body: str, tag: str, html: str | None = None
+        self,
+        *,
+        to: str,
+        subject: str,
+        body: str,
+        tag: str,
+        html: str | None = None,
+        attachments: Sequence[Attachment] = (),
     ) -> Sent:
         self.sent.append({"to": to, "subject": subject, "body": body, "tag": tag, "html": html})
+        self.attachments.append(list(attachments))
         return Sent(message_id=f"recorded-{len(self.sent)}", simulated=True)
 
 
@@ -141,7 +175,14 @@ class SmtpEmailSender:
         return False
 
     async def send(
-        self, *, to: str, subject: str, body: str, tag: str, html: str | None = None
+        self,
+        *,
+        to: str,
+        subject: str,
+        body: str,
+        tag: str,
+        html: str | None = None,
+        attachments: Sequence[Attachment] = (),
     ) -> Sent:
         message = EmailMessage()
         message["From"] = self._sender
@@ -153,6 +194,13 @@ class SmtpEmailSender:
         message.set_content(body)
         if html:
             message.add_alternative(html, subtype="html")
+        for attachment in attachments:
+            message.add_attachment(
+                attachment.content,
+                maintype=attachment.maintype,
+                subtype=attachment.subtype,
+                filename=attachment.filename,
+            )
 
         try:
             await asyncio.to_thread(self._deliver, message)

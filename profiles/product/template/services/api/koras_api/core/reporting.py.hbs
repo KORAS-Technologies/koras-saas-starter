@@ -82,6 +82,10 @@ class ReportingGrant:
     def can_export(self) -> bool:
         return self.plan.resolved and self.plan.includes(REPORTING_EXPORT_ENTITLEMENT)
 
+    @property
+    def can_schedule(self) -> bool:
+        return self.can_export and self.plan.includes(REPORTING_SCHEDULED_ENTITLEMENT)
+
 
 def _dt(value: object) -> datetime | None:
     if not isinstance(value, str) or not value:

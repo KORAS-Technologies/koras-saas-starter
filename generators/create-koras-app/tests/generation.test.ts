@@ -263,10 +263,29 @@ describe('the reporting capability', () => {
       'e2e/analytics.spec.ts',
       'tests/unit/test_reporting_api.py',
       'python-packages/koras-reporting/pyproject.toml',
+      // The second wave: schedules and background exports, the activity
+      // contract for the platform, and the worker that delivers.
+      'services/api/koras_api/routers/reporting_schedules.py',
+      'services/api/koras_api/routers/platform_reporting.py',
+      'supabase/migrations/00014_report_schedules.sql',
+      'supabase/tests/130_report_schedules_isolation.sql',
+      'apps/web/src/app/dashboard/analytics/actions.ts',
+      'apps/web/src/app/api/reports/exports/[id]/download/route.ts',
+      'tests/unit/test_reporting_schedules.py',
+      'tests/unit/test_reporting_delivery.py',
+      'tests/unit/test_platform_activity.py',
     ]) {
       expect(gen.has(path), `${path} missing`).toBe(true)
     }
     expect(gen.read('services/api/koras_api/main.py')).toContain('reporting.router')
+    expect(gen.read('services/api/koras_api/main.py')).toContain('reporting_schedules.router')
+    expect(gen.read('services/worker/koras_worker/worker.py')).toContain('deliver_scheduled_reports')
+    // The worker image carries the API's catalogue package, and only that.
+    const dockerfile = gen.read('services/worker/Dockerfile')
+    expect(dockerfile).toContain('COPY services/api/koras_api/reporting/')
+    expect(dockerfile).toContain('PYTHONPATH=/app/services/api')
+    expect(gen.read('services/worker/pyproject.toml')).toContain('koras-reporting')
+    expect(gen.read('local/config/secrets.manifest')).toContain('REPORT_EXPORT_RETENTION_DAYS')
     expect(gen.read('services/api/pyproject.toml')).toContain('koras-reporting = { workspace = true }')
     expect(gen.read('packages/branding/src/index.ts')).toContain("id: 'analytics'")
     expect(gen.read('services/worker/koras_worker/worker.py')).toContain('purge_audit_history')
@@ -292,6 +311,10 @@ describe('the reporting capability', () => {
     expect(gen.read('services/worker/koras_worker/worker.py')).not.toContain('purge_audit_history')
     expect(gen.read('services/worker/koras_worker/worker.py')).not.toContain('from arq import cron')
     expect(gen.read('local/config/secrets.manifest')).not.toContain('AUDIT_RETENTION_DAYS')
+    expect(gen.read('local/config/secrets.manifest')).not.toContain('REPORT_EXPORT_RETENTION_DAYS')
+    expect(gen.has('supabase/migrations/00014_report_schedules.sql')).toBe(false)
+    expect(gen.read('services/worker/Dockerfile')).not.toContain('koras_api')
+    expect(gen.read('services/worker/pyproject.toml')).not.toContain('koras-reporting')
   })
 })
 

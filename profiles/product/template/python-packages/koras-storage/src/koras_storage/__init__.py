@@ -189,6 +189,14 @@ class ObjectStore(Protocol):
         """The object's size in bytes, or None when it does not exist."""
         ...
 
+    def put(self, key: str, content: bytes, content_type: str) -> None:
+        """Write an object the API produced itself -- a report export -- in one call.
+
+        Uploads from a browser go through a signed URL and never through
+        here; this is for bytes the API already holds.
+        """
+        ...
+
     def delete(self, key: str) -> None: ...
 
 
@@ -253,6 +261,11 @@ class S3ObjectStore:
                 return None
             raise
         return int(answer.get("ContentLength", 0))
+
+    def put(self, key: str, content: bytes, content_type: str) -> None:
+        self._client.put_object(
+            Bucket=self.destination.bucket, Key=key, Body=content, ContentType=content_type
+        )
 
     def delete(self, key: str) -> None:
         self._client.delete_object(Bucket=self.destination.bucket, Key=key)

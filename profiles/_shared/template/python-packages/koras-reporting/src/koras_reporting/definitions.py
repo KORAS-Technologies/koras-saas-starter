@@ -86,7 +86,6 @@ class Visualization(StrEnum):
 
 class ExportFormat(StrEnum):
     CSV = "csv"
-    #: Declared so a definition can say what it intends; no writer exists yet.
     XLSX = "xlsx"
     PDF = "pdf"
 
@@ -184,7 +183,11 @@ class ReportDefinition:
     filters: tuple[FilterDefinition, ...] = ()
     default_visualization: Visualization = Visualization.KPI
     visualizations: tuple[Visualization, ...] = (Visualization.KPI, Visualization.TABLE)
-    export_formats: tuple[ExportFormat, ...] = (ExportFormat.CSV,)
+    export_formats: tuple[ExportFormat, ...] = (
+        ExportFormat.CSV,
+        ExportFormat.XLSX,
+        ExportFormat.PDF,
+    )
     cache_seconds: int = 0
     status: Status = Status.AVAILABLE
     version: int = 1

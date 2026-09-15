@@ -1,6 +1,6 @@
 import { currentLocale } from '../../../lib/locale'
 import { ReportPage } from './ReportPage'
-import { queryFrom } from './reporting'
+import { outcomeFrom, queryFrom } from './reporting'
 
 /**
  * Analytics: the landing report, which is the Overview, beside the list of
@@ -16,5 +16,12 @@ export default async function AnalyticsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const [locale, params] = await Promise.all([currentLocale(), searchParams])
-  return <ReportPage reportKey="usage.overview" query={queryFrom(params)} locale={locale} />
+  return (
+    <ReportPage
+      reportKey="usage.overview"
+      query={queryFrom(params)}
+      outcome={outcomeFrom(params)}
+      locale={locale}
+    />
+  )
 }

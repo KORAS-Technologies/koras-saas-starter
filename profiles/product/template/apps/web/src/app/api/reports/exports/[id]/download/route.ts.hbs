@@ -1,0 +1,46 @@
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { ApiError, fetchExportDownload } from '@{{projectSlug}}/api-client'
+import { can, signedInContext } from '../../../../../../lib/access'
+import { translator } from '../../../../../../lib/locale'
+import { apiBaseUrl, providerToken } from '../../../../../../lib/session'
+
+/**
+ * A background export's file.
+ *
+ * The API mints a signed URL into the tenant's bucket for a ready export,
+ * the way it does for a file on the Files page; this handler asks for it
+ * with the caller's own token and sends the browser there. The URL lives
+ * for minutes and names one object, so what the browser holds is worth
+ * little, and the token never leaves this side.
+ */
+export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const site = request.headers.get('sec-fetch-site')
+  if (site !== null && site !== 'same-origin' && site !== 'none') {
+    return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
+  }
+  const t = await translator()
+  const signedIn = await signedInContext()
+  if (signedIn === null || !can(signedIn.access, 'reports.export')) {
+    return NextResponse.json({ message: t('analytics.error.forbidden') }, { status: 403 })
+  }
+  const token = await providerToken()
+  const baseUrl = apiBaseUrl()
+  if (!token || !baseUrl) {
+    return NextResponse.json({ message: t('analytics.error.unavailable') }, { status: 503 })
+  }
+  const { id } = await context.params
+  try {
+    const ticket = await fetchExportDownload({ baseUrl, token, exportId: id })
+    return NextResponse.redirect(ticket.url, { status: 303 })
+  } catch (error) {
+    const status = error instanceof ApiError ? error.status : 502
+    const message =
+      status === 404
+        ? t('analytics.exports.gone')
+        : status === 402 || status === 403
+          ? t('analytics.error.forbidden')
+          : t('analytics.error.unavailable')
+    return NextResponse.json({ message }, { status: status >= 400 && status < 600 ? status : 502 })
+  }
+}

@@ -148,3 +148,47 @@ def test_csv_falls_back_to_the_metrics() -> None:
     ]
     assert export_filename("p.q", "2026-09-01", "2026-09-14") == "p-q-2026-09-01-to-2026-09-14.csv"
     assert export_filename("p.q", None, None) == "p-q.csv"
+
+
+def test_the_workbook_and_the_pdf_carry_the_same_rows() -> None:
+    from koras_reporting import ExportFormat, render, row_count
+
+    result = ReportResult(
+        key="p.q",
+        generated_at=datetime(2026, 9, 14, tzinfo=UTC),
+        metrics=[
+            MetricValue(
+                key="things_total",
+                label="Things",
+                value=4,
+                unit=Unit.COUNT,
+                format=Format.INTEGER,
+                kind="actual",
+            )
+        ],
+        table=Table(
+            columns=[
+                TableColumn(key="name", label="Name"),
+                TableColumn(key="count", label="Count", align="right"),
+            ],
+            rows=[{"name": "=SUM(A1)", "count": 3}, {"name": "ünïcode", "count": 1.5}],
+        ),
+    )
+    assert row_count(result) == 2
+
+    workbook = render(result, ExportFormat.XLSX)
+    assert workbook.extension == "xlsx" and workbook.content[:2] == b"PK"
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    book = load_workbook(BytesIO(workbook.content))
+    rows = list(book["Rows"].iter_rows(values_only=True))
+    assert rows[0] == ("Name", "Count")
+    # Stored as text, never as a formula.
+    assert rows[1] == ("'=SUM(A1)", 3)
+    assert [cell[0] for cell in book["Figures"].iter_rows(values_only=True)][1] == "Things"
+
+    pdf = render(result, ExportFormat.PDF, title="P and Q")
+    assert pdf.extension == "pdf" and pdf.content.startswith(b"%PDF")
+    assert export_filename("p.q", "2026-09-01", "2026-09-14", pdf.extension).endswith(".pdf")

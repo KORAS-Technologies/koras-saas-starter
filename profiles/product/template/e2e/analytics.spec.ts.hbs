@@ -53,10 +53,33 @@ test('a member without the reporting permission is refused, not shown a frame', 
 })
 
 test('the export handler refuses a caller without the permission', async ({ page, context }) => {
-  // A plain member may read reports and may not download them.
+  // A plain member may read reports and may not download them, in any
+  // format, in the foreground or the background.
   await signInAs(context, { roles: ['member'] })
   const answer = await page.request.get('/api/reports/usage.quotas/export')
   expect(answer.status()).toBe(403)
+  const xlsx = await page.request.get('/api/reports/usage.quotas/export?format=xlsx&background=1')
+  expect(xlsx.status()).toBe(403)
+})
+
+test('a prepared export is fetched with the same gate as a download', async ({ page, context }) => {
+  await signInAs(context, { roles: ['member'] })
+  const answer = await page.request.get('/api/reports/exports/not-an-id/download')
+  expect(answer.status()).toBe(403)
+})
+
+test('an owner without an API is told the export could not be prepared', async ({
+  page,
+  context,
+}) => {
+  // The handler asks the API for the file and there is none; what comes
+  // back is a status and a sentence, never a redirect to nowhere.
+  await signInAs(context)
+  const answer = await page.request.get('/api/reports/exports/not-an-id/download', {
+    maxRedirects: 0,
+  })
+  expect([502, 503]).toContain(answer.status())
+  expect((await answer.json()).message).toBeTruthy()
 })
 
 test('the page is translated with the rest of the shell', async ({ page, context }) => {

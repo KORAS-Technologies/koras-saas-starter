@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     trust_forwarded_for: bool = False
 
     doppler_token: str = ""
+{{#if capability.reporting}}
+    # Days a background report export is kept in the tenant's bucket before the
+    # exports list retires it, object then row. A week: long enough to come
+    # back for a file, short enough that a bucket does not fill with reports
+    # nobody downloaded.
+    report_export_retention_days: int = 7
+{{/if}}
 
     # Where a tenant's files go when the Control Plane has decided nothing
     # for them: the product's own bucket on its own Supabase project, or

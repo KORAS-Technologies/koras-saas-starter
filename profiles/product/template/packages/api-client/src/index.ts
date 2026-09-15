@@ -636,9 +636,54 @@ export interface ReportView extends ReportSummary {
   visualizations: ('kpi' | 'line' | 'bar' | 'table')[]
   export_formats: string[]
   can_export: boolean
+  can_schedule: boolean
   cache_seconds: number
   status: string
   version: number
+}
+
+export type ExportFormat = 'csv' | 'xlsx' | 'pdf'
+export type ScheduleCadence = 'daily' | 'weekly' | 'monthly'
+
+export interface ReportSchedule {
+  id: string
+  report_key: string
+  cadence: ScheduleCadence
+  format: ExportFormat
+  recipients: string[]
+  filters: Record<string, string>
+  active: boolean
+  next_run_at: string
+  last_run_at: string | null
+  last_error: string | null
+  created_by: string
+  created_at: string
+}
+
+export interface ReportExport {
+  id: string
+  report_key: string
+  format: ExportFormat
+  status: 'pending' | 'ready' | 'failed'
+  filename: string
+  rows: number
+  size_bytes: number | null
+  error: string | null
+  requested_by: string
+  created_at: string
+  ready_at: string | null
+}
+
+export interface ReportExportList {
+  exports: ReportExport[]
+  retention_days: number
+}
+
+/** What the export route answers when the file is written after the response. */
+export interface ExportQueued {
+  export_id: string
+  rows: number
+  format: ExportFormat
 }
 
 export interface ReportMetric {
@@ -725,26 +770,84 @@ export function fetchMetrics(options: RequestOptions): Promise<{ metrics: Metric
 }
 
 /**
- * A report's rows as CSV, as the raw response.
+ * A report as a file, as the raw response.
  *
  * Not through `request`, which parses JSON: the body is the file, streamed
- * on to the browser by the route handler that called this. A refusal is an
- * `ApiError` with the status the API gave -- 402 for a plan without export,
- * 403 for a caller without the permission -- so the handler can say which.
+ * on to the browser by the route handler that called this. A 202 is not a
+ * file: the API is writing it after the response, and the body names the
+ * export to look for in the list. A refusal is an `ApiError` with the
+ * status the API gave -- 402 for a plan without export, 403 for a caller
+ * without the permission -- so the handler can say which.
  */
 export async function exportReport(
-  options: RequestOptions & { key: string; query?: ReportQuery },
+  options: RequestOptions & {
+    key: string
+    query?: ReportQuery
+    format?: ExportFormat
+    background?: boolean
+  },
 ): Promise<Response> {
   const base = options.baseUrl.replace(/\/$/, '')
   if (!base) throw new ApiError('no API base URL is configured', 0)
-  const path = withQuery(reportPath(options.key, '/export'), options.query ?? {})
+  const query: Record<string, string> = { ...(options.query ?? {}) }
+  if (options.format) query.format = options.format
+  if (options.background) query.background = '1'
+  const path = withQuery(reportPath(options.key, '/export'), query)
   const response = await (options.fetchImpl ?? fetch)(`${base}${path}`, {
     method: 'GET',
-    headers: { Authorization: `Bearer ${options.token}`, Accept: 'text/csv' },
+    headers: { Authorization: `Bearer ${options.token}`, Accept: '*/*' },
     cache: 'no-store',
   })
   if (!response.ok) {
     throw new ApiError(`${path} answered ${response.status}`, response.status, await errorCode(response))
   }
   return response
+}
+
+export function fetchReportSchedules(
+  options: RequestOptions & { key: string },
+): Promise<{ schedules: ReportSchedule[] }> {
+  return request<{ schedules: ReportSchedule[] }>(reportPath(options.key, '/schedules'), options)
+}
+
+export function createReportSchedule(
+  options: RequestOptions & {
+    key: string
+    cadence: ScheduleCadence
+    format: ExportFormat
+    recipients: string[]
+    filters?: Record<string, string>
+  },
+): Promise<ReportSchedule> {
+  return request<ReportSchedule>(reportPath(options.key, '/schedules'), options, {
+    method: 'POST',
+    body: {
+      cadence: options.cadence,
+      format: options.format,
+      recipients: options.recipients,
+      filters: options.filters ?? {},
+    },
+  })
+}
+
+export function deleteReportSchedule(
+  options: RequestOptions & { scheduleId: string },
+): Promise<void> {
+  return request<void>(`/api/v1/reports/schedules/${encodeURIComponent(options.scheduleId)}`, options, {
+    method: 'DELETE',
+    empty: true,
+  })
+}
+
+export function fetchReportExports(options: RequestOptions): Promise<ReportExportList> {
+  return request<ReportExportList>('/api/v1/reports/exports', options)
+}
+
+export function fetchExportDownload(
+  options: RequestOptions & { exportId: string },
+): Promise<{ url: string; expires_in: number }> {
+  return request<{ url: string; expires_in: number }>(
+    `/api/v1/reports/exports/${encodeURIComponent(options.exportId)}/download`,
+    options,
+  )
 }

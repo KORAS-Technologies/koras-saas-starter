@@ -137,13 +137,20 @@ template_map:
     reporting:
       - services/api/koras_api/core/reporting.py
       - services/api/koras_api/routers/reporting.py
+      - services/api/koras_api/routers/reporting_schedules.py
+      - services/api/koras_api/routers/platform_reporting.py
       - services/api/koras_api/reporting
       - services/worker/koras_worker/tasks/reporting.py
       - supabase/migrations/00013_audit_events.sql
+      - supabase/migrations/00014_report_schedules.sql
       - supabase/tests/110_audit_isolation.sql
+      - supabase/tests/130_report_schedules_isolation.sql
       - tests/unit/test_reporting_api.py
       - tests/unit/test_reporting_standard.py
       - tests/unit/test_reporting_retention.py
+      - tests/unit/test_reporting_delivery.py
+      - tests/unit/test_reporting_schedules.py
+      - tests/unit/test_platform_activity.py
       - tests/unit/reporting_support.py
       - apps/web/src/app/dashboard/analytics
       - apps/web/src/app/api/reports

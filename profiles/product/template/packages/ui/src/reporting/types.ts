@@ -101,6 +101,7 @@ export interface ReportViewData extends ReportSummaryData {
   visualizations: VisualizationKind[]
   export_formats: string[]
   can_export: boolean
+  can_schedule: boolean
   cache_seconds: number
   status: string
   version: number
@@ -118,7 +119,36 @@ export interface ReportingLabels {
   chart: { asTable: string; noData: string; value: string; period: string }
   table: { empty: string; truncated: string }
   filters: { period: string; from: string; to: string; apply: string }
-  export: { download: string; notAllowed: string }
+  export: {
+    download: string
+    notAllowed: string
+    background: string
+    queued: string
+    formats: Record<string, string>
+  }
+  schedule: {
+    heading: string
+    intro: string
+    cadence: string
+    cadences: Record<string, string>
+    format: string
+    recipients: string
+    recipientsHint: string
+    create: string
+    remove: string
+    empty: string
+    next: string
+    notIncluded: string
+  }
+  exports: {
+    heading: string
+    intro: string
+    empty: string
+    download: string
+    pending: string
+    failed: string
+    retention: string
+  }
   list: { heading: string; locked: string; categories: Record<string, string> }
   states: { loading: string; retry: string }
 }

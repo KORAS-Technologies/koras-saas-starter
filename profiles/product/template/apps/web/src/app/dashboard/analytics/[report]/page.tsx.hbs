@@ -1,6 +1,6 @@
 import { currentLocale } from '../../../../lib/locale'
 import { ReportPage } from '../ReportPage'
-import { queryFrom } from '../reporting'
+import { outcomeFrom, queryFrom } from '../reporting'
 
 /**
  * Any report by key, from the catalogue the API answers. A key the caller
@@ -17,5 +17,12 @@ export default async function AnalyticsReportPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const [{ report }, query, locale] = await Promise.all([params, searchParams, currentLocale()])
-  return <ReportPage reportKey={report} query={queryFrom(query)} locale={locale} />
+  return (
+    <ReportPage
+      reportKey={report}
+      query={queryFrom(query)}
+      outcome={outcomeFrom(query)}
+      locale={locale}
+    />
+  )
 }

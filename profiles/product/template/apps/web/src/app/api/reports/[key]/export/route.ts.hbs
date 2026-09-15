@@ -1,25 +1,32 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { ApiError, exportReport } from '@{{projectSlug}}/api-client'
+import type { ExportFormat } from '@{{projectSlug}}/api-client'
 import { can, signedInContext } from '../../../../../lib/access'
 import { translator } from '../../../../../lib/locale'
 import { apiBaseUrl, providerToken } from '../../../../../lib/session'
 
 /**
- * A report's rows as a file.
+ * A report as a file.
  *
  * A server function returns a value and a download is a body, so this is a
  * route handler, the way the assistant's stream is. It does what the
  * analytics pages do -- decide again who is calling and what they may do,
- * then ask the API with the caller's own token -- and streams the CSV to
- * the browser byte for byte with the filename the API chose. The API is
- * what decides whether this caller may export; a 402 or 403 from it is
- * answered here as a sentence in the reader's language.
+ * then ask the API with the caller's own token -- and streams the file to
+ * the browser byte for byte with the type and filename the API chose. The
+ * API is what decides whether this caller may export; a 402 or 403 from it
+ * is answered here as a sentence in the reader's language.
+ *
+ * A 202 is not a file: the API is writing it after its response, into the
+ * tenant's bucket. The browser is sent back to the report it came from
+ * with a word in the URL the page turns into the sentence that says so.
  *
  * Same-site only. A page elsewhere cannot make a customer's browser export
  * their organization's data, and the fact of an export is recorded on the
  * API's side under the person who asked.
  */
+const FORMATS: ExportFormat[] = ['csv', 'xlsx', 'pdf']
+
 export async function GET(request: NextRequest, context: { params: Promise<{ key: string }> }) {
   const site = request.headers.get('sec-fetch-site')
   if (site !== null && site !== 'same-origin' && site !== 'none') {
@@ -38,13 +45,21 @@ export async function GET(request: NextRequest, context: { params: Promise<{ key
 
   const { key } = await context.params
   const query: Record<string, string> = {}
+  let format: ExportFormat = 'csv'
+  let background = false
   request.nextUrl.searchParams.forEach((value, name) => {
-    if (value !== '') query[name] = value
+    if (name === 'format') {
+      if (FORMATS.includes(value as ExportFormat)) format = value as ExportFormat
+    } else if (name === 'background') {
+      background = value === '1'
+    } else if (value !== '') {
+      query[name] = value
+    }
   })
 
   let upstream: Response
   try {
-    upstream = await exportReport({ baseUrl, token, key, query })
+    upstream = await exportReport({ baseUrl, token, key, query, format, background })
   } catch (error) {
     const status = error instanceof ApiError ? error.status : 502
     const message =
@@ -52,20 +67,35 @@ export async function GET(request: NextRequest, context: { params: Promise<{ key
         ? t('analytics.error.export')
         : status === 403 || status === 404
           ? t('analytics.error.forbidden')
-          : status === 413
-            ? t('analytics.error.tooLarge')
+          : status === 406
+            ? t('analytics.error.format')
             : status === 422
               ? t('analytics.error.filters')
               : t('analytics.error.unavailable')
     return NextResponse.json({ message }, { status: status >= 400 && status < 600 ? status : 502 })
   }
+
+  if (upstream.status === 202) {
+    // Written after the response; back to the report, which lists it.
+    const back = new URL(reportPath(key), request.nextUrl.origin)
+    for (const [name, value] of Object.entries(query)) back.searchParams.set(name, value)
+    back.searchParams.set('export', 'queued')
+    return NextResponse.redirect(back, { status: 303 })
+  }
   return new Response(upstream.body, {
     status: 200,
     headers: {
-      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Type': upstream.headers.get('content-type') ?? 'application/octet-stream',
       'Content-Disposition':
-        upstream.headers.get('content-disposition') ?? `attachment; filename="${key.replace(/\./g, '-')}.csv"`,
+        upstream.headers.get('content-disposition') ??
+        `attachment; filename="${key.replace(/\./g, '-')}.${format}"`,
       'Cache-Control': 'no-store',
     },
   })
+}
+
+function reportPath(key: string): string {
+  return key === 'usage.overview'
+    ? '/dashboard/analytics'
+    : `/dashboard/analytics/${encodeURIComponent(key)}`
 }

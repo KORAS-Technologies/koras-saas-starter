@@ -37,12 +37,14 @@ from koras_api.core.reporting import (  # noqa: E402
     plan_from,
     tenant_reporting,
 )
+from koras_api.core.storage import StorageGrant, TenantStorage, tenant_storage  # noqa: E402
 from koras_api.main import app  # noqa: E402
 from koras_api.reporting import catalogue  # noqa: E402
 from koras_auth import JWTClaims  # noqa: E402
 from koras_auth.permissions import permissions_for  # noqa: E402
 from koras_platform import OrganizationRole  # noqa: E402
 from koras_reporting import Entitlement, Plan, ReportContext, Scope  # noqa: E402
+from koras_storage import Provider  # noqa: E402
 from reporting_support import ScriptedSession  # noqa: E402
 
 app.state.redis = None
@@ -90,8 +92,37 @@ class Harness:
         )
 
 
+class _NoBucket:
+    """The export route resolves the tenant's storage; none of these tests use it."""
+
+    def presign_upload(self, key: str, content_type: str, size: int, expires_in: int) -> str:
+        return ""
+
+    def presign_download(self, key: str, filename: str, expires_in: int) -> str:
+        return ""
+
+    def head(self, key: str) -> int | None:
+        return None
+
+    def put(self, key: str, content: bytes, content_type: str) -> None:
+        raise AssertionError("nothing here should write to a bucket")
+
+    def delete(self, key: str) -> None:
+        return None
+
+
+def _storage() -> TenantStorage:
+    return TenantStorage(
+        store=_NoBucket(),
+        provider=Provider.SUPABASE,
+        bucket="bucket",
+        grant=StorageGrant(enabled=True, limit_bytes=None, resolved=True),
+    )
+
+
 def _install(harness: Harness) -> TestClient:
     app.dependency_overrides[tenant_reporting] = harness.reporting
+    app.dependency_overrides[tenant_storage] = _storage
     app.dependency_overrides[require_auth] = harness.claims
     return TestClient(app)
 
