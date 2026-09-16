@@ -19,6 +19,15 @@ have since changed: G6 and G7 closed on 2026-09-01 when
 reader and customer branding resolves at runtime. `docs/PRODUCT_APP_SHELL.md` is
 the current standard; `docs/FOLLOW_UPS.md` F16 records the close.
 
+Two further things have overtaken this survey, and are noted here rather than
+edited into the body for the same reason. The Files module shipped on
+2026-09-08 and gained governance on 2026-09-16 — digests, classification, a
+scan seam, a reconciliation sweep and an audit record of every operation — which
+`docs/STORAGE_ARCHITECTURE.md` describes. And the generator's structural suite,
+counted as forty files below, is forty-nine as of 2026-09-16; the figure is left
+as it was written, because what this document is for is the state on the day it
+was written.
+
 **Scope, stated once and enforced throughout.** This covers the `product`
 profile of `koras-saas-starter` only. The KORAS Control Plane repository is
 **out of scope and must not be modified**; so are the Control Plane admin UI and

@@ -381,14 +381,26 @@ in.
 
 `audit_events`, a general tenant-scoped table added by migration
 `00013_audit_events.sql`, is the second implementation of `AuditSink`.
-`SqlAuditSink` in `core/reporting.py` writes to it; the reporting router
-records `report.exported` for every export, `report.export_failed` when a
-background write fails, `report.scheduled` and `report.schedule_removed`,
-and `report.viewed` for every sensitive report, with the report key and
-the range and never the rows; the worker records `report.delivered`. The
-Activity report reads `audit_events` and `ai_audit_events` together. Rows
-are insert-only for a tenant, swept by the worker after
-`AUDIT_RETENTION_DAYS`.
+
+**It is no longer reporting's table.** It shipped inside this capability and
+became foundation on 2026-09-15, because a product generated without reporting
+had nowhere to record at all — and a general audit table that an unrelated
+capability can remove is not somewhere another module can safely record. The
+table, the sink in `core/audit.py`, the envelope and the nightly sweep are
+generated into every product; reporting is one of the modules that writes to
+them. `docs/AUDIT_ARCHITECTURE.md` describes the whole of it.
+
+What reporting still owns is its own six actions, registered at import with the
+class each is kept under: `report.exported` for every export,
+`report.export_failed` when a background write fails, `report.scheduled` and
+`report.schedule_removed`, and `report.viewed` for every sensitive report, with
+the report key and the range and never the rows; the worker records
+`report.delivered`. A product generated without reporting declares none of them.
+
+The Activity report reads `audit_events` and `ai_audit_events` together. Rows
+are insert-only for a tenant, and swept per classification — `report.viewed` is
+activity and goes after ninety days, the rest are audit or administrative and go
+after `AUDIT_RETENTION_DAYS`.
 
 The same table is what the platform collects. `routers/platform_reporting.py`
 answers `GET /internal/platform/v1/activity?since=` on the private contract

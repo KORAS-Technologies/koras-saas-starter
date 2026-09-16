@@ -580,6 +580,31 @@ Permissions: `files.read` and `files.upload` for every role in the tenant,
 the mapping by role because it cannot import the catalogue;
 `product-files.test.ts` in the starter keeps the two agreeing.
 
+**Governance arrived on 2026-09-16**, and the four boundaries above are
+unchanged by it -- what changed is what the row knows and what the module
+records. `docs/STORAGE_ARCHITECTURE.md` is the description; in summary:
+
+- The key gained a category segment: `tenants/<tenant>/<category>/<file>/<name>`.
+  Keys written before it are not rewritten, because the row stores what was
+  signed.
+- Every upload, download, deletion and refusal is recorded in `audit_events`,
+  which is foundation rather than reporting's. The module that stores a
+  customer's files was the one module whose operations left no trace.
+- The browser hashes a file before sending it and the confirmation carries the
+  digest. It is recorded as a claim, and marked verified only where the
+  provider's own digest agrees -- two columns, so nothing reads a claim as a
+  measurement.
+- The quota is checked again at confirmation. Two tickets taken out together
+  were each inside the limit and jointly over it.
+- `core/file_hooks.py` is a registry rather than a single slot, so a scanner can
+  register beside the assistant's indexer instead of replacing it.
+- A scan seam exists and **no scanner is integrated**: `core/file_scan.py`
+  records a result, moves an infected file to `quarantined`, and the download
+  route refuses before it signs a URL.
+- A nightly reconciliation sweep compares the platform bucket with the index. It
+  reports and deletes nothing, and is off unless `STORAGE_RECONCILE_ENABLED`
+  asks for it.
+
 ## 21b. Assistant
 
 The second module that stores something, and the first that runs a model.

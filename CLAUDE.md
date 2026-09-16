@@ -52,6 +52,10 @@ All planning and reference documents live in `docs/`, matching
 | `docs/REPORTING_ARCHITECTURE.md` | Reporting and analytics: one registry, three levels, every report server-authorized |
 | `docs/adr/0002-koras-reporting-framework.md` | The decision record for the reporting framework |
 | `docs/adr/0003-koras-storage-audit-governance.md` | The decision record for storage and audit governance |
+| `docs/STORAGE_ARCHITECTURE.md`    | Storage as built: the provider seam, the key, the index, scanning, reconciliation |
+| `docs/AUDIT_ARCHITECTURE.md`      | Audit as built: the envelope, the action registry, the four classes, retention |
+| `docs/RETENTION_POLICY.md`        | How long things are kept, the precedence, and which half is still design |
+| `docs/BACKUP_AND_RESTORE.md`      | Backup and restore: the design, and why none of it is built |
 
 ## Repository layout (target state)
 
@@ -261,6 +265,36 @@ a platform Analytics section in the Control Plane built on the same package,
 and seven shop reports in `koras-e2e-shop` registered through the extension
 point over a shop domain that repository now has. `docs/REPORTING_ARCHITECTURE.md`
 is the description; F25 in `FOLLOW_UPS.md` is what it leaves out.
+
+**Storage and audit governance began on 2026-09-15 and is part built.** Read
+`docs/adr/0003-koras-storage-audit-governance.md` for the decisions and
+`docs/STORAGE_ARCHITECTURE.md` and `docs/AUDIT_ARCHITECTURE.md` for what is
+there. It landed in the foundation rather than behind a capability, so every
+product has it: `audit_events` left the `reporting` gate, storage records every
+upload, download, deletion and refusal, migration `00018_files_governance.sql`
+put integrity, classification, retention, hold, scan, archive and backup state
+on `files`, `00019_audit_classification.sql` made retention per class, the
+provider seam gained listing, copying and digests, the file hooks became a
+registry, the quota is checked again at confirmation, and the reconciliation
+sweep two comments promised since `00005_files.sql` exists and reports without
+deleting.
+
+**What is not built matters as much as what is, and is easy to misread from the
+schema.** The governance columns exist and almost nothing writes them: as of
+2026-09-16 there is no retention engine for objects, no legal hold enforcement,
+no lifecycle transition, no backup, no restore, no audit search and no audit
+export. `docs/RETENTION_POLICY.md` marks its own two halves apart, and
+`docs/BACKUP_AND_RESTORE.md` is design only and says so in its first line. The
+two capabilities the plan named -- one for storage governance, one for audit --
+are still undeclared, which is why everything so far is foundation. No security
+review, privacy review or manual test pass has run against any of it.
+
+**One defect found and not fixed.** The API declares `fastapi>=0.115.0`, and at
+exactly 0.115.0 every route returning `None` with a 204 status fails at import
+-- `routers/files.py` and `routers/reporting_schedules.py` both have one. CI
+resolves higher, so the suite is green by the luck of resolution rather than
+because the declared floor works. Found 2026-09-16; it belongs in
+`RISK_REGISTER.md`.
 
 **Next step:** `FOLLOW_UPS.md` opens with the order rather than leaving it to be
 re-derived. One entry is left — the F3/F2b pair, a Control Plane authorization
