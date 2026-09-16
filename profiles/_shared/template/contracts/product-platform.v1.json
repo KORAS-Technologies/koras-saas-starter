@@ -42,7 +42,35 @@
     {"method": "get", "path": "/storage-defaults", "summary": "Where this product keeps files unless a policy says otherwise"},
     {"method": "get", "path": "/ai-usage", "capability": "ai", "summary": "Every tenant's AI usage per day since a date, aggregated; read by the platform's collector. Present only on a product generated with the assistant; a product without it answers 404 and the collector records nothing."},
     {"method": "get", "path": "/activity", "capability": "reporting", "summary": "Every tenant's audited activity per day since a date -- events and distinct actors per action and outcome, never a name or a target; read by the platform's collector. Present only on a product generated with reporting; a product without it answers 404 and the collector records nothing."},
-    {"method": "get", "path": "/governance", "summary": "Every tenant's stored objects, audit rows by class, legal holds and audit exports, as counts. What the product knows and the platform does not: how much is stored, how much carries a corroborated digest, how much has no retention resolved, how far back each class of audit row reaches, and what is under hold. Never a key, a filename, an actor or a hold reason. Deliberately not the provider or the quota: the platform owns both, and the product reads them with the customer's token, which a collector does not have."}
+    {
+      "method": "get",
+      "path": "/governance",
+      "summary": "Every tenant's stored objects, audit rows by class, legal holds and audit exports, as counts. What the product knows and the platform does not: how much is stored, how much carries a corroborated digest, how much has no retention resolved, how far back each class of audit row reaches, and what is under hold. Never a key, a filename, an actor or a hold reason. Deliberately not the provider or the quota: the platform owns both, and the product reads them with the customer's token, which a collector does not have.",
+      "response": {
+        "$comment": [
+          "The field names, declared because both sides read them by name and",
+          "neither would notice the other changing one.",
+          "",
+          "The product builds this response from Pydantic models; the Control",
+          "Plane's collector reads the same keys out of the parsed JSON with",
+          "`entry.get(\"bytes_stored\")` and friends. Rename a field on either",
+          "side and nothing fails: the collector reads a missing key as zero, and",
+          "every tenant in the estate quietly reports storing nothing, for ever,",
+          "on a console whose whole purpose is to say whether governance is",
+          "working. That is the failure this block exists to turn into a test.",
+          "",
+          "Both repositories assert their own side against this list. A rename",
+          "now has to happen in three places or fail in two."
+        ],
+        "storage": [
+          "tenant_id", "objects", "bytes_stored", "quarantined", "stranded",
+          "with_checksum", "checksum_verified", "retention_unresolved", "held"
+        ],
+        "audit": ["tenant_id", "classification", "events", "oldest"],
+        "holds": ["tenant_id", "scope", "status", "holds"],
+        "exports": ["tenant_id", "status", "exports", "rows_exported"]
+      }
+    }
   ],
   "rules": {
     "machine_identity_only": {

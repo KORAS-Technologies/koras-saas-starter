@@ -92,9 +92,17 @@ _FINISH = text(
 
 #: The object being restored, where it still exists. An overwrite needs its key
 #: and its metadata; a new object needs the metadata alone.
+#:
+#: Tenant-scoped, and it was not. The request that reaches here cannot name
+#: another tenant's file today -- `routers/restore.py` resolves the backup
+#: through `available_backup(tenant_id=...)` -- but that made a Python check the
+#: only thing between a crafted row and this statement reading another tenant's
+#: metadata under a context that sees every tenant. A predicate here costs
+#: nothing and does not depend on the route staying correct.
 _ORIGINAL = text(
     "select name, content_type, size_bytes, classification, category, uploaded_by, storage_key "
-    "from public.files where id = cast(:file_id as uuid)"
+    "from public.files "
+    "where id = cast(:file_id as uuid) and tenant_id = cast(:tenant_id as uuid)"
 )
 _INSERT_FILE = text(
     "insert into public.files "
@@ -105,7 +113,8 @@ _INSERT_FILE = text(
 )
 _TOUCH_FILE = text(
     "update public.files set size_bytes = :size_bytes, checksum_sha256 = :checksum, "
-    " status = 'ready' where id = cast(:file_id as uuid)"
+    " status = 'ready' "
+    "where id = cast(:file_id as uuid) and tenant_id = cast(:tenant_id as uuid)"
 )
 
 _AUDIT_INSERT = text(
@@ -181,7 +190,28 @@ async def run_one(
     if refusal is not None:
         return "failed", None, refusal
 
-    original = (await session.execute(_ORIGINAL, {"file_id": row.file_id})).first()
+    original = (
+        await session.execute(
+            _ORIGINAL, {"file_id": row.file_id, "tenant_id": row.tenant_id}
+        )
+    ).first()
+
+    # The index row is written as the tenant, never as the platform, and this
+    # is the whole correctness of the function.
+    #
+    # `files` has no provisioning insert policy and `00021` says the omission
+    # is deliberate; `files_update_provisioning` additionally refuses a row
+    # whose status is `purged`. So a worker on the provisioning context could
+    # write the bytes and then fail to write the row -- leaving an object with
+    # no index entry at all, which is outside retention, outside every hold,
+    # outside the purge sweep, and which reconciliation reports without ever
+    # removing. Restored content, usually content the tenant had purged,
+    # resurrected into live storage permanently and invisibly.
+    #
+    # A restored object belongs to the tenant exactly as an uploaded one does,
+    # so it is written under the tenant's own policies. That is also what the
+    # audit inserts in every other sweep already do.
+    await session.execute(_AS_TENANT, {"tenant_id": row.tenant_id})
 
     if row.overwrite:
         if original is None:
@@ -190,10 +220,31 @@ async def run_one(
             # different act than the one now available.
             return "failed", None, "the object to overwrite no longer exists"
         target.put(original.storage_key, content or b"", original.content_type)
-        await session.execute(
+        touched = await session.execute(
             _TOUCH_FILE,
-            {"file_id": row.file_id, "size_bytes": len(content or b""), "checksum": digest},
+            {
+                "file_id": row.file_id,
+                "tenant_id": row.tenant_id,
+                "size_bytes": len(content or b""),
+                "checksum": digest,
+            },
         )
+        # `rowcount` is on the cursor result rather than the typed `Result`
+        # facade, which is why this reads it dynamically. Zero is the case that
+        # matters: `files_update_provisioning` refuses a row whose status is
+        # `purged`, so an approved overwrite of a stranded object would
+        # otherwise write the bytes back, update nothing, and report success.
+        if getattr(touched, "rowcount", 0) != 1:
+            # Reported `completed` while updating nothing, which is the worst
+            # shape a destructive operation can take: the bytes are back in the
+            # bucket, the index still says what it said, and the next sweep
+            # removes them again. A row that could not be updated is a failure
+            # and the request says so.
+            return (
+                "failed",
+                None,
+                "the object could not be brought back into the index; nothing was changed",
+            )
         return "completed", row.file_id, None
 
     # A new object, which destroys nothing. Its own id and its own key, so the
@@ -265,6 +316,15 @@ async def run_restores(ctx: dict[str, Any]) -> dict[str, Any]:
                     await session.execute(_PROVISIONING)
                     outcome, restored, error = "failed", None, "the restore could not be completed"
 
+                # Back to the platform's context before touching the request
+                # row. `run_one` ends on the tenant's, because the index row it
+                # writes belongs to the tenant -- and `_FINISH` is written
+                # against `restore_requests_run_provisioning`, which is the
+                # policy that admits `restoring` -> `completed`. Leaving the
+                # tenant context set would have it permitted by the tenant's
+                # own policy instead: the same outcome today, by a rule nobody
+                # chose, and a silent failure the day either policy changes.
+                await session.execute(_PROVISIONING)
                 await session.execute(
                     _FINISH,
                     {

@@ -13,10 +13,21 @@ codes and the identity they require are not.
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
 import pytest
+
+# Every assertion here but one reads the router's source text, which needs no
+# settings. The exception is the governance response check below: comparing
+# Pydantic field names to the contract means importing the module, and the
+# module reads settings at import. The same four defaults every other unit
+# test in this suite sets, for the same reason.
+os.environ.setdefault("ENVIRONMENT", "dev")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/db")
+os.environ.setdefault("ZITADEL_DOMAIN", "https://example.invalid")
+os.environ.setdefault("ZITADEL_PROJECT_ID", "0")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ROUTER = REPO_ROOT / "services" / "api" / "koras_api" / "routers" / "platform.py"
@@ -269,3 +280,55 @@ def test_storage_defaults_are_the_settings_and_never_a_credential() -> None:
     assert "settings.storage_region" in handler
     for secret in ("access_key", "secret_key", "storage_endpoint"):
         assert secret not in handler, f"{secret} must not be reported"
+
+
+# -- the response shape, and not only the route -------------------------------
+#
+# The routes above are checked by name. That is not enough for `/governance`,
+# because the Control Plane does not call it through a generated client -- its
+# collector reads the keys out of the parsed JSON by name. A field renamed here
+# and not there is read as a missing key, which the collector counts as zero,
+# which the console reports as an estate storing nothing. Nothing goes red.
+#
+# So the contract declares the field names and both repositories assert their
+# own side against it.
+
+
+def _declared(section: str) -> set[str]:
+    route = next(r for r in CONTRACT["routes"] if r["path"] == "/governance")
+    return set(route["response"][section])
+
+
+@pytest.mark.parametrize(
+    ("section", "model"),
+    [
+        ("storage", "StorageSummary"),
+        ("audit", "AuditSummary"),
+        ("holds", "HoldSummary"),
+        ("exports", "ExportSummary"),
+    ],
+)
+def test_the_governance_response_matches_the_contract(section: str, model: str) -> None:
+    """Every field the contract declares exists on the model, and vice versa.
+
+    Both directions on purpose. A field the model dropped would be read as
+    zero by the collector; a field the model added that the contract does not
+    declare is one the Control Plane will never read, which is a different
+    kind of waste and worth knowing about at the same moment.
+    """
+    from koras_api.routers import platform_governance
+
+    fields = set(getattr(platform_governance, model).model_fields)
+    assert fields == _declared(section), (
+        f"{model} and the contract disagree about the {section} fields; "
+        f"only on the model: {sorted(fields - _declared(section))}; "
+        f"only in the contract: {sorted(_declared(section) - fields)}"
+    )
+
+
+def test_the_governance_response_names_nothing_that_identifies_anybody() -> None:
+    """The contract is where this is cheapest to enforce: a field added to the
+    declaration is reviewed here before either side implements it."""
+    every = set().union(*(_declared(s) for s in ("storage", "audit", "holds", "exports")))
+    for forbidden in ("storage_key", "name", "actor_id", "uploaded_by", "reason", "details"):
+        assert forbidden not in every, f"the platform contract would carry {forbidden}"

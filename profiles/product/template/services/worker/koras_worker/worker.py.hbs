@@ -1,6 +1,10 @@
+from typing import Any
+
 from arq import cron
 from arq.connections import RedisSettings
 from arq.typing import WorkerSettingsBase
+from koras_database import assert_rls_enforced
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from .settings import settings
 from .tasks import example_task
@@ -15,8 +19,50 @@ from .tasks.storage_restore import run_restores
 {{/if}}
 
 
+async def verify_isolation(ctx: dict[str, Any]) -> None:
+    """Refuse to sweep on a connection row-level security cannot restrain.
+
+    The API has made this check since R-032 and the worker did not, which a
+    security review found on 2026-09-16. The gap mattered more here than there:
+    every sweep below runs on the provisioning context, two of them delete, and
+    the policies that bound what they may touch -- `files_update_provisioning`
+    refusing a purged row, `legal_holds_expire_provisioning` admitting only
+    `active` to `expired`, `restore_requests_run_provisioning` being the
+    database half of the two-person rule -- are all inert against a role that
+    bypasses RLS. A managed Postgres commonly hands out a superuser as the
+    default role, and a DATABASE_URL copied from a dashboard is usually that
+    role. Such a deployment has correct policies, a green policy suite, and no
+    isolation at all.
+
+    Hardcoded rather than read from a setting, deliberately.
+    `REQUIRE_RLS_ENFORCEMENT` sits in this repository's `NEVER_SETTABLE` list
+    with the reason written out: a switch for it in Doppler would be a switch
+    for turning tenant isolation off, next to the one for the pool size.
+
+    A worker with no database skips, because every sweep that needs one already
+    skips and says so. Nothing else is exempt.
+    """
+    del ctx
+    if not settings.database_url:
+        return
+    engine = create_async_engine(
+        settings.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    )
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+            await assert_rls_enforced(session)
+    finally:
+        await engine.dispose()
+
+
 class WorkerSettings(WorkerSettingsBase):
     functions = [example_task]
+    # Before the first cron fires, not after. A sweep that deleted across
+    # tenants once has already done it.
+    #
+    # `staticmethod` because a bare function assigned in a class body becomes a
+    # method, and arq calls this with the context alone.
+    on_startup = staticmethod(verify_isolation)
     # Nightly, at a quiet hour, on the worker's own clock: no scheduler
     # service is needed for a sweep that runs once a day. Each capability
     # adds its sweeps to the one list.

@@ -30,6 +30,8 @@ from koras_api.core.restore import (  # noqa: E402
 pytest.importorskip("koras_worker")
 from koras_worker.tasks.storage_restore import RESTORE_CEILING, read_and_check  # noqa: E402
 
+pytestmark = pytest.mark.asyncio
+
 CONTENT = b"the original bytes"
 DIGEST = hashlib.sha256(CONTENT).hexdigest()
 OTHER = hashlib.sha256(b"something else").hexdigest()
@@ -127,3 +129,97 @@ def test_an_object_too_large_is_refused_before_it_is_read() -> None:
     # And nothing was fetched: the ceiling exists so the worker does not hold
     # the object in memory, which a check after the read would not achieve.
     assert store.written == []
+
+
+# -- the index row is written as the tenant ------------------------------------
+#
+# The defect this section exists for shipped and was found by a security review
+# the same day. `files` has no provisioning insert policy -- `00021` says the
+# omission is deliberate -- so a worker writing the restored row on the
+# platform context put the bytes in the bucket and then failed to write the
+# row. The object was then outside retention, outside every hold, outside the
+# purge sweep, and reconciliation reports without deleting: restored content,
+# usually content the tenant had purged, live and permanently ungoverned.
+#
+# Confirmed against real Postgres before it was fixed:
+#   ERROR:  new row violates row-level security policy for table "files"
+
+
+class _Recorder:
+    """A session that remembers the order of what it was asked to run."""
+
+    def __init__(self, original: object | None = None) -> None:
+        self._original = original
+        self.statements: list[str] = []
+
+    async def execute(self, statement: object, parameters: object | None = None) -> object:
+        text = str(statement)
+        self.statements.append(text)
+        return _Answer(self._original, text)
+
+    async def commit(self) -> None:
+        self.statements.append("commit")
+
+
+class _Answer:
+    def __init__(self, original: object | None, text: str) -> None:
+        self._original = original
+        self.rowcount = 1
+        self._text = text
+
+    def first(self) -> object | None:
+        return self._original
+
+
+class _Original:
+    name = "a.pdf"
+    content_type = "application/pdf"
+    category = "documents"
+    uploaded_by = "user-1"
+    classification = "standard"
+    storage_key = "tenants/t/documents/f1/a.pdf"
+
+
+class _Row:
+    id = "r1"
+    tenant_id = "11111111-1111-1111-1111-111111111111"
+    file_id = "22222222-2222-2222-2222-222222222222"
+    overwrite = False
+    backup_key = "tenants/t/documents/f1/a.pdf"
+    backup_digest = DIGEST
+    size_bytes = len(CONTENT)
+
+
+async def test_the_restored_row_is_written_on_the_tenant_context() -> None:
+    """Not the platform's. The insert is refused there, and the refusal used to
+    arrive after the bytes were already in the live bucket."""
+    from koras_worker.tasks.storage_restore import run_one
+
+    session = _Recorder()
+    outcome, _, _ = await run_one(
+        session,  # type: ignore[arg-type]
+        _Store(),  # type: ignore[arg-type]
+        _Store(),  # type: ignore[arg-type]
+        _Row(),  # type: ignore[arg-type]
+    )
+    assert outcome == "completed"
+
+    tenant_at = next(i for i, t in enumerate(session.statements) if "app.tenant_id" in t)
+    insert_at = next(i for i, t in enumerate(session.statements) if "insert into public.files" in t)
+    assert tenant_at < insert_at, "the row was written before the tenant context was set"
+
+
+async def test_reading_the_original_is_scoped_to_the_tenant() -> None:
+    """A crafted request naming another tenant's file must not reach that
+    tenant's metadata under a context that sees every tenant."""
+    from koras_worker.tasks.storage_restore import run_one
+
+    session = _Recorder(original=_Original())
+    await run_one(
+        session,  # type: ignore[arg-type]
+        _Store(),  # type: ignore[arg-type]
+        _Store(),  # type: ignore[arg-type]
+        _Row(),  # type: ignore[arg-type]
+    )
+    read = next(t for t in session.statements if "select name, content_type" in t)
+    assert "tenant_id = cast(:tenant_id as uuid)" in read
