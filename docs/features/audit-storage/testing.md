@@ -60,17 +60,18 @@ tests, because they have no code.
 
 | # | Gap | Consequence |
 |---|-----|-------------|
-| A1 | **The reconciliation sweep's cross-context insert is unproven** | It leaves the provisioning context to write as a tenant. No isolation test exercises that writer under the restricted role, and it is exactly the kind of path that looks right and is not |
-| A2 | **No isolation test for `00019`'s column** | Nothing asserts a tenant cannot rewrite `classification` to shorten its own retention |
+| ~~A1~~ | ~~The reconciliation sweep's cross-context insert is unproven~~ | **Closed 2026-09-16** by `supabase/tests/190_sweep_audit_write_isolation.sql`, which also proves provisioning cannot insert at all -- the refusal the switch exists for |
+| ~~A2~~ | ~~No isolation test for `00019`'s column~~ | **Closed 2026-09-16** by `supabase/tests/180_audit_classification_isolation.sql` |
 | A3 | AUDIT-009-AC03 cannot pass | No hold exists; the sweep would delete a record under investigation |
 | A4 | **No test that a customer token is refused** on the private contract | The refusal is asserted by reading `require_platform_machine` |
 | A5 | **No manual pass has been executed** | Eleven cases, every verdict blank |
 | A6 | **No independent review** — code, architecture, security or privacy | Four gates unmet |
 | A7 | **No alert if the sweep stops** | The table grows and only the log notices |
 
-**A1 and A2 are the two to close first.** Both are small `.sql` tests, both
-cover a boundary that was crossed deliberately, and both are cheaper now than
-after something depends on the behaviour being right.
+**A1 and A2 closed on 2026-09-16**, and both were mutation-tested rather than
+merely run: adding a tenant update policy makes 180 fail, and adding a
+provisioning insert policy makes 190 fail. A test that cannot fail proves
+nothing, which is the same reasoning behind CI's removed-`force` check.
 
 ## What CI runs
 

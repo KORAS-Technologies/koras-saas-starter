@@ -71,14 +71,13 @@ no code.
 | G1 | **No real upload in CI.** Generator Integration has Postgres and no bucket | The signing, the PUT and the digest are proven against MinIO locally and dev by hand. `FOLLOW_UPS.md` F22 |
 | G2 | **No test for 404-not-403** on another tenant's file id | The choice is a deliberate anti-enumeration measure and nothing asserts it |
 | G3 | **No concurrency test for the quota** | The second check is asserted by reading the code, not by racing two tickets |
-| G4 | **The reconciliation sweep's own audit write is unproven** under the restricted role | It switches from provisioning to a tenant context to insert; no isolation test exercises that path |
+| ~~G4~~ | ~~The reconciliation sweep's own audit write is unproven~~ | **Closed 2026-09-16** by `supabase/tests/190_sweep_audit_write_isolation.sql`, mutation-tested |
 | G5 | **No scanner anywhere**, so the quarantine refusal is proven by unit reasoning only | `TEST-STORAGE-018-01` is BLOCKED, not passing |
 | G6 | **No manual pass has been executed at all** | Fourteen cases, every verdict blank |
 | G7 | **No independent review** — code, architecture, security or privacy | Four gates unmet |
 
-G4 is the one I would close first: it is a small `.sql` test, it covers a writer
-that crosses a tenant boundary deliberately, and it is exactly the kind of path
-that looks correct and is not.
+G4 closed on 2026-09-16. G2, G3, G5, G6 and G7 remain, and G6 -- that no manual
+pass has been executed at all -- is the largest.
 
 ## What CI actually runs on every push
 
