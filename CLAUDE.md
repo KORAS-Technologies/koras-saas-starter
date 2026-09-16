@@ -51,6 +51,7 @@ All planning and reference documents live in `docs/`, matching
 | `docs/adr/0001-koras-shared-ai-foundation.md` | The decision record for the shared AI foundation |
 | `docs/REPORTING_ARCHITECTURE.md` | Reporting and analytics: one registry, three levels, every report server-authorized |
 | `docs/adr/0002-koras-reporting-framework.md` | The decision record for the reporting framework |
+| `docs/adr/0003-koras-storage-audit-governance.md` | The decision record for storage and audit governance |
 
 ## Repository layout (target state)
 
