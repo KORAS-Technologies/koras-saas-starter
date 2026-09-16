@@ -1,8 +1,7 @@
-"""The audit sweep deletes by age, on the provisioning context, and refuses zero.
+"""The audit sweep keeps each class for its own time, on the provisioning context.
 
-Foundation, like the sweep itself. These ran under `test_reporting_retention`
-while the table was reporting's; a product generated without reporting carried
-neither the sweep nor a test for it.
+Foundation, like the sweep itself. One number governed the whole table until
+2026-09-16: too long for an opened file, too short for a refusal.
 """
 
 from __future__ import annotations
@@ -18,8 +17,10 @@ os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 pytest.importorskip("koras_worker")
 from koras_worker.tasks.audit_retention import (  # noqa: E402
+    AuditSettings,
     purge_audit_events,
     purge_audit_history,
+    retention_by_class,
 )
 
 
@@ -45,21 +46,57 @@ class _Session:
         self.committed = True
 
 
-async def test_the_sweep_runs_on_the_provisioning_context_and_deletes_by_age() -> None:
-    session = _Session(removed=3)
-    removed = await purge_audit_events(session, retention_days=365)  # type: ignore[arg-type]
-    assert removed == 3
+def _retention() -> dict[str, int]:
+    return {"activity": 90, "audit": 365, "administrative": 365, "security": 1095}
+
+
+async def test_every_class_is_swept_at_its_own_age_in_one_transaction() -> None:
+    session = _Session(removed=2)
+    removed = await purge_audit_events(session, retention=_retention())  # type: ignore[arg-type]
+
+    assert removed == {"activity": 2, "administrative": 2, "audit": 2, "security": 2}
     assert session.committed
-    first, purge = session.statements
-    assert "app.provisioning" in first[0]
-    assert "delete from public.audit_events" in purge[0]
-    assert purge[1] is not None
-    assert datetime.now(UTC) - purge[1]["before"] > timedelta(days=364)
+
+    provisioning, *deletes = session.statements
+    assert "app.provisioning" in provisioning[0]
+    # One provisioning setting for all four deletes: a sweep interrupted half
+    # way leaves the table consistent with itself.
+    assert len(deletes) == 4
+    assert all("delete from public.audit_events" in text for text, _ in deletes)
+
+    by_class = {p["classification"]: p["before"] for _, p in deletes if p is not None}
+    now = datetime.now(UTC)
+    assert now - by_class["activity"] > timedelta(days=89)
+    assert now - by_class["security"] > timedelta(days=1094)
+    # Security is kept longest; activity the shortest. The ordering is the
+    # whole point of the column.
+    assert by_class["security"] < by_class["audit"] < by_class["activity"]
 
 
-async def test_retention_of_nothing_is_refused() -> None:
-    with pytest.raises(ValueError, match="at least 1"):
-        await purge_audit_events(_Session(0), retention_days=0)  # type: ignore[arg-type]
+async def test_retention_of_nothing_is_refused_for_any_class() -> None:
+    retention = _retention()
+    retention["security"] = 0
+    with pytest.raises(ValueError, match="security"):
+        await purge_audit_events(_Session(0), retention=retention)  # type: ignore[arg-type]
+
+
+async def test_nothing_is_deleted_when_one_class_is_misconfigured() -> None:
+    """The guard runs over every class before the first delete, so a typo in
+    one number cannot wipe the three that were spelled correctly."""
+    retention = _retention()
+    retention["audit"] = -1
+    session = _Session(5)
+    with pytest.raises(ValueError):
+        await purge_audit_events(session, retention=retention)  # type: ignore[arg-type]
+    assert session.statements == []
+    assert not session.committed
+
+
+def test_administrative_shares_the_default_and_security_does_not() -> None:
+    mapping = retention_by_class(AuditSettings())
+    assert mapping["administrative"] == mapping["audit"] == 365
+    assert mapping["activity"] == 90
+    assert mapping["security"] == 1095
 
 
 async def test_the_sweep_skips_loudly_without_a_database(

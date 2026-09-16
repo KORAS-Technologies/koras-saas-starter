@@ -270,6 +270,16 @@ export interface FileRow {
   indexed_at: string | null
   /** Why it was not indexed, or how many chunks it became. */
   index_note: string | null
+  /** The SHA-256 the browser computed over the bytes it sent, if it sent one. */
+  checksum_sha256: string | null
+  /**
+   * Whether the provider's own digest agreed with that claim. False does not
+   * mean a mismatch -- most objects have no comparable provider digest -- so
+   * this is "corroborated" rather than "correct".
+   */
+  checksum_verified: boolean
+  /** pending, clean, infected or skipped. Withheld files are refused server-side. */
+  scan_status: string
 }
 
 export interface FileList {
@@ -314,9 +324,12 @@ export function requestUpload(
   })
 }
 
-export function completeUpload(options: RequestOptions & { fileId: string }): Promise<FileRow> {
+export function completeUpload(
+  options: RequestOptions & { fileId: string; checksumSha256?: string | null },
+): Promise<FileRow> {
   return request<FileRow>(`/api/v1/files/${encodeURIComponent(options.fileId)}/complete`, options, {
     method: 'POST',
+    body: { checksum_sha256: options.checksumSha256 ?? null },
   })
 }
 

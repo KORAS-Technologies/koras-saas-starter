@@ -65,6 +65,28 @@ function formatBytes(bytes: number, locale: Locale): string {
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(value)} ${units[unit]}`
 }
 
+/**
+ * The SHA-256 of what is about to be sent, computed in the browser.
+ *
+ * `crypto.subtle` needs a secure context, which a deployed product always has
+ * and a plain-http development origin does not; and it reads the whole file
+ * into memory, which is fine for the five-gigabyte ceiling the API enforces
+ * but not free. Either way a failure here is not an upload failure: the digest
+ * is corroborating evidence, so the upload proceeds without one rather than
+ * refusing a file because a hash could not be taken.
+ */
+async function digestOf(file: File): Promise<string | null> {
+  try {
+    if (!globalThis.crypto?.subtle) return null
+    const hashed = await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer())
+    return Array.from(new Uint8Array(hashed))
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('')
+  } catch {
+    return null
+  }
+}
+
 function putWithProgress(
   url: string,
   headers: Record<string, string>,
@@ -131,8 +153,11 @@ export function FilesPanel({
           setError(ticket.message)
           return
         }
+        // Before the PUT, so the digest is of the bytes this browser holds
+        // rather than of a file that changed on disk while it uploaded.
+        const checksum = await digestOf(file)
         await putWithProgress(ticket.value.upload_url, ticket.value.headers, file, setProgress)
-        const done = await completeUpload(ticket.value.file_id)
+        const done = await completeUpload(ticket.value.file_id, checksum)
         if (done.status === 'error') {
           setError(done.message)
           return

@@ -7,7 +7,7 @@ from .tasks import example_task
 {{#if capability.ai}}from .tasks.ai_retention import purge_ai_history
 {{/if}}from .tasks.audit_retention import purge_audit_history
 {{#if capability.reporting}}from .tasks.reporting import deliver_scheduled_reports
-{{/if}}
+{{/if}}from .tasks.storage_reconcile import reconcile_storage
 
 
 class WorkerSettings(WorkerSettingsBase):
@@ -20,7 +20,11 @@ class WorkerSettings(WorkerSettingsBase):
         # events, so every product forgets them on a schedule.
         cron(purge_audit_history, hour=3, minute=23),
 {{#if capability.ai}}        cron(purge_ai_history, hour=3, minute=17),
-{{/if}}{{#if capability.reporting}}        # The seam for scheduled delivery. Hourly, and it says nothing is
+{{/if}}        # What the bucket holds against what the index says. Off unless
+        # STORAGE_RECONCILE_ENABLED asks for it, and it reports rather than
+        # deletes: an object it cannot match is not proof of a leak.
+        cron(reconcile_storage, hour=3, minute=41),
+{{#if capability.reporting}}        # The seam for scheduled delivery. Hourly, and it says nothing is
         # scheduled until a product gives it something to deliver.
         cron(deliver_scheduled_reports, minute=41),
 {{/if}}    ]

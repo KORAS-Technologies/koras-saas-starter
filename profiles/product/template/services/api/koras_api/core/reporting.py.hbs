@@ -25,7 +25,7 @@ from typing import Annotated
 
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from koras_audit import AuditEvent
+from koras_audit import AuditAction, AuditEvent, Classification, actions
 from koras_auth.permissions import permissions_for
 from koras_reporting import Entitlement, Plan, ReportContext, ReportingCatalogue, Scope
 
@@ -38,6 +38,46 @@ from .settings import PRODUCT_CODE
 from .tenant import TenantDep
 
 _log = logging.getLogger(__name__)
+
+# The actions this capability records. Registered here, at import, because the
+# class an action is kept under belongs to the action: `report.viewed` is
+# activity and `report.exported` is not, since an export leaves the product.
+# A product generated without reporting registers none of these and its sweep
+# never sees them.
+REPORTING_ACTIONS = (
+    AuditAction(
+        key="report.viewed",
+        classification=Classification.ACTIVITY,
+        summary="A report about people was opened.",
+    ),
+    AuditAction(
+        key="report.exported",
+        classification=Classification.AUDIT,
+        summary="A report was exported; a copy of the rows left the product.",
+    ),
+    AuditAction(
+        key="report.export_failed",
+        classification=Classification.AUDIT,
+        summary="A background export could not be written.",
+    ),
+    AuditAction(
+        key="report.scheduled",
+        classification=Classification.ADMINISTRATIVE,
+        summary="A recurring report delivery was created.",
+    ),
+    AuditAction(
+        key="report.schedule_removed",
+        classification=Classification.ADMINISTRATIVE,
+        summary="A recurring report delivery was removed.",
+    ),
+    AuditAction(
+        key="report.delivered",
+        classification=Classification.AUDIT,
+        summary="A scheduled report was rendered and mailed.",
+    ),
+)
+
+actions.extend(REPORTING_ACTIONS)
 
 #: The platform entitlements that gate reporting. Named once here and once in
 #: `packages/branding`'s navigation registry; the generator's structural test

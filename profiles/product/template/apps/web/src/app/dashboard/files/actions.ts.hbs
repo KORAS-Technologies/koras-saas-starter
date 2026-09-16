@@ -87,11 +87,19 @@ export async function requestUpload(input: {
   }
 }
 
-export async function completeUpload(fileId: string): Promise<ActionResult<null>> {
+/**
+ * Confirm an upload, carrying the digest the browser computed over the bytes
+ * it sent. The digest is the client's claim and is recorded as one; the API
+ * marks it corroborated only where the provider offers a digest that agrees.
+ */
+export async function completeUpload(
+  fileId: string,
+  checksumSha256?: string | null,
+): Promise<ActionResult<null>> {
   const auth = await session('files.upload')
   if (auth === null) return { status: 'error', message: (await translator())('files.error.forbidden') }
   try {
-    await completeUploadRequest({ ...auth, fileId })
+    await completeUploadRequest({ ...auth, fileId, checksumSha256 })
     revalidatePath('/dashboard/files')
     return { status: 'ok', value: null }
   } catch (error) {

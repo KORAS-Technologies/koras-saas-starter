@@ -108,11 +108,16 @@ _PLAN = text(
     "from public.tenant_plans where tenant_id = :tenant_id"
 )
 
+# `report.delivered` is the only action this writes, and it is classified
+# `audit` in the API's registry. The class is spelled here rather than looked
+# up because the worker does not import the API, and 00019's default is the
+# same value -- so a mismatch would be invisible. `test_reporting_delivery`
+# asserts the two agree.
 _AUDIT_INSERT = text(
     "insert into public.audit_events "
-    " (tenant_id, actor_id, action, target_type, target_id, outcome, details) "
+    " (tenant_id, actor_id, action, target_type, target_id, outcome, details, classification) "
     "values (:tenant_id, 'system', :action, 'report', :target_id, :outcome, "
-    " cast(:details as jsonb))"
+    " cast(:details as jsonb), 'audit')"
 )
 
 #: How many schedules one hourly run delivers at most.

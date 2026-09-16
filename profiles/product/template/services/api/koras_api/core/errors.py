@@ -45,6 +45,7 @@ class ApiErrorCode(StrEnum):
     FILE_NOT_FOUND = "file_not_found"
     UPLOAD_NOT_ARRIVED = "upload_not_arrived"
     UPLOAD_SIZE_MISMATCH = "upload_size_mismatch"
+    FILE_QUARANTINED = "file_quarantined"
     STORAGE_UNAVAILABLE = "storage_unavailable"
     # reporting
     REPORT_NOT_FOUND = "report_not_found"

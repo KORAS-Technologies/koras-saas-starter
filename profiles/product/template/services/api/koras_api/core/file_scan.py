@@ -1,0 +1,100 @@
+"""The seam a malware scanner plugs into, and the state it writes.
+
+**No scanner is integrated here, and that is the point.** Which scanner a
+product uses is a product's decision and usually a customer's contractual one;
+what the starter owes every product is a place to put the answer, a state the
+rest of the system already respects, and a refusal that happens on the server.
+
+A scanner registers as a `FileHook` like any other interested module, reads
+the object through the signed URL it is handed after an upload, and calls
+`record_scan` with what it found. Nothing else changes: `files.scan_status`
+was added by migration 00018 and `quarantined` has been one of the statuses
+since the same migration, so adding a scanner is a change of code rather than
+a change of schema.
+
+The default is `pending` and downloads of `pending` files are allowed. That is
+deliberate. A product with no scanner would otherwise have every file refused
+the moment this shipped, and a control that breaks the feature it protects is
+a control that gets switched off. Only `infected` is refused.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Literal
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .audit import record
+
+logger = logging.getLogger(__name__)
+
+#: What a scan concluded. `skipped` is a real answer -- a type the scanner
+#: does not handle, or a file past its size ceiling -- and is not `clean`.
+ScanStatus = Literal["pending", "clean", "infected", "skipped"]
+
+#: The statuses that may not be downloaded. Only one, and deliberately: see
+#: the module docstring on why `pending` is not here.
+WITHHELD: frozenset[str] = frozenset({"infected"})
+
+_RECORD = text(
+    "update public.files set scan_status = :status, scan_note = :note "
+    "where id = cast(:file_id as uuid) and tenant_id = cast(:tenant_id as uuid)"
+)
+_QUARANTINE = text(
+    "update public.files set scan_status = :status, scan_note = :note, status = 'quarantined' "
+    "where id = cast(:file_id as uuid) and tenant_id = cast(:tenant_id as uuid)"
+)
+
+
+def withheld(scan_status: str | None) -> bool:
+    """Whether a file with this scan result may be handed to anyone.
+
+    A pure function so the answer is the same in the download route, in the
+    listing and in any product code that asks, rather than three spellings of
+    one rule that drift apart.
+    """
+    return (scan_status or "pending") in WITHHELD
+
+
+async def record_scan(
+    session: AsyncSession,
+    *,
+    tenant_id: str,
+    file_id: str,
+    actor_id: str = "system",
+    status: ScanStatus,
+    note: str = "",
+) -> None:
+    """Write what a scan found, and withhold the file when it found something.
+
+    An infected file is moved to `quarantined` in the same statement as its
+    scan result, so there is no moment at which a file is known to be
+    infected and still listed as ready. The object is not deleted: a customer
+    may need it recovered, and destroying evidence of an incident is rarely
+    what an incident needs.
+
+    The note is a short sentence for a person to read, never a scanner's raw
+    output -- which can carry the name of the sample and, with it, whatever
+    the sample's author put in that name.
+    """
+    statement = _QUARANTINE if status == "infected" else _RECORD
+    await session.execute(
+        statement,
+        {"status": status, "note": note[:200], "file_id": file_id, "tenant_id": tenant_id},
+    )
+    await session.commit()
+
+    if status == "infected":
+        logger.warning("a scan withheld a file for tenant %s", tenant_id)
+        await record(
+            session,
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            action="storage.object.quarantined",
+            target_type="file",
+            target_id=file_id,
+            outcome="denied",
+            details={"scan_status": status},
+        )

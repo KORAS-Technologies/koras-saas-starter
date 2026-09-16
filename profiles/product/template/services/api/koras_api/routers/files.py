@@ -39,6 +39,7 @@ from ..core.auth import AuthDep
 from ..core.database import DbSession
 from ..core.errors import ApiErrorCode, api_error
 from ..core.file_hooks import hooks, run_after_upload
+from ..core.file_scan import withheld
 from ..core.storage import STORAGE_ENTITLEMENT, StorageDep
 from ..core.tenant import TenantDep
 
@@ -70,6 +71,14 @@ class FileRow(BaseModel):
     content_type: str
     uploaded_by: str
     uploaded_at: datetime
+    #: The digest, and whether anyone but the client vouched for it. Two
+    #: fields rather than one, so a reader is never left guessing whether a
+    #: hash was measured or merely claimed.
+    checksum_sha256: str | None = None
+    checksum_verified: bool = False
+    #: pending, clean, infected or skipped. `pending` where no scanner is
+    #: installed, which is the starter's own state.
+    scan_status: str = "pending"
     #: When the assistant's index took the file's text, or why it did not.
     indexed_at: datetime | None = None
     index_note: str | None = None
@@ -90,6 +99,20 @@ class UploadRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     size_bytes: int = Field(ge=0, le=MAX_OBJECT_BYTES)
     content_type: str = Field(default="application/octet-stream", max_length=255)
+
+
+class CompleteRequest(BaseModel):
+    """What the browser says about the upload it has just finished.
+
+    The digest is optional and is the client's claim about the bytes it sent.
+    It is recorded as a claim -- see `checksum_verified_at`, which this route
+    does not set -- because a client asserting a hash of its own upload proves
+    only that the client is consistent with itself. It is still worth having:
+    it detects a file that changed on disk between two uploads, and it gives a
+    later verification something to compare against.
+    """
+
+    checksum_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class UploadTicket(BaseModel):
@@ -269,6 +292,7 @@ async def request_upload(
 @router.post("/files/{file_id}/complete", response_model=FileRow)
 async def complete_upload(
     file_id: str,
+    body: CompleteRequest,
     tenant: TenantDep,
     claims: AuthDep,
     storage: StorageDep,
@@ -346,10 +370,24 @@ async def complete_upload(
                 "this upload would exceed the storage included in the plan",
             )
 
+    # The provider's own digest, where it will give one. A multipart object's
+    # entity tag is a digest of digests and `checksum()` answers None for it,
+    # so corroboration is attempted and never assumed.
     now = datetime.now(UTC)
+    provider_digest = storage.store.checksum(row.storage_key)
+    claimed = body.checksum_sha256
+    corroborated = (
+        claimed is not None and provider_digest is not None and claimed == provider_digest
+    )
+    verified_at = now if corroborated else None
+
     await session.execute(
-        text("update public.files set status = 'ready', ready_at = :now where id = :id"),
-        {"now": now, "id": file_id},
+        text(
+            "update public.files set status = 'ready', ready_at = :now, "
+            " checksum_sha256 = :checksum, checksum_verified_at = :verified "
+            "where id = :id"
+        ),
+        {"now": now, "id": file_id, "checksum": claimed, "verified": verified_at},
     )
     await session.commit()
     await _record(
@@ -359,7 +397,16 @@ async def complete_upload(
         action="storage.object.uploaded",
         target_id=file_id,
         outcome="ok",
-        details={"size_bytes": row.size_bytes, "content_type": row.content_type},
+        details={
+            "size_bytes": row.size_bytes,
+            "content_type": row.content_type,
+            # Whether the digest was claimed, corroborated, or absent. Never
+            # the digest itself: it is not a secret, but an audit row is not
+            # where a file's contents get fingerprinted for later matching.
+            "integrity": (
+                "verified" if verified_at else "claimed" if claimed else "none"
+            ),
+        },
     )
     interested = hooks.for_upload(row.content_type) if credentials is not None else ()
     if interested and credentials is not None:
@@ -389,6 +436,8 @@ async def complete_upload(
         content_type=row.content_type,
         uploaded_by=row.uploaded_by,
         uploaded_at=now,
+        checksum_sha256=claimed,
+        checksum_verified=verified_at is not None,
     )
 
 
@@ -407,6 +456,23 @@ async def download(
     issued is the last thing this side can honestly claim to know.
     """
     row = await _ready(session, tenant.id, file_id)
+    if withheld(row.scan_status):
+        # Server-side, before the URL is signed. A scan result the page
+        # consults and the API does not is a suggestion, not a control.
+        await _record(
+            session,
+            tenant_id=tenant.id,
+            actor_id=claims.sub,
+            action="storage.object.quarantined",
+            target_id=file_id,
+            outcome="denied",
+            details={"reason": "scan"},
+        )
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            ApiErrorCode.FILE_QUARANTINED,
+            "this file is withheld: a scan did not find it clean",
+        )
     await _record(
         session,
         tenant_id=tenant.id,
@@ -483,7 +549,7 @@ async def _one(session: DbSession, tenant_id: str, file_id: str, state: str) -> 
         ) from None
     result = await session.execute(
         text(
-            "select id, storage_key, name, size_bytes, content_type, uploaded_by "
+            "select id, storage_key, name, size_bytes, content_type, uploaded_by, scan_status "
             "from public.files where id = :id and tenant_id = :tenant_id and status = :state"
         ),
         {"id": file_id, "tenant_id": tenant_id, "state": state},

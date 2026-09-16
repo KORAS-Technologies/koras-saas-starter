@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 
-from koras_audit import AuditEvent, Outcome
+from koras_audit import AuditAction, AuditEvent, Classification, Outcome, actions
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,10 +26,66 @@ from .database import rebind_tenant
 
 _AUDIT_INSERT = text(
     "insert into public.audit_events "
-    " (tenant_id, actor_id, action, target_type, target_id, outcome, details, created_at) "
+    " (tenant_id, actor_id, action, target_type, target_id, outcome, details, "
+    "  classification, created_at) "
     "values (:tenant_id, :actor_id, :action, :target_type, :target_id, :outcome, "
-    " cast(:details as jsonb), :created_at)"
+    " cast(:details as jsonb), :classification, :created_at)"
 )
+
+# ── the actions this build can record ─────────────────────────────────────────
+#
+# Declared here rather than discovered from the strings passed at call sites, so
+# that the class an action is kept under is a property of the action. A product
+# adds its own with `actions.add(...)` at import; a duplicate key is refused
+# where it is a traceback.
+#
+# Storage is foundation, so its actions are registered unconditionally. A
+# capability's actions are registered by that capability's own module.
+
+STORAGE_ACTIONS = (
+    AuditAction(
+        key="storage.object.uploaded",
+        classification=Classification.AUDIT,
+        summary="A file was stored and confirmed present in the bucket.",
+    ),
+    AuditAction(
+        key="storage.object.downloaded",
+        classification=Classification.ACTIVITY,
+        summary="A signed download URL was issued for a file.",
+    ),
+    AuditAction(
+        key="storage.object.deleted",
+        classification=Classification.AUDIT,
+        summary="A file and its object were removed.",
+    ),
+    AuditAction(
+        key="storage.object.delete_refused",
+        classification=Classification.SECURITY,
+        summary="A deletion was refused: the caller lacked the role.",
+    ),
+    AuditAction(
+        key="storage.object.quarantined",
+        classification=Classification.SECURITY,
+        summary="A file was withheld: a scan did not find it clean.",
+    ),
+    AuditAction(
+        key="storage.upload.refused",
+        classification=Classification.SECURITY,
+        summary="An upload was refused by the plan or the quota.",
+    ),
+    AuditAction(
+        key="storage.upload.failed",
+        classification=Classification.AUDIT,
+        summary="An upload was announced and did not arrive as promised.",
+    ),
+    AuditAction(
+        key="storage.reconcile.orphan_found",
+        classification=Classification.AUDIT,
+        summary="The sweep found an object without a row, or a row without an object.",
+    ),
+)
+
+actions.extend(STORAGE_ACTIONS)
 
 
 async def record(
@@ -100,6 +156,11 @@ class SqlAuditSink:
                     "target_id": event.target_id,
                     "outcome": str(event.outcome),
                     "details": json.dumps(dict(event.details)),
+                    # From the registry, never from the caller: an action's
+                    # class decides how long the row is kept, and a caller
+                    # choosing it per call is how a security event is swept
+                    # on the activity schedule.
+                    "classification": str(actions.classification_of(event.action)),
                     "created_at": event.at,
                 },
             )
