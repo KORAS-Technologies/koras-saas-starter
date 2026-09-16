@@ -20,7 +20,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 pytest.importorskip("koras_worker")
-from koras_storage import Destination, Provider  # noqa: E402
+from koras_storage import Destination, IntegrityRefused, Provider  # noqa: E402
 from koras_worker.tasks.storage_backup import (  # noqa: E402
     STREAM_CEILING,
     BackupSettings,
@@ -105,19 +105,34 @@ class _Store:
         digest: str | None = DIGEST,
         content: bytes | None = b"one",
         refuse: bool = False,
+        reject: bool = False,
     ) -> None:
         self._digest = digest
         self._content = content
         self._refuse = refuse
+        #: The destination compared the bytes against the digest it was sent
+        #: and disagreed, which is the control working.
+        self._reject = reject
         self.copied: list[tuple[str, str]] = []
         self.put_keys: list[str] = []
+        self.put_digests: list[str | None] = []
         self.deleted: list[str] = []
 
     def get(self, key: str) -> bytes | None:
         return self._content
 
-    def put(self, key: str, content: bytes, content_type: str) -> None:
+    def put(
+        self,
+        key: str,
+        content: bytes,
+        content_type: str,
+        *,
+        checksum_sha256: str | None = None,
+    ) -> None:
+        if self._reject:
+            raise IntegrityRefused("the bytes do not match the digest")
         self.put_keys.append(key)
+        self.put_digests.append(checksum_sha256)
 
     def copy(self, source_key: str, dest_key: str, *, dest: Destination | None = None) -> None:
         if self._refuse:
@@ -202,6 +217,11 @@ def test_a_cross_provider_copy_hashes_what_it_actually_read() -> None:
     assert outcome.status == "verified"
     assert outcome.source_digest == DIGEST
     assert target.put_keys == ["tenants/t/documents/f1/a.pdf"]
+    # The digest goes *with* the write, not after it. Without this the
+    # destination stores no SHA-256, `checksum()` answers None, and every
+    # cross-provider copy reads `copied` for ever -- a backup nobody could
+    # confirm, from the job whose whole purpose is confirming backups.
+    assert target.put_digests == [DIGEST]
 
 
 def test_an_object_too_large_to_stream_is_left_rather_than_loaded() -> None:
@@ -415,3 +435,38 @@ async def test_a_destination_that_will_not_delete_keeps_the_catalogue_row() -> N
     )
     assert (retired, stuck) == (0, 1)
     assert not session.written("delete from public.file_backups")
+
+
+async def test_a_destination_that_rejects_the_bytes_is_a_failure_not_a_retry() -> None:
+    """A provider comparing what it received against the digest it was sent,
+    and disagreeing, is the control working. Writing the bytes again without
+    the digest would turn a caught corruption into a catalogued backup."""
+    outcome = copy_one(
+        _Store(content=b"one"),  # type: ignore[arg-type]
+        _Store(reject=True),  # type: ignore[arg-type]
+        TARGET,
+        source_key="tenants/t/documents/f1/a.pdf",
+        backup_key="tenants/t/documents/f1/a.pdf",
+        size_bytes=3,
+        streaming=True,
+    )
+    assert outcome.status == "failed"
+    assert outcome.note is not None and "not matching" in outcome.note
+
+
+def test_a_destination_with_no_checksum_support_still_gets_the_copy() -> None:
+    """A provider that cannot answer a SHA-256 leaves the copy at `copied`.
+    That is an honest report of an unverifiable copy, and it is better than no
+    copy: the object is still somewhere else."""
+    target = _Store(digest=None)
+    outcome = copy_one(
+        _Store(content=b"one"),  # type: ignore[arg-type]
+        target,  # type: ignore[arg-type]
+        TARGET,
+        source_key="tenants/t/documents/f1/a.pdf",
+        backup_key="tenants/t/documents/f1/a.pdf",
+        size_bytes=3,
+        streaming=True,
+    )
+    assert outcome.status == "copied"
+    assert target.put_keys == ["tenants/t/documents/f1/a.pdf"]

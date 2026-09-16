@@ -83,9 +83,27 @@ An object the run could not compare stays `copied`, and the catalogue records
 the whole point: "no digest" is the ordinary case, because a provider computes a
 SHA-256 only when the upload asked it to.
 
-A cross-provider copy produces a stronger statement than either provider's. The
-bytes pass through the worker, so the digest compared is of what this process
-actually read from the source and actually wrote to the destination.
+A cross-provider copy produces the strongest statement of the three, and it is
+worth understanding why. The bytes pass through the worker, which hashes what it
+read; that digest is then **sent with the write**, so the destination compares
+before it stores. A corrupt object is refused at the door rather than
+catalogued and compared afterwards, and the destination keeps the digest, which
+is what lets the comparison that follows succeed at all.
+
+Two refusals, opposite in meaning, and the code must not confuse them:
+
+| The destination says | What it means | What happens |
+|----------------------|---------------|--------------|
+| `BadDigest`, `InvalidDigest`, a checksum mismatch | It compared and disagreed | **`failed`.** Never retried without the digest — writing the bytes anyway would turn a caught corruption into a catalogued backup |
+| `NotImplemented`, `InvalidRequest`, `BadRequest` | It does not understand the parameter | The write is repeated without the digest. The copy is then one nobody can verify, which `checksum()` reports by answering nothing |
+| anything else | A missing bucket, a rejected credential | Raised unchanged. Swallowing it would make a broken destination look like a provider without checksum support |
+
+The first version of the cross-provider path, on 2026-09-16, did not send the
+digest with the write. The destination therefore stored no SHA-256, `checksum()`
+answered nothing, and **every cross-provider copy would have read `copied` for
+ever** — a backup nobody could confirm, produced by the job whose entire purpose
+is confirming backups. It was found by asking what would happen on Cloudflare R2
+before anything ran there.
 
 A digest that cannot be compared — a multipart object's entity tag is a digest
 of digests — is **not** a mismatch. The provider seam already answers "no

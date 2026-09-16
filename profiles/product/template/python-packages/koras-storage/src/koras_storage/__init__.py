@@ -35,6 +35,9 @@ from botocore.client import Config  # type: ignore[import-untyped]
 from botocore.exceptions import ClientError  # type: ignore[import-untyped]
 
 __all__ = [
+    "CHECKSUM_UNSUPPORTED",
+    "INTEGRITY_REFUSED",
+    "IntegrityRefused",
     "S3_COMPATIBLE",
     "Category",
     "Destination",
@@ -64,6 +67,30 @@ class Provider(StrEnum):
 
 #: The providers one S3-compatible client can serve.
 S3_COMPATIBLE = frozenset({Provider.SUPABASE, Provider.CLOUDFLARE_R2, Provider.AWS_S3})
+
+
+#: Provider codes meaning "the digest you sent is not the digest of what I
+#: received". Never retried without the digest: writing the bytes anyway and
+#: calling the result a copy is how a corrupt object becomes a backup.
+INTEGRITY_REFUSED = frozenset(
+    {"BadDigest", "InvalidDigest", "XAmzContentChecksumMismatch", "ChecksumMismatch"}
+)
+
+#: Provider codes meaning "I do not understand that parameter". Retried once
+#: without it, because a provider with no SHA-256 support should give a copy
+#: nobody could verify rather than no copy at all.
+CHECKSUM_UNSUPPORTED = frozenset(
+    {"NotImplemented", "InvalidRequest", "InvalidArgument", "BadRequest", "MethodNotAllowed"}
+)
+
+
+class IntegrityRefused(Exception):
+    """A provider rejected a write because the bytes did not match the digest.
+
+    Separate from `Unsupported` because the responses are opposite: an
+    unsupported parameter is dropped and the write retried, while this is the
+    control working and must reach the caller as a failure.
+    """
 
 
 class Unsupported(Exception):
@@ -262,11 +289,26 @@ class ObjectStore(Protocol):
         """The object's size in bytes, or None when it does not exist."""
         ...
 
-    def put(self, key: str, content: bytes, content_type: str) -> None:
+    def put(
+        self,
+        key: str,
+        content: bytes,
+        content_type: str,
+        *,
+        checksum_sha256: str | None = None,
+    ) -> None:
         """Write an object the API produced itself -- a report export -- in one call.
 
         Uploads from a browser go through a signed URL and never through
         here; this is for bytes the API already holds.
+
+        `checksum_sha256`, where given, is hex and is sent with the write. The
+        provider then verifies what it received before storing it and keeps the
+        digest, so a later `checksum()` has something to answer with. A
+        provider that refuses because the bytes do not match raises
+        `IntegrityRefused`; one that refuses because it does not understand the
+        parameter gets the write again without it, and the copy is then one
+        nobody can verify rather than no copy at all.
         """
         ...
 
@@ -406,10 +448,40 @@ class S3ObjectStore:
             raise
         return int(answer.get("ContentLength", 0))
 
-    def put(self, key: str, content: bytes, content_type: str) -> None:
-        self._client.put_object(
-            Bucket=self.destination.bucket, Key=key, Body=content, ContentType=content_type
-        )
+    def put(
+        self,
+        key: str,
+        content: bytes,
+        content_type: str,
+        *,
+        checksum_sha256: str | None = None,
+    ) -> None:
+        arguments: dict[str, Any] = {
+            "Bucket": self.destination.bucket,
+            "Key": key,
+            "Body": content,
+            "ContentType": content_type,
+        }
+        if checksum_sha256 is None:
+            self._client.put_object(**arguments)
+            return
+
+        arguments["ChecksumSHA256"] = _b64_digest(checksum_sha256)
+        try:
+            self._client.put_object(**arguments)
+        except ClientError as error:
+            code = error.response.get("Error", {}).get("Code", "")
+            if code in INTEGRITY_REFUSED:
+                raise IntegrityRefused(
+                    "the destination refused the write: the bytes do not match the digest"
+                ) from error
+            if code not in CHECKSUM_UNSUPPORTED:
+                raise
+            # A provider that does not speak SHA-256 checksums. The copy is
+            # still worth making; it is simply one nobody can verify, which is
+            # what `checksum()` then reports by answering None.
+            del arguments["ChecksumSHA256"]
+            self._client.put_object(**arguments)
 
     def delete(self, key: str) -> None:
         self._client.delete_object(Bucket=self.destination.bucket, Key=key)
@@ -452,15 +524,24 @@ class S3ObjectStore:
     def copy(self, source_key: str, dest_key: str, *, dest: Destination | None = None) -> None:
         target = dest or self.destination
         client = self._client if dest is None else S3ObjectStore(target)._client
-        client.copy_object(
-            Bucket=target.bucket,
-            Key=dest_key,
-            CopySource={"Bucket": self.destination.bucket, "Key": source_key},
+        arguments: dict[str, Any] = {
+            "Bucket": target.bucket,
+            "Key": dest_key,
+            "CopySource": {"Bucket": self.destination.bucket, "Key": source_key},
+        }
+        try:
             # So the copy carries a digest of its own. Without it S3 stores no
             # SHA-256 for a copied object, `checksum()` on the copy answers
             # None, and a backup could never be more than `copied`.
-            ChecksumAlgorithm="SHA256",
-        )
+            client.copy_object(**arguments, ChecksumAlgorithm="SHA256")
+        except ClientError as error:
+            code = error.response.get("Error", {}).get("Code", "")
+            if code not in CHECKSUM_UNSUPPORTED:
+                raise
+            # A gateway that does not implement checksums on copy. Better an
+            # unverifiable copy than no copy: the object is still somewhere
+            # else, and the catalogue says plainly that nobody compared it.
+            client.copy_object(**arguments)
 
     def checksum(self, key: str) -> str | None:
         try:

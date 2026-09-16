@@ -42,6 +42,7 @@ from typing import Any
 from koras_storage import (
     S3_COMPATIBLE,
     Destination,
+    IntegrityRefused,
     ObjectStore,
     Provider,
     S3ObjectStore,
@@ -320,11 +321,31 @@ def copy_one(
         if content is None:
             return Outcome("skipped", None, None, "the object was gone from the source")
         local = hashlib.sha256(content).hexdigest()
-        target_store.put(backup_key, content, "application/octet-stream")
+        try:
+            # The digest goes *with* the write. The destination verifies what
+            # it received before storing it and keeps the digest, so the
+            # `checksum()` below has something to answer with.
+            #
+            # Sending it is what makes this path capable of `verified` at all.
+            # Without it the destination stores no SHA-256, `checksum()`
+            # answers None, and every cross-provider copy reads `copied` for
+            # ever -- a backup nobody could ever confirm, reported by a job
+            # whose entire purpose is confirming backups.
+            target_store.put(
+                backup_key, content, "application/octet-stream", checksum_sha256=local
+            )
+        except IntegrityRefused:
+            # The destination compared and disagreed. That is the control
+            # working, and it is a failure rather than something to retry
+            # without the digest.
+            return Outcome(
+                "failed", local, None, "the destination rejected the bytes as not matching"
+            )
         answered = target_store.checksum(backup_key)
         # The locally computed digest is the source side of the comparison: the
         # bytes read are the bytes hashed. Where the destination answers its own
-        # digest the two are compared; where it does not, this is `copied`.
+        # digest the two are compared; where it does not -- a provider with no
+        # SHA-256 support -- this is `copied`.
         return verdict(local, answered)
 
     store.copy(source_key, backup_key, dest=target)

@@ -14,9 +14,13 @@ import base64
 from urllib.parse import urlparse
 
 import pytest
+from botocore.exceptions import ClientError  # type: ignore[import-untyped]
 from koras_storage import (
+    CHECKSUM_UNSUPPORTED,
+    INTEGRITY_REFUSED,
     Category,
     Destination,
+    IntegrityRefused,
     ObjectPage,
     Provider,
     S3ObjectStore,
@@ -265,3 +269,78 @@ def test_a_copy_within_one_destination_names_both_ends() -> None:
         "Bucket": "local-dev",
         "Key": "tenants/t/documents/a/one.pdf",
     }
+
+
+# -- a write that carries its own digest ---------------------------------------
+#
+# The strongest form of the copy: the provider compares before it stores, so a
+# corrupt object is refused at the door rather than catalogued and compared
+# afterwards. The two failure directions are opposite and must not be confused.
+
+
+class _WriteClient:
+    """A destination that can refuse a write, for one of two reasons."""
+
+    def __init__(self, code: str | None = None) -> None:
+        self._code = code
+        self.calls: list[dict[str, object]] = []
+
+    def put_object(self, **arguments: object) -> dict[str, object]:
+        self.calls.append(arguments)
+        if self._code and len(self.calls) == 1:
+            raise ClientError({"Error": {"Code": self._code}}, "PutObject")
+        return {}
+
+
+def _write_store(client: _WriteClient) -> S3ObjectStore:
+    store = S3ObjectStore(
+        Destination(Provider.SUPABASE, "http://localhost:9000", "local-dev", "us-east-1", "k", "s")
+    )
+    store._client = client
+    return store
+
+
+def test_a_digest_is_sent_with_the_write_as_base64() -> None:
+    """The protocol carries base64 and the column holds hex, so the store
+    converts. A provider handed hex stores a digest that matches nothing."""
+    client = _WriteClient()
+    digest = bytes(range(32)).hex()
+    _write_store(client).put("k", b"bytes", "text/plain", checksum_sha256=digest)
+    assert client.calls[0]["ChecksumSHA256"] == base64.b64encode(bytes(range(32))).decode()
+
+
+def test_a_write_with_no_digest_sends_no_checksum_at_all() -> None:
+    client = _WriteClient()
+    _write_store(client).put("k", b"bytes", "text/plain")
+    assert "ChecksumSHA256" not in client.calls[0]
+
+
+@pytest.mark.parametrize("code", sorted(CHECKSUM_UNSUPPORTED))
+def test_a_provider_that_cannot_verify_still_receives_the_object(code: str) -> None:
+    """Better an unverifiable copy than no copy. The object is still somewhere
+    else, and `checksum()` answering None is what reports it unverified."""
+    client = _WriteClient(code)
+    _write_store(client).put("k", b"bytes", "text/plain", checksum_sha256=bytes(32).hex())
+    assert len(client.calls) == 2
+    assert "ChecksumSHA256" not in client.calls[1]
+
+
+@pytest.mark.parametrize("code", sorted(INTEGRITY_REFUSED))
+def test_a_provider_that_compared_and_disagreed_is_never_retried(code: str) -> None:
+    """The opposite direction, and the one that matters. Retrying without the
+    digest would write the bytes anyway and call the result a backup, turning
+    a caught corruption into a catalogued one."""
+    client = _WriteClient(code)
+    with pytest.raises(IntegrityRefused):
+        _write_store(client).put("k", b"bytes", "text/plain", checksum_sha256=bytes(32).hex())
+    assert len(client.calls) == 1
+
+
+def test_any_other_refusal_reaches_the_caller_unchanged() -> None:
+    """A missing bucket or a rejected credential is neither of the two cases
+    above, and swallowing it would make a broken destination look like a
+    provider without checksum support."""
+    client = _WriteClient("AccessDenied")
+    with pytest.raises(ClientError):
+        _write_store(client).put("k", b"bytes", "text/plain", checksum_sha256=bytes(32).hex())
+    assert len(client.calls) == 1
