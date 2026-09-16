@@ -1,0 +1,73 @@
+import { expect, test } from '@playwright/test'
+import { signInAs } from './support/session'
+
+/**
+ * The restore page, in a browser without an API.
+ *
+ * The suite runs against `next start` with a session secret and no API, so
+ * every read fails. That is the state worth proving: the page renders its
+ * frame and says plainly that nothing answered, rather than showing a blank
+ * card that reads as "you have no backups" — which is the worst possible lie
+ * for this particular page to tell.
+ *
+ * The approval rules are proved by the API's own tests and the row-level
+ * security suite. What a browser can prove without a database is that the
+ * surface is reachable, operable by keyboard, honest when the thing behind it
+ * is not answering, and usable at a phone width.
+ */
+
+test('the page renders its frame and says when nothing answers', async ({ page, context }) => {
+  await signInAs(context)
+  await page.goto('/dashboard/restore')
+
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Restore')
+  await expect(page.getByTestId('restore')).toBeVisible()
+
+  // Scoped by test id: the shell carries its own live region, and an unscoped
+  // alert query would assert on whichever rendered first. The audit page's
+  // suite learned this the hard way on 2026-09-16.
+  await expect(page.getByTestId('restore-error')).toBeVisible()
+  await expect(page.locator('#main-content')).toHaveCount(1)
+})
+
+test('an empty catalogue is a sentence, not a blank card', async ({ page, context }) => {
+  await signInAs(context)
+  await page.goto('/dashboard/restore')
+
+  // Both sections render their own heading and their own empty sentence. A
+  // page that showed two silent cards would read as "nothing is backed up",
+  // which is a different claim from "the backup list could not be read".
+  await expect(page.getByRole('heading', { name: 'What can be restored' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Requests' })).toBeVisible()
+  await expect(page.getByText('No file has a backup copy yet.')).toBeVisible()
+  await expect(page.getByText('No one has asked for a restore.')).toBeVisible()
+})
+
+test('nothing on the page can start a restore by itself', async ({ page, context }) => {
+  await signInAs(context)
+  await page.goto('/dashboard/restore')
+
+  // The whole safety property of this surface, asserted from the outside: the
+  // only verbs available are asking and refreshing. No "restore now", no
+  // "approve" without a request, and the request form is not open until
+  // somebody chooses a file.
+  await expect(page.getByTestId('restore-ask')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible()
+})
+
+test('it is usable at a phone width', async ({ page, context }) => {
+  await signInAs(context)
+  await page.setViewportSize({ width: 375, height: 800 })
+  await page.goto('/dashboard/restore')
+
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  await expect(page.getByTestId('restore')).toBeVisible()
+
+  // Nothing overflows sideways. The tables are in `overflow-x-auto`
+  // containers, so the page itself must not scroll horizontally.
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+  )
+  expect(overflows).toBe(false)
+})

@@ -222,6 +222,16 @@ describe('a product generated without either capability', () => {
     expect(bare.has('services/api/koras_api/core/restore.py')).toBe(false)
     expect(bare.has('supabase/migrations/00026_restore_requests.sql')).toBe(false)
     expect(full.read('services/api/koras_api/main.py')).toContain('restore.router')
+
+    // The page and its suite go with the route. A Restore page in a product
+    // with no backup catalogue would be a screen that can only ever say the
+    // list could not be read.
+    expect(bare.has('apps/web/src/app/dashboard/restore')).toBe(false)
+    expect(bare.has('e2e/restore.spec.ts')).toBe(false)
+    expect(full.has('apps/web/src/app/dashboard/restore')).toBe(true)
+    // And the navigation entry, or the shell offers a link to a 404.
+    expect(bare.read('packages/branding/src/index.ts')).not.toContain("href: '/dashboard/restore'")
+    expect(full.read('packages/branding/src/index.ts')).toContain("href: '/dashboard/restore'")
   })
 
   it('still forgets audit rows on a schedule', () => {

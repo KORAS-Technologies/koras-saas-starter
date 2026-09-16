@@ -650,6 +650,76 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'admin.home.signedInAs': 'Sesión iniciada como {name}.',
 
   /* ------------------------------------------ F20 phase 2: errors and email */
+  'restore.title':
+    'Restaurar',
+  'restore.description':
+    'Recuperar un archivo desde su copia de seguridad. Deciden dos personas: una lo solicita y otra lo aprueba. Nada se restaura hasta entonces.',
+  'restore.available':
+    'Que se puede restaurar',
+  'restore.availableDescription':
+    'Archivos con copia de seguridad. Un archivo eliminado sigue apareciendo aqui: para eso existe la copia.',
+  'restore.requests':
+    'Solicitudes',
+  'restore.requestsDescription':
+    'Cada solicitud y en que punto esta. Una rechazada se conserva, porque es justo por la que se pregunta despues.',
+  'restore.name':
+    'Archivo',
+  'restore.copied':
+    'Copiado',
+  'restore.size':
+    'Tamano',
+  'restore.state':
+    'Estado',
+  'restore.present':
+    'Sigue aqui',
+  'restore.deleted':
+    'Eliminado',
+  'restore.verified':
+    'Copia verificada',
+  'restore.unverified':
+    'Copiado, sin verificar',
+  'restore.ask':
+    'Solicitar restauracion',
+  'restore.asking':
+    'Solicitando...',
+  'restore.cancel':
+    'Cancelar',
+  'restore.reason':
+    'Por que se necesita este archivo',
+  'restore.reasonHint':
+    'Quien apruebe la solicitud lo leera. Se conserva junto a ella.',
+  'restore.overwrite':
+    'Sustituir el archivo existente',
+  'restore.overwriteHint':
+    'Sin esta opcion el archivo vuelve como copia nueva. No se sustituye nada.',
+  'restore.overwriteWarning':
+    'El archivo que hay ahora sera sustituido por la copia de seguridad. Quien apruebe debe confirmarlo por separado.',
+  'restore.askNewCopy':
+    'Solicitar una copia nueva',
+  'restore.askOverwrite':
+    'Solicitar sustituir el archivo',
+  'restore.emptyBackups':
+    'Ningun archivo tiene copia de seguridad todavia. Las copias se ejecutan cada noche una vez configurado un destino.',
+  'restore.emptyRequests':
+    'Nadie ha solicitado una restauracion.',
+  'restore.pending':
+    'Ya solicitado',
+  'restore.approve':
+    'Aprobar',
+  'restore.approveOverwrite':
+    'Aprobar la sustitucion del archivo',
+  'restore.refuse':
+    'Rechazar',
+  'restore.who':
+    'Solicitado por',
+  'restore.yours':
+    'Usted lo solicito, asi que lo aprueba otra persona.',
+  'restore.refresh':
+    'Actualizar',
+  'restore.error.forbidden':
+    'No tiene permiso para restaurar archivos.',
+  'restore.error.unavailable':
+    'Las restauraciones no estan disponibles en este momento. Intentelo en breve.',
   'audit.title':
     'Auditoría',
   'audit.description':

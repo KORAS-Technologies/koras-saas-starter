@@ -1,0 +1,99 @@
+import { AccessDenied, Container } from '@{{projectSlug}}/ui'
+import { can, signedInContext } from '../../../lib/access'
+import { currentMember } from '../../../lib/session'
+import { currentLocale, translator } from '../../../lib/locale'
+import { RestorePanel } from './RestorePanel'
+import { listBackups, listRestores } from './actions'
+
+/**
+ * Restore: bringing an object back from its backup.
+ *
+ * One gate before anything renders and the same gate again inside the API.
+ * `files.manage` — managing files is the authority, reading them is not, so a
+ * member who may download an object cannot ask for a deleted one back.
+ *
+ * **There is no entitlement gate, and that is a decision rather than an
+ * omission.** Gating data recovery behind a plan tier means a customer whose
+ * plan lapsed cannot get their data back, which is a worse position to defend
+ * than not selling the capability at all. ADR 0006 question 3, answered
+ * 2026-09-16.
+ *
+ * The page also does not consult the plan for a second reason: an unreachable
+ * Control Plane must not stop somebody recovering a deleted file. The
+ * verification that matters here is the digest, which the worker checks itself.
+ *
+ * Both lists are read here so the first paint has rows in it; everything after
+ * is a server action.
+ */
+export const dynamic = 'force-dynamic'
+
+export default async function RestorePage() {
+  const [context, member, locale, t] = await Promise.all([
+    signedInContext(),
+    currentMember(),
+    currentLocale(),
+    translator(),
+  ])
+  if (context === null || member === null || !can(context.access, 'files.manage')) {
+    return <AccessDenied locale={locale} />
+  }
+
+  const [backups, restores] = await Promise.all([listBackups(), listRestores()])
+
+  // Built here rather than inline: a JSX prop given an object literal opens
+  // with two braces, which the generator reads as a Handlebars expression.
+  const labels = {
+    available: t('restore.available'),
+    availableDescription: t('restore.availableDescription'),
+    requests: t('restore.requests'),
+    requestsDescription: t('restore.requestsDescription'),
+    name: t('restore.name'),
+    copied: t('restore.copied'),
+    size: t('restore.size'),
+    state: t('restore.state'),
+    present: t('restore.present'),
+    deleted: t('restore.deleted'),
+    verified: t('restore.verified'),
+    unverified: t('restore.unverified'),
+    ask: t('restore.ask'),
+    asking: t('restore.asking'),
+    cancel: t('restore.cancel'),
+    reason: t('restore.reason'),
+    reasonHint: t('restore.reasonHint'),
+    overwrite: t('restore.overwrite'),
+    overwriteHint: t('restore.overwriteHint'),
+    overwriteWarning: t('restore.overwriteWarning'),
+    askNewCopy: t('restore.askNewCopy'),
+    askOverwrite: t('restore.askOverwrite'),
+    emptyBackups: t('restore.emptyBackups'),
+    emptyRequests: t('restore.emptyRequests'),
+    pending: t('restore.pending'),
+    approve: t('restore.approve'),
+    approveOverwrite: t('restore.approveOverwrite'),
+    refuse: t('restore.refuse'),
+    who: t('restore.who'),
+    yours: t('restore.yours'),
+    refresh: t('restore.refresh'),
+  }
+
+  return (
+    <div className="py-12">
+      <Container>
+        <h1 className="font-display text-2xl font-bold text-ink">{t('restore.title')}</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">
+          {t('restore.description')}
+        </p>
+        <RestorePanel
+          initialBackups={backups}
+          initialRestores={restores}
+          // The same identity the API records as `requested_by`, so that
+          // "you asked for this one" is decided by the same value on both
+          // sides. The page disables the control; the API refuses it anyway.
+          currentUser={member.userId}
+          locale={locale}
+          labels={labels}
+        />
+      </Container>
+    </div>
+  )
+}

@@ -1589,7 +1589,26 @@ export const productConfig: ProductConfig = {
         group: 'primary',
         order: 0,
       },
-{{#if capability.audit_governance}}
+{{#if capability.storage_governance}}
+      // Restore. Generated with the `storage_governance` capability, which is
+      // what ships the backup catalogue this page reads. Gated on
+      // `files.manage` rather than `files.read`: a member who may download an
+      // object should not be able to ask for a deleted one back.
+      //
+      // No entitlement, and that is deliberate -- gating data recovery behind
+      // a plan tier means a customer whose plan lapsed cannot get their data
+      // back. ADR 0006 question 3.
+      {
+        id: 'restore',
+        label: 'Restore',
+        icon: 'clock',
+        href: '/dashboard/restore',
+        group: 'primary',
+        order: 29,
+        requiredPermissions: ['files.manage'],
+        requiredCapabilities: ['storage_governance'],
+      },
+{{/if}}{{#if capability.audit_governance}}
       // Audit. Generated with the `audit_governance` capability -- the surface
       // over the record, while the record itself is foundation -- and with no
       // entitlement: reading one's own history is not a paid feature, because

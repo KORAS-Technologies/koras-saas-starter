@@ -23,9 +23,12 @@ avoid, pointed the other way.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, status
 from koras_auth.permissions import permissions_for
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 
 from ..core.audit import record
 from ..core.auth import AuthDep
@@ -62,6 +65,28 @@ class Approval(BaseModel):
     #: Must match the request. An approver who did not notice the flag has not
     #: approved a deletion, so they retype it rather than inherit it.
     overwrite: bool = False
+
+
+class BackupRow(BaseModel):
+    """One catalogue entry, as somebody choosing what to bring back sees it."""
+
+    file_id: str
+    #: The name the object had. Read from the catalogue's source key rather
+    #: than from `files`, because the row this exists to restore has usually
+    #: been deleted -- which is the whole point of the catalogue outliving it.
+    name: str
+    status: str
+    size_bytes: int | None
+    copied_at: datetime
+    #: Whether the object is still in the product. False is the interesting
+    #: case: it is gone, and this is the only way back to it.
+    file_exists: bool
+    #: Where a request for this object has got to, if there is one.
+    request_status: str | None
+
+
+class BackupList(BaseModel):
+    backups: list[BackupRow]
 
 
 class BackupState(BaseModel):
@@ -124,6 +149,56 @@ async def _found(session: DbSession, tenant_id: str, restore_id: str) -> Restore
             status.HTTP_404_NOT_FOUND, ApiErrorCode.RESTORE_NOT_FOUND, "no such restore request"
         )
     return request
+
+
+#: The catalogue as a person needs to read it: what has a copy, whether the
+#: object is still here, and whether anybody has already asked for it.
+#:
+#: Without this route the feature is unusable, and the reason is worth stating.
+#: `GET /files/{id}/backup` answers about an id the caller already has, and the
+#: `files` row for a purged object is gone -- so the Files page cannot offer it
+#: and nothing else knows it existed. The catalogue outlives the object
+#: precisely so that somebody can find it afterwards; a product that stored
+#: that fact and had no way to read it would have a backup nobody could use.
+_CATALOGUE = text(
+    "select b.file_id::text as file_id, b.source_key, b.status, b.size_bytes, b.copied_at, "
+    " (f.id is not null) as file_exists, f.name as current_name, r.status as request_status "
+    "from public.file_backups b "
+    "left join public.files f on f.id = b.file_id "
+    "left join lateral ("
+    "  select status from public.restore_requests rr "
+    "   where rr.file_id = b.file_id and rr.tenant_id = b.tenant_id "
+    "   order by created_at desc limit 1"
+    ") r on true "
+    "where b.tenant_id = cast(:tenant_id as uuid) "
+    "order by b.copied_at desc limit :limit"
+)
+
+
+@router.get("/backups", response_model=BackupList)
+async def list_backups(
+    claims: AuthDep, tenant: TenantDep, session: DbSession
+) -> BackupList:
+    """Everything this tenant has a copy of, and what state it is in."""
+    _require_permission(claims)
+    rows = (await session.execute(_CATALOGUE, {"tenant_id": tenant.id, "limit": 200})).all()
+    return BackupList(
+        backups=[
+            BackupRow(
+                file_id=row.file_id,
+                # The current name where the object is still here, and the last
+                # segment of the key where it is not. A key segment is not a
+                # pretty name, and it is the only name left for a deleted file.
+                name=row.current_name or row.source_key.rsplit("/", 1)[-1],
+                status=row.status,
+                size_bytes=row.size_bytes,
+                copied_at=row.copied_at,
+                file_exists=row.file_exists,
+                request_status=row.request_status,
+            )
+            for row in rows
+        ]
+    )
 
 
 @router.get("/restores", response_model=RestoreList)

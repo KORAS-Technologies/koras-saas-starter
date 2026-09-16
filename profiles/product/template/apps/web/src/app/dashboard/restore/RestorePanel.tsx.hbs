@@ -1,0 +1,362 @@
+'use client'
+
+import { useCallback, useId, useState } from 'react'
+import type { BackupRow, RestoreRow } from '@{{projectSlug}}/api-client'
+import type { Locale } from '@{{projectSlug}}/i18n'
+import { Button, Card, TextField } from '@{{projectSlug}}/ui'
+import type { ActionResult } from './actions'
+import { approveRestore, askForRestore, listBackups, listRestores, refuseRestore } from './actions'
+
+export interface RestoreLabels {
+  available: string
+  availableDescription: string
+  requests: string
+  requestsDescription: string
+  name: string
+  copied: string
+  size: string
+  state: string
+  present: string
+  deleted: string
+  verified: string
+  unverified: string
+  ask: string
+  asking: string
+  cancel: string
+  reason: string
+  reasonHint: string
+  overwrite: string
+  overwriteHint: string
+  overwriteWarning: string
+  askNewCopy: string
+  askOverwrite: string
+  emptyBackups: string
+  emptyRequests: string
+  pending: string
+  approve: string
+  approveOverwrite: string
+  refuse: string
+  who: string
+  yours: string
+  refresh: string
+}
+
+/** A request in one of these states is finished; the object may be asked for again. */
+const TERMINAL = ['completed', 'failed', 'refused']
+
+function size(bytes: number | null, locale: Locale): string {
+  if (bytes === null) return '—'
+  const units = ['B', 'kB', 'MB', 'GB']
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  const shown = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value)
+  return `${shown} ${units[unit]}`
+}
+
+function when(value: string, locale: Locale): string {
+  const at = new Date(value)
+  return Number.isNaN(at.getTime())
+    ? value
+    : new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(at)
+}
+
+/**
+ * Bringing an object back from its backup.
+ *
+ * Two lists, and the order is the point. **What can be restored** comes first
+ * and is the backup catalogue, not the file list: the object somebody wants
+ * back has usually been deleted, so its row in `files` is gone and the Files
+ * page cannot offer it. A row marked deleted is the interesting one here, not
+ * the broken one.
+ *
+ * **Asking is not restoring**, and the interface says so rather than relying on
+ * the API to refuse. The button reads "ask to restore", the request appears as
+ * `requested`, and approving your own is disabled with the reason written
+ * beside the control instead of hidden in a tooltip. The API refuses it anyway;
+ * this is so nobody learns the rule by being refused.
+ *
+ * **Overwriting is a different act from restoring.** Unchecked, a restore
+ * writes a new copy and destroys nothing, and the submit button says so.
+ * Checked, the warning replaces the hint rather than joining it, so the
+ * destructive reading is the only one on screen -- and the approver has to tick
+ * it again on their side, because the API compares the two and refuses when
+ * they disagree.
+ */
+export function RestorePanel({
+  initialBackups,
+  initialRestores,
+  currentUser,
+  locale,
+  labels,
+}: {
+  initialBackups: ActionResult<{ backups: BackupRow[] }>
+  initialRestores: ActionResult<{ restores: RestoreRow[] }>
+  currentUser: string
+  locale: Locale
+  labels: RestoreLabels
+}) {
+  const [backups, setBackups] = useState<BackupRow[]>(
+    initialBackups.status === 'ok' ? initialBackups.value.backups : [],
+  )
+  const [restores, setRestores] = useState<RestoreRow[]>(
+    initialRestores.status === 'ok' ? initialRestores.value.restores : [],
+  )
+  const [error, setError] = useState<string | null>(
+    initialBackups.status === 'error' ? initialBackups.message : null,
+  )
+  const [asking, setAsking] = useState<string | null>(null)
+  const [reason, setReason] = useState('')
+  const [overwrite, setOverwrite] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const formId = useId()
+
+  const reload = useCallback(async () => {
+    const [nextBackups, nextRestores] = await Promise.all([listBackups(), listRestores()])
+    if (nextBackups.status === 'ok') setBackups(nextBackups.value.backups)
+    if (nextRestores.status === 'ok') setRestores(nextRestores.value.restores)
+    if (nextBackups.status === 'error') setError(nextBackups.message)
+    else if (nextRestores.status === 'error') setError(nextRestores.message)
+    else setError(null)
+  }, [])
+
+  const ask = useCallback(
+    async (fileId: string) => {
+      setBusy(true)
+      const result = await askForRestore(fileId, reason, overwrite)
+      setBusy(false)
+      if (result.status === 'error') {
+        setError(result.message)
+        return
+      }
+      setError(null)
+      setAsking(null)
+      setReason('')
+      setOverwrite(false)
+      await reload()
+    },
+    [overwrite, reason, reload],
+  )
+
+  const decide = useCallback(
+    async (row: RestoreRow, approved: boolean) => {
+      setBusy(true)
+      // The overwrite flag goes back exactly as the request carries it. The API
+      // refuses when the two disagree, which is what makes approving an
+      // overwrite a decision rather than inheriting somebody else's checkbox.
+      const result = approved
+        ? await approveRestore(row.id, row.overwrite)
+        : await refuseRestore(row.id)
+      setBusy(false)
+      if (result.status === 'error') {
+        setError(result.message)
+        return
+      }
+      setError(null)
+      await reload()
+    },
+    [reload],
+  )
+
+  return (
+    <div className="mt-8 space-y-6" data-testid="restore">
+      {error !== null && (
+        <Card className="max-w-5xl border-danger/40">
+          <p role="alert" data-testid="restore-error" className="text-sm leading-6 text-ink-muted">
+            {error}
+          </p>
+        </Card>
+      )}
+
+      <Card className="max-w-5xl">
+        <h2 className="font-display text-lg font-semibold text-ink">{labels.available}</h2>
+        <p className="mt-1 text-sm leading-6 text-ink-muted">{labels.availableDescription}</p>
+
+        {backups.length === 0 ? (
+          <p className="mt-4 text-sm leading-6 text-ink-muted">{labels.emptyBackups}</p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full border-collapse text-left text-sm">
+              <caption className="sr-only">{labels.available}</caption>
+              <thead>
+                <tr className="border-b border-line">
+                  <th scope="col" className="py-2 pr-4 font-semibold text-ink">
+                    {labels.name}
+                  </th>
+                  <th scope="col" className="py-2 pr-4 font-semibold text-ink">
+                    {labels.state}
+                  </th>
+                  <th scope="col" className="py-2 pr-4 font-semibold text-ink">
+                    {labels.copied}
+                  </th>
+                  <th scope="col" className="py-2 pr-4 font-semibold text-ink">
+                    {labels.size}
+                  </th>
+                  <th scope="col" className="py-2 font-semibold text-ink">
+                    <span className="sr-only">{labels.ask}</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {backups.map((row) => (
+                  <tr key={row.file_id} className="border-b border-line/60 align-top">
+                    <td className="py-3 pr-4 font-medium text-ink">{row.name}</td>
+                    <td className="py-3 pr-4 text-ink-muted">
+                      <span className="block">
+                        {row.file_exists ? labels.present : labels.deleted}
+                      </span>
+                      {/* Said in the row rather than hidden. "Copied" is an
+                          honest report of a copy nobody could compare, and the
+                          person deciding is the one who should weigh it. */}
+                      <span className="block text-xs">
+                        {row.status === 'verified' ? labels.verified : labels.unverified}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-4 text-ink-muted">{when(row.copied_at, locale)}</td>
+                    <td className="py-3 pr-4 text-ink-muted">{size(row.size_bytes, locale)}</td>
+                    <td className="py-3">
+                      {row.request_status !== null && !TERMINAL.includes(row.request_status) ? (
+                        <span className="text-xs text-ink-muted">{labels.pending}</span>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={busy}
+                          onClick={() => {
+                            setAsking(row.file_id)
+                            setReason('')
+                            setOverwrite(false)
+                          }}
+                        >
+                          {labels.ask}
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {asking !== null && (
+          <form
+            className="mt-6 space-y-4 border-t border-line pt-6"
+            data-testid="restore-ask"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void ask(asking)
+            }}
+          >
+            <TextField
+              id={`${formId}-reason`}
+              label={labels.reason}
+              value={reason}
+              required
+              minLength={3}
+              onChange={(event) => setReason(event.target.value)}
+            />
+            <p className="text-xs leading-5 text-ink-muted">{labels.reasonHint}</p>
+
+            <div className="flex items-start gap-2">
+              <input
+                id={`${formId}-overwrite`}
+                type="checkbox"
+                className="mt-1"
+                checked={overwrite}
+                onChange={(event) => setOverwrite(event.target.checked)}
+              />
+              <label htmlFor={`${formId}-overwrite`} className="text-sm leading-6 text-ink">
+                {labels.overwrite}
+                <span className="block text-xs text-ink-muted">
+                  {/* The warning replaces the hint rather than joining it, so
+                      the destructive reading is the only one on screen once the
+                      box is ticked. */}
+                  {overwrite ? labels.overwriteWarning : labels.overwriteHint}
+                </span>
+              </label>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <Button type="submit" disabled={busy || reason.trim().length < 3}>
+                {busy ? labels.asking : overwrite ? labels.askOverwrite : labels.askNewCopy}
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setAsking(null)}>
+                {labels.cancel}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Card>
+
+      <Card className="max-w-5xl">
+        <div className="flex flex-wrap items-baseline justify-between gap-4">
+          <div>
+            <h2 className="font-display text-lg font-semibold text-ink">{labels.requests}</h2>
+            <p className="mt-1 text-sm leading-6 text-ink-muted">{labels.requestsDescription}</p>
+          </div>
+          <Button type="button" variant="secondary" disabled={busy} onClick={() => void reload()}>
+            {labels.refresh}
+          </Button>
+        </div>
+
+        {restores.length === 0 ? (
+          <p className="mt-4 text-sm leading-6 text-ink-muted">{labels.emptyRequests}</p>
+        ) : (
+          <ul className="mt-4 space-y-4">
+            {restores.map((row) => {
+              const mine = row.requested_by === currentUser
+              const decidable = row.status === 'requested'
+              return (
+                <li key={row.id} className="border-b border-line/60 pb-4 last:border-0">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="font-medium text-ink">{row.reason}</span>
+                    <span className="text-xs uppercase tracking-wide text-ink-muted">
+                      {row.status}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-ink-muted">
+                    {labels.who}: {row.requested_by}
+                    {row.overwrite ? ` · ${labels.overwrite}` : ''}
+                  </p>
+                  {row.error !== null && <p className="mt-1 text-xs text-ink-muted">{row.error}</p>}
+
+                  {decidable && (
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <Button
+                        type="button"
+                        disabled={busy || mine}
+                        onClick={() => void decide(row, true)}
+                      >
+                        {row.overwrite ? labels.approveOverwrite : labels.approve}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={busy}
+                        onClick={() => void decide(row, false)}
+                      >
+                        {labels.refuse}
+                      </Button>
+                      {mine && (
+                        // Written beside the disabled control rather than put
+                        // in a tooltip. The API refuses this regardless; saying
+                        // it here is so nobody learns the rule by being
+                        // refused.
+                        <span className="text-xs text-ink-muted">{labels.yours}</span>
+                      )}
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </Card>
+    </div>
+  )
+}

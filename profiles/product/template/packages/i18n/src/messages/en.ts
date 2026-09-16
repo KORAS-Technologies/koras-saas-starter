@@ -652,6 +652,76 @@ export const en = {
   // (services/api/koras_api/core/errors.py). The API's own `message` is for
   // the log and never shown; these are what a person reads. Mapped by
   // `apps/web/src/lib/api-errors.ts`.
+  'restore.title':
+    'Restore',
+  'restore.description':
+    'Bringing a file back from its backup. Two people decide: one asks, someone else approves. Nothing is restored until they do.',
+  'restore.available':
+    'What can be restored',
+  'restore.availableDescription':
+    'Files with a backup copy. A file that has been deleted still appears here -- that is what the copy is for.',
+  'restore.requests':
+    'Requests',
+  'restore.requestsDescription':
+    'Every request and where it has got to. A refused one is kept, because it is the one somebody asks about later.',
+  'restore.name':
+    'File',
+  'restore.copied':
+    'Copied',
+  'restore.size':
+    'Size',
+  'restore.state':
+    'State',
+  'restore.present':
+    'Still here',
+  'restore.deleted':
+    'Deleted',
+  'restore.verified':
+    'Copy verified',
+  'restore.unverified':
+    'Copied, not verified',
+  'restore.ask':
+    'Ask to restore',
+  'restore.asking':
+    'Asking...',
+  'restore.cancel':
+    'Cancel',
+  'restore.reason':
+    'Why this file is needed',
+  'restore.reasonHint':
+    'Whoever approves this will read it. It is kept with the request.',
+  'restore.overwrite':
+    'Replace the existing file',
+  'restore.overwriteHint':
+    'Leave this off and the file comes back as a new copy. Nothing is replaced.',
+  'restore.overwriteWarning':
+    'The file that is there now will be replaced by the backup. Whoever approves has to confirm this separately.',
+  'restore.askNewCopy':
+    'Ask for a new copy',
+  'restore.askOverwrite':
+    'Ask to replace the file',
+  'restore.emptyBackups':
+    'No file has a backup copy yet. Backups run nightly once a destination is configured.',
+  'restore.emptyRequests':
+    'No one has asked for a restore.',
+  'restore.pending':
+    'Already asked for',
+  'restore.approve':
+    'Approve',
+  'restore.approveOverwrite':
+    'Approve replacing the file',
+  'restore.refuse':
+    'Refuse',
+  'restore.who':
+    'Asked by',
+  'restore.yours':
+    'You asked for this one, so somebody else approves it.',
+  'restore.refresh':
+    'Refresh',
+  'restore.error.forbidden':
+    'You do not have permission to restore files.',
+  'restore.error.unavailable':
+    'Restores cannot be reached at the moment. Try again shortly.',
   'audit.title':
     'Audit',
   'audit.description':

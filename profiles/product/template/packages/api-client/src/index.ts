@@ -1188,6 +1188,86 @@ export interface AuditExportList {
   exports: AuditExportRow[]
 }
 
+// -- restoring an object from its backup ------------------------------------
+//
+// The catalogue is the entry point and not the Files page, because the object
+// a person wants back has usually been deleted -- its `files` row is gone and
+// nothing else remembers it existed. `file_exists: false` is the interesting
+// row, not the broken one.
+
+export interface BackupRow {
+  file_id: string
+  name: string
+  /** `verified` is a digest somebody compared; `copied` is one nobody could. */
+  status: string
+  size_bytes: number | null
+  copied_at: string
+  file_exists: boolean
+  request_status: string | null
+}
+
+export interface BackupList {
+  backups: BackupRow[]
+}
+
+export interface RestoreRow {
+  id: string
+  file_id: string
+  reason: string
+  overwrite: boolean
+  status: string
+  requested_by: string
+  approved_by: string | null
+  restored_file_id: string | null
+  error: string | null
+}
+
+export interface RestoreList {
+  restores: RestoreRow[]
+}
+
+export function fetchBackups(options: RequestOptions): Promise<BackupList> {
+  return request<BackupList>('/api/v1/backups', options)
+}
+
+export function fetchRestores(options: RequestOptions): Promise<RestoreList> {
+  return request<RestoreList>('/api/v1/restores', options)
+}
+
+export function askForRestore(
+  options: RequestOptions & { fileId: string; reason: string; overwrite: boolean },
+): Promise<RestoreRow> {
+  return request<RestoreRow>('/api/v1/restores', options, {
+    method: 'POST',
+    body: {
+      file_id: options.fileId,
+      reason: options.reason,
+      overwrite: options.overwrite,
+    },
+  })
+}
+
+export function approveRestore(
+  options: RequestOptions & { restoreId: string; overwrite: boolean },
+): Promise<RestoreRow> {
+  // The overwrite flag is sent again rather than inherited from the request:
+  // an approver who did not notice a checkbox has not approved a deletion, and
+  // the API refuses when the two disagree.
+  return request<RestoreRow>(`/api/v1/restores/${options.restoreId}/approve`, options, {
+    method: 'POST',
+    body: { overwrite: options.overwrite },
+  })
+}
+
+export function refuseRestore(
+  options: RequestOptions & { restoreId: string },
+): Promise<RestoreRow> {
+  return request<RestoreRow>(`/api/v1/restores/${options.restoreId}/refuse`, options, {
+    method: 'POST',
+    body: {},
+  })
+}
+
 export interface AuditFilters {
   action?: string
   actorId?: string

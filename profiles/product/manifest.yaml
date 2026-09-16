@@ -212,6 +212,8 @@ template_map:
       - services/worker/koras_worker/tasks/storage_lifecycle.py
       - services/worker/koras_worker/tasks/storage_reconcile.py
       - services/worker/koras_worker/tasks/storage_restore.py
+      - apps/web/src/app/dashboard/restore
+      - e2e/restore.spec.ts
       - supabase/migrations/00025_file_backups.sql
       - supabase/migrations/00026_restore_requests.sql
       - supabase/tests/240_file_backups_isolation.sql

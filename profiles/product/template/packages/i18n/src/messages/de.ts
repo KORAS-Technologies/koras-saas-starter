@@ -661,6 +661,76 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'admin.home.signedInAs': 'Angemeldet als {name}.',
 
   /* ------------------------------------------ F20 phase 2: errors and email */
+  'restore.title':
+    'Wiederherstellen',
+  'restore.description':
+    'Eine Datei aus ihrer Sicherung zurueckholen. Zwei Personen entscheiden: eine fragt an, eine andere genehmigt. Vorher wird nichts wiederhergestellt.',
+  'restore.available':
+    'Was wiederhergestellt werden kann',
+  'restore.availableDescription':
+    'Dateien mit einer Sicherungskopie. Eine geloeschte Datei erscheint hier weiterhin -- genau dafuer ist die Kopie da.',
+  'restore.requests':
+    'Anfragen',
+  'restore.requestsDescription':
+    'Jede Anfrage und ihr Stand. Auch eine abgelehnte bleibt erhalten, denn nach genau dieser wird spaeter gefragt.',
+  'restore.name':
+    'Datei',
+  'restore.copied':
+    'Kopiert',
+  'restore.size':
+    'Groesse',
+  'restore.state':
+    'Zustand',
+  'restore.present':
+    'Noch vorhanden',
+  'restore.deleted':
+    'Geloescht',
+  'restore.verified':
+    'Kopie geprueft',
+  'restore.unverified':
+    'Kopiert, nicht geprueft',
+  'restore.ask':
+    'Wiederherstellung anfragen',
+  'restore.asking':
+    'Wird angefragt...',
+  'restore.cancel':
+    'Abbrechen',
+  'restore.reason':
+    'Warum diese Datei gebraucht wird',
+  'restore.reasonHint':
+    'Wer die Anfrage genehmigt, liest dies. Es wird mit der Anfrage aufbewahrt.',
+  'restore.overwrite':
+    'Vorhandene Datei ersetzen',
+  'restore.overwriteHint':
+    'Ohne diese Option kommt die Datei als neue Kopie zurueck. Es wird nichts ersetzt.',
+  'restore.overwriteWarning':
+    'Die jetzt vorhandene Datei wird durch die Sicherung ersetzt. Wer genehmigt, muss dies gesondert bestaetigen.',
+  'restore.askNewCopy':
+    'Neue Kopie anfragen',
+  'restore.askOverwrite':
+    'Ersetzen der Datei anfragen',
+  'restore.emptyBackups':
+    'Noch hat keine Datei eine Sicherungskopie. Sicherungen laufen naechtlich, sobald ein Ziel konfiguriert ist.',
+  'restore.emptyRequests':
+    'Niemand hat eine Wiederherstellung angefragt.',
+  'restore.pending':
+    'Bereits angefragt',
+  'restore.approve':
+    'Genehmigen',
+  'restore.approveOverwrite':
+    'Ersetzen der Datei genehmigen',
+  'restore.refuse':
+    'Ablehnen',
+  'restore.who':
+    'Angefragt von',
+  'restore.yours':
+    'Sie haben dies angefragt, daher genehmigt es jemand anderes.',
+  'restore.refresh':
+    'Aktualisieren',
+  'restore.error.forbidden':
+    'Sie haben keine Berechtigung, Dateien wiederherzustellen.',
+  'restore.error.unavailable':
+    'Wiederherstellungen sind derzeit nicht erreichbar. Versuchen Sie es in Kuerze erneut.',
   'audit.title':
     'Prüfprotokoll',
   'audit.description':

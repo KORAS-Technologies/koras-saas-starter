@@ -1,0 +1,109 @@
+'use server'
+
+import {
+  ApiError,
+  approveRestore as approveRestoreRequest,
+  askForRestore as askForRestoreRequest,
+  fetchBackups,
+  fetchRestores,
+  refuseRestore as refuseRestoreRequest,
+} from '@{{projectSlug}}/api-client'
+import type { BackupList, RestoreList, RestoreRow } from '@{{projectSlug}}/api-client'
+import { can, signedInContext } from '../../../lib/access'
+import { apiErrorMessage } from '../../../lib/api-errors'
+import { translator } from '../../../lib/locale'
+import { apiBaseUrl, providerToken } from '../../../lib/session'
+
+/**
+ * The Restore page's server half.
+ *
+ * Every action re-establishes who is calling before it reaches the API, and the
+ * API decides again with the same token. The two-person rule lives there and
+ * not here: this process could not enforce it honestly, because it is the same
+ * process for both people.
+ */
+
+export type ActionResult<T> = { status: 'ok'; value: T } | { status: 'error'; message: string }
+
+async function session() {
+  const context = await signedInContext()
+  if (context === null || !can(context.access, 'files.manage')) return null
+  const token = await providerToken()
+  const baseUrl = apiBaseUrl()
+  if (!token || !baseUrl) return null
+  return { baseUrl, token }
+}
+
+async function explain(error: unknown): Promise<string> {
+  const t = await translator()
+  if (error instanceof ApiError) {
+    const coded = apiErrorMessage(t, error.code)
+    if (coded !== null) return coded
+    if (error.status === 403) return t('restore.error.forbidden')
+  }
+  return t('restore.error.unavailable')
+}
+
+async function denied<T>(): Promise<ActionResult<T>> {
+  return { status: 'error', message: (await translator())('restore.error.forbidden') }
+}
+
+export async function listBackups(): Promise<ActionResult<BackupList>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    return { status: 'ok', value: await fetchBackups(auth) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function listRestores(): Promise<ActionResult<RestoreList>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    return { status: 'ok', value: await fetchRestores(auth) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function askForRestore(
+  fileId: string,
+  reason: string,
+  overwrite: boolean,
+): Promise<ActionResult<RestoreRow>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    return { status: 'ok', value: await askForRestoreRequest({ ...auth, fileId, reason, overwrite }) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function approveRestore(
+  restoreId: string,
+  overwrite: boolean,
+): Promise<ActionResult<RestoreRow>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    // `overwrite` is passed through rather than remembered from the request:
+    // the API refuses when the two disagree, which is what makes approving an
+    // overwrite a decision rather than a click on somebody else's checkbox.
+    return { status: 'ok', value: await approveRestoreRequest({ ...auth, restoreId, overwrite }) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function refuseRestore(restoreId: string): Promise<ActionResult<RestoreRow>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    return { status: 'ok', value: await refuseRestoreRequest({ ...auth, restoreId }) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
