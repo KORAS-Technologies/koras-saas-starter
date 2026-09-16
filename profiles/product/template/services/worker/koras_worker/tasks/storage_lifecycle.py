@@ -50,8 +50,21 @@ class LifecycleSettings(BaseSettings):
 
     #: The platform floor, in days, by classification. A tenant may lengthen
     #: retention and may never shorten it below these.
-    storage_retention_days: int = 2555
-    storage_retention_days_standard: int = 2555
+    #:
+    #: **`standard` is one day, and that is the whole point of the number.**
+    #: It was 2555 -- seven years over everything a customer uploaded, which a
+    #: tenant could not shorten. A customer who uploads a document and wants it
+    #: gone in ninety days is entitled to ask, and a product that answers
+    #: "seven years" to that is not applying a compliance control; it is
+    #: refusing a deletion, which is the finding rather than the defence. One
+    #: day rather than zero because retention of nothing is a wipe, and
+    #: `floors_from` refuses anything below one for that reason.
+    #:
+    #: `sensitive` and `restricted` keep ten years, because those are the
+    #: classifications a product sets deliberately for content it has decided
+    #: carries an obligation. The floor belongs where the obligation is.
+    #: Decided 2026-09-16; ADR 0003 decision 15.
+    storage_retention_days_standard: int = 1
     storage_retention_days_sensitive: int = 3650
     storage_retention_days_restricted: int = 3650
 

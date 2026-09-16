@@ -2229,6 +2229,45 @@ decision rather than an omission, and each names the seam it plugs into.
       row-level security test proving a tenant cannot reach another's orders
       through it.
 
+### F26 — storage and audit governance: what the first governance layer leaves out
+
+Opened 2026-09-16, after the first independent security and privacy review of
+the work. Both reviewers returned BLOCK; everything they found is fixed and in
+`1b59f29`. These are the items that were decisions rather than defects.
+
+- [ ] **Erasure by class.** ADR 0003 decision 14 settles the position: an
+      Article 17 request removes a data subject's content and leaves every
+      audit row about them, on 17(3)(b) and 17(3)(e). The more defensible
+      answer is to split it — erase `activity`, which is convenience data with
+      no obligation behind it, and refuse the three that carry one. It is not
+      built because it is three things, not one: a route that erases, an audit
+      row recording the erasure (which must survive the erasure it records),
+      and a hold check, since a subject under hold is exactly the case the
+      refusal exists for. Improvising any of the three is worse than the
+      documented refusal.
+- [ ] **A product-level retention policy.** The precedence in
+      `docs/RETENTION_POLICY.md` names three levels and two exist: the platform
+      floor in settings and the tenant override in `tenant_settings`. The
+      product level — a product's own configuration sitting between them — has
+      no home yet. Nothing is wrong without it; a product that wants a longer
+      default sets the floor.
+- [ ] **Reconciliation findings as a table.** The sweep records what it found
+      as audit rows, so a console wanting a history rather than a latest has to
+      read them back out of `audit_events`. That works and is indirect.
+      `docs/features/storage-architecture/integration-contracts.md` says the
+      same.
+- [ ] **Storage tiers.** WARM, COLD and ARCHIVE stay metadata with no physical
+      effect: no provider in this estate offers tiering and no bucket is
+      provisioned for an archive. ADR 0003 decision 11. A `tier` column that
+      nothing acts on would be the defect this work exists to close.
+- [ ] **The two capabilities are undeclared.** A storage-governance capability
+      and an audit-governance capability were the plan's shape, and everything
+      shipped into the foundation instead, so every product has all of it. The
+      names are in ADR 0003 decision 1 rather than here, because a capability
+      named in a document and absent from every manifest reads exactly like one
+      a product could be generated without. Declaring them is a decision about
+      what a product may be generated without, not a gap in what was built.
+
 ### F23 — the sign-in page, on a host of ours — opened 2026-09-09, built 2026-09-11 as the product's own page
 
 The one customer surface still drawn by ZITADEL is the sign-in page: ZITADEL

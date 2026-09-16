@@ -126,6 +126,27 @@ def test_every_floor_is_checked_before_any_is_used() -> None:
         floors_from(settings)
 
 
+def test_the_floor_over_ordinary_content_does_not_outlast_the_customer_s_wish() -> None:
+    """`standard` was 2555 -- seven years over everything a customer uploaded,
+    which a tenant could not shorten, because `retention_days_for` takes the
+    greater of floor and override.
+
+    A customer who uploads a document and wants it gone in ninety days is
+    entitled to ask, and a product answering "seven years" to that is not
+    applying a compliance control; it is refusing a deletion. The floor belongs
+    where an obligation is, which is the two classifications a product sets
+    deliberately. ADR 0003 decision 15.
+
+    One rather than zero: `floors_from` refuses anything below a day, because
+    retention of nothing is a wipe.
+    """
+    defaults = LifecycleSettings()
+    assert defaults.storage_retention_days_standard == 1
+    assert defaults.storage_retention_days_sensitive == 3650
+    assert defaults.storage_retention_days_restricted == 3650
+    floors_from(defaults)
+
+
 def test_a_sensitive_object_is_kept_longer_than_a_standard_one() -> None:
     assert FLOORS.days_for("sensitive") > FLOORS.days_for("standard")
     assert FLOORS.days_for("restricted") == FLOORS.days_for("sensitive")

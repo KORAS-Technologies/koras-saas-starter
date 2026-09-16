@@ -126,6 +126,20 @@ are the design:
 An audit row that can be edited is not an audit row. A tenant cannot delete its
 own history, and nothing but the retention sweep can delete anyone's.
 
+**Nor does an erasure request reach it.** A data subject asking under GDPR
+Article 17 has their content removed and every audit row about them kept, on
+17(3)(b) and 17(3)(e) — decided 2026-09-16 as ADR 0003 decision 14, with the
+reasoning and the two rejected alternatives in `docs/RETENTION_POLICY.md`.
+That the table has no update policy is what makes the position cheap to hold:
+there is no half-measure available in the schema, so pseudonymising had to be a
+deliberate build rather than something a route could quietly do.
+
+An export closes out the same way, for the same reason. The request records
+`pending` because the row exists before the artifact does, and the result
+arrives as a second event rather than as an edit to the first — an update
+statement against `audit_events` finds no policy, touches zero rows, and
+reports success.
+
 ## The write path
 
 `services/api/koras_api/core/audit.py`. Events are buffered and flushed by the

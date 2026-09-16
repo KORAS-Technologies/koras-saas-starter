@@ -97,6 +97,27 @@ the assistant and is not specific to it.
     prove it happened.* Audit, activity, security and administrative events
     are rows; application and operational events are log lines. Without that
     sentence the audit table becomes the log.
+14. *An erasure request does not reach the audit history.* Decided 2026-09-16.
+    A data subject's request under GDPR Article 17 removes their content and
+    leaves every audit row about them, on Article 17(3)(b) -- a legal
+    obligation to keep records -- and 17(3)(e) -- the establishment and defence
+    of legal claims. The alternative considered and rejected was pseudonymising
+    `actor_id`: correlation across the remaining rows still identifies the
+    person, so it buys little, and it destroys "who did this" for exactly the
+    investigation the rows exist to support. Splitting the position by class --
+    erasing `activity` and refusing the rest -- is the more defensible answer
+    and is recorded as a follow-up rather than built, because it needs an
+    erasure route, an audit row for the erasure itself and a hold check, and
+    none of those should be improvised.
+15. *The retention floor protects what needs protecting, and nothing else.*
+    Decided 2026-09-16, replacing a seven-year floor over everything a customer
+    uploaded. A tenant that wants a document gone in ninety days may have that:
+    `standard` content follows the tenant's own policy, with a floor of one day
+    because retention of nothing is a wipe. `sensitive` and `restricted` keep
+    the ten-year floor, and audit rows keep theirs. A floor over arbitrary
+    customer content is not a compliance control -- it is a product refusing to
+    honour a deletion the customer is entitled to ask for, which is the finding
+    rather than the defence.
 
 **Consequences.** The audit table's migration moves between manifest entries
 without being renumbered, and a product generated without reporting gains an
