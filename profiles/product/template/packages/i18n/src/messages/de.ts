@@ -676,6 +676,14 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Die hochgeladene Datei hat nicht die angekündigte Größe. Versuchen Sie den Upload erneut.',
   'errors.fileQuarantined':
     'Diese Datei wird zurückgehalten, weil eine Sicherheitsprüfung sie nicht als unbedenklich eingestuft hat. Wenden Sie sich an eine Administratorin oder einen Administrator, wenn Sie sie benötigen.',
+  'errors.holdNotFound':
+    'Diese Aufbewahrungssperre gibt es nicht.',
+  'errors.holdNotTransitionable':
+    'Über diese Aufbewahrungssperre wurde bereits entschieden; laden Sie die Liste neu, um den aktuellen Stand zu sehen.',
+  'errors.holdInvalidWindow':
+    'Eine Aufbewahrungssperre kann nicht enden, bevor sie beginnt.',
+  'errors.auditEventNotFound':
+    'Dieses Prüfereignis gibt es nicht.',
   'errors.storageUnavailable': 'Der Dateispeicher ist derzeit nicht verfügbar.',
   'errors.reportNotFound': 'Diesen Bericht gibt es nicht.',
   'errors.scheduleNotFound': 'Diesen Zeitplan gibt es nicht mehr.',

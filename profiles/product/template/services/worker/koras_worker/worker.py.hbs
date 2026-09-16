@@ -7,7 +7,8 @@ from .tasks import example_task
 {{#if capability.ai}}from .tasks.ai_retention import purge_ai_history
 {{/if}}from .tasks.audit_retention import purge_audit_history
 {{#if capability.reporting}}from .tasks.reporting import deliver_scheduled_reports
-{{/if}}from .tasks.storage_reconcile import reconcile_storage
+{{/if}}from .tasks.storage_lifecycle import sweep_storage_lifecycle
+from .tasks.storage_reconcile import reconcile_storage
 
 
 class WorkerSettings(WorkerSettingsBase):
@@ -24,6 +25,11 @@ class WorkerSettings(WorkerSettingsBase):
         # STORAGE_RECONCILE_ENABLED asks for it, and it reports rather than
         # deletes: an object it cannot match is not proof of a leak.
         cron(reconcile_storage, hour=3, minute=41),
+        # Retention for stored objects: resolve a date for what has none,
+        # lengthen what falls short of the floor, remove what has passed one
+        # and nothing is holding. Off unless STORAGE_LIFECYCLE_ENABLED asks --
+        # it deletes, which is a good reason to opt in rather than discover.
+        cron(sweep_storage_lifecycle, hour=4, minute=7),
 {{#if capability.reporting}}        # The seam for scheduled delivery. Hourly, and it says nothing is
         # scheduled until a product gives it something to deliver.
         cron(deliver_scheduled_reports, minute=41),

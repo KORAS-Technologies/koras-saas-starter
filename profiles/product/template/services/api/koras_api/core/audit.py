@@ -83,9 +83,51 @@ STORAGE_ACTIONS = (
         classification=Classification.AUDIT,
         summary="The sweep found an object without a row, or a row without an object.",
     ),
+    AuditAction(
+        key="storage.object.purged",
+        classification=Classification.AUDIT,
+        summary="A file passed its retention and was removed.",
+    ),
+    AuditAction(
+        key="storage.purge.held",
+        classification=Classification.SECURITY,
+        summary="A file was due for purge and was kept: a legal hold covers it.",
+    ),
+)
+
+# Holds are administrative: they change what the system will do rather than
+# what it holds. Refusals among them are security, because a refused lift is
+# somebody trying to make a purge possible again.
+HOLD_ACTIONS = (
+    AuditAction(
+        key="hold.requested",
+        classification=Classification.ADMINISTRATIVE,
+        summary="A legal hold was requested. It holds nothing until approved.",
+    ),
+    AuditAction(
+        key="hold.approved",
+        classification=Classification.ADMINISTRATIVE,
+        summary="A legal hold was approved and is now active.",
+    ),
+    AuditAction(
+        key="hold.released",
+        classification=Classification.ADMINISTRATIVE,
+        summary="A legal hold was lifted; what it covered may expire again.",
+    ),
+    AuditAction(
+        key="hold.refused",
+        classification=Classification.SECURITY,
+        summary="A hold transition was refused: the caller lacked the authority.",
+    ),
+    AuditAction(
+        key="audit.searched",
+        classification=Classification.ACTIVITY,
+        summary="A tenant's own audit history was read.",
+    ),
 )
 
 actions.extend(STORAGE_ACTIONS)
+actions.extend(HOLD_ACTIONS)
 
 
 async def record(

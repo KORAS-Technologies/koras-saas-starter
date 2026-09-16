@@ -663,6 +663,14 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'El archivo subido no tiene el tamaño anunciado. Intente subirlo de nuevo.',
   'errors.fileQuarantined':
     'Este archivo está retenido porque un análisis de seguridad no lo consideró limpio. Consulte a un administrador si lo necesita.',
+  'errors.holdNotFound':
+    'Esa retención legal no existe.',
+  'errors.holdNotTransitionable':
+    'Esa retención legal ya se ha decidido; recargue la lista para ver su estado actual.',
+  'errors.holdInvalidWindow':
+    'Una retención legal no puede terminar antes de empezar.',
+  'errors.auditEventNotFound':
+    'Ese evento de auditoría no existe.',
   'errors.storageUnavailable': 'El almacenamiento de archivos no está disponible en este momento.',
   'errors.reportNotFound': 'Ese informe no existe.',
   'errors.scheduleNotFound': 'Esa programación ya no existe.',

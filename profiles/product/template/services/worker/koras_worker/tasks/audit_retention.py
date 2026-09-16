@@ -51,9 +51,28 @@ audit = AuditSettings()
 logger = logging.getLogger(__name__)
 
 _PROVISIONING = text("select set_config('app.provisioning', 'on', true)")
+# A hold is a reason to stop the schedule, and it outranks every date. The
+# `not exists` is why 00020 gives `legal_holds` a provisioning select policy:
+# a sweep that could not read a tenant's holds would purge on their behalf
+# while they were in litigation.
+#
+# The subquery is correlated on the row's own tenant, so one tenant's hold
+# never protects another's rows -- and never fails to protect its own, which
+# is the direction that matters.
 _PURGE_AUDIT = text(
-    "delete from public.audit_events "
-    "where classification = :classification and created_at < :before returning id"
+    "delete from public.audit_events e "
+    "where e.classification = :classification and e.created_at < :before "
+    "  and not public.under_legal_hold(e.tenant_id, 'audit') "
+    "returning e.id"
+)
+
+#: What a hold kept. Counted separately from what was deleted, because a
+#: sweep that removed nothing because everything was held and a sweep that
+#: removed nothing because there was nothing to remove are different nights.
+_HELD_AUDIT = text(
+    "select count(*) as held from public.audit_events e "
+    "where e.classification = :classification and e.created_at < :before "
+    "  and public.under_legal_hold(e.tenant_id, 'audit')"
 )
 
 
@@ -72,12 +91,18 @@ def retention_by_class(settings: AuditSettings) -> dict[str, int]:
     }
 
 
-async def purge_audit_events(session: AsyncSession, *, retention: dict[str, int]) -> dict[str, int]:
-    """Remove rows of each class older than that class allows.
+async def purge_audit_events(
+    session: AsyncSession, *, retention: dict[str, int]
+) -> tuple[dict[str, int], int]:
+    """Remove rows of each class older than that class allows, respecting holds.
 
     One transaction and one provisioning setting for all four deletes, so a
     sweep interrupted half way leaves the table consistent with itself rather
     than with two of four classes swept.
+
+    Returns what was removed per class and how many rows a legal hold kept.
+    The second number is the evidence that holds are working: a hold that
+    silently preserves data looks exactly like a sweep that failed.
     """
     for name, days in sorted(retention.items()):
         if days < 1:
@@ -88,13 +113,19 @@ async def purge_audit_events(session: AsyncSession, *, retention: dict[str, int]
     now = datetime.now(UTC)
     await session.execute(_PROVISIONING)
     removed: dict[str, int] = {}
+    held = 0
     for name, days in sorted(retention.items()):
-        rows = await session.execute(
-            _PURGE_AUDIT, {"classification": name, "before": now - timedelta(days=days)}
+        before = now - timedelta(days=days)
+        # Counted before the delete, because afterwards the rows a hold saved
+        # and the rows that were never due look identical.
+        counted = await session.execute(
+            _HELD_AUDIT, {"classification": name, "before": before}
         )
+        held += int(counted.one().held)
+        rows = await session.execute(_PURGE_AUDIT, {"classification": name, "before": before})
         removed[name] = len(rows.all())
     await session.commit()
-    return removed
+    return removed, held
 
 
 def _engine() -> AsyncEngine:
@@ -112,13 +143,20 @@ async def purge_audit_history(ctx: dict[str, Any]) -> dict[str, Any]:
     engine = _engine()
     try:
         async with async_sessionmaker(engine, expire_on_commit=False)() as session:
-            removed = await purge_audit_events(session, retention=retention)
+            removed, held = await purge_audit_events(session, retention=retention)
     finally:
         await engine.dispose()
     total = sum(removed.values())
     logger.info(
-        "audit retention removed %d row(s): %s",
+        "audit retention removed %d row(s): %s; %d row(s) kept by a legal hold",
         total,
         ", ".join(f"{name} {count}" for name, count in sorted(removed.items())),
+        held,
     )
-    return {"status": "ok", "removed": total, "by_class": removed, "retention": retention}
+    return {
+        "status": "ok",
+        "removed": total,
+        "by_class": removed,
+        "held": held,
+        "retention": retention,
+    }

@@ -1,0 +1,265 @@
+"""Legal holds: request, approve, release, list.
+
+Four routes and one asymmetry worth reading before changing any of them.
+
+**Requesting needs `audit.legal_hold`. Approving and releasing need an owner or
+an administrator as well.** Placing a hold keeps data, and its worst case is
+cost. Lifting one makes a purge possible again, and its worst case is destroyed
+evidence. The bar is set by the worse outcome, not by which verb sounds more
+serious.
+
+**An approver may not be the requester.** Borrowed from the assistant's approval
+rule rather than invented here: a person who can propose and approve alone is a
+person with no second pair of eyes, and the whole point of an approval step is
+the second pair of eyes.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Annotated
+
+from fastapi import APIRouter, status
+from koras_auth.permissions import permissions_for
+from koras_platform import OrganizationRole
+from pydantic import BaseModel, Field
+
+from ..core.audit import record
+from ..core.auth import AuthDep
+from ..core.database import DbSession
+from ..core.errors import ApiErrorCode, api_error
+from ..core.holds import (
+    Hold,
+    HoldScope,
+    HoldStatus,
+    InvalidTransition,
+    get_hold,
+    list_holds,
+    move_hold,
+    request_hold,
+)
+from ..core.tenant import TenantDep
+
+router = APIRouter(tags=["holds"])
+
+#: Approving and releasing. The same two roles the Files module trusts with
+#: deletion, for the same reason: both decide whether data survives.
+_MANAGERS = (OrganizationRole.OWNER, OrganizationRole.ADMIN)
+
+PERMISSION = "audit.legal_hold"
+
+
+class HoldRequest(BaseModel):
+    scope: HoldScope = HoldScope.TENANT
+    reason: str = Field(min_length=1, max_length=2000)
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+
+
+class HoldRow(BaseModel):
+    id: str
+    scope: str
+    reason: str
+    requested_by: str
+    approved_by: str | None
+    status: str
+    starts_at: datetime
+    ends_at: datetime | None
+    created_at: datetime
+    #: Whether this hold is actually stopping anything right now. A hold in
+    #: `requested` holds nothing, and one whose window has passed holds nothing
+    #: either -- neither is obvious from the status alone.
+    in_force: bool
+
+
+class HoldList(BaseModel):
+    holds: list[HoldRow]
+
+
+def _row(hold: Hold, *, now: datetime | None = None) -> HoldRow:
+    moment = now or datetime.now(hold.starts_at.tzinfo)
+    in_force = (
+        hold.status is HoldStatus.ACTIVE
+        and hold.starts_at <= moment
+        and (hold.ends_at is None or hold.ends_at > moment)
+    )
+    return HoldRow(
+        id=hold.id,
+        scope=str(hold.scope),
+        reason=hold.reason,
+        requested_by=hold.requested_by,
+        approved_by=hold.approved_by,
+        status=str(hold.status),
+        starts_at=hold.starts_at,
+        ends_at=hold.ends_at,
+        created_at=hold.created_at,
+        in_force=in_force,
+    )
+
+
+def _require_permission(claims: AuthDep) -> None:
+    if PERMISSION not in permissions_for(claims.roles):
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            ApiErrorCode.PERMISSION_MISSING,
+            "placing or lifting a legal hold needs the audit hold permission",
+        )
+
+
+async def _require_manager(
+    session: DbSession, claims: AuthDep, tenant_id: str, hold_id: str, attempted: str
+) -> None:
+    """Approving and releasing need a manager, and a refusal is recorded.
+
+    Recorded because a refused lift is somebody trying to make a purge possible
+    again, which is exactly the kind of attempt that is interesting months
+    later.
+    """
+    if claims.has_role(*_MANAGERS):
+        return
+    await record(
+        session,
+        tenant_id=tenant_id,
+        actor_id=claims.sub,
+        action="hold.refused",
+        target_type="hold",
+        target_id=hold_id,
+        outcome="denied",
+        details={"attempted": attempted, "reason": "role"},
+    )
+    raise api_error(
+        status.HTTP_403_FORBIDDEN,
+        ApiErrorCode.ROLE_REQUIRED,
+        f"{attempted} a legal hold needs an owner or administrator",
+    )
+
+
+@router.get("/holds", response_model=HoldList)
+async def list_tenant_holds(
+    claims: AuthDep, tenant: TenantDep, session: DbSession
+) -> HoldList:
+    _require_permission(claims)
+    holds = await list_holds(session, tenant_id=tenant.id)
+    return HoldList(holds=[_row(hold) for hold in holds])
+
+
+@router.post("/holds", response_model=HoldRow, status_code=status.HTTP_201_CREATED)
+async def create_hold(
+    body: HoldRequest, claims: AuthDep, tenant: TenantDep, session: DbSession
+) -> HoldRow:
+    """Record a request. **It holds nothing until somebody approves it.**"""
+    _require_permission(claims)
+    if body.ends_at is not None and body.starts_at is not None and body.ends_at <= body.starts_at:
+        raise api_error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            ApiErrorCode.HOLD_INVALID_WINDOW,
+            "a hold cannot end before it starts",
+        )
+    hold = await request_hold(
+        session,
+        tenant_id=tenant.id,
+        scope=body.scope,
+        reason=body.reason,
+        requested_by=claims.sub,
+        starts_at=body.starts_at,
+        ends_at=body.ends_at,
+    )
+    await record(
+        session,
+        tenant_id=tenant.id,
+        actor_id=claims.sub,
+        action="hold.requested",
+        target_type="hold",
+        target_id=hold.id,
+        outcome="ok",
+        # The scope and the window, never the reason: a reason names a matter,
+        # and an audit row is read by more people than a hold request is.
+        details={"scope": str(hold.scope), "bounded": hold.ends_at is not None},
+    )
+    return _row(hold)
+
+
+@router.post("/holds/{hold_id}/approve", response_model=HoldRow)
+async def approve_hold(
+    hold_id: str, claims: AuthDep, tenant: TenantDep, session: DbSession
+) -> HoldRow:
+    _require_permission(claims)
+    await _require_manager(session, claims, tenant.id, hold_id, "approving")
+    hold = await _found(session, tenant.id, hold_id)
+
+    if hold.requested_by == claims.sub:
+        await record(
+            session,
+            tenant_id=tenant.id,
+            actor_id=claims.sub,
+            action="hold.refused",
+            target_type="hold",
+            target_id=hold_id,
+            outcome="denied",
+            details={"attempted": "approving", "reason": "self"},
+        )
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            ApiErrorCode.ROLE_REQUIRED,
+            "a legal hold is approved by someone other than the person who requested it",
+        )
+
+    moved = await _move(session, tenant.id, hold, HoldStatus.ACTIVE, claims.sub)
+    await record(
+        session,
+        tenant_id=tenant.id,
+        actor_id=claims.sub,
+        action="hold.approved",
+        target_type="hold",
+        target_id=hold_id,
+        outcome="ok",
+        details={"scope": str(moved.scope), "requested_by": moved.requested_by},
+    )
+    return _row(moved)
+
+
+@router.post("/holds/{hold_id}/release", response_model=HoldRow)
+async def release_hold(
+    hold_id: str, claims: AuthDep, tenant: TenantDep, session: DbSession
+) -> HoldRow:
+    """Lift a hold. The dangerous half: what it covered may expire again."""
+    _require_permission(claims)
+    await _require_manager(session, claims, tenant.id, hold_id, "releasing")
+    hold = await _found(session, tenant.id, hold_id)
+    moved = await _move(session, tenant.id, hold, HoldStatus.RELEASED, claims.sub)
+    await record(
+        session,
+        tenant_id=tenant.id,
+        actor_id=claims.sub,
+        action="hold.released",
+        target_type="hold",
+        target_id=hold_id,
+        outcome="ok",
+        details={"scope": str(moved.scope), "was": str(hold.status)},
+    )
+    return _row(moved)
+
+
+async def _found(session: DbSession, tenant_id: str, hold_id: str) -> Hold:
+    hold = await get_hold(session, tenant_id=tenant_id, hold_id=hold_id)
+    if hold is None:
+        # 404 rather than 403 for a hold belonging to another tenant, so that
+        # list and URL agree and a status code does not confirm existence.
+        raise api_error(status.HTTP_404_NOT_FOUND, ApiErrorCode.HOLD_NOT_FOUND, "no such hold")
+    return hold
+
+
+async def _move(
+    session: DbSession, tenant_id: str, hold: Hold, wanted: HoldStatus, actor_id: str
+) -> Hold:
+    try:
+        return await move_hold(
+            session, tenant_id=tenant_id, hold=hold, wanted=wanted, actor_id=actor_id
+        )
+    except InvalidTransition as problem:
+        raise api_error(
+            status.HTTP_409_CONFLICT, ApiErrorCode.HOLD_NOT_TRANSITIONABLE, str(problem)
+        ) from problem
+
+
+HoldsRouter = Annotated[APIRouter, router]

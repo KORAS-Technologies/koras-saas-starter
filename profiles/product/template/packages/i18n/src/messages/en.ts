@@ -664,6 +664,14 @@ export const en = {
     'The uploaded file is not the size that was announced. Try the upload again.',
   'errors.fileQuarantined':
     'This file is being withheld because a security scan did not find it clean. Ask an administrator if you need it.',
+  'errors.holdNotFound':
+    'That legal hold does not exist.',
+  'errors.holdNotTransitionable':
+    'That legal hold has already been decided; reload the list to see its current state.',
+  'errors.holdInvalidWindow':
+    'A legal hold cannot end before it starts.',
+  'errors.auditEventNotFound':
+    'That audit event does not exist.',
   'errors.storageUnavailable': 'File storage is not available right now.',
   'errors.reportNotFound': 'That report does not exist.',
   'errors.scheduleNotFound': 'That schedule no longer exists.',

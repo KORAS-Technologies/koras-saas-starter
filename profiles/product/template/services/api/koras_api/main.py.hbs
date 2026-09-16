@@ -17,8 +17,10 @@ from .core.settings import settings
 # template cannot know which it will be.
 from .routers import (
 {{#if capability.ai}}    ai,
-{{/if}}    files,
+{{/if}}    audit,
+    files,
     health,
+    holds,
     platform,
 {{#if capability.ai}}    platform_ai,
 {{/if}}{{#if capability.reporting}}    platform_reporting,
@@ -124,6 +126,20 @@ app.include_router(
 # it is the first route family that mints signed URLs and touches a bucket.
 app.include_router(
     files.router,
+    prefix="/api/v1",
+    dependencies=[Depends(limit_authenticated)],
+)
+# A tenant's own audit history, and the legal holds that stop it expiring.
+# Foundation like the table they read and write: a product that records
+# without being able to answer what it recorded is a product with a write-only
+# compliance store.
+app.include_router(
+    audit.router,
+    prefix="/api/v1",
+    dependencies=[Depends(limit_authenticated)],
+)
+app.include_router(
+    holds.router,
     prefix="/api/v1",
     dependencies=[Depends(limit_authenticated)],
 )

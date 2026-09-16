@@ -39,6 +39,11 @@ PRODUCT_PERMISSIONS: tuple[str, ...] = (
     "reports.read",
     "reports.sensitive",
     "reports.export",
+    # Audit. Reading a tenant's own history is administrative rather than a
+    # member capability, and stopping retention with a legal hold is its own
+    # authority. Mirrors the TypeScript catalogue.
+    "audit.view",
+    "audit.legal_hold",
 )
 
 _EVERYONE: tuple[str, ...] = (
@@ -57,6 +62,7 @@ ROLE_PERMISSIONS: dict[OrganizationRole, tuple[str, ...]] = {
         "team.read",
         "settings.read",
         "reports.sensitive",
+        "audit.view",
     ),
     OrganizationRole.BILLING_ADMIN: (*_EVERYONE, "settings.read", "reports.export"),
     OrganizationRole.MEMBER: _EVERYONE,

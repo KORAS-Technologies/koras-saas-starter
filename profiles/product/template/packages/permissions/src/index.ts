@@ -96,6 +96,14 @@ export const PRODUCT_PERMISSIONS = [
   'reports.read',
   'reports.sensitive',
   'reports.export',
+  // Audit. Reading a tenant's own history is an administrative capability
+  // rather than a member one -- it names who did what, and a member reading
+  // their colleagues' activity is a different product. Security-classified
+  // rows need more still, and that is a role check rather than a permission.
+  // Placing and lifting a legal hold is the authority to stop retention, and
+  // lifting is the dangerous half. The Python catalogue mirrors both.
+  'audit.view',
+  'audit.legal_hold',
 ] as const
 
 export type ProductPermission = (typeof PRODUCT_PERMISSIONS)[number]
@@ -129,7 +137,7 @@ export const ROLE_PERMISSIONS: Record<OrganizationRole, readonly ProductPermissi
   // role's grant as a line, and a permission wrapped onto the next one reads
   // as a role that grants nothing.
   // prettier-ignore
-  security_admin: ['product.access', 'team.read', 'settings.read', 'files.read', 'files.upload', 'ai.use', 'reports.read', 'reports.sensitive'],
+  security_admin: ['product.access', 'team.read', 'settings.read', 'files.read', 'files.upload', 'ai.use', 'reports.read', 'reports.sensitive', 'audit.view'],
   // prettier-ignore
   billing_admin: ['product.access', 'settings.read', 'files.read', 'files.upload', 'ai.use', 'reports.read', 'reports.export'],
   member: ['product.access', 'files.read', 'files.upload', 'ai.use', 'reports.read'],

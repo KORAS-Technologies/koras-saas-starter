@@ -57,6 +57,11 @@ class ApiErrorCode(StrEnum):
     RECIPIENT_INVALID = "recipient_invalid"
     PERIOD_NOT_A_FILTER = "period_not_a_filter"
     REPORT_FAILED = "report_failed"
+    # legal holds and audit search
+    HOLD_NOT_FOUND = "hold_not_found"
+    HOLD_NOT_TRANSITIONABLE = "hold_not_transitionable"
+    HOLD_INVALID_WINDOW = "hold_invalid_window"
+    AUDIT_EVENT_NOT_FOUND = "audit_event_not_found"
     # the assistant (its own errors carry `koras_ai.ErrorCode`; this one is the API's)
     TOOL_DENIED = "tool_denied"
     # the platform's private contract: machine callers, never a person

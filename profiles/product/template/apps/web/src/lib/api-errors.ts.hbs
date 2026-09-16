@@ -43,6 +43,14 @@ export function apiErrorMessage(t: Translator, code: string | null | undefined):
       return t('errors.uploadNotArrived')
     case 'upload_size_mismatch':
       return t('errors.uploadSizeMismatch')
+    case 'hold_not_found':
+      return t('errors.holdNotFound')
+    case 'hold_not_transitionable':
+      return t('errors.holdNotTransitionable')
+    case 'hold_invalid_window':
+      return t('errors.holdInvalidWindow')
+    case 'audit_event_not_found':
+      return t('errors.auditEventNotFound')
     case 'file_quarantined':
       return t('errors.fileQuarantined')
     case 'storage_unavailable':
