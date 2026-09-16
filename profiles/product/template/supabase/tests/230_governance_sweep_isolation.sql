@@ -161,4 +161,46 @@ begin
 end
 $$;
 
+-- And it may change the status and nothing else. The policy's `with check`
+-- cannot see the old row, so it cannot express "everything else unchanged" --
+-- a trigger does, and this is what proves the trigger is there. Without it one
+-- statement could expire a hold and move it to another tenant in the same
+-- UPDATE, which is a hold rewritten by the process whose job is to retire it.
+select set_config('app.tenant_id', '', true) as _;
+select set_config('app.provisioning', 'on', true) as _;
+
+do $$
+declare
+  refused boolean := false;
+begin
+  begin
+    update public.legal_holds
+       set status = 'expired',
+           tenant_id = '00000000-0000-0000-0000-000000000002'
+     where id = '70000000-0000-0000-0000-000000000004';
+  exception
+    when insufficient_privilege then refused := true;
+  end;
+
+  if not refused then
+    raise exception 'holds: a sweep moved a hold to another tenant while expiring it';
+  end if;
+
+  begin
+    refused := false;
+    update public.legal_holds
+       set status = 'expired', reason = 'something else entirely'
+     where id = '70000000-0000-0000-0000-000000000004';
+  exception
+    when insufficient_privilege then refused := true;
+  end;
+
+  if not refused then
+    raise exception 'holds: a sweep rewrote a hold''s reason while expiring it';
+  end if;
+
+  raise notice 'a sweep may change a hold''s status and nothing else: ok';
+end
+$$;
+
 rollback;

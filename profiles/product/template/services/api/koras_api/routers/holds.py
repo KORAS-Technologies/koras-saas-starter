@@ -354,17 +354,43 @@ async def read_retention(
 async def write_retention(
     body: RetentionOverrides, claims: AuthDep, tenant: TenantDep, session: DbSession
 ) -> RetentionOverrides:
-    """Set this tenant's retention. Lengthening is the only direction that acts.
+    """Change this tenant's retention. Only the kinds the caller names.
 
     Changing what a customer keeps is an administrative act, so it needs the
     same authority as placing a hold and is recorded as an administrative
     event. The numbers go into the record; a retention policy is not a secret
     and the point of the record is to be able to say when it changed.
+
+    **A kind the caller did not mention keeps its value.** This replaced the
+    whole map until a security review found it on 2026-09-16: a caller sending
+    `{"audit": 400}` cleared a tenant's `audit_security` of 2555 back to the
+    platform floor of 1095, and everything that class covered became deletable
+    on the next sweep. Nothing in the request said so and nothing in the record
+    showed it, because the audit row carried only the new map -- a shortening
+    from seven years to the floor was indistinguishable from setting that value
+    for the first time.
+
+    Removing one is still possible and is now explicit: send the kind as null.
+    `model_fields_set` is what separates "not mentioned" from "set to nothing",
+    which `model_dump()` alone cannot.
     """
     _require_permission(claims)
     await _require_manager(session, claims, tenant.id, "-", "changing retention for")
 
-    overrides = {key: value for key, value in body.model_dump().items() if value is not None}
+    row = (await session.execute(_READ_RETENTION, {"tenant_id": tenant.id})).first()
+    # Read the same way `read_retention` above reads it, so the two cannot
+    # disagree about what an empty map looks like.
+    before: dict[str, int] = dict(row.overrides) if row is not None and row.overrides else {}
+    overrides: dict[str, int] = dict(before)
+
+    named = body.model_dump()
+    for key in body.model_fields_set:
+        value = named.get(key)
+        if value is None:
+            overrides.pop(key, None)
+        else:
+            overrides[key] = int(value)
+
     await session.execute(
         _WRITE_RETENTION, {"tenant_id": tenant.id, "overrides": json.dumps(overrides)}
     )
@@ -378,6 +404,12 @@ async def write_retention(
         target_type="tenant",
         target_id=tenant.id,
         outcome="ok",
-        details={key: int(value) for key, value in overrides.items()},
+        # Both maps. A shortening is only visible as a change if the record
+        # says what it changed from, and this is the one event in the product
+        # whose whole purpose is to make a retention change legible later.
+        details={
+            **{f"now_{key}": int(value) for key, value in overrides.items()},
+            **{f"was_{key}": int(value) for key, value in before.items()},
+        },
     )
     return RetentionOverrides(**overrides)

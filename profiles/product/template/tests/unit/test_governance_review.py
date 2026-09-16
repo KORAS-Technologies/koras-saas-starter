@@ -175,3 +175,39 @@ def test_a_security_administrator_may_request_a_hold() -> None:
     # And still not the authority to approve or lift one, which the router
     # checks by role rather than by permission.
     assert OrganizationRole.SECURITY_ADMIN not in holds._MANAGERS
+
+
+# -- retention changes keep what they did not mention --------------------------
+#
+# Found by a security review on 2026-09-16. `PUT /settings/retention` replaced
+# the whole map, so a caller sending `{"audit": 400}` cleared a tenant's
+# `audit_security` of 2555 back to the platform floor of 1095 -- and everything
+# that class covered became deletable on the next sweep. The audit row carried
+# only the new map, so a shortening from seven years to the floor was
+# indistinguishable from setting that value for the first time.
+
+
+def test_a_retention_change_keeps_the_kinds_it_did_not_mention() -> None:
+    """`model_fields_set` is what separates "not mentioned" from "set to
+    nothing"; `model_dump()` alone cannot, which is how this shipped."""
+    source = inspect.getsource(holds.write_retention)
+    assert "model_fields_set" in source
+    # And the prior map is read before the new one is written, or there is
+    # nothing to keep and nothing to record.
+    assert "_READ_RETENTION" in source
+
+
+def test_a_retention_change_records_what_it_changed_from() -> None:
+    """The one event in the product whose whole purpose is to make a retention
+    change legible later. Only the new values is not a record of a change."""
+    source = inspect.getsource(holds.write_retention)
+    assert 'f"was_{key}"' in source
+    assert 'f"now_{key}"' in source
+
+
+def test_removing_an_override_is_possible_and_explicit() -> None:
+    """Merge semantics must not make a deliberate removal impossible -- sending
+    the kind as null is how, and it has to be distinguishable from omitting
+    it."""
+    source = inspect.getsource(holds.write_retention)
+    assert "overrides.pop(key, None)" in source
