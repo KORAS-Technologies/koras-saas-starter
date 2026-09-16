@@ -113,16 +113,16 @@ contract · — = nothing owed.
 | STORAGE-003 | Tenant-isolated objects | SHARED | RLS + key scheme | consumes | — | — | — | — | Synced |
 | STORAGE-004 | Configurable providers | BOTH | `resolve_destination` | consumes | **owns the policy** | `storage.files` | area `storage` | `/storage-defaults` | Synced |
 | STORAGE-005 | Storage quotas | BOTH | enforcement | enforces | **owns the limit** | `storage.files` GB/plan | area `entitlements` | — | Synced |
-| STORAGE-006 | Object lifecycle | SHARED | `storage_lifecycle.py` | runs it | *observe* | — | — | `/governance` | **Product behind** |
+| STORAGE-006 | Object lifecycle | SHARED | `storage_lifecycle.py` | runs it | *observe* | — | — | `/governance` | Synced |
 | STORAGE-007 | File versioning | NOT REQUIRED | — | — | — | — | — | — | Closed |
 | STORAGE-008 | Signed URLs | SHARED | `presign_*` | consumes | **never receives one** | — | `files.read` | — | Synced |
-| STORAGE-009 | Daily backup | SHARED | `storage_backup.py` | runs it | *observe* — proposed | — | — | proposed | **Product behind** |
-| STORAGE-010 | Cross-provider backup | SHARED | same | runs it | *observe* | — | — | proposed | **Product behind** |
-| STORAGE-011 | Backup verification | SHARED | digest comparison | runs it | *observe* | — | — | proposed | **Product behind** |
-| STORAGE-012 | Object restore | SHARED | `00026`, `core/restore.py` | **missing** | *observe only* — see the constraint above | **none, decided** | `files.manage` + two people | proposed | **Not synced** |
+| STORAGE-009 | Daily backup | SHARED | `storage_backup.py` | runs it | *observe* | — | — | `/governance` | Synced |
+| STORAGE-010 | Cross-provider backup | SHARED | same | runs it | *observe* | — | — | `/governance` | Synced |
+| STORAGE-011 | Backup verification | SHARED | digest comparison | runs it | *observe* | — | — | `/governance` | Synced |
+| STORAGE-012 | Object restore | SHARED | `00026`, `core/restore.py` + the Restore page | has it | *observe only* — see the constraint above | **none, decided** | `files.manage` + two people | — | Synced |
 | STORAGE-013 | Snapshot restore | NOT STARTED | — | — | operator runbook | — | — | — | Not started |
 | STORAGE-014 | Usage metrics | NOT REQUIRED | — | — | — | — | — | — | Closed |
-| STORAGE-015 | Administration contracts | BOTH | `/governance` built | serves it | **contract + collector + page** | — | area `storage` | `/governance` | **CP not started** |
+| STORAGE-015 | Administration contracts | BOTH | `/governance` built | serves it | **collector + page built** | — | area `storage` | `/governance` | Synced |
 | STORAGE-016 | Config inheritance | BOTH | `retention_days_for` | tenant override | policy half exists | — | `files.manage` | — | Synced |
 | STORAGE-017 | Integrity at upload | SHARED | digest seam | consumes | *observe* | — | — | `/governance` | Synced |
 | STORAGE-018 | Scan seam, quarantine | SHARED | `file_scan.py` | consumes | *observe* | — | — | `/governance` | Synced |
@@ -172,10 +172,9 @@ contract · — = nothing owed.
 
 ### `output/koras-e2e-shop`
 
-1. **Sync two commits** — `ac87be6` and `6004821`. That is the whole of
-   STORAGE-012 plus the capability declarations: eight files, migration `00026`,
-   five error codes, four audit actions, the api-client block and fifteen i18n
-   keys.
+1. ~~Sync~~ **Done 2026-09-16** in `dfa58a8`: twenty-two files across three
+   starter commits, verified there with 681 Python tests, 25 RLS suites on the
+   full 28-migration stack and 109 browser checks.
 2. **Three findings that are the shop's own and predate this work.** Decided
    2026-09-16: **a separate pass, not this one.** None of them is a governance
    defect and folding them in would make a sync indistinguishable from a repair.
@@ -194,6 +193,13 @@ contract · — = nothing owed.
 
 Its share is small, precise, and smaller than a reading of the feature titles
 suggests.
+
+**Both parts below were built on 2026-09-16** — the contract in `e64e5cf`, the
+collector and page in `86c6c65`. Two things remain unproven and are recorded
+because they are the kind that go quiet: **no browser has opened the console
+page**, and **nothing has been collected from a real deployed product** — every
+test uses a fake source, so the merge is proved against the contract's declared
+shape rather than against what a product answers.
 
 1. **Contract first, and it is two files.** `GET /governance` is in the
    starter's contract and absent from the Control Plane's copy.
