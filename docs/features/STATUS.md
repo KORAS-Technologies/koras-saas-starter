@@ -18,8 +18,8 @@ Planner tracking for both features. Status vocabulary is
 | STORAGE-009 | Daily backup | NEW | **Built 2026-09-16** |
 | STORAGE-010 | Cross-provider backup | NEW | **Built 2026-09-16** — the settings already promised it |
 | STORAGE-011 | Backup integrity verification | NEW | **Built 2026-09-16** |
-| STORAGE-012 | Object restore | NEW | Blocked — ADR 0006 question 3 |
-| STORAGE-013 | Snapshot restore | NEW | Blocked — STORAGE-012 |
+| STORAGE-012 | Object restore | NEW | **Built 2026-09-16** — permission and two people, no entitlement |
+| STORAGE-013 | Snapshot restore | NEW | Not started — operator work with a runbook, not a button |
 | STORAGE-014 | Storage usage metrics | NOT REQUIRED | Closed — no metric API |
 | STORAGE-015 | Storage administration contracts | NEW | Built — `GET /governance` |
 | STORAGE-016 | Storage configuration inheritance | NEW | Built — tenant may lengthen only |

@@ -11,6 +11,7 @@ from .tasks import example_task
 {{/if}}{{#if capability.storage_governance}}from .tasks.storage_backup import back_up_storage
 from .tasks.storage_lifecycle import sweep_storage_lifecycle
 from .tasks.storage_reconcile import reconcile_storage
+from .tasks.storage_restore import run_restores
 {{/if}}
 
 
@@ -51,6 +52,12 @@ class WorkerSettings(WorkerSettingsBase):
         # own clock here rather than being deleted alongside it. Off unless
         # STORAGE_BACKUP_ENABLED asks -- it bills a second destination.
         cron(back_up_storage, hour=4, minute=39),
+        # Approved restores. Every ten minutes rather than nightly: a person
+        # who approved a recovery is waiting for it, and the sweep is what
+        # makes the approval durable -- a request approved and then lost to a
+        # crashed process is a row somebody can find rather than an approval
+        # that evaporated.
+        cron(run_restores, minute={0, 10, 20, 30, 40, 50}),
 {{/if}}
 {{#if capability.reporting}}        # The seam for scheduled delivery. Hourly, and it says nothing is
         # scheduled until a product gives it something to deliver.

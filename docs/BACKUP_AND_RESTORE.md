@@ -1,10 +1,10 @@
 # Koras Backup and Restore
 
-> **The backup half is built as of 2026-09-16. Restore is not.** A nightly
-> copy runs, compares digests and catalogues the result; nothing restores from
-> it yet, and nothing in Terraform creates a bucket for either — the
-> destination is a name a person supplies, which is how `STORAGE_BUCKET`
-> already works.
+> **Both halves are built as of 2026-09-16.** A nightly copy runs, compares
+> digests and catalogues the result, and an object can be brought back from
+> that catalogue by two people. Nothing in Terraform creates a bucket for
+> either — the destination is a name a person supplies, which is how
+> `STORAGE_BUCKET` already works.
 >
 > The decision record is `docs/adr/0006-backup-strategy.md`, accepted the same
 > day. What else exists is in `docs/STORAGE_ARCHITECTURE.md`.
@@ -153,7 +153,7 @@ Two properties matter more than the columns:
 | Source object missing | Not a backup failure. That is reconciliation's finding, and it is reported there |
 | Credentials rejected | Stop the run. Continuing would fill a log with noise and produce nothing |
 
-## Restore — designed, not built
+## Restore
 
 Restore is **destructive** and is designed around that fact rather than around
 convenience.
@@ -164,22 +164,33 @@ requested -> authorized -> queued -> restoring -> verifying -> completed
                    +--> refused                         +--> failed
 ```
 
-It reuses machinery that already exists rather than inventing a second approval
-flow: the AI foundation's action state machine, its destructive-operation class,
-and its approval rule. That rule is worth restating because it is the good part:
-**an approver must be someone who could have performed the action themselves.**
-An administrator cannot rubber-stamp an operation they lack the permission for.
+It borrows the **rule** from machinery that already exists, and not the
+machinery itself. The design said it would reuse the AI foundation's action
+state machine; that machine persists to `ai_actions`, which arrives with the
+`ai` capability and is off by default, so restore would have been unavailable in
+most products because they had not bought an assistant. `legal_holds` faced the
+same choice and answered it the same way, so restore has its own table and its
+own machine in `core/restore.py`.
+
+The rule is worth restating because it is the good part: **an approver must be
+someone who could have performed the action themselves.** An administrator
+cannot rubber-stamp an operation they lack the permission for, and the person
+who asked cannot be the person who approves.
 
 Four decisions:
 
 1. **Non-overwriting by default.** A restore to a new file id is not
    destructive. Overwriting an existing object is, and is a separately approved
    option rather than a checkbox on the same request.
-2. **An unresolved plan refuses.** Storage takes the opposite rule — an
-   unreachable platform is no gate, so a customer keeps working during an
-   outage. Restore takes the export rule: a closed gate. The asymmetry is
-   deliberate. An outage must not lock a customer out of their own work, and it
-   must not let unverified data move either.
+2. **The plan is not consulted at all**, and no entitlement gates this.
+   `files.manage` and the two people are the authority. The design said the
+   opposite — that an unresolved plan should refuse, by analogy with export —
+   and building it showed the analogy was wrong: the verification that matters
+   here is the digest, which the worker checks itself and which a platform
+   outage cannot affect. All the rule would have achieved is an unreachable
+   Control Plane stopping somebody recovering a deleted file. Gating data
+   recovery behind a plan tier is also a worse position to defend than not
+   selling it.
 3. **Every transition is audited**, including a refused authorization. A denied
    approval is exactly the record somebody asks for later.
 4. **Cross-tenant restore must be proven impossible**, by an isolation test

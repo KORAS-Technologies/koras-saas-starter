@@ -51,6 +51,16 @@ export function apiErrorMessage(t: Translator, code: string | null | undefined):
       return t('errors.holdInvalidWindow')
     case 'audit_event_not_found':
       return t('errors.auditEventNotFound')
+    case 'backup_not_found':
+      return t('errors.backupNotFound')
+    case 'restore_not_found':
+      return t('errors.restoreNotFound')
+    case 'restore_not_transitionable':
+      return t('errors.restoreNotTransitionable')
+    case 'restore_already_requested':
+      return t('errors.restoreAlreadyRequested')
+    case 'restore_overwrite_unconfirmed':
+      return t('errors.restoreOverwriteUnconfirmed')
     case 'file_under_hold':
       return t('errors.fileUnderHold')
     case 'file_quarantined':

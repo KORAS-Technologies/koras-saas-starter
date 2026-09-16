@@ -738,6 +738,16 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Die Datei ist nicht wie erwartet im Speicher angekommen. Versuchen Sie den Upload erneut.',
   'errors.uploadSizeMismatch':
     'Die hochgeladene Datei hat nicht die angekündigte Größe. Versuchen Sie den Upload erneut.',
+  'errors.backupNotFound':
+    'Von dieser Datei existiert keine Sicherung, aus der wiederhergestellt werden könnte.',
+  'errors.restoreNotFound':
+    'Diese Wiederherstellungsanfrage existiert nicht.',
+  'errors.restoreNotTransitionable':
+    'Über diese Wiederherstellungsanfrage wurde bereits entschieden.',
+  'errors.restoreAlreadyRequested':
+    'Für diese Datei wartet bereits eine Wiederherstellung auf eine Entscheidung.',
+  'errors.restoreOverwriteUnconfirmed':
+    'Diese Anfrage ersetzt die vorhandene Datei. Genehmigen Sie sie ausdrücklich als Ersetzung, oder fordern Sie stattdessen eine neue Kopie an.',
   'errors.fileUnderHold':
     'Diese Datei kann nicht gelöscht werden: Eine rechtliche Aufbewahrungspflicht hält sie. Nach deren Aufhebung ist das Löschen möglich.',
   'errors.fileQuarantined':

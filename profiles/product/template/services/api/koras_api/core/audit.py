@@ -102,6 +102,34 @@ STORAGE_ACTIONS = (
         summary="A backup copy passed its date and was removed from the destination.",
     ),
     AuditAction(
+        key="storage.restore.requested",
+        classification=Classification.ADMINISTRATIVE,
+        summary="A restore was asked for. It restores nothing until approved.",
+    ),
+    AuditAction(
+        key="storage.restore.approved",
+        classification=Classification.ADMINISTRATIVE,
+        summary="A restore was approved by somebody other than whoever asked.",
+    ),
+    AuditAction(
+        key="storage.restore.refused",
+        classification=Classification.SECURITY,
+        summary=(
+            "A restore was refused: a decision, an unconfirmed overwrite, or "
+            "somebody trying to approve their own request."
+        ),
+    ),
+    AuditAction(
+        key="storage.restore.completed",
+        classification=Classification.ADMINISTRATIVE,
+        summary="An object was brought back from its backup.",
+    ),
+    AuditAction(
+        key="storage.restore.failed",
+        classification=Classification.ADMINISTRATIVE,
+        summary="A restore ran and did not produce the object.",
+    ),
+    AuditAction(
         key="storage.purge.held",
         classification=Classification.SECURITY,
         summary="A file was due for purge and was kept: a legal hold covers it.",

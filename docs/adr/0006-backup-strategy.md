@@ -1,9 +1,12 @@
 # ADR 0006 — Backup Strategy
 
-**Status.** Accepted, 2026-09-16, with one question still open. The copy and its
-verification are built — `services/worker/koras_worker/tasks/storage_backup.py`
-and migration `00025_file_backups.sql`. Restore is not; question 3 governs it
-and is unanswered.
+**Status.** Accepted, 2026-09-16. All three questions are answered and both
+halves are built: the copy and its verification in
+`services/worker/koras_worker/tasks/storage_backup.py` with migration
+`00025_file_backups.sql`, and restore in `routers/restore.py`,
+`core/restore.py`, `tasks/storage_restore.py` and `00026_restore_requests.sql`.
+Two decisions in this record were amended on building it; both amendments are
+marked below.
 
 **Context.** No object in this estate is backed up. Objects live in whichever
 bucket a customer's storage policy names, and the only copy is the one the
@@ -43,13 +46,27 @@ Three things blocked designing it, and one has since cleared:
 5. *A partial run is never recorded as complete.* The same rule the
    reconciliation sweep follows, for the same reason: a count derived from an
    unfinished pass, presented as a total, is worse than no count.
-6. *Restore is destructive and reuses the approval machinery that exists.* The
-   AI foundation's action state machine, its destructive-operation class, and
-   its rule that an approver must be someone who could have performed the action
-   themselves. Non-overwriting by default; overwriting is separately approved.
-7. *Restore refuses while the entitlement plan is unresolved.* Upload takes the
-   opposite rule and continues. The asymmetry is deliberate: an outage must not
-   lock a customer out of their own work, and must not let unverified data move.
+6. *Restore is destructive and borrows the approval rule, not the machinery.*
+   **Amended 2026-09-16 on building it.** This said restore would reuse the AI
+   foundation's action state machine. It cannot: `ai_actions` arrives with the
+   `ai` capability, which is off by default, so a storage safety operation would
+   have been unavailable in most products because they had not bought an
+   assistant. `legal_holds` faced the same choice in `00020` and answered it the
+   same way — its own table, its own machine, the same rule. Restore does that,
+   in `restore_requests`.
+
+   The rule is unchanged and is the good part: an approver is somebody other
+   than the requester. Non-overwriting by default, and overwriting is asked for
+   *twice* — named on the request and confirmed again on the approval, because
+   an approver who did not notice a checkbox has not approved a deletion.
+7. *Restore does not consult the plan at all.* **Amended 2026-09-16.** This
+   said restore refuses while the entitlement plan is unresolved, drawing an
+   asymmetry with upload on the grounds that an outage must not let unverified
+   data move. The verification that matters turned out to be the digest, which
+   the restore checks itself and which a platform outage cannot affect — so the
+   rule as written would only have meant an unreachable Control Plane stopping
+   a customer from recovering a deleted file, which is the failure mode the
+   reasoning was trying to avoid, pointed the other way.
 8. *Disaster recovery is out of scope and needs its own record.* RPO, RTO,
    failover and cross-region replication are estate-level commitments to
    customers, not a product template's decisions.
@@ -75,7 +92,7 @@ Three things blocked designing it, and one has since cleared:
 |---|----------|--------|
 | 1 | Who creates the archive and backup buckets | **Answered 2026-09-16: a documented manual step**, matching how `STORAGE_BUCKET` already works. A person creates the bucket and sets `STORAGE_BACKUP_BUCKET`; nothing in Terraform is named for a bucket, so the identifiers test needs no exemption |
 | 2 | Same-provider only, or cross-provider from the start | **Answered 2026-09-16: both, because the settings already promised both.** Same endpoint and the provider copies server-side; a different endpoint and no single provider reaches both ends, so the object passes through the worker, bounded at 64 MiB. A setting accepted and doing nothing is the defect this work exists to close |
-| 3 | Which entitlement gates restore | **Open as of 2026-09-16.** Proposed `storage.restore`; adding it is Control Plane catalogue work, governed by the open F3/F2b authorization question. Restore is not built, so nothing is gated on an answer that does not exist |
+| 3 | Which entitlement gates restore | **Answered 2026-09-16: none.** `files.manage` and the two-person rule, following the audit-export precedent. Gating data recovery behind a plan tier means a customer whose plan lapsed cannot get their data back, which is a worse position to defend than not selling it. `storage.restore` can be added later — adding a gate to something that works is easy in a way that removing one from something that refuses is not |
 
 **Consequences.** STORAGE-009 and STORAGE-011 are built as of 2026-09-16;
 STORAGE-012 and STORAGE-013 — restore, and its approval flow — are not, and are

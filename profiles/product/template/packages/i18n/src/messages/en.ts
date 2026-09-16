@@ -726,6 +726,16 @@ export const en = {
   'errors.uploadNotArrived': 'The file did not arrive in storage as expected. Try the upload again.',
   'errors.uploadSizeMismatch':
     'The uploaded file is not the size that was announced. Try the upload again.',
+  'errors.backupNotFound':
+    'No backup of this file exists, so there is nothing to restore it from.',
+  'errors.restoreNotFound':
+    'No such restore request.',
+  'errors.restoreNotTransitionable':
+    'This restore request has already been decided.',
+  'errors.restoreAlreadyRequested':
+    'A restore of this file is already waiting to be decided.',
+  'errors.restoreOverwriteUnconfirmed':
+    'This request replaces the existing file. Approve it saying so, or ask for a new copy instead.',
   'errors.fileUnderHold':
     'This file cannot be deleted: a legal hold is keeping it. It can be deleted once the hold is lifted.',
   'errors.fileQuarantined':

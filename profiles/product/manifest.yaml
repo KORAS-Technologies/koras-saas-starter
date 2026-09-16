@@ -206,13 +206,19 @@ template_map:
     # index that records state nothing acts on. That is the honest shape: the
     # column says what is true, and no sweep is pretending to maintain it.
     storage_governance:
+      - services/api/koras_api/core/restore.py
+      - services/api/koras_api/routers/restore.py
       - services/worker/koras_worker/tasks/storage_backup.py
       - services/worker/koras_worker/tasks/storage_lifecycle.py
       - services/worker/koras_worker/tasks/storage_reconcile.py
+      - services/worker/koras_worker/tasks/storage_restore.py
       - supabase/migrations/00025_file_backups.sql
+      - supabase/migrations/00026_restore_requests.sql
       - supabase/tests/240_file_backups_isolation.sql
+      - supabase/tests/250_restore_isolation.sql
       - tests/unit/test_governance_sweeps_review.py
       - tests/unit/test_storage_backup.py
+      - tests/unit/test_storage_restore.py
       - tests/unit/test_storage_lifecycle.py
       - tests/unit/test_storage_reconcile.py
 

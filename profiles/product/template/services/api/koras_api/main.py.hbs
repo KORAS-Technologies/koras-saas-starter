@@ -21,6 +21,8 @@ from .routers import (
     audit_exports,
 {{/if}}    files,
     health,
+{{#if capability.storage_governance}}    restore,
+{{/if}}
 {{#if capability.audit_governance}}    holds,
 {{/if}}    platform,
 {{#if capability.ai}}    platform_ai,
@@ -131,7 +133,17 @@ app.include_router(
     prefix="/api/v1",
     dependencies=[Depends(limit_authenticated)],
 )
-{{#if capability.audit_governance}}# A tenant's own audit history, and the legal holds that stop it expiring.
+{{#if capability.storage_governance}}# Bringing an object back from its backup: ask, approve, watch. Two people
+# decide and the worker runs it, so no route here touches a bucket. Gated by
+# permission and by nothing else -- gating data recovery behind a plan tier
+# would mean a customer whose plan lapsed cannot get their data back, which is
+# a worse position to defend than not selling it (ADR 0006 question 3).
+app.include_router(
+    restore.router,
+    prefix="/api/v1",
+    dependencies=[Depends(limit_authenticated)],
+)
+{{/if}}{{#if capability.audit_governance}}# A tenant's own audit history, and the legal holds that stop it expiring.
 # The surface over the record, not the record: `audit_events` and
 # `legal_holds` are foundation and exist whatever this capability says, so a
 # product generated without it still records what happened and still refuses a

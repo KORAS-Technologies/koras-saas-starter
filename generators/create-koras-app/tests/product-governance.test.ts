@@ -206,9 +206,22 @@ describe('a product generated without either capability', () => {
       'reconcile_storage',
       'sweep_storage_lifecycle',
       'back_up_storage',
+      'run_restores',
     ]) {
       expect(worker, `${task} survived`).not.toContain(task)
     }
+  })
+
+  it('offers no way to ask for a restore', () => {
+    // Restore reads the backup catalogue, and `file_backups` goes with the
+    // capability. A route that could ask for a restore from a table that does
+    // not exist would be a 500 where a 404 belongs.
+    const main = bare.read('services/api/koras_api/main.py')
+    expect(main).not.toContain('restore.router')
+    expect(bare.has('services/api/koras_api/routers/restore.py')).toBe(false)
+    expect(bare.has('services/api/koras_api/core/restore.py')).toBe(false)
+    expect(bare.has('supabase/migrations/00026_restore_requests.sql')).toBe(false)
+    expect(full.read('services/api/koras_api/main.py')).toContain('restore.router')
   })
 
   it('still forgets audit rows on a schedule', () => {
@@ -242,6 +255,7 @@ describe('a product generated without either capability', () => {
       'test_legal_holds.py',
       'test_governance_review.py',
       'test_governance_sweeps_review.py',
+      'test_storage_restore.py',
     ]) {
       expect(bare.has(`tests/unit/${name}`), `${name} leaked`).toBe(false)
     }

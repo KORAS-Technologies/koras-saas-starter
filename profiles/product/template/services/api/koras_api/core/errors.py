@@ -63,6 +63,12 @@ class ApiErrorCode(StrEnum):
     HOLD_NOT_TRANSITIONABLE = "hold_not_transitionable"
     HOLD_INVALID_WINDOW = "hold_invalid_window"
     AUDIT_EVENT_NOT_FOUND = "audit_event_not_found"
+    # restoring an object from its backup
+    BACKUP_NOT_FOUND = "backup_not_found"
+    RESTORE_NOT_FOUND = "restore_not_found"
+    RESTORE_NOT_TRANSITIONABLE = "restore_not_transitionable"
+    RESTORE_ALREADY_REQUESTED = "restore_already_requested"
+    RESTORE_OVERWRITE_UNCONFIRMED = "restore_overwrite_unconfirmed"
     # the assistant (its own errors carry `koras_ai.ErrorCode`; this one is the API's)
     TOOL_DENIED = "tool_denied"
     # the platform's private contract: machine callers, never a person

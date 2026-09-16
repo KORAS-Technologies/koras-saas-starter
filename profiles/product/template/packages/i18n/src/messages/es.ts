@@ -725,6 +725,16 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'El archivo no llegó al almacenamiento como se esperaba. Intente subirlo de nuevo.',
   'errors.uploadSizeMismatch':
     'El archivo subido no tiene el tamaño anunciado. Intente subirlo de nuevo.',
+  'errors.backupNotFound':
+    'No existe ninguna copia de seguridad de este archivo desde la que restaurarlo.',
+  'errors.restoreNotFound':
+    'No existe esa solicitud de restauración.',
+  'errors.restoreNotTransitionable':
+    'Esta solicitud de restauración ya se ha decidido.',
+  'errors.restoreAlreadyRequested':
+    'Ya hay una restauración de este archivo esperando una decisión.',
+  'errors.restoreOverwriteUnconfirmed':
+    'Esta solicitud sustituye el archivo existente. Apruébela indicándolo, o solicite una copia nueva en su lugar.',
   'errors.fileUnderHold':
     'Este archivo no se puede eliminar: una retención legal lo conserva. Podrá eliminarse cuando se levante la retención.',
   'errors.fileQuarantined':

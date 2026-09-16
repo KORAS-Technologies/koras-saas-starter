@@ -1,0 +1,298 @@
+"""Running an approved restore: read the copy, check it, then write it.
+
+**The route approves; this runs.** A person approving a restore does not wait
+for a bucket, and a request that was approved and then lost to a crashed process
+is a row somebody can find rather than an approval that evaporated. The sweep
+picks up anything `approved`, which makes the approval durable and the execution
+retryable without either being a special case.
+
+**It verifies before it writes, and that is the whole reason this is safe.** The
+bytes are hashed here, and compared with the digest the backup run recorded. A
+copy that does not match is a failure -- the object stays gone, which is
+recoverable, rather than being replaced by something that is not it, which is
+not. Where no digest was ever recorded the restore still runs, because refusing
+would mean refusing the only copy of an object whose provider never computed
+one, and the audit row says plainly that nothing was compared.
+
+**Non-overwriting by default.** A restore writes a new object under a new file
+id and destroys nothing. Overwriting is a separate decision taken twice, at the
+request and at the approval, and only then does this reuse the original key.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import uuid
+from typing import Any, Protocol
+
+from koras_storage import Category, ObjectStore, S3ObjectStore, object_key
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+
+from ..settings import settings
+from .storage_backup import backup as backup_settings
+from .storage_backup import destination_from
+
+logger = logging.getLogger(__name__)
+
+
+class ApprovedRestore(Protocol):
+    """One row of the approved-and-joined query.
+
+    A protocol rather than `Any`, so that renaming a column in the statement
+    above and not here is a type error rather than an attribute error at three
+    in the morning on the one night somebody needed their file back.
+    """
+
+    id: str
+    tenant_id: str
+    file_id: str
+    overwrite: bool
+    backup_key: str
+    backup_digest: str | None
+    size_bytes: int | None
+
+#: The largest object this process will read into memory. The same ceiling the
+#: cross-provider backup uses, for the same reason: a worker holding a gigabyte
+#: to move it is a worker that falls over on the night it mattered.
+RESTORE_CEILING = 64 * 1024 * 1024
+
+#: How many approved requests one pass runs. A ceiling rather than a target.
+RESTORE_LIMIT = 50
+
+_PROVISIONING = text("select set_config('app.provisioning', 'on', true)")
+_AS_TENANT = text(
+    "select set_config('app.provisioning', '', true), set_config('app.tenant_id', :tenant_id, true)"
+)
+
+_APPROVED = text(
+    "select r.id::text as id, r.tenant_id::text as tenant_id, r.file_id::text as file_id, "
+    " r.overwrite, b.backup_key, b.backup_digest, b.size_bytes, b.source_key "
+    "from public.restore_requests r "
+    "join public.file_backups b on b.id = r.backup_id "
+    "where r.status = 'approved' order by r.approved_at limit :limit"
+)
+
+_CLAIM = text(
+    "update public.restore_requests set status = 'restoring' "
+    "where id = cast(:id as uuid) and status = 'approved' returning id"
+)
+_FINISH = text(
+    "update public.restore_requests set status = :status, error = :error, "
+    " restored_file_id = cast(:restored as uuid), finished_at = now() "
+    "where id = cast(:id as uuid)"
+)
+
+#: The object being restored, where it still exists. An overwrite needs its key
+#: and its metadata; a new object needs the metadata alone.
+_ORIGINAL = text(
+    "select name, content_type, size_bytes, classification, category, uploaded_by, storage_key "
+    "from public.files where id = cast(:file_id as uuid)"
+)
+_INSERT_FILE = text(
+    "insert into public.files "
+    " (id, tenant_id, name, storage_key, content_type, size_bytes, status, uploaded_by, "
+    "  category, classification, checksum_sha256) "
+    "values (cast(:id as uuid), cast(:tenant_id as uuid), :name, :storage_key, :content_type, "
+    " :size_bytes, 'ready', :uploaded_by, :category, :classification, :checksum)"
+)
+_TOUCH_FILE = text(
+    "update public.files set size_bytes = :size_bytes, checksum_sha256 = :checksum, "
+    " status = 'ready' where id = cast(:file_id as uuid)"
+)
+
+_AUDIT_INSERT = text(
+    "insert into public.audit_events "
+    " (tenant_id, actor_id, action, target_type, target_id, outcome, details, classification) "
+    "values (cast(:tenant_id as uuid), 'system', :action, 'file', :target_id, :outcome, "
+    " cast(:details as jsonb), 'administrative')"
+)
+
+
+def _engine() -> AsyncEngine:
+    return create_async_engine(
+        settings.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    )
+
+
+def _primary() -> ObjectStore:
+    """The bucket objects live in. Where a restore puts them back."""
+    from .storage_backup import _store
+
+    return _store(backup_settings)
+
+
+async def _record(
+    session: AsyncSession,
+    tenant_id: str,
+    *,
+    action: str,
+    target_id: str,
+    outcome: str,
+    details: dict[str, Any],
+) -> None:
+    await session.execute(_AS_TENANT, {"tenant_id": tenant_id})
+    await session.execute(
+        _AUDIT_INSERT,
+        {
+            "tenant_id": tenant_id,
+            "action": action,
+            "target_id": target_id,
+            "outcome": outcome,
+            "details": json.dumps(details),
+        },
+    )
+
+
+def read_and_check(
+    store: ObjectStore, key: str, expected: str | None, size_bytes: int | None
+) -> tuple[bytes | None, str, str | None]:
+    """Fetch the copy and decide whether it is the object it claims to be.
+
+    Returns the bytes, the digest of what was read, and a refusal where there
+    is one. A mismatch returns no bytes: the object stays gone, which is
+    recoverable, rather than being replaced by something that is not it.
+    """
+    if size_bytes is not None and size_bytes > RESTORE_CEILING:
+        return None, "", "the object is larger than this process will read in one piece"
+    content = store.get(key)
+    if content is None:
+        return None, "", "the backup copy is no longer at the destination"
+    digest = hashlib.sha256(content).hexdigest()
+    if expected and digest != expected:
+        return None, digest, "the backup copy does not match the digest recorded for it"
+    return content, digest, None
+
+
+async def run_one(
+    session: AsyncSession, source: ObjectStore, target: ObjectStore, row: ApprovedRestore
+) -> tuple[str, str | None, str | None]:
+    """One approved request. Returns its outcome, the new file id and any error."""
+    content, digest, refusal = read_and_check(
+        source, row.backup_key, row.backup_digest, row.size_bytes
+    )
+    if refusal is not None:
+        return "failed", None, refusal
+
+    original = (await session.execute(_ORIGINAL, {"file_id": row.file_id})).first()
+
+    if row.overwrite:
+        if original is None:
+            # Approved as an overwrite and there is nothing to overwrite. Not a
+            # silent downgrade to a new object: the approval was for a
+            # different act than the one now available.
+            return "failed", None, "the object to overwrite no longer exists"
+        target.put(original.storage_key, content or b"", original.content_type)
+        await session.execute(
+            _TOUCH_FILE,
+            {"file_id": row.file_id, "size_bytes": len(content or b""), "checksum": digest},
+        )
+        return "completed", row.file_id, None
+
+    # A new object, which destroys nothing. Its own id and its own key, so the
+    # restored copy and anything still at the original key are distinguishable.
+    new_id = str(uuid.uuid4())
+    name = original.name if original is not None else f"restored-{row.file_id}"
+    content_type = original.content_type if original is not None else "application/octet-stream"
+    category = Category(original.category) if original is not None else Category.DOCUMENTS
+    key = object_key(row.tenant_id, new_id, name, category=category)
+    target.put(key, content or b"", content_type)
+    await session.execute(
+        _INSERT_FILE,
+        {
+            "id": new_id,
+            "tenant_id": row.tenant_id,
+            "name": name,
+            "storage_key": key,
+            "content_type": content_type,
+            "size_bytes": len(content or b""),
+            "uploaded_by": original.uploaded_by if original is not None else "system",
+            "category": str(category),
+            "classification": (
+                original.classification if original is not None else "standard"
+            ),
+            "checksum": digest,
+        },
+    )
+    return "completed", new_id, None
+
+
+async def run_restores(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Every approved request, read and checked before anything is written."""
+    del ctx
+    if not settings.database_url:
+        logger.warning("restore skipped: the worker has no DATABASE_URL")
+        return {"status": "skipped", "reason": "no database"}
+    if not backup_settings.storage_bucket or not backup_settings.storage_access_key:
+        logger.warning("restore skipped: the worker has no storage credentials")
+        return {"status": "skipped", "reason": "no storage"}
+    try:
+        backup_destination = destination_from(backup_settings)
+    except ValueError as problem:
+        # Enabled approvals with nowhere to read from. Loud, and not a skip: a
+        # restore reported as nothing-to-do is a restore nobody chases.
+        logger.error("restore cannot run: %s", problem)
+        return {"status": "failed", "reason": str(problem)}
+
+    source = S3ObjectStore(backup_destination)
+    target = _primary()
+    engine = _engine()
+    done = 0
+    failed = 0
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+            await session.execute(_PROVISIONING)
+            for row in (await session.execute(_APPROVED, {"limit": RESTORE_LIMIT})).all():
+                # Claimed first, so two workers cannot run the same request.
+                claimed = (await session.execute(_CLAIM, {"id": row.id})).first()
+                await session.commit()
+                await session.execute(_PROVISIONING)
+                if claimed is None:
+                    continue
+
+                try:
+                    outcome, restored, error = await run_one(session, source, target, row)
+                except Exception:
+                    logger.exception("a restore failed")
+                    await session.rollback()
+                    await session.execute(_PROVISIONING)
+                    outcome, restored, error = "failed", None, "the restore could not be completed"
+
+                await session.execute(
+                    _FINISH,
+                    {
+                        "id": row.id,
+                        "status": outcome,
+                        "error": error,
+                        "restored": restored,
+                    },
+                )
+                await _record(
+                    session,
+                    row.tenant_id,
+                    action=f"storage.restore.{outcome}",
+                    target_id=row.file_id,
+                    outcome="ok" if outcome == "completed" else "failed",
+                    details={
+                        "overwrite": bool(row.overwrite),
+                        # Whether anything was compared, and never the digest
+                        # itself: it identifies the bytes.
+                        "verified": bool(row.backup_digest),
+                    },
+                )
+                await session.commit()
+                await session.execute(_PROVISIONING)
+                done += outcome == "completed"
+                failed += outcome == "failed"
+    finally:
+        await engine.dispose()
+
+    logger.info("restore: %d completed, %d failed", done, failed)
+    return {"status": "ok", "completed": done, "failed": failed}
