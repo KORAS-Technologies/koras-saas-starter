@@ -725,6 +725,8 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'El archivo no llegó al almacenamiento como se esperaba. Intente subirlo de nuevo.',
   'errors.uploadSizeMismatch':
     'El archivo subido no tiene el tamaño anunciado. Intente subirlo de nuevo.',
+  'errors.fileUnderHold':
+    'Este archivo no se puede eliminar: una retención legal lo conserva. Podrá eliminarse cuando se levante la retención.',
   'errors.fileQuarantined':
     'Este archivo está retenido porque un análisis de seguridad no lo consideró limpio. Consulte a un administrador si lo necesita.',
   'errors.holdNotFound':

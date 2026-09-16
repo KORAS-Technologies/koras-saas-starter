@@ -10,6 +10,7 @@ the deployed smoke check are for.
 
 from __future__ import annotations
 
+import base64
 from urllib.parse import urlparse
 
 import pytest
@@ -170,7 +171,13 @@ class _Client:
 
     def head_object(self, **arguments: object) -> dict[str, object]:
         self.calls.append(arguments)
-        return {"ETag": self._pages[0].get("ETag", '"abc"')}
+        answer: dict[str, object] = {"ETag": self._pages[0].get("ETag", '"abc"')}
+        # Only when the object was stored with one. A provider answering an
+        # ETag alone is a provider that cannot corroborate a digest, and the
+        # store must say so rather than return the ETag.
+        if "ChecksumSHA256" in self._pages[0]:
+            answer["ChecksumSHA256"] = self._pages[0]["ChecksumSHA256"]
+        return answer
 
 
 def _store(client: _Client) -> S3ObjectStore:
@@ -217,18 +224,36 @@ def test_a_finished_listing_offers_no_cursor() -> None:
     assert client.calls[0]["ContinuationToken"] == "carry-on"
 
 
-def test_a_multipart_entity_tag_is_absent_rather_than_wrong() -> None:
+def test_a_multipart_composite_checksum_is_absent_rather_than_wrong() -> None:
     """`-2` means a digest of digests. Comparing it to a file's SHA-256 would
     report every large object as corrupt, so it is reported as no digest."""
-    client = _Client([{"ETag": '"d41d8cd98f00b204e9800998ecf8427e-2"'}])
+    digest = base64.b64encode(bytes(range(32))).decode() + "-2"
+    client = _Client([{"ChecksumSHA256": digest}])
     assert _store(client).checksum("tenants/t/documents/a/one.pdf") is None
 
 
-def test_a_single_part_entity_tag_is_returned_unquoted() -> None:
+def test_a_provider_digest_is_returned_as_hex() -> None:
+    """The column takes 64 lowercase hex characters, and the protocol carries
+    base64, so the store converts rather than the caller."""
+    raw = bytes(range(32))
+    client = _Client([{"ChecksumSHA256": base64.b64encode(raw).decode()}])
+    assert _store(client).checksum("tenants/t/documents/a/one.pdf") == raw.hex()
+
+
+def test_a_head_asks_the_provider_to_return_its_checksum() -> None:
+    """Without `ChecksumMode`, S3 omits the field entirely and every object
+    reads as having no digest."""
+    client = _Client([{"ChecksumSHA256": base64.b64encode(bytes(32)).decode()}])
+    _store(client).checksum("tenants/t/documents/a/one.pdf")
+    assert client.calls[0]["ChecksumMode"] == "ENABLED"
+
+
+def test_an_entity_tag_is_never_offered_as_a_checksum() -> None:
+    """An ETag is 32 hex characters and a SHA-256 is 64, so the comparison the
+    file index performs could never have succeeded. It did exactly this until
+    2026-09-16: integrity read as unverified for every object in the estate."""
     client = _Client([{"ETag": '"d41d8cd98f00b204e9800998ecf8427e"'}])
-    assert _store(client).checksum("tenants/t/documents/a/one.pdf") == (
-        "d41d8cd98f00b204e9800998ecf8427e"
-    )
+    assert _store(client).checksum("tenants/t/documents/a/one.pdf") is None
 
 
 def test_a_copy_within_one_destination_names_both_ends() -> None:

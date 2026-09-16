@@ -26,10 +26,12 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, status
+from koras_audit import Outcome
 from koras_auth.permissions import permissions_for
 from koras_storage import Category, object_key
 from pydantic import BaseModel
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.audit import record
 from ..core.audit_export import DEFAULT_EXPIRY_DAYS, MEDIA_TYPES, filename, render
@@ -296,10 +298,21 @@ async def write_export(
                     "actor_id": actor_id,
                     "outcome": outcome,
                     "target_type": None,
-                    "limit": EXPORT_ROW_CEILING,
+                    # One more than the ceiling, so a full page is
+                    # distinguishable from an over-full one.
+                    "limit": EXPORT_ROW_CEILING + 1,
                 },
             )
             rows = result.all()
+            if len(rows) > EXPORT_ROW_CEILING:
+                # The ceiling is a refusal, not a trim. An evidential export
+                # handed to an auditor as a complete record of a period, that
+                # silently held only the most recent 200,000 rows, is worse
+                # than one that did not arrive. The comment above promised
+                # this and the code truncated until a review found it.
+                raise ValueError(
+                    f"the range contains more than {EXPORT_ROW_CEILING} rows; narrow it"
+                )
             payload = render(rows, fmt)
             name = filename(export_id, fmt)
             key = object_key(tenant_id, export_id, name, category=Category.EXPORTS)
@@ -308,6 +321,7 @@ async def write_export(
                 _READY,
                 {"id": export_id, "key": key, "size": len(payload), "rows": len(rows)},
             )
+            await _completed(session, tenant_id, user_id, export_id, "ok", rows=len(rows))
             await session.commit()
         except Exception as problem:
             logger.exception("an audit export could not be written")
@@ -316,11 +330,51 @@ async def write_export(
                 _FAILED,
                 {
                     "id": export_id,
-                    "error": f"{type(problem).__name__}: the export failed; "
-                    "the reason is in the server log",
+                    # A fixed sentence. The class name said `ClientError`,
+                    # `NoCredentialsError`, `EndpointConnectionError` -- which
+                    # is infrastructure fingerprinting handed to a customer,
+                    # and the table's own comment forbids it. The detail is in
+                    # the log, with the export id to find it by.
+                    "error": (
+                        "the export could not be produced; quote this export's"
+                        " id to support"
+                        if not isinstance(problem, ValueError)
+                        else str(problem)
+                    ),
                 },
             )
+            await _completed(session, tenant_id, user_id, export_id, "failed", rows=0)
             await session.commit()
+
+
+async def _completed(
+    session: AsyncSession,
+    tenant_id: str,
+    user_id: str,
+    export_id: str,
+    outcome: Outcome,
+    *,
+    rows: int,
+) -> None:
+    """Close the request event out with a second event, never by editing the first.
+
+    The request records `pending`, because the row exists before the artifact
+    does. Resolving that by updating the row would be an update on
+    `audit_events`, which carries no update policy -- append-only is the point
+    of the table -- so the statement would touch zero rows and report success.
+    A second event with the same target is the honest shape: the history says
+    an export was asked for and then says how it ended.
+    """
+    await record(
+        session,
+        tenant_id=tenant_id,
+        actor_id=user_id,
+        action="audit.export_completed",
+        target_type="audit_export",
+        target_id=export_id,
+        outcome=outcome,
+        details={"rows": rows},
+    )
 
 
 @router.get("/audit/exports/{export_id}/download", response_model=DownloadTicket)

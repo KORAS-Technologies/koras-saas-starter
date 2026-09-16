@@ -2,16 +2,18 @@
 
 Four routes and one asymmetry worth reading before changing any of them.
 
-**Requesting needs `audit.legal_hold`. Approving and releasing need an owner or
-an administrator as well.** Placing a hold keeps data, and its worst case is
-cost. Lifting one makes a purge possible again, and its worst case is destroyed
-evidence. The bar is set by the worse outcome, not by which verb sounds more
-serious.
+**Requesting needs `audit.legal_hold`, which a security administrator holds.
+Approving and releasing need an owner or an administrator as well.** Placing a
+hold keeps data, and its worst case is cost. Lifting one makes a purge possible
+again, and its worst case is destroyed evidence. The bar is set by the worse
+outcome, not by which verb sounds more serious.
 
-**An approver may not be the requester.** Borrowed from the assistant's approval
-rule rather than invented here: a person who can propose and approve alone is a
-person with no second pair of eyes, and the whole point of an approval step is
-the second pair of eyes.
+**An approver may not be the requester, and neither may a releaser.** Borrowed
+from the assistant's approval rule rather than invented here: a person who can
+propose and approve alone is a person with no second pair of eyes, and the
+whole point of an approval step is the second pair of eyes. Lifting carries the
+same rule rather than a stricter one, because a rule needing a third distinct
+person is unsatisfiable in a tenant with two administrators.
 """
 
 from __future__ import annotations
@@ -49,6 +51,18 @@ router = APIRouter(tags=["holds"])
 _MANAGERS = (OrganizationRole.OWNER, OrganizationRole.ADMIN)
 
 PERMISSION = "audit.legal_hold"
+
+#: The longest retention a tenant may set, in days. Ten years.
+#:
+#: There was no ceiling until 2026-09-16, and the consequence was worse than an
+#: over-long retention: the resolved number is fed to `make_interval`, so one
+#: tenant setting a few hundred thousand years made `now() - interval` overflow
+#: the timestamp range, and both nightly sweeps run every class in one
+#: transaction -- so that tenant would have aborted retention for every tenant
+#: in the product, indefinitely, with a worker traceback as the only signal.
+#: A review found it. The bound is also the storage-limitation answer: a
+#: retention nobody can justify is not one a processor should offer.
+MAX_RETENTION_DAYS = 3650
 
 
 class HoldRequest(BaseModel):
@@ -224,10 +238,36 @@ async def approve_hold(
 async def release_hold(
     hold_id: str, claims: AuthDep, tenant: TenantDep, session: DbSession
 ) -> HoldRow:
-    """Lift a hold. The dangerous half: what it covered may expire again."""
+    """Lift a hold. The dangerous half: what it covered may expire again.
+
+    Two people, the same rule approving takes: whoever asked for the hold is
+    not whoever lifts it. It is deliberately the *same* bar and not a higher
+    one -- a rule needing a third distinct person would be unliftable in a
+    tenant with two administrators, and a control that cannot be satisfied is
+    one somebody eventually routes around at the database. The docstring here
+    claimed a higher bar than any code enforced until a review looked.
+    """
     _require_permission(claims)
     await _require_manager(session, claims, tenant.id, hold_id, "releasing")
     hold = await _found(session, tenant.id, hold_id)
+
+    if hold.requested_by == claims.sub:
+        await record(
+            session,
+            tenant_id=tenant.id,
+            actor_id=claims.sub,
+            action="hold.refused",
+            target_type="hold",
+            target_id=hold_id,
+            outcome="denied",
+            details={"attempted": "releasing", "reason": "self"},
+        )
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            ApiErrorCode.ROLE_REQUIRED,
+            "a legal hold is lifted by someone other than the person who requested it",
+        )
+
     moved = await _move(session, tenant.id, hold, HoldStatus.RELEASED, claims.sub)
     await record(
         session,
@@ -280,12 +320,12 @@ class RetentionOverrides(BaseModel):
     for trying something the platform simply overrides.
     """
 
-    audit_activity: int | None = Field(default=None, ge=1)
-    audit: int | None = Field(default=None, ge=1)
-    audit_security: int | None = Field(default=None, ge=1)
-    storage_standard: int | None = Field(default=None, ge=1)
-    storage_sensitive: int | None = Field(default=None, ge=1)
-    storage_restricted: int | None = Field(default=None, ge=1)
+    audit_activity: int | None = Field(default=None, ge=1, le=MAX_RETENTION_DAYS)
+    audit: int | None = Field(default=None, ge=1, le=MAX_RETENTION_DAYS)
+    audit_security: int | None = Field(default=None, ge=1, le=MAX_RETENTION_DAYS)
+    storage_standard: int | None = Field(default=None, ge=1, le=MAX_RETENTION_DAYS)
+    storage_sensitive: int | None = Field(default=None, ge=1, le=MAX_RETENTION_DAYS)
+    storage_restricted: int | None = Field(default=None, ge=1, le=MAX_RETENTION_DAYS)
 
 
 _READ_RETENTION = text(

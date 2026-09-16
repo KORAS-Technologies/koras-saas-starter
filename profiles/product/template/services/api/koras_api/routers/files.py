@@ -21,6 +21,7 @@ permission" -- and the page says which plan lifts it.
 
 from __future__ import annotations
 
+import base64
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -99,6 +100,13 @@ class UploadRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     size_bytes: int = Field(ge=0, le=MAX_OBJECT_BYTES)
     content_type: str = Field(default="application/octet-stream", max_length=255)
+    #: The digest of the bytes about to be sent, where the browser could take
+    #: one. Signed into the upload URL, so the provider stores it and can be
+    #: asked for it afterwards -- which is the only way corroboration is
+    #: possible at all. It also makes the provider refuse bytes that do not
+    #: match, so a corrupted transfer fails at the bucket rather than arriving
+    #: as a file whose claim nobody can check.
+    checksum_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class CompleteRequest(BaseModel):
@@ -155,6 +163,11 @@ async def _record(
         outcome=outcome,
         details=details,
     )
+
+
+def _b64(hex_digest: str) -> str:
+    """A hex SHA-256 as the base64 the S3 protocol carries in its header."""
+    return base64.b64encode(bytes.fromhex(hex_digest)).decode("ascii")
 
 
 def _require_grant(storage: StorageDep) -> None:
@@ -280,11 +293,17 @@ async def request_upload(
     )
     await session.commit()
 
-    url = storage.store.presign_upload(key, content_type, body.size_bytes, UPLOAD_URL_SECONDS)
+    url = storage.store.presign_upload(
+        key, content_type, body.size_bytes, UPLOAD_URL_SECONDS, body.checksum_sha256
+    )
+    headers = {"Content-Type": content_type}
+    if body.checksum_sha256:
+        # Part of the signature, so the browser must send exactly this.
+        headers["x-amz-checksum-sha256"] = _b64(body.checksum_sha256)
     return UploadTicket(
         file_id=file_id,
         upload_url=url,
-        headers={"Content-Type": content_type},
+        headers=headers,
         expires_in=UPLOAD_URL_SECONDS,
     )
 
@@ -514,6 +533,36 @@ async def delete_file(
             "deleting files needs an owner or administrator",
         )
     row = await _ready(session, tenant.id, file_id)
+
+    # A hold outranks the person as well as the schedule. The sweeps have
+    # excluded held rows since 00020 and this route did not, which protected
+    # the file from the machine and not from the administrator -- the wrong way
+    # round, because the actor a hold exists to constrain is the one who can
+    # decide to delete. Found by review on 2026-09-16.
+    held = bool(row.legal_hold) or bool(
+        (
+            await session.execute(
+                text("select public.under_legal_hold(cast(:tenant_id as uuid), 'files') as held"),
+                {"tenant_id": tenant.id},
+            )
+        ).one().held
+    )
+    if held:
+        await _record(
+            session,
+            tenant_id=tenant.id,
+            actor_id=claims.sub,
+            action="storage.purge.held",
+            target_id=file_id,
+            outcome="denied",
+            details={"reason": "legal_hold", "by": "person"},
+        )
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            ApiErrorCode.FILE_UNDER_HOLD,
+            "this file is under a legal hold and cannot be deleted",
+        )
+
     storage.store.delete(row.storage_key)
     for hook in hooks.for_delete():
         undo = hook.before_delete
@@ -528,7 +577,7 @@ async def delete_file(
         action="storage.object.deleted",
         target_id=file_id,
         outcome="ok",
-        details={"size_bytes": row.size_bytes, "name": row.name},
+        details={"size_bytes": row.size_bytes, "content_type": row.content_type},
     )
 
 
@@ -549,7 +598,8 @@ async def _one(session: DbSession, tenant_id: str, file_id: str, state: str) -> 
         ) from None
     result = await session.execute(
         text(
-            "select id, storage_key, name, size_bytes, content_type, uploaded_by, scan_status "
+            "select id, storage_key, name, size_bytes, content_type, uploaded_by, scan_status, "
+            " legal_hold "
             "from public.files where id = :id and tenant_id = :tenant_id and status = :state"
         ),
         {"id": file_id, "tenant_id": tenant_id, "state": state},

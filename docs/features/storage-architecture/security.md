@@ -55,8 +55,9 @@
 | Withheld file refused before signing | `core/file_scan.py` | Built |
 | Every operation and refusal audited | `core/audit.py` | Built |
 | Credential-shaped audit details refused | `koras_audit` | Built |
-| Legal hold blocking removal | — | **Not built** |
-| Restore approval and cross-tenant refusal | — | **Not built** |
+| Legal hold blocking removal | `routers/files.py`, `storage_lifecycle.py` | Built 2026-09-16 |
+| Two people to approve or lift a hold | `routers/holds.py` | Built 2026-09-16 |
+| Restore approval and cross-tenant refusal | — | **Not built** (STORAGE-012) |
 
 ## Abuse cases
 
@@ -118,4 +119,4 @@ rather than a judgement call.
 | S4 | The reconciliation sweep's own audit write, proven under the restricted role | **No test** |
 | S5 | A storage policy naming a host that resolves to a private address | Open; the same shape as `FOLLOW_UPS.md` F19's DNS half |
 | S6 | No scanner is installed anywhere | By design; the seam exists |
-| S7 | Rate limiting for restore and export | Not built, because neither is |
+| S7 | Rate limiting for restore | Not built, because restore is not |

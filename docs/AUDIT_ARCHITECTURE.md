@@ -190,11 +190,15 @@ Usage and Adoption report. A product's audit rows never leave the product.
 The Activity report, through the reporting capability, reading `audit_events`
 and `ai_audit_events` together.
 
-**There is no filtered audit search and no audit export as of 2026-09-16.** Both
-are designed and neither is built: `audit.view` and `audit.export` are the
-intended entitlements, and the work sits behind an audit governance
-capability that is also undeclared as of 2026-09-16. Until then a customer's window on
-their own audit history is the Activity report's aggregate.
+**Filtered audit search and audit export were built on 2026-09-16.**
+`GET /audit` with typed bound filters, `POST /audit/exports` for a CSV, JSON or
+NDJSON artifact, and the Audit page in the shell. `audit.view` and
+`audit.export` are the permissions, the second held by owners and
+administrators alone: reading the history inside the product and taking a copy
+out of it are different authorities. The audit governance capability itself is
+still undeclared as of 2026-09-16 -- the code ships in the foundation, so every
+product has it, and gating it is the next decision rather than a missing
+feature.
 
 ## Testing
 

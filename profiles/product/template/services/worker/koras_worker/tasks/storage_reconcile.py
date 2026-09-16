@@ -80,6 +80,21 @@ _TENANTS = text("select id::text as id from public.tenants where status = 'activ
 _KEYS = text(
     "select storage_key, status from public.files where tenant_id = cast(:tenant_id as uuid)"
 )
+#: Objects under a tenant's prefix that no `files` row will ever claim. Export
+#: artifacts -- audit and reporting alike -- are written to `exports/` with a
+#: row in their own table and none in `files`, so a sweep that asked `files`
+#: alone reported every export a customer had ever produced as an orphan.
+#:
+#: Through a function rather than by reading the tables, and the difference is
+#: the point: a report export row carries the report, the filename and who
+#: asked for it, and `130_report_schedules_isolation.sql` asserts the worker
+#: sees none of that. Keys are what a reconciliation needs, so keys are all it
+#: is given. The function also handles `report_exports` being absent in a
+#: product generated without the reporting capability.
+_CLAIMED_ELSEWHERE = text(
+    "select public.claimed_storage_keys(cast(:tenant_id as uuid)) as storage_key"
+)
+
 _STALE_PENDING = text(
     "select count(*) as stale from public.files "
     "where tenant_id = cast(:tenant_id as uuid) and status = 'pending' and created_at < :before"
@@ -139,6 +154,12 @@ async def reconcile_tenant(
     rows = (await session.execute(_KEYS, {"tenant_id": tenant_id})).all()
     ready = {row.storage_key for row in rows if row.status == "ready"}
     known = {row.storage_key for row in rows}
+
+    # Export artifacts are stored objects with no `files` row. They are claimed,
+    # not orphaned, and counting them as orphans would have made the sweep's
+    # headline number grow with ordinary use of the product.
+    claimed = (await session.execute(_CLAIMED_ELSEWHERE, {"tenant_id": tenant_id})).all()
+    known.update(row.storage_key for row in claimed)
 
     keys, partial = list_prefix(store, f"tenants/{tenant_id}/")
     before = datetime.now(UTC) - timedelta(hours=stale_hours)

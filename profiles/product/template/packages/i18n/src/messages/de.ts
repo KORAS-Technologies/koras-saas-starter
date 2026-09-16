@@ -738,6 +738,8 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Die Datei ist nicht wie erwartet im Speicher angekommen. Versuchen Sie den Upload erneut.',
   'errors.uploadSizeMismatch':
     'Die hochgeladene Datei hat nicht die angekündigte Größe. Versuchen Sie den Upload erneut.',
+  'errors.fileUnderHold':
+    'Diese Datei kann nicht gelöscht werden: Eine rechtliche Aufbewahrungspflicht hält sie. Nach deren Aufhebung ist das Löschen möglich.',
   'errors.fileQuarantined':
     'Diese Datei wird zurückgehalten, weil eine Sicherheitsprüfung sie nicht als unbedenklich eingestuft hat. Wenden Sie sich an eine Administratorin oder einen Administrator, wenn Sie sie benötigen.',
   'errors.holdNotFound':

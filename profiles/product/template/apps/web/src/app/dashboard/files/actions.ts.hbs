@@ -69,6 +69,7 @@ export async function requestUpload(input: {
   name: string
   sizeBytes: number
   contentType: string
+  checksumSha256?: string | null
 }): Promise<ActionResult<UploadTicket>> {
   const auth = await session('files.upload')
   if (auth === null) return { status: 'error', message: (await translator())('files.error.forbidden') }
@@ -80,6 +81,7 @@ export async function requestUpload(input: {
         name: input.name,
         sizeBytes: input.sizeBytes,
         contentType: input.contentType,
+        checksumSha256: input.checksumSha256,
       }),
     }
   } catch (error) {

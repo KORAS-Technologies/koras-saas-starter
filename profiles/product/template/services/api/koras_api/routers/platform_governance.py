@@ -47,7 +47,11 @@ class StorageSummary(BaseModel):
     #: Withheld by a scan. Non-zero here is the estate's early warning.
     quarantined: int
     #: Marked purged and not yet removed from the bucket -- the lifecycle sweep
-    #: could not delete the object. Reconciliation finds these later.
+    #: could not delete the object, and retries it at the start of its next
+    #: run. A number that does not fall is a bucket refusing deletes, which is
+    #: the only place in the estate that would say so: reconciliation reads
+    #: every `files` row as claimed, so a stranded object is not an orphan to
+    #: it.
     stranded: int
     #: How many objects carry a digest, and how many of those a provider
     #: corroborated. The difference is the honest measure of integrity: a

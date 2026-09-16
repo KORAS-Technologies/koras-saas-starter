@@ -25,6 +25,7 @@ from koras_worker.tasks.storage_lifecycle import (  # noqa: E402
     floors_from,
     purge_expired,
     resolve_retention,
+    retry_stranded,
     sweep_storage_lifecycle,
 )
 
@@ -67,9 +68,16 @@ class _Result:
 
 
 class _Session:
-    def __init__(self, rows: list[Any] | None = None, held: int = 0) -> None:
+    def __init__(
+        self,
+        rows: list[Any] | None = None,
+        held: int = 0,
+        *,
+        stranded: list[Any] | None = None,
+    ) -> None:
         self._rows = rows or []
         self._held = held
+        self._stranded = stranded or []
         self.statements: list[tuple[str, dict[str, Any] | None]] = []
         self.commits = 0
 
@@ -78,6 +86,11 @@ class _Session:
         self.statements.append((text, parameters))
         if "count(*)" in text:
             return _Result([], self._held)
+        # The backlog query, asked before the due one. Answering it with the
+        # due rows would let this fixture delete objects the sweep had not
+        # selected.
+        if "status = 'purged'" in text:
+            return _Result(list(self._stranded))
         if "select" in text and "from public.files" in text:
             return _Result(list(self._rows))
         if "returning id" in text:
@@ -226,3 +239,31 @@ async def test_an_enabled_sweep_without_storage_credentials_skips_loudly(
     monkeypatch.setattr(storage_lifecycle.settings, "database_url", "postgresql://x/y")
     monkeypatch.setattr(storage_lifecycle.lifecycle, "storage_bucket", "")
     assert await sweep_storage_lifecycle({}) == {"status": "skipped", "reason": "no storage"}
+
+
+async def test_a_stranded_object_is_tried_again_on_the_next_run() -> None:
+    """`_DUE` excludes a row already marked `purged`, so before this existed a
+    row that stranded once stranded for ever -- and reconciliation could not
+    find it either, because it reads every `files` row as claimed."""
+    stranded = _File(file_id="file-9", storage_key="tenants/t/documents/f9/nine.pdf")
+    session = _Session(stranded=[stranded])
+    store = _Store()
+
+    cleared, still = await retry_stranded(session, store, limit=10)  # type: ignore[arg-type]
+
+    assert cleared == 1
+    assert still == 0
+    assert store.deleted == ["tenants/t/documents/f9/nine.pdf"]
+    # The row goes only once the object has: the reverse leaves bytes with no
+    # record behind them.
+    assert any("delete from public.files" in text for text, _ in session.statements)
+
+
+async def test_a_backlog_the_bucket_still_refuses_keeps_its_row() -> None:
+    stranded = _File(file_id="file-9", storage_key="tenants/t/documents/f9/nine.pdf")
+    session = _Session(stranded=[stranded])
+
+    cleared, still = await retry_stranded(session, _Store(fail=True), limit=10)  # type: ignore[arg-type]
+
+    assert (cleared, still) == (0, 1)
+    assert not any("delete from public.files" in text for text, _ in session.statements)

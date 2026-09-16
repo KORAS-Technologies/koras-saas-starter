@@ -1,8 +1,11 @@
 # SAG-F2 — Legal and compliance hold
 
-> **Not built.** `files.legal_hold` exists as a column from
-> `00018_files_governance.sql` and **nothing reads it**; there is no hold record
-> for audit rows at all. This is the design. Status 2026-09-16.
+> **Built 2026-09-16.** `legal_holds` (migration `00020`), the four routes in
+> `routers/holds.py`, and `public.under_legal_hold(tenant, scope)` as the single
+> question both sweeps ask. The audit retention sweep, the object lifecycle
+> sweep and `DELETE /files/{id}` all consult it. What remains designed: holds
+> scoped narrower than a whole category, and any notice to the person who
+> requested one.
 
 ## The rule everything else serves
 

@@ -22,6 +22,7 @@ writing the customer's files to the platform default they asked to leave.
 
 from __future__ import annotations
 
+import base64
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -245,7 +246,14 @@ class ObjectPage:
 class ObjectStore(Protocol):
     """What the API asks of a bucket. Small on purpose; see the module docstring."""
 
-    def presign_upload(self, key: str, content_type: str, size: int, expires_in: int) -> str: ...
+    def presign_upload(
+        self,
+        key: str,
+        content_type: str,
+        size: int,
+        expires_in: int,
+        checksum_sha256: str | None = None,
+    ) -> str: ...
 
     def presign_download(self, key: str, filename: str, expires_in: int) -> str: ...
 
@@ -285,12 +293,13 @@ class ObjectStore(Protocol):
         ...
 
     def checksum(self, key: str) -> str | None:
-        """The provider's own digest, or None where it will not give a single one.
+        """The provider's own SHA-256 of the stored bytes, or None.
 
-        A multipart object's entity tag is a digest of digests and means
-        nothing to compare against a file's SHA-256, so it is reported as
-        absent rather than as a mismatch. This is what separates a digest a
-        client asserted from one a provider corroborated.
+        None where the provider holds no comparable digest -- which is most
+        objects, because a provider only computes one when the upload asked it
+        to. It is never an entity tag: an ETag is an MD5 for a single-part
+        object and a digest of digests for a multipart one, and comparing
+        either to a SHA-256 would report every object as a mismatch.
         """
         ...
 
@@ -313,19 +322,37 @@ class S3ObjectStore:
             config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
         )
 
-    def presign_upload(self, key: str, content_type: str, size: int, expires_in: int) -> str:
+    def presign_upload(
+        self,
+        key: str,
+        content_type: str,
+        size: int,
+        expires_in: int,
+        checksum_sha256: str | None = None,
+    ) -> str:
         # The content type is part of the signature, so the browser must send
         # exactly what the API recorded -- which is what stops a client
         # uploading an HTML file under the name it registered as a PDF.
+        #
+        # The digest, where the client offered one, is signed too. That is what
+        # makes corroboration possible at all: a provider only stores a SHA-256
+        # when the upload asked it to, and without it `checksum` has nothing to
+        # answer with and every object reads as unverified forever. It also
+        # makes the provider reject bytes that do not match the digest, so a
+        # corrupted transfer fails at the bucket rather than being recorded as
+        # a file whose claim nobody could check.
+        params: dict[str, Any] = {
+            "Bucket": self.destination.bucket,
+            "Key": key,
+            "ContentType": content_type,
+            "ContentLength": size,
+        }
+        if checksum_sha256:
+            params["ChecksumSHA256"] = _b64_digest(checksum_sha256)
         return str(
             self._client.generate_presigned_url(
                 "put_object",
-                Params={
-                    "Bucket": self.destination.bucket,
-                    "Key": key,
-                    "ContentType": content_type,
-                    "ContentLength": size,
-                },
+                Params=params,
                 ExpiresIn=expires_in,
                 HttpMethod="PUT",
             )
@@ -400,24 +427,53 @@ class S3ObjectStore:
 
     def checksum(self, key: str) -> str | None:
         try:
-            answer = self._client.head_object(Bucket=self.destination.bucket, Key=key)
+            answer = self._client.head_object(
+                Bucket=self.destination.bucket, Key=key, ChecksumMode="ENABLED"
+            )
         except ClientError as error:
             code = error.response.get("Error", {}).get("Code", "")
             if code in {"404", "NoSuchKey", "NotFound"}:
                 return None
             raise
-        return _etag(answer.get("ETag"))
+        return _hex_digest(answer.get("ChecksumSHA256"))
 
 
 def _etag(value: object) -> str | None:
-    """A single-part entity tag, or None.
+    """A provider's entity tag, unquoted, as an opaque marker.
 
-    S3 quotes the tag, and suffixes it with `-<parts>` when the object was
-    uploaded in more than one. A suffixed tag is a digest of digests: it
-    cannot be compared with a digest of the bytes, so it is not returned as
-    one. Reporting it would turn "cannot verify" into "does not match".
+    Useful in a listing to tell two versions of one key apart. **Not a digest
+    anybody may compare with a SHA-256**: for a single-part object an ETag is
+    an MD5, and for a multipart one it is a digest of digests. `checksum()`
+    deliberately does not use this.
     """
     if not isinstance(value, str):
         return None
-    tag = value.strip('"')
-    return None if "-" in tag else tag
+    return value.strip('"') or None
+
+
+def _b64_digest(hex_digest: str) -> str:
+    """A hex SHA-256 as the base64 the S3 protocol carries."""
+    return base64.b64encode(bytes.fromhex(hex_digest)).decode("ascii")
+
+
+def _hex_digest(value: object) -> str | None:
+    """A provider's base64 SHA-256 as hex, or None.
+
+    None rather than a guess for anything that is not a full SHA-256: a
+    multipart object's composite checksum carries a `-<parts>` suffix and is a
+    digest of digests, which cannot be compared with a digest of the bytes.
+    Returning it would turn "cannot verify" into "does not match", and every
+    large object would read as corrupt.
+
+    This read an ETag until 2026-09-16, which could never match a SHA-256 at
+    all -- an ETag is 32 hex characters and a SHA-256 is 64 -- so the
+    verification it fed was structurally incapable of succeeding. A review
+    found it.
+    """
+    if not isinstance(value, str) or "-" in value:
+        return None
+    try:
+        raw = base64.b64decode(value, validate=True)
+    except (ValueError, TypeError):
+        return None
+    return raw.hex() if len(raw) == 32 else None

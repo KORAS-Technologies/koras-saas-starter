@@ -138,7 +138,7 @@ export const ROLE_PERMISSIONS: Record<OrganizationRole, readonly ProductPermissi
   // role's grant as a line, and a permission wrapped onto the next one reads
   // as a role that grants nothing.
   // prettier-ignore
-  security_admin: ['product.access', 'team.read', 'settings.read', 'files.read', 'files.upload', 'ai.use', 'reports.read', 'reports.sensitive', 'audit.view'],
+  security_admin: ['product.access', 'team.read', 'settings.read', 'files.read', 'files.upload', 'ai.use', 'reports.read', 'reports.sensitive', 'audit.view', 'audit.legal_hold'],
   // prettier-ignore
   billing_admin: ['product.access', 'settings.read', 'files.read', 'files.upload', 'ai.use', 'reports.read', 'reports.export'],
   member: ['product.access', 'files.read', 'files.upload', 'ai.use', 'reports.read'],

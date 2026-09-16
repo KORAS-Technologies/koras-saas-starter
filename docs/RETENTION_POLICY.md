@@ -17,13 +17,15 @@ different stages, and conflating them would be the kind of documentation defect
 |---------|------------------------|
 | Audit retention, per class | **Built.** Nightly sweep, four classes, three settings |
 | Object retention columns | **Built.** `retain_until`, `retention_policy`, `legal_hold` on `files` |
-| Object retention *engine* | **Designed, not built.** Nothing writes those columns and no sweep reads them |
-| Legal hold enforcement | **Designed, not built.** The column exists; nothing consults it |
-| Lifecycle transitions | **Designed, not built.** See the tiers below |
+| Object retention *engine* | **Built 2026-09-16.** A nightly sweep resolves a date, lengthens to a raised floor, and purges what has passed one |
+| Legal hold enforcement | **Built 2026-09-16.** The sweep will not select a held row, and `DELETE /files/{id}` refuses one |
+| Tenant retention overrides | **Built 2026-09-16.** Lengthening only, capped at ten years |
+| Lifecycle transitions | **Designed, not built.** See the tiers below; WARM, COLD and ARCHIVE remain metadata with no physical effect |
 
-So: the audit half of this document describes behaviour that can be observed.
-The object half describes a schema that is ready and an engine that is not.
-Nothing below marked *designed* has been written.
+So: both halves of this document now describe behaviour that can be observed,
+except the storage tiers. Those stay designed because no provider in this
+estate offers tiering and no bucket is provisioned for an archive -- a `tier`
+column that nothing acts on would be the defect this work exists to close.
 
 ## Precedence
 
@@ -142,9 +144,12 @@ Product policy   in the product's own configuration
 Tenant policy    in tenant settings, lengthening only
 ```
 
-As of 2026-09-16 only the platform level exists, as the three audit settings
-above. Product and tenant levels are the design; no tenant-facing retention
-control has been built.
+As of 2026-09-16 the platform and tenant levels exist: the platform floors as
+the settings above, and the tenant level as `retention_overrides` on
+`tenant_settings`, written through `PUT /retention` and resolved by
+`public.retention_days_for`. A tenant may only lengthen, and never past ten
+years. The product level -- a product's own configuration sitting between the
+two -- is still the design.
 
 Security and compliance minimums are not tenant-configurable at any level. That
 is the whole point of the floor.

@@ -312,6 +312,9 @@ export function requestUpload(
     name: string
     sizeBytes: number
     contentType: string
+    /** Signed into the upload URL, so the provider stores it and can be asked
+     *  for it later. Without it no upload can ever be corroborated. */
+    checksumSha256?: string | null
   },
 ): Promise<UploadTicket> {
   return request<UploadTicket>('/api/v1/files/uploads', options, {
@@ -320,6 +323,7 @@ export function requestUpload(
       name: options.name,
       size_bytes: options.sizeBytes,
       content_type: options.contentType,
+      checksum_sha256: options.checksumSha256 ?? null,
     },
   })
 }

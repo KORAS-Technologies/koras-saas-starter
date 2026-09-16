@@ -144,18 +144,22 @@ export function FilesPanel({
       setError(null)
       setProgress(0)
       try {
+        // Before the ticket, not merely before the PUT: the digest is signed
+        // into the upload URL, so the provider stores it and can be asked for
+        // it afterwards. Hashing after the ticket was issued -- which is what
+        // this did until 2026-09-16 -- left the provider with nothing to
+        // corroborate, and `checksum_verified` false for every file forever.
+        const checksum = await digestOf(file)
         const ticket = await requestUpload({
           name: file.name,
           sizeBytes: file.size,
           contentType: file.type || 'application/octet-stream',
+          checksumSha256: checksum,
         })
         if (ticket.status === 'error') {
           setError(ticket.message)
           return
         }
-        // Before the PUT, so the digest is of the bytes this browser holds
-        // rather than of a file that changed on disk while it uploaded.
-        const checksum = await digestOf(file)
         await putWithProgress(ticket.value.upload_url, ticket.value.headers, file, setProgress)
         const done = await completeUpload(ticket.value.file_id, checksum)
         if (done.status === 'error') {

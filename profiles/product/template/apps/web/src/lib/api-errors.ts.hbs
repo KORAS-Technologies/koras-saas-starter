@@ -51,6 +51,8 @@ export function apiErrorMessage(t: Translator, code: string | null | undefined):
       return t('errors.holdInvalidWindow')
     case 'audit_event_not_found':
       return t('errors.auditEventNotFound')
+    case 'file_under_hold':
+      return t('errors.fileUnderHold')
     case 'file_quarantined':
       return t('errors.fileQuarantined')
     case 'storage_unavailable':

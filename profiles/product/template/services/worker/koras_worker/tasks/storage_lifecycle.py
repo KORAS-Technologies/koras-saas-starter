@@ -129,6 +129,18 @@ _HELD = text(
     "  and (f.legal_hold = true or public.under_legal_hold(f.tenant_id, 'files'))"
 )
 
+#: Rows marked `purged` whose object the bucket would not delete on an earlier
+#: run. Retried before anything new is purged, because the alternative is what
+#: shipped first: `_DUE` excludes `status = 'purged'`, so a row that stranded
+#: once stranded forever, and reconciliation could not find it either -- it
+#: reads every `files` row into its claimed set, so the object was never an
+#: orphan to report. Nothing in the product looked at these.
+_STRANDED = text(
+    "select id::text as id, tenant_id::text as tenant_id, storage_key, size_bytes "
+    "from public.files where status = 'purged' and storage_key is not null "
+    "order by retain_until limit :limit"
+)
+
 _MARK_PURGED = text("update public.files set status = 'purged' where id = cast(:id as uuid)")
 _DELETE_ROW = text("delete from public.files where id = cast(:id as uuid)")
 
@@ -228,22 +240,49 @@ async def extend_to_floor(session: AsyncSession, *, floors: Floors) -> int:
     return extended
 
 
+async def retry_stranded(
+    session: AsyncSession, store: ObjectStore, *, limit: int
+) -> tuple[int, int]:
+    """Try again to remove objects whose row already says `purged`.
+
+    Before anything new is purged, so a bucket that has started refusing
+    deletes cannot have a growing backlog hidden behind a fresh one. Returns
+    how many were cleared and how many are still stranded.
+    """
+    cleared = 0
+    still = 0
+    for row in (await session.execute(_STRANDED, {"limit": limit})).all():
+        try:
+            store.delete(row.storage_key)
+        except Exception:
+            logger.warning("a stranded object still could not be removed from the bucket")
+            still += 1
+            continue
+        await session.execute(_DELETE_ROW, {"id": row.id})
+        await session.commit()
+        await session.execute(_PROVISIONING)
+        cleared += 1
+    return cleared, still
+
+
 async def purge_expired(
     session: AsyncSession, store: ObjectStore, *, limit: int
 ) -> tuple[int, int, int]:
     """Remove objects past their retention that nothing is holding.
 
     Returns how many were purged, how many a hold kept, and how many could not
-    be removed from the bucket. The third is not a failure of the sweep: an
-    object the provider would not delete leaves its row marked `purged`, which
-    the reconciliation sweep will later report as a row without an object -- a
-    finding, rather than a silent leak.
+    be removed from the bucket. The third is retried at the start of the next
+    run: an object the provider would not delete leaves its row marked
+    `purged`, and that row is this sweep's own backlog. It is not
+    reconciliation's -- that sweep reads every `files` row into its claimed set,
+    so a stranded object never looked like an orphan to it. An earlier version
+    of this docstring said otherwise, and the object would have stayed in the
+    bucket for as long as the product ran.
     """
+    purged, stranded = await retry_stranded(session, store, limit=limit)
     held = int((await session.execute(_HELD)).one().held)
     due = (await session.execute(_DUE, {"limit": limit})).all()
 
-    purged = 0
-    stranded = 0
     for row in due:
         # Marked first. A crash between the mark and the delete leaves a row
         # that says what was supposed to happen, which is recoverable; the

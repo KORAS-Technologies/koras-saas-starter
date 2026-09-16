@@ -64,6 +64,13 @@ ROLE_PERMISSIONS: dict[OrganizationRole, tuple[str, ...]] = {
         "settings.read",
         "reports.sensitive",
         "audit.view",
+        # Requesting a hold is this role's job. Approving and releasing are
+        # not: the holds router checks for an owner or administrator on top
+        # of the permission, and until this grant existed that second check
+        # could never fire, because only owners and administrators held the
+        # permission at all. A two-tier rule where both tiers are the same
+        # people is a one-tier rule with a comment.
+        "audit.legal_hold",
     ),
     OrganizationRole.BILLING_ADMIN: (*_EVERYONE, "settings.read", "reports.export"),
     OrganizationRole.MEMBER: _EVERYONE,

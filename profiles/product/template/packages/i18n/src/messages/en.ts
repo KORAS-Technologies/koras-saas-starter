@@ -726,6 +726,8 @@ export const en = {
   'errors.uploadNotArrived': 'The file did not arrive in storage as expected. Try the upload again.',
   'errors.uploadSizeMismatch':
     'The uploaded file is not the size that was announced. Try the upload again.',
+  'errors.fileUnderHold':
+    'This file cannot be deleted: a legal hold is keeping it. It can be deleted once the hold is lifted.',
   'errors.fileQuarantined':
     'This file is being withheld because a security scan did not find it clean. Ask an administrator if you need it.',
   'errors.holdNotFound':

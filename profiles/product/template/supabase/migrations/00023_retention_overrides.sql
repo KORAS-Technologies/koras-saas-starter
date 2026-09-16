@@ -21,9 +21,16 @@ alter table public.tenant_settings
   -- migration per class would be a migration per policy decision.
   add column if not exists retention_overrides jsonb not null default '{}';
 
--- Every value must be a whole number of days, and at least one. A tenant that
--- could write a zero could wipe their own history on the next sweep, which is
--- the one thing a retention control must never make easy.
+-- Every value must be a whole number of days, at least one and at most ten
+-- years. A tenant that could write a zero could wipe their own history on the
+-- next sweep, which is the one thing a retention control must never make easy.
+--
+-- The upper bound matters for a less obvious reason. The resolved number is fed
+-- to `make_interval`, and both nightly sweeps run every class in one
+-- transaction: a tenant writing a few hundred thousand years would overflow the
+-- timestamp range, abort the statement, and stop retention for *every* tenant
+-- until somebody read a worker traceback. There was no ceiling until
+-- 2026-09-16.
 --
 -- In a function because a check constraint may not contain a subquery, and
 -- validating a map means iterating it. `immutable` is honest here: it reads
@@ -36,6 +43,7 @@ returns boolean as $$
       from jsonb_each(p_overrides) as entry(key, value)
      where jsonb_typeof(entry.value) <> 'number'
         or (entry.value)::text::numeric < 1
+        or (entry.value)::text::numeric > 3650
         or (entry.value)::text::numeric <> floor((entry.value)::text::numeric)
   );
 $$ language sql immutable;
@@ -62,13 +70,20 @@ create policy "tenant_settings_select_provisioning"
 create or replace function public.retention_days_for(
   p_tenant_id uuid, p_kind text, p_floor integer
 ) returns integer as $$
+  -- The cap is on the override alone, never on the result. Clamping the result
+  -- would mean a platform floor raised above ten years being silently
+  -- shortened -- a guard against a long retention turning into a deletion,
+  -- which is the direction that loses data.
   select greatest(
     p_floor,
-    coalesce(
-      (select (retention_overrides ->> p_kind)::integer
-         from public.tenant_settings
-        where tenant_id = p_tenant_id),
-      0
+    least(
+      coalesce(
+        (select (retention_overrides ->> p_kind)::integer
+           from public.tenant_settings
+          where tenant_id = p_tenant_id),
+        0
+      ),
+      3650
     )
   );
 $$ language sql stable;

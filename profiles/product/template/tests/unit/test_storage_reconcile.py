@@ -72,12 +72,26 @@ class _Stale:
         self.stale = stale
 
 
-class _Session:
-    """Answers the two queries the sweep makes, in the order it makes them."""
+class _Claimed:
+    """A storage key claimed by a table other than `files` -- an export."""
 
-    def __init__(self, rows: list[_Row], stale: int = 0) -> None:
+    def __init__(self, storage_key: str) -> None:
+        self.storage_key = storage_key
+
+
+class _Session:
+    """Answers each query the sweep makes, chosen by what the statement asks."""
+
+    def __init__(
+        self,
+        rows: list[_Row],
+        stale: int = 0,
+        *,
+        exports: list[str] | None = None,
+    ) -> None:
         self._rows = rows
         self._stale = stale
+        self._exports = exports or []
         self.statements: list[str] = []
 
     async def execute(
@@ -85,6 +99,8 @@ class _Session:
     ) -> _Result:
         text = str(statement)
         self.statements.append(text)
+        if "claimed_storage_keys" in text:
+            return _Result([_Claimed(key) for key in self._exports])
         if "count(*)" in text:
             return _Result([], _Stale(self._stale))
         return _Result(list(self._rows))
@@ -188,3 +204,32 @@ async def test_an_enabled_sweep_without_storage_credentials_skips_loudly(
     monkeypatch.setattr(storage_reconcile.settings, "database_url", "postgresql://x/y")
     monkeypatch.setattr(storage_reconcile.reconcile, "storage_bucket", "")
     assert await reconcile_storage({}) == {"status": "skipped", "reason": "no storage"}
+
+
+async def test_an_export_artifact_is_claimed_rather_than_orphaned() -> None:
+    """An export is a stored object with a row in `audit_exports` and none in
+    `files`. A sweep that asked `files` alone reported every export a customer
+    had ever produced as an orphan, so the number grew with ordinary use."""
+    key = f"tenants/{TENANT}/exports/e1/audit.csv"
+    store = _Store([_page([f"tenants/{TENANT}/documents/a/one.pdf", key])])
+    session = _Session(
+        [_Row(f"tenants/{TENANT}/documents/a/one.pdf", "ready")], exports=[key]
+    )
+
+    finding = await reconcile_tenant(session, store, TENANT, stale_hours=24)  # type: ignore[arg-type]
+
+    assert finding.orphan_objects == 0
+    assert finding.objects == 2
+
+
+async def test_the_sweep_asks_for_keys_rather_than_reading_the_export_tables() -> None:
+    """A report export row carries the report, the filename and who asked for
+    it, and `130_report_schedules_isolation.sql` asserts the worker sees none
+    of that. Reconciliation needs keys, so keys are what it is given."""
+    store = _Store([_page([])])
+    session = _Session([])
+
+    await reconcile_tenant(session, store, TENANT, stale_hours=24)  # type: ignore[arg-type]
+
+    assert any("claimed_storage_keys" in s for s in session.statements)
+    assert not any("from public.report_exports" in s for s in session.statements)

@@ -6,6 +6,7 @@ from .settings import settings
 from .tasks import example_task
 {{#if capability.ai}}from .tasks.ai_retention import purge_ai_history
 {{/if}}from .tasks.audit_retention import purge_audit_history
+from .tasks.governance_expiry import expire_audit_exports, expire_legal_holds
 {{#if capability.reporting}}from .tasks.reporting import deliver_scheduled_reports
 {{/if}}from .tasks.storage_lifecycle import sweep_storage_lifecycle
 from .tasks.storage_reconcile import reconcile_storage
@@ -20,6 +21,17 @@ class WorkerSettings(WorkerSettingsBase):
         # Foundation, like the table it sweeps: every product records audit
         # events, so every product forgets them on a schedule.
         cron(purge_audit_history, hour=3, minute=23),
+        # Export artifacts past their expiry. On by default, unlike the two
+        # sweeps below: those remove a customer's own content, while this
+        # removes an artifact the product generated with a date the product
+        # itself displayed. Before it existed, the only thing that retired
+        # an export was somebody opening the exports page.
+        cron(expire_audit_exports, hour=3, minute=29),
+        # A bounded hold stopped holding on the day it said it would; this
+        # makes the row say so too. Always on -- it changes a label, not a
+        # byte, and a holds list full of holds that hold nothing is how a
+        # tenant loses track of the ones that do.
+        cron(expire_legal_holds, hour=3, minute=31),
 {{#if capability.ai}}        cron(purge_ai_history, hour=3, minute=17),
 {{/if}}        # What the bucket holds against what the index says. Off unless
         # STORAGE_RECONCILE_ENABLED asks for it, and it reports rather than

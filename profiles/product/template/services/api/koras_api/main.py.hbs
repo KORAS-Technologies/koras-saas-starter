@@ -135,13 +135,18 @@ app.include_router(
 # Foundation like the table they read and write: a product that records
 # without being able to answer what it recorded is a product with a write-only
 # compliance store.
+# Exports first, and this order is load-bearing: Starlette matches in
+# registration order, so `/audit/{event_id}` registered before `/audit/exports`
+# reads "exports" as an event id, fails the uuid cast and answers 404. The
+# reporting routers a few lines down carry the same note for the same reason,
+# and this router did not until a review found it on 2026-09-16.
 app.include_router(
-    audit.router,
+    audit_exports.router,
     prefix="/api/v1",
     dependencies=[Depends(limit_authenticated)],
 )
 app.include_router(
-    audit_exports.router,
+    audit.router,
     prefix="/api/v1",
     dependencies=[Depends(limit_authenticated)],
 )

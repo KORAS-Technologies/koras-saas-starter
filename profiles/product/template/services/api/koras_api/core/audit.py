@@ -115,6 +115,11 @@ HOLD_ACTIONS = (
         summary="A legal hold was lifted; what it covered may expire again.",
     ),
     AuditAction(
+        key="hold.expired",
+        classification=Classification.ADMINISTRATIVE,
+        summary="A bounded hold reached its end date and stopped holding.",
+    ),
+    AuditAction(
         key="hold.refused",
         classification=Classification.SECURITY,
         summary="A hold transition was refused: the caller lacked the authority.",
@@ -128,6 +133,16 @@ HOLD_ACTIONS = (
         key="audit.exported",
         classification=Classification.AUDIT,
         summary="An export was requested; a copy of the records leaves the product.",
+    ),
+    AuditAction(
+        key="audit.export_completed",
+        classification=Classification.AUDIT,
+        summary="An export finished, either as an artifact or as a failure.",
+    ),
+    AuditAction(
+        key="audit.export_expired",
+        classification=Classification.AUDIT,
+        summary="An export artifact reached its expiry and was removed.",
     ),
     AuditAction(
         key="audit.export_downloaded",
