@@ -661,6 +661,8 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'El archivo no llegó al almacenamiento como se esperaba. Intente subirlo de nuevo.',
   'errors.uploadSizeMismatch':
     'El archivo subido no tiene el tamaño anunciado. Intente subirlo de nuevo.',
+  'errors.fileQuarantined':
+    'Este archivo está retenido porque un análisis de seguridad no lo consideró limpio. Consulte a un administrador si lo necesita.',
   'errors.storageUnavailable': 'El almacenamiento de archivos no está disponible en este momento.',
   'errors.reportNotFound': 'Ese informe no existe.',
   'errors.scheduleNotFound': 'Esa programación ya no existe.',

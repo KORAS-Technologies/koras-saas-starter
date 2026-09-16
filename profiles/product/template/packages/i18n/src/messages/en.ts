@@ -662,6 +662,8 @@ export const en = {
   'errors.uploadNotArrived': 'The file did not arrive in storage as expected. Try the upload again.',
   'errors.uploadSizeMismatch':
     'The uploaded file is not the size that was announced. Try the upload again.',
+  'errors.fileQuarantined':
+    'This file is being withheld because a security scan did not find it clean. Ask an administrator if you need it.',
   'errors.storageUnavailable': 'File storage is not available right now.',
   'errors.reportNotFound': 'That report does not exist.',
   'errors.scheduleNotFound': 'That schedule no longer exists.',
