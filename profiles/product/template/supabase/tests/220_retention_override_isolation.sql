@@ -24,8 +24,11 @@ values
 
 insert into public.tenant_settings (tenant_id, retention_overrides)
 values
-  -- Alpha keeps audit rows for seven years, which is longer than the floor.
-  ('00000000-0000-0000-0000-000000000001', '{"audit": 2555}'::jsonb),
+  -- Alpha keeps audit rows for seven years, which is longer than the floor,
+  -- and wants its own documents gone in ninety days -- a class the platform
+  -- sets no floor for, so nothing stands in the way of that.
+  ('00000000-0000-0000-0000-000000000001',
+   '{"audit": 2555, "storage_standard": 90}'::jsonb),
   -- Beta has asked for less than the floor. The row is allowed; the floor
   -- still wins at resolution, which is the point.
   ('00000000-0000-0000-0000-000000000002', '{"audit": 30}'::jsonb);
@@ -60,6 +63,28 @@ begin
     into resolved;
   if resolved <> 365 then
     raise exception 'overrides: a tenant with no row did not take the floor, resolved %', resolved;
+  end if;
+
+  -- A class with no platform floor, and nobody overriding it, resolves to
+  -- zero. Zero is what the object sweep reads as "no date is due", and the
+  -- statement that writes `retain_until` is guarded on it being above zero.
+  --
+  -- This is the case that nearly shipped as a wipe. A floor of one day made
+  -- every standard object expire the night after upload; the answer is not a
+  -- smaller number but no number, and this is the assertion that the absence
+  -- resolves to something the sweep will refuse to act on.
+  select public.retention_days_for('00000000-0000-0000-0000-000000000009', 'storage_standard', 0)
+    into resolved;
+  if resolved <> 0 then
+    raise exception 'overrides: an absent floor resolved to %, expected 0', resolved;
+  end if;
+
+  -- And a tenant who does want their documents gone still gets a date, because
+  -- their override resolves above the absent floor rather than under it.
+  select public.retention_days_for('00000000-0000-0000-0000-000000000001', 'storage_standard', 0)
+    into resolved;
+  if resolved <> 90 then
+    raise exception 'overrides: a tenant override over an absent floor resolved %', resolved;
   end if;
 
   raise notice 'retention override resolution: ok';

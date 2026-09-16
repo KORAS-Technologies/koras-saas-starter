@@ -127,21 +127,20 @@ def test_every_floor_is_checked_before_any_is_used() -> None:
 
 
 def test_the_floor_over_ordinary_content_does_not_outlast_the_customer_s_wish() -> None:
-    """`standard` was 2555 -- seven years over everything a customer uploaded,
-    which a tenant could not shorten, because `retention_days_for` takes the
-    greater of floor and override.
+    """`standard` has no platform floor, and that means no deletion at all.
 
-    A customer who uploads a document and wants it gone in ninety days is
-    entitled to ask, and a product answering "seven years" to that is not
-    applying a compliance control; it is refusing a deletion. The floor belongs
-    where an obligation is, which is the two classifications a product sets
-    deliberately. ADR 0003 decision 15.
+    The number does two jobs -- the floor a tenant may not go below, and the
+    period after which an object is removed when nobody said otherwise -- and
+    both wrong answers came from treating it as one. At 2555 a customer could
+    not delete their own document for seven years. At 1, the correction made
+    earlier the same day, every standard object would have been purged the day
+    after upload in any product that switched the sweep on.
 
-    One rather than zero: `floors_from` refuses anything below a day, because
-    retention of nothing is a wipe.
+    Unset is the answer to both: no floor to breach, and no date to come due.
+    ADR 0003 decision 15.
     """
     defaults = LifecycleSettings()
-    assert defaults.storage_retention_days_standard == 1
+    assert defaults.storage_retention_days_standard is None
     assert defaults.storage_retention_days_sensitive == 3650
     assert defaults.storage_retention_days_restricted == 3650
     floors_from(defaults)
@@ -288,3 +287,43 @@ async def test_a_backlog_the_bucket_still_refuses_keeps_its_row() -> None:
 
     assert (cleared, still) == (0, 1)
     assert not any("delete from public.files" in text for text, _ in session.statements)
+
+
+async def test_a_class_with_no_floor_and_no_override_is_given_no_date() -> None:
+    """The defect this exists to catch is not subtle and would not have looked
+    like one: with a one-day floor, `retain_until` became `created_at + 1 day`
+    and the purge pass removed every standard object the following night.
+
+    A resolved zero must write nothing. Null is not expired -- it means nobody
+    has decided -- and the due query never selects a null date.
+    """
+    session = _Session(rows=[_File()])
+    floors = Floors(standard=None, sensitive=3650, restricted=3650)
+
+    await resolve_retention(session, floors=floors, limit=10)  # type: ignore[arg-type]
+
+    statements = [text for text, _ in session.statements if "set retain_until" in text]
+    assert statements, "the statement did not run at all"
+    # The guard is in the statement rather than in Python, so that a tenant
+    # override can still resolve above an absent floor and produce a date.
+    assert all("retention_days_for(f.tenant_id, :kind, :days) > 0" in t for t in statements)
+
+
+async def test_an_absent_floor_is_passed_as_zero_rather_than_as_null() -> None:
+    """`make_interval(days => null)` is null, and `retain_until = null` would
+    read as "nobody decided" by luck rather than by the guard. Zero makes the
+    comparison in the statement decide it."""
+    session = _Session(rows=[_File()])
+    await resolve_retention(  # type: ignore[arg-type]
+        session, floors=Floors(standard=None, sensitive=3650, restricted=3650), limit=10
+    )
+    params = [p for t, p in session.statements if "set retain_until" in t][0]
+    assert params is not None and params["days"] == 0
+
+
+def test_an_unset_floor_is_allowed_and_a_zero_one_is_not() -> None:
+    """Unset is a decision -- this class is not automatically deleted. Zero is
+    a mistyped number, and it would be a wipe."""
+    floors_from(LifecycleSettings(storage_retention_days_standard=None))
+    with pytest.raises(ValueError, match="at least 1 day"):
+        floors_from(LifecycleSettings(storage_retention_days_standard=0))

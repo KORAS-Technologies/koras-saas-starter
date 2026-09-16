@@ -111,13 +111,21 @@ the assistant and is not specific to it.
     none of those should be improvised.
 15. *The retention floor protects what needs protecting, and nothing else.*
     Decided 2026-09-16, replacing a seven-year floor over everything a customer
-    uploaded. A tenant that wants a document gone in ninety days may have that:
-    `standard` content follows the tenant's own policy, with a floor of one day
-    because retention of nothing is a wipe. `sensitive` and `restricted` keep
-    the ten-year floor, and audit rows keep theirs. A floor over arbitrary
-    customer content is not a compliance control -- it is a product refusing to
-    honour a deletion the customer is entitled to ask for, which is the finding
-    rather than the defence.
+    uploaded, and corrected twice the same day. The number does two jobs -- the
+    floor a tenant may not go below, and the period after which an object is
+    removed when nobody said otherwise -- and both wrong answers came from
+    treating it as one. At 2555 a customer could not delete their own document
+    for seven years. At 1, the first correction, every standard object would
+    have been purged the night after upload in any product that switched the
+    sweep on; that is far worse, and it was one guard away from shipping.
+    **`standard` is therefore unset, and unset means no automatic deletion at
+    all** -- the resolved value is zero, no `retain_until` is written, and a
+    null date is never due. A tenant who wants their documents gone in ninety
+    days still gets that, because their override resolves above an absent
+    floor. `sensitive` and `restricted` keep ten years, because those are
+    classifications a product sets deliberately; audit rows keep their own. A
+    floor over arbitrary customer content is not a compliance control -- it is
+    a product refusing a deletion the customer is entitled to ask for.
 
 **Consequences.** The audit table's migration moves between manifest entries
 without being renumbered, and a product generated without reporting gains an

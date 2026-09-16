@@ -51,22 +51,34 @@ class LifecycleSettings(BaseSettings):
     #: The platform floor, in days, by classification. A tenant may lengthen
     #: retention and may never shorten it below these.
     #:
-    #: **`standard` is one day, and that is the whole point of the number.**
-    #: It was 2555 -- seven years over everything a customer uploaded, which a
-    #: tenant could not shorten. A customer who uploads a document and wants it
-    #: gone in ninety days is entitled to ask, and a product that answers
-    #: "seven years" to that is not applying a compliance control; it is
-    #: refusing a deletion, which is the finding rather than the defence. One
-    #: day rather than zero because retention of nothing is a wipe, and
-    #: `floors_from` refuses anything below one for that reason.
+    #: **`standard` is unset, and unset means no automatic deletion at all.**
+    #: Not a short period: none. A customer's ordinary document is kept until
+    #: the customer deletes it, which is what every file store does and what
+    #: anybody uploading a file expects.
+    #:
+    #: This number does two jobs, and that is what made the first two answers
+    #: wrong. It is the floor a tenant may not go below, *and* it is the period
+    #: after which an object is removed when nobody has said otherwise. At 2555
+    #: it meant a customer could not delete their own document for seven years.
+    #: At 1 -- the correction, on the morning of 2026-09-16 -- it meant every
+    #: standard object was purged the day after upload, for any product that
+    #: switched the sweep on. The second is far worse than the first, and one
+    #: guard away from shipping: `floors_from` refuses a value below a day
+    #: because retention of nothing is a wipe, and a day is a wipe with a
+    #: night's delay.
+    #:
+    #: So: unset is no expiry. A resolved zero leaves `retain_until` null, and
+    #: a null date is never due -- the sweep passes over the object for ever.
+    #: A tenant that *wants* their documents gone in ninety days still gets
+    #: that, because their own override resolves above the absent floor.
     #:
     #: `sensitive` and `restricted` keep ten years, because those are the
     #: classifications a product sets deliberately for content it has decided
-    #: carries an obligation. The floor belongs where the obligation is.
-    #: Decided 2026-09-16; ADR 0003 decision 15.
-    storage_retention_days_standard: int = 1
-    storage_retention_days_sensitive: int = 3650
-    storage_retention_days_restricted: int = 3650
+    #: carries an obligation. Both jobs belong where the obligation is.
+    #: ADR 0003 decision 15.
+    storage_retention_days_standard: int | None = None
+    storage_retention_days_sensitive: int | None = 3650
+    storage_retention_days_restricted: int | None = 3650
 
     #: How many objects one night removes at most. A ceiling rather than a
     #: target: a sweep that deletes ten thousand files because a floor was
@@ -99,12 +111,19 @@ _UNRESOLVED = text(
 )
 
 # The floor resolved against this tenant's own override, whichever is longer.
+#
+# The `> 0` is what makes "no platform floor" mean no deletion rather than
+# immediate deletion. A class with no floor and a tenant with no override
+# resolve to zero, no row is touched, `retain_until` stays null, and a null date
+# is never due. Without it the statement would write `created_at + 0 days` and
+# every object would be purged on the next pass.
 _SET_RETENTION = text(
     "update public.files f "
     "   set retain_until = f.created_at + make_interval("
     "         days => public.retention_days_for(f.tenant_id, :kind, :days)), "
     "       retention_policy = :policy "
-    " where f.id = cast(:id as uuid) and f.retain_until is null"
+    " where f.id = cast(:id as uuid) and f.retain_until is null "
+    "   and public.retention_days_for(f.tenant_id, :kind, :days) > 0"
 )
 
 #: Only lengthening, and set-based because it touches every row of a class.
@@ -119,6 +138,7 @@ _EXTEND = text(
     " where coalesce(f.classification, 'standard') = :classification "
     "   and f.retain_until is not null "
     "   and f.status <> 'purged' "
+    "   and public.retention_days_for(f.tenant_id, :kind, :days) > 0 "
     "   and f.retain_until < f.created_at + make_interval("
     "         days => public.retention_days_for(f.tenant_id, :kind, :days)) "
     "returning f.id"
@@ -167,18 +187,29 @@ _AUDIT_INSERT = text(
 
 @dataclass(frozen=True)
 class Floors:
-    """The platform floor per classification, in days."""
+    """The platform floor per classification, in days. None is no expiry."""
 
-    standard: int
-    sensitive: int
-    restricted: int
+    standard: int | None
+    sensitive: int | None
+    restricted: int | None
 
-    def days_for(self, classification: str | None) -> int:
+    def days_for(self, classification: str | None) -> int | None:
         if classification == "sensitive":
             return self.sensitive
         if classification == "restricted":
             return self.restricted
         return self.standard
+
+    def sql_days_for(self, classification: str | None) -> int:
+        """The same number as a parameter, with None as zero.
+
+        Zero is what the statements read as "this class has no platform floor".
+        A tenant override still resolves above it, so a tenant who wants their
+        documents gone in ninety days gets that; with no override the resolved
+        value is zero, no date is written, and the object is never due.
+        """
+        days = self.days_for(classification)
+        return days if days is not None else 0
 
 
 def floors_from(config: LifecycleSettings) -> Floors:
@@ -198,10 +229,12 @@ def floors_from(config: LifecycleSettings) -> Floors:
         ("sensitive", floors.sensitive),
         ("restricted", floors.restricted),
     ):
-        if days < 1:
+        # None is "no platform floor for this class", which is a decision. A
+        # number below a day is a wipe dressed as a retention policy.
+        if days is not None and days < 1:
             raise ValueError(
-                f"storage retention for {name!r} must be at least 1 day; "
-                "retention of nothing is a wipe"
+                f"storage retention for {name!r} must be at least 1 day, or unset "
+                "for no automatic deletion; retention of nothing is a wipe"
             )
     return floors
 
@@ -211,6 +244,12 @@ async def resolve_retention(session: AsyncSession, *, floors: Floors, limit: int
 
     The date is derived from the object's own creation time, not from now, so
     resolving late does not grant an old file a fresh full term.
+
+    A class with no platform floor and a tenant with no override resolve to
+    zero days, and the statement writes nothing: `retain_until` stays null, and
+    null is not expired -- it means nobody has decided. The count returned is
+    how many rows were *considered*, which is why a product with no floors sees
+    the same number every night and no deletions.
     """
     rows = (await session.execute(_UNRESOLVED, {"limit": limit})).all()
     for row in rows:
@@ -220,7 +259,7 @@ async def resolve_retention(session: AsyncSession, *, floors: Floors, limit: int
             {
                 "id": row.id,
                 "kind": f"storage_{classification}",
-                "days": floors.days_for(row.classification),
+                "days": floors.sql_days_for(row.classification),
                 "policy": f"platform:{classification}",
             },
         )
@@ -244,7 +283,7 @@ async def extend_to_floor(session: AsyncSession, *, floors: Floors) -> int:
             {
                 "classification": classification,
                 "kind": f"storage_{classification}",
-                "days": floors.days_for(classification),
+                "days": floors.sql_days_for(classification),
                 "policy": f"platform:{classification}",
             },
         )

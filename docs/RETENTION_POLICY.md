@@ -90,16 +90,27 @@ deletes.
 
 | Classification | Setting | Default | Why |
 |----------------|---------|---------|-----|
-| `standard` | `STORAGE_RETENTION_DAYS_STANDARD` | 1 day | The tenant's own policy decides; the floor only stops a retention of nothing |
+| `standard` | `STORAGE_RETENTION_DAYS_STANDARD` | **unset — no automatic deletion** | A customer's ordinary document is kept until the customer deletes it |
 | `sensitive` | `STORAGE_RETENTION_DAYS_SENSITIVE` | 3650 days | A classification a product sets deliberately, for content it has decided carries an obligation |
 | `restricted` | `STORAGE_RETENTION_DAYS_RESTRICTED` | 3650 days | The same, and the narrower set |
 
-**`standard` was 2555 — seven years — until 2026-09-16, and a tenant could not
-shorten it.** That meant a customer who uploaded a document and wanted it gone
-in ninety days could not have that. A floor over arbitrary customer content is
-not a compliance control; it is a product refusing a deletion the customer is
-entitled to ask for, which is the finding rather than the defence. The floor now
-sits where the obligation sits. ADR 0003 decision 15.
+**This number does two jobs, and both wrong answers came from treating it as
+one.** It is the floor a tenant may not go below, *and* it is the period after
+which an object is removed when nobody has said otherwise.
+
+| It was | Which meant |
+|--------|-------------|
+| 2555 (seven years) | A customer could not delete their own document for seven years |
+| 1 (the first correction, 2026-09-16) | Every standard object was purged the night after upload, in any product that switched the sweep on |
+| unset (2026-09-16) | No floor to breach, and no date to come due |
+
+The second is far worse than the first and was one guard away from shipping.
+`floors_from` refuses anything below a day because retention of nothing is a
+wipe — and a day is a wipe with a night's delay. Unset answers both jobs: the
+resolved value is zero, the statement that writes `retain_until` is guarded on
+it being above zero, so no date is written and a null date is never due. A
+tenant who *wants* their documents gone in ninety days still gets that, because
+their own override resolves above an absent floor. ADR 0003 decision 15.
 
 Seven years was never derived from a regulation this product is subject to. It
 is the common commercial middle — above the six-year limitation period for
@@ -107,9 +118,16 @@ contract claims in England and Wales, level with the Sarbanes-Oxley period for
 audit records and with Dutch fiscal retention, below the ten years German
 `HGB` §257 requires for books. Five years would have been defensible for
 anti-money-laundering records, which is the regime that names five, and short
-for anything a contract claim could reach in year six. That spread is the
-argument for the floors being settings a product sets against its own
-obligations rather than a number the factory is confident about.
+for anything a contract claim could reach in year six.
+
+**Those regimes are about a company's own records, not about arbitrary files a
+customer uploaded into a product.** SOX governs audit workpapers; HGB §257
+governs books and commercial correspondence; the tax rules govern tax records.
+None of them says a file-sharing feature must keep a customer's holiday photo
+for seven years. Where the industry numbers actually bite in this product is the
+**audit** table above — and those defaults are 90, 365 and 1095 days, which is
+shorter than every regime named here. That is the retention worth arguing about,
+and it is a different setting.
 
 `retain_until` null means **no policy has been resolved for this object**, which
 is not the same as expired. A sweep must treat null as not-yet-eligible rather
