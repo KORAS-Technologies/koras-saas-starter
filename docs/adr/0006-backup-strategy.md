@@ -1,8 +1,9 @@
 # ADR 0006 — Backup Strategy
 
-**Status.** Proposed, 2026-09-16. **Not accepted, and nothing is built.** Three
-questions in the Decision section are open and are named as open; this record
-exists so that the settled parts are settled before code rather than during it.
+**Status.** Accepted, 2026-09-16, with one question still open. The copy and its
+verification are built — `services/worker/koras_worker/tasks/storage_backup.py`
+and migration `00025_file_backups.sql`. Restore is not; question 3 governs it
+and is unanswered.
 
 **Context.** No object in this estate is backed up. Objects live in whichever
 bucket a customer's storage policy names, and the only copy is the one the
@@ -17,7 +18,8 @@ Three things blocked designing it, and one has since cleared:
 - **Terraform creates no buckets.** A repository-wide search of
   `infrastructure/` finds one match for the word and it is prose.
   `STORAGE_BUCKET` is declared `supplied` for exactly that reason. A backup needs
-  a destination and nothing provisions one.
+  a destination and nothing provisions one. Answered 2026-09-16: a documented
+  manual step, matching how `STORAGE_BUCKET` already works.
 - **Cross-provider backup costs money.** A second provider's bill and a second
   credential, and no estate has been asked.
 
@@ -51,23 +53,37 @@ Three things blocked designing it, and one has since cleared:
 8. *Disaster recovery is out of scope and needs its own record.* RPO, RTO,
    failover and cross-region replication are estate-level commitments to
    customers, not a product template's decisions.
-9. *No RPO or RTO is stated here.* A daily copy implies a recovery point no
+9. *The catalogue outlives the object it describes.* Added 2026-09-16 on
+   building it. `file_backups` holds `file_id` deliberately without a foreign
+   key, because a catalogue row deleted alongside the object would be insurance
+   that expires at the moment of the accident. A copy of a live object is kept
+   as long as the object; a copy whose object is gone is dated, and goes
+   `STORAGE_BACKUP_RETENTION_DAYS` later.
+10. *The copy keeps the source key.* Objects here are immutable — a key carries
+   the file's id and nothing overwrites one — so a mirror is a complete backup
+   of current state and a restore does not need a catalogue lookup to find the
+   bytes. Dated copies would guard against an overwrite this product cannot
+   perform, at the cost of multiplying every object.
+11. *No RPO or RTO is stated here.* A daily copy implies a recovery point no
    better than 24 hours, and that is a consequence of the design rather than a
    target it was built to. Writing plausible numbers into a design document is
    how a number nobody agreed to becomes a number everyone cites.
 
 **Open, and blocking.**
 
-| # | Question | Leaning |
-|---|----------|---------|
-| 1 | Who creates the archive and backup buckets — a Terraform module, or a documented manual step | A manual step first, matching how `STORAGE_BUCKET` already works. Adding a Terraform output named for buckets also fails `tests/docs/identifiers.test.ts` until its exemption is removed in the same commit |
-| 2 | Same-provider only, or cross-provider from the start | Same-provider first. Cross-provider when an estate asks and accepts the bill |
-| 3 | Which entitlement gates restore | Propose `storage.restore`; adding it is Control Plane catalogue work, governed by the open F3/F2b authorization question |
+| # | Question | Answer |
+|---|----------|--------|
+| 1 | Who creates the archive and backup buckets | **Answered 2026-09-16: a documented manual step**, matching how `STORAGE_BUCKET` already works. A person creates the bucket and sets `STORAGE_BACKUP_BUCKET`; nothing in Terraform is named for a bucket, so the identifiers test needs no exemption |
+| 2 | Same-provider only, or cross-provider from the start | **Answered 2026-09-16: both, because the settings already promised both.** Same endpoint and the provider copies server-side; a different endpoint and no single provider reaches both ends, so the object passes through the worker, bounded at 64 MiB. A setting accepted and doing nothing is the defect this work exists to close |
+| 3 | Which entitlement gates restore | **Open as of 2026-09-16.** Proposed `storage.restore`; adding it is Control Plane catalogue work, governed by the open F3/F2b authorization question. Restore is not built, so nothing is gated on an answer that does not exist |
 
-**Consequences.** Nothing can be built until question 1 is answered, and
-stories STORAGE-009 through STORAGE-013 are blocked on it rather than merely
-unstarted. The integrity work that would otherwise look premature is the
-prerequisite that makes this design possible at all. Accepting decision 1 means
+**Consequences.** STORAGE-009 and STORAGE-011 are built as of 2026-09-16;
+STORAGE-012 and STORAGE-013 — restore, and its approval flow — are not, and are
+blocked on question 3 rather than on a bucket. The integrity work that would
+otherwise look premature is the prerequisite that made this possible at all: a
+digest that could never match, which is what `checksum()` returned until a
+review found it, would have made every object `copied` and none `verified`
+while the console reported a working backup. Accepting decision 1 means
 a console cannot show "backed up" for an object that was only copied, which will
 make the first honest backup report look worse than a dishonest one would — and
 that is the point of writing it down before anyone is disappointed by it.

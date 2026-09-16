@@ -89,6 +89,19 @@ STORAGE_ACTIONS = (
         summary="A file passed its retention and was removed.",
     ),
     AuditAction(
+        key="storage.backup.run",
+        classification=Classification.AUDIT,
+        summary=(
+            "A backup pass ran over this tenant's objects. `verified` is a "
+            "backup; `copied` is a copy nobody could compare."
+        ),
+    ),
+    AuditAction(
+        key="storage.backup.retired",
+        classification=Classification.AUDIT,
+        summary="A backup copy passed its date and was removed from the destination.",
+    ),
+    AuditAction(
         key="storage.purge.held",
         classification=Classification.SECURITY,
         summary="A file was due for purge and was kept: a legal hold covers it.",

@@ -8,7 +8,8 @@ from .tasks import example_task
 {{/if}}from .tasks.audit_retention import purge_audit_history
 from .tasks.governance_expiry import expire_audit_exports, expire_legal_holds
 {{#if capability.reporting}}from .tasks.reporting import deliver_scheduled_reports
-{{/if}}from .tasks.storage_lifecycle import sweep_storage_lifecycle
+{{/if}}from .tasks.storage_backup import back_up_storage
+from .tasks.storage_lifecycle import sweep_storage_lifecycle
 from .tasks.storage_reconcile import reconcile_storage
 
 
@@ -42,6 +43,12 @@ class WorkerSettings(WorkerSettingsBase):
         # and nothing is holding. Off unless STORAGE_LIFECYCLE_ENABLED asks --
         # it deletes, which is a good reason to opt in rather than discover.
         cron(sweep_storage_lifecycle, hour=4, minute=7),
+        # The copy, and the digest comparison that makes it a backup. After
+        # the lifecycle sweep on purpose: an object removed tonight should
+        # not be copied tonight, and a copy whose object has gone starts its
+        # own clock here rather than being deleted alongside it. Off unless
+        # STORAGE_BACKUP_ENABLED asks -- it bills a second destination.
+        cron(back_up_storage, hour=4, minute=39),
 {{#if capability.reporting}}        # The seam for scheduled delivery. Hourly, and it says nothing is
         # scheduled until a product gives it something to deliver.
         cron(deliver_scheduled_reports, minute=41),

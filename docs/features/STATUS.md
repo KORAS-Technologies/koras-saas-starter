@@ -15,10 +15,10 @@ Planner tracking for both features. Status vocabulary is
 | STORAGE-006 | Object lifecycle | NEW | Built — purge and retention; ARCHIVE still blocked |
 | STORAGE-007 | File versioning | NOT REQUIRED | Closed |
 | STORAGE-008 | Secure signed URLs | EXISTING | Built |
-| STORAGE-009 | Daily backup | NEW | Blocked — no bucket |
-| STORAGE-010 | Cross-provider backup | NEW | Blocked — STORAGE-009 |
-| STORAGE-011 | Backup integrity verification | NEW | Blocked — STORAGE-009 |
-| STORAGE-012 | Object restore | NEW | Blocked — STORAGE-011 |
+| STORAGE-009 | Daily backup | NEW | **Built 2026-09-16** |
+| STORAGE-010 | Cross-provider backup | NEW | **Built 2026-09-16** — the settings already promised it |
+| STORAGE-011 | Backup integrity verification | NEW | **Built 2026-09-16** |
+| STORAGE-012 | Object restore | NEW | Blocked — ADR 0006 question 3 |
 | STORAGE-013 | Snapshot restore | NEW | Blocked — STORAGE-012 |
 | STORAGE-014 | Storage usage metrics | NOT REQUIRED | Closed — no metric API |
 | STORAGE-015 | Storage administration contracts | NEW | Built — `GET /governance` |
@@ -62,7 +62,7 @@ Planner tracking for both features. Status vocabulary is
 
 | Blocker | Blocks | Owner |
 |---------|--------|-------|
-| Nothing provisions a bucket | STORAGE-009..013, AUDIT-008 | A human decision; ADR 0006 question 1 |
+| Nothing provisions a bucket | AUDIT-008 | Answered 2026-09-16 for backup: a manual step, as `STORAGE_BUCKET` already is. The archive destination is still nobody's |
 | No entitlement codes in the platform catalogue | STORAGE-012; audit export is gated by permission alone | Control Plane work, governed by F3/F2b |
 | No metric API in the repository | STORAGE-014, AUDIT-017 | Open framework decision |
 | The two capabilities are undeclared | Every gated surface | Generator work; both off by default when declared |

@@ -35,6 +35,7 @@ from botocore.client import Config  # type: ignore[import-untyped]
 from botocore.exceptions import ClientError  # type: ignore[import-untyped]
 
 __all__ = [
+    "S3_COMPATIBLE",
     "Category",
     "Destination",
     "ObjectPage",
@@ -283,8 +284,29 @@ class ObjectStore(Protocol):
         """
         ...
 
+    def get(self, key: str) -> bytes | None:
+        """The stored bytes, or None where the object is not there.
+
+        Used where an object has to pass *through* this process rather than
+        between two buckets a single provider can reach -- a cross-provider
+        backup is the one caller. Everything else signs a URL and lets the
+        browser talk to the provider directly, which is the reason this is not
+        the ordinary way to read a file.
+        """
+        ...
+
     def copy(self, source_key: str, dest_key: str, *, dest: Destination | None = None) -> None:
         """Copy one object, optionally into another destination.
+
+        Server-side, so the bytes never reach this process. That also means the
+        destination's provider must be able to reach the source bucket: a
+        `dest` at a different endpoint is a copy no single provider can make,
+        and the caller reads the bytes and puts them instead.
+
+        The copy asks the destination to compute a SHA-256 of what it stored,
+        so that a later `checksum()` on the copy has something to answer with.
+        A provider that ignores the request leaves the copy verifiable only as
+        `copied`, which is the honest outcome rather than a failure.
 
         There is no `move`. Copy and delete at the call site is two events in
         the audit trail and one visible failure in between, where a move is
@@ -392,6 +414,17 @@ class S3ObjectStore:
     def delete(self, key: str) -> None:
         self._client.delete_object(Bucket=self.destination.bucket, Key=key)
 
+    def get(self, key: str) -> bytes | None:
+        try:
+            answer = self._client.get_object(Bucket=self.destination.bucket, Key=key)
+        except ClientError as error:
+            code = error.response.get("Error", {}).get("Code", "")
+            if code in {"404", "NoSuchKey", "NotFound"}:
+                return None
+            raise
+        body = answer["Body"].read()
+        return bytes(body)
+
     def list(self, prefix: str, *, cursor: str | None = None, limit: int = 1000) -> ObjectPage:
         arguments: dict[str, Any] = {
             "Bucket": self.destination.bucket,
@@ -423,6 +456,10 @@ class S3ObjectStore:
             Bucket=target.bucket,
             Key=dest_key,
             CopySource={"Bucket": self.destination.bucket, "Key": source_key},
+            # So the copy carries a digest of its own. Without it S3 stores no
+            # SHA-256 for a copied object, `checksum()` on the copy answers
+            # None, and a backup could never be more than `copied`.
+            ChecksumAlgorithm="SHA256",
         )
 
     def checksum(self, key: str) -> str | None:

@@ -1,28 +1,44 @@
 # Koras Backup and Restore
 
-> **Nothing in this document is built.** As of 2026-09-16 no backup runs, no
-> restore exists, and no Terraform module creates a bucket for either. This is
-> the design and the reasoning, written so that the decisions are settled before
-> the code rather than discovered during it.
+> **The backup half is built as of 2026-09-16. Restore is not.** A nightly
+> copy runs, compares digests and catalogues the result; nothing restores from
+> it yet, and nothing in Terraform creates a bucket for either — the
+> destination is a name a person supplies, which is how `STORAGE_BUCKET`
+> already works.
 >
-> The decision record is `docs/adr/0003-koras-storage-audit-governance.md`.
-> What does exist is in `docs/STORAGE_ARCHITECTURE.md`.
+> The decision record is `docs/adr/0006-backup-strategy.md`, accepted the same
+> day. What else exists is in `docs/STORAGE_ARCHITECTURE.md`.
 
-## Why this was still a document on 2026-09-16, and not yet code
+## What runs
 
-Three things were true on 2026-09-16 and each of them blocks building:
+`back_up_storage` in `services/worker/koras_worker/tasks/storage_backup.py`,
+nightly at 04:39 and after the lifecycle sweep — an object removed tonight
+should not be copied tonight. Off unless `STORAGE_BACKUP_ENABLED` asks for it,
+because it bills a second destination.
 
-1. **No integrity existed until recently.** A backup that cannot be compared
-   with its source is a copy, not a backup. Digests arrived on 2026-09-16; they
-   are the prerequisite, and they are now in place.
-2. **Terraform creates no buckets at all.** A repository-wide search of
-   `infrastructure/` finds one match for the word, and it is prose. The
-   product's own bucket is a name a project supplies, not a resource the estate
-   provisions — `STORAGE_BUCKET` is declared `supplied` in the secrets manifest
-   for exactly that reason. A backup destination therefore needs either a new
-   Terraform module or a documented manual step, and that is an open decision.
-3. **The estate has never been asked for the money.** Cross-provider backup
-   means a second provider's storage bill and a second credential in Doppler.
+Four things in one pass: copy what has no good copy, compare the digests, date
+any copy whose object has gone, and remove any copy past its date.
+
+## Three things blocked this until 2026-09-16, and what answered each
+
+1. **No integrity existed.** A backup that cannot be compared with its source
+   is a copy with a reassuring name. Digests arrived on 2026-09-16 — and the
+   first version of them could never have matched anything, because
+   `checksum()` returned a 32-character entity tag for a column holding 64 hex
+   characters. A review found it. Had it shipped, every object would have read
+   `copied` and none `verified` while a console reported a working backup.
+2. **Terraform creates no buckets at all.** Answered: a documented manual step,
+   matching `STORAGE_BUCKET`, which is declared `supplied` in the secrets
+   manifest for the same reason. The person who creates the bucket sets
+   `STORAGE_BACKUP_BUCKET`, and a destination equal to the source bucket is
+   refused outright — a copy beside the original survives a deleted object and
+   nothing else.
+3. **Cross-provider backup costs money.** Answered by building both and letting
+   the configuration decide. The same endpoint is a server-side copy and no
+   byte reaches the worker; a different endpoint is a copy no single provider
+   can make, so the bytes pass through, bounded at 64 MiB per object. The
+   settings already promised both, and a setting accepted while doing nothing
+   is the defect this work exists to close.
 
 ## The shape
 
@@ -57,8 +73,19 @@ records two distinct states, and only one of them is a backup:
 | verified | The destination digest matched the recorded source digest |
 | failed | The copy was refused, or the digests disagreed |
 
-`backup_status` and `backed_up_at` on the file index carry this per object; they
-were added by `00018_files_governance.sql` and nothing writes them yet.
+`backup_status` and `backed_up_at` on the file index carry this per object.
+They were added by `00018_files_governance.sql` and written since 2026-09-16.
+`failed` leaves `backed_up_at` null: there is no moment at which that object was
+backed up, and a date there would read as though there were.
+
+An object the run could not compare stays `copied`, and the catalogue records
+*why* in its `note` — which end had no digest. Three outcomes rather than two is
+the whole point: "no digest" is the ordinary case, because a provider computes a
+SHA-256 only when the upload asked it to.
+
+A cross-provider copy produces a stronger statement than either provider's. The
+bytes pass through the worker, so the digest compared is of what this process
+actually read from the source and actually wrote to the destination.
 
 A digest that cannot be compared — a multipart object's entity tag is a digest
 of digests — is **not** a mismatch. The provider seam already answers "no
@@ -67,10 +94,28 @@ never reported as corrupt.
 
 ## What a run must record
 
-A catalogue table, which does not exist on 2026-09-16, holding per run: when
-it started and finished, its scope, how many objects were considered, copied,
-verified and failed, how many bytes moved, and the first error where there was
-one.
+`public.file_backups`, from migration `00025_file_backups.sql`: one row per
+object per destination, holding both digests the comparison was made from, the
+status, a note, and the dates. A run also records one `storage.backup.run`
+audit event per tenant whose objects it touched, carrying counts and nothing
+else — an object key is half a signed URL and is never a detail.
+
+**The catalogue outlives the object it describes.** `file_id` is deliberately
+not a foreign key: a catalogue row deleted alongside the object would be
+insurance that expires the instant the accident happens. A copy of a live object is
+kept as long as the object; a copy whose object is gone is dated, and goes
+`STORAGE_BACKUP_RETENTION_DAYS` later — thirty days when unset.
+
+**The copy keeps the source key.** Objects here are immutable, so a mirror is a
+complete backup of current state and a restore will not need a catalogue lookup
+to find the bytes. Dated copies would guard against an overwrite this product
+cannot perform, at the cost of multiplying every object.
+
+A tenant reads its own catalogue and writes none of it. Every row is a sweep's:
+a tenant that could insert one could claim a backup exists that does not, which
+is worse than having no catalogue at all.
+`supabase/tests/240_file_backups_isolation.sql` proves both, and the mutation
+that makes `file_id` a cascading foreign key kills it.
 
 Two properties matter more than the columns:
 
@@ -90,7 +135,7 @@ Two properties matter more than the columns:
 | Source object missing | Not a backup failure. That is reconciliation's finding, and it is reported there |
 | Credentials rejected | Stop the run. Continuing would fill a log with noise and produce nothing |
 
-## Restore
+## Restore — designed, not built
 
 Restore is **destructive** and is designed around that fact rather than around
 convenience.
