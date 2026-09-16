@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import knowledge
 from .ai import index_uploaded_file
-from .file_hooks import hooks
+from .file_hooks import FileHook, hooks
 from .settings import settings
 
 
@@ -22,8 +22,19 @@ async def _remove(session: AsyncSession, tenant_id: str, file_id: str) -> None:
 
 
 def install() -> None:
+    """Register the assistant as one interested party, not as the only one.
+
+    Named `knowledge`, so a second registration of the same name -- two
+    `install()` calls in one process, say -- is refused loudly instead of
+    quietly replacing this one.
+    """
     if not settings.ai_gateway_url:
         return
-    hooks.indexable = knowledge.is_indexable
-    hooks.index = index_uploaded_file
-    hooks.remove = _remove
+    hooks.add(
+        FileHook(
+            name="knowledge",
+            interested=knowledge.is_indexable,
+            after_upload=index_uploaded_file,
+            before_delete=_remove,
+        )
+    )

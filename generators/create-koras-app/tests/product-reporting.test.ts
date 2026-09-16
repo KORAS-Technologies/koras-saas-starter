@@ -208,7 +208,11 @@ describe('scheduled delivery and background exports', () => {
     expect(router).toContain('HTTP_202_ACCEPTED')
     expect(router).toContain('background.add_task(')
     expect(router).toContain('write_export,')
-    expect(router).toContain('tenants/{tenant_id}/exports/{export_id}/')
+    // The layout moved into `koras_storage.object_key` on 2026-09-15, so this
+    // asserts the router uses the one builder rather than re-spelling the
+    // path. What the bytes are is asserted where they are now produced, in
+    // the storage package's own tests.
+    expect(router).toContain('object_key(tenant_id, export_id, filename, category=Category.EXPORTS)')
   })
 
   it('offers the three formats and names each by its media type', () => {

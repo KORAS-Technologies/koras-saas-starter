@@ -1,12 +1,12 @@
-{{#if capability.ai}}from arq import cron
-{{else}}{{#if capability.reporting}}from arq import cron
-{{/if}}{{/if}}from arq.connections import RedisSettings
+from arq import cron
+from arq.connections import RedisSettings
 from arq.typing import WorkerSettingsBase
 
 from .settings import settings
 from .tasks import example_task
 {{#if capability.ai}}from .tasks.ai_retention import purge_ai_history
-{{/if}}{{#if capability.reporting}}from .tasks.reporting import deliver_scheduled_reports, purge_audit_history
+{{/if}}from .tasks.audit_retention import purge_audit_history
+{{#if capability.reporting}}from .tasks.reporting import deliver_scheduled_reports
 {{/if}}
 
 
@@ -16,9 +16,11 @@ class WorkerSettings(WorkerSettingsBase):
     # service is needed for a sweep that runs once a day. Each capability
     # adds its sweeps to the one list.
     cron_jobs = [
+        # Foundation, like the table it sweeps: every product records audit
+        # events, so every product forgets them on a schedule.
+        cron(purge_audit_history, hour=3, minute=23),
 {{#if capability.ai}}        cron(purge_ai_history, hour=3, minute=17),
-{{/if}}{{#if capability.reporting}}        cron(purge_audit_history, hour=3, minute=23),
-        # The seam for scheduled delivery. Hourly, and it says nothing is
+{{/if}}{{#if capability.reporting}}        # The seam for scheduled delivery. Hourly, and it says nothing is
         # scheduled until a product gives it something to deliver.
         cron(deliver_scheduled_reports, minute=41),
 {{/if}}    ]

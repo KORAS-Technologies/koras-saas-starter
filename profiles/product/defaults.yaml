@@ -23,8 +23,9 @@ capabilities:
   # together: --with ai,ai_gateway.
   ai: false
   # Analytics for every product. Nothing external is needed, so it is on;
-  # --without reporting removes the router, the pages, the audit table and
-  # the extension point together.
+  # --without reporting removes the router, the pages and the extension
+  # point together. It no longer removes the audit table: that is foundation,
+  # because a product that records nothing cannot be asked what happened.
   reporting: true
 
 infrastructure:

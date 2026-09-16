@@ -3,10 +3,14 @@
 -- `koras_audit` has named the shape since the AI foundation -- an action, an
 -- actor, a tenant, a target, an outcome, and a small detail map that refuses
 -- anything named like a secret -- and the assistant kept its own copy in
--- `ai_audit_events`. Reporting is the first module outside the assistant
+-- `ai_audit_events`. Reporting was the first module outside the assistant
 -- with something to record: an export that left the product, a report about
 -- people that was opened. This is the general table, the second durable
 -- implementation of the same sink, and where every later module records.
+--
+-- It shipped inside the `reporting` capability and is foundation as of
+-- 2026-09-15, because a table every module records to cannot be removable by
+-- one of them: a product generated without reporting had nowhere to record.
 --
 -- The same shape and the same rules as 00009: a tenant column, RLS enabled
 -- and forced, insert and select for the tenant, no update and no delete for

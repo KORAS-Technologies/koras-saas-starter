@@ -53,9 +53,10 @@ capabilities:
   # requires the gateway service below, which is where the provider keys live.
   ai: true
   # Reporting and analytics: the registries, the reports router, the six
-  # standard tenant reports, the general audit table, the Analytics pages
-  # and the extension point a product registers its own reports in. On by
-  # default: it needs no external service.
+  # standard tenant reports, the Analytics pages and the extension point a
+  # product registers its own reports in. On by default: it needs no external
+  # service. The general audit table is not here -- it is foundation, and
+  # reporting is one of the modules that records to it.
   reporting: true
 
 registration:
@@ -142,10 +143,8 @@ template_map:
       - services/api/koras_api/routers/platform_reporting.py
       - services/api/koras_api/reporting
       - services/worker/koras_worker/tasks/reporting.py
-      - supabase/migrations/00013_audit_events.sql
       - supabase/migrations/00014_report_schedules.sql
       - supabase/migrations/00016_report_schedule_locale.sql
-      - supabase/tests/110_audit_isolation.sql
       - supabase/tests/130_report_schedules_isolation.sql
       - tests/unit/test_reporting_api.py
       - tests/unit/test_reporting_standard.py

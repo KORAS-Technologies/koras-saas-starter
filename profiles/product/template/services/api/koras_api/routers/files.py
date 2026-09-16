@@ -27,16 +27,18 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from koras_audit import Outcome
 from koras_platform import OrganizationRole
-from koras_storage import object_key, safe_filename
+from koras_storage import Category, object_key, safe_filename
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.engine import Row
 
+from ..core.audit import record
 from ..core.auth import AuthDep
 from ..core.database import DbSession
 from ..core.errors import ApiErrorCode, api_error
-from ..core.file_hooks import hooks
+from ..core.file_hooks import hooks, run_after_upload
 from ..core.storage import STORAGE_ENTITLEMENT, StorageDep
 from ..core.tenant import TenantDep
 
@@ -102,6 +104,34 @@ class UploadTicket(BaseModel):
 class DownloadTicket(BaseModel):
     url: str
     expires_in: int
+
+
+async def _record(
+    session: DbSession,
+    *,
+    tenant_id: str,
+    actor_id: str,
+    action: str,
+    target_id: str,
+    outcome: Outcome,
+    details: dict[str, str | int | bool] | None = None,
+) -> None:
+    """Record one storage event. Everything here targets a file.
+
+    Never `storage_key`: `koras_audit` refuses a detail whose name contains
+    `key`, and the object key is half a signed URL anyway. The file id is
+    what a later question is asked about.
+    """
+    await record(
+        session,
+        tenant_id=tenant_id,
+        actor_id=actor_id,
+        action=action,
+        target_type="file",
+        target_id=target_id,
+        outcome=outcome,
+        details=details,
+    )
 
 
 def _require_grant(storage: StorageDep) -> None:
@@ -176,11 +206,30 @@ async def request_upload(
     checked here, against ready bytes plus this file, so a customer at the
     ceiling is told before uploading rather than after.
     """
+    if not storage.grant.enabled:
+        await _record(
+            session,
+            tenant_id=tenant.id,
+            actor_id=claims.sub,
+            action="storage.upload.refused",
+            target_id="-",
+            outcome="denied",
+            details={"reason": "entitlement", "size_bytes": body.size_bytes},
+        )
     _require_grant(storage)
     limit = storage.grant.limit_bytes
     if limit is not None:
         used = await _used_bytes(session, tenant.id)
         if used + body.size_bytes > limit:
+            await _record(
+                session,
+                tenant_id=tenant.id,
+                actor_id=claims.sub,
+                action="storage.upload.refused",
+                target_id="-",
+                outcome="denied",
+                details={"reason": "quota", "size_bytes": body.size_bytes},
+            )
             raise api_error(
                 status.HTTP_402_PAYMENT_REQUIRED,
                 ApiErrorCode.STORAGE_LIMIT_EXCEEDED,
@@ -188,7 +237,7 @@ async def request_upload(
             )
 
     file_id = str(uuid.uuid4())
-    key = object_key(tenant.id, file_id, body.name)
+    key = object_key(tenant.id, file_id, body.name, category=Category.DOCUMENTS)
     content_type = body.content_type or "application/octet-stream"
     await session.execute(
         text(
@@ -233,10 +282,26 @@ async def complete_upload(
     mismatch means something other than the promised file was put there, and
     the row is removed rather than marked ready -- the object stays for the
     sweep, because deleting on a client's word is how a race loses a file.
+
+    The quota is checked again here, and not only when the ticket was issued.
+    Two tickets taken out together were each within the limit and together
+    over it, and nothing between the two checks stopped the second: the
+    ceiling was advisory until 2026-09-15. A confirmation that would cross it
+    is refused the way the ticket would have been, and its row goes the way a
+    size mismatch's does.
     """
     row = await _pending(session, tenant.id, file_id)
     actual = storage.store.head(row.storage_key)
     if actual is None:
+        await _record(
+            session,
+            tenant_id=tenant.id,
+            actor_id=claims.sub,
+            action="storage.upload.failed",
+            target_id=file_id,
+            outcome="failed",
+            details={"reason": "not_arrived"},
+        )
         raise api_error(
             status.HTTP_409_CONFLICT,
             ApiErrorCode.UPLOAD_NOT_ARRIVED,
@@ -245,11 +310,41 @@ async def complete_upload(
     if actual != row.size_bytes:
         await session.execute(text("delete from public.files where id = :id"), {"id": file_id})
         await session.commit()
+        await _record(
+            session,
+            tenant_id=tenant.id,
+            actor_id=claims.sub,
+            action="storage.upload.failed",
+            target_id=file_id,
+            outcome="failed",
+            details={"reason": "size_mismatch", "announced": row.size_bytes, "found": actual},
+        )
         raise api_error(
             status.HTTP_409_CONFLICT,
             ApiErrorCode.UPLOAD_SIZE_MISMATCH,
             "the object in the bucket is not the size that was announced",
         )
+
+    limit = storage.grant.limit_bytes
+    if limit is not None:
+        used = await _used_bytes(session, tenant.id)
+        if used + row.size_bytes > limit:
+            await session.execute(text("delete from public.files where id = :id"), {"id": file_id})
+            await session.commit()
+            await _record(
+                session,
+                tenant_id=tenant.id,
+                actor_id=claims.sub,
+                action="storage.upload.refused",
+                target_id=file_id,
+                outcome="denied",
+                details={"reason": "quota_at_confirm", "size_bytes": row.size_bytes},
+            )
+            raise api_error(
+                status.HTTP_402_PAYMENT_REQUIRED,
+                ApiErrorCode.STORAGE_LIMIT_EXCEEDED,
+                "this upload would exceed the storage included in the plan",
+            )
 
     now = datetime.now(UTC)
     await session.execute(
@@ -257,20 +352,35 @@ async def complete_upload(
         {"now": now, "id": file_id},
     )
     await session.commit()
-    if hooks.index is not None and credentials is not None and hooks.indexable(row.content_type):
-        # A type with text in it, or pages a vision model can read, so worth
-        # reading back and indexing after the response.
-        background.add_task(
-            hooks.index,
-            tenant_id=tenant.id,
-            organization_id=tenant.organization_id,
-            token=credentials.credentials,
-            file_id=file_id,
-            name=row.name,
-            content_type=row.content_type,
-            url=storage.store.presign_download(row.storage_key, row.name, DOWNLOAD_URL_SECONDS),
-            user_id=claims.sub,
-        )
+    await _record(
+        session,
+        tenant_id=tenant.id,
+        actor_id=claims.sub,
+        action="storage.object.uploaded",
+        target_id=file_id,
+        outcome="ok",
+        details={"size_bytes": row.size_bytes, "content_type": row.content_type},
+    )
+    interested = hooks.for_upload(row.content_type) if credentials is not None else ()
+    if interested:
+        # A type something registered an interest in -- text a model can read,
+        # or bytes a scanner wants -- so worth handing on after the response.
+        # One signed URL for all of them: minting one per hook would put more
+        # short-lived credentials in flight for no gain.
+        url = storage.store.presign_download(row.storage_key, row.name, DOWNLOAD_URL_SECONDS)
+        for hook in interested:
+            background.add_task(
+                run_after_upload,
+                hook,
+                tenant_id=tenant.id,
+                organization_id=tenant.organization_id,
+                token=credentials.credentials,
+                file_id=file_id,
+                name=row.name,
+                content_type=row.content_type,
+                url=url,
+                user_id=claims.sub,
+            )
     return FileRow(
         id=file_id,
         name=row.name,
@@ -283,9 +393,28 @@ async def complete_upload(
 
 @router.get("/files/{file_id}/download", response_model=DownloadTicket)
 async def download(
-    file_id: str, tenant: TenantDep, storage: StorageDep, session: DbSession
+    file_id: str,
+    claims: AuthDep,
+    tenant: TenantDep,
+    storage: StorageDep,
+    session: DbSession,
 ) -> DownloadTicket:
+    """A signed URL for one object, and a record that it was asked for.
+
+    The record is of the ticket, not of the bytes: the browser fetches the
+    object from the bucket, so the product never sees the transfer. A ticket
+    issued is the last thing this side can honestly claim to know.
+    """
     row = await _ready(session, tenant.id, file_id)
+    await _record(
+        session,
+        tenant_id=tenant.id,
+        actor_id=claims.sub,
+        action="storage.object.downloaded",
+        target_id=file_id,
+        outcome="ok",
+        details={"size_bytes": row.size_bytes},
+    )
     return DownloadTicket(
         url=storage.store.presign_download(row.storage_key, row.name, DOWNLOAD_URL_SECONDS),
         expires_in=DOWNLOAD_URL_SECONDS,
@@ -303,6 +432,15 @@ async def delete_file(
     """Object first, then row: a row without an object is a pending upload the
     list already hides, and an object without a row is what the sweep finds."""
     if not claims.has_role(*_MANAGERS):
+        await _record(
+            session,
+            tenant_id=tenant.id,
+            actor_id=claims.sub,
+            action="storage.object.delete_refused",
+            target_id=file_id,
+            outcome="denied",
+            details={"reason": "role"},
+        )
         raise api_error(
             status.HTTP_403_FORBIDDEN,
             ApiErrorCode.ROLE_REQUIRED,
@@ -310,10 +448,21 @@ async def delete_file(
         )
     row = await _ready(session, tenant.id, file_id)
     storage.store.delete(row.storage_key)
-    if hooks.remove is not None:
-        await hooks.remove(session, tenant.id, file_id)
+    for hook in hooks.for_delete():
+        undo = hook.before_delete
+        if undo is not None:
+            await undo(session, tenant.id, file_id)
     await session.execute(text("delete from public.files where id = :id"), {"id": file_id})
     await session.commit()
+    await _record(
+        session,
+        tenant_id=tenant.id,
+        actor_id=claims.sub,
+        action="storage.object.deleted",
+        target_id=file_id,
+        outcome="ok",
+        details={"size_bytes": row.size_bytes, "name": row.name},
+    )
 
 
 async def _ready(session: DbSession, tenant_id: str, file_id: str) -> Row[Any]:

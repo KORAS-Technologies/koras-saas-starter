@@ -34,8 +34,11 @@ from botocore.client import Config  # type: ignore[import-untyped]
 from botocore.exceptions import ClientError  # type: ignore[import-untyped]
 
 __all__ = [
+    "Category",
     "Destination",
+    "ObjectPage",
     "ObjectStore",
+    "StoredObject",
     "Provider",
     "S3ObjectStore",
     "StoragePolicy",
@@ -173,9 +176,70 @@ def safe_filename(name: str) -> str:
     return cleaned[:180] or "file"
 
 
-def object_key(tenant_id: str, file_id: str, name: str) -> str:
-    """tenants/<tenant>/<file>/<name>: readable back to its owner, never colliding."""
-    return f"tenants/{tenant_id}/{file_id}/{safe_filename(name)}"
+class Category(StrEnum):
+    """What an object is for. Mirrors the check constraint on `files.category`.
+
+    A closed set, because it is a path segment: an open one would let a caller
+    invent a prefix, and a prefix a caller invents is a prefix a caller can
+    aim somewhere else.
+    """
+
+    DOCUMENTS = "documents"
+    EXPORTS = "exports"
+    IMPORTS = "imports"
+    ATTACHMENTS = "attachments"
+    GENERATED = "generated"
+    REPORTS = "reports"
+    ARCHIVES = "archives"
+    TEMP = "temp"
+
+
+def object_key(
+    tenant_id: str, file_id: str, name: str, *, category: Category = Category.DOCUMENTS
+) -> str:
+    """tenants/<tenant>/<category>/<file>/<name>: readable back to its owner.
+
+    The tenant is the security boundary and the category is what the object is
+    for. Nothing else is in the key: an environment is already a separate
+    bucket, a deployment is already one product, and an organization is a fact
+    that changes -- a tenant that moved organization would have to have every
+    object copied to keep a key honest. A date would freeze a second such fact
+    for the sake of a listing nothing performs.
+
+    The category segment arrived on 2026-09-15. Keys written before it have no
+    such segment and are not rewritten: `files.storage_key` stores what was
+    signed, and rewriting it would unpick every row that holds one.
+    """
+    return f"tenants/{tenant_id}/{category}/{file_id}/{safe_filename(name)}"
+
+
+@dataclass(frozen=True)
+class StoredObject:
+    """One object as the bucket describes it, which is not what the index says.
+
+    The point of listing is to compare the two, so this carries only what a
+    bucket can answer for: the key, the size, and the entity tag where the
+    provider gives one. It is never a substitute for the row.
+    """
+
+    key: str
+    size: int
+    etag: str | None = None
+
+
+@dataclass(frozen=True)
+class ObjectPage:
+    """A page of a listing, and where to continue it.
+
+    Paged rather than whole: a tenant's prefix is unbounded, and a sweep that
+    reads all of it into memory is an outage waiting for the largest customer.
+    `truncated` says the bucket had more to give, which is not the same as
+    `cursor` being set on every provider.
+    """
+
+    objects: tuple[StoredObject, ...]
+    cursor: str | None = None
+    truncated: bool = False
 
 
 class ObjectStore(Protocol):
@@ -198,6 +262,37 @@ class ObjectStore(Protocol):
         ...
 
     def delete(self, key: str) -> None: ...
+
+    def list(self, prefix: str, *, cursor: str | None = None, limit: int = 1000) -> ObjectPage:
+        """What is actually in the bucket under a prefix.
+
+        Added for reconciliation, which two comments in this repository have
+        promised since 00005 and which could not be written without it: a row
+        without an object and an object without a row are both findable only
+        by asking the bucket what it holds. Never exposed to a tenant route --
+        the prefix is chosen by the caller, and a caller that can choose a
+        prefix can choose another tenant's.
+        """
+        ...
+
+    def copy(self, source_key: str, dest_key: str, *, dest: Destination | None = None) -> None:
+        """Copy one object, optionally into another destination.
+
+        There is no `move`. Copy and delete at the call site is two events in
+        the audit trail and one visible failure in between, where a move is
+        one event that either happened or silently half happened.
+        """
+        ...
+
+    def checksum(self, key: str) -> str | None:
+        """The provider's own digest, or None where it will not give a single one.
+
+        A multipart object's entity tag is a digest of digests and means
+        nothing to compare against a file's SHA-256, so it is reported as
+        absent rather than as a mismatch. This is what separates a digest a
+        client asserted from one a provider corroborated.
+        """
+        ...
 
 
 class S3ObjectStore:
@@ -269,3 +364,60 @@ class S3ObjectStore:
 
     def delete(self, key: str) -> None:
         self._client.delete_object(Bucket=self.destination.bucket, Key=key)
+
+    def list(self, prefix: str, *, cursor: str | None = None, limit: int = 1000) -> ObjectPage:
+        arguments: dict[str, Any] = {
+            "Bucket": self.destination.bucket,
+            "Prefix": prefix,
+            "MaxKeys": limit,
+        }
+        if cursor:
+            arguments["ContinuationToken"] = cursor
+        answer = self._client.list_objects_v2(**arguments)
+        objects = tuple(
+            StoredObject(
+                key=str(item["Key"]),
+                size=int(item.get("Size", 0)),
+                etag=_etag(item.get("ETag")),
+            )
+            for item in answer.get("Contents", [])
+        )
+        truncated = bool(answer.get("IsTruncated", False))
+        return ObjectPage(
+            objects=objects,
+            cursor=answer.get("NextContinuationToken") if truncated else None,
+            truncated=truncated,
+        )
+
+    def copy(self, source_key: str, dest_key: str, *, dest: Destination | None = None) -> None:
+        target = dest or self.destination
+        client = self._client if dest is None else S3ObjectStore(target)._client
+        client.copy_object(
+            Bucket=target.bucket,
+            Key=dest_key,
+            CopySource={"Bucket": self.destination.bucket, "Key": source_key},
+        )
+
+    def checksum(self, key: str) -> str | None:
+        try:
+            answer = self._client.head_object(Bucket=self.destination.bucket, Key=key)
+        except ClientError as error:
+            code = error.response.get("Error", {}).get("Code", "")
+            if code in {"404", "NoSuchKey", "NotFound"}:
+                return None
+            raise
+        return _etag(answer.get("ETag"))
+
+
+def _etag(value: object) -> str | None:
+    """A single-part entity tag, or None.
+
+    S3 quotes the tag, and suffixes it with `-<parts>` when the object was
+    uploaded in more than one. A suffixed tag is a digest of digests: it
+    cannot be compared with a digest of the bytes, so it is not returned as
+    one. Reporting it would turn "cannot verify" into "does not match".
+    """
+    if not isinstance(value, str):
+        return None
+    tag = value.strip('"')
+    return None if "-" in tag else tag

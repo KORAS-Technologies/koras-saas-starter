@@ -1,10 +1,9 @@
-"""Reporting's two sweeps: the audit table's retention, and scheduled delivery.
+"""Reporting's sweep: scheduled delivery.
 
-The retention sweep is the AI one's shape exactly: on the provisioning
-context, which migration 00013 admits for this delete and nothing else,
-with the pure statement taking the session so a test needs no database.
-`AUDIT_RETENTION_DAYS` is its own setting, read here rather than by every
-worker, and a year unless set.
+The audit table's retention sweep was here while `audit_events` was
+reporting's table. It is `tasks/audit_retention.py` now, and foundation,
+because the table is: a product generated without reporting still records
+and still has to forget.
 
 Delivery runs hourly. On the provisioning context it reads every schedule
 that is due; for each it opens a transaction as that tenant -- the same
@@ -71,10 +70,6 @@ from ..settings import settings
 class ReportingSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
-    #: Days an audit row is kept. A year: long enough to answer a question
-    #: about last quarter, short enough to stop growing forever.
-    audit_retention_days: int = 365
-
     #: The same SMTP settings the API's approval notices use. Unset means
     #: deliveries are recorded and logged rather than sent.
     smtp_host: str = ""
@@ -93,7 +88,6 @@ _PROVISIONING = text("select set_config('app.provisioning', 'on', true)")
 _AS_TENANT = text(
     "select set_config('app.provisioning', '', true), set_config('app.tenant_id', :tenant_id, true)"
 )
-_PURGE_AUDIT = text("delete from public.audit_events where created_at < :before returning id")
 
 _DUE = text(
     "select id::text as id, tenant_id::text as tenant_id, report_key, cadence, format, "
@@ -389,20 +383,6 @@ def _json(values: dict[str, Any]) -> str:
     return json.dumps(values, sort_keys=True)
 
 
-# ── the retention sweep ───────────────────────────────────────────────────────
-
-
-async def purge_audit_events(session: AsyncSession, *, retention_days: int) -> int:
-    """Remove audit rows older than `retention_days`; return how many."""
-    if retention_days < 1:
-        raise ValueError("AUDIT_RETENTION_DAYS must be at least 1; retention of nothing is a wipe")
-    before = datetime.now(UTC) - timedelta(days=retention_days)
-    await session.execute(_PROVISIONING)
-    removed = len((await session.execute(_PURGE_AUDIT, {"before": before})).all())
-    await session.commit()
-    return removed
-
-
 # ── the tasks ─────────────────────────────────────────────────────────────────
 
 
@@ -410,27 +390,6 @@ def _engine() -> AsyncEngine:
     return create_async_engine(
         settings.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     )
-
-
-async def purge_audit_history(ctx: dict[str, Any]) -> dict[str, Any]:
-    """The nightly sweep. Skips, loudly, when the worker has no database."""
-    if not settings.database_url:
-        logger.warning("audit retention skipped: the worker has no DATABASE_URL")
-        return {"status": "skipped", "reason": "no database"}
-    engine = _engine()
-    try:
-        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
-            removed = await purge_audit_events(
-                session, retention_days=reporting.audit_retention_days
-            )
-    finally:
-        await engine.dispose()
-    logger.info(
-        "audit retention removed %d row(s) older than %d days",
-        removed,
-        reporting.audit_retention_days,
-    )
-    return {"status": "ok", "removed": removed, "retention_days": reporting.audit_retention_days}
 
 
 async def deliver_scheduled_reports(ctx: dict[str, Any]) -> dict[str, Any]:

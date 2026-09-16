@@ -40,6 +40,7 @@ from koras_reporting import (
     row_count,
     visibility_for,
 )
+from koras_storage import Category, object_key
 from pydantic import BaseModel
 from sqlalchemy import text
 
@@ -326,7 +327,14 @@ _EXPORT_FAILED = text(
 
 
 def export_object_key(tenant_id: str, export_id: str, filename: str) -> str:
-    return f"tenants/{tenant_id}/exports/{export_id}/{filename}"
+    """An export's key, built by the one function that builds keys.
+
+    This spelled the same layout by hand until 2026-09-15, which is how a
+    second convention starts: two places that agree until one of them is
+    edited. `Category.EXPORTS` is the segment, and the result is byte for
+    byte what this returned before.
+    """
+    return object_key(tenant_id, export_id, filename, category=Category.EXPORTS)
 
 
 @router.get(
