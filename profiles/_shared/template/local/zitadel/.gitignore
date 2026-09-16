@@ -1,5 +1,12 @@
-# Written by provision.py: the local project and OIDC client, including the
-# client secret ZITADEL issues once at creation. A real credential, even for a
-# throwaway container, and exactly the kind of file that gets committed by a
-# hurried `git add -A`.
-provisioned.env
+# Written by provision.py and by anything else that provisions against the
+# local instance: the project and OIDC client, the client secret ZITADEL
+# issues once at creation, test principals and their passwords. Real
+# credentials, even for a throwaway container, and exactly the kind of file
+# that gets committed by a hurried `git add -A`.
+#
+# Every `.env` here, not one named file. This listed `provisioned.env` alone
+# until 2026-09-15, and `test-principals.env` -- a password in plain text --
+# sat untracked and unignored in koras-e2e-shop, one `git add -A` from being
+# published. A pattern that has to be extended per file is a pattern that
+# will be forgotten.
+*.env
