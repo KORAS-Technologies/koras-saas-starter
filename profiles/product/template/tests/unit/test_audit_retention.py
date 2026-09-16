@@ -7,7 +7,6 @@ Foundation, like the sweep itself. One number governed the whole table until
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -80,13 +79,23 @@ async def test_every_class_is_swept_at_its_own_age_in_one_transaction() -> None:
     # way leaves the table consistent with itself.
     assert len(deletes) == 4
 
-    by_class = {p["classification"]: p["before"] for _, p in deletes if p is not None}
-    now = datetime.now(UTC)
-    assert now - by_class["activity"] > timedelta(days=89)
-    assert now - by_class["security"] > timedelta(days=1094)
+    floors = {p["classification"]: p["floor"] for _, p in deletes if p is not None}
     # Security is kept longest; activity the shortest. The ordering is the
     # whole point of the column.
-    assert by_class["security"] < by_class["audit"] < by_class["activity"]
+    assert floors["security"] > floors["audit"] > floors["activity"]
+    assert floors["administrative"] == floors["audit"]
+
+    # The floor is a floor, not the answer: the age is resolved per row
+    # against the tenant's own override, so a tenant may lengthen.
+    for statement, _ in deletes:
+        assert "public.retention_days_for(e.tenant_id" in statement
+
+    kinds = {p["classification"]: p["kind"] for _, p in deletes if p is not None}
+    assert kinds["activity"] == "audit_activity"
+    assert kinds["security"] == "audit_security"
+    # Administrative shares the `audit` override key as well as its floor, so
+    # a tenant lengthening one lengthens both rather than being surprised.
+    assert kinds["administrative"] == kinds["audit"] == "audit"
 
 
 async def test_every_delete_excludes_rows_a_legal_hold_covers() -> None:

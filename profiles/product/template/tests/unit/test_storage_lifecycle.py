@@ -121,15 +121,26 @@ def test_a_sensitive_object_is_kept_longer_than_a_standard_one() -> None:
 
 
 async def test_a_date_is_derived_from_when_the_object_was_stored() -> None:
-    """Resolving late must not grant an old file a fresh full term."""
+    """Resolving late must not grant an old file a fresh full term.
+
+    The arithmetic moved into SQL when tenant overrides arrived, so what is
+    asserted here is that the statement derives from `created_at` rather than
+    from now, and resolves the floor against the tenant.
+    """
     old = NOW - timedelta(days=1000)
     session = _Session([_File(created_at=old)])
     resolved = await resolve_retention(session, floors=FLOORS, limit=10)  # type: ignore[arg-type]
 
     assert resolved == 1
-    update = next(p for t, p in session.statements if "set retain_until" in t and p is not None)
-    assert update["until"] == old + timedelta(days=2555)
-    assert update["policy"] == "platform:standard"
+    statement, params = next(
+        (t, p) for t, p in session.statements if "set retain_until" in t and p is not None
+    )
+    assert "f.created_at + make_interval" in statement
+    assert "public.retention_days_for(f.tenant_id" in statement
+    assert "now()" not in statement
+    assert params["days"] == 2555
+    assert params["kind"] == "storage_standard"
+    assert params["policy"] == "platform:standard"
 
 
 async def test_extension_only_ever_lengthens() -> None:
@@ -139,11 +150,21 @@ async def test_extension_only_ever_lengthens() -> None:
     session = _Session([_File()])
     await extend_to_floor(session, floors=FLOORS)  # type: ignore[arg-type]
 
-    updates = [t for t, _ in session.statements if "set retain_until" in t]
+    updates = [(t, p) for t, p in session.statements if "set retain_until" in t]
     assert len(updates) == 3  # one per classification
-    for statement in updates:
-        assert "retain_until < created_at + make_interval" in statement
-        assert "retain_until is not null" in statement
+    for statement, _ in updates:
+        assert "f.retain_until < f.created_at + make_interval" in statement
+        assert "f.retain_until is not null" in statement
+        # Against the resolved floor, so a tenant that lengthened its own
+        # retention is extended to *its* number rather than the platform's.
+        assert "public.retention_days_for(f.tenant_id" in statement
+
+    kinds = {p["classification"]: p["kind"] for _, p in updates if p is not None}
+    assert kinds == {
+        "standard": "storage_standard",
+        "sensitive": "storage_sensitive",
+        "restricted": "storage_restricted",
+    }
 
 
 async def test_a_held_object_is_never_selected_for_removal() -> None:

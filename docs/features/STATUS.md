@@ -22,13 +22,13 @@ Planner tracking for both features. Status vocabulary is
 | STORAGE-013 | Snapshot restore | NEW | Blocked — STORAGE-012 |
 | STORAGE-014 | Storage usage metrics | NOT REQUIRED | Closed — no metric API |
 | STORAGE-015 | Storage administration contracts | NEW | Planned |
-| STORAGE-016 | Storage configuration inheritance | NEW | Planned |
+| STORAGE-016 | Storage configuration inheritance | NEW | Built — tenant may lengthen only |
 | STORAGE-017 | Object integrity at upload | NEW | Built |
 | STORAGE-018 | Malware scan seam and quarantine | NEW | Built |
 | STORAGE-019 | Bucket/index reconciliation | NEW | Built |
 | STORAGE-020 | Multi-consumer upload hooks | EXTEND | Built |
 
-**12 built · 3 planned · 3 blocked · 2 closed**
+**13 built · 2 planned · 3 blocked · 2 closed**
 
 ## SAG-F2 — Audit Storage, Retention & Archival
 
@@ -44,26 +44,26 @@ Planner tracking for both features. Status vocabulary is
 | AUDIT-008 | Audit archival | NEW | Planned |
 | AUDIT-009 | Audit purge | EXTEND | Built — hold-aware since 2026-09-16 |
 | AUDIT-010 | Legal / compliance hold | NEW | Built |
-| AUDIT-011 | Audit export | NEW | Planned |
-| AUDIT-012 | Audit export jobs | EXTEND | Planned |
-| AUDIT-013 | Customer audit viewer contract | NEW | Planned |
+| AUDIT-011 | Audit export | NEW | Built |
+| AUDIT-012 | Audit export jobs | EXTEND | Built |
+| AUDIT-013 | Customer audit viewer contract | NEW | Built — the page and its e2e suite |
 | AUDIT-014 | Control Plane audit contract | EXISTING | Built |
 | AUDIT-015 | Audit RBAC | EXTEND | Built — `audit.view`, and the security class needs a manager |
 | AUDIT-016 | Audit integrity | EXISTING | Built |
 | AUDIT-017 | Audit observability | NOT REQUIRED | Closed — no metric API |
-| AUDIT-018 | Audit configuration inheritance | NEW | Planned |
+| AUDIT-018 | Audit configuration inheritance | NEW | Built |
 | AUDIT-019 | Audit action registry | NEW | Built |
 | AUDIT-020 | Audit event classification | NEW | Built |
 | AUDIT-021 | Storage operations recorded | NEW | Built |
 
-**14 built · 4 planned · 0 blocked · 3 closed**
+**18 built · 0 planned · 0 blocked · 3 closed**
 
 ## Blockers, and who owns them
 
 | Blocker | Blocks | Owner |
 |---------|--------|-------|
 | Nothing provisions a bucket | STORAGE-009..013, AUDIT-008 | A human decision; ADR 0006 question 1 |
-| No entitlement codes in the platform catalogue | STORAGE-012, AUDIT-011, AUDIT-015 | Control Plane work, governed by F3/F2b |
+| No entitlement codes in the platform catalogue | STORAGE-012; audit export is gated by permission alone | Control Plane work, governed by F3/F2b |
 | No metric API in the repository | STORAGE-014, AUDIT-017 | Open framework decision |
 | The two capabilities are undeclared | Every gated surface | Generator work; both off by default when declared |
 
@@ -87,12 +87,20 @@ software against a real environment and written down what happened.
 
 ## Recommended order
 
-1. **Independent security review** of what has shipped, before more ships.
-   Six commits of governance code have had no independent eyes, and the gap
-   widens with each feature rather than closing.
-2. **Answer ADR 0006 question 1.** It blocks six stories across both features
-   and is half a day of somebody's decision rather than of engineering.
-3. **Declare the two capabilities**, so the gated surfaces have somewhere to go.
-4. **AUDIT-011, audit export**, which reuses the reporting export pipeline and
-   is the last thing a customer would obviously ask for.
-5. **A manual pass.** Twenty-five cases, every verdict still blank.
+**SAG-F2 has no unbuilt stories left.** Everything below is either review,
+a decision, or work that belongs to SAG-F1.
+
+1. **Independent security review** of what has shipped. Eight commits of
+   governance code — migrations, policies, two destructive sweeps, an
+   authorization asymmetry, an export path that moves records out of the
+   product — have had no independent eyes, and the gap widens with each
+   feature rather than closing.
+2. **A manual pass.** Twenty-five cases, every verdict still blank, and the
+   export and hold flows have never been exercised by a person.
+3. **Answer ADR 0006 question 1.** It blocks five storage stories and is half
+   a day of somebody's decision rather than of engineering.
+4. **Declare the two capabilities.** Everything has landed in the foundation,
+   so every product carries holds, audit search, export and two sweeps whether
+   it wants them or not.
+5. **STORAGE-015**, the platform contract, so the console can show governance
+   state across the estate.

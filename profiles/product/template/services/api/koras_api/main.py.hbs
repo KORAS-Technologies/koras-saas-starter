@@ -18,6 +18,7 @@ from .core.settings import settings
 from .routers import (
 {{#if capability.ai}}    ai,
 {{/if}}    audit,
+    audit_exports,
     files,
     health,
     holds,
@@ -135,6 +136,11 @@ app.include_router(
 # compliance store.
 app.include_router(
     audit.router,
+    prefix="/api/v1",
+    dependencies=[Depends(limit_authenticated)],
+)
+app.include_router(
+    audit_exports.router,
     prefix="/api/v1",
     dependencies=[Depends(limit_authenticated)],
 )

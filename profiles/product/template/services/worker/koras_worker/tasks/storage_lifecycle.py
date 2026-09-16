@@ -26,7 +26,6 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import Any
 
 from koras_storage import ObjectStore, S3ObjectStore, StorageSettings, resolve_destination
@@ -86,9 +85,13 @@ _UNRESOLVED = text(
     "order by created_at limit :limit"
 )
 
+# The floor resolved against this tenant's own override, whichever is longer.
 _SET_RETENTION = text(
-    "update public.files set retain_until = :until, retention_policy = :policy "
-    "where id = cast(:id as uuid) and retain_until is null"
+    "update public.files f "
+    "   set retain_until = f.created_at + make_interval("
+    "         days => public.retention_days_for(f.tenant_id, :kind, :days)), "
+    "       retention_policy = :policy "
+    " where f.id = cast(:id as uuid) and f.retain_until is null"
 )
 
 #: Only lengthening, and set-based because it touches every row of a class.
@@ -96,14 +99,16 @@ _SET_RETENTION = text(
 #: *shortened* matches nothing, so a configuration change can extend retention
 #: and can never bring a deletion forward.
 _EXTEND = text(
-    "update public.files "
-    "   set retain_until = created_at + make_interval(days => :days), "
+    "update public.files f "
+    "   set retain_until = f.created_at + make_interval("
+    "         days => public.retention_days_for(f.tenant_id, :kind, :days)), "
     "       retention_policy = :policy "
-    " where coalesce(classification, 'standard') = :classification "
-    "   and retain_until is not null "
-    "   and status <> 'purged' "
-    "   and retain_until < created_at + make_interval(days => :days) "
-    "returning id"
+    " where coalesce(f.classification, 'standard') = :classification "
+    "   and f.retain_until is not null "
+    "   and f.status <> 'purged' "
+    "   and f.retain_until < f.created_at + make_interval("
+    "         days => public.retention_days_for(f.tenant_id, :kind, :days)) "
+    "returning f.id"
 )
 
 #: Due, and not held. The hold is checked in the query rather than after it,
@@ -184,13 +189,14 @@ async def resolve_retention(session: AsyncSession, *, floors: Floors, limit: int
     """
     rows = (await session.execute(_UNRESOLVED, {"limit": limit})).all()
     for row in rows:
-        days = floors.days_for(row.classification)
+        classification = row.classification or "standard"
         await session.execute(
             _SET_RETENTION,
             {
                 "id": row.id,
-                "until": row.created_at + timedelta(days=days),
-                "policy": f"platform:{row.classification or 'standard'}",
+                "kind": f"storage_{classification}",
+                "days": floors.days_for(row.classification),
+                "policy": f"platform:{classification}",
             },
         )
     await session.commit()
@@ -212,6 +218,7 @@ async def extend_to_floor(session: AsyncSession, *, floors: Floors) -> int:
             _EXTEND,
             {
                 "classification": classification,
+                "kind": f"storage_{classification}",
                 "days": floors.days_for(classification),
                 "policy": f"platform:{classification}",
             },

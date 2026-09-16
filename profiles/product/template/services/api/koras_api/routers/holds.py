@@ -16,6 +16,7 @@ the second pair of eyes.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Annotated
 
@@ -23,6 +24,7 @@ from fastapi import APIRouter, status
 from koras_auth.permissions import permissions_for
 from koras_platform import OrganizationRole
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 
 from ..core.audit import record
 from ..core.auth import AuthDep
@@ -263,3 +265,79 @@ async def _move(
 
 
 HoldsRouter = Annotated[APIRouter, router]
+
+
+# -- retention overrides -------------------------------------------------------
+
+
+class RetentionOverrides(BaseModel):
+    """What this tenant keeps, where it wants longer than the platform floor.
+
+    Days, by kind. A kind absent from the map takes the floor. A value shorter
+    than the floor is accepted into the row and loses at resolution, because
+    `retention_days_for` takes whichever is greater -- so a customer cannot
+    shorten retention by writing a smaller number, and does not get an error
+    for trying something the platform simply overrides.
+    """
+
+    audit_activity: int | None = Field(default=None, ge=1)
+    audit: int | None = Field(default=None, ge=1)
+    audit_security: int | None = Field(default=None, ge=1)
+    storage_standard: int | None = Field(default=None, ge=1)
+    storage_sensitive: int | None = Field(default=None, ge=1)
+    storage_restricted: int | None = Field(default=None, ge=1)
+
+
+_READ_RETENTION = text(
+    "select coalesce(retention_overrides, cast('{}' as jsonb)) as overrides "
+    "from public.tenant_settings where tenant_id = cast(:tenant_id as uuid)"
+)
+
+_WRITE_RETENTION = text(
+    "insert into public.tenant_settings (tenant_id, retention_overrides) "
+    "values (cast(:tenant_id as uuid), cast(:overrides as jsonb)) "
+    "on conflict (tenant_id) do update set retention_overrides = cast(:overrides as jsonb)"
+)
+
+
+@router.get("/settings/retention", response_model=RetentionOverrides)
+async def read_retention(
+    claims: AuthDep, tenant: TenantDep, session: DbSession
+) -> RetentionOverrides:
+    _require_permission(claims)
+    row = (await session.execute(_READ_RETENTION, {"tenant_id": tenant.id})).first()
+    stored = dict(row.overrides) if row is not None and row.overrides else {}
+    return RetentionOverrides(**stored)
+
+
+@router.put("/settings/retention", response_model=RetentionOverrides)
+async def write_retention(
+    body: RetentionOverrides, claims: AuthDep, tenant: TenantDep, session: DbSession
+) -> RetentionOverrides:
+    """Set this tenant's retention. Lengthening is the only direction that acts.
+
+    Changing what a customer keeps is an administrative act, so it needs the
+    same authority as placing a hold and is recorded as an administrative
+    event. The numbers go into the record; a retention policy is not a secret
+    and the point of the record is to be able to say when it changed.
+    """
+    _require_permission(claims)
+    await _require_manager(session, claims, tenant.id, "-", "changing retention for")
+
+    overrides = {key: value for key, value in body.model_dump().items() if value is not None}
+    await session.execute(
+        _WRITE_RETENTION, {"tenant_id": tenant.id, "overrides": json.dumps(overrides)}
+    )
+    await session.commit()
+
+    await record(
+        session,
+        tenant_id=tenant.id,
+        actor_id=claims.sub,
+        action="retention.changed",
+        target_type="tenant",
+        target_id=tenant.id,
+        outcome="ok",
+        details={key: int(value) for key, value in overrides.items()},
+    )
+    return RetentionOverrides(**overrides)

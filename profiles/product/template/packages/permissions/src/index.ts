@@ -103,6 +103,7 @@ export const PRODUCT_PERMISSIONS = [
   // Placing and lifting a legal hold is the authority to stop retention, and
   // lifting is the dangerous half. The Python catalogue mirrors both.
   'audit.view',
+  'audit.export',
   'audit.legal_hold',
 ] as const
 

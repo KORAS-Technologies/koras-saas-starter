@@ -43,6 +43,7 @@ PRODUCT_PERMISSIONS: tuple[str, ...] = (
     # member capability, and stopping retention with a legal hold is its own
     # authority. Mirrors the TypeScript catalogue.
     "audit.view",
+    "audit.export",
     "audit.legal_hold",
 )
 

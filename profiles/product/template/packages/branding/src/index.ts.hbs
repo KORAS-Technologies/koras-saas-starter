@@ -1589,6 +1589,21 @@ export const productConfig: ProductConfig = {
         group: 'primary',
         order: 0,
       },
+      // Audit. Foundation rather than a capability, and with no entitlement:
+      // reading one's own history is not a paid feature, because a customer
+      // who cannot answer "who deleted that" has a product they cannot be
+      // accountable for. The permission is administrative, so an ordinary
+      // member does not see the module at all -- hidden rather than locked,
+      // since there is nothing to upsell.
+      {
+        id: 'audit',
+        label: 'Audit',
+        icon: 'clock',
+        href: '/dashboard/audit',
+        group: 'primary',
+        order: 30,
+        requiredPermissions: ['audit.view'],
+      },
 {{#if capability.reporting}}
       // Analytics. Generated with the `reporting` capability, gated on the
       // permission every member holds and locked when the plan lacks it --

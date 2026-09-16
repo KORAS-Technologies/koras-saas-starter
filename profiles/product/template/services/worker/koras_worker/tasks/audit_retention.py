@@ -14,7 +14,6 @@ testable without a database.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -59,9 +58,15 @@ _PROVISIONING = text("select set_config('app.provisioning', 'on', true)")
 # The subquery is correlated on the row's own tenant, so one tenant's hold
 # never protects another's rows -- and never fails to protect its own, which
 # is the direction that matters.
+# `retention_days_for` resolves the floor against the tenant's own override,
+# per row, taking whichever is longer. A tenant may lengthen and may never
+# shorten, and doing it in the delete means the API and the job that actually
+# deletes cannot disagree about how long something is kept.
 _PURGE_AUDIT = text(
     "delete from public.audit_events e "
-    "where e.classification = :classification and e.created_at < :before "
+    "where e.classification = :classification "
+    "  and e.created_at < now() - make_interval("
+    "        days => public.retention_days_for(e.tenant_id, :kind, :floor)) "
     "  and not public.under_legal_hold(e.tenant_id, 'audit') "
     "returning e.id"
 )
@@ -71,9 +76,20 @@ _PURGE_AUDIT = text(
 #: removed nothing because there was nothing to remove are different nights.
 _HELD_AUDIT = text(
     "select count(*) as held from public.audit_events e "
-    "where e.classification = :classification and e.created_at < :before "
+    "where e.classification = :classification "
+    "  and e.created_at < now() - make_interval("
+    "        days => public.retention_days_for(e.tenant_id, :kind, :floor)) "
     "  and public.under_legal_hold(e.tenant_id, 'audit')"
 )
+
+#: Which override key governs each class. A class with no key here takes the
+#: floor and nothing else, which is the safe direction.
+OVERRIDE_KINDS = {
+    "activity": "audit_activity",
+    "audit": "audit",
+    "administrative": "audit",
+    "security": "audit_security",
+}
 
 
 def retention_by_class(settings: AuditSettings) -> dict[str, int]:
@@ -110,19 +126,16 @@ async def purge_audit_events(
                 f"audit retention for {name!r} must be at least 1 day; "
                 "retention of nothing is a wipe"
             )
-    now = datetime.now(UTC)
     await session.execute(_PROVISIONING)
     removed: dict[str, int] = {}
     held = 0
     for name, days in sorted(retention.items()):
-        before = now - timedelta(days=days)
+        bound = {"classification": name, "kind": OVERRIDE_KINDS[name], "floor": days}
         # Counted before the delete, because afterwards the rows a hold saved
         # and the rows that were never due look identical.
-        counted = await session.execute(
-            _HELD_AUDIT, {"classification": name, "before": before}
-        )
+        counted = await session.execute(_HELD_AUDIT, bound)
         held += int(counted.one().held)
-        rows = await session.execute(_PURGE_AUDIT, {"classification": name, "before": before})
+        rows = await session.execute(_PURGE_AUDIT, bound)
         removed[name] = len(rows.all())
     await session.commit()
     return removed, held

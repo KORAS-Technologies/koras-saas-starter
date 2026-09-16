@@ -652,6 +652,70 @@ export const en = {
   // (services/api/koras_api/core/errors.py). The API's own `message` is for
   // the log and never shown; these are what a person reads. Mapped by
   // `apps/web/src/lib/api-errors.ts`.
+  'audit.title':
+    'Audit',
+  'audit.description':
+    'What happened in your organization: who did what, to which record, and how it ended. Records are kept for as long as their kind requires and no longer.',
+  'audit.filters':
+    'Filters',
+  'audit.action':
+    'Action',
+  'audit.actor':
+    'Person',
+  'audit.outcome':
+    'Result',
+  'audit.classification':
+    'Kind',
+  'audit.any':
+    'Any',
+  'audit.apply':
+    'Search',
+  'audit.clear':
+    'Clear',
+  'audit.searching':
+    'Searching…',
+  'audit.empty':
+    'Nothing has been recorded yet.',
+  'audit.emptyFiltered':
+    'Nothing matches those filters.',
+  'audit.more':
+    'Show more',
+  'audit.when':
+    'When',
+  'audit.what':
+    'Action',
+  'audit.who':
+    'Person',
+  'audit.target':
+    'Record',
+  'audit.result':
+    'Result',
+  'audit.kind':
+    'Kind',
+  'audit.details':
+    'Details',
+  'audit.exportTitle':
+    'Export',
+  'audit.exportDescription':
+    'Take a copy of the records matching your filters. The file is prepared in the background and stays available for seven days.',
+  'audit.exportFormat':
+    'Format',
+  'audit.exportStart':
+    'Start export',
+  'audit.exportPending':
+    'Refresh',
+  'audit.exportDownload':
+    'Download',
+  'audit.exportEmpty':
+    'No exports yet.',
+  'audit.exportRows':
+    '{rows} records',
+  'audit.restricted':
+    'Some kinds of record need an owner or administrator to read.',
+  'audit.error.forbidden':
+    'You do not have permission to read the audit history.',
+  'audit.error.unavailable':
+    'The audit history could not be read right now.',
   'errors.tokenInvalid': 'Your session has expired. Sign in again.',
   'errors.tenantInactive': 'Your organisation is not active in this product.',
   'errors.roleRequired': 'Only an owner or administrator of your organisation can do that.',

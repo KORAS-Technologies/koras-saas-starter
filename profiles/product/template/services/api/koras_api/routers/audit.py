@@ -43,6 +43,10 @@ router = APIRouter(tags=["audit"])
 
 PERMISSION = "audit.view"
 
+#: Exporting is its own authority. A search shows a page inside the product; an
+#: export makes a copy that leaves it, and the two are not the same decision.
+EXPORT_PERMISSION = "audit.export"
+
 #: Reading the security class. The same two roles that may delete a file and
 #: lift a hold, because all three answer "who may see what went wrong".
 _MANAGERS = (OrganizationRole.OWNER, OrganizationRole.ADMIN)
@@ -58,7 +62,7 @@ MAX_LIMIT = 200
 MAX_RANGE_DAYS = 400
 
 
-def _max_range() -> timedelta:
+def max_range() -> timedelta:
     return timedelta(days=MAX_RANGE_DAYS)
 
 
@@ -84,7 +88,7 @@ class AuditPage(BaseModel):
     classifications: list[str]
 
 
-def _require_permission(claims: AuthDep) -> None:
+def require_view(claims: AuthDep) -> None:
     if PERMISSION not in permissions_for(claims.roles):
         raise api_error(
             status.HTTP_403_FORBIDDEN,
@@ -110,7 +114,7 @@ def visible_classes(claims: AuthDep) -> tuple[str, ...]:
     return ordinary
 
 
-_SEARCH = text(
+SEARCH_STATEMENT = text(
     "select id::text as id, action, actor_id, target_type, target_id, outcome, "
     " classification, details, created_at "
     "from public.audit_events "
@@ -135,7 +139,7 @@ _ONE = text(
 )
 
 
-def _row(row: object) -> AuditRow:
+def audit_row(row: object) -> AuditRow:
     return AuditRow(
         id=row.id,  # type: ignore[attr-defined]
         action=row.action,  # type: ignore[attr-defined]
@@ -171,7 +175,7 @@ async def search_audit(
     page's cursor to continue. Paging by timestamp rather than by offset,
     because an offset into a table that is being written to skips rows.
     """
-    _require_permission(claims)
+    require_view(claims)
     allowed = visible_classes(claims)
 
     if classification is not None:
@@ -188,14 +192,14 @@ async def search_audit(
 
     now = datetime.now(UTC)
     end = before or now
-    start = since or (end - _max_range())
+    start = since or (end - max_range())
     if start >= end:
         raise api_error(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             ApiErrorCode.FILTER_INVALID,
             "the range starts after it ends",
         )
-    if (end - start) > _max_range():
+    if (end - start) > max_range():
         raise api_error(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             ApiErrorCode.FILTER_INVALID,
@@ -203,7 +207,7 @@ async def search_audit(
         )
 
     result = await session.execute(
-        _SEARCH,
+        SEARCH_STATEMENT,
         {
             "tenant_id": tenant.id,
             "classes": list(allowed),
@@ -216,7 +220,7 @@ async def search_audit(
             "limit": limit,
         },
     )
-    rows = [_row(row) for row in result.all()]
+    rows = [audit_row(row) for row in result.all()]
 
     # Reading a tenant's own history is itself an event, and an ordinary one:
     # activity, not audit. Recorded with the shape of the question and never
@@ -249,7 +253,7 @@ async def read_audit_event(
     of a class this caller may not read, so that neither a tenancy boundary nor
     a classification boundary can be probed with a status code.
     """
-    _require_permission(claims)
+    require_view(claims)
     try:
         row = (
             await session.execute(
@@ -268,5 +272,5 @@ async def read_audit_event(
         raise api_error(
             status.HTTP_404_NOT_FOUND, ApiErrorCode.AUDIT_EVENT_NOT_FOUND, "no such event"
         )
-    return _row(row)
+    return audit_row(row)
 

@@ -1,0 +1,351 @@
+'use client'
+
+import { useCallback, useId, useState } from 'react'
+import type { AuditExportRow, AuditPage, AuditRow } from '@{{projectSlug}}/api-client'
+import type { Locale } from '@{{projectSlug}}/i18n'
+import { Button, Card, SelectField, TextField } from '@{{projectSlug}}/ui'
+import type { ActionResult, AuditQuery } from './actions'
+import { exportUrl, listExports, requestExport, searchAudit } from './actions'
+
+export interface AuditLabels {
+  filters: string
+  action: string
+  actor: string
+  outcome: string
+  classification: string
+  any: string
+  apply: string
+  clear: string
+  searching: string
+  empty: string
+  emptyFiltered: string
+  more: string
+  when: string
+  what: string
+  who: string
+  target: string
+  result: string
+  kind: string
+  details: string
+  exportTitle: string
+  exportDescription: string
+  exportFormat: string
+  exportStart: string
+  exportPending: string
+  exportDownload: string
+  exportEmpty: string
+  exportRows: string
+  restricted: string
+}
+
+const OUTCOMES = ['ok', 'denied', 'failed', 'pending'] as const
+const FORMATS = ['csv', 'json', 'ndjson'] as const
+
+/** `{name}` replaced, the way the rest of the product fills a sentence. */
+function fill(template: string, values: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ''))
+}
+
+function when(value: string, locale: Locale): string {
+  const at = new Date(value)
+  return Number.isNaN(at.getTime())
+    ? value
+    : new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'medium' }).format(at)
+}
+
+/**
+ * A tenant's own audit history.
+ *
+ * The filters are the ones the API declares and nothing else: there is no
+ * free-text search, here or there. What a caller may see is decided by the
+ * API from the verified token, so a security-classified row never reaches this
+ * component for an ordinary member -- there is no client-side redaction that
+ * could be wrong, and `classifications` says which classes the page covers so
+ * a thin result is explicable rather than mysterious.
+ */
+export function AuditPanel({
+  initial,
+  canExport,
+  locale,
+  labels,
+}: {
+  initial: ActionResult<AuditPage>
+  canExport: boolean
+  locale: Locale
+  labels: AuditLabels
+}) {
+  const [page, setPage] = useState<AuditPage | null>(
+    initial.status === 'ok' ? initial.value : null,
+  )
+  const [rows, setRows] = useState<AuditRow[]>(initial.status === 'ok' ? initial.value.events : [])
+  const [error, setError] = useState<string | null>(
+    initial.status === 'error' ? initial.message : null,
+  )
+  const [busy, setBusy] = useState(false)
+  const [query, setQuery] = useState<AuditQuery>({})
+  const [exports, setExports] = useState<AuditExportRow[]>([])
+  const [format, setFormat] = useState<string>('csv')
+  const [open, setOpen] = useState<string | null>(null)
+
+  const formId = useId()
+  const filtered = Object.values(query).some((value) => Boolean(value))
+
+  const run = useCallback(
+    async (next: AuditQuery, append: boolean) => {
+      setBusy(true)
+      setError(null)
+      const answer = await searchAudit(next)
+      setBusy(false)
+      if (answer.status === 'error') {
+        setError(answer.message)
+        return
+      }
+      setPage(answer.value)
+      setRows((current) => (append ? [...current, ...answer.value.events] : answer.value.events))
+    },
+    [],
+  )
+
+  const refreshExports = useCallback(async () => {
+    const answer = await listExports()
+    if (answer.status === 'ok') setExports(answer.value.exports)
+  }, [])
+
+  const startExport = useCallback(async () => {
+    setBusy(true)
+    setError(null)
+    const answer = await requestExport(format, query)
+    setBusy(false)
+    if (answer.status === 'error') {
+      setError(answer.message)
+      return
+    }
+    await refreshExports()
+  }, [format, query, refreshExports])
+
+  const download = useCallback(async (id: string) => {
+    const answer = await exportUrl(id)
+    if (answer.status === 'error') {
+      setError(answer.message)
+      return
+    }
+    // A signed URL with an attachment disposition: the browser saves it and
+    // the tab stays here.
+    window.location.assign(answer.value)
+  }, [])
+
+  return (
+    <div className="mt-8 flex flex-col gap-6" data-testid="audit">
+      <Card className="max-w-5xl">
+        <h2 className="font-display text-lg font-bold text-ink">{labels.filters}</h2>
+        <form
+          className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void run(query, false)
+          }}
+        >
+          <TextField
+            id={`${formId}-action`}
+            label={labels.action}
+            value={query.action ?? ''}
+            onChange={(event) => setQuery({ ...query, action: event.target.value || undefined })}
+          />
+          <TextField
+            id={`${formId}-actor`}
+            label={labels.actor}
+            value={query.actorId ?? ''}
+            onChange={(event) => setQuery({ ...query, actorId: event.target.value || undefined })}
+          />
+          <SelectField
+            id={`${formId}-outcome`}
+            label={labels.outcome}
+            value={query.outcome ?? ''}
+            onChange={(event) => setQuery({ ...query, outcome: event.target.value || undefined })}
+          >
+            <option value="">{labels.any}</option>
+            {OUTCOMES.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField
+            id={`${formId}-class`}
+            label={labels.classification}
+            value={query.classification ?? ''}
+            onChange={(event) =>
+              setQuery({ ...query, classification: event.target.value || undefined })
+            }
+          >
+            <option value="">{labels.any}</option>
+            {(page?.classifications ?? []).map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </SelectField>
+          <div className="flex items-end gap-3 sm:col-span-2 lg:col-span-4">
+            <Button type="submit" disabled={busy}>
+              {busy ? labels.searching : labels.apply}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={busy || !filtered}
+              onClick={() => {
+                setQuery({})
+                void run({}, false)
+              }}
+            >
+              {labels.clear}
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      {error !== null && (
+        <Card className="max-w-5xl border-danger/40">
+          <p role="alert" data-testid="audit-error" className="text-sm leading-6 text-ink-muted">
+            {error}
+          </p>
+        </Card>
+      )}
+
+      <Card className="max-w-5xl">
+        {rows.length === 0 ? (
+          <p className="text-sm leading-6 text-ink-muted">
+            {filtered ? labels.emptyFiltered : labels.empty}
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-sm">
+              <caption className="sr-only">{labels.filters}</caption>
+              <thead>
+                <tr className="border-b border-line">
+                  <th scope="col" className="py-2 pr-4 font-semibold text-ink">
+                    {labels.when}
+                  </th>
+                  <th scope="col" className="py-2 pr-4 font-semibold text-ink">
+                    {labels.what}
+                  </th>
+                  <th scope="col" className="py-2 pr-4 font-semibold text-ink">
+                    {labels.who}
+                  </th>
+                  <th scope="col" className="py-2 pr-4 font-semibold text-ink">
+                    {labels.target}
+                  </th>
+                  <th scope="col" className="py-2 pr-4 font-semibold text-ink">
+                    {labels.result}
+                  </th>
+                  <th scope="col" className="py-2 font-semibold text-ink">
+                    {labels.kind}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.id} className="border-b border-line/60 align-top">
+                    <td className="py-2 pr-4 text-ink-muted">{when(row.created_at, locale)}</td>
+                    <td className="py-2 pr-4 font-medium text-ink">{row.action}</td>
+                    <td className="py-2 pr-4 text-ink-muted">{row.actor_id}</td>
+                    <td className="py-2 pr-4 text-ink-muted">
+                      {row.target_type}
+                      {row.target_id === '-' ? '' : ` · ${row.target_id}`}
+                    </td>
+                    <td className="py-2 pr-4 text-ink-muted">{row.outcome}</td>
+                    <td className="py-2 text-ink-muted">
+                      {row.classification}
+                      {Object.keys(row.details).length > 0 && (
+                        <button
+                          type="button"
+                          className="ml-2 underline underline-offset-2"
+                          aria-expanded={open === row.id}
+                          onClick={() => setOpen(open === row.id ? null : row.id)}
+                        >
+                          {labels.details}
+                        </button>
+                      )}
+                      {open === row.id && (
+                        <pre className="mt-2 max-w-md overflow-x-auto rounded bg-surface-muted p-2 text-xs">
+                          {JSON.stringify(row.details, null, 2)}
+                        </pre>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {page?.cursor != null && (
+          <div className="mt-4">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void run({ ...query, before: page.cursor ?? undefined }, true)}
+            >
+              {busy ? labels.searching : labels.more}
+            </Button>
+          </div>
+        )}
+      </Card>
+
+      {canExport && (
+        <Card className="max-w-5xl">
+          <h2 className="font-display text-lg font-bold text-ink">{labels.exportTitle}</h2>
+          <p className="mt-2 text-sm leading-6 text-ink-muted">{labels.exportDescription}</p>
+          <div className="mt-4 flex flex-wrap items-end gap-3">
+            <SelectField
+              id={`${formId}-format`}
+              label={labels.exportFormat}
+              value={format}
+              onChange={(event) => setFormat(event.target.value)}
+            >
+              {FORMATS.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </SelectField>
+            <Button type="button" disabled={busy} onClick={() => void startExport()}>
+              {labels.exportStart}
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => void refreshExports()}>
+              {labels.exportPending}
+            </Button>
+          </div>
+
+          {exports.length === 0 ? (
+            <p className="mt-4 text-sm leading-6 text-ink-muted">{labels.exportEmpty}</p>
+          ) : (
+            <ul className="mt-4 flex flex-col gap-2">
+              {exports.map((row) => (
+                <li key={row.id} className="flex flex-wrap items-center gap-3 text-sm">
+                  <span className="font-medium text-ink">{row.format}</span>
+                  <span className="text-ink-muted">{when(row.created_at, locale)}</span>
+                  <span className="text-ink-muted">{row.status}</span>
+                  {row.status === 'ready' && (
+                    <>
+                      <span className="text-ink-muted">
+                        {fill(labels.exportRows, { rows: row.rows_exported })}
+                      </span>
+                      <Button type="button" onClick={() => void download(row.id)}>
+                        {labels.exportDownload}
+                      </Button>
+                    </>
+                  )}
+                  {row.status === 'failed' && row.error !== null && (
+                    <span className="text-ink-muted">{row.error}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+    </div>
+  )
+}

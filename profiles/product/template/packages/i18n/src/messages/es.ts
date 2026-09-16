@@ -650,6 +650,70 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'admin.home.signedInAs': 'Sesión iniciada como {name}.',
 
   /* ------------------------------------------ F20 phase 2: errors and email */
+  'audit.title':
+    'Auditoría',
+  'audit.description':
+    'Qué ha ocurrido en su organización: quién hizo qué, sobre qué registro y cómo terminó. Los registros se conservan el tiempo que exige su tipo y no más.',
+  'audit.filters':
+    'Filtros',
+  'audit.action':
+    'Acción',
+  'audit.actor':
+    'Persona',
+  'audit.outcome':
+    'Resultado',
+  'audit.classification':
+    'Tipo',
+  'audit.any':
+    'Cualquiera',
+  'audit.apply':
+    'Buscar',
+  'audit.clear':
+    'Limpiar',
+  'audit.searching':
+    'Buscando…',
+  'audit.empty':
+    'Aún no se ha registrado nada.',
+  'audit.emptyFiltered':
+    'No hay nada que coincida con esos filtros.',
+  'audit.more':
+    'Mostrar más',
+  'audit.when':
+    'Cuándo',
+  'audit.what':
+    'Acción',
+  'audit.who':
+    'Persona',
+  'audit.target':
+    'Registro',
+  'audit.result':
+    'Resultado',
+  'audit.kind':
+    'Tipo',
+  'audit.details':
+    'Detalles',
+  'audit.exportTitle':
+    'Exportar',
+  'audit.exportDescription':
+    'Obtenga una copia de los registros que coinciden con sus filtros. El archivo se prepara en segundo plano y permanece disponible durante siete días.',
+  'audit.exportFormat':
+    'Formato',
+  'audit.exportStart':
+    'Iniciar exportación',
+  'audit.exportPending':
+    'Actualizar',
+  'audit.exportDownload':
+    'Descargar',
+  'audit.exportEmpty':
+    'Aún no hay exportaciones.',
+  'audit.exportRows':
+    '{rows} registros',
+  'audit.restricted':
+    'Algunos tipos de registro solo pueden leerlos propietarios o administradores.',
+  'audit.error.forbidden':
+    'No tiene permiso para leer el historial de auditoría.',
+  'audit.error.unavailable':
+    'El historial de auditoría no se pudo leer en este momento.',
   'errors.tokenInvalid': 'Su sesión ha caducado. Inicie sesión de nuevo.',
   'errors.tenantInactive': 'Su organización no está activa en este producto.',
   'errors.roleRequired': 'Solo un propietario o administrador de su organización puede hacer eso.',

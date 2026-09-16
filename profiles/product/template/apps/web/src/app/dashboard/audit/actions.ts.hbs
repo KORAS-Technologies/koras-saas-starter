@@ -1,0 +1,103 @@
+'use server'
+
+import {
+  ApiError,
+  createAuditExport as createAuditExportRequest,
+  fetchAuditExportUrl,
+  fetchAuditExports,
+  searchAudit as searchAuditRequest,
+} from '@{{projectSlug}}/api-client'
+import type { AuditExportList, AuditExportRow, AuditPage } from '@{{projectSlug}}/api-client'
+import { can, signedInContext } from '../../../lib/access'
+import { apiErrorMessage } from '../../../lib/api-errors'
+import { translator } from '../../../lib/locale'
+import { apiBaseUrl, providerToken } from '../../../lib/session'
+
+/**
+ * The Audit page's server half.
+ *
+ * Every action re-establishes who is calling before it reaches the API, and
+ * the API decides again with the same token. Neither trusts the other: the
+ * page is a convenience and the API is the boundary.
+ *
+ * Nothing here filters rows. Which classes a caller may see is decided by the
+ * API from the verified token -- a security-classified row never reaches this
+ * process for an ordinary member -- so there is no client-side redaction to
+ * get wrong.
+ */
+
+export type ActionResult<T> = { status: 'ok'; value: T } | { status: 'error'; message: string }
+
+export interface AuditQuery {
+  action?: string
+  actorId?: string
+  outcome?: string
+  classification?: string
+  since?: string
+  before?: string
+}
+
+async function session(permission: 'audit.view' | 'audit.export') {
+  const context = await signedInContext()
+  if (context === null || !can(context.access, permission)) return null
+  const token = await providerToken()
+  const baseUrl = apiBaseUrl()
+  if (!token || !baseUrl) return null
+  return { baseUrl, token }
+}
+
+async function explain(error: unknown): Promise<string> {
+  const t = await translator()
+  if (error instanceof ApiError) {
+    const coded = apiErrorMessage(t, error.code)
+    if (coded !== null) return coded
+    if (error.status === 403) return t('audit.error.forbidden')
+  }
+  return t('audit.error.unavailable')
+}
+
+export async function searchAudit(query: AuditQuery): Promise<ActionResult<AuditPage>> {
+  const auth = await session('audit.view')
+  if (auth === null) return { status: 'error', message: (await translator())('audit.error.forbidden') }
+  try {
+    const page = await searchAuditRequest({ ...auth, ...query, limit: 50 })
+    return { status: 'ok', value: page }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function listExports(): Promise<ActionResult<AuditExportList>> {
+  const auth = await session('audit.view')
+  if (auth === null) return { status: 'error', message: (await translator())('audit.error.forbidden') }
+  try {
+    return { status: 'ok', value: await fetchAuditExports(auth) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function requestExport(
+  format: string,
+  query: AuditQuery,
+): Promise<ActionResult<AuditExportRow>> {
+  const auth = await session('audit.export')
+  if (auth === null) return { status: 'error', message: (await translator())('audit.error.forbidden') }
+  try {
+    const created = await createAuditExportRequest({ ...auth, ...query, format })
+    return { status: 'ok', value: created }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function exportUrl(exportId: string): Promise<ActionResult<string>> {
+  const auth = await session('audit.export')
+  if (auth === null) return { status: 'error', message: (await translator())('audit.error.forbidden') }
+  try {
+    const ticket = await fetchAuditExportUrl({ ...auth, exportId })
+    return { status: 'ok', value: ticket.url }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}

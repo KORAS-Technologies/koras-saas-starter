@@ -124,6 +124,21 @@ HOLD_ACTIONS = (
         classification=Classification.ACTIVITY,
         summary="A tenant's own audit history was read.",
     ),
+    AuditAction(
+        key="audit.exported",
+        classification=Classification.AUDIT,
+        summary="An export was requested; a copy of the records leaves the product.",
+    ),
+    AuditAction(
+        key="audit.export_downloaded",
+        classification=Classification.AUDIT,
+        summary="A finished audit export was fetched.",
+    ),
+    AuditAction(
+        key="retention.changed",
+        classification=Classification.ADMINISTRATIVE,
+        summary="A tenant changed how long it keeps records.",
+    ),
 )
 
 actions.extend(STORAGE_ACTIONS)

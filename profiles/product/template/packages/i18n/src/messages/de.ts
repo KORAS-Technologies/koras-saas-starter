@@ -661,6 +661,70 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'admin.home.signedInAs': 'Angemeldet als {name}.',
 
   /* ------------------------------------------ F20 phase 2: errors and email */
+  'audit.title':
+    'Prüfprotokoll',
+  'audit.description':
+    'Was in Ihrer Organisation geschehen ist: wer was mit welchem Datensatz getan hat und wie es ausging. Einträge werden so lange aufbewahrt, wie es ihre Art erfordert, und nicht länger.',
+  'audit.filters':
+    'Filter',
+  'audit.action':
+    'Aktion',
+  'audit.actor':
+    'Person',
+  'audit.outcome':
+    'Ergebnis',
+  'audit.classification':
+    'Art',
+  'audit.any':
+    'Alle',
+  'audit.apply':
+    'Suchen',
+  'audit.clear':
+    'Zurücksetzen',
+  'audit.searching':
+    'Wird gesucht…',
+  'audit.empty':
+    'Es wurde noch nichts aufgezeichnet.',
+  'audit.emptyFiltered':
+    'Zu diesen Filtern gibt es nichts.',
+  'audit.more':
+    'Mehr anzeigen',
+  'audit.when':
+    'Wann',
+  'audit.what':
+    'Aktion',
+  'audit.who':
+    'Person',
+  'audit.target':
+    'Datensatz',
+  'audit.result':
+    'Ergebnis',
+  'audit.kind':
+    'Art',
+  'audit.details':
+    'Details',
+  'audit.exportTitle':
+    'Export',
+  'audit.exportDescription':
+    'Erstellen Sie eine Kopie der Einträge, die Ihren Filtern entsprechen. Die Datei wird im Hintergrund erzeugt und bleibt sieben Tage verfügbar.',
+  'audit.exportFormat':
+    'Format',
+  'audit.exportStart':
+    'Export starten',
+  'audit.exportPending':
+    'Aktualisieren',
+  'audit.exportDownload':
+    'Herunterladen',
+  'audit.exportEmpty':
+    'Noch keine Exporte.',
+  'audit.exportRows':
+    '{rows} Einträge',
+  'audit.restricted':
+    'Manche Arten von Einträgen dürfen nur Eigentümer oder Administratoren lesen.',
+  'audit.error.forbidden':
+    'Sie haben keine Berechtigung, das Prüfprotokoll zu lesen.',
+  'audit.error.unavailable':
+    'Das Prüfprotokoll konnte derzeit nicht gelesen werden.',
   'errors.tokenInvalid': 'Ihre Sitzung ist abgelaufen. Melden Sie sich erneut an.',
   'errors.tenantInactive': 'Ihre Organisation ist in diesem Produkt nicht aktiv.',
   'errors.roleRequired':

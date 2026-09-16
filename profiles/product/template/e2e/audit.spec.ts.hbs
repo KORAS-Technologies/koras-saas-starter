@@ -1,0 +1,92 @@
+import { expect, test } from '@playwright/test'
+import { signInAs } from './support/session'
+
+/**
+ * The audit page, in a browser without an API.
+ *
+ * The suite runs against `next start` with a session secret and no API, so
+ * every read fails. That is the state worth proving: the page must render its
+ * frame, its filters and a sentence saying the history could not be read --
+ * never a blank frame, and never a spinner that stays.
+ *
+ * The rows themselves are exercised by the API's own tests and by the
+ * row-level security suite; what a browser can prove without a database is
+ * that the surface is reachable, operable by keyboard, and honest when the
+ * thing behind it is not answering.
+ */
+
+test('the page renders its frame and says when nothing answers', async ({ page, context }) => {
+  await signInAs(context)
+  await page.goto('/dashboard/audit')
+
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Audit')
+  await expect(page.getByTestId('audit')).toBeVisible()
+
+  // The refusal is a sentence, not an empty table. Scoped by test id: the
+  // shell carries its own live region, and an unscoped alert query would be
+  // asserting on whichever one happened to render first.
+  await expect(page.getByTestId('audit-error')).toBeVisible()
+  await expect(page.locator('#main-content')).toHaveCount(1)
+})
+
+test('the filters are declared, labelled and operable by keyboard', async ({ page, context }) => {
+  await signInAs(context)
+  await page.goto('/dashboard/audit')
+
+  // Every control has a real label, which is what a screen reader reads and
+  // what a `getByLabel` query proves exists.
+  await expect(page.getByLabel('Action')).toBeVisible()
+  await expect(page.getByLabel('Person')).toBeVisible()
+  await expect(page.getByLabel('Result')).toBeVisible()
+  await expect(page.getByLabel('Kind')).toBeVisible()
+
+  // There is no free-text search box: the filters are the ones the API
+  // declares, and a box that searched everything would be the thing the API
+  // deliberately does not offer.
+  await expect(page.getByRole('searchbox')).toHaveCount(0)
+
+  const action = page.getByLabel('Action')
+  await action.click()
+  await action.fill('storage.object.uploaded')
+  await expect(action).toHaveValue('storage.object.uploaded')
+
+  // Clear becomes available once something is filtered, and returns the form
+  // to its resting state.
+  const clear = page.getByRole('button', { name: 'Clear' })
+  await expect(clear).toBeEnabled()
+  await clear.click()
+  await expect(action).toHaveValue('')
+})
+
+test('the search button is reachable by keyboard and shows its working state', async ({
+  page,
+  context,
+}) => {
+  await signInAs(context)
+  await page.goto('/dashboard/audit')
+
+  const search = page.getByRole('button', { name: 'Search' })
+  await search.focus()
+  await expect(search).toBeFocused()
+  await search.press('Enter')
+
+  // Whatever the answer, the control returns to a usable state rather than
+  // staying disabled behind a request that failed.
+  await expect(search).toBeEnabled({ timeout: 10_000 })
+})
+
+test('it holds together at a phone width', async ({ page, context }) => {
+  await signInAs(context)
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.goto('/dashboard/audit')
+
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  await expect(page.getByTestId('audit')).toBeVisible()
+
+  // The page itself must not scroll sideways; the table may, inside its own
+  // container.
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+  )
+  expect(overflows).toBe(false)
+})

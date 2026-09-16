@@ -1145,3 +1145,98 @@ async function readUpTo(response: Response, maxBytes: number): Promise<ArrayBuff
   }
   return buffer
 }
+
+// -- audit ---------------------------------------------------------------------
+
+export interface AuditRow {
+  id: string
+  action: string
+  actor_id: string
+  target_type: string
+  target_id: string
+  outcome: string
+  classification: string
+  details: Record<string, unknown>
+  created_at: string
+}
+
+export interface AuditPage {
+  events: AuditRow[]
+  /** Pass back as `before` to continue. Absent when the page was not full. */
+  cursor: string | null
+  /** Which classes this caller was allowed to see, so a thin page is explicable. */
+  classifications: string[]
+}
+
+export interface AuditExportRow {
+  id: string
+  format: string
+  status: string
+  rows_exported: number
+  size_bytes: number | null
+  error: string | null
+  expires_at: string | null
+  created_at: string
+  ready_at: string | null
+}
+
+export interface AuditExportList {
+  exports: AuditExportRow[]
+}
+
+export interface AuditFilters {
+  action?: string
+  actorId?: string
+  outcome?: string
+  classification?: string
+  since?: string
+  before?: string
+  limit?: number
+}
+
+function auditQuery(filters: AuditFilters): string {
+  const search = new URLSearchParams()
+  if (filters.action) search.set('action', filters.action)
+  if (filters.actorId) search.set('actor_id', filters.actorId)
+  if (filters.outcome) search.set('outcome', filters.outcome)
+  if (filters.classification) search.set('classification', filters.classification)
+  if (filters.since) search.set('since', filters.since)
+  if (filters.before) search.set('before', filters.before)
+  if (filters.limit) search.set('limit', String(filters.limit))
+  const query = search.toString()
+  return query ? `?${query}` : ''
+}
+
+export function searchAudit(options: RequestOptions & AuditFilters): Promise<AuditPage> {
+  return request<AuditPage>(`/api/v1/audit${auditQuery(options)}`, options)
+}
+
+export function fetchAuditExports(options: RequestOptions): Promise<AuditExportList> {
+  return request<AuditExportList>('/api/v1/audit/exports', options)
+}
+
+export function createAuditExport(
+  options: RequestOptions & AuditFilters & { format: string },
+): Promise<AuditExportRow> {
+  return request<AuditExportRow>('/api/v1/audit/exports', options, {
+    method: 'POST',
+    body: {
+      format: options.format,
+      action: options.action ?? null,
+      actor_id: options.actorId ?? null,
+      outcome: options.outcome ?? null,
+      classification: options.classification ?? null,
+      since: options.since ?? null,
+      before: options.before ?? null,
+    },
+  })
+}
+
+export function fetchAuditExportUrl(
+  options: RequestOptions & { exportId: string },
+): Promise<DownloadTicket> {
+  return request<DownloadTicket>(
+    `/api/v1/audit/exports/${encodeURIComponent(options.exportId)}/download`,
+    options,
+  )
+}
