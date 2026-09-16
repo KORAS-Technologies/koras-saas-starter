@@ -177,7 +177,7 @@ def _store(client: _Client) -> S3ObjectStore:
     store = S3ObjectStore(
         Destination(Provider.SUPABASE, "http://localhost:9000", "local-dev", "us-east-1", "k", "s")
     )
-    store._client = client  # type: ignore[assignment]
+    store._client = client
     return store
 
 

@@ -44,9 +44,10 @@ from koras_storage import Category, object_key
 from pydantic import BaseModel
 from sqlalchemy import text
 
+from ..core.audit import SqlAuditSink
 from ..core.database import tenant_session
 from ..core.errors import ApiErrorCode, api_error
-from ..core.reporting import EXPORT_PERMISSION, ReportingDep, SqlAuditSink, TenantReporting
+from ..core.reporting import EXPORT_PERMISSION, ReportingDep, TenantReporting
 from ..core.storage import StorageDep, TenantStorage
 
 router = APIRouter(tags=["reports"])

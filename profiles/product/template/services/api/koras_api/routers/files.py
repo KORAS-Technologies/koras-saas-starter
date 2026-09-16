@@ -362,11 +362,12 @@ async def complete_upload(
         details={"size_bytes": row.size_bytes, "content_type": row.content_type},
     )
     interested = hooks.for_upload(row.content_type) if credentials is not None else ()
-    if interested:
+    if interested and credentials is not None:
         # A type something registered an interest in -- text a model can read,
         # or bytes a scanner wants -- so worth handing on after the response.
-        # One signed URL for all of them: minting one per hook would put more
-        # short-lived credentials in flight for no gain.
+        # One signed URL for all of them, and none at all when nothing wants
+        # the file: a signed URL is a bearer credential, so minting one that
+        # nobody reads is a credential in flight for no reason.
         url = storage.store.presign_download(row.storage_key, row.name, DOWNLOAD_URL_SECONDS)
         for hook in interested:
             background.add_task(
