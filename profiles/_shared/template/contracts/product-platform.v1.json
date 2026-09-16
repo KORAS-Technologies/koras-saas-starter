@@ -41,7 +41,8 @@
     },
     {"method": "get", "path": "/storage-defaults", "summary": "Where this product keeps files unless a policy says otherwise"},
     {"method": "get", "path": "/ai-usage", "capability": "ai", "summary": "Every tenant's AI usage per day since a date, aggregated; read by the platform's collector. Present only on a product generated with the assistant; a product without it answers 404 and the collector records nothing."},
-    {"method": "get", "path": "/activity", "capability": "reporting", "summary": "Every tenant's audited activity per day since a date -- events and distinct actors per action and outcome, never a name or a target; read by the platform's collector. Present only on a product generated with reporting; a product without it answers 404 and the collector records nothing."}
+    {"method": "get", "path": "/activity", "capability": "reporting", "summary": "Every tenant's audited activity per day since a date -- events and distinct actors per action and outcome, never a name or a target; read by the platform's collector. Present only on a product generated with reporting; a product without it answers 404 and the collector records nothing."},
+    {"method": "get", "path": "/governance", "summary": "Every tenant's stored objects, audit rows by class, legal holds and audit exports, as counts. What the product knows and the platform does not: how much is stored, how much carries a corroborated digest, how much has no retention resolved, how far back each class of audit row reaches, and what is under hold. Never a key, a filename, an actor or a hold reason. Deliberately not the provider or the quota: the platform owns both, and the product reads them with the customer's token, which a collector does not have."}
   ],
   "rules": {
     "machine_identity_only": {

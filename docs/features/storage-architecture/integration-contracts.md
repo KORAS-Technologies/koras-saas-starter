@@ -3,9 +3,10 @@
 What the Control Plane and a customer's own portal would consume, defined here
 so that building either later is an implementation rather than a negotiation.
 
-> **Nothing here is built, and nothing in this task modifies the Control Plane
-> or any generated product.** Contracts are defined; consumers are not written.
-> Status 2026-09-16.
+> **The product half of `GET /governance` is built as of 2026-09-16; everything
+> else here is a definition.** No consumer is written, and nothing in this work
+> modifies the Control Plane or any generated product — a contract the platform
+> can read is not the same as a platform that reads it.
 
 ## Where a contract lives
 
@@ -26,14 +27,26 @@ A breaking change is a `v2` alongside `v1`, never an edit to `v1`.
 
 All on the private prefix `/internal/platform/v1`, counts and aggregates only.
 
-### `GET /storage-summary`
+### `GET /governance` — **built 2026-09-16**
 
-Per tenant: object count, total bytes, bytes by category, the provider actually
-in use, and the quota ceiling resolved for that tenant.
+One route rather than four, because the collector wants all of it at once and
+four round trips per product per sweep is three more chances for a partial
+picture nobody notices. Per tenant: stored objects and bytes, how many are
+quarantined, how many are stranded mid-purge, how many carry a digest and how
+many of those a provider corroborated, how many have no retention resolved, and
+how many a hold is keeping. Plus audit rows by class with the oldest of each,
+hold counts by scope and status, and export counts by status.
 
-**No names, no keys, no uploader identities.** The platform is answering "is this
-customer near their limit and where are their files", not "what does this
-customer have".
+**No names, no keys, no uploader identities, no hold reasons.** The platform is
+answering "is retention working across the estate", not "what does this customer
+have".
+
+**The provider and the quota were dropped from this contract**, and the reason is
+worth keeping. Both come from the Control Plane's own storage policy and
+entitlement catalogue, so asking a product for them would be asking it to echo
+the platform's own records — and the product could not answer honestly anyway,
+because it reads both with the *customer's* token and a collector has none. What
+a product knows that the platform does not is what it actually stored.
 
 ### `GET /storage-backup-status`
 
@@ -61,7 +74,10 @@ unverifiable rows — and whether the listing was partial.
 **`partial` must be carried through to the console.** A count derived from an
 unfinished listing that is presented as a total is worse than no count.
 
-*Buildable now: the sweep exists and records these.*
+*Still to build.* The sweep records its findings as audit rows rather than to a
+table, so this would read them back out of `audit_events` — which works and is
+slightly indirect. A counts table would be the cleaner answer if the console
+ever wants a history rather than a latest.
 
 ## What the platform must never receive
 

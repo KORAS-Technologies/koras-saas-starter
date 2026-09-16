@@ -38,9 +38,26 @@ REQUIRED_ROUTES = tuple((r["method"], r["path"], r.get("capability")) for r in C
 CAPABILITIES = sorted({r["capability"] for r in CONTRACT["routes"] if r.get("capability")})
 
 
+def _foundation_routers() -> list[Path]:
+    """Every platform router a product carries regardless of its capabilities.
+
+    `platform.py` was the only one until 2026-09-16, when the governance
+    aggregates arrived and were too large to add to it. A route with no
+    `capability` in the contract may live in any of these; a route *with* one
+    lives in that capability's own file and nowhere else, which is what keeps
+    a product without the capability answering 404 rather than serving it.
+    """
+    capability_files = {_capability_router(name).name for name in CAPABILITIES}
+    return sorted(
+        path
+        for path in ROUTER.parent.glob("platform*.py")
+        if path.name not in capability_files
+    )
+
+
 def _router_source() -> str:
     assert ROUTER.is_file(), "the private platform router is missing"
-    sources = [ROUTER.read_text(encoding="utf-8")]
+    sources = [path.read_text(encoding="utf-8") for path in _foundation_routers()]
     for capability in CAPABILITIES:
         extra = _capability_router(capability)
         if extra.is_file():

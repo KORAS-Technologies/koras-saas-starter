@@ -21,14 +21,14 @@ Planner tracking for both features. Status vocabulary is
 | STORAGE-012 | Object restore | NEW | Blocked — STORAGE-011 |
 | STORAGE-013 | Snapshot restore | NEW | Blocked — STORAGE-012 |
 | STORAGE-014 | Storage usage metrics | NOT REQUIRED | Closed — no metric API |
-| STORAGE-015 | Storage administration contracts | NEW | Planned |
+| STORAGE-015 | Storage administration contracts | NEW | Built — `GET /governance` |
 | STORAGE-016 | Storage configuration inheritance | NEW | Built — tenant may lengthen only |
 | STORAGE-017 | Object integrity at upload | NEW | Built |
 | STORAGE-018 | Malware scan seam and quarantine | NEW | Built |
 | STORAGE-019 | Bucket/index reconciliation | NEW | Built |
 | STORAGE-020 | Multi-consumer upload hooks | EXTEND | Built |
 
-**13 built · 2 planned · 3 blocked · 2 closed**
+**14 built · 1 planned · 3 blocked · 2 closed**
 
 ## SAG-F2 — Audit Storage, Retention & Archival
 
