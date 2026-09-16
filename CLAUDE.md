@@ -56,6 +56,11 @@ All planning and reference documents live in `docs/`, matching
 | `docs/AUDIT_ARCHITECTURE.md`      | Audit as built: the envelope, the action registry, the four classes, retention |
 | `docs/RETENTION_POLICY.md`        | How long things are kept, the precedence, and which half is still design |
 | `docs/BACKUP_AND_RESTORE.md`      | Backup and restore: the design, and why none of it is built |
+| `docs/adr/0004-storage-provider-abstraction.md` | Why the provider seam is narrow, and what it refuses |
+| `docs/adr/0005-storage-object-hierarchy.md` | What is in an object key, and the five things deliberately left out |
+| `docs/adr/0006-backup-strategy.md` | Backup: what is settled, and the three questions that block building it |
+| `docs/features/README.md`         | The feature catalogue, and how it relates to the flat documents |
+| `docs/features/STATUS.md`         | Every SAG story, its class and its status |
 
 ## Repository layout (target state)
 
