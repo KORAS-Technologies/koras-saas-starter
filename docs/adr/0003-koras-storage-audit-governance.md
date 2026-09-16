@@ -28,10 +28,25 @@ the assistant and is not specific to it.
 
 1. *Governance is two capabilities over one foundation.* `storage_governance`
    and `audit_governance` are separate, so audit search and export need not
-   wait for a bucket that does not exist. Both are off by default, following
-   the `ai` precedent rather than the `reporting` one: a capability whose
-   later phases need an external resource stays off until a product asks for
-   it.
+   wait for a bucket that does not exist. **Declared 2026-09-16, and both are
+   on by default** — the `reporting` precedent, not the `ai` one, which this
+   record originally proposed. The reasoning changed with the building: `ai`
+   is off because it cannot work without a gateway service and provider keys,
+   and neither of these needs anything a product does not already have. The
+   three sweeps that *do* cost something are each off behind their own
+   setting, so the capability decides whether the code is present and the
+   setting decides whether it runs.
+
+   **What each gates is the surface, not the record.** Only one governance
+   migration is gated — `00025_file_backups.sql`, because nothing outside
+   `storage_backup.py` reads `file_backups`. Every other table stays in the
+   foundation, and the rule is stated rather than left to judgement: *a table
+   is gated only when no foundation code and no foundation migration reaches
+   it.* `audit_exports` fails that test twice over, `legal_holds` three times.
+   The rule exists because `audit_events` sat inside the `reporting` gate
+   until 2026-09-16, which meant a product generated without analytics
+   recorded nothing at all and nobody noticed — an empty audit table and an
+   absent one look identical from every screen a person opens.
 2. *The audit table is foundation, not a capability.* The table, the sink,
    the envelope and the basic retention sweep move out of the `reporting`
    gate and are generated into every product. A general audit table that an

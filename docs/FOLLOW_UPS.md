@@ -2260,13 +2260,14 @@ the work. Both reviewers returned BLOCK; everything they found is fixed and in
       effect: no provider in this estate offers tiering and no bucket is
       provisioned for an archive. ADR 0003 decision 11. A `tier` column that
       nothing acts on would be the defect this work exists to close.
-- [ ] **The two capabilities are undeclared.** A storage-governance capability
-      and an audit-governance capability were the plan's shape, and everything
-      shipped into the foundation instead, so every product has all of it. The
-      names are in ADR 0003 decision 1 rather than here, because a capability
-      named in a document and absent from every manifest reads exactly like one
-      a product could be generated without. Declaring them is a decision about
-      what a product may be generated without, not a gap in what was built.
+- [x] **The two capabilities are undeclared.** Declared 2026-09-16, both on by
+      default, and what they gate is the surface rather than the record: only
+      `00025_file_backups.sql` is a gated migration, because nothing outside
+      the backup sweep reads `file_backups`. A product generated without either
+      still records every event, still classifies and forgets it on a schedule,
+      still refuses a deletion under hold, and still answers the platform's
+      governance contract. What it loses is search, export, the holds routes,
+      the Audit page and the three sweeps.
 
 ### F23 — the sign-in page, on a host of ours — opened 2026-09-09, built 2026-09-11 as the product's own page
 

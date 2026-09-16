@@ -64,6 +64,7 @@ Planner tracking for both features. Status vocabulary is
 |---------|--------|-------|
 | Nothing provisions a bucket | AUDIT-008 | Answered 2026-09-16 for backup: a manual step, as `STORAGE_BUCKET` already is. The archive destination is still nobody's |
 | No entitlement codes in the platform catalogue | STORAGE-012; audit export is gated by permission alone | Control Plane work, governed by F3/F2b |
+| ~~Everything shipped into the foundation~~ | ~~every story~~ | Closed 2026-09-16: `audit_governance` and `storage_governance` are declared, both on by default |
 | No metric API in the repository | STORAGE-014, AUDIT-017 | Open framework decision |
 | The two capabilities are undeclared | Every gated surface | Generator work; both off by default when declared |
 

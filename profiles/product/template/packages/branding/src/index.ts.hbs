@@ -1589,12 +1589,18 @@ export const productConfig: ProductConfig = {
         group: 'primary',
         order: 0,
       },
-      // Audit. Foundation rather than a capability, and with no entitlement:
-      // reading one's own history is not a paid feature, because a customer
-      // who cannot answer "who deleted that" has a product they cannot be
-      // accountable for. The permission is administrative, so an ordinary
-      // member does not see the module at all -- hidden rather than locked,
-      // since there is nothing to upsell.
+{{#if capability.audit_governance}}
+      // Audit. Generated with the `audit_governance` capability -- the surface
+      // over the record, while the record itself is foundation -- and with no
+      // entitlement: reading one's own history is not a paid feature, because
+      // a customer who cannot answer "who deleted that" has a product they
+      // cannot be accountable for. The permission is administrative, so an
+      // ordinary member does not see the module at all: hidden rather than
+      // locked, since there is nothing to upsell.
+      //
+      // Both the wrapper and `requiredCapabilities`, like the assistant below.
+      // The wrapper keeps the entry out of a product that has no such page;
+      // the declaration keeps the shell honest if one is ever added by hand.
       {
         id: 'audit',
         label: 'Audit',
@@ -1603,7 +1609,9 @@ export const productConfig: ProductConfig = {
         group: 'primary',
         order: 30,
         requiredPermissions: ['audit.view'],
+        requiredCapabilities: ['audit_governance'],
       },
+{{/if}}
 {{#if capability.reporting}}
       // Analytics. Generated with the `reporting` capability, gated on the
       // permission every member holds and locked when the plan lacks it --

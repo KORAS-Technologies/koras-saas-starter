@@ -6,11 +6,12 @@ from .settings import settings
 from .tasks import example_task
 {{#if capability.ai}}from .tasks.ai_retention import purge_ai_history
 {{/if}}from .tasks.audit_retention import purge_audit_history
-from .tasks.governance_expiry import expire_audit_exports, expire_legal_holds
-{{#if capability.reporting}}from .tasks.reporting import deliver_scheduled_reports
-{{/if}}from .tasks.storage_backup import back_up_storage
+{{#if capability.audit_governance}}from .tasks.governance_expiry import expire_audit_exports, expire_legal_holds
+{{/if}}{{#if capability.reporting}}from .tasks.reporting import deliver_scheduled_reports
+{{/if}}{{#if capability.storage_governance}}from .tasks.storage_backup import back_up_storage
 from .tasks.storage_lifecycle import sweep_storage_lifecycle
 from .tasks.storage_reconcile import reconcile_storage
+{{/if}}
 
 
 class WorkerSettings(WorkerSettingsBase):
@@ -22,8 +23,8 @@ class WorkerSettings(WorkerSettingsBase):
         # Foundation, like the table it sweeps: every product records audit
         # events, so every product forgets them on a schedule.
         cron(purge_audit_history, hour=3, minute=23),
-        # Export artifacts past their expiry. On by default, unlike the two
-        # sweeps below: those remove a customer's own content, while this
+{{#if capability.audit_governance}}        # Export artifacts past their expiry. On by default, unlike the two
+        # storage sweeps: those remove a customer's own content, while this
         # removes an artifact the product generated with a date the product
         # itself displayed. Before it existed, the only thing that retired
         # an export was somebody opening the exports page.
@@ -33,8 +34,9 @@ class WorkerSettings(WorkerSettingsBase):
         # byte, and a holds list full of holds that hold nothing is how a
         # tenant loses track of the ones that do.
         cron(expire_legal_holds, hour=3, minute=31),
+{{/if}}
 {{#if capability.ai}}        cron(purge_ai_history, hour=3, minute=17),
-{{/if}}        # What the bucket holds against what the index says. Off unless
+{{/if}}{{#if capability.storage_governance}}        # What the bucket holds against what the index says. Off unless
         # STORAGE_RECONCILE_ENABLED asks for it, and it reports rather than
         # deletes: an object it cannot match is not proof of a leak.
         cron(reconcile_storage, hour=3, minute=41),
@@ -49,6 +51,7 @@ class WorkerSettings(WorkerSettingsBase):
         # own clock here rather than being deleted alongside it. Off unless
         # STORAGE_BACKUP_ENABLED asks -- it bills a second destination.
         cron(back_up_storage, hour=4, minute=39),
+{{/if}}
 {{#if capability.reporting}}        # The seam for scheduled delivery. Hourly, and it says nothing is
         # scheduled until a product gives it something to deliver.
         cron(deliver_scheduled_reports, minute=41),

@@ -27,6 +27,20 @@ capabilities:
   # point together. It no longer removes the audit table: that is foundation,
   # because a product that records nothing cannot be asked what happened.
   reporting: true
+  # The surface over the audit record: search, export, legal holds, the Audit
+  # page. On, because a product that records what happened and cannot show it
+  # is worse than one that does neither -- and because reading your own history
+  # is not a premium feature. `--without audit_governance` removes the routes,
+  # the page and the export sweep; the table, its classification and its
+  # nightly retention stay, because those are foundation.
+  audit_governance: true
+  # The three sweeps over stored objects: retention, reconciliation, backup.
+  # On, and each sweep is separately off until its own setting asks for it --
+  # `STORAGE_LIFECYCLE_ENABLED`, `STORAGE_RECONCILE_ENABLED`,
+  # `STORAGE_BACKUP_ENABLED` -- because two of them delete and the third bills
+  # a second destination. The capability decides whether the code is there; the
+  # settings decide whether it runs.
+  storage_governance: true
 
 infrastructure:
   supabase_region: "us-east-1"

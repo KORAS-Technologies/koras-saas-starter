@@ -17,12 +17,12 @@ from .core.settings import settings
 # template cannot know which it will be.
 from .routers import (
 {{#if capability.ai}}    ai,
-{{/if}}    audit,
+{{/if}}{{#if capability.audit_governance}}    audit,
     audit_exports,
-    files,
+{{/if}}    files,
     health,
-    holds,
-    platform,
+{{#if capability.audit_governance}}    holds,
+{{/if}}    platform,
 {{#if capability.ai}}    platform_ai,
 {{/if}}    platform_governance,
 {{#if capability.reporting}}    platform_reporting,
@@ -131,10 +131,11 @@ app.include_router(
     prefix="/api/v1",
     dependencies=[Depends(limit_authenticated)],
 )
-# A tenant's own audit history, and the legal holds that stop it expiring.
-# Foundation like the table they read and write: a product that records
-# without being able to answer what it recorded is a product with a write-only
-# compliance store.
+{{#if capability.audit_governance}}# A tenant's own audit history, and the legal holds that stop it expiring.
+# The surface over the record, not the record: `audit_events` and
+# `legal_holds` are foundation and exist whatever this capability says, so a
+# product generated without it still records what happened and still refuses a
+# deletion under hold. What it loses is the reading and the managing.
 # Exports first, and this order is load-bearing: Starlette matches in
 # registration order, so `/audit/{event_id}` registered before `/audit/exports`
 # reads "exports" as an event id, fails the uuid cast and answers 404. The
@@ -155,7 +156,7 @@ app.include_router(
     prefix="/api/v1",
     dependencies=[Depends(limit_authenticated)],
 )
-{{#if capability.ai}}# The assistant: conversations, messages and the actions a person decides.
+{{/if}}{{#if capability.ai}}# The assistant: conversations, messages and the actions a person decides.
 # The same customer surface and the same limiter; every route resolves the
 # tenant from the token and refuses before a model is called when the plan
 # lacks the assistant. See core/ai.py.

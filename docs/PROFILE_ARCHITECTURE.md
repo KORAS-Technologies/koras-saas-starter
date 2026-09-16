@@ -51,6 +51,8 @@ Two profiles exist initially:
 | Customer branding           | Yes       | No              |
 | AI foundation (`ai`)        | Optional (default off; needs `ai_gateway`) | No |
 | Reporting (`reporting`)     | Optional (default on) | No; the Control Plane builds its platform analytics on the same shared package |
+| Audit governance (`audit_governance`) | Optional (default on) | No | 
+| Storage governance (`storage_governance`) | Optional (default on) | No |
 | Custom domains              | Yes       | No              |
 | White labeling              | Yes       | No              |
 | **Control Plane Relationship** |        |                 |

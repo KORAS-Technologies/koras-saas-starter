@@ -284,15 +284,36 @@ registry, the quota is checked again at confirmation, and the reconciliation
 sweep two comments promised since `00005_files.sql` exists and reports without
 deleting.
 
-**What is not built matters as much as what is, and is easy to misread from the
-schema.** The governance columns exist and almost nothing writes them: as of
-2026-09-16 there is no retention engine for objects, no legal hold enforcement,
-no lifecycle transition, no backup, no restore, no audit search and no audit
-export. `docs/RETENTION_POLICY.md` marks its own two halves apart, and
-`docs/BACKUP_AND_RESTORE.md` is design only and says so in its first line. The
-two capabilities the plan named -- one for storage governance, one for audit --
-are still undeclared, which is why everything so far is foundation. No security
-review, privacy review or manual test pass has run against any of it.
+**It was finished on 2026-09-16 and the shop is level with it.** Object
+retention, legal holds, audit search and export, tenant retention overrides,
+the governance contract, reconciliation, the expiry sweeps and backup with
+digest verification all ship; restore does not, and is blocked on ADR 0006
+question 3 rather than on a bucket. Two independent reviews ran and both
+returned BLOCK; every finding is fixed in `1b59f29` and after. `koras-e2e-shop`
+carries all of it as of `98d078e`, with migrations 00019-00025 applied to the
+dev database and both workflows green.
+
+**The two capabilities are declared.** `audit_governance` and
+`storage_governance`, both on by default, and what they gate is the *surface*
+rather than the record: only `00025_file_backups.sql` is a gated migration. A
+product generated without either still records every event, classifies it,
+forgets it on a schedule, refuses a deletion under hold and answers the
+platform's governance contract. The rule is written down because breaking it
+has happened: a table is gated only when no foundation code and no foundation
+migration reaches it, and `audit_events` sat inside the `reporting` gate until
+this work, which meant a product without analytics recorded nothing and nobody
+noticed.
+
+**Three defects worth remembering, all found by asking what a comparison would
+actually compare.** `checksum()` returned a 32-character entity tag for a column
+holding 64 hex characters, so integrity could never be verified. The
+cross-provider backup wrote bytes without sending the digest, so a copy could
+never be more than `copied`. And the storage retention floor does two jobs --
+the minimum a tenant may not go below, and the period after which an object is
+deleted -- so setting it to one day would have purged every customer file the
+night after upload. `docs/RETENTION_POLICY.md` records the last one.
+
+No manual test pass has run against any of it.
 
 **One defect found and not fixed.** The API declares `fastapi>=0.115.0`, and at
 exactly 0.115.0 every route returning `None` with a 204 status fails at import

@@ -318,6 +318,11 @@ describe('nothing generated imports what was not generated', () => {
     ['sampleapp-leak-default', {}],
     ['sampleapp-leak-minimal', { without: ['admin', 'worker', 'reporting'] }],
     ['sampleapp-leak-ai', { with: ['ai', 'ai_gateway'] }],
+    // Without the two governance capabilities, which between them remove three
+    // worker sweeps, three routers and two core modules. The row exists because
+    // every capability added since this test was written has leaked at least
+    // once, and the leak is always a test file nobody remembered to gate.
+    ['sampleapp-leak-governance', { without: ['audit_governance', 'storage_governance'] }],
   ] as Array<[string, Overrides]>)('in a product generated as %s', async (slug, overrides) => {
     const gen = await generate('product', slug, overrides)
     const generated = new Set(gen.fileList)

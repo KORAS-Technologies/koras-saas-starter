@@ -58,6 +58,17 @@ capabilities:
   # service. The general audit table is not here -- it is foundation, and
   # reporting is one of the modules that records to it.
   reporting: true
+  # The surface over the audit record: search, export, legal holds and the
+  # Audit page. On by default. The record itself is not here and never will
+  # be -- `audit` above is the foundation that writes it, and `audit_events`
+  # sat inside the `reporting` gate until 2026-09-16, which meant a product
+  # generated without analytics recorded nothing and nobody noticed.
+  audit_governance: true
+  # The three sweeps over stored objects: retention, reconciliation and
+  # backup, with the catalogue the third writes. On by default, and each sweep
+  # is separately off until its own setting asks for it, because two of them
+  # delete and the third bills a second destination.
+  storage_governance: true
 
 registration:
   registers_as_product: true
@@ -156,6 +167,54 @@ template_map:
       - apps/web/src/app/dashboard/analytics
       - apps/web/src/app/api/reports
       - e2e/analytics.spec.ts
+    # Audit governance: the surface over the audit record, not the record.
+    #
+    # **Every migration stays out of this list, and that is the whole design.**
+    # `audit_events` sat inside the `reporting` gate until 2026-09-16, which
+    # meant a product generated without analytics recorded nothing at all and
+    # nobody noticed, because the absence looks exactly like an empty table.
+    # The rule this list follows instead: a table is gated only when no
+    # foundation code and no foundation migration reaches it. `audit_exports`
+    # fails that test twice over -- `platform_governance.py` counts it and
+    # `00024`'s `claimed_storage_keys` reads it -- and `legal_holds` fails it
+    # three times, because the object sweep, the audit sweep and
+    # `DELETE /files/{id}` all ask `under_legal_hold`.
+    #
+    # So what a product loses without this is the reading and the managing:
+    # search, export, the holds routes, the Audit page, and the sweep that
+    # retires an expired export. What it keeps is the record itself, its
+    # classification, its retention, and every table.
+    audit_governance:
+      - services/api/koras_api/core/audit_export.py
+      - services/api/koras_api/core/holds.py
+      - services/api/koras_api/routers/audit.py
+      - services/api/koras_api/routers/audit_exports.py
+      - services/api/koras_api/routers/holds.py
+      - services/worker/koras_worker/tasks/governance_expiry.py
+      - tests/unit/test_governance_review.py
+      - tests/unit/test_legal_holds.py
+      - apps/web/src/app/dashboard/audit
+      - e2e/audit.spec.ts
+    # Storage governance: the three sweeps over stored objects, and the
+    # catalogue one of them writes.
+    #
+    # `00025_file_backups.sql` *is* gated, and it is the only governance
+    # migration that is: nothing in the foundation reads `file_backups`, and
+    # nothing but `storage_backup.py` writes it. The columns the sweeps act on
+    # -- `retain_until`, `legal_hold`, `backup_status` -- live on `files` from
+    # `00018`, which is foundation, so a product without this capability has an
+    # index that records state nothing acts on. That is the honest shape: the
+    # column says what is true, and no sweep is pretending to maintain it.
+    storage_governance:
+      - services/worker/koras_worker/tasks/storage_backup.py
+      - services/worker/koras_worker/tasks/storage_lifecycle.py
+      - services/worker/koras_worker/tasks/storage_reconcile.py
+      - supabase/migrations/00025_file_backups.sql
+      - supabase/tests/240_file_backups_isolation.sql
+      - tests/unit/test_governance_sweeps_review.py
+      - tests/unit/test_storage_backup.py
+      - tests/unit/test_storage_lifecycle.py
+      - tests/unit/test_storage_reconcile.py
 
 # Components that need another enabled beside them. See the generator's
 # manifest schema for why this is refused rather than switched on silently.
