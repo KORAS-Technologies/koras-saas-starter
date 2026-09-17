@@ -39,8 +39,49 @@ started.
 | `STORAGE_R2_SECRET_KEY` | optional | — | As above |
 | `STORAGE_S3_ACCESS_KEY` | optional | — | For a customer whose policy names AWS S3 |
 | `STORAGE_S3_SECRET_KEY` | optional | — | As above |
-| `STORAGE_RECONCILE_ENABLED` | optional | off | Whether the nightly sweep runs at all |
+| `STORAGE_RECONCILE_ENABLED` | optional | **off** | Whether the nightly comparison of bucket against index runs. Reports; deletes nothing |
 | `STORAGE_PENDING_STALE_HOURS` | optional | 24 | When a pending upload is counted stale |
+| `STORAGE_LIFECYCLE_ENABLED` | optional | **off** | Whether objects past their retention are removed. **This one deletes** |
+| `STORAGE_RETENTION_DAYS_STANDARD` | optional | **unset — no expiry** | Not a short period: none. An ordinary document is kept until the customer deletes it |
+| `STORAGE_RETENTION_DAYS_SENSITIVE` | optional | 3650 | A classification a product sets deliberately, for content carrying an obligation |
+| `STORAGE_RETENTION_DAYS_RESTRICTED` | optional | 3650 | The same, and the narrower set |
+| `STORAGE_PURGE_LIMIT` | optional | 500 | Objects one nightly pass removes at most. A ceiling, so a mistyped floor cannot empty a bucket in a night |
+| `STORAGE_BACKUP_ENABLED` | optional | **off** | Whether the nightly copy runs. Bills a second destination |
+| `STORAGE_BACKUP_BUCKET` | optional | — | **No default.** Enabled without it is a failure, not a skip. Equal to `STORAGE_BUCKET` is refused |
+| `STORAGE_BACKUP_PROVIDER` | optional | same as source | `supabase`, `cloudflare-r2` or `aws-s3`. A name this product does not serve is refused |
+| `STORAGE_BACKUP_ENDPOINT` | optional | same as source | **Setting it changes the mechanism**, not just the address — see below |
+| `STORAGE_BACKUP_REGION` | optional | same as source | R2 wants `auto` |
+| `STORAGE_BACKUP_ACCESS_KEY` | optional | the primary pair | A separate pair is what stops one compromised credential reaching both copies |
+| `STORAGE_BACKUP_SECRET_KEY` | optional | the primary pair | As above |
+| `STORAGE_BACKUP_RETENTION_DAYS` | optional | 30 | How long a copy outlives the object it copies |
+| `STORAGE_BACKUP_LIMIT` | optional | 2000 | Objects copied in one pass at most |
+
+### The three switches that are off, and when each would run
+
+| Setting | Sweep | Runs at | What turning it on does |
+|---------|-------|---------|-------------------------|
+| `STORAGE_RECONCILE_ENABLED` | `reconcile_storage` | 03:41 | Lists every active tenant's prefix and compares it with the index. Reports orphans; **removes nothing** |
+| `STORAGE_LIFECYCLE_ENABLED` | `sweep_storage_lifecycle` | 04:07 | Resolves a retention date, lengthens one that falls short of a raised floor, and **deletes** what has passed one and no hold is keeping |
+| `STORAGE_BACKUP_ENABLED` | `back_up_storage` | 04:39 | Copies to the second destination and compares digests. Also retires copies past their date |
+
+**All three are unset in every environment as of 2026-09-16**, which is why
+none appears in Doppler. Absent is the configured state, not an omission: the
+manifest declares them `optional` so bootstrap does not demand them, and a
+product that never sets one never acquires a sweep by upgrading.
+
+**Turn the two reporting ones on freely.** Reconciliation deletes nothing by
+design, and backup only adds. **`STORAGE_LIFECYCLE_ENABLED` is the one to think
+about**: it is the only setting in this table whose effect is removal, and with
+`STORAGE_RETENTION_DAYS_STANDARD` unset it removes nothing anyway — every
+object of that class resolves to no date. It becomes destructive only once a
+floor is set or a tenant sets an override.
+
+**`STORAGE_BACKUP_ENDPOINT` deserves its own sentence.** Left unset, the
+provider copies server-side and no byte passes through the worker. Set to
+another provider's endpoint, no single provider can reach both ends, so each
+object is read into the worker and written out — bounded at 64 MiB per object,
+and anything larger is skipped with the run reported `partial`. It also means
+egress from the source provider on every first copy.
 
 Reconciliation is **off by default** deliberately: it lists every active
 tenant's prefix, which costs provider requests, and a product with a hundred
