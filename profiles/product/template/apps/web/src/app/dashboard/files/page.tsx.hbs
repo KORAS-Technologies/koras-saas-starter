@@ -1,4 +1,4 @@
-import { isEntitled } from '@{{projectSlug}}/branding'
+import { isEntitled, productConfig } from '@{{projectSlug}}/branding'
 import { AccessDenied, Card, Container, rich, strongTag } from '@{{projectSlug}}/ui'
 import { can, signedInContext } from '../../../lib/access'
 import { currentLocale, translator } from '../../../lib/locale'
@@ -77,7 +77,13 @@ export default async function FilesPage() {
     <div className="py-12">
       <Container>
         <h1 className="font-display text-2xl font-bold text-ink">{t('files.title')}</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">{t('files.intro')}</p>
+        {/* The sentence carries a `{product}` placeholder, so it needs the
+            name. Called without one it rendered the braces to the customer --
+            "stored in {product}" -- on a deployed product, found by opening
+            the page. */}
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
+          {t('files.intro', { product: productConfig.product.name })}
+        </p>
         {!entitlements.resolved && (
           <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">{t('files.unresolved')}</p>
         )}

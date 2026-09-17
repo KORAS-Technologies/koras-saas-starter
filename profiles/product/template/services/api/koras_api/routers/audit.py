@@ -122,10 +122,24 @@ SEARCH_STATEMENT = text(
     "  and classification = any(:classes) "
     "  and created_at >= :since "
     "  and created_at < :before "
-    "  and (:action is null or action = :action) "
-    "  and (:actor_id is null or actor_id = :actor_id) "
-    "  and (:outcome is null or outcome = :outcome) "
-    "  and (:target_type is null or target_type = :target_type) "
+    # Every optional filter is cast, and the cast is load-bearing rather than
+    # decorative. `where (:action is null or ...)` gives asyncpg a parameter it
+    # sees only inside an `is null` test, so it cannot infer a type and raises
+    # `AmbiguousParameterError: could not determine data type of parameter $N`
+    # -- before the query runs, for every search, whether or not a filter was
+    # supplied. Audit search was unusable on a deployed product from the day it
+    # shipped.
+    #
+    # Nothing caught it. The unit tests assert on this statement as *text*, and
+    # the row-level security suite runs raw SQL through psql, which infers types
+    # differently. No test executed this statement through the driver the API
+    # uses. The Control Plane hit the identical defect in its governance
+    # repository on the same day and fixed it the same way.
+    "  and (cast(:action as text) is null or action = cast(:action as text)) "
+    "  and (cast(:actor_id as text) is null or actor_id = cast(:actor_id as text)) "
+    "  and (cast(:outcome as text) is null or outcome = cast(:outcome as text)) "
+    "  and (cast(:target_type as text) is null "
+    "       or target_type = cast(:target_type as text)) "
     "order by created_at desc "
     "limit :limit"
 )
