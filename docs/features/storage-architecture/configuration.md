@@ -64,10 +64,20 @@ started.
 | `STORAGE_LIFECYCLE_ENABLED` | `sweep_storage_lifecycle` | 04:07 | Resolves a retention date, lengthens one that falls short of a raised floor, and **deletes** what has passed one and no hold is keeping |
 | `STORAGE_BACKUP_ENABLED` | `back_up_storage` | 04:39 | Copies to the second destination and compares digests. Also retires copies past their date |
 
-**All three are unset in every environment as of 2026-09-16**, which is why
-none appears in Doppler. Absent is the configured state, not an omission: the
-manifest declares them `optional` so bootstrap does not demand them, and a
-product that never sets one never acquires a sweep by upgrading.
+**Two of the three are unset in every environment as of 2026-09-16**, which is
+why neither appears in Doppler. Absent is the configured state, not an
+omission: the manifest declares them `optional` so bootstrap does not demand
+them, and a product that never sets one never acquires a sweep by upgrading.
+
+`STORAGE_BACKUP_ENABLED` is the exception and is `true` in all four of
+`koras-e2e-shop`'s configurations, with `supabase` and a `backups` bucket
+beside it. Only `dev` has the storage credentials the sweep needs; in `test`,
+`stg` and `prod` the switch is on over a provider that is not configured, so
+the nightly run has nothing to read. That is harmless -- an unconfigured
+provider is a skip, not a failure -- but it is a switch that reads as on and
+does nothing, which is exactly the shape that gets discovered during an
+incident. Either set the storage credentials in those three, or turn the
+switch off until they exist.
 
 **Turn the two reporting ones on freely.** Reconciliation deletes nothing by
 design, and backup only adds. **`STORAGE_LIFECYCLE_ENABLED` is the one to think
