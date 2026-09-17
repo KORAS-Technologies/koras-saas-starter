@@ -35,7 +35,19 @@ pnpm create-koras-app <name> --profile <profile> --provision-only --output-dir .
 
 cd ../output/<name>
 
-# 5. Create the restricted database role, ONCE PER ENVIRONMENT. Keep both URLs.
+# 5. Create the role the services connect as -- ONCE PER ENVIRONMENT, so four
+#    times. In: that environment's privileged Supabase URL. Out: a restricted
+#    one, printed once and stored nowhere.
+#
+#    Keep both. The one you passed in becomes DATABASE_ADMIN_URL (migrations,
+#    CI only); the one printed becomes DATABASE_URL (every service). Step 7
+#    asks for both, which is why this comes first.
+#
+#    Why it exists: RLS does not apply to a superuser, and Supabase issues one
+#    as its default credential -- so services using the dashboard URL get
+#    correct policies and no isolation at all. See R-032, and "What steps 5
+#    to 8 ask for" below for where the privileged URL comes from.
+#
 #    Needs psql. On Windows use Git Bash explicitly -- see the note below.
 bash local/scripts/create-app-role.sh "<privileged database url>"
 
@@ -168,11 +180,129 @@ the printed one becomes `DATABASE_URL`, the one you passed becomes
 `DATABASE_ADMIN_URL`. Losing it costs a re-run, which rotates the credential —
 that is the recovery path, not a failure.
 
-**Step 7 prompts per environment.** For a product, 11 settings come from
-Terraform and 13 are asked for — 11 of them unless `ai_gateway` is enabled,
-which adds `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`, plus the optional
-`GEMINI_API_KEY` and `OPENROUTER_API_KEY`. For the Control Plane, 12
-derived and 8 asked.
+**Step 7 prompts per environment.** For a product without `ai_gateway`, 12
+settings come from Terraform and **9** are asked for. Enabling `ai_gateway` adds
+one derived setting (`AI_GATEWAY_URL`) and **three** asked-for ones —
+`LITELLM_MASTER_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` — making 13 and 12,
+plus the optional `GEMINI_API_KEY` and `OPENROUTER_API_KEY`. For the Control
+Plane, 12 derived and 8 asked.
+
+Do not trust those numbers against a manifest you have in front of you — count
+it, because the manifest is the authority and this document is not:
+
+```bash
+# From the generated project. `supplied` is what step 7 will ask you for.
+grep -v '^#' local/config/secrets.manifest | awk 'NF {print $2}' | sort | uniq -c
+```
+
+This paragraph claimed "11 derived and 13 asked" until 2026-09-17, and the table
+below was missing four of the settings the script actually prompts for —
+`LITELLM_MASTER_KEY`, `ZITADEL_PLATFORM_CALLER_SUB`, `STORAGE_ACCESS_KEY` and
+`STORAGE_SECRET_KEY`. Three of those four are prompted for **every** product,
+which is why the count command is here rather than a promise to keep the list
+current.
+
+### Gather the values before you start
+
+The prompts come in one pass per environment, and **an empty answer is not
+recorded** — it prints `skipped, still missing` and marks the run failed. So
+collect everything first. Four environments, four passes; the checklist at the
+end of this section is what to fill in.
+
+Six groups, ordered so that each one's tab is open before you need it.
+
+**1 — Already in hand, from step 5.** Two per environment, and this is the whole
+reason step 5 comes first.
+
+| Setting | Value |
+|---|---|
+| `DATABASE_URL` | the restricted URL `create-app-role.sh` printed |
+| `DATABASE_ADMIN_URL` | the privileged Supabase URL you passed it |
+
+**2 — You generate.** Nobody issues these. A different value in every
+environment, both times.
+
+| Setting | How |
+|---|---|
+| `SESSION_SECRET` | `openssl rand -base64 48`. At least 32 characters. One shared key makes a development cookie a production cookie |
+| `LITELLM_MASTER_KEY` | `echo "sk-$(openssl rand -hex 32)"`. Only with `ai_gateway`. See below — empty is open, not off |
+
+**3 — You choose.** Neither is derivable, because neither names a resource
+Terraform created.
+
+| Setting | What to answer |
+|---|---|
+| `OTEL_SERVICE_NAME` | the product slug |
+| `STORAGE_BUCKET` | a bucket name you pick. The storage module provisions **no buckets**, so there is nothing to derive it from — and nothing creates the bucket either. Create it in Supabase Storage yourself |
+
+**4 — Supabase dashboard**, per environment, per project.
+
+| Setting | Where |
+|---|---|
+| `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` | that project → **Storage → S3 access keys** → create a pair. The API signs upload and download URLs with it and nothing else ever holds it. Locally these are MinIO's root pair, which is why a developer machine works while a deployed environment does not |
+| the **Description** field on that dialog | a label only — it appears in no key and no setting, and exists so you can tell pairs apart when one is rotated or revoked. Name it `<product>-<env>-api`, matching the `<component>-<env>` shape used for Fly apps and Vercel projects: `docoris-dev-api`. One pair per environment, never shared between them |
+
+Supabase says it plainly on that dialog, and it is worth reading twice: an S3 access key gives **full access to every bucket and bypasses every RLS policy**. That is the storage half of R-032. Row-level security protects rows, not blobs, so for files the isolation is the object key path and the short-lived signed URL, enforced separately — which is why storage tenancy is its own mechanism rather than a consequence of the database's. Treat this pair as being as privileged as `DATABASE_ADMIN_URL`: it belongs in Doppler and nowhere else, never in a `.env` and never in a Terraform artifact.
+
+**5 — ZITADEL**, per environment. Two values from two different places, and the
+second is the one people miss.
+
+| Setting | Where |
+|---|---|
+| `ZITADEL_CLIENT_SECRET` | that environment's ZITADEL console → **this product's** project → its OIDC application. ZITADEL shows it **once**; if it is gone, regenerate rather than guess |
+| `ZITADEL_PLATFORM_CALLER_SUB` | the `sub` of the estate's `product-caller` service account, which lives in the **platform's** ZITADEL organization, not this product's. Read it from the Control Plane's own key rather than retyping it — `doppler secrets get ZITADEL_PRODUCT_CALLER_KEY_JSON --plain --project koras-control-plane --config <env>`, and take the `userId` field, which *is* the `sub` because the assertion is issued and subjected to the service user. Or: ZITADEL console → the platform organization → Service Users → `product-caller` → its ID |
+
+`ZITADEL_PLATFORM_CALLER_SUB` has its own procedure, including the two settings
+that are not this one — `product-caller` must be on the **JWT** access token
+type, and it must have **no project grant**. Both are in
+`koras-control-plane/docs/runbooks/product-platform-caller.md`. Getting the token type wrong gives a
+401 *after* a successful token exchange, which reads like a credential problem
+and is not.
+
+**6 — Model providers**, only with `ai_gateway`. These are read by the gateway
+and by nothing else; the product never holds a provider credential.
+
+| Setting | Where to create it | If that URL has moved |
+|---|---|---|
+| `OPENAI_API_KEY` | <https://platform.openai.com/api-keys> | platform.openai.com → the project selector → **API keys** |
+| `ANTHROPIC_API_KEY` | <https://console.anthropic.com/settings/keys> | console.anthropic.com → **Settings → API keys** |
+| `GEMINI_API_KEY` *(optional)* | <https://aistudio.google.com/apikey> | aistudio.google.com → **Get API key** |
+| `OPENROUTER_API_KEY` *(optional)* | <https://openrouter.ai/keys> | openrouter.ai → **Keys** |
+
+The navigation path is given beside each link because console URLs move and the in-console path outlives them.
+
+**OpenAI and Anthropic cannot be skipped** — both are class `supplied`, so the prompt refuses an empty answer. Gemini and OpenRouter are `optional`: an unkeyed provider is answered with that provider's own refusal rather than silently falling through to another model.
+
+**Both need billing before the key works.** A key issued on an account with no credit returns a quota error on first use, which reads like a bad key and is not. Each key is shown **once**; copy it straight into Doppler, and reissue rather than hunt for a lost one. 
+**A separate key per environment is not required, and is worth doing anyway.** Label them the way the S3 pairs are labelled — `docoris-dev`, `docoris-prod` — so that revoking a leaked development key is not also a production incident.
+
+#### The checklist
+
+Per environment, before running step 7. Nine rows without `ai_gateway`, twelve
+with it.
+
+| # | Setting | dev | test | stg | prod |
+|---|---|:--:|:--:|:--:|:--:|
+| 1 | `DATABASE_URL` | ☐ | ☐ | ☐ | ☐ |
+| 2 | `DATABASE_ADMIN_URL` | ☐ | ☐ | ☐ | ☐ |
+| 3 | `SESSION_SECRET` | ☐ | ☐ | ☐ | ☐ |
+| 4 | `OTEL_SERVICE_NAME` | ☐ | ☐ | ☐ | ☐ |
+| 5 | `STORAGE_BUCKET` | ☐ | ☐ | ☐ | ☐ |
+| 6 | `STORAGE_ACCESS_KEY` | ☐ | ☐ | ☐ | ☐ |
+| 7 | `STORAGE_SECRET_KEY` | ☐ | ☐ | ☐ | ☐ |
+| 8 | `ZITADEL_CLIENT_SECRET` | ☐ | ☐ | ☐ | ☐ |
+| 9 | `ZITADEL_PLATFORM_CALLER_SUB` | ☐ | ☐ | ☐ | ☐ |
+| 10 | `LITELLM_MASTER_KEY` | ☐ | ☐ | ☐ | ☐ |
+| 11 | `OPENAI_API_KEY` | ☐ | ☐ | ☐ | ☐ |
+| 12 | `ANTHROPIC_API_KEY` | ☐ | ☐ | ☐ | ☐ |
+
+Rows 10 to 12 exist only when `ai_gateway` is enabled. Confirm the list against
+the manifest rather than against this table — the count command above is there
+because this table has been wrong before.
+
+#### The full reference
+
+Every prompt, including the optional ones the gather list does not walk through:
 
 | Prompt | Where the value comes from |
 |--------|----------------------------|
@@ -180,36 +310,282 @@ derived and 8 asked.
 | `DATABASE_ADMIN_URL` | the privileged URL you passed to step 5 |
 | `ZITADEL_CLIENT_SECRET` | that environment's ZITADEL console → the project → its OIDC application. ZITADEL shows it once |
 | `ZITADEL_SERVICE_TOKEN` | Control Plane only. A PAT on a machine user in that instance |
+| `ZITADEL_PLATFORM_CALLER_SUB` | that environment's ZITADEL: the subject of the identity the platform calls as. Prompted for every product |
+| `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` | the object store's credentials. Prompted for every product, and **not** derivable: the storage module provisions no bucket, so nothing in the Terraform outputs knows them |
+| `LITELLM_MASTER_KEY` | only when `ai_gateway` is enabled. **Nobody issues this one — you invent it.** See below |
 | `SESSION_SECRET` | `openssl rand -base64 48`. **Different in every environment** — one shared key makes a development cookie a production cookie |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | **Empty is valid and is the right answer until a collector exists.** Empty means no exporter, not no tracing: spans are still created and context still propagates |
 | `OTEL_EXPORTER_OTLP_HEADERS` | Empty unless a hosted collector needs auth, then `authorization=Basic <base64>` |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` for a managed collector, `grpc` otherwise. Not inferable — the local collector is an `http://` URL that speaks gRPC |
 | `OTEL_SERVICE_NAME` | the product slug |
-| `KORAS_CONTROL_PLANE_TOKEN` | **not** issued by the Control Plane, whatever this row said before 2026-08-30: nothing mints a per-product credential (F2b). It is a ZITADEL token for the estate-wide `registrar` service user, and it lasts twelve hours. The generator prefers `KORAS_CONTROL_PLANE_KEY_JSON` and mints per call (F2a). Empty is correct here: the deploy-time job that would read it is off by default |
+| `KORAS_CONTROL_PLANE_TOKEN` | **empty, and never copied from another product** — see below. **not** issued by the Control Plane, whatever this row said before 2026-08-30: nothing mints a per-product credential (F2b). It is a ZITADEL token for the estate-wide `registrar` service user, and it lasts twelve hours. The generator prefers `KORAS_CONTROL_PLANE_KEY_JSON` and mints per call (F2a). Empty is correct here: the deploy-time job that would read it is off by default |
 | `KORAS_CONTROL_PLANE_URL` | the Control Plane's address. Empty if there is none. It cannot be derived: the Control Plane is a separate estate with its own state |
 | `STORAGE_BUCKET` | a name you pick. The storage module provisions no buckets, so there is nothing to derive it from |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | only when `ai_gateway` is enabled |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_FROM`, `SMTP_USERNAME`, `SMTP_PASSWORD` | optional: any provider that speaks SMTP, for the mail the product sends itself (the assistant's approval notice). Empty means the notice is recorded and logged, not sent |
 | `GEMINI_API_KEY`, `OPENROUTER_API_KEY` | only when `ai_gateway` is enabled, and optional: an empty answer leaves that provider unkeyed, and a routing policy naming it is answered with the provider's refusal |
 
-**An empty answer is not recorded.** Pressing enter prints `skipped, still
-missing`, writes nothing, and marks the run failed; the script then hands off to
-`doppler-check.sh`, which reports it as absent. This sentence used to claim the
-opposite — that empty counted as answered — and it was wrong in a way that
-matters, because four of the settings above are *legitimately* empty and the
-prompt cannot express that.
+**`LITELLM_MASTER_KEY` is not a key anyone issues you.** It is a shared bearer
+token between two things the estate owns: the product's API sends it, and the
+product's own LiteLLM gateway checks it. It is unrelated to `OPENAI_API_KEY` and
+`ANTHROPIC_API_KEY`, which are the provider credentials the gateway then calls
+*with* — the gateway holds those so the product never does.
 
-Until that is fixed (F5a), set those four directly, which does record an empty
-value:
+Generate one, per environment, and a different one in each:
 
 ```bash
-printf '' | doppler secrets set OTEL_EXPORTER_OTLP_ENDPOINT \
-  --project <product> --config <environment> --no-interactive
+echo "sk-$(openssl rand -hex 32)"
 ```
 
-`doppler-check` reads names and never values, so an empty-valued secret passes
-it. That is the same guarantee as before; only the way to arrive at one has
-changed.
+No format is enforced — `guard.py` compares the bearer with
+`hmac.compare_digest` against whatever is set — but LiteLLM's own convention is
+an `sk-` prefix, so use it. Both the API and the gateway read the value from the
+same Doppler config, which is what makes the two sides match.
+
+**Empty is not "off", it is open.** The gateway's middleware treats an empty key
+as unset and stops validating (`self._key = key or None`), so a deployed gateway
+with no master key serves anyone who can reach its URL. This is not
+hypothetical: the manifest entry was marked `local` at one point, which left
+every deployed gateway with no master key at all. The product side fails closed
+— an empty value raises `CONFIGURATION_ERROR` rather than calling out
+unauthenticated — so the failure is one-sided and silent on the side that
+matters.
+
+Nothing consumes it until a product actually calls a model, so a placeholder now
+and a rotation later is defensible. A short or memorable one is not: it is the
+only thing between a public URL and a provider bill.
+
+#### The three Control Plane settings, and the one you must not copy
+
+All three are class `optional`. Step 7 does prompt for them, and pressing
+enter leaves each unset, which is correct for the third and wrong for the first
+two — those you type, per environment. Two are estate-wide identifiers that every product in
+an environment shares. The third looks like the other two and is not.
+
+| Setting | Shared across products? | What it is |
+|---|---|---|
+| `KORAS_CONTROL_PLANE_URL` | **Yes** — same value for every product in that environment | Where the Control Plane lives. One per environment |
+| `KORAS_CONTROL_PLANE_PROJECT_ID` | **Yes** — same value for every product in that environment | The Control Plane's ZITADEL project id, requested as an extra token audience at sign-in so a product's web tier can read a customer's own plan. An identifier, not a credential |
+| `KORAS_CONTROL_PLANE_TOKEN` | **No. Never copy it between products** | A bearer for the estate-wide `registrar` service account, valid twelve hours |
+
+```bash
+# The two that are copied. Per environment, per product.
+doppler secrets set KORAS_CONTROL_PLANE_URL --project <product> --config <env>
+doppler secrets set KORAS_CONTROL_PLANE_PROJECT_ID --project <product> --config <env>
+```
+
+**Why `KORAS_CONTROL_PLANE_TOKEN` is not one of them.** It is not per-product —
+nothing mints a per-product credential (F2b) — so the value sitting in one
+product's config is the *estate's* registrar, and the registrar can write **every
+product's registry entry**. Copying it from a product that has one gives each
+product write access to the other's registration. That is the reason the
+deploy-time registration job is off by default, not an incidental consequence of
+it.
+
+It also would not work. The token lasts twelve hours, so a value copied out of
+another product's Doppler is expired or about to be.
+
+**Empty is the correct answer**, and the failure mode of a wrong one is quiet:
+an unset Control Plane URL is a documented skip (R-001), so registration reports
+"no Control Plane configured" rather than failing. That is how an estate *with* a
+Control Plane went for a period reporting that it had none — the bootstrap
+prompted for `CONTROL_PLANE_API_KEY` while every reader looked for the prefixed
+name, and nothing anywhere went red.
+
+**What to do instead when a product's references need re-sending:**
+`--register-only` from the starter. It reads Terraform outputs and sends them,
+never plans and never applies, and the generator mints a token per call from
+`KORAS_CONTROL_PLANE_KEY_JSON` in the bootstrap config (F2a). Nothing long-lived
+has to sit in a product's Doppler at all.
+
+```bash
+pnpm create-koras-app <name> --profile <profile> --register-only --output-dir ../output
+```
+
+**If you find a token already set in a product's config**, it is one of two
+things: a deploy-time registration job that somebody deliberately enabled for
+that product, or a value set once and dead ever since. Neither is a reason to
+replicate it into a new product. Check
+`koras-control-plane/docs/PRODUCT_REGISTRATION_CONTRACT.md` and
+`docs/REGISTRATION_LIFECYCLE.md` before enabling the job anywhere.
+
+#### The retention settings, and the one that is not like the others
+
+Nine settings decide how long things are kept. All are class `optional` and **all
+have defaults**, so step 7 asks and enter is the right answer to every one of
+them. Leave them unset unless there is a reason to change one — a number typed to look decisive is the
+main way these go wrong.
+
+| Setting | Unset means | Keeps |
+|---|---|---|
+| `AI_RETENTION_DAYS` | 90 days | An assistant conversation, its messages and its actions, counted from when it was last *touched* rather than created. Usage rows survive the purge: a call that happened still happened |
+| `AI_AUDIT_RETENTION_DAYS` | 1 year | Assistant audit rows |
+| `AUDIT_RETENTION_DAYS` | 1 year | The `audit` and `administrative` classes. Foundation, like the table: every product records, so every product forgets |
+| `AUDIT_ACTIVITY_RETENTION_DAYS` | 90 days | `activity` — a file opened, a report viewed. The bulk of the rows and the least of them worth a year |
+| `AUDIT_SECURITY_RETENTION_DAYS` | **3 years** | `security` — a refusal, an authorization decision, a hold. The longest, because the question asked about one of these is usually asked late |
+| `STORAGE_BACKUP_RETENTION_DAYS` | 30 days | A backup copy, before the catalogue retires it. Deliberately shorter than the objects' own retention: a backup is insurance against losing something recently, not a second archive |
+| `REPORT_EXPORT_RETENTION_DAYS` | 7 days | A background report export in the tenant's bucket |
+| `STORAGE_RETENTION_DAYS_SENSITIVE` | 10 years | Objects a product classified `sensitive` |
+| `STORAGE_RETENTION_DAYS_RESTRICTED` | 10 years | Objects a product classified `restricted` |
+
+Every sweep is nightly, and every one asks about legal hold before it acts. A
+value below 1 is refused rather than honoured — `AI_RETENTION_DAYS must be at
+least 1; retention of nothing is a wipe`.
+
+**`STORAGE_RETENTION_DAYS_STANDARD` is the exception, and it is the dangerous
+one.** Unset does not mean a short default. It means **no automatic deletion at
+all**: an ordinary customer document is kept until the customer deletes it.
+
+Do not read it as "days before cleanup". It does two jobs at once — the floor a
+tenant may not go below, *and* the period after which an object is actually
+deleted — so a `7` there does not mean "keep for at least a week", it means every
+customer file of that class disappears in a week. That conflation has already
+produced a defect in this platform; `docs/RETENTION_POLICY.md` records it. A
+tenant may lengthen retention through their own override and may never shorten it
+below a floor that is set.
+
+`SENSITIVE` and `RESTRICTED` carry ten-year defaults for the opposite reason:
+those are classifications a product applies deliberately, to content it has
+decided carries an obligation.
+
+#### The sweeps, and the switches that start them
+
+Three nightly sweeps run over stored objects, and **each is separately off until
+its own setting asks for it**. The capability decides whether the code is there;
+these decide whether it runs. All are class `optional`: step 7 asks, and enter
+leaves each off, which is what you want until the product stores files.
+
+| Setting | Unset | Why it is opt-in rather than opt-out |
+|---|---|---|
+| `STORAGE_LIFECYCLE_ENABLED` | off | **It deletes.** Objects past their retention are removed — and a legal hold outranks it whatever the dates say |
+| `STORAGE_RECONCILE_ENABLED` | off | It deletes nothing, but it lists every active tenant's prefix, which costs provider requests on every run |
+| `STORAGE_BACKUP_ENABLED` | off | It bills a second destination |
+
+Two delete or cost money and the third costs money, which is the whole reason
+none of them defaults on.
+
+**`STORAGE_PENDING_STALE_HOURS`** is a parameter of the reconciliation sweep
+rather than a switch of its own: hours a `pending` file row is given to become
+`ready` before the sweep counts it as stale. **24 when unset**, and it does
+nothing at all while `STORAGE_RECONCILE_ENABLED` is off.
+
+Twenty-four hours, when the signed URL itself lasts fifteen minutes, is
+deliberate. Anything still pending at the sixteenth minute is already never
+completing — but clock skew, a retried confirm, a slow client and a queue
+backlog all leave a row briefly pending while nothing is wrong. A day is past
+every benign explanation, and since the outcome is a number in a report rather
+than a deletion, waiting costs nothing. A rising `stale_pending` count is a
+signal about the *upload path* — a confirm failing silently, clients abandoning
+uploads, quota refusals at confirmation — not about storage.
+
+**What reconciliation can and cannot see.** It covers the platform's default
+bucket only. The worker holds the platform's own credentials and nothing else: a
+customer's storage policy is read by the API with that customer's token, and the
+worker has no machine identity toward the platform (F2b). A tenant whose policy
+names a bucket of their own is therefore counted **unverifiable**, not missing —
+the difference between "the object is gone" and "the object is somewhere this
+process cannot look" is the difference between an alert and a false alarm.
+
+**A copy in the same bucket is not a backup.** `STORAGE_BACKUP_ENABLED` needs a
+destination, and the bucket is created by a person rather than by Terraform — the
+storage module provisions none, which is why `STORAGE_BUCKET` is `supplied` at
+all. A copy beside the original survives a deleted object and nothing else: not a
+deleted bucket, not a mistaken lifecycle rule, and not a compromised key, which
+reaches every object that key reaches. Use a different bucket at least, and a
+different provider where the data is worth a second bill.
+
+**Each sweep has a per-pass ceiling, and the two are not the same kind of
+number.**
+
+| Setting | Unset | The ceiling is there to contain |
+|---|---|---|
+| `STORAGE_PURGE_LIMIT` | 500 | **A mistake.** It is what stands between a mistyped retention floor and an empty bucket by morning: instead of losing everything you lose 500 objects, notice, and fix it |
+| `STORAGE_BACKUP_LIMIT` | 2000 | **A bill.** The dangerous moment for backup is day one, when an entire existing corpus is unbacked and one night's pass would copy all of it across egress and storage on a second destination |
+
+Both are per pass across the whole estate, not per tenant — so one misconfigured
+tenant can consume the whole budget while other tenants' work waits. That is
+acceptable for a safety ceiling and worth knowing before tuning either.
+
+`STORAGE_PURGE_LIMIT` is the one not to raise. It is not a throughput knob: it is
+the only thing containing the setting most likely to be misunderstood, which is
+`STORAGE_RETENTION_DAYS_STANDARD` two prompts earlier. A genuine retention
+backlog of more than 15,000 objects a month deserves a person looking at it
+rather than a larger number. `STORAGE_BACKUP_LIMIT` may reasonably be raised
+*temporarily* to clear an initial backlog and then put back; a permanently high
+ceiling is a bill waiting for a large tenant.
+
+A third ceiling sits outside this section and guards a third thing again:
+`AI_REQUESTS_PER_MINUTE` contains abuse rather than a mistake or a bill. All
+three default to a value chosen to be survivable, and none is a performance
+setting.
+
+**Turn them on in order, on dev, with a person reading the first report.**
+Reconciliation first, because it is the one that only looks; lifecycle last,
+because it is the one that deletes. The reconciliation sweep in particular was a
+promise in two migration comments from `00005_files.sql` until the storage
+protocol gained a listing operation, so its first output against a real bucket is
+worth eyes rather than a dashboard.
+
+#### One limit that is neither retention nor a sweep
+
+`AI_REQUESTS_PER_MINUTE` — model calls **one organization** may make in a minute,
+across all its users. **30 when unset; zero switches it off.** Also `optional`,
+so enter is the answer.
+
+It is the middle of three limits, and it exists because the other two leave a
+gap: the tier-2 limiter bounds one caller's requests, the plan's monthly
+allowance bounds a tenant's spend for the month, and without something in
+between a loop can make a model call every few milliseconds until the month's
+allowance is gone. The per-caller limiter does not see that shape, and the
+monthly allowance only notices after the money has left.
+
+It is a **setting rather than a plan entitlement, deliberately**: it exists to
+stop abuse, not to sell capacity. Wanting to raise it for a paying customer is
+the monthly allowance's job.
+
+Two behaviours to know before tuning it. It is keyed on the organization the
+token already proved, so it costs no tenant lookup and is one bucket per
+organization. And **no Redis degrades to allowing** — as every limiter here does
+— so it is a ceiling rather than a guarantee, and it will not hold during a Redis
+outage.
+
+**`optional` settings are prompted too — press enter on them.** The bootstrap
+skips only class `local`; everything else is asked for, in manifest order. What
+differs is what an empty answer does:
+
+| Class | Empty answer | Run |
+|---|---|---|
+| `supplied` | `skipped, still missing` | **marked failed** |
+| `optional` | `left unset` | fine — the default applies |
+| `derived` | not asked; taken from Terraform | — |
+
+So an `optional` you press enter on is answered, not skipped, and the line
+confirming it says `left unset`. A line that says `set` means a value was
+written. Input is read with `read -rs` and is not echoed, so a typo is invisible
+at the prompt and surfaces wherever the value is first parsed — a
+`STORAGE_RECONCILE_ENABLED` of `y` rather than `true` fails at worker startup,
+not here.
+
+Undo one with `doppler secrets delete <NAME> --project <product> --config <env>`.
+Deleting is the right correction rather than writing the default in by hand: an
+explicitly written value stops tracking the default if the default ever moves.
+
+**An empty answer to a `supplied` setting is not recorded.** Pressing enter
+prints `skipped, still missing`, writes nothing, and marks the run failed; the
+script then hands off to `doppler-check.sh`, which reports it as absent. That is
+correct behaviour for a `supplied` setting — there is no such thing as one that
+is legitimately empty, which is what the class means.
+
+**F5a is done, and this passage used to describe the workaround for it.** The
+prompt could not express "there is none", so the settings that are legitimately
+empty had to be written directly with `printf '' | doppler secrets set …`. They
+no longer do: those settings are class `optional`, enter answers them, and the
+script prints `left unset`. `doppler-check.sh` requires only names that are
+neither `local` nor `optional`, so an unset optional passes it — the guarantee is
+unchanged and the workaround is gone.
+
+If you are reading an older copy of this runbook that tells you to write empty
+values by hand, that copy predates the fix.
 
 Values are read with `read -rs` and piped to `doppler secrets set` on stdin, so
 none reaches `ps` output or shell history. Already-set values are skipped unless
