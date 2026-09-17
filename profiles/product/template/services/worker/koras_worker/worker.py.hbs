@@ -11,7 +11,8 @@ from .tasks import example_task
 {{#if capability.ai}}from .tasks.ai_retention import purge_ai_history
 {{/if}}from .tasks.audit_retention import purge_audit_history
 {{#if capability.audit_governance}}from .tasks.governance_expiry import expire_audit_exports, expire_legal_holds
-{{/if}}{{#if capability.reporting}}from .tasks.reporting import deliver_scheduled_reports
+{{/if}}from .tasks.product import PRODUCT_CRON_JOBS
+{{#if capability.reporting}}from .tasks.reporting import deliver_scheduled_reports
 {{/if}}{{#if capability.storage_governance}}from .tasks.storage_backup import back_up_storage
 from .tasks.storage_lifecycle import sweep_storage_lifecycle
 from .tasks.storage_reconcile import reconcile_storage
@@ -108,7 +109,16 @@ class WorkerSettings(WorkerSettingsBase):
 {{#if capability.reporting}}        # The seam for scheduled delivery. Hourly, and it says nothing is
         # scheduled until a product gives it something to deliver.
         cron(deliver_scheduled_reports, minute=41),
-{{/if}}    ]
+{{/if}}        # This product's own, from `tasks/product.py`. Last, so the
+        # starter's sweeps keep their order and a product reading this file
+        # can see where its own work joins.
+        #
+        # The list is empty in a freshly generated project. It exists because
+        # a product that had to edit *this* file to schedule anything would
+        # carry a permanent conflict into every future sync -- which is why
+        # `koras-e2e-shop` had a retention sweep it never ran.
+        *PRODUCT_CRON_JOBS,
+    ]
     # Derived from REDIS_URL rather than hardcoded. A fixed localhost:6379 is
     # not merely wrong once deployed -- the worker starts, stays up, and quietly
     # consumes an empty local queue while the real one fills elsewhere. On a

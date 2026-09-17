@@ -238,6 +238,38 @@ describe('the ai capability', () => {
   })
 })
 
+// ── the product's own extension points ───────────────────────────────────────
+//
+// A generated project has two places to put its own domain: reports, and now
+// scheduled work. Both ship as an empty stub the product replaces. The second
+// arrived on 2026-09-16 because its absence had already cost something --
+// `koras-e2e-shop` wrote an orders retention sweep, tested it, and could not
+// schedule it without editing a generated file, so it never ran.
+
+describe('the extension points ship empty', () => {
+  it('gives a product somewhere to put its own cron jobs', async () => {
+    const gen = await generate('product', 'sampleapp-seams')
+    const stub = gen.read('services/worker/koras_worker/tasks/product.py')
+
+    // Empty, or a new project starts with work nobody asked for.
+    expect(stub).toContain('PRODUCT_CRON_JOBS: list[CronJob] = []')
+
+    // And the worker actually reads it. A stub nothing imports is a file
+    // that looks like a seam and is not one, which is worse than no seam:
+    // somebody fills it in and nothing runs.
+    const worker = gen.read('services/worker/koras_worker/worker.py')
+    expect(worker).toContain('from .tasks.product import PRODUCT_CRON_JOBS')
+    expect(worker).toContain('*PRODUCT_CRON_JOBS,')
+  })
+
+  it('ships the reports stub empty too', async () => {
+    const gen = await generate('product', 'sampleapp-seams-reports')
+    const stub = gen.read('services/api/koras_api/reporting/reports.py')
+    expect(stub).toContain('METRICS: list[MetricDefinition] = []')
+    expect(stub).toContain('REPORTS: list[ReportDefinition] = []')
+  })
+})
+
 // ── capability leakage, derived rather than listed ───────────────────────────
 
 /**
