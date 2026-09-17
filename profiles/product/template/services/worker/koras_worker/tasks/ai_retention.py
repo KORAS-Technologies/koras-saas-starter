@@ -23,14 +23,14 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from ..settings import settings
+from ..settings import SweepSettings, settings
 
 
-class RetentionSettings(BaseSettings):
+class RetentionSettings(SweepSettings):
     """The sweep's own two settings, read here rather than by every worker.
 
     A Control Plane worker has no assistant and must not read a setting

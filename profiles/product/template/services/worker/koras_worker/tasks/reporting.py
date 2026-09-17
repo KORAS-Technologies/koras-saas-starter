@@ -54,7 +54,7 @@ from koras_reporting import (
     render,
     resolve_filters,
 )
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 from sqlalchemy import text
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import (
@@ -64,10 +64,10 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from ..settings import settings
+from ..settings import SweepSettings, settings
 
 
-class ReportingSettings(BaseSettings):
+class ReportingSettings(SweepSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     #: The same SMTP settings the API's approval notices use. Unset means

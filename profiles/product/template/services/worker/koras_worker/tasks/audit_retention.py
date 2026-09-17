@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -25,10 +25,10 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from ..settings import settings
+from ..settings import SweepSettings, settings
 
 
-class AuditSettings(BaseSettings):
+class AuditSettings(SweepSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     #: Days an audit row is kept. A year: long enough to answer a question

@@ -1,6 +1,40 @@
 from koras_platform import Environment
-from pydantic import RedisDsn
+from pydantic import RedisDsn, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class SweepSettings(BaseSettings):
+    """Settings for a sweep, where a blank value means the setting is absent.
+
+    A secret store is not an environment. Doppler holds a key with an empty
+    value as readily as it holds no key at all, and somebody turning a sweep off
+    by clearing its box is doing the obvious thing. Pydantic disagrees: `bool`
+    refuses `""` outright, so a cleared switch does not read as off -- it raises
+    `ValidationError` when the sweep constructs its settings, which is to say
+    the job that was meant to be disabled now fails every night at 04:07.
+
+    Found on 2026-09-17 with `STORAGE_LIFECYCLE_ENABLED` blank in dev. The
+    setting whose whole purpose is to keep a deleting sweep switched off was the
+    one a blank value broke.
+
+    So a blank is dropped before validation and the field's own default applies.
+    Every sweep here defaults to off or to a value that skips, so clearing a box
+    does what clearing a box looks like it does.
+
+    A field whose default is already `""` is unaffected -- dropping an empty
+    value leaves it empty. A required field with no default still fails, and
+    should: "this must be configured" and "this may be blank" are different
+    claims, and only the first one is safe to guess.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _blank_means_absent(cls, values: dict[str, object]) -> dict[str, object]:
+        return {
+            key: value
+            for key, value in values.items()
+            if not (isinstance(value, str) and value.strip() == "")
+        }
 
 
 class Settings(BaseSettings):

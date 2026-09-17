@@ -30,7 +30,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from koras_storage import ObjectStore, S3ObjectStore, StorageSettings, resolve_destination
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -39,10 +39,10 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from ..settings import settings
+from ..settings import SweepSettings, settings
 
 
-class ReconcileSettings(BaseSettings):
+class ReconcileSettings(SweepSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     #: Off unless asked for. Listing every tenant's prefix costs provider

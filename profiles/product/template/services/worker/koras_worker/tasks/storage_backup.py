@@ -49,7 +49,7 @@ from koras_storage import (
     StorageSettings,
     resolve_destination,
 )
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -58,10 +58,10 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from ..settings import settings
+from ..settings import SweepSettings, settings
 
 
-class BackupSettings(BaseSettings):
+class BackupSettings(SweepSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     #: Off unless asked for. A copy costs storage at a second destination, and a
