@@ -778,7 +778,9 @@ export const en = {
     'Download',
   'audit.exportEmpty':
     'No exports yet.',
-  'audit.exportRows':
+  'audit.exportRows.one':
+    '{rows} record',
+  'audit.exportRows.other':
     '{rows} records',
   'audit.restricted':
     'Some kinds of record need an owner or administrator to read.',

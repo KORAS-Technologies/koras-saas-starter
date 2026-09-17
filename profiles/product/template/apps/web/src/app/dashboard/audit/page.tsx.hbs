@@ -2,7 +2,7 @@ import { AccessDenied, Container } from '@{{projectSlug}}/ui'
 import { can, signedInContext } from '../../../lib/access'
 import { currentLocale, translator } from '../../../lib/locale'
 import { AuditPanel } from './AuditPanel'
-import { searchAudit } from './actions'
+import { listExports, searchAudit } from './actions'
 
 /**
  * Audit: what happened in this tenant, for the people entitled to ask.
@@ -20,8 +20,13 @@ import { searchAudit } from './actions'
  * cannot be accountable for. Exporting is the gated half, and only because a
  * copy leaves the product.
  *
- * The first page is read here so the first paint has rows in it; everything
- * after is a server action.
+ * Both lists are read here so the first paint has them in it; everything after
+ * is a server action.
+ *
+ * **Both**, because for a while only the search was. The exports list started
+ * empty and filled on Refresh, so somebody who started an export, went away and
+ * came back was told "No exports yet" while their file sat ready. Found by
+ * opening the page on 2026-09-17.
  */
 export const dynamic = 'force-dynamic'
 
@@ -31,7 +36,7 @@ export default async function AuditPage() {
     return <AccessDenied locale={locale} />
   }
 
-  const initial = await searchAudit({})
+  const [initial, initialExports] = await Promise.all([searchAudit({}), listExports()])
 
   // Built here rather than inline: a JSX prop given an object literal opens
   // with two braces, which the generator reads as a Handlebars expression.
@@ -62,7 +67,8 @@ export default async function AuditPage() {
     exportPending: t('audit.exportPending'),
     exportDownload: t('audit.exportDownload'),
     exportEmpty: t('audit.exportEmpty'),
-    exportRows: t('audit.exportRows'),
+    exportRowsOne: t('audit.exportRows.one'),
+    exportRowsOther: t('audit.exportRows.other'),
     restricted: t('audit.restricted'),
   }
 
@@ -73,6 +79,7 @@ export default async function AuditPage() {
         <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">{t('audit.description')}</p>
         <AuditPanel
           initial={initial}
+          initialExports={initialExports}
           canExport={can(context.access, 'audit.export')}
           locale={locale}
           labels={labels}

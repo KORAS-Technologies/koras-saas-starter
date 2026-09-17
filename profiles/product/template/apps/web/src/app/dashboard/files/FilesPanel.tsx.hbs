@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ActionResult } from './actions'
 import type { FileList } from '@{{projectSlug}}/api-client'
 import type { Locale } from '@{{projectSlug}}/i18n'
@@ -125,6 +125,22 @@ export function FilesPanel({
   const [list, setList] = useState<FileList | null>(initial.status === 'ok' ? initial.value : null)
   const [error, setError] = useState<string | null>(initial.status === 'error' ? initial.message : null)
   const [progress, setProgress] = useState<number | null>(null)
+  // **Why the table formats times in UTC for exactly one render.**
+  //
+  // `Intl.DateTimeFormat` with a `timeStyle` uses the running machine's time
+  // zone. On the server that is UTC; in the browser it is the customer's. The
+  // two produce different text for the same instant, React finds markup it did
+  // not send, and the page logs a hydration failure -- #418 on a deployed
+  // product, found by opening the Files page on 2026-09-17.
+  //
+  // So the server pass and the first client pass both format in UTC, which
+  // agree by construction, and the zone becomes the customer's once mounted.
+  // The alternative, `suppressHydrationWarning`, silences the message and keeps
+  // the server's text, which means showing every customer UTC forever.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  const timeZone = mounted ? undefined : 'UTC'
+
   const [busy, setBusy] = useState(false)
   const input = useRef<HTMLInputElement>(null)
 
@@ -292,9 +308,13 @@ export function FilesPanel({
                   <td className="px-4 py-3 text-ink">{file.name}</td>
                   <td className="px-4 py-3 text-ink-muted">{formatBytes(file.size_bytes, locale)}</td>
                   <td className="px-4 py-3 text-ink-muted">
-                    {new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
-                      new Date(file.uploaded_at),
-                    )}
+                    <time dateTime={file.uploaded_at}>
+                      {new Intl.DateTimeFormat(locale, {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                        timeZone,
+                      }).format(new Date(file.uploaded_at))}
+                    </time>
                   </td>
                   <td className="px-4 py-3 text-ink-muted" data-testid="file-searchable">
                     {file.indexed_at ? (

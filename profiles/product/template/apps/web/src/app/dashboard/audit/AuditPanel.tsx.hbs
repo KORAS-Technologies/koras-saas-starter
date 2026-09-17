@@ -1,8 +1,8 @@
 'use client'
 
 import { useCallback, useId, useState } from 'react'
-import type { AuditExportRow, AuditPage, AuditRow } from '@{{projectSlug}}/api-client'
-import type { Locale } from '@{{projectSlug}}/i18n'
+import type { AuditExportList, AuditExportRow, AuditPage, AuditRow } from '@{{projectSlug}}/api-client'
+import { type Locale, pluralCategory } from '@{{projectSlug}}/i18n'
 import { Button, Card, SelectField, TextField } from '@{{projectSlug}}/ui'
 import type { ActionResult, AuditQuery } from './actions'
 import { exportUrl, listExports, requestExport, searchAudit } from './actions'
@@ -34,7 +34,8 @@ export interface AuditLabels {
   exportPending: string
   exportDownload: string
   exportEmpty: string
-  exportRows: string
+  exportRowsOne: string
+  exportRowsOther: string
   restricted: string
 }
 
@@ -65,11 +66,13 @@ function when(value: string, locale: Locale): string {
  */
 export function AuditPanel({
   initial,
+  initialExports,
   canExport,
   locale,
   labels,
 }: {
   initial: ActionResult<AuditPage>
+  initialExports: ActionResult<AuditExportList>
   canExport: boolean
   locale: Locale
   labels: AuditLabels
@@ -83,7 +86,12 @@ export function AuditPanel({
   )
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState<AuditQuery>({})
-  const [exports, setExports] = useState<AuditExportRow[]>([])
+  // Seeded from the server rather than started empty. An export somebody
+  // asked for on a previous visit is ready and waiting, and a list that began
+  // empty said "No exports yet" until they thought to press Refresh.
+  const [exports, setExports] = useState<AuditExportRow[]>(
+    initialExports.status === 'ok' ? initialExports.value.exports : [],
+  )
   const [format, setFormat] = useState<string>('csv')
   const [open, setOpen] = useState<string | null>(null)
 
@@ -330,7 +338,20 @@ export function AuditPanel({
                   {row.status === 'ready' && (
                     <>
                       <span className="text-ink-muted">
-                        {fill(labels.exportRows, { rows: row.rows_exported })}
+                        {fill(
+                          // One key per plural form, chosen by `Intl.PluralRules`
+                          // rather than `=== 1`. The export list said
+                          // "1 records" on a deployed product; German would
+                          // have said "1 Einträge", which is the example the
+                          // helper's own docstring gives. It had never been
+                          // called until this line. English, German and
+                          // Spanish all use `one` and `other`, so the two
+                          // forms are enough for the catalogues that exist.
+                          pluralCategory(locale, row.rows_exported) === 'one'
+                            ? labels.exportRowsOne
+                            : labels.exportRowsOther,
+                          { rows: row.rows_exported },
+                        )}
                       </span>
                       <Button type="button" onClick={() => void download(row.id)}>
                         {labels.exportDownload}

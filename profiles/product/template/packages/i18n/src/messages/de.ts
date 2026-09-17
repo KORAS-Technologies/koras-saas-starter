@@ -787,7 +787,9 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Herunterladen',
   'audit.exportEmpty':
     'Noch keine Exporte.',
-  'audit.exportRows':
+  'audit.exportRows.one':
+    '{rows} Eintrag',
+  'audit.exportRows.other':
     '{rows} Einträge',
   'audit.restricted':
     'Manche Arten von Einträgen dürfen nur Eigentümer oder Administratoren lesen.',

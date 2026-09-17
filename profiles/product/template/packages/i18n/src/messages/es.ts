@@ -776,7 +776,9 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'Descargar',
   'audit.exportEmpty':
     'Aún no hay exportaciones.',
-  'audit.exportRows':
+  'audit.exportRows.one':
+    '{rows} registro',
+  'audit.exportRows.other':
     '{rows} registros',
   'audit.restricted':
     'Algunos tipos de registro solo pueden leerlos propietarios o administradores.',
