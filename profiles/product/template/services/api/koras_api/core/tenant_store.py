@@ -23,6 +23,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..settings_catalogue import catalogue
+from . import settings_store
+
 # Provisioning creates the first administrator, not a member. The value matches
 # `packages/permissions`' ORGANIZATION_ROLES on the TypeScript side -- the two
 # runtimes cannot import each other, so this is one of the places that drift
@@ -156,6 +159,12 @@ async def create(
                 ),
                 {"zitadel_org_id": zitadel_org_id, "tenant_key": tenant_key},
             )
+        # Seeded on the retry path too, and for the same reason the identity is
+        # backfilled two lines above: this is how a tenant created before the
+        # settings framework existed gets its rows. `seed_tenant` inserts
+        # `on conflict do nothing` and records the provenance only when there is
+        # none, so a retry of a tenant that already has both changes nothing.
+        await settings_store.seed_tenant(session, existing.tenant_id, catalogue)
         await session.commit()
         return existing, False
 
@@ -178,6 +187,14 @@ async def create(
                 "role": OWNER_ROLE,
             },
         )
+
+    # The settings snapshot, inside the same transaction as the tenant row and
+    # the owner's membership. One commit, so a tenant never exists without the
+    # settings it was given -- a half-seeded tenant would resolve some keys from
+    # its own rows and the rest from whatever the platform holds later, which is
+    # the dynamic inheritance the snapshot exists to prevent, applied to an
+    # arbitrary subset of the catalogue.
+    await settings_store.seed_tenant(session, created.tenant_id, catalogue)
 
     await session.commit()
     return created, True

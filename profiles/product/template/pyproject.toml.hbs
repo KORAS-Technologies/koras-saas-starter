@@ -41,6 +41,10 @@ dev = [
   # The reporting framework, for the same reason: its tests are pure and run
   # in every product, whether or not the API was generated with `reporting`.
   "koras-reporting",
+  # The settings framework. Unlike the three above it is not optional in any
+  # product -- the shell resolves settings on every signed-in request -- so the
+  # API depends on it directly and this line only makes its own tests run.
+  "koras-settings",
 ]
 
 [tool.uv.sources]
@@ -48,6 +52,7 @@ dev = [
 koras-email = { workspace = true }
 koras-ai = { workspace = true }
 koras-reporting = { workspace = true }
+koras-settings = { workspace = true }
 
 [tool.ruff]
 line-length = 100

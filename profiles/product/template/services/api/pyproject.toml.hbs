@@ -37,6 +37,11 @@ dependencies = [
   "koras-logging",
   "koras-observability",
   "koras-audit",
+  # The settings framework: the definition registry and the resolver behind
+  # every signed-in request. Never capability-gated -- the shell resolves a
+  # customer's settings before it paints, so a product generated without
+  # anything optional still needs it.
+  "koras-settings",
   "koras-storage",
   "koras-queue",
   # Mail, and the language it is written in. Always present: the assistant's
