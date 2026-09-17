@@ -2095,8 +2095,16 @@ export interface ResolvedModule {
    * reason, not the one a person sees.
    */
   lockedReason?: string
-  /** Which gate locked it, so the shell can say so in the caller's language. */
-  lockedBy?: 'entitlement' | 'feature'
+  /**
+   * Which gate locked it, so the shell can say so in the caller's language.
+   *
+   * `unresolved` is a third answer and not a variant of `entitlement`. The
+   * module is locked either way, but the sentences are different claims:
+   * "not included in your plan" is about the customer's plan, and saying it
+   * when the plan could not be read is telling them something false about what
+   * they bought.
+   */
+  lockedBy?: 'entitlement' | 'feature' | 'unresolved'
 }
 
 export interface ResolvedGroup {
@@ -2196,9 +2204,30 @@ export function resolveNavigation(
       // makes per module rather than something the shell does on its behalf.
       if ((module.lockedBehavior ?? 'hide') === 'hide') continue
       state = 'locked'
-      lockedBy = missingEntitlement !== undefined ? 'entitlement' : 'feature'
+      if (missingEntitlement !== undefined) {
+        // **Locked, but for which reason.** `isEntitled` answers false for an
+        // unresolved set, which is the right default for a gate -- an
+        // unreachable Control Plane must not become the way to obtain a paid
+        // feature. It is the wrong *sentence*: the module is locked because
+        // nobody could ask, not because the answer was no.
+        //
+        // Seen on a deployed product on 2026-09-17. The API machine had
+        // stopped; the first request woke it and timed out, and the sidebar
+        // told a paying customer that Files, Assistant and Analytics were not
+        // in their plan. The next load, same session, showed all three. The
+        // Files page said the true thing on the same render -- "your plan
+        // could not be read from the KORAS platform just now" -- so the
+        // product contradicted itself on one screen.
+        lockedBy = context.entitlements.resolved ? 'entitlement' : 'unresolved'
+      } else {
+        lockedBy = 'feature'
+      }
       lockedReason =
-        lockedBy === 'entitlement' ? 'Not included in your plan' : 'Not enabled for your organisation'
+        lockedBy === 'entitlement'
+          ? 'Not included in your plan'
+          : lockedBy === 'unresolved'
+            ? 'Your plan could not be read just now'
+            : 'Not enabled for your organisation'
     }
 
     const items = byGroup.get(module.group) ?? []

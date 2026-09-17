@@ -43,6 +43,7 @@ export const en = {
   'shell.themeSystem': 'System',
   'shell.themeDark': 'Dark',
   'shell.lockedPlan': 'Not included in your plan',
+  'shell.lockedUnresolved': 'Your plan could not be read just now',
   'shell.lockedFeature': 'Not enabled for your organisation',
 
   'subscription.trial.endsIn': 'Your free trial ends in {days} days.',

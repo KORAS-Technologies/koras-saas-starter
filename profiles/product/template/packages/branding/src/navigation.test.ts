@@ -238,6 +238,32 @@ test('an unresolved entitlement set counts as not entitled', () => {
   assert.equal(isEntitled(NO_ENTITLEMENTS, 'advanced_reporting'), false)
 })
 
+test('a module locked by an unread plan does not claim the plan excludes it', () => {
+  // Who gets in is unchanged -- the test above still holds, and an unreachable
+  // Control Plane is still not the way to obtain a paid feature. What changes
+  // is the sentence. "Not included in your plan" is a claim about what the
+  // customer bought, and a deployed product made it on 2026-09-17 to somebody
+  // who had bought all three modules, because the API machine had stopped and
+  // the first request woke it and timed out. The Files page said the true
+  // thing on the same render, so the product contradicted itself on one
+  // screen.
+  const nav = config([
+    module({ requiredEntitlements: ['advanced_reporting'], lockedBehavior: 'lock' }),
+  ])
+
+  const locked = resolveNavigation(nav, context({ entitlements: NO_ENTITLEMENTS }))[0]?.items[0]
+  assert.equal(locked?.state, 'locked')
+  assert.equal(locked?.lockedBy, 'unresolved')
+
+  // And the other way, so this cannot pass by never saying `entitlement`.
+  const answered = resolveNavigation(
+    nav,
+    context({ entitlements: { resolved: true, plan: 'starter', features: {} } }),
+  )[0]?.items[0]
+  assert.equal(answered?.state, 'locked')
+  assert.equal(answered?.lockedBy, 'entitlement')
+})
+
 test('an unresolved plan changes nothing about ungated modules', () => {
   // The product keeps working when the platform is unreachable. Only the
   // plan-gated part of the sidebar goes quiet.

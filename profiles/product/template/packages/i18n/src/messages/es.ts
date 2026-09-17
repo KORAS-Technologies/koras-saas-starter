@@ -37,6 +37,7 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'shell.themeSystem': 'Sistema',
   'shell.themeDark': 'Oscuro',
   'shell.lockedPlan': 'No incluido en su plan',
+  'shell.lockedUnresolved': 'No se ha podido leer su plan en este momento',
   'subscription.trial.endsIn': 'Su prueba gratuita termina en {days} días.',
   'subscription.trial.endsToday': 'Su prueba gratuita termina hoy.',
   'subscription.trial.open': 'Está en una prueba gratuita.',

@@ -124,6 +124,7 @@ function owningHref(groups: ResolvedGroup[], pathname: string): string | undefin
  */
 function lockedText(item: ResolvedModule, t: Translator): string {
   if (item.lockedBy === 'entitlement') return t('shell.lockedPlan')
+  if (item.lockedBy === 'unresolved') return t('shell.lockedUnresolved')
   if (item.lockedBy === 'feature') return t('shell.lockedFeature')
   return item.lockedReason ?? ''
 }
