@@ -79,6 +79,15 @@ does nothing, which is exactly the shape that gets discovered during an
 incident. Either set the storage credentials in those three, or turn the
 switch off until they exist.
 
+**What `koras-e2e-shop` has, as of 2026-09-17.** Backup on in all four
+configurations. Reconciliation on in `dev` and unset elsewhere. Lifecycle
+explicitly `false` in `dev` and unset elsewhere -- explicitly, because it was
+briefly *blank* there, and a blank is not an absent value: pydantic refuses
+`""` for a `bool`, so the sweep that was meant to be off would have failed at
+04:07 every night. `SweepSettings` now drops a blank so the field's default
+applies, and the value is set to `false` rather than cleared, so the two states
+agree.
+
 **Turn the two reporting ones on freely.** Reconciliation deletes nothing by
 design, and backup only adds. **`STORAGE_LIFECYCLE_ENABLED` is the one to think
 about**: it is the only setting in this table whose effect is removal, and with
