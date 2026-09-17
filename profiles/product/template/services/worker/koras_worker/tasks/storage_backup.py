@@ -41,6 +41,7 @@ from typing import Any
 
 from koras_storage import (
     S3_COMPATIBLE,
+    CopyRefused,
     Destination,
     IntegrityRefused,
     ObjectStore,
@@ -296,6 +297,48 @@ def verdict(source_digest: str | None, backup_digest: str | None) -> Outcome:
     )
 
 
+def _stream_one(
+    store: ObjectStore,
+    target_store: ObjectStore,
+    *,
+    source_key: str,
+    backup_key: str,
+    size_bytes: int | None,
+) -> Outcome:
+    """Read the object here and write it there, hashing what passes through.
+
+    Used when no single provider reaches both ends, and now also when one that
+    should reach both refuses -- see `copy_one`.
+    """
+    if size_bytes is not None and size_bytes > STREAM_CEILING:
+        return Outcome("skipped", None, None, "larger than the cross-provider stream ceiling")
+    content = store.get(source_key)
+    if content is None:
+        return Outcome("skipped", None, None, "the object was gone from the source")
+    local = hashlib.sha256(content).hexdigest()
+    try:
+        # The digest goes *with* the write. The destination verifies what it
+        # received before storing it and keeps the digest, so the `checksum()`
+        # below has something to answer with.
+        #
+        # Sending it is what makes this path capable of `verified` at all.
+        # Without it the destination stores no SHA-256, `checksum()` answers
+        # None, and every copy through here reads `copied` for ever -- a backup
+        # nobody could ever confirm, reported by a job whose entire purpose is
+        # confirming backups.
+        target_store.put(backup_key, content, "application/octet-stream", checksum_sha256=local)
+    except IntegrityRefused:
+        # The destination compared and disagreed. That is the control working,
+        # and it is a failure rather than something to retry without the digest.
+        return Outcome("failed", local, None, "the destination rejected the bytes as not matching")
+    answered = target_store.checksum(backup_key)
+    # The locally computed digest is the source side of the comparison: the
+    # bytes read are the bytes hashed. Where the destination answers its own
+    # digest the two are compared; where it does not -- a provider with no
+    # SHA-256 support -- this is `copied`.
+    return verdict(local, answered)
+
+
 def copy_one(
     store: ObjectStore,
     target_store: ObjectStore,
@@ -308,47 +351,45 @@ def copy_one(
 ) -> Outcome:
     """Copy one object and decide what the copy is worth.
 
-    Server-side where one provider reaches both ends. Where it does not, the
-    bytes pass through here, bounded by `STREAM_CEILING` -- and in that case the
-    digest of what was sent is computed here too, which is a stronger statement
-    than either provider's: it is the digest of the bytes this process actually
-    read from the source and actually wrote to the destination.
+    Server-side where one provider reaches both ends. Where it does not -- or
+    where the one that should refuses -- the bytes pass through here, bounded by
+    `STREAM_CEILING`, and the digest of what was sent is computed here too,
+    which is a stronger statement than either provider's: it is the digest of
+    the bytes this process actually read from the source and actually wrote to
+    the destination.
+
+    **The refusal case is not theoretical.** Supabase's S3 gateway refuses
+    `CopyObject` for any key containing a space, with an empty error code, while
+    `HeadObject` on the same key succeeds. Four of the dev estate's six objects
+    were therefore recorded `failed` night after night -- a backup job reporting
+    `ok` while two thirds of the files it was for had no copy. Reading the
+    bytes and writing them works on exactly those keys, so the fallback is not a
+    lesser copy: it is the only one available, and it is the one that can reach
+    `verified`.
+
+    An integrity refusal is never answered this way. That is the destination
+    saying the bytes do not match, and writing them by another route is how a
+    corrupt object becomes a backup.
     """
     if streaming:
-        if size_bytes is not None and size_bytes > STREAM_CEILING:
-            return Outcome("skipped", None, None, "larger than the cross-provider stream ceiling")
-        content = store.get(source_key)
-        if content is None:
-            return Outcome("skipped", None, None, "the object was gone from the source")
-        local = hashlib.sha256(content).hexdigest()
-        try:
-            # The digest goes *with* the write. The destination verifies what
-            # it received before storing it and keeps the digest, so the
-            # `checksum()` below has something to answer with.
-            #
-            # Sending it is what makes this path capable of `verified` at all.
-            # Without it the destination stores no SHA-256, `checksum()`
-            # answers None, and every cross-provider copy reads `copied` for
-            # ever -- a backup nobody could ever confirm, reported by a job
-            # whose entire purpose is confirming backups.
-            target_store.put(
-                backup_key, content, "application/octet-stream", checksum_sha256=local
-            )
-        except IntegrityRefused:
-            # The destination compared and disagreed. That is the control
-            # working, and it is a failure rather than something to retry
-            # without the digest.
-            return Outcome(
-                "failed", local, None, "the destination rejected the bytes as not matching"
-            )
-        answered = target_store.checksum(backup_key)
-        # The locally computed digest is the source side of the comparison: the
-        # bytes read are the bytes hashed. Where the destination answers its own
-        # digest the two are compared; where it does not -- a provider with no
-        # SHA-256 support -- this is `copied`.
-        return verdict(local, answered)
+        return _stream_one(
+            store,
+            target_store,
+            source_key=source_key,
+            backup_key=backup_key,
+            size_bytes=size_bytes,
+        )
 
-    store.copy(source_key, backup_key, dest=target)
+    try:
+        store.copy(source_key, backup_key, dest=target)
+    except CopyRefused:
+        return _stream_one(
+            store,
+            target_store,
+            source_key=source_key,
+            backup_key=backup_key,
+            size_bytes=size_bytes,
+        )
     return verdict(store.checksum(source_key), target_store.checksum(backup_key))
 
 

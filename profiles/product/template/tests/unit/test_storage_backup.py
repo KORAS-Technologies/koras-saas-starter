@@ -20,7 +20,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 pytest.importorskip("koras_worker")
-from koras_storage import Destination, IntegrityRefused, Provider  # noqa: E402
+from koras_storage import CopyRefused, Destination, IntegrityRefused, Provider  # noqa: E402
 from koras_worker.tasks.storage_backup import (  # noqa: E402
     STREAM_CEILING,
     BackupSettings,
@@ -106,10 +106,14 @@ class _Store:
         content: bytes | None = b"one",
         refuse: bool = False,
         reject: bool = False,
+        refuse_copy: bool = False,
     ) -> None:
         self._digest = digest
         self._content = content
         self._refuse = refuse
+        #: The destination will not copy server-side but will take the bytes,
+        #: which is Supabase's S3 for any key containing a space.
+        self._refuse_copy = refuse_copy
         #: The destination compared the bytes against the digest it was sent
         #: and disagreed, which is the control working.
         self._reject = reject
@@ -135,6 +139,8 @@ class _Store:
         self.put_digests.append(checksum_sha256)
 
     def copy(self, source_key: str, dest_key: str, *, dest: Destination | None = None) -> None:
+        if self._refuse_copy:
+            raise CopyRefused("the destination will not copy this key server-side")
         if self._refuse:
             raise RuntimeError("the destination refused the copy")
         self.copied.append((source_key, dest_key))
@@ -470,3 +476,80 @@ def test_a_destination_with_no_checksum_support_still_gets_the_copy() -> None:
     )
     assert outcome.status == "copied"
     assert target.put_keys == ["tenants/t/documents/f1/a.pdf"]
+
+
+def test_a_refused_server_side_copy_is_streamed_instead() -> None:
+    """A provider that will not copy is not a provider that cannot back up.
+
+    Supabase's S3 gateway refuses `CopyObject` for any key with a space in it,
+    with an empty error code so no code list could have matched, while
+    `HeadObject` on the same key succeeds. Four of the dev estate's six objects
+    were recorded `failed` night after night and the run still reported `ok`.
+
+    Reading the bytes and writing them works on exactly those keys, so the
+    fallback is not a lesser copy -- it is the only one available, and it is the
+    one that can reach `verified`, because the digest is computed here and sent
+    with the write.
+    """
+    source = _Store(refuse_copy=True, content=b"one")
+    target = _Store(digest=hashlib.sha256(b"one").hexdigest())
+
+    outcome = copy_one(
+        source,
+        target,
+        TARGET,
+        source_key="tenants/t/f/Homework Packet.pdf",
+        backup_key="tenants/t/f/Homework Packet.pdf",
+        size_bytes=3,
+        streaming=False,
+    )
+
+    assert outcome.status == "verified", outcome.note
+    assert target.put_keys == ["tenants/t/f/Homework Packet.pdf"]
+    # The digest went with the write. Without it the destination stores no
+    # SHA-256 and this could never be better than `copied`.
+    assert target.put_digests == [hashlib.sha256(b"one").hexdigest()]
+
+
+def test_the_stream_ceiling_still_applies_to_a_refused_copy() -> None:
+    """The fallback is the cross-provider path, and it has a bound.
+
+    A refusal must not become a way to pull an object of any size into a
+    worker's memory, which is the thing `STREAM_CEILING` exists to prevent.
+    """
+    source = _Store(refuse_copy=True)
+    outcome = copy_one(
+        source,
+        _Store(),
+        TARGET,
+        source_key="tenants/t/f/big file.bin",
+        backup_key="tenants/t/f/big file.bin",
+        size_bytes=STREAM_CEILING + 1,
+        streaming=False,
+    )
+    assert outcome.status == "skipped"
+
+
+def test_an_integrity_refusal_is_never_streamed_around() -> None:
+    """Guards the guard, and the more important half of it.
+
+    "Will not copy by that route" and "those bytes do not match" are different
+    claims. Answering the second by writing the bytes another way is how a
+    corrupt object becomes a backup, so the fallback must not be reachable from
+    it. `IntegrityRefused` is raised by `put`, on the path the fallback uses.
+    """
+    source = _Store(refuse_copy=True, content=b"one")
+    target = _Store(reject=True)
+
+    outcome = copy_one(
+        source,
+        target,
+        TARGET,
+        source_key="tenants/t/f/a file.pdf",
+        backup_key="tenants/t/f/a file.pdf",
+        size_bytes=3,
+        streaming=False,
+    )
+
+    assert outcome.status == "failed"
+    assert outcome.note == "the destination rejected the bytes as not matching"

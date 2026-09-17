@@ -37,6 +37,7 @@ from botocore.exceptions import ClientError  # type: ignore[import-untyped]
 __all__ = [
     "CHECKSUM_UNSUPPORTED",
     "INTEGRITY_REFUSED",
+    "CopyRefused",
     "IntegrityRefused",
     "S3_COMPATIBLE",
     "Category",
@@ -75,6 +76,27 @@ S3_COMPATIBLE = frozenset({Provider.SUPABASE, Provider.CLOUDFLARE_R2, Provider.A
 INTEGRITY_REFUSED = frozenset(
     {"BadDigest", "InvalidDigest", "XAmzContentChecksumMismatch", "ChecksumMismatch"}
 )
+
+class CopyRefused(Exception):
+    """The destination would not copy this object server-side.
+
+    Raised in place of the provider's own error so that callers can answer it
+    without importing botocore -- the point of this package is that the rest of
+    the codebase does not see boto3.
+
+    It is deliberately *not* an integrity failure. Those keep their own type,
+    are never retried, and must never be answered by writing the bytes another
+    way. This one means "not by that route", and the honest response is to try
+    another route.
+
+    It is not hypothetical. Supabase's S3 gateway refuses `CopyObject` outright
+    when the key contains a space -- with an empty error code, so no code list
+    could have matched it -- while `HeadObject` on the same key succeeds.
+    Confirmed against the dev estate on 2026-09-17, where four of six objects
+    were unbackupable because somebody had uploaded "Homework Packet Fill-In
+    Updated 2025-04-18.pdf".
+    """
+
 
 #: Provider codes meaning "I do not understand that parameter". Retried once
 #: without it, because a provider with no SHA-256 support should give a copy
@@ -534,14 +556,26 @@ class S3ObjectStore:
             # SHA-256 for a copied object, `checksum()` on the copy answers
             # None, and a backup could never be more than `copied`.
             client.copy_object(**arguments, ChecksumAlgorithm="SHA256")
+            return
         except ClientError as error:
             code = error.response.get("Error", {}).get("Code", "")
-            if code not in CHECKSUM_UNSUPPORTED:
-                raise
+            if code in INTEGRITY_REFUSED:
+                raise IntegrityRefused(str(error)) from error
+            first = error
+
+        try:
             # A gateway that does not implement checksums on copy. Better an
             # unverifiable copy than no copy: the object is still somewhere
             # else, and the catalogue says plainly that nobody compared it.
+            #
+            # Tried for *any* non-integrity failure rather than only for a list
+            # of codes, because the list could not have caught the one that
+            # happened: Supabase answers an empty code. If the retry fails too
+            # then the checksum was not the difference, and the caller is told
+            # so rather than being handed a code list nobody can extend in time.
             client.copy_object(**arguments)
+        except ClientError as second:
+            raise CopyRefused(str(first)) from second
 
     def checksum(self, key: str) -> str | None:
         try:
