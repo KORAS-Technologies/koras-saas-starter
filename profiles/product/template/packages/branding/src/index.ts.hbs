@@ -1630,6 +1630,32 @@ export const productConfig: ProductConfig = {
         requiredPermissions: ['audit.view'],
         requiredCapabilities: ['audit_governance'],
       },
+      // Governance: legal holds and this organisation's retention.
+      //
+      // `audit.legal_hold` rather than `audit.view`, because this is where records
+      // are kept *from* being deleted rather than read. That permission is
+      // administrative, so an ordinary member does not see the module at all --
+      // hidden rather than locked, since there is nothing to upsell.
+      //
+      // No entitlement. A hold is how a customer meets an obligation that is
+      // not ours to price, and a customer whose plan lapsed still has the
+      // matter. The same reasoning as Restore, from a different direction.
+      //
+      // The API for this shipped on 2026-09-16 and nothing reached it until
+      // 2026-09-17: a customer could not place a hold, see one, or find out
+      // that their records were being kept for a matter. Walking the deployed
+      // product is what found it, because every test the surface had was a
+      // test of the API.
+      {
+        id: 'governance',
+        label: 'Governance',
+        icon: 'shield',
+        href: '/dashboard/governance',
+        group: 'primary',
+        order: 31,
+        requiredPermissions: ['audit.legal_hold'],
+        requiredCapabilities: ['audit_governance'],
+      },
 {{/if}}
 {{#if capability.reporting}}
       // Analytics. Generated with the `reporting` capability, gated on the
@@ -2215,9 +2241,14 @@ export function resolveNavigation(
         // stopped; the first request woke it and timed out, and the sidebar
         // told a paying customer that Files, Assistant and Analytics were not
         // in their plan. The next load, same session, showed all three. The
-        // Files page said the true thing on the same render -- "your plan
-        // could not be read from the KORAS platform just now" -- so the
-        // product contradicted itself on one screen.
+        // Files page said the true thing on the same render -- that the plan
+        // could not be read -- so the product contradicted itself on one
+        // screen.
+        //
+        // The platform's name is deliberately not quoted here.
+        // `product-frontend.test.ts` refuses it anywhere in a product's own
+        // content, a comment included, and this one failed that test on
+        // 2026-09-17 because quoting a sentence looked harmless.
         lockedBy = context.entitlements.resolved ? 'entitlement' : 'unresolved'
       } else {
         lockedBy = 'feature'

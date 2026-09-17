@@ -453,6 +453,7 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'files.searchable.yes': 'Consultable',
   'files.searchable.pending': 'Indexando…',
   'files.searchable.no': 'No consultable',
+  'files.searchable.unknown': 'No indexado',
   'files.usage': '{used} de {limit} usados',
   'files.usageUnlimited': '{used} usados',
   'files.usageUnknown': 'Límite de almacenamiento no disponible ahora mismo',
@@ -831,4 +832,54 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'errors.periodNotAFilter': 'El periodo de un informe programado lo decide su cadencia.',
   'errors.reportFailed': 'No se pudo generar el informe. Inténtelo más tarde.',
   'errors.toolDenied': 'Su rol no permite eso en el asistente.',
+
+  /* ----------------------------------------------------------- governance */
+  'governance.title': 'Gobernanza',
+  'governance.description':
+    'Retenciones legales y cuánto tiempo conserva esta organización lo que almacena. Una retención impide borrar todo lo que cubre, incluidas las purgas nocturnas.',
+  'governance.holds': 'Retenciones legales',
+  'governance.holdsDescription':
+    'Cada retención y en qué punto está. Una levantada se conserva, porque es por la que alguien pregunta más adelante.',
+  'governance.reason': 'Por qué hace falta esta retención',
+  'governance.reasonHint':
+    'Indique el asunto. Lo lee quien la aprueba y cualquiera que revise la retención después.',
+  'governance.scope': 'Qué cubre',
+  'governance.scopeTenant': 'Todo lo de esta organización',
+  'governance.scopeFiles': 'Solo archivos',
+  'governance.scopeAudit': 'Solo registros de auditoría',
+  'governance.endsAt': 'Termina el (opcional)',
+  'governance.endsAtHint':
+    'Déjelo vacío para una retención sin fin. Una retención abierta conserva todo lo que cubre hasta que alguien la levante.',
+  'governance.ask': 'Solicitar una retención',
+  'governance.asking': 'Solicitando…',
+  'governance.status': 'Estado',
+  'governance.inForce': 'En vigor ahora',
+  'governance.notInForce': 'No retiene nada',
+  'governance.who': 'Solicitada por',
+  'governance.yours': 'Esta debe decidirla alguien que no sea usted.',
+  'governance.approve': 'Aprobar',
+  'governance.release': 'Levantar esta retención',
+  'governance.releaseWarning':
+    'Lo que cubre podrá volver a borrarse desde la próxima purga nocturna.',
+  'governance.emptyHolds': 'No se ha solicitado ninguna retención.',
+  'governance.refresh': 'Actualizar',
+  'governance.retention': 'Cuánto tiempo se conserva',
+  'governance.retentionDescription':
+    'Días, por tipo. Deje una casilla vacía para usar el valor por defecto de la plataforma.',
+  'governance.retentionFloorHint':
+    'Puede pedir más que el valor por defecto, nunca menos: un número menor se acepta y se aplica el mayor de los dos. El máximo es 3650 días.',
+  'governance.days': 'días',
+  'governance.save': 'Guardar',
+  'governance.saving': 'Guardando…',
+  'governance.saved': 'Guardado.',
+  'governance.kind.auditActivity': 'Registros de actividad diaria',
+  'governance.kind.audit': 'Registros de auditoría',
+  'governance.kind.auditSecurity': 'Registros de seguridad',
+  'governance.kind.storageStandard': 'Archivos ordinarios',
+  'governance.kind.storageSensitive': 'Archivos sensibles',
+  'governance.kind.storageRestricted': 'Archivos restringidos',
+  'governance.error.forbidden':
+    'No tiene permiso para hacer eso. Poner o levantar una retención requiere el permiso de retención, y aprobar o levantar requiere una propietaria o administradora que no la haya solicitado.',
+  'governance.error.unavailable':
+    'No se ha podido leer la gobernanza en este momento. No se ha cambiado nada.',
 }

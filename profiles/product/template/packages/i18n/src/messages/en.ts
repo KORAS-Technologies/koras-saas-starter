@@ -454,6 +454,7 @@ export const en = {
   'files.searchable.yes': 'Searchable',
   'files.searchable.pending': 'Indexing…',
   'files.searchable.no': 'Not searchable',
+  'files.searchable.unknown': 'Not indexed',
   'files.usage': '{used} of {limit} used',
   'files.usageUnlimited': '{used} used',
   'files.usageUnknown': 'Usage limit not available right now',
@@ -832,4 +833,54 @@ export const en = {
   'errors.periodNotAFilter': 'The period of a scheduled report is decided by its cadence.',
   'errors.reportFailed': 'The report could not be produced. Try again later.',
   'errors.toolDenied': 'Your role does not allow that in the assistant.',
+
+  /* ----------------------------------------------------------- governance */
+  'governance.title': 'Governance',
+  'governance.description':
+    'Legal holds, and how long this organisation keeps what it stores. A hold stops anything it covers being deleted, including by the nightly retention sweeps.',
+  'governance.holds': 'Legal holds',
+  'governance.holdsDescription':
+    'Every hold and where it has got to. A released one is kept, because it is the one somebody asks about later.',
+  'governance.reason': 'Why this hold is needed',
+  'governance.reasonHint':
+    'Name the matter. This is read by whoever approves it and by anyone reviewing the hold later.',
+  'governance.scope': 'What it covers',
+  'governance.scopeTenant': 'Everything this organisation has',
+  'governance.scopeFiles': 'Files only',
+  'governance.scopeAudit': 'Audit records only',
+  'governance.endsAt': 'Ends on (optional)',
+  'governance.endsAtHint':
+    'Leave empty for a hold with no end. An open hold keeps everything it covers until somebody lifts it.',
+  'governance.ask': 'Ask for a hold',
+  'governance.asking': 'Asking…',
+  'governance.status': 'Status',
+  'governance.inForce': 'In force now',
+  'governance.notInForce': 'Not holding anything',
+  'governance.who': 'Asked by',
+  'governance.yours': 'Someone other than you has to decide this one.',
+  'governance.approve': 'Approve',
+  'governance.release': 'Lift this hold',
+  'governance.releaseWarning':
+    'What this covers can be deleted again from the next nightly sweep.',
+  'governance.emptyHolds': 'No hold has been asked for.',
+  'governance.refresh': 'Refresh',
+  'governance.retention': 'How long things are kept',
+  'governance.retentionDescription':
+    'Days, by kind. Leave a box empty to use the platform default for that kind.',
+  'governance.retentionFloorHint':
+    'You can ask for longer than the default, never shorter: a smaller number is accepted and the longer of the two is what runs. The most that can be set is 3650 days.',
+  'governance.days': 'days',
+  'governance.save': 'Save',
+  'governance.saving': 'Saving…',
+  'governance.saved': 'Saved.',
+  'governance.kind.auditActivity': 'Everyday activity records',
+  'governance.kind.audit': 'Audit records',
+  'governance.kind.auditSecurity': 'Security records',
+  'governance.kind.storageStandard': 'Ordinary files',
+  'governance.kind.storageSensitive': 'Sensitive files',
+  'governance.kind.storageRestricted': 'Restricted files',
+  'governance.error.forbidden':
+    'You do not have permission to do that. Placing or lifting a hold needs the hold permission, and approving or lifting needs an owner or an administrator who did not ask for it.',
+  'governance.error.unavailable':
+    'Governance could not be read right now. Nothing has been changed.',
 } as const

@@ -1,0 +1,386 @@
+'use client'
+
+import { useCallback, useId, useState } from 'react'
+import type { HoldRow, RetentionOverrides } from '@{{projectSlug}}/api-client'
+import type { Locale } from '@{{projectSlug}}/i18n'
+import { Button, Card, SelectField, TextField } from '@{{projectSlug}}/ui'
+import type { ActionResult } from './actions'
+import { approveHold, askForHold, listHolds, releaseHold, writeRetention } from './actions'
+
+export interface GovernanceLabels {
+  holds: string
+  holdsDescription: string
+  reason: string
+  reasonHint: string
+  scope: string
+  scopeTenant: string
+  scopeFiles: string
+  scopeAudit: string
+  endsAt: string
+  endsAtHint: string
+  ask: string
+  asking: string
+  status: string
+  inForce: string
+  notInForce: string
+  who: string
+  yours: string
+  approve: string
+  release: string
+  releaseWarning: string
+  emptyHolds: string
+  refresh: string
+  retention: string
+  retentionDescription: string
+  retentionFloorHint: string
+  days: string
+  save: string
+  saving: string
+  saved: string
+  auditActivity: string
+  audit: string
+  auditSecurity: string
+  storageStandard: string
+  storageSensitive: string
+  storageRestricted: string
+}
+
+/** The kinds a tenant may lengthen, in the order the API declares them. */
+const KINDS = [
+  'audit_activity',
+  'audit',
+  'audit_security',
+  'storage_standard',
+  'storage_sensitive',
+  'storage_restricted',
+] as const
+
+type Kind = (typeof KINDS)[number]
+
+/** The ceiling the API enforces. Stated here so the field says so before a refusal. */
+const MAX_RETENTION_DAYS = 3650
+
+function when(value: string | null, locale: Locale): string {
+  if (value === null) return '-'
+  const at = new Date(value)
+  return Number.isNaN(at.getTime())
+    ? value
+    : new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(at)
+}
+
+/**
+ * Legal holds, and how long this organisation keeps things.
+ *
+ * **Asking is not holding**, and the interface says so rather than leaving the
+ * API to. A new hold appears as `requested` and stops nothing; each row says
+ * plainly whether it is in force, because `active` and `in force` are different
+ * claims -- a hold whose window has passed is still `active` and holds nothing.
+ *
+ * **Lifting is the dangerous half**, so the control carries the consequence:
+ * what the hold covered becomes deletable again on the next sweep. The API
+ * needs an owner or an administrator and refuses the person who asked. Both
+ * are left to it, and every refusal is recorded there; a control that vanishes
+ * teaches nobody the rule.
+ *
+ * **Retention sends every kind, because the form shows every kind.** A blank
+ * field is a deliberate "remove this override", which is null rather than
+ * absent. The API separates the two by which keys are present, and conflating
+ * them is how a tenant's seven-year security retention was silently reset to
+ * the floor -- found by review on 2026-09-16.
+ */
+export function GovernancePanel({
+  initialHolds,
+  initialRetention,
+  currentUser,
+  locale,
+  labels,
+}: {
+  initialHolds: ActionResult<{ holds: HoldRow[] }>
+  initialRetention: ActionResult<RetentionOverrides>
+  currentUser: string
+  locale: Locale
+  labels: GovernanceLabels
+}) {
+  const [holds, setHolds] = useState<HoldRow[]>(
+    initialHolds.status === 'ok' ? initialHolds.value.holds : [],
+  )
+  const [error, setError] = useState<string | null>(
+    initialHolds.status === 'error'
+      ? initialHolds.message
+      : initialRetention.status === 'error'
+        ? initialRetention.message
+        : null,
+  )
+  const [scope, setScope] = useState('tenant')
+  const [reason, setReason] = useState('')
+  const [endsAt, setEndsAt] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  // Held as strings, because a blank field and a zero are different answers
+  // and only a string can carry the difference.
+  const stored: RetentionOverrides = initialRetention.status === 'ok' ? initialRetention.value : {}
+  const [days, setDays] = useState<Record<Kind, string>>(() => {
+    const start = {} as Record<Kind, string>
+    for (const kind of KINDS) {
+      const value = stored[kind]
+      start[kind] = value === undefined || value === null ? '' : String(value)
+    }
+    return start
+  })
+
+  const formId = useId()
+
+  const reload = useCallback(async () => {
+    const answer = await listHolds()
+    if (answer.status === 'ok') {
+      setHolds(answer.value.holds)
+      setError(null)
+    } else {
+      setError(answer.message)
+    }
+  }, [])
+
+  const ask = useCallback(async () => {
+    setBusy(true)
+    const answer = await askForHold(scope, reason, endsAt === '' ? null : endsAt)
+    setBusy(false)
+    if (answer.status === 'error') {
+      setError(answer.message)
+      return
+    }
+    setError(null)
+    setReason('')
+    setEndsAt('')
+    await reload()
+  }, [endsAt, reason, reload, scope])
+
+  const decide = useCallback(
+    async (hold: HoldRow, approved: boolean) => {
+      setBusy(true)
+      const answer = approved ? await approveHold(hold.id) : await releaseHold(hold.id)
+      setBusy(false)
+      if (answer.status === 'error') {
+        setError(answer.message)
+        return
+      }
+      setError(null)
+      await reload()
+    },
+    [reload],
+  )
+
+  const save = useCallback(async () => {
+    setBusy(true)
+    setSaved(false)
+    const overrides: RetentionOverrides = {}
+    for (const kind of KINDS) {
+      const raw = days[kind].trim()
+      overrides[kind] = raw === '' ? null : Number(raw)
+    }
+    const answer = await writeRetention(overrides)
+    setBusy(false)
+    if (answer.status === 'error') {
+      setError(answer.message)
+      return
+    }
+    setError(null)
+    setSaved(true)
+    // Repainted from what the API answered rather than from what was typed:
+    // a value below the platform floor is accepted and then loses at
+    // resolution, so echoing the request back would show a number that is not
+    // the one in force.
+    const next = {} as Record<Kind, string>
+    for (const kind of KINDS) {
+      const value = answer.value[kind]
+      next[kind] = value === undefined || value === null ? '' : String(value)
+    }
+    setDays(next)
+  }, [days])
+
+  const kindLabel: Record<Kind, string> = {
+    audit_activity: labels.auditActivity,
+    audit: labels.audit,
+    audit_security: labels.auditSecurity,
+    storage_standard: labels.storageStandard,
+    storage_sensitive: labels.storageSensitive,
+    storage_restricted: labels.storageRestricted,
+  }
+
+  return (
+    <div className="mt-8 space-y-6" data-testid="governance">
+      {error !== null && (
+        <Card className="max-w-5xl border-danger/40">
+          <p
+            role="alert"
+            data-testid="governance-error"
+            className="text-sm leading-6 text-ink-muted"
+          >
+            {error}
+          </p>
+        </Card>
+      )}
+
+      <Card className="max-w-5xl">
+        <div className="flex flex-wrap items-baseline justify-between gap-4">
+          <div>
+            <h2 className="font-display text-lg font-semibold text-ink">{labels.holds}</h2>
+            <p className="mt-1 text-sm leading-6 text-ink-muted">{labels.holdsDescription}</p>
+          </div>
+          <Button type="button" variant="secondary" disabled={busy} onClick={() => void reload()}>
+            {labels.refresh}
+          </Button>
+        </div>
+
+        {holds.length === 0 ? (
+          <p className="mt-4 text-sm leading-6 text-ink-muted">{labels.emptyHolds}</p>
+        ) : (
+          <ul className="mt-4 space-y-4" data-testid="governance-holds">
+            {holds.map((hold) => {
+              const mine = hold.requested_by === currentUser
+              return (
+                <li key={hold.id} className="border-b border-line/60 pb-4 last:border-0">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="font-medium text-ink">{hold.reason}</span>
+                    <span className="text-xs uppercase tracking-wide text-ink-muted">
+                      {hold.status}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-ink-muted">
+                    {/* `in force` is said, not inferred from the status. An
+                        active hold whose window has passed is stopping
+                        nothing, and a page that showed only the status would
+                        tell somebody their records were protected. */}
+                    {hold.in_force ? labels.inForce : labels.notInForce}
+                    {' · '}
+                    {labels.scope}: {hold.scope}
+                    {' · '}
+                    {labels.who}: {hold.requested_by}
+                    {' · '}
+                    {when(hold.ends_at, locale)}
+                  </p>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    {hold.status === 'requested' && (
+                      <Button
+                        type="button"
+                        disabled={busy || mine}
+                        onClick={() => void decide(hold, true)}
+                      >
+                        {labels.approve}
+                      </Button>
+                    )}
+                    {hold.status === 'active' && (
+                      <>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={busy || mine}
+                          onClick={() => void decide(hold, false)}
+                        >
+                          {labels.release}
+                        </Button>
+                        <span className="text-xs text-ink-muted">{labels.releaseWarning}</span>
+                      </>
+                    )}
+                    {mine && hold.status !== 'released' && (
+                      // Beside the disabled control rather than in a tooltip.
+                      // The API refuses this regardless; saying it here is so
+                      // nobody learns the rule by being refused.
+                      <span className="text-xs text-ink-muted">{labels.yours}</span>
+                    )}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </Card>
+
+      <Card className="max-w-5xl">
+        <h2 className="font-display text-lg font-semibold text-ink">{labels.ask}</h2>
+        <form
+          className="mt-4 space-y-4"
+          data-testid="governance-ask"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void ask()
+          }}
+        >
+          <SelectField
+            id={`${formId}-scope`}
+            label={labels.scope}
+            value={scope}
+            onChange={(event) => setScope(event.target.value)}
+          >
+            <option value="tenant">{labels.scopeTenant}</option>
+            <option value="files">{labels.scopeFiles}</option>
+            <option value="audit">{labels.scopeAudit}</option>
+          </SelectField>
+          <TextField
+            id={`${formId}-reason`}
+            label={labels.reason}
+            hint={labels.reasonHint}
+            value={reason}
+            required
+            minLength={1}
+            onChange={(event) => setReason(event.target.value)}
+          />
+          <TextField
+            id={`${formId}-ends`}
+            label={labels.endsAt}
+            hint={labels.endsAtHint}
+            type="date"
+            value={endsAt}
+            onChange={(event) => setEndsAt(event.target.value)}
+          />
+          <Button type="submit" disabled={busy || reason.trim().length === 0}>
+            {busy ? labels.asking : labels.ask}
+          </Button>
+        </form>
+      </Card>
+
+      <Card className="max-w-5xl">
+        <h2 className="font-display text-lg font-semibold text-ink">{labels.retention}</h2>
+        <p className="mt-1 text-sm leading-6 text-ink-muted">{labels.retentionDescription}</p>
+        <p className="mt-1 text-xs leading-5 text-ink-muted">{labels.retentionFloorHint}</p>
+
+        <form
+          className="mt-4 space-y-4"
+          data-testid="governance-retention"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void save()
+          }}
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            {KINDS.map((kind) => (
+              <TextField
+                key={kind}
+                id={`${formId}-${kind}`}
+                label={`${kindLabel[kind]} (${labels.days})`}
+                type="number"
+                min={1}
+                max={MAX_RETENTION_DAYS}
+                value={days[kind]}
+                onChange={(event) =>
+                  setDays((current) => ({ ...current, [kind]: event.target.value }))
+                }
+              />
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" disabled={busy}>
+              {busy ? labels.saving : labels.save}
+            </Button>
+            {saved && (
+              <span role="status" className="text-xs text-ink-muted">
+                {labels.saved}
+              </span>
+            )}
+          </div>
+        </form>
+      </Card>
+    </div>
+  )
+}

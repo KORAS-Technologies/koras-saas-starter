@@ -194,7 +194,9 @@ template_map:
       - tests/unit/test_governance_review.py
       - tests/unit/test_legal_holds.py
       - apps/web/src/app/dashboard/audit
+      - apps/web/src/app/dashboard/governance
       - e2e/audit.spec.ts
+      - e2e/governance.spec.ts
     # Storage governance: the three sweeps over stored objects, and the
     # catalogue one of them writes.
     #

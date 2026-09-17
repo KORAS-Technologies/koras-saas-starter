@@ -463,6 +463,7 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'files.searchable.yes': 'Durchsuchbar',
   'files.searchable.pending': 'Wird indexiert…',
   'files.searchable.no': 'Nicht durchsuchbar',
+  'files.searchable.unknown': 'Nicht indiziert',
   'files.usage': '{used} von {limit} belegt',
   'files.usageUnlimited': '{used} belegt',
   'files.usageUnknown': 'Speicherlimit gerade nicht verfügbar',
@@ -844,4 +845,54 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'errors.periodNotAFilter': 'Den Zeitraum eines geplanten Berichts bestimmt sein Rhythmus.',
   'errors.reportFailed': 'Der Bericht konnte nicht erstellt werden. Versuchen Sie es später erneut.',
   'errors.toolDenied': 'Ihre Rolle erlaubt das im Assistenten nicht.',
+
+  /* ----------------------------------------------------------- governance */
+  'governance.title': 'Governance',
+  'governance.description':
+    'Rechtliche Sperren und wie lange diese Organisation Gespeichertes aufbewahrt. Eine Sperre verhindert das Löschen von allem, was sie umfasst, auch durch die nächtlichen Aufbewahrungsläufe.',
+  'governance.holds': 'Rechtliche Sperren',
+  'governance.holdsDescription':
+    'Jede Sperre und ihr Stand. Eine aufgehobene bleibt erhalten, denn nach ihr wird später gefragt.',
+  'governance.reason': 'Warum diese Sperre nötig ist',
+  'governance.reasonHint':
+    'Nennen Sie den Vorgang. Das liest, wer sie genehmigt, und jeder, der die Sperre später prüft.',
+  'governance.scope': 'Was sie umfasst',
+  'governance.scopeTenant': 'Alles, was diese Organisation hat',
+  'governance.scopeFiles': 'Nur Dateien',
+  'governance.scopeAudit': 'Nur Audit-Einträge',
+  'governance.endsAt': 'Endet am (optional)',
+  'governance.endsAtHint':
+    'Leer lassen für eine Sperre ohne Ende. Eine offene Sperre bewahrt alles auf, bis jemand sie aufhebt.',
+  'governance.ask': 'Sperre beantragen',
+  'governance.asking': 'Wird beantragt…',
+  'governance.status': 'Status',
+  'governance.inForce': 'Derzeit in Kraft',
+  'governance.notInForce': 'Hält derzeit nichts',
+  'governance.who': 'Beantragt von',
+  'governance.yours': 'Darüber muss jemand anderes als Sie entscheiden.',
+  'governance.approve': 'Genehmigen',
+  'governance.release': 'Sperre aufheben',
+  'governance.releaseWarning':
+    'Was sie umfasst, kann ab dem nächsten nächtlichen Lauf wieder gelöscht werden.',
+  'governance.emptyHolds': 'Es wurde keine Sperre beantragt.',
+  'governance.refresh': 'Aktualisieren',
+  'governance.retention': 'Aufbewahrungsdauer',
+  'governance.retentionDescription':
+    'Tage, nach Art. Ein leeres Feld bedeutet den Standard der Plattform für diese Art.',
+  'governance.retentionFloorHint':
+    'Sie können länger als den Standard verlangen, nie kürzer: eine kleinere Zahl wird angenommen, es gilt der längere Wert. Höchstens 3650 Tage.',
+  'governance.days': 'Tage',
+  'governance.save': 'Speichern',
+  'governance.saving': 'Wird gespeichert…',
+  'governance.saved': 'Gespeichert.',
+  'governance.kind.auditActivity': 'Alltägliche Aktivitätseinträge',
+  'governance.kind.audit': 'Audit-Einträge',
+  'governance.kind.auditSecurity': 'Sicherheitseinträge',
+  'governance.kind.storageStandard': 'Gewöhnliche Dateien',
+  'governance.kind.storageSensitive': 'Vertrauliche Dateien',
+  'governance.kind.storageRestricted': 'Streng vertrauliche Dateien',
+  'governance.error.forbidden':
+    'Dazu fehlt Ihnen die Berechtigung. Sperren setzen oder aufheben erfordert die Sperrberechtigung; genehmigen oder aufheben erfordert eine Inhaberin oder Administratorin, die sie nicht beantragt hat.',
+  'governance.error.unavailable':
+    'Governance konnte gerade nicht gelesen werden. Es wurde nichts geändert.',
 }

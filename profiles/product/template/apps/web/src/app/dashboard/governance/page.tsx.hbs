@@ -1,0 +1,104 @@
+import { AccessDenied, Container } from '@{{projectSlug}}/ui'
+import { can, signedInContext } from '../../../lib/access'
+import { currentMember } from '../../../lib/session'
+import { currentLocale, translator } from '../../../lib/locale'
+import { GovernancePanel } from './GovernancePanel'
+import { listHolds, readRetention } from './actions'
+
+/**
+ * Governance: legal holds, and how long this organisation keeps things.
+ *
+ * One gate before anything renders and the same gate again inside the API:
+ * `audit.legal_hold`. Approving and lifting need more than that -- an owner or an
+ * administrator, and never the person who asked -- and those are decided by
+ * the API alone. This page shows the controls and lets the refusal happen,
+ * because a control that disappears teaches nobody the rule, and every refusal
+ * on that side is recorded.
+ *
+ * **Why this page exists at all.** The holds API shipped on 2026-09-16 and
+ * nothing in the product reached it: a customer could not place a hold, see
+ * one, or find out that their records were being kept for a matter. The
+ * retention overrides had the same problem. Both were reachable only by
+ * someone with a token and a terminal, which is not a governance feature, it
+ * is a governance feature's back end. Found by walking the deployed product on
+ * 2026-09-17.
+ *
+ * Both lists are read here so the first paint has them in it; everything after
+ * is a server action.
+ */
+export const dynamic = 'force-dynamic'
+
+export default async function GovernancePage() {
+  const [context, member, locale, t] = await Promise.all([
+    signedInContext(),
+    currentMember(),
+    currentLocale(),
+    translator(),
+  ])
+  if (context === null || member === null || !can(context.access, 'audit.legal_hold')) {
+    return <AccessDenied locale={locale} />
+  }
+
+  const [holds, retention] = await Promise.all([listHolds(), readRetention()])
+
+  // Built here rather than inline: a JSX prop given an object literal opens
+  // with two braces, which the generator reads as a Handlebars expression.
+  const labels = {
+    holds: t('governance.holds'),
+    holdsDescription: t('governance.holdsDescription'),
+    reason: t('governance.reason'),
+    reasonHint: t('governance.reasonHint'),
+    scope: t('governance.scope'),
+    scopeTenant: t('governance.scopeTenant'),
+    scopeFiles: t('governance.scopeFiles'),
+    scopeAudit: t('governance.scopeAudit'),
+    endsAt: t('governance.endsAt'),
+    endsAtHint: t('governance.endsAtHint'),
+    ask: t('governance.ask'),
+    asking: t('governance.asking'),
+    status: t('governance.status'),
+    inForce: t('governance.inForce'),
+    notInForce: t('governance.notInForce'),
+    who: t('governance.who'),
+    yours: t('governance.yours'),
+    approve: t('governance.approve'),
+    release: t('governance.release'),
+    releaseWarning: t('governance.releaseWarning'),
+    emptyHolds: t('governance.emptyHolds'),
+    refresh: t('governance.refresh'),
+    retention: t('governance.retention'),
+    retentionDescription: t('governance.retentionDescription'),
+    retentionFloorHint: t('governance.retentionFloorHint'),
+    days: t('governance.days'),
+    save: t('governance.save'),
+    saving: t('governance.saving'),
+    saved: t('governance.saved'),
+    auditActivity: t('governance.kind.auditActivity'),
+    audit: t('governance.kind.audit'),
+    auditSecurity: t('governance.kind.auditSecurity'),
+    storageStandard: t('governance.kind.storageStandard'),
+    storageSensitive: t('governance.kind.storageSensitive'),
+    storageRestricted: t('governance.kind.storageRestricted'),
+  }
+
+  return (
+    <div className="py-12">
+      <Container>
+        <h1 className="font-display text-2xl font-bold text-ink">{t('governance.title')}</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">
+          {t('governance.description')}
+        </p>
+        <GovernancePanel
+          initialHolds={holds}
+          initialRetention={retention}
+          // The same identity the API records as `requested_by`, so "you asked
+          // for this one" is decided by the same value on both sides. The page
+          // disables the control; the API refuses it anyway.
+          currentUser={member.userId}
+          locale={locale}
+          labels={labels}
+        />
+      </Container>
+    </div>
+  )
+}

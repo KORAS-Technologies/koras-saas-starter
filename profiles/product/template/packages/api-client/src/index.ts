@@ -1268,6 +1268,99 @@ export function refuseRestore(
   })
 }
 
+/* -------------------------------------------------------------------------- */
+/* Legal holds and retention                                                  */
+/* -------------------------------------------------------------------------- */
+
+export interface HoldRow {
+  id: string
+  scope: string
+  reason: string
+  requested_by: string
+  approved_by: string | null
+  status: string
+  starts_at: string
+  ends_at: string | null
+  created_at: string
+  /**
+   * Whether this hold is stopping anything *right now*.
+   *
+   * Not derivable from `status` alone, which is why the API sends it: a hold in
+   * `requested` holds nothing, and an `active` one whose window has passed
+   * holds nothing either. A surface that showed only the status would tell
+   * somebody their records were protected when they were not.
+   */
+  in_force: boolean
+}
+
+export interface HoldList {
+  holds: HoldRow[]
+}
+
+/**
+ * Days kept, by kind, where this tenant wants longer than the platform floor.
+ *
+ * A kind absent from the object takes the floor. Undefined and null are
+ * different requests on the way *in* -- absent means "leave it alone", null
+ * means "remove it" -- which is why `saveRetention` sends only what it is
+ * given.
+ */
+export interface RetentionOverrides {
+  audit_activity?: number | null
+  audit?: number | null
+  audit_security?: number | null
+  storage_standard?: number | null
+  storage_sensitive?: number | null
+  storage_restricted?: number | null
+}
+
+export function fetchHolds(options: RequestOptions): Promise<HoldList> {
+  return request<HoldList>('/api/v1/holds', options)
+}
+
+export function requestHold(
+  options: RequestOptions & { scope: string; reason: string; endsAt?: string | null },
+): Promise<HoldRow> {
+  return request<HoldRow>('/api/v1/holds', options, {
+    method: 'POST',
+    body: {
+      scope: options.scope,
+      reason: options.reason,
+      ...(options.endsAt ? { ends_at: options.endsAt } : {}),
+    },
+  })
+}
+
+export function approveHold(options: RequestOptions & { holdId: string }): Promise<HoldRow> {
+  return request<HoldRow>(`/api/v1/holds/${options.holdId}/approve`, options, {
+    method: 'POST',
+    body: {},
+  })
+}
+
+export function releaseHold(options: RequestOptions & { holdId: string }): Promise<HoldRow> {
+  return request<HoldRow>(`/api/v1/holds/${options.holdId}/release`, options, {
+    method: 'POST',
+    body: {},
+  })
+}
+
+export function fetchRetention(options: RequestOptions): Promise<RetentionOverrides> {
+  return request<RetentionOverrides>('/api/v1/settings/retention', options)
+}
+
+export function saveRetention(
+  options: RequestOptions & { overrides: RetentionOverrides },
+): Promise<RetentionOverrides> {
+  // Only the kinds the caller names. A kind left out keeps its value and a kind
+  // sent as null is removed -- the API separates the two by which keys are
+  // present, so this must not helpfully fill in the rest.
+  return request<RetentionOverrides>('/api/v1/settings/retention', options, {
+    method: 'PUT',
+    body: options.overrides as Record<string, unknown>,
+  })
+}
+
 export interface AuditFilters {
   action?: string
   actorId?: string

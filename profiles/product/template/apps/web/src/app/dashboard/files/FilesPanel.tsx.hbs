@@ -39,6 +39,7 @@ export interface FilesLabels {
   searchableYes: string
   searchablePending: string
   searchableNo: string
+  searchableUnknown: string
   /** `{used}` and `{limit}` */
   usage: string
   /** `{used}` */
@@ -137,6 +138,21 @@ export function FilesPanel({
   // agree by construction, and the zone becomes the customer's once mounted.
   // The alternative, `suppressHydrationWarning`, silences the message and keeps
   // the server's text, which means showing every customer UTC forever.
+  // **How long "Indexing…" can honestly mean "in progress".**
+  //
+  // Reading an upload back and embedding it takes seconds -- a text file on the
+  // dev estate took eight. The page infers the in-flight state from the absence
+  // of a record, which is right while the work is happening and a lie once it
+  // has stopped happening. Nine files on that estate had said "Indexing…" since
+  // 9 September: they were uploaded before the assistant's hook existed, so no
+  // attempt was ever scheduled and no outcome was ever written. Nothing would
+  // ever have written one.
+  //
+  // An hour is far beyond any real indexing run and short enough that nobody
+  // watches a false sentence for a working day. Past it, with no record either
+  // way, the honest reading is that nothing indexed this file.
+  const INDEXING_GRACE_MS = 60 * 60 * 1000
+
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   const timeZone = mounted ? undefined : 'UTC'
@@ -321,6 +337,8 @@ export function FilesPanel({
                       <span className="text-ink">{labels.searchableYes}</span>
                     ) : file.index_note ? (
                       <span title={file.index_note}>{labels.searchableNo}</span>
+                    ) : Date.now() - new Date(file.uploaded_at).getTime() > INDEXING_GRACE_MS ? (
+                      <span>{labels.searchableUnknown}</span>
                     ) : (
                       <span>{labels.searchablePending}</span>
                     )}

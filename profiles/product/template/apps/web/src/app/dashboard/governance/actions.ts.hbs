@@ -1,0 +1,125 @@
+'use server'
+
+import {
+  ApiError,
+  approveHold as approveHoldRequest,
+  fetchHolds,
+  fetchRetention,
+  releaseHold as releaseHoldRequest,
+  requestHold as requestHoldRequest,
+  saveRetention as saveRetentionRequest,
+} from '@{{projectSlug}}/api-client'
+import type { HoldList, HoldRow, RetentionOverrides } from '@{{projectSlug}}/api-client'
+import { can, signedInContext } from '../../../lib/access'
+import { apiErrorMessage } from '../../../lib/api-errors'
+import { translator } from '../../../lib/locale'
+import { apiBaseUrl, providerToken } from '../../../lib/session'
+
+/**
+ * The Governance page's server half.
+ *
+ * Every action re-establishes who is calling before it reaches the API, and the
+ * API decides again with the same token. The two-person rule and the manager
+ * requirement live there, not here: this is the same process for both people,
+ * so it could not enforce either honestly.
+ */
+
+export type ActionResult<T> = { status: 'ok'; value: T } | { status: 'error'; message: string }
+
+async function session() {
+  const context = await signedInContext()
+  // The same permission the API requires. Checked here so the page does not
+  // render controls that would be refused, never *instead* of there.
+  if (context === null || !can(context.access, 'audit.legal_hold')) return null
+  const token = await providerToken()
+  const baseUrl = apiBaseUrl()
+  if (!token || !baseUrl) return null
+  return { baseUrl, token }
+}
+
+async function explain(error: unknown): Promise<string> {
+  const t = await translator()
+  if (error instanceof ApiError) {
+    const coded = apiErrorMessage(t, error.code)
+    if (coded !== null) return coded
+    // 403 here is the interesting one and is not a mistake to hide: approving
+    // your own hold, or lifting one without being an owner or administrator,
+    // both arrive this way and both are recorded on the other side.
+    if (error.status === 403) return t('governance.error.forbidden')
+  }
+  return t('governance.error.unavailable')
+}
+
+async function denied<T>(): Promise<ActionResult<T>> {
+  return { status: 'error', message: (await translator())('governance.error.forbidden') }
+}
+
+export async function listHolds(): Promise<ActionResult<HoldList>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    return { status: 'ok', value: await fetchHolds(auth) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function askForHold(
+  scope: string,
+  reason: string,
+  endsAt: string | null,
+): Promise<ActionResult<HoldRow>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    return { status: 'ok', value: await requestHoldRequest({ ...auth, scope, reason, endsAt }) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function approveHold(holdId: string): Promise<ActionResult<HoldRow>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    return { status: 'ok', value: await approveHoldRequest({ ...auth, holdId }) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function releaseHold(holdId: string): Promise<ActionResult<HoldRow>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    return { status: 'ok', value: await releaseHoldRequest({ ...auth, holdId }) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function readRetention(): Promise<ActionResult<RetentionOverrides>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    return { status: 'ok', value: await fetchRetention(auth) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function writeRetention(
+  overrides: RetentionOverrides,
+): Promise<ActionResult<RetentionOverrides>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    // Passed through exactly as the form built it. A kind the form left out
+    // keeps its stored value and a kind sent as null is removed; filling in
+    // the rest here would silently rewrite settings nobody touched, which is
+    // the defect a security review found on the API side on 2026-09-16.
+    return { status: 'ok', value: await saveRetentionRequest({ ...auth, overrides }) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
