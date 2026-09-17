@@ -297,6 +297,36 @@ def verdict(source_digest: str | None, backup_digest: str | None) -> Outcome:
     )
 
 
+def digest_by_reading(store: ObjectStore, key: str, *, size_bytes: int | None) -> str | None:
+    """Hash an object by reading it, for a provider that will not say.
+
+    **Why this exists.** A backup is worth what can be said about it, and until
+    this function every statement depended on the provider volunteering a
+    SHA-256. Supabase's S3 accepts one on upload, stores nothing, and answers
+    `None` to `HeadObject` and `GetObject` alike -- confirmed against the dev
+    estate on 2026-09-17 by sending a digest and asking for it back. Nothing
+    computes a digest at upload either, so `files.checksum_sha256` is null for
+    every row. `verified` was therefore unreachable on the only provider
+    configured in any environment, and the feature reported `copied` for ever
+    while being described as backup with digest verification.
+
+    Reading both ends and hashing them here is *stronger* than the provider's
+    answer, not a substitute for it: it is a statement about the bytes this
+    process actually read, rather than about a value a provider stored and may
+    have computed over something else. The provider's own digest is still
+    preferred where it exists, because it costs nothing.
+
+    Bounded by `STREAM_CEILING`, which is the same bound the cross-provider copy
+    has and for the same reason: an object of any size must not be pulled into a
+    worker's memory. Past it this answers `None`, the comparison has nothing to
+    compare, and the outcome is an honest `copied`.
+    """
+    if size_bytes is not None and size_bytes > STREAM_CEILING:
+        return None
+    content = store.get(key)
+    return None if content is None else hashlib.sha256(content).hexdigest()
+
+
 def _stream_one(
     store: ObjectStore,
     target_store: ObjectStore,
@@ -331,11 +361,14 @@ def _stream_one(
         # The destination compared and disagreed. That is the control working,
         # and it is a failure rather than something to retry without the digest.
         return Outcome("failed", local, None, "the destination rejected the bytes as not matching")
-    answered = target_store.checksum(backup_key)
     # The locally computed digest is the source side of the comparison: the
-    # bytes read are the bytes hashed. Where the destination answers its own
-    # digest the two are compared; where it does not -- a provider with no
-    # SHA-256 support -- this is `copied`.
+    # bytes read are the bytes hashed. The destination's own digest is preferred
+    # because it costs nothing; where it answers none -- Supabase answers none
+    # for everything -- the copy is read back and hashed here, which is what
+    # makes `verified` reachable at all on such a provider.
+    answered = target_store.checksum(backup_key) or digest_by_reading(
+        target_store, backup_key, size_bytes=size_bytes
+    )
     return verdict(local, answered)
 
 
@@ -390,7 +423,18 @@ def copy_one(
             backup_key=backup_key,
             size_bytes=size_bytes,
         )
-    return verdict(store.checksum(source_key), target_store.checksum(backup_key))
+    # Same rule on both ends: take the provider's digest when it gives one,
+    # read and hash when it does not. On a provider that answers neither this
+    # is two extra reads per object, once, when the backup is made -- `_DUE`
+    # only picks up objects with no good copy, so a verified one is never read
+    # again.
+    source_digest = store.checksum(source_key) or digest_by_reading(
+        store, source_key, size_bytes=size_bytes
+    )
+    backup_digest = target_store.checksum(backup_key) or digest_by_reading(
+        target_store, backup_key, size_bytes=size_bytes
+    )
+    return verdict(source_digest, backup_digest)
 
 
 def backup_key_for(source_key: str) -> str:

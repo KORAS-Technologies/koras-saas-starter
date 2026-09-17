@@ -29,6 +29,7 @@ from koras_worker.tasks.storage_backup import (  # noqa: E402
     copy_one,
     date_orphaned_copies,
     destination_from,
+    digest_by_reading,
     retire_expired_copies,
     streams_through_here,
     verdict,
@@ -460,22 +461,32 @@ async def test_a_destination_that_rejects_the_bytes_is_a_failure_not_a_retry() -
     assert outcome.note is not None and "not matching" in outcome.note
 
 
-def test_a_destination_with_no_checksum_support_still_gets_the_copy() -> None:
-    """A provider that cannot answer a SHA-256 leaves the copy at `copied`.
-    That is an honest report of an unverifiable copy, and it is better than no
-    copy: the object is still somewhere else."""
+def test_a_copy_too_large_to_read_back_is_honestly_unverified() -> None:
+    """`copied` is still a real outcome, and this is where it survives.
+
+    It used to be the answer whenever the destination could not name a digest.
+    Since 2026-09-17 such a copy is read back and hashed here instead, because
+    Supabase names one for nothing and that made `verified` unreachable in every
+    environment. What remains unverifiable is what cannot be read within the
+    bound: past `STREAM_CEILING` there is nothing to compare, and the catalogue
+    says so rather than guessing.
+
+    Better than no copy either way -- the object is still somewhere else, and
+    the row says plainly that nobody compared it.
+    """
     target = _Store(digest=None)
     outcome = copy_one(
-        _Store(content=b"one"),  # type: ignore[arg-type]
+        _Store(content=b"one", digest=None),  # type: ignore[arg-type]
         target,  # type: ignore[arg-type]
         TARGET,
         source_key="tenants/t/documents/f1/a.pdf",
         backup_key="tenants/t/documents/f1/a.pdf",
-        size_bytes=3,
-        streaming=True,
+        size_bytes=STREAM_CEILING + 1,
+        streaming=False,
     )
     assert outcome.status == "copied"
-    assert target.put_keys == ["tenants/t/documents/f1/a.pdf"]
+    assert target.copied == []  # the source did the copying, not the target
+    assert outcome.note is not None
 
 
 def test_a_refused_server_side_copy_is_streamed_instead() -> None:
@@ -553,3 +564,59 @@ def test_an_integrity_refusal_is_never_streamed_around() -> None:
 
     assert outcome.status == "failed"
     assert outcome.note == "the destination rejected the bytes as not matching"
+
+
+def test_a_silent_provider_is_verified_by_reading_the_copy_back() -> None:
+    """`verified` must not depend on the provider volunteering a digest.
+
+    Supabase's S3 accepts a SHA-256 on upload, stores nothing, and answers None
+    to both `HeadObject` and `GetObject` -- confirmed against the dev estate by
+    sending one and asking for it back. Nothing computes a digest at upload
+    either. So every backup in every environment could only ever be `copied`,
+    from a feature described as backup with digest verification.
+
+    Reading the copy back and hashing it here is a stronger statement than the
+    provider's: it is about the bytes this process read, not about a value a
+    provider stored and may have computed over something else.
+    """
+    source = _Store(digest=None, content=b"one")
+    target = _Store(digest=None, content=b"one")
+
+    outcome = copy_one(
+        source,
+        target,
+        TARGET,
+        source_key="tenants/t/f/a.pdf",
+        backup_key="tenants/t/f/a.pdf",
+        size_bytes=3,
+        streaming=True,
+    )
+
+    assert outcome.status == "verified", outcome.note
+
+
+def test_reading_back_still_catches_a_copy_that_does_not_match() -> None:
+    """Guards the guard. A read-back that always agreed would turn every copy
+    into a `verified` one and the whole comparison into decoration."""
+    source = _Store(digest=None, content=b"one")
+    target = _Store(digest=None, content=b"something else entirely")
+
+    outcome = copy_one(
+        source,
+        target,
+        TARGET,
+        source_key="tenants/t/f/a.pdf",
+        backup_key="tenants/t/f/a.pdf",
+        size_bytes=3,
+        streaming=True,
+    )
+
+    assert outcome.status == "failed", outcome.note
+
+
+def test_a_huge_object_is_not_read_back_to_verify_it() -> None:
+    """The bound that stops an object of any size entering a worker's memory
+    applies to verification as well as to copying. Past it there is nothing to
+    compare, and the honest answer is `copied` rather than a read that fails."""
+    assert digest_by_reading(_Store(content=b"one"), "k", size_bytes=STREAM_CEILING + 1) is None
+    assert digest_by_reading(_Store(content=b"one"), "k", size_bytes=3) is not None

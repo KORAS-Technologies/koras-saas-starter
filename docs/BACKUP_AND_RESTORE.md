@@ -70,8 +70,46 @@ records two distinct states, and only one of them is a backup:
 |-------|---------|
 | none | No copy has been attempted for this object |
 | copied | The provider accepted the copy. Nothing has been compared |
-| verified | The destination digest matched the recorded source digest |
+| verified | Two digests were compared and matched |
 | failed | The copy was refused, or the digests disagreed |
+
+### Where the two digests come from
+
+The provider's own, where it gives one -- it costs nothing to ask. Where it does
+not, both ends are read and hashed by the worker instead, bounded by
+`STREAM_CEILING`.
+
+That fallback is not a refinement. Until 2026-09-17 verification depended
+entirely on the provider volunteering a SHA-256, and **Supabase volunteers
+none**: its S3 accepts `ChecksumSHA256` on upload, stores nothing, and answers
+`None` to `HeadObject` and `GetObject` alike. Confirmed by sending a digest and
+asking for it back. Nothing computes one at upload either, so
+`files.checksum_sha256` is null for every row in the estate. `verified` was
+therefore unreachable in all four environments, on the only provider any of
+them is configured with -- a feature described as backup with digest
+verification that could never report one.
+
+A digest computed here is the stronger claim in any case. The provider's is a
+value it stored and may have computed over something else; this one is of the
+bytes this process actually read.
+
+What stays `copied` is what cannot be read within the bound. Past
+`STREAM_CEILING` there is nothing to compare, and the row says so rather than
+guessing.
+
+### A provider that will not copy
+
+`CopyObject` is refused outright by Supabase's S3 for any key containing a
+space, with an empty error code, while `HeadObject` on the same key succeeds. On
+the dev estate that was four of six objects -- somebody had uploaded "Homework
+Packet Fill-In Updated 2025-04-18.pdf" -- each recorded `failed` night after
+night under a run reporting `ok`.
+
+A refused server-side copy now streams through the worker, which is the path
+that already existed for cross-provider copies and works on exactly those keys.
+An *integrity* refusal is never answered that way: that is the destination
+saying the bytes do not match, and writing them by another route is how a
+corrupt object becomes a backup.
 
 `backup_status` and `backed_up_at` on the file index carry this per object.
 They were added by `00018_files_governance.sql` and written since 2026-09-16.
