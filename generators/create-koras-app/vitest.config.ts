@@ -1,6 +1,22 @@
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  /**
+   * Transform without reading a `tsconfig.json` from the file's own directory.
+   *
+   * Two of these tests import a pure module out of `profiles/product/template`
+   * rather than reading it as text, because a decision that is easy to get
+   * subtly wrong should be executed by a test rather than asserted about. A
+   * template package carries a `tsconfig.json` extending `../../tsconfig.base.
+   * json`, which exists only once the two template layers have been merged into
+   * a generated project -- so esbuild resolving it here fails on a file that is
+   * correct and complete for what it is.
+   *
+   * Empty rather than a path to the shared layer's copy: nothing in these
+   * tests needs a compiler option, and pointing at one layer's config would be
+   * a claim about which layer a template file belongs to.
+   */
+  esbuild: { tsconfigRaw: '{}' },
   test: {
     include: ['tests/**/*.test.ts'],
     /**

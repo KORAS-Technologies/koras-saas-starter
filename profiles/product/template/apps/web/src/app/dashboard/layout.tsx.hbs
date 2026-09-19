@@ -3,12 +3,14 @@ import { navigationFor, productConfig, resolveNavigation } from '@{{projectSlug}
 import {
   AuthenticatedProductShell,
   BrandScope,
+  SettingsProvider,
   SubscriptionClosed,
   SubscriptionNotice,
   subscriptionBlocks,
 } from '@{{projectSlug}}/ui'
 import { NO_TENANT, roleLabel, signedInContext } from '../../lib/access'
 import { currentLocale } from '../../lib/locale'
+import { effectiveSettings } from '../../lib/settings'
 {{#if capability.ai}}import { isEntitled } from '@{{projectSlug}}/branding'
 import { can } from '../../lib/access'
 import { translator } from '../../lib/locale'
@@ -64,7 +66,15 @@ export function workspaceLabel(whiteLabel: string, organizationName?: string): s
 }
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
-  const [context, locale] = await Promise.all([signedInContext(), currentLocale()])
+  // Three reads, concurrently, once for every page beneath this layout. The
+  // settings join the two that were already here rather than being fetched by
+  // the pages that use them: one call per navigation, and one answer that every
+  // component below agrees about.
+  const [context, locale, settings] = await Promise.all([
+    signedInContext(),
+    currentLocale(),
+    effectiveSettings(),
+  ])
 
   // The middleware admits nobody without a session, so this is defence rather
   // than a path a browser reaches. Rendering the frame with the product's own
@@ -144,6 +154,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
   return (
     <BrandScope tenant={tenant} className="flex min-h-screen flex-col">
+      {/*
+       * Inside the brand scope and outside the shell, so every component in
+       * the signed-in area can read a setting -- the header, the sidebar and
+       * the page alike -- and nothing outside it can. `settings` is null when
+       * the API could not be reached, and each consumer then uses its own
+       * fallback rather than the page failing.
+       */}
+      <SettingsProvider settings={settings}>
       <AuthenticatedProductShell
         navigation={navigation}
         tenant={tenant}
@@ -174,6 +192,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         </AIPageContextProvider>
 {{/if}}
       </AuthenticatedProductShell>
+      </SettingsProvider>
     </BrandScope>
   )
 }

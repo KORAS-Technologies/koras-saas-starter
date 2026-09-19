@@ -1,0 +1,51 @@
+import type { ResolvedSetting, SettingValue } from './types'
+
+/**
+ * Which value a component actually uses, given what the server resolved.
+ *
+ * Pure, and in its own module rather than inside the provider, for one reason:
+ * `packages/ui` has no test runner in this template — it is typechecked and
+ * exercised in a browser by Playwright, and nothing in it is unit-tested. A
+ * decision this small and this easy to get subtly wrong should be testable
+ * without a DOM, so it lives here and `product-settings.test.ts` imports it
+ * directly.
+ *
+ * Two rules, and the second is the one worth having.
+ *
+ * *Nothing resolved means the fallback.* A component rendered outside the
+ * signed-in area, or before the first load, or while the API was unreachable,
+ * uses the value it would have used anyway.
+ *
+ * *A value of the wrong shape means the fallback too.* A definition can change
+ * under a value that was valid when it was written — an integer setting made
+ * an enum, say — and the row survives until somebody writes it again. Trusting
+ * it would mean a table asked to draw `"comfortable"` rows per page. Falling
+ * back is not hiding the problem: `EffectiveSettings.skipped` carries what the
+ * resolver refused, and this is the narrower case where the server accepted a
+ * value and this particular component cannot use it.
+ */
+export function settingValue<T extends SettingValue>(
+  resolved: ResolvedSetting | undefined,
+  fallback: T,
+): T {
+  if (resolved === undefined) return fallback
+  return sameShape(resolved.value, fallback) ? (resolved.value as T) : fallback
+}
+
+/**
+ * Whether a resolved value is the same kind of thing as the fallback.
+ *
+ * `typeof` alone is not enough: an array is an `object` in JavaScript and so is
+ * a settings object, and a component expecting a list of page sizes given a
+ * `{}` would map over nothing and render an empty control rather than falling
+ * back. Arrays are therefore decided first, in both directions.
+ *
+ * Deliberately shallow. This guards against a setting whose *type* changed, not
+ * against a value whose contents are wrong — bounds and options are the
+ * definition's job, checked in the API before the value was ever stored.
+ */
+export function sameShape(value: SettingValue, fallback: SettingValue): boolean {
+  if (Array.isArray(fallback)) return Array.isArray(value)
+  if (Array.isArray(value)) return false
+  return typeof value === typeof fallback
+}

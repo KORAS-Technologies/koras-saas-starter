@@ -1,0 +1,45 @@
+import { cache } from 'react'
+import { fetchEffectiveSettings } from '@{{projectSlug}}/api-client'
+import type { EffectiveSettings } from '@{{projectSlug}}/api-client'
+import { apiBaseUrl, providerToken } from './session'
+
+/**
+ * Every setting this caller's pages resolve against, read once per render.
+ *
+ * `cache` from React de-duplicates within a single render pass, so the layout
+ * and anything else that asks get one call. Wrapping it is not an optimisation
+ * to be cleaned up later, for the same reason `tenant-settings.ts` gives: three
+ * readers in one pass would make three authenticated requests per navigation,
+ * and the three answers can disagree — a person who changes their page size
+ * mid-render gets a table paginated from one version and a pager drawn from
+ * another.
+ *
+ * Server-side only. It reads the caller's provider token from a cookie, which
+ * a browser bundle has no business holding, and it talks to an origin the
+ * browser is not told about.
+ *
+ * **Never throws.** A caller whose settings cannot be read gets `null`, and the
+ * provider hands every component its own fallback — which is the same state a
+ * brand-new product with an empty database is in, and a working page. Failing
+ * closed here would take the whole signed-in area down because a preference
+ * lookup was unavailable, and settings are the one thing every page reads.
+ */
+export const effectiveSettings = cache(async (): Promise<EffectiveSettings | null> => {
+  const token = await providerToken()
+  const baseUrl = apiBaseUrl()
+  if (!token || !baseUrl) return null
+
+  try {
+    return await fetchEffectiveSettings({ baseUrl, token })
+  } catch (error) {
+    // Server-side, so this reaches the service log and never the browser.
+    //
+    // Worth logging rather than swallowing: an unreachable API and a customer
+    // who has configured nothing produce a page that looks the same, and only
+    // one of them is something to fix. That indistinguishability is the defect
+    // the signup plan catalogue had for a day, reported as "signup is
+    // unavailable" while the platform answered 500 to every request.
+    console.error('[settings] the effective settings could not be read:', error)
+    return null
+  }
+})

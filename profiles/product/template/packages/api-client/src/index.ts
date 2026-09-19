@@ -164,6 +164,47 @@ export function fetchTenantSettings(options: RequestOptions): Promise<TenantSett
 }
 
 /**
+ * One setting, resolved for this caller, and where the answer came from.
+ *
+ * Snake_case because that is what the API answers with, the same choice
+ * `TenantSettings.member_locale` above already makes. A mapping layer on this
+ * side would be a second vocabulary for one contract.
+ */
+export interface ResolvedSetting {
+  key: string
+  value: unknown
+  source: 'user' | 'organization' | 'global' | 'default'
+  can_override: boolean
+  organization_value: unknown
+  global_value: unknown
+}
+
+export interface EffectiveSettings {
+  settings: Record<string, ResolvedSetting>
+  /** Stored values the resolver passed over because they no longer validate. */
+  skipped: string[]
+}
+
+/**
+ * Every setting, resolved for this caller, in one request.
+ *
+ * One call rather than one per key: the shell reads this once per navigation
+ * and hands it to a provider, so no page and no component fetches a setting.
+ *
+ * Takes neither a tenant nor a subject, and there is nowhere to put either:
+ * the API resolves both from the token it verified, and the rows it reads are
+ * scoped by row-level security to exactly those two. A client that could name
+ * a person would be a client somebody could point at a colleague.
+ *
+ * `value` is `unknown` for the reason `branding` is: a setting's type is
+ * declared in the catalogue, not in this client, and the caller holds it
+ * against a fallback of the shape it actually needs.
+ */
+export function fetchEffectiveSettings(options: RequestOptions): Promise<EffectiveSettings> {
+  return request<EffectiveSettings>('/api/v1/settings/effective', options)
+}
+
+/**
  * Remember the language this caller chose, for every device they sign in on.
  *
  * No user identifier, and there is nowhere to put one: the API keys the row

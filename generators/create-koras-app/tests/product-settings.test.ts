@@ -3,6 +3,14 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import yaml from 'js-yaml'
 import { templatePath } from './template-path'
+import {
+  sameShape,
+  settingValue,
+} from '../../../profiles/product/template/packages/ui/src/settings/value'
+import type {
+  ResolvedSetting,
+  SettingValue,
+} from '../../../profiles/product/template/packages/ui/src/settings/types'
 
 /**
  * The settings framework, checked from the template text.
@@ -346,18 +354,24 @@ describe('the language preference moves into the framework', () => {
  * Not about settings, and here because settings is where it bit.
  *
  * Every `python-packages/*\/tests/` directory is on the path as a top-level
- * module with no `__init__.py`, so two packages each carrying a `support.py`
- * are two modules with one name. `mypy` refuses the pair rather than choosing
- * one, and it refuses it only when it checks the whole workspace — a single
- * package's suite runs perfectly well on its own, which is why this reached
- * CI on 2026-09-17 with every local check green.
+ * module with no `__init__.py`, so two packages each carrying one filename are
+ * two modules with one name. `mypy` refuses the pair rather than choosing, and
+ * it refuses it only when it checks the whole workspace — a single package's
+ * suite runs perfectly well on its own, which is why this reached CI on
+ * 2026-09-17 with every local check green.
  *
- * The convention that avoids it is already in the tree twice
- * (`reporting_support.py`, and now `settings_support.py`): a shared test helper
- * is named for the package it serves.
+ * **It then reached CI a second time, on 2026-09-19, past the first version of
+ * this test.** That version skipped `test_*.py` on the reasoning that such a
+ * name "is already unique by habit, and pytest would complain long before
+ * mypy". Both halves were wrong: `test_definitions_and_registry.py` is the
+ * obvious name for a registry's suite and two packages had reached for it, and
+ * pytest was perfectly happy. A guard with a carve-out is a guard for the cases
+ * somebody already thought of.
+ *
+ * So: every `.py` file in those directories, whatever it is called.
  */
 describe('test helpers do not collide across packages', () => {
-  it('gives every shared helper a name of its own', () => {
+  it('gives every module in a tests directory a name of its own', () => {
     // Every directory whose `.py` files mypy sees as top-level modules.
     const directories: string[] = [join(PRODUCT, 'tests', 'unit')]
     for (const root of [join(SHARED, 'python-packages'), join(PRODUCT, 'python-packages')]) {
@@ -372,9 +386,10 @@ describe('test helpers do not collide across packages', () => {
     for (const tests of directories) {
       if (existsSync(tests)) {
         for (const file of readdirSync(tests)) {
-          // Only the helpers. A `test_*.py` name is already unique by habit,
-          // and pytest's own collection would complain long before mypy.
-          if (!file.endsWith('.py') || file.startsWith('test_')) continue
+          if (!file.endsWith('.py')) continue
+          // The two names that are *supposed* to repeat: `__init__.py` makes a
+          // package rather than a top-level module, and pytest resolves a
+          // `conftest.py` by directory rather than by module name.
           if (file === '__init__.py' || file === 'conftest.py') continue
           const where = join(tests, file)
           const first = seen.get(file)
@@ -388,8 +403,128 @@ describe('test helpers do not collide across packages', () => {
       }
     }
 
-    // Not vacuous: the helpers it is meant to be comparing really are there.
+    // Not vacuous: the files behind both failures really are in the scan, and
+    // enough of the tree is being walked to have found them.
     expect(seen.has('settings_support.py')).toBe(true)
     expect(seen.has('support.py')).toBe(true)
+    expect(seen.has('test_settings_definitions.py')).toBe(true)
+    expect(seen.has('test_definitions_and_registry.py')).toBe(true)
+    expect(seen.size).toBeGreaterThan(30)
+  })
+})
+
+/**
+ * The provider's one decision, tested rather than asserted about.
+ *
+ * `packages/ui` has no test runner in this template — it is typechecked and
+ * exercised in a browser by Playwright, and nothing in it is unit-tested. The
+ * rest of this file reads template text; this imports the module, because the
+ * fallback rule is small, easy to get subtly wrong, and needs no DOM.
+ */
+describe('which value a component uses', () => {
+  const resolved = (value: SettingValue): ResolvedSetting => ({
+    key: 'grid.pageSize',
+    value,
+    source: 'organization',
+    can_override: true,
+    organization_value: value,
+    global_value: value,
+  })
+
+  it('uses the resolved value when the server sent one', () => {
+    expect(settingValue(resolved(100), 50)).toBe(100)
+  })
+
+  it('uses the fallback outside a provider', () => {
+    // A component in a test, in a story, or on a page above the signed-in
+    // area. It renders with its own default rather than crashing.
+    expect(settingValue(undefined, 50)).toBe(50)
+  })
+
+  it('uses the fallback when the stored value is the wrong shape', () => {
+    // A definition changed under a value that was valid when written. Trusting
+    // it means a table asked to draw "comfortable" rows per page.
+    expect(settingValue(resolved('comfortable'), 50)).toBe(50)
+    expect(settingValue(resolved(true), 50)).toBe(50)
+  })
+
+  it('does not confuse a list with an object, in either direction', () => {
+    // Both are `object` to `typeof`, and a component expecting page-size
+    // options given `{}` would map over nothing and draw an empty control.
+    expect(settingValue(resolved({ a: 1 }), ['10', '25'])).toEqual(['10', '25'])
+    expect(settingValue(resolved(['10']), { a: 1 })).toEqual({ a: 1 })
+    expect(settingValue(resolved(['10', '25']), ['50'])).toEqual(['10', '25'])
+  })
+
+  it('keeps a falsy value that is genuinely the answer', () => {
+    // The mistake a `||` would make. `false` and `0` are values somebody chose.
+    expect(settingValue(resolved(false), true)).toBe(false)
+    expect(settingValue(resolved(0), 50)).toBe(0)
+    expect(settingValue(resolved(''), 'UTC')).toBe('')
+  })
+
+  it('decides shape without deciding validity', () => {
+    // Bounds and options are the definition's job, checked in the API before
+    // the value was stored. This guards a type that changed, nothing else.
+    expect(sameShape(9999, 50)).toBe(true)
+    expect(sameShape('mauve', 'system')).toBe(true)
+  })
+})
+
+describe('the settings provider', () => {
+  it('loads once in the layout and wraps everything below it', () => {
+    const layout = read('apps', 'web', 'src', 'app', 'dashboard', 'layout.tsx.hbs')
+
+    // In the same concurrent read as the context and the locale — one call per
+    // navigation, not one per page that happens to need a setting.
+    expect(layout).toContain('effectiveSettings()')
+    expect(layout).toMatch(/Promise\.all\(\[\s*\n\s*signedInContext\(\),/)
+
+    // Outside the shell, so the header and the sidebar can read a setting too.
+    const opens = layout.indexOf('<SettingsProvider')
+    const shell = layout.indexOf('<AuthenticatedProductShell')
+    const closes = layout.indexOf('</SettingsProvider>')
+    expect(opens).toBeGreaterThan(-1)
+    expect(opens).toBeLessThan(shell)
+    expect(closes).toBeGreaterThan(layout.indexOf('</AuthenticatedProductShell>'))
+  })
+
+  it('never lets a settings read take the signed-in area down', () => {
+    // Settings are the one thing every page reads. Failing closed here would
+    // mean an unreachable API is an unreachable product.
+    const loader = read('apps', 'web', 'src', 'lib', 'settings.ts.hbs')
+    expect(loader).toContain('cache(')
+    expect(loader).toContain('return null')
+    expect(loader).toContain('catch')
+  })
+
+  it('is a client component, and the loader never reaches a browser', () => {
+    const provider = read('packages', 'ui', 'src', 'settings', 'provider.tsx')
+    expect(provider.startsWith("'use client'")).toBe(true)
+    // The loader reads a cookie and talks to an origin the browser is not told
+    // about, so it must not be imported from anything the client bundles.
+    const loader = read('apps', 'web', 'src', 'lib', 'settings.ts.hbs')
+    expect(loader).not.toContain("'use client'")
+    expect(loader).toContain('providerToken')
+  })
+
+  it('offers the keys the catalogue declares, and does not cap what a product may add', () => {
+    // A union for autocompletion, not a second catalogue: no labels, no
+    // defaults, no rules. The string intersection is what lets a product
+    // declare `shop.basketHoldMinutes` without editing this package.
+    const types = read('packages', 'ui', 'src', 'settings', 'types.ts')
+    const listed = [...types.matchAll(/^ {2}'([a-z][\w.]+)',$/gm)].map((match) => match[1]!)
+
+    const standard = read('services', 'api', 'koras_api', 'settings_catalogue', 'standard.py')
+    // The first argument of each `_setting(` call, and only that. Matching
+    // every quoted string at that indent also catches defaults — `"auto"`,
+    // `"comfortable"` — which are values, not keys.
+    const declared = [...standard.matchAll(/_setting\(\s*\n\s*"([\w.]+)"/g)].map(
+      (match) => match[1]!,
+    )
+
+    expect(listed.length).toBeGreaterThan(30)
+    expect([...listed].sort()).toEqual([...declared].sort())
+    expect(types).toContain('(string & Record<never, never>)')
   })
 })

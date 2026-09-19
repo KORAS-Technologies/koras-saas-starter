@@ -1,7 +1,7 @@
 # Settings & Preferences Framework — implementation plan
 
-Written 2026-09-17, at the close of Phase 1. Phases 2, 3 and 4 are done;
-5 onward are not started, as of 2026-09-17.
+Written 2026-09-17, at the close of Phase 1. Phases 2 to 5 are done; 6 onward
+are not started, as of 2026-09-19.
 
 ---
 
@@ -126,13 +126,30 @@ Exit, met: 46 unit tests pass in a generated product, covering the eight routes,
 the three refusals, the audit rows and the locale move; ruff and mypy `--strict`
 clean; the structural suite pins the router outside every capability gate.
 
-### Phase 5 — provider
+### Phase 5 — provider  *(done 2026-09-19)*
 
-Effective settings loaded once in the dashboard layout, wrapped in React
-`cache()`, passed to `SettingsProvider`. `useSettings` and `useSetting`.
+`fetchEffectiveSettings` in `packages/api-client`, `lib/settings.ts` wrapped in
+React `cache()` and never throwing, and `SettingsProvider` / `useSettings` /
+`useSetting` / `useSettingValue` in `packages/ui`, loaded once in the dashboard
+layout beside the context and the locale.
 
-Exit: one API call per navigation, asserted; a component outside the provider
-gets the definition's default rather than throwing.
+**`useSettingValue` takes the fallback rather than knowing it.** A shared
+component has to work outside a provider and while the API is unreachable, so
+it needs a value it can name — and making the caller pass one keeps the
+foundation's defaults in `koras_settings` rather than mirrored into a second
+table in TypeScript that would drift. The one number the grid needs is a
+constant in the grid, pinned to the catalogue by a test in Phase 6.
+
+**`packages/ui` has no test runner**, so the decision that is easy to get
+subtly wrong — which value a component actually uses — lives in a pure module,
+`settings/value.ts`, and the starter's own suite imports and executes it. That
+needed one line of vitest configuration, because a template package's
+`tsconfig.json` extends a file that exists only after the two template layers
+are merged.
+
+Exit, met: one API call per navigation, asserted from the layout; a component
+outside the provider, or given a value of the wrong shape, uses its own
+fallback; `false` and `0` survive, which a `||` would not.
 
 ### Phase 6 — grid
 

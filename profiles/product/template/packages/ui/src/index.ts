@@ -117,3 +117,17 @@ export type {
   ValueUnit,
   VisualizationKind,
 } from './reporting/types'
+
+// The settings a signed-in person's pages resolve against, loaded once in the
+// dashboard layout and handed down. Never capability-gated: the shell reads
+// them before it paints, in every product.
+export { SettingsProvider, useSetting, useSettingValue, useSettings } from './settings/provider'
+export { STANDARD_SETTING_KEYS } from './settings/types'
+export { sameShape, settingValue } from './settings/value'
+export type {
+  EffectiveSettings,
+  ResolvedSetting,
+  SettingKey,
+  SettingSource,
+  SettingValue,
+} from './settings/types'
