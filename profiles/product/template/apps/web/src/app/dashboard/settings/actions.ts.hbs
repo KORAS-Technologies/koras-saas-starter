@@ -1,12 +1,23 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { ApiError, updateTenantLocale } from '@{{projectSlug}}/api-client'
+import { redirect } from 'next/navigation'
+import {
+  ApiError,
+  clearMySetting,
+  fetchSettingDefinitions,
+  resetTenantSetting,
+  updateMySettings,
+  updateTenantLocale,
+  updateTenantSettingValues,
+} from '@{{projectSlug}}/api-client'
+import type { SettingDefinitionResponse } from '@{{projectSlug}}/api-client'
 import { productConfig } from '@{{projectSlug}}/branding'
 import { isLocale } from '@{{projectSlug}}/i18n'
 import { can, signedInContext } from '../../../lib/access'
 import { translator } from '../../../lib/locale'
 import { apiBaseUrl, providerToken } from '../../../lib/session'
+import { valuesFromForm } from '../../../lib/setting-fields'
 import type { TenantLocaleState } from './state'
 
 /**
@@ -54,4 +65,118 @@ export async function setTenantLocale(
   // call, so the whole area is stale rather than one route.
   revalidatePath('/dashboard', 'layout')
   return { status: 'saved', message: t('settings.language.tenantSaved') }
+}
+
+/**
+ * Save one category of the organisation's settings.
+ *
+ * Re-establishes who is calling and what they may do, reads the published
+ * catalogue, types the submitted form against it, and sends the result. The API
+ * checks the permission and every value again with the same token — this is the
+ * convenience, that is the guard.
+ *
+ * **Answers by redirecting rather than by returning state.** The form is a
+ * server-rendered one inside a shared component, and a state-returning action
+ * would make that component hold a `useActionState` per category and every page
+ * pass a matching initial state. A redirect with a flag works without
+ * JavaScript, survives a reload, and says the same thing to everybody.
+ */
+export async function saveOrganizationSettings(form: FormData): Promise<void> {
+  const outcome = await writeSettings(form, 'organization')
+  redirect(`/dashboard/settings?saved=${outcome}`)
+}
+
+/** Put the platform's current value back into one of the organisation's rows. */
+export async function resetOrganizationSetting(form: FormData): Promise<void> {
+  const context = await signedInContext()
+  if (context === null || !can(context.access, 'settings.manage')) {
+    redirect('/dashboard/settings?saved=forbidden')
+  }
+  const [token, baseUrl] = [await providerToken(), apiBaseUrl()]
+  const key = String(form.get('key') ?? '')
+  if (!token || !baseUrl || key === '') redirect('/dashboard/settings?saved=error')
+
+  try {
+    await resetTenantSetting({ baseUrl, token, key })
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 403) {
+      redirect('/dashboard/settings?saved=forbidden')
+    }
+    redirect('/dashboard/settings?saved=error')
+  }
+  revalidatePath('/dashboard', 'layout')
+  redirect('/dashboard/settings?saved=ok')
+}
+
+/**
+ * The half both scopes share: read the catalogue, type the form, send it.
+ *
+ * `redirect` throws, which is how Next's own control flow works, so this
+ * returns a word and lets the caller do the redirecting — otherwise the
+ * `try` below would swallow the redirect as a failure.
+ */
+async function writeSettings(form: FormData, scope: 'organization' | 'member'): Promise<string> {
+  const context = await signedInContext()
+  if (context === null) return 'error'
+  // Changing the organisation decides for other people; changing your own
+  // decides for you, and needs no permission for the same reason choosing a
+  // language never did.
+  if (scope === 'organization' && !can(context.access, 'settings.manage')) return 'forbidden'
+
+  const [token, baseUrl] = [await providerToken(), apiBaseUrl()]
+  if (!token || !baseUrl) return 'error'
+
+  const category = String(form.get('category') ?? '')
+  if (category === '') return 'error'
+
+  try {
+    const definitions = await fetchSettingDefinitions({ baseUrl, token })
+    const visible = (definition: SettingDefinitionResponse) =>
+      scope === 'organization' ? definition.org_admin_visible : definition.user_visible
+    const values = valuesFromForm(definitions, category, form, visible)
+    if (Object.keys(values).length === 0) return 'ok'
+
+    if (scope === 'organization') {
+      await updateTenantSettingValues({ baseUrl, token, values })
+    } else {
+      await updateMySettings({ baseUrl, token, values })
+    }
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 403) return 'forbidden'
+    return 'error'
+  }
+
+  // Every signed-in page resolves its settings through one cached call in the
+  // layout, so the whole area is stale rather than one route.
+  revalidatePath('/dashboard', 'layout')
+  return 'ok'
+}
+
+/** Save one category of this person's own preferences. */
+export async function saveMyPreferences(form: FormData): Promise<void> {
+  const outcome = await writeSettings(form, 'member')
+  redirect(`/dashboard/preferences?saved=${outcome}`)
+}
+
+/**
+ * Stop deciding one setting for yourself.
+ *
+ * A delete, where the organisation's reset is a copy: the organisation's value
+ * answers again, now and as it changes.
+ */
+export async function resetMyPreference(form: FormData): Promise<void> {
+  const context = await signedInContext()
+  const [token, baseUrl] = [await providerToken(), apiBaseUrl()]
+  const key = String(form.get('key') ?? '')
+  if (context === null || !token || !baseUrl || key === '') {
+    redirect('/dashboard/preferences?saved=error')
+  }
+
+  try {
+    await clearMySetting({ baseUrl, token, key })
+  } catch {
+    redirect('/dashboard/preferences?saved=error')
+  }
+  revalidatePath('/dashboard', 'layout')
+  redirect('/dashboard/preferences?saved=ok')
 }

@@ -339,7 +339,24 @@ describe('the catalogues', () => {
     const missing = [...used].filter((key) => !keys.has(key))
     expect(missing, 'keys used by a template that no catalogue declares').toEqual([])
 
-    const unused = [...keys].filter((key) => !used.has(key))
+    // The settings catalogue is the one family of keys this scan cannot see.
+    //
+    // A setting's label is looked up as `t(definition.label_key)` -- the key is
+    // named in `settings_catalogue/standard.py` and arrives over the API, so
+    // there is no literal in any template to match. Scanning for literals is
+    // the right mechanism for every other key and is blind to this one.
+    //
+    // Exempted here and checked better elsewhere: `product-settings.test.ts`
+    // asserts that every key the catalogue names exists in all three
+    // catalogues, and that every `settings.*` key here belongs to a definition
+    // that is actually shown. That is a stronger statement than "some template
+    // mentions it", because it is tied to the thing that renders it.
+    const rendered = (key: string) =>
+      key.startsWith('settings.def.') ||
+      key.startsWith('settings.category.') ||
+      key.startsWith('settings.option.')
+
+    const unused = [...keys].filter((key) => !used.has(key) && !rendered(key))
     expect(unused, 'keys declared that nothing renders').toEqual([])
   })
 

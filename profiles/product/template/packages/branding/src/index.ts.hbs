@@ -817,6 +817,7 @@ export const productConfig: ProductConfig = {
 {{/if}}          insights: 'Einblicke',
           team: 'Team & Zugriff',
           settings: 'Einstellungen',
+          preferences: 'Meine Einstellungen',
         },
       },
       marketing: {
@@ -1067,6 +1068,7 @@ export const productConfig: ProductConfig = {
 {{/if}}          insights: 'Análisis',
           team: 'Equipo y acceso',
           settings: 'Configuración',
+          preferences: 'Mis preferencias',
         },
       },
       marketing: {
@@ -1715,6 +1717,19 @@ export const productConfig: ProductConfig = {
         group: 'administration',
         order: 20,
         requiredPermissions: ['settings.read'],
+      },
+      // A person's own settings, beside the organisation's and gated by
+      // nothing. Choosing your own theme is not an act that needs authority,
+      // and the row a save writes is keyed to the caller's verified subject --
+      // which is what makes it safe, rather than a permission string. The same
+      // position `PUT /me/locale` has taken since the language work.
+      {
+        id: 'preferences',
+        label: 'My preferences',
+        icon: 'users',
+        href: '/dashboard/preferences',
+        group: 'administration',
+        order: 25,
       },
       // The first module that stores something. Locked rather than hidden
       // when the plan lacks it, because file storage is something a

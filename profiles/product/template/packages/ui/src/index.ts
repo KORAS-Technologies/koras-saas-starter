@@ -125,6 +125,14 @@ export { SettingsProvider, useSetting, useSettingValue, useSettings } from './se
 export { STANDARD_SETTING_KEYS } from './settings/types'
 export { chooseValue, sameShape, settingValue } from './settings/value'
 export { parseEffectiveSettings } from './settings/parse'
+export { SettingsForm } from './settings/settings-form'
+export { describeValue, optionLabel } from './settings/fields'
+export type {
+  SettingField,
+  SettingFieldOption,
+  SettingGroup,
+  SettingsFormLabels,
+} from './settings/fields'
 export type {
   EffectiveSettings,
   ResolvedSetting,

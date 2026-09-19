@@ -1,6 +1,6 @@
 # Settings & Preferences Framework — implementation plan
 
-Written 2026-09-17, at the close of Phase 1. Phases 2 to 6 are done; 7 onward
+Written 2026-09-17, at the close of Phase 1. Phases 2 to 7 are done; 8 onward
 are not started, as of 2026-09-19.
 
 ---
@@ -180,14 +180,43 @@ with a caption and column scopes, an announced range, visible focus on both
 pager controls, an empty result as a sentence, and the pager's six strings in
 all three catalogues.
 
-### Phase 7 — product UI
+### Phase 7 — product UI  *(done 2026-09-19)*
 
-`/dashboard/settings` gains the category-grouped organisation settings with
-current value, platform default, modified-or-default status and reset.
-`/dashboard/preferences` is new — a nav module, a permission-free page, and the
-reset-to-organisation control.
+One shared `SettingsForm` in `packages/ui`, used by both surfaces:
+`/dashboard/settings` gains the organisation's settings grouped by category,
+and `/dashboard/preferences` is new — a nav module with no permission on it, a
+page, and a reset that clears rather than copies.
 
-Exit: e2e over both, at 375 and 1440, with the console clean.
+**Neither page shows the effective settings.** The organisation's page shows
+what the organisation holds with the platform's value beneath it; My preferences
+shows what the person holds with the organisation's beneath it. Showing either
+page the resolved value is the mistake that makes settings feel broken: an
+administrator whose own override is winning changes the organisation's value,
+sees no difference, and changes it again.
+
+**27 settings are shown, not 32.** The five `grid.*` settings the table does not
+honour are `surfaced=False` in the catalogue: published over the API, so a
+product may read them, and absent from both pages. A control that visibly does
+nothing teaches people the framework is decorative, which is more expensive than
+a missing row.
+
+**The translations are mine and want a reader.** 86 keys per language — 54
+setting labels and descriptions, 7 category names, 25 option labels shared by
+value — plus 23 of page chrome. The English is the source of truth. The German
+and Spanish have not been read by anyone who speaks them, and the existing
+catalogues were translated rather than written by an author; this is the first
+part of the estate where that is not true.
+
+**The e2e spec is not written**, and belongs in Phase 10 where Playwright
+actually runs. A spec written here could not be executed, and the assertions
+worth making — that a save lands, that a reset gives back the value it names —
+depend on an API the local template tree has no way to answer with. A spec
+nobody ran that goes red in CI teaches people to re-run rather than to read.
+
+Exit, met: a generated product **builds, lints and typechecks** (33/33 on each);
+the settings API's `Call` type learned `PATCH`, which the build found; 78
+structural tests including every rendered setting having a label and description
+in all three catalogues, and no hidden setting having one.
 
 ### Phase 8 — contract and Control Plane
 

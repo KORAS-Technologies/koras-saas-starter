@@ -1,3 +1,4 @@
+import { fetchSettingDefinitions, fetchTenantSettingValues } from '@{{projectSlug}}/api-client'
 import { productConfig } from '@{{projectSlug}}/branding'
 import { LOCALE_NAMES, isLocale } from '@{{projectSlug}}/i18n'
 import {
@@ -6,13 +7,18 @@ import {
   Card,
   Container,
   SelectField,
+  SettingsForm,
   ThemeToggle,
   codeTag,
   rich,
 } from '@{{projectSlug}}/ui'
 import { can, signedInContext } from '../../../lib/access'
 import { currentLocale, translator } from '../../../lib/locale'
+import { apiBaseUrl, providerToken } from '../../../lib/session'
+import { settingGroups } from '../../../lib/setting-fields'
+import { effectiveSettings } from '../../../lib/settings'
 import { tenantSettings } from '../../../lib/tenant-settings'
+import { resetOrganizationSetting, saveOrganizationSettings } from './actions'
 import { TenantLocaleForm } from './TenantLocaleForm'
 
 /**
@@ -45,12 +51,21 @@ import { TenantLocaleForm } from './TenantLocaleForm'
  */
 export const dynamic = 'force-dynamic'
 
-export default async function SettingsPage() {
-  const [context, locale, t, settings] = await Promise.all([
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ saved?: string }>
+}) {
+  const [context, locale, t, settings, effective, query] = await Promise.all([
     signedInContext(),
     currentLocale(),
     translator(),
     tenantSettings(),
+    effectiveSettings(),
+    // `query`, not `params`: this page already binds `params` to the
+    // translation parameters a few lines below, and two things called params
+    // in one function is one too many.
+    searchParams,
   ])
 
   // Checked here as well as in the middleware, which is not duplication: the
@@ -73,6 +88,45 @@ export default async function SettingsPage() {
   const tenantDefault =
     isLocale(storedDefault) && i18n.locales.includes(storedDefault) ? storedDefault : null
 
+  const [token, baseUrl] = [await providerToken(), apiBaseUrl()]
+  const manage = can(context.access, 'settings.manage')
+
+  // What the organisation holds, and what the platform holds beneath it. Not
+  // the effective set: an administrator editing the organisation needs to see
+  // the organisation's value, or their own override hides the change they just
+  // made and they make it twice.
+  const [definitions, held] =
+    token && baseUrl
+      ? await Promise.all([
+          fetchSettingDefinitions({ baseUrl, token }).catch(() => []),
+          fetchTenantSettingValues({ baseUrl, token }).catch(() => ({})),
+        ])
+      : [[], {}]
+
+  const platform = Object.fromEntries(
+    Object.entries(effective?.settings ?? {}).map(([key, resolved]) => [key, resolved.global_value]),
+  )
+
+  const groups = settingGroups({
+    definitions,
+    values: held,
+    inherited: platform,
+    t,
+    visible: (definition) => definition.org_admin_visible,
+  })
+
+  const settingsLabels = {
+    save: t('settings.values.save'),
+    saving: t('settings.values.saving'),
+    modified: t('settings.values.modified'),
+    inheritedFrom: t('settings.values.inherited'),
+    reset: t('settings.values.reset'),
+    resetTo: (value: string) => t('settings.values.resetTo', { value }),
+    listHint: t('settings.values.listHint'),
+    on: t('settings.values.on'),
+    off: t('settings.values.off'),
+  }
+
   return (
     <div className="py-12">
       <Container>
@@ -88,6 +142,60 @@ export default async function SettingsPage() {
           </dl>
           <p className="mt-4 text-sm text-ink-muted">{rich(t('settings.product.configuredIn'), code)}</p>
         </Card>
+
+        {/*
+          The organisation's own settings, grouped as the catalogue groups them.
+          Rendered for anybody who may read settings; the controls are there for
+          everybody and the API refuses a write from somebody without
+          `settings.manage`, which the page says before they try.
+        */}
+        <div className="mt-6 max-w-3xl">
+          <h2 className="font-display text-xl font-bold text-ink">{t('settings.values.title')}</h2>
+          <p className="mt-2 text-sm leading-6 text-ink-muted">
+            {t('settings.values.intro', params)}
+          </p>
+
+          {/*
+            Announced, because a redirect lands on a page that looks the same as
+            the one just left.
+          */}
+          {query.saved ? (
+            <p
+              className="mt-4 text-sm text-ink-muted"
+              role="status"
+              data-testid="settings-outcome"
+              data-outcome={query.saved}
+            >
+              {query.saved === 'ok'
+                ? t('settings.values.saved')
+                : query.saved === 'forbidden'
+                  ? t('settings.values.forbidden')
+                  : t('settings.values.error')}
+            </p>
+          ) : null}
+
+          {!manage ? (
+            <p className="mt-4 text-sm text-ink-muted" data-testid="settings-readonly">
+              {t('settings.values.forbidden')}
+            </p>
+          ) : null}
+
+          <div className="mt-4">
+            {groups.length === 0 ? (
+              <p className="text-sm text-ink-muted" data-testid="settings-unavailable">
+                {t('settings.values.unavailable')}
+              </p>
+            ) : (
+              <SettingsForm
+                groups={groups}
+                labels={settingsLabels}
+                save={saveOrganizationSettings}
+                reset={resetOrganizationSetting}
+                testId="organisation-settings"
+              />
+            )}
+          </div>
+        </div>
 
         {/* Rendered only when there is a choice to make. A form offering one
             option asks a person to decide something already decided. */}

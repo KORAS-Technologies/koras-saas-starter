@@ -77,6 +77,7 @@ def _setting(
     maximum: float | None = None,
     org_admin_visible: bool = True,
     status: Status = Status.AVAILABLE,
+    surfaced: bool = True,
 ) -> SettingDefinition:
     """One definition, with the two i18n keys derived from the setting's own.
 
@@ -96,10 +97,16 @@ def _setting(
         options=options,
         minimum=minimum,
         maximum=maximum,
-        org_admin_visible=org_admin_visible,
+        org_admin_visible=org_admin_visible and surfaced,
         # A person is offered exactly what a person may write. The definition
         # refuses the other combination outright, so this cannot drift.
-        user_visible=scope.admits_user,
+        #
+        # `surfaced` is the second half: a setting nothing honours yet is
+        # published in the catalogue -- a product may read it -- and shown on
+        # neither customer page. A control that visibly does nothing teaches
+        # people the whole framework is decorative, which is a more expensive
+        # lesson than a missing row on a settings page.
+        user_visible=scope.admits_user and surfaced,
         status=status,
         ui=ui,
         order=order,
@@ -275,6 +282,8 @@ SETTINGS: list[SettingDefinition] = [
         Scope.GLOBAL_ORG_USER,
         ui=UiControl.TOGGLE,
         order=50,
+        # Declared, and honoured by nothing as of 2026-09-19.
+        surfaced=False,
     ),
     _setting(
         "grid.allowColumnReorder",
@@ -284,6 +293,8 @@ SETTINGS: list[SettingDefinition] = [
         Scope.GLOBAL_ORG_USER,
         ui=UiControl.TOGGLE,
         order=60,
+        # Declared, and honoured by nothing as of 2026-09-19.
+        surfaced=False,
     ),
     _setting(
         "grid.rememberFilters",
@@ -293,6 +304,8 @@ SETTINGS: list[SettingDefinition] = [
         Scope.GLOBAL_ORG_USER,
         ui=UiControl.TOGGLE,
         order=70,
+        # Declared, and honoured by nothing as of 2026-09-19.
+        surfaced=False,
     ),
     _setting(
         "grid.rememberSort",
@@ -302,6 +315,8 @@ SETTINGS: list[SettingDefinition] = [
         Scope.GLOBAL_ORG_USER,
         ui=UiControl.TOGGLE,
         order=80,
+        # Declared, and honoured by nothing as of 2026-09-19.
+        surfaced=False,
     ),
     _setting(
         "grid.rememberColumns",
@@ -311,6 +326,8 @@ SETTINGS: list[SettingDefinition] = [
         Scope.GLOBAL_ORG_USER,
         ui=UiControl.TOGGLE,
         order=90,
+        # Declared, and honoured by nothing as of 2026-09-19.
+        surfaced=False,
     ),
     _setting(
         "grid.rowDensity",

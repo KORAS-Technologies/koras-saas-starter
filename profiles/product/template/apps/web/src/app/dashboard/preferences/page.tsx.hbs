@@ -1,0 +1,129 @@
+import { Container, SettingsForm } from '@{{projectSlug}}/ui'
+import { fetchMySettings, fetchSettingDefinitions } from '@{{projectSlug}}/api-client'
+import { AccessDenied } from '@{{projectSlug}}/ui'
+import { signedInContext } from '../../../lib/access'
+import { currentLocale, translator } from '../../../lib/locale'
+import { apiBaseUrl, providerToken } from '../../../lib/session'
+import { effectiveSettings } from '../../../lib/settings'
+import { settingGroups } from '../../../lib/setting-fields'
+import { resetMyPreference, saveMyPreferences } from '../settings/actions'
+
+/**
+ * A person's own settings, on every device they sign in on.
+ *
+ * Shows only what a person may actually change: `user_visible` is false for
+ * every setting the organisation decides, so the page cannot offer a control
+ * the API would refuse. The catalogue decides, not this file — which is what
+ * lets a product add a personal setting without editing a page.
+ *
+ * **What a field falls back to here is the organisation's value, not the
+ * platform's.** That is the rung below a person, and it is what clearing a
+ * preference gives them back. The effective settings already carry it per key,
+ * resolved by the server in the same request the layout made, so this costs
+ * nothing extra.
+ *
+ * **No permission.** Choosing your own theme is not an act that needs
+ * authority, and what makes it safe is the row being keyed to the caller's
+ * verified subject. The same position `PUT /me/locale` has taken since the
+ * language work.
+ */
+export const dynamic = 'force-dynamic'
+
+export default async function PreferencesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ saved?: string }>
+}) {
+  const [context, locale, t, effective, params] = await Promise.all([
+    signedInContext(),
+    currentLocale(),
+    translator(),
+    effectiveSettings(),
+    searchParams,
+  ])
+
+  if (context === null) return <AccessDenied locale={locale} />
+
+  const [token, baseUrl] = [await providerToken(), apiBaseUrl()]
+  const ready = Boolean(token && baseUrl)
+
+  // Two reads, and neither is the effective set: this page edits what *this
+  // person* holds, and showing them the resolved value would mean clearing a
+  // preference appears to change nothing.
+  const [definitions, mine] = ready
+    ? await Promise.all([
+        fetchSettingDefinitions({ baseUrl: baseUrl!, token: token! }).catch(() => []),
+        fetchMySettings({ baseUrl: baseUrl!, token: token! }).catch(() => ({})),
+      ])
+    : [[], {}]
+
+  const inherited = Object.fromEntries(
+    Object.entries(effective?.settings ?? {}).map(([key, resolved]) => [
+      key,
+      resolved.organization_value,
+    ]),
+  )
+
+  const groups = settingGroups({
+    definitions,
+    values: mine,
+    inherited,
+    t,
+    visible: (definition) => definition.user_visible,
+  })
+
+  const labels = {
+    save: t('settings.values.save'),
+    saving: t('settings.values.saving'),
+    modified: t('preferences.modified'),
+    inheritedFrom: t('preferences.inherited'),
+    reset: t('settings.values.reset'),
+    resetTo: (value: string) => t('preferences.resetTo', { value }),
+    listHint: t('settings.values.listHint'),
+    on: t('settings.values.on'),
+    off: t('settings.values.off'),
+  }
+
+  return (
+    <div className="py-12">
+      <Container>
+        <h1 className="font-display text-3xl font-bold tracking-tight text-ink">
+          {t('preferences.title')}
+        </h1>
+        <p className="mt-3 max-w-2xl leading-7 text-ink-muted">{t('preferences.intro')}</p>
+
+        {/*
+          Announced, because a redirect lands on a page that looks the same as
+          the one just left. Without it a save is indistinguishable from a
+          reload for anybody not watching one particular field.
+        */}
+        {params.saved ? (
+          <p
+            className="mt-6 text-sm text-ink-muted"
+            role="status"
+            data-testid="preferences-outcome"
+            data-outcome={params.saved}
+          >
+            {params.saved === 'ok' ? t('preferences.saved') : t('preferences.error')}
+          </p>
+        ) : null}
+
+        <div className="mt-8 max-w-3xl">
+          {groups.length === 0 ? (
+            <p className="text-sm text-ink-muted" data-testid="preferences-unavailable">
+              {t('settings.values.unavailable')}
+            </p>
+          ) : (
+            <SettingsForm
+              groups={groups}
+              labels={labels}
+              save={saveMyPreferences}
+              reset={resetMyPreference}
+              testId="preferences-form"
+            />
+          )}
+        </div>
+      </Container>
+    </div>
+  )
+}

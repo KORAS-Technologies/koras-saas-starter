@@ -823,3 +823,210 @@ describe('the wire shape and the rendered shape are told apart', () => {
   })
 })
 
+/**
+ * Every sentence the settings pages render, in every language.
+ *
+ * `product-i18n.test.ts` scans templates for `t('literal')` and cannot see
+ * these: a setting's label is looked up as `t(definition.label_key)`, named in
+ * `settings_catalogue/standard.py` and arriving over the API. It exempts the
+ * family and this replaces it with something stronger — tied to the definitions
+ * that are actually shown rather than to whether some file mentions the key.
+ */
+describe('the settings catalogue speaks every language', () => {
+  const standard = read('services', 'api', 'koras_api', 'settings_catalogue', 'standard.py')
+
+  /** Every `_setting(` call, with whether it is hidden from both pages. */
+  function declared(): { key: string; surfaced: boolean }[] {
+    return [...standard.matchAll(/_setting\(\s*\n\s*"([\w.]+)",([\s\S]*?)\n {4}\),/g)].map(
+      (match) => ({ key: match[1]!, surfaced: !match[2]!.includes('surfaced=False') }),
+    )
+  }
+
+  const catalogues = ['en', 'de', 'es'].map((locale) => ({
+    locale,
+    text: read('packages', 'i18n', 'src', 'messages', `${locale}.ts`),
+  }))
+
+  it('gives every shown setting a label and a description, in all three', () => {
+    const shown = declared().filter((setting) => setting.surfaced)
+    expect(shown.length).toBe(27)
+
+    for (const { locale, text } of catalogues) {
+      for (const { key } of shown) {
+        for (const part of ['label', 'description']) {
+          expect(text, `settings.def.${key}.${part} is missing from ${locale}`).toContain(
+            `'settings.def.${key}.${part}'`,
+          )
+        }
+      }
+    }
+  })
+
+  it('translates no setting it does not show', () => {
+    // The other direction, and the one that rots: a setting hidden or removed
+    // leaves two strings per language behind, and nothing else would say so.
+    const hidden = declared()
+      .filter((setting) => !setting.surfaced)
+      .map((setting) => setting.key)
+    expect(hidden.length).toBe(5)
+
+    const keys = new Set(
+      catalogues
+        .flatMap(({ text }) => [...text.matchAll(/'settings\.def\.([\w.]+)\.(?:label|description)'/g)])
+        .map((match) => match[1]!),
+    )
+    const shown = new Set(declared().filter((s) => s.surfaced).map((s) => s.key))
+
+    expect([...keys].filter((key) => hidden.includes(key)), 'hidden settings are translated').toEqual(
+      [],
+    )
+    expect([...keys].filter((key) => !shown.has(key)), 'translated settings nobody declares').toEqual(
+      [],
+    )
+  })
+
+  it('names every category and every option a control can offer', () => {
+    // Options are shared by value rather than by setting: `compact` means the
+    // same thing wherever it appears.
+    const options = new Set<string>()
+    for (const match of standard.matchAll(/options=\(([^)]*)\)/g)) {
+      for (const value of match[1]!.matchAll(/"([\w]+)"/g)) options.add(value[1]!)
+    }
+    // Two families a control shows as themselves rather than translating. The
+    // page sizes are numbers, and an ISO currency code is the same word in
+    // every language and is what people actually recognise -- "Euro" in a list
+    // beside "USD" would be worse, not better.
+    for (const literal of ['10', '25', '50', '100', '250']) options.delete(literal)
+    for (const currency of ['EUR', 'GBP', 'USD', 'CHF', 'AUD', 'CAD']) options.delete(currency)
+    expect(options.size).toBeGreaterThan(20)
+
+    for (const { locale, text } of catalogues) {
+      for (const category of [
+        'general',
+        'appearance',
+        'grid',
+        'notifications',
+        'files',
+        'reporting',
+        'accessibility',
+      ]) {
+        expect(text, `settings.category.${category} missing from ${locale}`).toContain(
+          `'settings.category.${category}'`,
+        )
+      }
+      for (const option of options) {
+        expect(text, `settings.option.${option} missing from ${locale}`).toContain(
+          `'settings.option.${option}'`,
+        )
+      }
+    }
+  })
+
+  it('hides exactly the settings nothing honours', () => {
+    // The five the shared table does not read. When one is honoured, its
+    // `surfaced=False` goes and its two strings arrive in the same commit.
+    const hidden = declared()
+      .filter((setting) => !setting.surfaced)
+      .map((setting) => setting.key)
+      .sort()
+    expect(hidden).toEqual([
+      'grid.allowColumnReorder',
+      'grid.allowColumnResize',
+      'grid.rememberColumns',
+      'grid.rememberFilters',
+      'grid.rememberSort',
+    ])
+
+    // And the table really does not read them, which is what makes hiding them
+    // honest rather than a way to avoid writing the strings.
+    const table = read('packages', 'ui', 'src', 'data-table', 'data-table.tsx')
+    for (const key of hidden) expect(table).not.toContain(key)
+  })
+})
+
+describe('the two settings surfaces', () => {
+  const organisation = read('apps', 'web', 'src', 'app', 'dashboard', 'settings', 'page.tsx.hbs')
+  const preferences = read('apps', 'web', 'src', 'app', 'dashboard', 'preferences', 'page.tsx.hbs')
+  const form = read('packages', 'ui', 'src', 'settings', 'settings-form.tsx')
+
+  it('shows each scope what that scope holds, not what it resolves to', () => {
+    // The mistake that makes a settings page feel broken: an administrator
+    // whose own override is winning changes the organisation's value, sees no
+    // difference, and changes it again.
+    expect(organisation).toContain('fetchTenantSettingValues')
+    expect(organisation).toContain('values: held')
+    expect(preferences).toContain('fetchMySettings')
+    expect(preferences).toContain('values: mine')
+  })
+
+  it('falls back to the rung immediately below, which differs per page', () => {
+    // An organisation falls back to the platform; a person falls back to their
+    // organisation. Both come from the effective answer, which carries each.
+    expect(organisation).toContain('resolved.global_value')
+    expect(preferences).toContain('resolved.organization_value')
+  })
+
+  it('offers each scope only what that scope may write', () => {
+    expect(organisation).toContain('definition.org_admin_visible')
+    expect(preferences).toContain('definition.user_visible')
+  })
+
+  it('needs no permission for a person’s own preferences', () => {
+    // The same position `PUT /me/locale` takes. What makes it safe is the row
+    // being keyed to the verified subject, not a permission string.
+    expect(preferences).not.toContain("can(context.access, 'settings")
+    const module = read('packages', 'branding', 'src', 'index.ts.hbs')
+    const entry = module.split("id: 'preferences'")[1]?.split('},')[0] ?? ''
+    expect(entry).toContain("href: '/dashboard/preferences'")
+    expect(entry).not.toContain('requiredPermissions')
+  })
+
+  it('says whether a value was given or chosen, rather than deriving it', () => {
+    // Comparing against the inherited value gets it wrong the moment somebody
+    // deliberately sets a value equal to it.
+    const fields = read('packages', 'ui', 'src', 'settings', 'fields.ts')
+    expect(fields).toContain('isSet')
+    expect(form).toContain('field.isSet')
+    expect(form).toContain("data-state={field.isSet ? 'modified' : 'inherited'}")
+  })
+
+  it('names what a reset would restore, before it is pressed', () => {
+    expect(form).toContain('labels.resetTo(')
+    // And says which setting it resets, because "Reset" alone beside
+    // twenty-seven fields says nothing to a screen reader.
+    expect(form).toContain('aria-label={`${labels.reset}: ${field.label}`}')
+  })
+
+  it('associates every control with its own label and description', () => {
+    expect(form).toContain('htmlFor={id}')
+    expect(form.match(/aria-describedby=\{describedBy\}/g)?.length).toBeGreaterThanOrEqual(4)
+    // The definition's bounds reach the browser control too, so it refuses what
+    // the API would refuse — a convenience, with the guard still server-side.
+    expect(form).toContain('min={field.minimum ?? undefined}')
+    expect(form).toContain('max={field.maximum ?? undefined}')
+  })
+
+  it('reads a form back from the definitions rather than from what was sent', () => {
+    // An unchecked checkbox sends nothing, so a form read by its own contents
+    // silently drops every switch somebody turned off.
+    const builder = read('apps', 'web', 'src', 'lib', 'setting-fields.ts.hbs')
+    expect(builder).toContain('for (const definition of definitions)')
+    expect(builder).toContain("values[definition.key] = form.get(definition.key) !== null")
+  })
+
+  it('announces the outcome of a save', () => {
+    // A redirect lands on a page that looks the same as the one just left.
+    expect(organisation).toContain('role="status"')
+    expect(organisation).toContain('query.saved')
+    expect(preferences).toContain('role="status"')
+    expect(preferences).toContain('params.saved')
+  })
+
+  it('holds no English in the shared form, like every component here', () => {
+    for (const word of ['Save', 'Reset', 'Changed here']) {
+      expect(form).not.toContain(`>${word}<`)
+    }
+    expect(form).toContain('labels.save')
+    expect(form).toContain('labels.reset')
+  })
+})

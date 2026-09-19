@@ -103,7 +103,10 @@ export interface RequestOptions {
 }
 
 interface Call {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
+  // `PATCH` since the settings routes arrived: a settings write sends the keys
+  // that changed rather than the whole scope, so `PUT` would be a lie about
+  // what it replaces.
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   /** Sent as JSON. */
   body?: unknown
   /** True for a 204. */
@@ -213,6 +216,113 @@ export function fetchEffectiveSettings(
   options: RequestOptions,
 ): Promise<EffectiveSettingsResponse> {
   return request<EffectiveSettingsResponse>('/api/v1/settings/effective', options)
+}
+
+/**
+ * One setting's definition, as a surface needs it to draw a control.
+ *
+ * Everything here is metadata and nothing is a value. `label_key` and
+ * `description_key` are i18n keys, not sentences: the catalogue is declared in
+ * Python and the words live in `packages/i18n`, so a product speaking a
+ * language the API has never heard of still renders its own.
+ */
+export interface SettingDefinitionResponse {
+  key: string
+  category: string
+  data_type: string
+  default: unknown
+  scope: string
+  label_key: string
+  description_key: string
+  options: string[]
+  minimum: number | null
+  maximum: number | null
+  ui: string
+  order: number
+  org_admin_visible: boolean
+  user_visible: boolean
+}
+
+/**
+ * The settings this product declares, in display order.
+ *
+ * Only what this caller may see: deprecated definitions and the platform's own
+ * are left out by the API rather than by the page, so a surface cannot show one
+ * by forgetting to filter.
+ */
+export function fetchSettingDefinitions(
+  options: RequestOptions,
+): Promise<SettingDefinitionResponse[]> {
+  return request<SettingDefinitionResponse[]>('/api/v1/settings/definitions', options)
+}
+
+/**
+ * The organisation's own stored values, as stored.
+ *
+ * Distinct from the effective settings, which are what *this person* sees. An
+ * administrator editing the organisation needs to know what the organisation
+ * holds, or they change a value, see no difference because their own override
+ * is winning, and change it again.
+ */
+export function fetchTenantSettingValues(
+  options: RequestOptions,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>('/api/v1/tenant/settings/values', options)
+}
+
+/** Change settings for everybody in the organisation. Answers the new values. */
+export function updateTenantSettingValues(
+  options: RequestOptions & { values: Record<string, unknown> },
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>('/api/v1/tenant/settings/values', options, {
+    method: 'PATCH',
+    body: { values: options.values },
+  })
+}
+
+/**
+ * Put the platform's current value back into one of the organisation's rows.
+ *
+ * A copy, not a delete: the answer holds a value, and it is the platform's
+ * value *today* rather than a promise to follow it tomorrow.
+ */
+export function resetTenantSetting(
+  options: RequestOptions & { key: string },
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    `/api/v1/tenant/settings/values/${encodeURIComponent(options.key)}/reset`,
+    options,
+    { method: 'POST' },
+  )
+}
+
+/** This caller's own values. Takes no subject; the API keys on the token. */
+export function fetchMySettings(options: RequestOptions): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>('/api/v1/me/settings', options)
+}
+
+/** Override settings for yourself. Answers this caller's new values. */
+export function updateMySettings(
+  options: RequestOptions & { values: Record<string, unknown> },
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>('/api/v1/me/settings', options, {
+    method: 'PATCH',
+    body: { values: options.values },
+  })
+}
+
+/**
+ * Stop deciding one setting for yourself.
+ *
+ * A delete, where the organisation's reset is a copy: "I no longer want a
+ * preference" means the organisation's value should answer, now and as it
+ * changes, and only an absent row says that.
+ */
+export function clearMySetting(options: RequestOptions & { key: string }): Promise<void> {
+  return request<void>(`/api/v1/me/settings/${encodeURIComponent(options.key)}`, options, {
+    method: 'DELETE',
+    empty: true,
+  })
 }
 
 /**
