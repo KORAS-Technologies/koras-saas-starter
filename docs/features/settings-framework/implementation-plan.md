@@ -1,6 +1,6 @@
 # Settings & Preferences Framework — implementation plan
 
-Written 2026-09-17, at the close of Phase 1. Phases 2 to 5 are done; 6 onward
+Written 2026-09-17, at the close of Phase 1. Phases 2 to 6 are done; 7 onward
 are not started, as of 2026-09-19.
 
 ---
@@ -151,13 +151,34 @@ Exit, met: one API call per navigation, asserted from the layout; a component
 outside the provider, or given a value of the wrong shape, uses its own
 fallback; `false` and `0` survive, which a `||` would not.
 
-### Phase 6 — grid
+### Phase 6 — grid  *(done 2026-09-19)*
 
-`KorasDataTable`, exported from the UI barrel, with pagination, the ten grid
-settings, and the explicit-prop override.
+`KorasDataTable` in `packages/ui/src/data-table/`, exported from the barrel,
+with the paging arithmetic in a pure module the starter's suite executes.
+`<KorasDataTable data={records} columns={columns} />` is the whole ordinary
+usage; every setting-bearing prop is optional and each one wins over the
+setting it overrides.
 
-Exit: component tests for default 50, organisation value, user value, and
-explicit prop beating all three; accessibility checks on the pager.
+**It honours five of the ten `grid.*` settings, not ten.** `pageSize`,
+`pageSizeOptions`, `paginationEnabled`, `stickyHeader` and `rowDensity`.
+`allowColumnResize` and `allowColumnReorder` need interactions this component
+does not have — a keyboard-operable resize handle and an accessible reorder are
+each their own piece of work, and a drag-only implementation would be worse than
+none. The three `remember*` settings describe persistence of a filter and a sort
+that a table does not own; that state belongs to the surface above it, which is
+where the Control Plane's toolbar keeps it too.
+
+The five are declared in the catalogue and **read by nothing**, deliberately. A
+setting nothing reads costs a definition and three translations and reserves the
+vocabulary; a setting a component reads and ignores teaches people the framework
+is decorative.
+
+Exit, met: 24 tests over the paging arithmetic and the component's contract —
+default 50 pinned to the catalogue in both languages, the explicit prop winning,
+`??` rather than `||` so `paginationEnabled={false}` is honoured, a real table
+with a caption and column scopes, an announced range, visible focus on both
+pager controls, an empty result as a sentence, and the pager's six strings in
+all three catalogues.
 
 ### Phase 7 — product UI
 

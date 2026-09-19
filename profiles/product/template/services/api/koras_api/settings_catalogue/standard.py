@@ -3,14 +3,20 @@
 Thirty-two definitions in seven categories. A product adds its own in
 `product.py` beside this file; nothing here has to change for it to.
 
-**What is consumed today, as of 2026-09-17.** `general.language` is read by the
-locale resolver, and the ten `grid.*` settings are read by the shared table
-component. The rest are declared, validated, stored, audited and rendered on
-the settings pages, and no other code reads them yet -- they are the vocabulary
-a product is expected to consume, and each one is consumed by the surface that
-owns it rather than by this package. A setting that nothing reads is still
-worth declaring: it is one definition and three translations, and a product
-that needs it does not have to design it.
+**What is consumed today, as of 2026-09-19.** `general.language` is read by the
+locale resolver. `KorasDataTable` reads five of the ten `grid.*` settings:
+`pageSize`, `pageSizeOptions`, `paginationEnabled`, `stickyHeader` and
+`rowDensity`. The other five are declared and read by nothing --
+`allowColumnResize` and `allowColumnReorder` need interactions that component
+does not have, and the three `remember*` settings describe persistence of state
+a table does not own. Everything else here is declared, validated, stored,
+audited and rendered on the settings pages, and no other code reads it.
+
+A setting nothing reads is still worth declaring: it is one definition and three
+translations, and a product that needs it does not have to design it. A setting
+a component *reads and ignores* is not -- that teaches people the whole
+framework is decorative -- which is why the five above are absent from
+`data-table.tsx` rather than wired to nothing.
 
 **The scopes are not decoration.** A setting is `GLOBAL_ORG_USER` when one
 person disagreeing with their colleagues harms nobody -- a theme, a date

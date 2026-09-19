@@ -11,6 +11,16 @@ import type {
   ResolvedSetting,
   SettingValue,
 } from '../../../profiles/product/template/packages/ui/src/settings/types'
+import {
+  DEFAULT_PAGE_SIZE,
+  DEFAULT_PAGE_SIZE_OPTIONS,
+  MAX_PAGE_SIZE,
+  MIN_PAGE_SIZE,
+  clampSize,
+  paginate,
+  sizeOptions,
+} from '../../../profiles/product/template/packages/ui/src/data-table/paging'
+import { parseEffectiveSettings } from '../../../profiles/product/template/packages/ui/src/settings/parse'
 
 /**
  * The settings framework, checked from the template text.
@@ -528,3 +538,288 @@ describe('the settings provider', () => {
     expect(types).toContain('(string & Record<never, never>)')
   })
 })
+
+/**
+ * The table's arithmetic, executed rather than asserted about.
+ *
+ * Every input here reaches the component from a customer's stored settings or
+ * from a URL, so "produces a table rather than a stack trace" is a property and
+ * not a nicety.
+ */
+describe('paging', () => {
+  it('shows the first fifty rows by default', () => {
+    const page = paginate(312, 1, 50)
+    expect([page.start, page.end]).toEqual([0, 50])
+    expect([page.from, page.to, page.total]).toEqual([1, 50, 312])
+    expect(page.pages).toBe(7)
+  })
+
+  it('counts a part-full last page', () => {
+    const page = paginate(312, 7, 50)
+    expect([page.start, page.end]).toEqual([300, 312])
+    expect([page.from, page.to]).toEqual([301, 312])
+  })
+
+  it('says page 1 of 1, showing 0 to 0, when there is nothing', () => {
+    // Not "page 1 of 0", which reads as a fault, and not "showing 1 to 0 of 0",
+    // which is what `start + 1` produces and what people report as a bug.
+    const page = paginate(0, 1, 50)
+    expect([page.pages, page.from, page.to, page.total]).toEqual([1, 0, 0, 0])
+  })
+
+  it('lands on the last page when asked for one past the end', () => {
+    // Somebody on page 9 when a colleague deleted rows should see the end of
+    // the list, not an empty grid that looks like the data is gone.
+    expect(paginate(120, 9, 50).page).toBe(3)
+    expect(paginate(120, -4, 50).page).toBe(1)
+    expect(paginate(120, Number.NaN, 50).page).toBe(1)
+  })
+
+  it('treats no size as one page of everything', () => {
+    // How `grid.paginationEnabled = false` is expressed, so the component has
+    // one code path rather than a branch that skips the pager and another that
+    // skips the slice.
+    const page = paginate(312, 1, 0)
+    expect([page.start, page.end, page.pages]).toEqual([0, 312, 1])
+    expect(paginate(0, 1, 0).pages).toBe(1)
+  })
+
+  it('holds a page size inside the bounds the catalogue declares', () => {
+    expect(clampSize(5)).toBe(MIN_PAGE_SIZE)
+    expect(clampSize(5000)).toBe(MAX_PAGE_SIZE)
+    expect(clampSize(Number.NaN)).toBe(DEFAULT_PAGE_SIZE)
+    expect(clampSize(25)).toBe(25)
+  })
+
+  it('always offers the size actually in effect', () => {
+    // A select whose current value is not among its options renders as though
+    // nothing is selected, and a person then cannot get back to it.
+    expect(sizeOptions(['10', '25'], 50)).toEqual([10, 25, 50])
+    expect(sizeOptions(['10', '25', '50'], 50)).toEqual([10, 25, 50])
+  })
+
+  it('drops one bad option rather than the whole control', () => {
+    expect(sizeOptions(['10', 'fifty', '25', '-3', ''], 25)).toEqual([10, 25])
+  })
+
+  it('falls back to the defaults when the list is unusable', () => {
+    expect(sizeOptions([], 50)).toEqual([...DEFAULT_PAGE_SIZE_OPTIONS])
+    expect(sizeOptions(['nonsense'], 50)).toEqual([...DEFAULT_PAGE_SIZE_OPTIONS])
+  })
+
+  it('collapses duplicates and sorts, so two orders give one control', () => {
+    expect(sizeOptions(['100', '10', '10', '25'], 25)).toEqual([10, 25, 100])
+  })
+})
+
+describe('the shared table', () => {
+  const table = read('packages', 'ui', 'src', 'data-table', 'data-table.tsx')
+
+  it('defaults to the page size the catalogue declares', () => {
+    // One number in two languages. This is what keeps them the same number.
+    const standard = read('services', 'api', 'koras_api', 'settings_catalogue', 'standard.py')
+    const declared =
+      /"grid\.pageSize",\s*\n\s*Category\.GRID,\s*\n\s*DataType\.INTEGER,\s*\n\s*(\d+),/.exec(
+        standard,
+      )?.[1]
+    expect(Number(declared)).toBe(DEFAULT_PAGE_SIZE)
+
+    const bounds = /minimum=(\d+),\s*\n\s*maximum=(\d+),/.exec(
+      standard.split('"grid.pageSize"')[1] ?? '',
+    )
+    expect(Number(bounds?.[1])).toBe(MIN_PAGE_SIZE)
+    expect(Number(bounds?.[2])).toBe(MAX_PAGE_SIZE)
+  })
+
+  it('reads its settings from context rather than from props it demands', () => {
+    // `<KorasDataTable data={records} />` has to be the ordinary usage, or
+    // every page ends up passing settings down and the framework buys nothing.
+    for (const key of [
+      'grid.pageSize',
+      'grid.paginationEnabled',
+      'grid.stickyHeader',
+      'grid.rowDensity',
+      'grid.pageSizeOptions',
+    ]) {
+      expect(table, `${key} is not read`).toContain(key)
+    }
+    // Every setting-bearing prop is optional: the `?:` is what makes the
+    // one-prop usage compile.
+    for (const prop of ['pageSize', 'paginationEnabled', 'stickyHeader', 'rowDensity']) {
+      expect(table).toContain(`${prop}?:`)
+    }
+  })
+
+  it('lets an explicit prop win over the resolved setting', () => {
+    // `??` and not `||`: a page that asked for `paginationEnabled={false}` must
+    // get it, and `||` would hand back the setting instead.
+    expect(table).toContain('paginationEnabled ?? settingPaging')
+    expect(table).toContain('stickyHeader ?? settingSticky')
+    expect(table).toContain('pageSize ?? settingSize')
+    expect(table).not.toMatch(/pageSize \|\|/)
+  })
+
+  it('is a real table a screen reader can use', () => {
+    expect(table).toContain('<caption className="sr-only">')
+    expect(table).toContain('scope="col"')
+    // The pager is a landmark with a name, and the range is announced —
+    // pressing Next changes content far from the button.
+    expect(table).toContain('aria-label={labels.pagination}')
+    expect(table).toContain('aria-live="polite"')
+    // Focus is visible on both controls a keyboard reaches.
+    expect(table.match(/focus-visible:outline/g)?.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('renders an empty result as a sentence rather than an empty grid', () => {
+    expect(table).toContain('-empty`}')
+    const empty = table.split('if (data.length === 0)')[1]?.split('cellPadding')[0] ?? ''
+    expect(empty).not.toContain('<table')
+  })
+
+  it('holds no English, like every component in this package', () => {
+    // Enforced generally by `product-frontend.test.ts`; asserted here because
+    // a pager is where somebody reaches for a literal "Next".
+    for (const word of ['Next', 'Previous', 'Rows per page', 'Showing']) {
+      expect(table).not.toContain(`>${word}<`)
+    }
+    expect(table).toContain('labels.next')
+    expect(table).toContain('labels.previous')
+  })
+
+  it('gives the pager a sentence in every language', () => {
+    for (const locale of ['en', 'de', 'es']) {
+      const catalogue = read('packages', 'i18n', 'src', 'messages', `${locale}.ts`)
+      for (const key of [
+        'grid.pagination',
+        'grid.rowsPerPage',
+        'grid.previous',
+        'grid.next',
+        'grid.showing',
+        'grid.page',
+      ]) {
+        expect(catalogue, `${key} is missing from ${locale}`).toContain(key)
+      }
+      // The numbers are placeholders, so a language can put them where it
+      // wants rather than in English order.
+      expect(catalogue).toMatch(/grid\.showing.*\{from\}.*\{to\}.*\{total\}/)
+    }
+  })
+})
+
+/**
+ * What the API said, checked into something a component may render.
+ *
+ * This exists because the two shapes were the same name for one commit. Every
+ * package typechecked; the application that imported both did not, and it
+ * failed in the generated-project build rather than anywhere local. The type
+ * names are distinct now, and this is the seam that joins them.
+ */
+describe('parsing the effective settings', () => {
+  const wire = (value: unknown, extra: Record<string, unknown> = {}) => ({
+    settings: {
+      'grid.pageSize': {
+        key: 'grid.pageSize',
+        value,
+        source: 'organization',
+        can_override: true,
+        organization_value: value,
+        global_value: value,
+        ...extra,
+      },
+    },
+    skipped: [],
+  })
+
+  it('keeps every type a setting can hold', () => {
+    for (const value of [50, true, 'dark', ['10', '25'], { a: 1 }]) {
+      const parsed = parseEffectiveSettings(wire(value))
+      expect(parsed?.settings['grid.pageSize']?.value, JSON.stringify(value)).toEqual(value)
+    }
+  })
+
+  it('drops one malformed setting rather than refusing the answer', () => {
+    // One unrecognised setting must not unstyle the product.
+    const raw = {
+      settings: {
+        'grid.pageSize': wire(50).settings['grid.pageSize'],
+        'ui.theme': { key: 'ui.theme', value: null, source: 'default' },
+      },
+      skipped: [],
+    }
+    const parsed = parseEffectiveSettings(raw)
+    expect(Object.keys(parsed?.settings ?? {})).toEqual(['grid.pageSize'])
+  })
+
+  it('refuses a value of a type no definition could produce', () => {
+    // A mixed list is not a `STRING_LIST`, and null is not a setting value —
+    // clearing one removes the row rather than storing a null.
+    expect(parseEffectiveSettings(wire(['10', 25]))?.settings['grid.pageSize']).toBeUndefined()
+    expect(parseEffectiveSettings(wire(null))?.settings['grid.pageSize']).toBeUndefined()
+  })
+
+  it('refuses a source it does not recognise', () => {
+    const parsed = parseEffectiveSettings(wire(50, { source: 'somewhere-else' }))
+    expect(parsed?.settings['grid.pageSize']).toBeUndefined()
+  })
+
+  it('treats a missing override flag as no override', () => {
+    // Fail closed: a preferences page must not offer a control for a setting
+    // the API never said this person may change.
+    const parsed = parseEffectiveSettings(wire(50, { can_override: 'yes' }))
+    expect(parsed?.settings['grid.pageSize']?.can_override).toBe(false)
+  })
+
+  it('falls back to the value itself when the two fallbacks are absent', () => {
+    // An older answer is still usable; only the reset controls need them.
+    const raw = {
+      settings: {
+        'grid.pageSize': { key: 'grid.pageSize', value: 100, source: 'user', can_override: true },
+      },
+      skipped: [],
+    }
+    const resolved = parseEffectiveSettings(raw)?.settings['grid.pageSize']
+    expect([resolved?.organization_value, resolved?.global_value]).toEqual([100, 100])
+  })
+
+  it('answers null for something that is not an answer at all', () => {
+    for (const raw of [null, undefined, 'nonsense', [], { skipped: [] }]) {
+      expect(parseEffectiveSettings(raw)).toBeNull()
+    }
+  })
+
+  it('keeps only the skipped keys that are strings', () => {
+    const raw = { settings: {}, skipped: ['grid.pageSize', 7, null] }
+    expect(parseEffectiveSettings(raw)?.skipped).toEqual(['grid.pageSize'])
+  })
+
+  it('trusts the map key over the entry key', () => {
+    // If they disagree, the map is what a caller looked the setting up by.
+    const raw = {
+      settings: {
+        'grid.pageSize': { key: 'something.else', value: 50, source: 'default', can_override: true },
+      },
+      skipped: [],
+    }
+    expect(parseEffectiveSettings(raw)?.settings['grid.pageSize']?.key).toBe('grid.pageSize')
+  })
+})
+
+describe('the wire shape and the rendered shape are told apart', () => {
+  it('names the API client’s types for what they describe', () => {
+    // Two structurally different types with one name is a compile error in
+    // whichever application imports both, and in no package on its own.
+    const client = read('packages', 'api-client', 'src', 'index.ts')
+    expect(client).toContain('EffectiveSettingsResponse')
+    expect(client).toContain('ResolvedSettingResponse')
+    expect(client).not.toMatch(/export interface EffectiveSettings\b/)
+    expect(client).not.toMatch(/export interface ResolvedSetting\b/)
+  })
+
+  it('makes the application depend on the checked shape, not the wire one', () => {
+    const loader = read('apps', 'web', 'src', 'lib', 'settings.ts.hbs')
+    expect(loader).toContain('parseEffectiveSettings')
+    // The type it promises is the one the provider takes.
+    expect(loader).toMatch(/import type \{ EffectiveSettings \} from '@\{\{projectSlug\}\}\/ui'/)
+  })
+})
+

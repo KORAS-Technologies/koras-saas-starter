@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from 'react'
 import type { EffectiveSettings, ResolvedSetting, SettingKey, SettingValue } from './types'
-import { settingValue } from './value'
+import { chooseValue } from './value'
 
 /**
  * The settings a signed-in person's pages resolve against, loaded once.
@@ -85,6 +85,18 @@ export function useSetting(key: SettingKey): ResolvedSetting | undefined {
  * value that was valid when written — yields the fallback rather than a page
  * that renders `NaN` rows per page.
  */
-export function useSettingValue<T extends SettingValue>(key: SettingKey, fallback: T): T {
-  return settingValue(useSetting(key), fallback)
+export function useSettingValue(key: SettingKey, fallback: boolean): boolean
+export function useSettingValue(key: SettingKey, fallback: number): number
+export function useSettingValue(key: SettingKey, fallback: string): string
+export function useSettingValue(key: SettingKey, fallback: readonly string[]): readonly string[]
+export function useSettingValue(
+  key: SettingKey,
+  fallback: Record<string, unknown>,
+): Record<string, unknown>
+export function useSettingValue(key: SettingKey, fallback: SettingValue): SettingValue {
+  // Overloaded for the reason `settingValue` is: a literal fallback would
+  // otherwise become the value's whole type, and the first comparison against
+  // anything else is a compile error the author did not cause. The plain
+  // `chooseValue` is what it delegates to, so neither side casts.
+  return chooseValue(useSetting(key), fallback)
 }

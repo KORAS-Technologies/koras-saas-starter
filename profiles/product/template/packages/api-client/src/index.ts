@@ -164,13 +164,22 @@ export function fetchTenantSettings(options: RequestOptions): Promise<TenantSett
 }
 
 /**
- * One setting, resolved for this caller, and where the answer came from.
+ * One setting, resolved for this caller, as it arrives on the wire.
  *
  * Snake_case because that is what the API answers with, the same choice
- * `TenantSettings.member_locale` above already makes. A mapping layer on this
- * side would be a second vocabulary for one contract.
+ * `TenantSettings.member_locale` above already makes.
+ *
+ * **`Response` in the name, and it is not noise.** `packages/ui` has a type of
+ * its own for a setting a component may render, whose `value` is one of the
+ * types a setting can hold rather than `unknown`. The two are deliberately
+ * different: this describes what the API said, that describes what has been
+ * checked. `parseEffectiveSettings` turns one into the other, the way
+ * `parseTenantBranding` does for branding.
+ *
+ * They were both called `EffectiveSettings` for one commit, which typechecked
+ * in every package and failed in the application that imported both.
  */
-export interface ResolvedSetting {
+export interface ResolvedSettingResponse {
   key: string
   value: unknown
   source: 'user' | 'organization' | 'global' | 'default'
@@ -179,8 +188,8 @@ export interface ResolvedSetting {
   global_value: unknown
 }
 
-export interface EffectiveSettings {
-  settings: Record<string, ResolvedSetting>
+export interface EffectiveSettingsResponse {
+  settings: Record<string, ResolvedSettingResponse>
   /** Stored values the resolver passed over because they no longer validate. */
   skipped: string[]
 }
@@ -200,8 +209,10 @@ export interface EffectiveSettings {
  * declared in the catalogue, not in this client, and the caller holds it
  * against a fallback of the shape it actually needs.
  */
-export function fetchEffectiveSettings(options: RequestOptions): Promise<EffectiveSettings> {
-  return request<EffectiveSettings>('/api/v1/settings/effective', options)
+export function fetchEffectiveSettings(
+  options: RequestOptions,
+): Promise<EffectiveSettingsResponse> {
+  return request<EffectiveSettingsResponse>('/api/v1/settings/effective', options)
 }
 
 /**

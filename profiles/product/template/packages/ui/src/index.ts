@@ -123,7 +123,8 @@ export type {
 // them before it paints, in every product.
 export { SettingsProvider, useSetting, useSettingValue, useSettings } from './settings/provider'
 export { STANDARD_SETTING_KEYS } from './settings/types'
-export { sameShape, settingValue } from './settings/value'
+export { chooseValue, sameShape, settingValue } from './settings/value'
+export { parseEffectiveSettings } from './settings/parse'
 export type {
   EffectiveSettings,
   ResolvedSetting,
@@ -131,3 +132,20 @@ export type {
   SettingSource,
   SettingValue,
 } from './settings/types'
+
+// The product's table. Pages itself from the customer's own `grid.*` settings,
+// and an explicit prop always wins over one.
+export { KorasDataTable } from './data-table/data-table'
+export type { DataTableColumn } from './data-table/data-table'
+export type { DataTableLabels } from './data-table/types'
+export {
+  DEFAULT_PAGE_SIZE,
+  DEFAULT_PAGE_SIZE_OPTIONS,
+  MAX_PAGE_SIZE,
+  MIN_PAGE_SIZE,
+  clampPage,
+  clampSize,
+  paginate,
+  sizeOptions,
+} from './data-table/paging'
+export type { Paging } from './data-table/paging'

@@ -788,6 +788,13 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'No tiene permiso para leer el historial de auditoría.',
   'audit.error.unavailable':
     'El historial de auditoría no se pudo leer en este momento.',
+  // La paginación de la tabla compartida.
+  'grid.pagination': 'Paginación',
+  'grid.rowsPerPage': 'Filas por página',
+  'grid.previous': 'Anterior',
+  'grid.next': 'Siguiente',
+  'grid.showing': 'Mostrando {from} a {to} de {total}',
+  'grid.page': 'Página {page} de {pages}',
   'errors.tokenInvalid': 'Su sesión ha caducado. Inicie sesión de nuevo.',
   'errors.tenantInactive': 'Su organización no está activa en este producto.',
   'errors.roleRequired': 'Solo un propietario o administrador de su organización puede hacer eso.',

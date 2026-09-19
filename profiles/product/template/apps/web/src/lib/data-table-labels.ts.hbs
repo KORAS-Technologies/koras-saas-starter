@@ -1,0 +1,29 @@
+import type { Translator } from '@{{projectSlug}}/i18n'
+import type { DataTableLabels } from '@{{projectSlug}}/ui'
+
+/**
+ * Every string the shared table renders, in the caller's language.
+ *
+ * Built on the server from the request's translator and handed down as plain
+ * data, the way the reporting and assistant labels are. The component knows
+ * nothing of the catalogue, which is what lets it live in `packages/ui` without
+ * pulling every language into the bundle of anything that imports it.
+ *
+ * `showing` and `page` are functions rather than pre-rendered strings because
+ * their numbers change as somebody pages, and a label bundle is built once per
+ * request. Calling the translator inside them keeps the placeholder
+ * substitution in the one place that knows the language — a component that
+ * built "Showing 1 to 50 of 312" by concatenation would put the numbers in
+ * English order in every language.
+ */
+export function dataTableLabels(t: Translator): DataTableLabels {
+  return {
+    pagination: t('grid.pagination'),
+    rowsPerPage: t('grid.rowsPerPage'),
+    previous: t('grid.previous'),
+    next: t('grid.next'),
+    showing: (from, to, total) =>
+      t('grid.showing', { from: String(from), to: String(to), total: String(total) }),
+    page: (page, pages) => t('grid.page', { page: String(page), pages: String(pages) }),
+  }
+}

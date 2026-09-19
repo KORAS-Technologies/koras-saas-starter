@@ -799,6 +799,13 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Sie haben keine Berechtigung, das Prüfprotokoll zu lesen.',
   'audit.error.unavailable':
     'Das Prüfprotokoll konnte derzeit nicht gelesen werden.',
+  // Die Seitensteuerung der gemeinsamen Tabelle.
+  'grid.pagination': 'Seitennavigation',
+  'grid.rowsPerPage': 'Zeilen pro Seite',
+  'grid.previous': 'Zurück',
+  'grid.next': 'Weiter',
+  'grid.showing': '{from} bis {to} von {total}',
+  'grid.page': 'Seite {page} von {pages}',
   'errors.tokenInvalid': 'Ihre Sitzung ist abgelaufen. Melden Sie sich erneut an.',
   'errors.tenantInactive': 'Ihre Organisation ist in diesem Produkt nicht aktiv.',
   'errors.roleRequired':

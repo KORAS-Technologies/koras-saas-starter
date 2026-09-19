@@ -23,13 +23,53 @@ import type { ResolvedSetting, SettingValue } from './types'
  * back is not hiding the problem: `EffectiveSettings.skipped` carries what the
  * resolver refused, and this is the narrower case where the server accepted a
  * value and this particular component cannot use it.
+ *
+ * `chooseValue` is the whole decision and is not overloaded; `settingValue` is
+ * the same function with the signatures a caller wants. Both exist so the hook
+ * in `provider.tsx` can delegate to the plain one rather than casting its way
+ * through its own overloads.
  */
-export function settingValue<T extends SettingValue>(
+export function chooseValue(
   resolved: ResolvedSetting | undefined,
-  fallback: T,
-): T {
+  fallback: SettingValue,
+): SettingValue {
   if (resolved === undefined) return fallback
-  return sameShape(resolved.value, fallback) ? (resolved.value as T) : fallback
+  return sameShape(resolved.value, fallback) ? resolved.value : fallback
+}
+
+/**
+ * The same, overloaded so a literal fallback does not become the whole type.
+ *
+ * `settingValue(resolved, 'comfortable')` with a single generic signature
+ * infers `T` as the literal `'comfortable'`, so the caller is handed a value
+ * TypeScript believes can only ever be that one string -- and `density ===
+ * 'compact'` two lines later is "a comparison with no overlap". The same
+ * happens to `50`, where it goes unnoticed until somebody compares against a
+ * page size.
+ *
+ * The overloads widen at the boundary: a boolean fallback yields `boolean`, a
+ * number `number`, a string `string`. A caller that genuinely wants the narrow
+ * type still has one, by writing it.
+ *
+ * Found on 2026-09-19 by building a generated product, which is the only thing
+ * that compiles this package.
+ */
+export function settingValue(r: ResolvedSetting | undefined, fallback: boolean): boolean
+export function settingValue(r: ResolvedSetting | undefined, fallback: number): number
+export function settingValue(r: ResolvedSetting | undefined, fallback: string): string
+export function settingValue(
+  r: ResolvedSetting | undefined,
+  fallback: readonly string[],
+): readonly string[]
+export function settingValue(
+  r: ResolvedSetting | undefined,
+  fallback: Record<string, unknown>,
+): Record<string, unknown>
+export function settingValue(
+  resolved: ResolvedSetting | undefined,
+  fallback: SettingValue,
+): SettingValue {
+  return chooseValue(resolved, fallback)
 }
 
 /**

@@ -790,6 +790,14 @@ export const en = {
     'You do not have permission to read the audit history.',
   'audit.error.unavailable':
     'The audit history could not be read right now.',
+  // The shared table's pager. Used by `KorasDataTable` through
+  // `lib/data-table-labels.ts`; no component in `packages/ui` holds a sentence.
+  'grid.pagination': 'Pagination',
+  'grid.rowsPerPage': 'Rows per page',
+  'grid.previous': 'Previous',
+  'grid.next': 'Next',
+  'grid.showing': 'Showing {from} to {to} of {total}',
+  'grid.page': 'Page {page} of {pages}',
   'errors.tokenInvalid': 'Your session has expired. Sign in again.',
   'errors.tenantInactive': 'Your organisation is not active in this product.',
   'errors.roleRequired': 'Only an owner or administrator of your organisation can do that.',

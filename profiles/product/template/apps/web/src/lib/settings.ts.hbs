@@ -1,6 +1,7 @@
 import { cache } from 'react'
 import { fetchEffectiveSettings } from '@{{projectSlug}}/api-client'
-import type { EffectiveSettings } from '@{{projectSlug}}/api-client'
+import { parseEffectiveSettings } from '@{{projectSlug}}/ui'
+import type { EffectiveSettings } from '@{{projectSlug}}/ui'
 import { apiBaseUrl, providerToken } from './session'
 
 /**
@@ -18,6 +19,13 @@ import { apiBaseUrl, providerToken } from './session'
  * a browser bundle has no business holding, and it talks to an origin the
  * browser is not told about.
  *
+ * **Parsed at the boundary, not trusted.** What the client returns describes
+ * the wire — a setting's value is `unknown` there, because its type lives in
+ * the catalogue and not in an HTTP client. `parseEffectiveSettings` turns that
+ * into the checked shape a component may render, dropping one malformed entry
+ * rather than refusing the whole answer. The same seam `parseTenantBranding`
+ * sits on, for the same reason.
+ *
  * **Never throws.** A caller whose settings cannot be read gets `null`, and the
  * provider hands every component its own fallback — which is the same state a
  * brand-new product with an empty database is in, and a working page. Failing
@@ -30,7 +38,7 @@ export const effectiveSettings = cache(async (): Promise<EffectiveSettings | nul
   if (!token || !baseUrl) return null
 
   try {
-    return await fetchEffectiveSettings({ baseUrl, token })
+    return parseEffectiveSettings(await fetchEffectiveSettings({ baseUrl, token }))
   } catch (error) {
     // Server-side, so this reaches the service log and never the browser.
     //
