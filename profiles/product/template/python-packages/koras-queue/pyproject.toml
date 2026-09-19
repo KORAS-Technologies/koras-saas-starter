@@ -2,7 +2,10 @@
 name = "koras-queue"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["arq>=0.25.0","koras-logging"]
+# Raised from 0.25 to match the worker that runs these tasks, which has asked
+# for 0.26 since it was written. Two floors for one library is how a package
+# resolves to a version the service it belongs to was never tested against.
+dependencies = ["arq>=0.26.0","koras-logging"]
 
 [tool.uv.sources]
 koras-logging = { workspace = true }

@@ -516,6 +516,74 @@ export function deleteFile(options: RequestOptions & { fileId: string }): Promis
 }
 
 /* -------------------------------------------------------------------------- */
+/* Notifications                                                              */
+/* -------------------------------------------------------------------------- */
+
+export interface NotificationRow {
+  id: string
+  kind: string
+  title: string
+  body: string
+  /** Root-relative, or empty. The API refuses anything else. */
+  url: string
+  severity: string
+  created_at: string
+  read_at: string | null
+}
+
+export interface NotificationListResponse {
+  notifications: NotificationRow[]
+  unread: number
+}
+
+/**
+ * This caller's own feed. No parameter names a person: the route answers for
+ * the verified subject and for nobody else.
+ */
+export function fetchNotifications(
+  options: RequestOptions & { limit?: number; unreadOnly?: boolean },
+): Promise<NotificationListResponse> {
+  const query = new URLSearchParams()
+  if (options.limit !== undefined) query.set('limit', String(options.limit))
+  if (options.unreadOnly) query.set('unread', 'true')
+  const suffix = query.size > 0 ? `?${query.toString()}` : ''
+  return request<NotificationListResponse>(`/api/v1/notifications${suffix}`, options)
+}
+
+/** The number alone, for the shell, which wants a count and not a page. */
+export function fetchUnreadCount(options: RequestOptions): Promise<{ unread: number }> {
+  return request<{ unread: number }>('/api/v1/notifications/unread-count', options)
+}
+
+export function markNotificationRead(
+  options: RequestOptions & { notificationId: string },
+): Promise<{ marked: number }> {
+  return request<{ marked: number }>(
+    `/api/v1/notifications/${encodeURIComponent(options.notificationId)}/read`,
+    options,
+    { method: 'POST' },
+  )
+}
+
+export function markAllNotificationsRead(
+  options: RequestOptions,
+): Promise<{ marked: number }> {
+  return request<{ marked: number }>('/api/v1/notifications/read-all', options, {
+    method: 'POST',
+  })
+}
+
+export function dismissNotification(
+  options: RequestOptions & { notificationId: string },
+): Promise<void> {
+  return request<void>(
+    `/api/v1/notifications/${encodeURIComponent(options.notificationId)}`,
+    options,
+    { method: 'DELETE', empty: true },
+  )
+}
+
+/* -------------------------------------------------------------------------- */
 /* The assistant                                                              */
 /* -------------------------------------------------------------------------- */
 

@@ -393,15 +393,37 @@ async def _tell_approvers(
     except Exception:
         _log.exception("approvers could not be resolved; the action waits unannounced")
         return
+
+    requester = notify.Requester(
+        id=ai.context.user_id, name=ai.requester_name, email=ai.requester_email
+    )
+
+    # In the product first, and on this request's own session: a notification
+    # is tenant data and belongs with the turn that produced it. The commit is
+    # deliberate rather than left to whatever runs next -- the turn and its
+    # actions are already written by this point, so there is no partial state
+    # to publish, and a notice that depended on a later commit would be a
+    # notice that vanished whenever the route returned by another path.
+    if ai.session is not None:
+        await notify.announce_awaiting_approval(
+            ai.session,
+            tenant_id=ai.context.tenant_id,
+            summaries=summaries,
+            product=PRODUCT_NAME,
+            app_url=settings.next_public_app_url,
+            requester=requester,
+            request_text=request_text,
+            locale=resolve_locale(locale),
+        )
+        await ai.session.commit()
+
     background.add_task(
         notify.notify_awaiting_approval,
         recipients=recipients,
         summaries=summaries,
         product=PRODUCT_NAME,
         app_url=settings.next_public_app_url,
-        requester=notify.Requester(
-            id=ai.context.user_id, name=ai.requester_name, email=ai.requester_email
-        ),
+        requester=requester,
         request_text=request_text,
         tag=f"ai-approval:{waiting[0].id}",
         locale=resolve_locale(locale),

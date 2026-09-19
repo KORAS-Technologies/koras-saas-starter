@@ -846,12 +846,22 @@ export const en = {
   'settings.def.grid.stickyHeader.description': 'Headings stay in place while the rows scroll.',
   'settings.def.grid.rowDensity.label': 'Row height',
   'settings.def.grid.rowDensity.description': 'How tall table rows are.',
+  // ── Notifications ─────────────────────────────────────────────────────────
+  'notifications.title': 'Notifications',
+  'notifications.unread': '{count} unread',
+  'notifications.empty': 'Nothing to catch up on',
+  'notifications.emptyHint': 'When something needs your attention, it will appear here.',
+  'notifications.markAllRead': 'Mark all read',
+  'notifications.markRead': 'Mark read',
+  'notifications.dismiss': 'Dismiss',
+  'notifications.close': 'Close notifications',
+  'notifications.viewAll': 'See all notifications',
+  'notifications.pageTitle': 'Notifications',
+  'notifications.pageDescription': 'Everything the product has told you, newest first.',
+  'notifications.hiddenTitle': 'Notifications are switched off',
+  'notifications.hiddenBody': 'You have turned off notifications in the product. Turn them back on in your preferences.',
   'settings.def.notifications.inAppEnabled.label': 'Notifications in the product',
   'settings.def.notifications.inAppEnabled.description': 'Show notifications while you are signed in.',
-  'settings.def.notifications.emailEnabled.label': 'Notifications by email',
-  'settings.def.notifications.emailEnabled.description': 'Send notifications to your email address.',
-  'settings.def.notifications.digestFrequency.label': 'Summary email',
-  'settings.def.notifications.digestFrequency.description': 'How often a summary of what happened is sent.',
   'settings.def.files.maxUploadSizeMb.label': 'Largest file',
   'settings.def.files.maxUploadSizeMb.description': 'The biggest single file anyone here may upload, in megabytes.',
   'settings.def.files.allowedExtensions.label': 'Allowed file types',
@@ -937,6 +947,8 @@ export const en = {
     'This file cannot be deleted: a legal hold is keeping it. It can be deleted once the hold is lifted.',
   'errors.fileQuarantined':
     'This file is being withheld because a security scan did not find it clean. Ask an administrator if you need it.',
+  'errors.notificationNotFound':
+    'That notification is no longer there. It may already have been read or dismissed.',
   'errors.settingNotFound':
     'That setting does not exist. Reload the page to see the current list.',
   'errors.settingValueInvalid':

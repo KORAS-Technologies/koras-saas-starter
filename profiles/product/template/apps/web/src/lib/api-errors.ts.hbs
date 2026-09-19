@@ -43,6 +43,8 @@ export function apiErrorMessage(t: Translator, code: string | null | undefined):
       return t('errors.uploadNotArrived')
     case 'upload_size_mismatch':
       return t('errors.uploadSizeMismatch')
+    case 'notification_not_found':
+      return t('errors.notificationNotFound')
     case 'setting_not_found':
       return t('errors.settingNotFound')
     case 'setting_value_invalid':

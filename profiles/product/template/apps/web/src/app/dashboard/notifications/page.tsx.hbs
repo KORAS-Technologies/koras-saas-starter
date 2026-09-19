@@ -1,0 +1,82 @@
+import { AccessDenied, Banner, Card, Container, settingValue } from '@{{projectSlug}}/ui'
+import { signedInContext } from '../../../lib/access'
+import { currentLocale, translator } from '../../../lib/locale'
+import { effectiveSettings } from '../../../lib/settings'
+import { NotificationCentre } from './NotificationCentre'
+import {
+  dismissNotification,
+  loadNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+} from './actions'
+import { notificationLabels } from './labels'
+
+/**
+ * Everything the product has told this person, newest first.
+ *
+ * **No permission and no entitlement.** The only module in the navigation
+ * registry with neither, and deliberately: a feed is guarded by the row-level
+ * policy keyed to the caller's own subject, so there is nothing here anybody
+ * could see that is not addressed to them. A permission would mean the product
+ * sends messages to members who have nowhere to read them, and an entitlement
+ * would make "what happened to my upload" a paid feature.
+ *
+ * **The `notifications.inAppEnabled` preference is honoured here rather than
+ * enforced.** Its own description says "Show notifications while you are
+ * signed in", which is a display preference and not an access control — so the
+ * rows are still written and still readable, and what the switch decides is
+ * whether the bell and the feed are drawn. Somebody who turns it off and comes
+ * to this page directly is told why it is empty instead of being shown an
+ * empty page, because the second reads as a broken product.
+ *
+ * That setting was one of six registered, translated into three languages,
+ * drawn on the preferences page, and read by nothing at all until 2026-09-19.
+ */
+export const dynamic = 'force-dynamic'
+
+export default async function NotificationsPage() {
+  const [context, locale, t, settings, feed] = await Promise.all([
+    signedInContext(),
+    currentLocale(),
+    translator(),
+    effectiveSettings(),
+    loadNotifications(50),
+  ])
+
+  if (context === null) return <AccessDenied locale={locale} />
+
+  const shown = settingValue(settings?.settings['notifications.inAppEnabled'], true)
+  const labels = notificationLabels(t)
+
+  return (
+    <Container className="py-8">
+      <header className="mb-6">
+        <h1 className="font-display text-2xl font-bold text-ink">
+          {t('notifications.pageTitle')}
+        </h1>
+        <p className="mt-1 text-sm text-ink-muted">{t('notifications.pageDescription')}</p>
+      </header>
+
+      {shown ? null : (
+        <Banner
+          tone="info"
+          title={t('notifications.hiddenTitle')}
+          className="mb-6"
+        >
+          {t('notifications.hiddenBody')}
+        </Banner>
+      )}
+
+      <Card className="overflow-hidden p-0">
+        <NotificationCentre
+          notifications={feed.notifications}
+          labels={labels}
+          locale={locale}
+          markRead={markNotificationRead}
+          markAllRead={markAllNotificationsRead}
+          dismiss={dismissNotification}
+        />
+      </Card>
+    </Container>
+  )
+}

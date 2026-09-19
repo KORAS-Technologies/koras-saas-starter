@@ -68,7 +68,28 @@ const MEMBER = {
  * runs the same file and still proves the same thing about what it has.
  */
 const REPORTING = productConfig.product.capabilities.includes('reporting')
-const PRIMARY = REPORTING ? ['home', 'analytics'] : ['home']
+
+/** The notification centre is generated with the `notifications` capability. */
+const NOTIFICATIONS = productConfig.product.capabilities.includes('notifications')
+
+const PRIMARY = [
+  'home',
+  ...(NOTIFICATIONS ? ['notifications'] : []),
+  ...(REPORTING ? ['analytics'] : []),
+]
+
+/**
+ * The modules in the administration group that no gate keeps from anybody.
+ *
+ * `preferences` is one: choosing your own theme needs no authority, so it
+ * carries no permission and every signed-in person sees it. That made these
+ * two assertions wrong the day the settings framework shipped it on
+ * 2026-09-19 -- the registry grew a module and the expectation did not, and
+ * the generated product's own node tests were red until the notification work
+ * ran them a few hours later. Named here rather than folded into a literal,
+ * so the next ungated module is added in one obvious place.
+ */
+const UNGATED_ADMINISTRATION = ['preferences']
 
 const DENIED = { granted: false, role: null, permissions: [] } as const
 
@@ -393,7 +414,7 @@ test('a plain member sees the product but not its administration', () => {
   // that is the two lock behaviours, in the shipped registry rather than in a
   // fixture. A member is refused the administration group by permission, which
   // is a different gate and hides regardless of behaviour.
-  assert.deepEqual(ids(resolved), PRIMARY)
+  assert.deepEqual(ids(resolved), [...PRIMARY, ...UNGATED_ADMINISTRATION])
 })
 
 test('an administrator sees the administration group', () => {
@@ -401,7 +422,7 @@ test('an administrator sees the administration group', () => {
     productConfig.navigation,
     context({ access: ADMIN, capabilities: productConfig.product.capabilities }),
   )
-  assert.deepEqual(ids(resolved), [...PRIMARY, 'team', 'settings'])
+  assert.deepEqual(ids(resolved), [...PRIMARY, 'team', 'settings', ...UNGATED_ADMINISTRATION])
 })
 
 test('the two shipped plan gates demonstrate one behaviour each', () => {

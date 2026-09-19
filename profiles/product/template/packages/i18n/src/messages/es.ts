@@ -844,12 +844,22 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'settings.def.grid.stickyHeader.description': 'Los encabezados se quedan fijos mientras las filas se desplazan.',
   'settings.def.grid.rowDensity.label': 'Altura de fila',
   'settings.def.grid.rowDensity.description': 'Qué altura tienen las filas de una tabla.',
+  // ── Notificaciones ────────────────────────────────────────────────────────
+  'notifications.title': 'Notificaciones',
+  'notifications.unread': '{count} sin leer',
+  'notifications.empty': 'Nada pendiente',
+  'notifications.emptyHint': 'Cuando algo necesite su atencion, aparecera aqui.',
+  'notifications.markAllRead': 'Marcar todo como leido',
+  'notifications.markRead': 'Marcar como leido',
+  'notifications.dismiss': 'Descartar',
+  'notifications.close': 'Cerrar notificaciones',
+  'notifications.viewAll': 'Ver todas las notificaciones',
+  'notifications.pageTitle': 'Notificaciones',
+  'notifications.pageDescription': 'Todo lo que el producto le ha comunicado, lo mas reciente primero.',
+  'notifications.hiddenTitle': 'Las notificaciones estan desactivadas',
+  'notifications.hiddenBody': 'Ha desactivado las notificaciones en el producto. Puede volver a activarlas en sus preferencias.',
   'settings.def.notifications.inAppEnabled.label': 'Notificaciones en el producto',
   'settings.def.notifications.inAppEnabled.description': 'Mostrar notificaciones mientras esté conectado.',
-  'settings.def.notifications.emailEnabled.label': 'Notificaciones por correo',
-  'settings.def.notifications.emailEnabled.description': 'Enviar notificaciones a su dirección de correo.',
-  'settings.def.notifications.digestFrequency.label': 'Correo de resumen',
-  'settings.def.notifications.digestFrequency.description': 'Con qué frecuencia se envía un resumen de lo ocurrido.',
   'settings.def.files.maxUploadSizeMb.label': 'Archivo más grande',
   'settings.def.files.maxUploadSizeMb.description': 'El archivo individual más grande que se puede subir aquí, en megabytes.',
   'settings.def.files.allowedExtensions.label': 'Tipos de archivo permitidos',
@@ -935,6 +945,8 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'Este archivo no se puede eliminar: una retención legal lo conserva. Podrá eliminarse cuando se levante la retención.',
   'errors.fileQuarantined':
     'Este archivo está retenido porque un análisis de seguridad no lo consideró limpio. Consulte a un administrador si lo necesita.',
+  'errors.notificationNotFound':
+    'Esa notificacion ya no esta. Es posible que ya se haya leido o descartado.',
   'errors.settingNotFound':
     'Ese ajuste no existe. Vuelva a cargar la página para ver la lista actual.',
   'errors.settingValueInvalid':

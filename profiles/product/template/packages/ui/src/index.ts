@@ -27,12 +27,24 @@ export type { RichTags } from './i18n/rich'
 
 export { Button, ButtonLink } from './primitives/button'
 export type { ButtonSize, ButtonVariant } from './primitives/button'
+export { Banner } from './primitives/banner'
 export { Card } from './primitives/card'
 export { Container } from './primitives/container'
+export { Drawer } from './primitives/drawer'
 export { SelectField, TextField } from './primitives/field'
 export { SubmitButton } from './primitives/submit-button'
 export { Icon } from './primitives/icon'
 export { Section } from './primitives/section'
+export { MAX_TOASTS, TOAST_MS, ToastProvider, useToast } from './primitives/toast'
+export type { Toast, ToastTone } from './primitives/toast'
+
+export { NotificationBell } from './notifications/notification-bell'
+export { NotificationList } from './notifications/notification-list'
+export type {
+  NotificationItem,
+  NotificationLabels,
+  NotificationTone,
+} from './notifications/types'
 
 export { brandStyle } from './brand/brand-style'
 export { BrandScope } from './brand/brand-scope'

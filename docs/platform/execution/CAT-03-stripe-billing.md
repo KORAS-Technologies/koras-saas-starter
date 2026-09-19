@@ -6,7 +6,7 @@
 | **Feature name** | Commercial catalogue to provider provisioning |
 | **Owner** | CAT-03 lead |
 | **Written** | 2026-09-19 |
-| **Status** | Planned. Ready to start. No code written |
+| **Status** | Phase 0 built and Phase 1 mostly built, 2026-09-19. Phases 2 to 4 planned |
 | **Read first** | `docs/platform/master-platform-plan.md` §5.1, §7, §9.4; `docs/BILLING_DESIGN.md`; and in `koras-control-plane`, its billing document, its commercial catalogue document and its go-live runbook |
 
 ## The finding that defines this category

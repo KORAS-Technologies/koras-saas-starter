@@ -156,10 +156,16 @@ describe('the capability', () => {
     capabilities: Record<string, boolean>
   }
 
-  it('is declared, off by default, and needs the gateway', () => {
+  it('is declared, off by default, and needs the gateway and a feed', () => {
     expect(manifest.capabilities.ai).toBe(true)
     expect(defaults.capabilities.ai).toBe(false)
-    expect(manifest.requires.ai).toEqual(['ai_gateway'])
+    // The gateway because the provider keys live there and a deployed gateway
+    // is refused without them. `notifications` joined on 2026-09-19, when the
+    // approval notice started reaching the product as well as the inbox:
+    // `core/notify.py` imports `core/notifications.py`, so `--with ai --without
+    // notifications` would generate an import that does not resolve. Refused
+    // rather than switched on silently, which is what `requires` is for.
+    expect(manifest.requires.ai).toEqual(['ai_gateway', 'notifications'])
   })
 
   it('gates paths that all exist in the template', () => {

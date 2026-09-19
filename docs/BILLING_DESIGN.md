@@ -7,8 +7,8 @@
 > is authoritative for what a plan *is*; this document adds what a plan
 > *costs* and how a customer comes to pay it.
 
-Status: **all five phases built** — Phases 1 to 4 on 2026-09-05 and the
-code half of Phase 5 on 2026-09-06, on `develop` in both repositories — and
+Status: **all five phases built in code** — Phases 1 to 4 on 2026-09-05 and
+the code half of Phase 5 on 2026-09-06, on `develop` in both repositories — and
 **the provider switched from Paddle to Stripe Managed Payments on
 2026-09-09**, before any customer existed to migrate. What remains is not
 code: the Stripe account with Managed Payments enabled, the test-mode
@@ -20,10 +20,24 @@ mean something before a card is taken (`koras-control-plane` R-93). This is
 the payment work F13 said would "have a field to land on". What the Control
 Plane holds of it is `koras-control-plane/docs/BILLING.md`.
 
-The test-mode catalogue does not exist yet. The fixtures carry placeholder
-price ids until it does; the runbook's second step creates it, and the ids
-go on the plan row in `dev`. Price ids are references and safe to record;
-the secret key and the webhook secret are not, and live in Doppler only.
+**That paragraph and the phase table below were written on 2026-09-06 and
+overtaken on 2026-09-15, and said otherwise until 2026-09-19.** What used to
+stand here is that the test-mode catalogue did not exist and the fixtures
+carried placeholder price ids. By 2026-09-15 the Stripe test-mode account,
+the catalogue, the webhook endpoint and six completed browser checkouts all
+existed, and the fixtures were re-recorded from real deliveries — recorded in
+`koras-control-plane/docs/BILLING.md` and in FOLLOW_UPS F21, and not here.
+
+One fact, two documents, one of them updated: the `SYNC_BACKLOG.md` shape,
+landing on the document that calls itself authoritative for both repositories.
+So the phase table below now says where to look rather than what is true, and
+`koras-control-plane/docs/BILLING.md` is the single place the built state is
+recorded. What stays here is the *design* — the decisions, the data model, the
+adapter's six operations and the rules — which is what this document is for
+and what does not change when a box is ticked.
+
+Price ids are references and safe to record; the secret key and the webhook
+secret are not, and live in Doppler only.
 
 Three things changed between the proposal and the build, each recorded in
 the section it touches: the customer reference is a table rather than a
@@ -435,13 +449,24 @@ already does, and rendering two states it does not yet have.
 
 ## Phases
 
-| Phase | Repository | Content | Effort | Exit criterion |
-|---|---|---|---|---|
-| 1 Foundation — **built 2026-09-05, re-implemented for Stripe 2026-09-09** | control-plane | migration, adapter, provider implementation, webhook endpoint, `billing_events`, status mapping | 4 days | recorded test-mode events replay through the handler in tests and land the right status. **Half met:** the replay harness exists and runs against fixtures authored from Stripe's documented shape; recording needs a deployed API holding a secret, which no environment has yet |
-| 2 Catalogue — **built 2026-09-05** | control-plane | price ids, interval, seat bounds on plans; console forms | 1 day | a plan with two prices and seat bounds is visible from `GET /api/signup/v1/plans`. Met in code; not yet exercised against a database with the migration applied |
-| 3 Signup with card — **built 2026-09-05, hosted checkout since 2026-09-09** | both | interval and seats on the form; the hosted checkout on verify and the return from it; provisioning on the subscription-created event; abandoned-checkout reminder | 3 days | a test-mode signup with a test card ends signed in, with a `trialing` row carrying billing ids. **Not yet run:** the code is tested end to end through the API with a stand-in provider that opens a checkout without asking Stripe and verifies webhooks with the adapter's own code, and the product template is type-checked as a generated project; the browser journey needs the test-mode catalogue and a deployed API holding the key |
-| 4 In-app billing — **built 2026-09-05** | both | portal Billing section; change plan, interval, seats; manage billing link; trial-ended and past-due states; first gated module | 3 days | trial to active to seat change to cancel observed in `subscriptions.status`, and the gated module closes on cancel. **Half met:** the seat, interval and plan changes are tested through the portal API against a stand-in provider, and the two gated modules the template already shipped close when the state closes; the full cycle against the real sandbox is the same browser run Phase 3 is waiting on |
-| 5 Reconciliation and go-live — **code built 2026-09-06** | control-plane | reconciliation half of the sweep; the account with Managed Payments enabled; live keys in Doppler; the customer portal configured | 2 days | reconciliation reports zero findings against test mode; live mode activated. **The check exists and is tested with a stand-in provider**, and runs every fifteen minutes with the estate sweep rather than nightly; the zero-findings night against test mode and the activated account are the two open boxes |
+**What each phase contains is below; how far each one has got is not.** The
+per-phase exit criteria this table carried until 2026-09-19 were written on
+2026-09-06 and were four days stale by 2026-09-15 — Phase 3 read "not yet run"
+after six browser checkouts had run. A design document that tracks progress
+tracks it wrongly, because it is edited when the design changes and progress
+changes without it.
+
+`koras-control-plane/docs/BILLING.md` records what is built and what is not, in
+the repository the code is in. `docs/FOLLOW_UPS.md` F21 records what is left,
+which is the walk from test mode to live and is a person at a dashboard.
+
+| Phase | Repository | Content | Effort |
+|---|---|---|---|
+| 1 Foundation | control-plane | migration, adapter, provider implementation, webhook endpoint, `billing_events`, status mapping | 4 days |
+| 2 Catalogue | control-plane | price ids, interval, seat bounds on plans; console forms | 1 day |
+| 3 Signup with card | both | interval and seats on the form; the hosted checkout on verify and the return from it; provisioning on the subscription-created event; abandoned-checkout reminder | 3 days |
+| 4 In-app billing | both | portal Billing section; change plan, interval, seats; manage billing link; trial-ended and past-due states; first gated module | 3 days |
+| 5 Reconciliation and go-live | control-plane | reconciliation half of the sweep; the account with Managed Payments enabled; live keys in Doppler; the customer portal configured | 2 days |
 
 Three weeks of engineering. Stripe activates an account on business details
 rather than after a review, so Phase 5's waiting is hours; Managed Payments

@@ -1746,7 +1746,23 @@ export const productConfig: ProductConfig = {
         requiredEntitlements: ['storage.files'],
         lockedBehavior: 'lock',
       },
-{{#if capability.ai}}
+{{#if capability.notifications}}
+      // The notification centre: everything the bell's drawer does not show.
+      // No `requiredPermissions` and no entitlement, deliberately — a feed is
+      // guarded by the row-level policy keyed to the caller's own subject, and
+      // a permission here would mean the product sends messages to a member
+      // who has nowhere to read them. It is the only module in this registry
+      // with neither gate, which is why it says so.
+      {
+        id: 'notifications',
+        label: 'Notifications',
+        icon: 'bell',
+        href: '/dashboard/notifications',
+        group: 'primary',
+        order: 6,
+        requiredCapabilities: ['notifications'],
+      },
+{{/if}}{{#if capability.ai}}
       // The assistant. Generated only with the `ai` capability, gated on the
       // permission every member holds and locked when the plan lacks it --
       // `ai.assistant` is the entitlement the API enforces too, and the

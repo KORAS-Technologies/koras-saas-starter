@@ -6,7 +6,7 @@
 | **Feature name** | Notification and communication framework |
 | **Owner** | CAT-01 lead |
 | **Written** | 2026-09-19 |
-| **Status** | Planned. No code written |
+| **Status** | Phase 0 and Phase 1 built 2026-09-19. Phases 2 to 5 planned |
 | **Read first** | `docs/platform/master-platform-plan.md` §7, §9; `docs/platform/feature-dependency-map.md`; `docs/platform/gap-defect-register.md` NOTIF rows |
 
 ## Objective
@@ -37,13 +37,32 @@ and one of them sent in the wrong person's language.
 | Navigation registry | HARD | Satisfied |
 | `packages/ui` primitives | HARD | Satisfied |
 | Email transport | HARD | Satisfied |
-| **PLAT-F1 job contract** | **HARD from Phase 3** | Absent as of 2026-09-19 |
+| **PLAT-F1 job contract** | **HARD from Phase 3** | Built 2026-09-19 |
 | Domain event bus | OPTIONAL | Deliberately absent. This category supplies the interim |
 | Realtime transport | OPTIONAL | Phase 1 polls |
 | SMS provider | FUTURE | Phase 5 |
 
-**Hard blockers.** One: PLAT-F1, and only for Phase 3 onward. Phases 0 to 2 are
-unblocked as of 2026-09-19.
+**Hard blockers.** None as of 2026-09-19: PLAT-F1 was built the same day, so
+Phase 3 is unblocked too.
+
+**What Phases 0 and 1 delivered**, built and verified on 2026-09-19 against a
+freshly generated product — lint, typecheck, test and build across 71 tasks, in
+three capability variants:
+
+- The capability gates seven paths and can be excluded; `requires` refuses a
+  producer without a store.
+- `00032_notifications.sql` with forced row-level security, four policies, an
+  isolation suite, and a check constraint that refuses a link the product did
+  not make.
+- A kind registry, a store that refuses a programming mistake and swallows a
+  delivery one, four routes, and no route that writes a notification.
+- A bell with an unread count, a drawer, a notification centre, and `Banner`
+  and `ToastProvider` primitives.
+- One producer: the assistant's approval notice, which now reaches the product
+  as well as the inbox, in the same words.
+- A nightly sweep in two windows, always on.
+- `notifications.inAppEnabled` honoured; the other two unsurfaced until the
+  phases that honour them.
 
 ## Shared contracts
 

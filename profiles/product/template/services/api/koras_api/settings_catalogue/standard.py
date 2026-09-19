@@ -340,6 +340,17 @@ SETTINGS: list[SettingDefinition] = [
         order=100,
     ),
     # ── Notifications ────────────────────────────────────────────────────────
+    #
+    # All three were surfaced and read by nothing at all from the day the
+    # framework shipped until 2026-09-19, which is the failure `surfaced` was
+    # introduced to prevent, four days later and in the same file. A customer
+    # could switch off notification emails and still receive them.
+    #
+    # The first is honoured now: the dashboard layout reads it and does not
+    # draw the bell, and the notification centre says why it is empty. The
+    # other two are unsurfaced until the channel seam and the digest job exist,
+    # because a control that changes nothing is worse than one that is not
+    # offered.
     _setting(
         "notifications.inAppEnabled",
         Category.NOTIFICATIONS,
@@ -357,6 +368,11 @@ SETTINGS: list[SettingDefinition] = [
         Scope.GLOBAL_ORG_USER,
         ui=UiControl.TOGGLE,
         order=20,
+        # Declared, and honoured by nothing as of 2026-09-19. The one mail a
+        # product sends -- the assistant's approval notice -- does not consult
+        # it. CAT-01 Phase 2 moves that send onto the dispatch point, and this
+        # is surfaced again in the same change.
+        surfaced=False,
     ),
     _setting(
         "notifications.digestFrequency",
@@ -367,6 +383,9 @@ SETTINGS: list[SettingDefinition] = [
         options=("never", "daily", "weekly"),
         ui=UiControl.SELECT,
         order=30,
+        # Declared, and honoured by nothing as of 2026-09-19: there is no
+        # digest job. CAT-01 Phase 4.
+        surfaced=False,
     ),
     # ── Files ────────────────────────────────────────────────────────────────
     #

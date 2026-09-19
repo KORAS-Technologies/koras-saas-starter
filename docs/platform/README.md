@@ -35,6 +35,11 @@ The division of labour, extending the table in `docs/features/README.md`:
 | `docs/platform/execution/CAT-02-data-import.md` | The data-import category, executable on its own |
 | `docs/platform/execution/CAT-03-stripe-billing.md` | The Stripe provisioning category, executable on its own |
 
+**Status as of 2026-09-19.** PLAT-F1 is built, CAT-01 Phases 0 and 1 are built,
+CAT-03 Phase 0 is built and Phase 1 is built except the storage of the lookup
+key. CAT-02 is unblocked and unstarted. Each manifest carries its own state;
+`docs/platform/gap-defect-register.md` carries what each change closed.
+
 ## Three registers already exist, and this adds a fourth on purpose
 
 `docs/RISK_REGISTER.md` owns defects found in operation. `docs/FOLLOW_UPS.md`

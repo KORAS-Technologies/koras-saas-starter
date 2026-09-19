@@ -448,27 +448,76 @@ three parallel slots B, C and D exactly.
 
 ## 18. Next three features
 
-After this plan, and before anything else in these three categories:
+**The first three were taken on 2026-09-19 and are built.** PLAT-F1 is the job
+contract; CAT-01 Phases 0 and 1 are the notification feed; CAT-03 Phase 1 is
+the lookup key, outbound idempotency and one entitlement catalogue. What each
+closed is in `docs/platform/gap-defect-register.md`; what building them found
+that this plan had not is below, because two of the three recommendations rest
+on it.
 
-1. **PLAT-F1 — the background job contract.** An enqueue seam, a product task
-   registry beside the cron registry, and a declared retry policy. It unblocks
-   CAT-02 entirely and CAT-01's Phase 3, closes a gap a real product raised as
-   its own OD-19, and removes the only reason either category would edit a
-   starter-owned file. One to two days, and everything else is cheaper after it.
+### What building them changed about the ranking
 
-2. **CAT-01 Phase 1 — in-app notifications, with the toast and banner
-   primitives.** The single largest visible hole in a generated product: there
-   is no bell, no feed, no read state, and thirty hand-rolled alert regions
-   where a toast should be. It needs nothing that does not exist, it gives the
-   `notifications` capability something to gate, and it gives every later
-   feature — import completion included — somewhere to say what happened.
+- **The job contract has no production caller.** It is tested by running real
+  tasks through its own wrapper, which is honest and is not the same as having
+  been used. A seam's first real use is where its design is argued with, and
+  the longer that waits the more is built on an unargued design.
+- **Half of PLAT-DEF-001 was left open on 2026-09-19.** The three
+  `notifications.*` settings are resolved; the three `files.*` are drawn on the
+  settings page and
+  enforced by nothing, and the upload route still applies a hardcoded 5 GiB
+  ceiling that consults none of them.
+- **The settings framework produced two defects in one day, both found by
+  accident.** Three settings offered and honoured by nothing, and a navigation
+  test left stale by the same commit that shipped the preferences page. Neither
+  was found by looking for it. `docs/FOLLOW_UPS.md` F27 asks for a deliberate
+  review of that framework and ranks it first; today is evidence it would pay.
 
-3. **CAT-03 Phase 1 — lookup keys, outbound idempotency, and one entitlement
-   catalogue.** Three small changes in the Control Plane with an outsized
-   payoff: a retried checkout stops being able to create a second subscription,
-   prices stop being addressed by a hand-pasted id, and the two places that
-   disagree about which entitlements a new product gets become one. The
-   reporting entitlements being absent from the seed means a product registered
-   today is not granted the reports it ships with, and nothing goes red.
+### The three
 
-All three are independent of each other and can run at once.
+1. **CAT-02 Phases 0 and 1 — data import, as far as the dry run.** Unblocked
+   the moment PLAT-F1 landed, and it is the largest thing a customer actually
+   asks for: loading what they already have. It is also the job contract's
+   first production caller, so it is what argues with that design while only
+   one feature rests on it. Phase 0 owes one decision before any migration —
+   whether the import run table is a third instance of the run-and-record
+   pattern or the reason to extract it (PLAT-GAP-006) — and Phase 1 enforces
+   the three `files.*` settings at the presign route, which closes the rest of
+   PLAT-DEF-001. The requirements are already written, in
+   `docoris/docs/architecture/IMPORT.md`, by the product that needs them.
+   *Rough size: the largest of the three.*
+
+2. **CAT-01 Phase 2 — channels, templates, recipients, and the language.**
+   Three open defects in one phase. `notifications.emailEnabled` is currently
+   *hidden* rather than honoured, which is a holding position and not a fix.
+   The one transactional mail a product sends still composes its HTML inline
+   and still goes out in the requester's language rather than the recipient's,
+   although the member language preference has existed since F20 closed on
+   2026-09-15. And the channel seam built here is what every later channel —
+   the digest, the announcement, SMS — plugs into, so building one of those
+   first would mean building it twice. *Rough size: medium.*
+
+3. **F27 — the settings framework reviewed, then exercised.**
+   `docs/FOLLOW_UPS.md` ranks this first and it has not moved since 2026-09-19.
+   What changed is the evidence: two defects in that framework surfaced this
+   week without anybody looking for them, and its manual test plan still has
+   fifteen cases and fifteen blank verdicts — the first of which is the thing
+   the feature exists for and the one no automated test in this estate reaches.
+   A review's value decays as work is built on what it would have found, and
+   the notification work has just built on it. *Rough size: about a day for the
+   review, half a day for the pass.*
+
+### What was considered and not chosen
+
+**CAT-03 Phase 2 — the provisioner and catalogue drift.** Real, and it would
+make the Phase 1 lookup key used rather than merely decided. It is not in the
+three because its value is capped until the account is live, and that is F21:
+a person at a Stripe dashboard, not code. Building a provisioner that can only
+ever act against test mode is building it twice, once now and once when the
+first live price disagrees with it. It moves to the top of this list the day
+F21 closes.
+
+**A mechanical check that a surfaced setting has a consumer.** Not a feature,
+and it should not be one: it belongs inside CAT-02 Phase 1, in the same change
+that fixes the last three offenders. Fix the three, then add the check that
+stops a fourth — which is the shape `tests/docs/` already uses for prose, and
+this defect class has now appeared three times.

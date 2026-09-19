@@ -4,6 +4,7 @@ from arq import cron
 from arq.connections import RedisSettings
 from arq.typing import WorkerSettingsBase
 from koras_database import assert_rls_enforced
+from koras_queue import worker_functions
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from .settings import settings
@@ -11,7 +12,8 @@ from .tasks import example_task
 {{#if capability.ai}}from .tasks.ai_retention import purge_ai_history
 {{/if}}from .tasks.audit_retention import purge_audit_history
 {{#if capability.audit_governance}}from .tasks.governance_expiry import expire_audit_exports, expire_legal_holds
-{{/if}}from .tasks.product import PRODUCT_CRON_JOBS
+{{/if}}{{#if capability.notifications}}from .tasks.notifications import purge_notifications
+{{/if}}from .tasks.product import PRODUCT_CRON_JOBS, PRODUCT_TASKS
 {{#if capability.reporting}}from .tasks.reporting import deliver_scheduled_reports
 {{/if}}{{#if capability.storage_governance}}from .tasks.storage_backup import back_up_storage
 from .tasks.storage_lifecycle import sweep_storage_lifecycle
@@ -57,7 +59,16 @@ async def verify_isolation(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings(WorkerSettingsBase):
-    functions = [example_task]
+    # Cron jobs are below; these are the jobs a *request* asks for. The list
+    # was `[example_task]` alone until 2026-09-19, and that was the whole of
+    # the problem: nothing could enqueue, so every path that needed work done
+    # after responding used FastAPI background tasks, which run in the API
+    # process and are lost when it restarts.
+    #
+    # `worker_functions` applies each task's declared retry policy and timeout
+    # and refuses a name bound twice, so a collision is a traceback here rather
+    # than one handler silently shadowing another in production.
+    functions = [example_task, *worker_functions(PRODUCT_TASKS)]
     # Before the first cron fires, not after. A sweep that deleted across
     # tenants once has already done it.
     #
@@ -71,7 +82,13 @@ class WorkerSettings(WorkerSettingsBase):
         # Foundation, like the table it sweeps: every product records audit
         # events, so every product forgets them on a schedule.
         cron(purge_audit_history, hour=3, minute=23),
-{{#if capability.audit_governance}}        # Export artifacts past their expiry. On by default, unlike the two
+{{#if capability.notifications}}        # The feed, in two windows: a read notification goes at ninety days, an
+        # unread one at a hundred and eighty. Always on, like the audit sweep
+        # and unlike the storage ones -- a notification is a sentence the
+        # product wrote about content that still exists, so forgetting one
+        # costs the customer nothing they cannot see elsewhere.
+        cron(purge_notifications, hour=3, minute=19),
+{{/if}}{{#if capability.audit_governance}}        # Export artifacts past their expiry. On by default, unlike the two
         # storage sweeps: those remove a customer's own content, while this
         # removes an artifact the product generated with a date the product
         # itself displayed. Before it existed, the only thing that retired

@@ -44,6 +44,17 @@ capabilities:
   billing: true
   storage: true
   email: true
+  # In-app notifications: the feed, the bell, the drawer, the centre, and the
+  # toast and banner primitives beside them. On by default -- a product that
+  # cannot tell a person anything is worse than one that can, and unlike
+  # importing there is no product for which the answer is plainly no.
+  #
+  # Declared `true` here since the manifest was written and gating nothing
+  # until 2026-09-19: no `template_map` entry, no `defaults.yaml` entry, and a
+  # `packages/notifications` that was two lines long. So `--without
+  # notifications` removed nothing while appearing to succeed, and the flag
+  # recorded in a generated project's `.koras/project.yaml` claimed a feature
+  # the project did not have.
   notifications: true
   feature_flags: true
   audit: true
@@ -143,6 +154,29 @@ template_map:
       - services/worker/koras_worker/tasks/ai_retention.py
       - apps/web/src/app/dashboard/assistant
       - e2e/assistant.spec.ts
+    # In-app notifications: the table, the emitter, the routes, the page and
+    # the browser test.
+    #
+    # **The migration *is* gated**, and by the manifest's own rule it may be:
+    # no foundation code and no foundation migration reaches `notifications`.
+    # Every producer is inside a capability -- the approval notice is `ai`'s --
+    # so a product generated without this has nothing that would write a row.
+    # That is the test `audit_events` failed until 2026-09-16, applied forward
+    # rather than remembered.
+    #
+    # What is not listed is generated always and harmless without it: the
+    # components in `packages/ui`, the permissions catalogue (there is no
+    # notification permission -- a feed is guarded by the policy keyed to the
+    # subject, not by a string) and the translations.
+    notifications:
+      - services/api/koras_api/core/notifications.py
+      - services/api/koras_api/routers/notifications.py
+      - services/worker/koras_worker/tasks/notifications.py
+      - supabase/migrations/00032_notifications.sql
+      - supabase/tests/290_notifications_isolation.sql
+      - tests/unit/test_notifications.py
+      - apps/web/src/app/dashboard/notifications
+      - e2e/notifications.spec.ts
     # Reporting is spread the same way. What is not listed is generated
     # always and harmless without it: the `koras-reporting` package, the
     # permissions the catalogue names, the components in `packages/ui`
@@ -229,7 +263,7 @@ template_map:
 # Components that need another enabled beside them. See the generator's
 # manifest schema for why this is refused rather than switched on silently.
 requires:
-  ai: [ai_gateway]
+  ai: [ai_gateway, notifications]
 
 # Directories copied verbatim from the starter into the generated project.
 # Terraform modules stay single-sourced here rather than being duplicated

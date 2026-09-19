@@ -11,7 +11,16 @@ import {
 import { NO_TENANT, roleLabel, signedInContext } from '../../lib/access'
 import { currentLocale } from '../../lib/locale'
 import { effectiveSettings } from '../../lib/settings'
-{{#if capability.ai}}import { isEntitled } from '@{{projectSlug}}/branding'
+{{#if capability.notifications}}import { createTranslator } from '@{{projectSlug}}/i18n'
+import { NotificationBell, settingValue } from '@{{projectSlug}}/ui'
+import {
+  dismissNotification,
+  loadNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+} from './notifications/actions'
+import { notificationLabels } from './notifications/labels'
+{{/if}}{{#if capability.ai}}import { isEntitled } from '@{{projectSlug}}/branding'
 import { can } from '../../lib/access'
 import { translator } from '../../lib/locale'
 import { AssistantLauncher } from './assistant/AssistantLauncher'
@@ -147,10 +156,53 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     can(access, 'ai.use') &&
     (!access.entitlements.resolved || isEntitled(access.entitlements, 'ai.assistant'))
   const labels = assistantLabels(await translator())
-  const headerActions = assistantAllowed ? (
-    <AssistantLauncher locale={locale} labels={labels} canApprove={can(access, 'ai.approve')} />
-  ) : undefined
 {{/if}}
+{{#if capability.notifications}}
+  /*
+   * The bell, resolved on the server once per navigation rather than polled.
+   *
+   * Two things decide whether it is drawn. `notifications.inAppEnabled` is the
+   * person's own preference and its description says "Show notifications while
+   * you are signed in" — a display preference, so the rows are still written
+   * and still readable at /dashboard/notifications, and what the switch decides
+   * is whether the header carries a bell. That setting was registered,
+   * translated into three languages and read by nothing at all until
+   * 2026-09-19.
+   *
+   * The feed is only fetched when the bell will be drawn, so somebody who has
+   * turned it off does not pay for a request they will not see.
+   */
+  const bellShown = settingValue(settings?.settings['notifications.inAppEnabled'], true)
+  const feed = bellShown
+    ? await loadNotifications(20)
+    : { notifications: [], unread: 0 }
+  const bellLabels = notificationLabels(createTranslator(locale))
+{{/if}}
+
+  // Always built, so a product with one capability, both or neither renders
+  // the same header. An empty fragment costs nothing and removes a second
+  // conditional from the JSX below, where a Handlebars block inside a prop is
+  // considerably harder to read.
+  const headerActions = (
+    <>
+{{#if capability.notifications}}      {bellShown ? (
+        <NotificationBell
+          notifications={feed.notifications}
+          unread={feed.unread}
+          labels={bellLabels}
+          locale={locale}
+          allHref="/dashboard/notifications"
+          onMarkRead={markNotificationRead}
+          onMarkAllRead={markAllNotificationsRead}
+          onDismiss={dismissNotification}
+        />
+      ) : null}
+{{/if}}{{#if capability.ai}}      {assistantAllowed ? (
+        <AssistantLauncher locale={locale} labels={labels} canApprove={can(access, 'ai.approve')} />
+      ) : null}
+{{/if}}    </>
+  )
+
 
   return (
     <BrandScope tenant={tenant} className="flex min-h-screen flex-col">
@@ -168,9 +220,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         identity={identity}
         locale={locale}
         accountUrl={accountUrl}
-{{#if capability.ai}}
         headerActions={headerActions}
-{{/if}}
       >
 {{#if capability.ai}}
         <AIPageContextProvider>

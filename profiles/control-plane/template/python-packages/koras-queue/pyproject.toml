@@ -2,7 +2,16 @@
 name = "koras-queue"
 version = "0.1.0"
 requires-python = ">=3.12"
+# Declared here as well as in the product profile since 2026-09-19, when this
+# package stopped being a one-line comment. It was an empty manifest with no
+# dependencies and no packages table while four services declared a dependency
+# on it; the Control Plane's copy would have installed a package whose modules
+# import a library nothing brought.
+dependencies = ["arq>=0.26.0"]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/koras_queue"]

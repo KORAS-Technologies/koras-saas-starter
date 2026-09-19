@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from koras_queue import queue_for
 from redis.asyncio import Redis
 
 from .core.database import verify_rls_enforcement
@@ -24,6 +25,7 @@ from .routers import (
 {{#if capability.storage_governance}}    restore,
 {{/if}}
 {{#if capability.audit_governance}}    holds,
+{{/if}}{{#if capability.notifications}}    notifications,
 {{/if}}    platform,
 {{#if capability.ai}}    platform_ai,
 {{/if}}    platform_governance,
@@ -37,11 +39,17 @@ from .routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Opens one Redis connection for the rate limiter, or none.
+    """Opens one Redis connection for the rate limiter and one job queue.
 
     An unset REDIS_URL leaves `app.state.redis` as None, which the limiter
     treats as the degraded case: requests are allowed and the decision says so.
     That is what lets the service run locally, and in a test, without a Redis.
+
+    The queue reads the same setting and degrades differently on purpose. A
+    rate limiter that cannot reach Redis should let the request through; a
+    queue that cannot reach Redis has lost the work. So the unconfigured queue
+    records, warns on every call, and answers `simulated` -- and the route that
+    enqueued is expected to read that rather than answer 202 regardless.
     """
     # Before anything is served. A connection that bypasses RLS makes every
     # tenant policy inert, and that has no symptom until a tenant sees another
@@ -49,11 +57,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await verify_rls_enforcement()
 
     app.state.redis = Redis.from_url(settings.redis_url) if settings.redis_url else None
+    # Synchronous, and does not connect: the pool opens on the first enqueue,
+    # so an API that never enqueues never holds a second connection.
+    app.state.jobs = queue_for(settings.redis_url)
     try:
         yield
     finally:
         if app.state.redis is not None:
             await app.state.redis.aclose()
+        await app.state.jobs.aclose()
 
 
 app = FastAPI(
@@ -155,7 +167,23 @@ app.include_router(
     prefix="/api/v1",
     dependencies=[Depends(limit_authenticated)],
 )
-{{#if capability.storage_governance}}# Bringing an object back from its backup: ask, approve, watch. Two people
+{{#if capability.notifications}}# A person's own feed. No permission on any route, like `/me/settings`: what
+# protects a feed is the policy keyed to the verified subject, and a permission
+# would make the bell a premium feature. No route writes one either -- a
+# notification is produced by the thing that happened, server-side, because a
+# create route would let any signed-in person put a message in a colleague's
+# feed under the product's own branding.
+#
+# `/notifications/unread-count` and `/notifications/read-all` are registered
+# ahead of `/notifications/{notification_id}` inside the router, because
+# Starlette matches in registration order and would otherwise read either
+# static segment as an id.
+app.include_router(
+    notifications.router,
+    prefix="/api/v1",
+    dependencies=[Depends(limit_authenticated)],
+)
+{{/if}}{{#if capability.storage_governance}}# Bringing an object back from its backup: ask, approve, watch. Two people
 # decide and the worker runs it, so no route here touches a bucket. Gated by
 # permission and by nothing else -- gating data recovery behind a plan tier
 # would mean a customer whose plan lapsed cannot get their data back, which is

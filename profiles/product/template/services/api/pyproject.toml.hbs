@@ -3,6 +3,15 @@ name = "{{projectSlug}}-api"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+  # Left at 0.115.0 on 2026-09-19, deliberately. This repository records that
+  # at exactly 0.115.0 every route returning `None` with a 204 fails at import,
+  # which would make the declared floor a floor that does not work. Adding a
+  # third such route (`routers/notifications.py`) was the reason to check, and
+  # it does not reproduce: 0.115.0, 0.115.1, 0.115.2 and 0.115.4 all import a
+  # 204 route returning `None`, both bare and with dependencies through
+  # `include_router`. Either the claim is wrong or it needs a condition nobody
+  # wrote down, so the floor is not moved on a premise that could not be shown.
+  # PLAT-DEBT-001 carries the finding.
   "fastapi>=0.115.0",
   # Imported directly by core/security.py for BaseHTTPMiddleware. It resolves
   # anyway -- fastapi brings it -- which is exactly how an undeclared import

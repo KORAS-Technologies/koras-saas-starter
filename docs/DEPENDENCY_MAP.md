@@ -54,24 +54,43 @@ ui ◄── branding, types        │
 
 ### Dependency table
 
+**This table is the intended graph, not the built one, and said otherwise until
+2026-09-19.** Eleven of these packages are two-line stubs — `billing`,
+`domains`, `feature-flags`, `notifications`, `storage`, `audit`, `security`,
+`observability`, `validation`, `types`, and `email`, the last deliberately with
+its reason written in the file. A stub declares no dependencies and imports
+nothing, so every edge below that touches one describes a plan rather than a
+system. The rows are kept because the direction is the decision — apps may
+depend on packages and packages never on apps — and marked rather than deleted
+so that a package growing real content is a row that stops being marked.
+
+Where the substance actually is: `services/api/koras_api/` and
+`python-packages/koras-*` on the Python side, and `packages/branding`,
+`packages/permissions`, `packages/auth`, `packages/ui`, `packages/i18n` and
+`packages/api-client` on the TypeScript side. In-app notifications, for one,
+are a table and a router in the API and components in `packages/ui`; nothing
+of that feature is in `packages/notifications`, which is still two lines.
+
+A `†` marks a package that is a stub as of 2026-09-19.
+
 | Package          | Depends on                                      |
 |------------------|-------------------------------------------------|
-| `types`          | (none — foundation layer)                       |
+| `types` †        | (none — foundation layer)                       |
 | `config`         | `types`                                         |
 | `logger`         | `config`, `types`                               |
-| `validation`     | `types`                                         |
+| `validation` †   | `types`                                         |
 | `auth`           | `types`, `config`                               |
 | `tenant`         | `auth`, `types`                                 |
 | `permissions`    | `tenant`, `auth`, `types`                       |
-| `observability`  | `logger`, `config`                              |
-| `audit`          | `auth`, `tenant`, `logger`                      |
-| `storage`        | `auth`, `tenant`, `config`                      |
-| `billing`        | `tenant`, `auth`                                |
-| `email`          | `config`                                        |
-| `notifications`  | `email`, `config`                               |
-| `domains`        | `tenant`                                        |
-| `feature-flags`  | `tenant`                                        |
-| `security`       | `auth`, `config`                                |
+| `observability` † | `logger`, `config`                              |
+| `audit` †        | `auth`, `tenant`, `logger`                      |
+| `storage` †      | `auth`, `tenant`, `config`                      |
+| `billing` †      | `tenant`, `auth`                                |
+| `email` †        | `config`                                        |
+| `notifications` † | `email`, `config`                               |
+| `domains` †      | `tenant`                                        |
+| `feature-flags` † | `tenant`                                        |
+| `security` †     | `auth`, `config`                                |
 | `branding`       | `tenant`                                        |
 | `api-client`     | `auth`, `types`, `config`                       |
 | `ui`             | `branding`, `types`                             |

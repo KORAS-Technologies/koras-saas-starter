@@ -849,7 +849,7 @@ describe('the settings catalogue speaks every language', () => {
 
   it('gives every shown setting a label and a description, in all three', () => {
     const shown = declared().filter((setting) => setting.surfaced)
-    expect(shown.length).toBe(27)
+    expect(shown.length).toBe(25)
 
     for (const { locale, text } of catalogues) {
       for (const { key } of shown) {
@@ -868,7 +868,7 @@ describe('the settings catalogue speaks every language', () => {
     const hidden = declared()
       .filter((setting) => !setting.surfaced)
       .map((setting) => setting.key)
-    expect(hidden.length).toBe(5)
+    expect(hidden.length).toBe(7)
 
     const keys = new Set(
       catalogues
@@ -923,8 +923,9 @@ describe('the settings catalogue speaks every language', () => {
   })
 
   it('hides exactly the settings nothing honours', () => {
-    // The five the shared table does not read. When one is honoured, its
-    // `surfaced=False` goes and its two strings arrive in the same commit.
+    // Seven. Five the shared table does not read, and two the notification
+    // work could not honour yet. When one is honoured, its `surfaced=False`
+    // goes and its two strings arrive in the same commit.
     const hidden = declared()
       .filter((setting) => !setting.surfaced)
       .map((setting) => setting.key)
@@ -935,12 +936,33 @@ describe('the settings catalogue speaks every language', () => {
       'grid.rememberColumns',
       'grid.rememberFilters',
       'grid.rememberSort',
+      'notifications.digestFrequency',
+      'notifications.emailEnabled',
     ])
 
-    // And the table really does not read them, which is what makes hiding them
-    // honest rather than a way to avoid writing the strings.
+    // And the code really does not read them, which is what makes hiding them
+    // honest rather than a way to avoid writing the strings. Each group is
+    // checked against the file that would honour it: a single unscoped search
+    // would pass for a key nothing anywhere reads and for one read in the
+    // wrong place alike.
     const table = read('packages', 'ui', 'src', 'data-table', 'data-table.tsx')
-    for (const key of hidden) expect(table).not.toContain(key)
+    for (const key of hidden.filter((k) => k.startsWith('grid.'))) {
+      expect(table).not.toContain(key)
+    }
+
+    // The mail path, which is what would honour `emailEnabled`, and the worker,
+    // which is what would honour a digest. Neither does yet.
+    const notify = read('services', 'api', 'koras_api', 'core', 'notify.py')
+    const worker = read('services', 'worker', 'koras_worker', 'worker.py.hbs')
+    for (const key of hidden.filter((k) => k.startsWith('notifications.'))) {
+      expect(notify).not.toContain(key)
+      expect(worker).not.toContain(key)
+    }
+
+    // The one that *is* honoured reads from the layout, so it stays offered.
+    const layout = read('apps', 'web', 'src', 'app', 'dashboard', 'layout.tsx.hbs')
+    expect(layout).toContain('notifications.inAppEnabled')
+    expect(hidden).not.toContain('notifications.inAppEnabled')
   })
 })
 

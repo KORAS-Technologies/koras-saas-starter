@@ -1,10 +1,13 @@
 # ADR 0008 — The background job contract, and notification's dispatch point
 
-**Status.** Proposed, 2026-09-19. Nothing here is built. It records the two
-decisions the master platform plan of 2026-09-19 rests on, so that three feature
-categories can be worked in parallel without each answering them differently.
-The plan is `docs/platform/master-platform-plan.md`; the findings are
-`docs/platform/gap-defect-register.md`.
+**Status.** Accepted, 2026-09-19. **Decision 1 is built** — `koras-queue`
+carries the seam, the API opens one queue per process, and the worker's product
+extension point gained `PRODUCT_TASKS` beside `PRODUCT_CRON_JOBS`. Decision 2 is
+the contract CAT-01 implements, and was unbuilt on the day this was accepted.
+Both record what the master platform plan of 2026-09-19 rests on, so that three
+feature categories can be worked in parallel without each answering them
+differently. The plan is `docs/platform/master-platform-plan.md`; the findings
+are `docs/platform/gap-defect-register.md`.
 
 **Context.** Read across the repository on 2026-09-19: **nothing can enqueue a
 background job.** ARQ is present, the worker runs, and nine sweeps are

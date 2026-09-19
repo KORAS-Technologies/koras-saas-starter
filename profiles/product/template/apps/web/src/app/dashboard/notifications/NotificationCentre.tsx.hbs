@@ -1,0 +1,72 @@
+'use client'
+
+import { useTransition } from 'react'
+import { NotificationList } from '@{{projectSlug}}/ui'
+import type { NotificationItem, NotificationLabels } from '@{{projectSlug}}/ui'
+
+/**
+ * The client half of the notification centre.
+ *
+ * It exists for one reason: `NotificationList` needs click handlers, and a
+ * server component cannot give it any. Everything it renders comes from the
+ * server, and after every action the page revalidates — so there is no
+ * optimistic copy of the list here that could disagree with the database.
+ *
+ * `useTransition` rather than a disabled flag per row: the whole list is
+ * stale for the moment the action takes, and marking one row busy while the
+ * others silently become wrong is worse than saying the list is updating.
+ */
+export function NotificationCentre({
+  notifications,
+  labels,
+  locale,
+  markRead,
+  markAllRead,
+  dismiss,
+}: {
+  notifications: readonly NotificationItem[]
+  labels: NotificationLabels
+  locale: string
+  markRead: (id: string) => Promise<void>
+  markAllRead: () => Promise<void>
+  dismiss: (id: string) => Promise<void>
+}) {
+  const [pending, start] = useTransition()
+  const unread = notifications.filter((item) => !item.read).length
+
+  return (
+    <div data-testid="notification-centre" data-pending={pending ? 'true' : 'false'}>
+      <div className="flex items-center justify-between border-b border-line px-4 py-2">
+        <p className="text-xs text-ink-muted">{labels.unread(unread)}</p>
+        <button
+          type="button"
+          data-testid="centre-mark-all-read"
+          disabled={unread === 0 || pending}
+          onClick={() => {
+            start(() => {
+              void markAllRead()
+            })
+          }}
+          className="rounded-brand px-2 py-1 text-xs font-semibold text-brand hover:bg-surface-muted disabled:opacity-50"
+        >
+          {labels.markAllRead}
+        </button>
+      </div>
+      <NotificationList
+        notifications={notifications}
+        labels={labels}
+        locale={locale}
+        onMarkRead={(id) => {
+          start(() => {
+            void markRead(id)
+          })
+        }}
+        onDismiss={(id) => {
+          start(() => {
+            void dismiss(id)
+          })
+        }}
+      />
+    </div>
+  )
+}

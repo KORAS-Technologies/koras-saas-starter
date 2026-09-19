@@ -1,0 +1,108 @@
+import { expect, test } from '@playwright/test'
+import { signInAs } from './support/session'
+
+/**
+ * The bell, the drawer and the notification centre, in a browser without an API.
+ *
+ * The suite runs against `next start` with a session secret and no API, so
+ * every read fails and the feed is empty. That is the state worth proving for
+ * a feed in particular: a bell that throws when the notification service is
+ * unreachable takes the whole dashboard down, because it is in the layout and
+ * therefore on every signed-in page. The server action answers an empty feed
+ * instead, deliberately, and this is what says so.
+ *
+ * What a browser can prove here: the bell is reachable and named, the drawer
+ * is a dialog with a working focus trap, the empty state is a sentence rather
+ * than a blank panel, and the centre renders at both widths.
+ */
+
+test('the bell is in the header, named, and carries no badge when nothing waits', async ({
+  page,
+  context,
+}) => {
+  await signInAs(context)
+  await page.goto('/dashboard')
+
+  const bell = page.getByTestId('notification-bell')
+  await expect(bell).toBeVisible()
+
+  // The count belongs on the button's accessible name, not only in a badge:
+  // a screen reader should hear "Notifications, 3 unread" rather than
+  // "Notifications" beside an unannounced number. With no API there is
+  // nothing waiting, so the name is the bare one and there is no badge.
+  await expect(bell).toHaveAccessibleName('Notifications')
+  await expect(page.getByTestId('notification-badge')).toHaveCount(0)
+})
+
+test('the drawer opens as a dialog, traps focus, and Escape returns it', async ({
+  page,
+  context,
+}) => {
+  await signInAs(context)
+  await page.goto('/dashboard')
+
+  const bell = page.getByTestId('notification-bell')
+  await expect(bell).toHaveAttribute('aria-expanded', 'false')
+  await bell.click()
+
+  const drawer = page.getByTestId('notification-drawer')
+  await expect(drawer).toBeVisible()
+  await expect(drawer).toHaveAttribute('role', 'dialog')
+  await expect(drawer).toHaveAttribute('aria-modal', 'true')
+  await expect(bell).toHaveAttribute('aria-expanded', 'true')
+
+  // Focus went into the panel rather than staying on the trigger. This is the
+  // assertion a text search reads as present and a keyboard finds missing,
+  // which is why the shell suite makes it too.
+  await expect(drawer.locator(':focus')).toHaveCount(1)
+
+  await page.keyboard.press('Escape')
+  await expect(drawer).toBeHidden()
+  await expect(bell).toBeFocused()
+})
+
+test('the drawer says there is nothing rather than showing an empty panel', async ({
+  page,
+  context,
+}) => {
+  await signInAs(context)
+  await page.goto('/dashboard')
+  await page.getByTestId('notification-bell').click()
+
+  await expect(page.getByTestId('notifications-empty')).toBeVisible()
+  // Nothing to mark read, so the control is present and refuses rather than
+  // absent: a button that disappears when it would do nothing teaches a person
+  // it was never there.
+  await expect(page.getByTestId('mark-all-read')).toBeDisabled()
+  await expect(page.getByTestId('notification-view-all')).toBeVisible()
+})
+
+test('the centre is reachable from the drawer and renders its own frame', async ({
+  page,
+  context,
+}) => {
+  await signInAs(context)
+  await page.goto('/dashboard')
+  await page.getByTestId('notification-bell').click()
+  await page.getByTestId('notification-view-all').click()
+
+  await expect(page).toHaveURL(/\/dashboard\/notifications$/)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Notifications')
+  await expect(page.getByTestId('notification-centre')).toBeVisible()
+  await expect(page.getByTestId('notifications-empty')).toBeVisible()
+  await expect(page.locator('#main-content')).toHaveCount(1)
+})
+
+test('the centre works at phone width', async ({ page, context }) => {
+  await signInAs(context)
+  await page.setViewportSize({ width: 375, height: 800 })
+  await page.goto('/dashboard/notifications')
+
+  await expect(page.getByTestId('notification-centre')).toBeVisible()
+  // Nothing scrolls sideways at 375: the commonest responsive regression, and
+  // the one a screenshot at 1440 never shows.
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  )
+  expect(overflow).toBe(false)
+})

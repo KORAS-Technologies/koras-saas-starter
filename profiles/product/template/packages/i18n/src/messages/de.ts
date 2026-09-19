@@ -855,12 +855,22 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'settings.def.grid.stickyHeader.description': 'Überschriften bleiben stehen, während die Zeilen scrollen.',
   'settings.def.grid.rowDensity.label': 'Zeilenhöhe',
   'settings.def.grid.rowDensity.description': 'Wie hoch Tabellenzeilen sind.',
+  // ── Benachrichtigungen ────────────────────────────────────────────────────
+  'notifications.title': 'Benachrichtigungen',
+  'notifications.unread': '{count} ungelesen',
+  'notifications.empty': 'Nichts nachzuholen',
+  'notifications.emptyHint': 'Sobald etwas Ihre Aufmerksamkeit braucht, erscheint es hier.',
+  'notifications.markAllRead': 'Alle als gelesen markieren',
+  'notifications.markRead': 'Als gelesen markieren',
+  'notifications.dismiss': 'Entfernen',
+  'notifications.close': 'Benachrichtigungen schliessen',
+  'notifications.viewAll': 'Alle Benachrichtigungen ansehen',
+  'notifications.pageTitle': 'Benachrichtigungen',
+  'notifications.pageDescription': 'Alles, was das Produkt Ihnen mitgeteilt hat, das Neueste zuerst.',
+  'notifications.hiddenTitle': 'Benachrichtigungen sind ausgeschaltet',
+  'notifications.hiddenBody': 'Sie haben Benachrichtigungen im Produkt ausgeschaltet. In Ihren Einstellungen koennen Sie sie wieder einschalten.',
   'settings.def.notifications.inAppEnabled.label': 'Benachrichtigungen im Produkt',
   'settings.def.notifications.inAppEnabled.description': 'Benachrichtigungen anzeigen, während Sie angemeldet sind.',
-  'settings.def.notifications.emailEnabled.label': 'Benachrichtigungen per E-Mail',
-  'settings.def.notifications.emailEnabled.description': 'Benachrichtigungen an Ihre E-Mail-Adresse senden.',
-  'settings.def.notifications.digestFrequency.label': 'Zusammenfassung per E-Mail',
-  'settings.def.notifications.digestFrequency.description': 'Wie oft eine Zusammenfassung des Geschehenen gesendet wird.',
   'settings.def.files.maxUploadSizeMb.label': 'Maximale Dateigröße',
   'settings.def.files.maxUploadSizeMb.description': 'Die größte einzelne Datei, die hier hochgeladen werden darf, in Megabyte.',
   'settings.def.files.allowedExtensions.label': 'Erlaubte Dateitypen',
@@ -948,6 +958,8 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Diese Datei kann nicht gelöscht werden: Eine rechtliche Aufbewahrungspflicht hält sie. Nach deren Aufhebung ist das Löschen möglich.',
   'errors.fileQuarantined':
     'Diese Datei wird zurückgehalten, weil eine Sicherheitsprüfung sie nicht als unbedenklich eingestuft hat. Wenden Sie sich an eine Administratorin oder einen Administrator, wenn Sie sie benötigen.',
+  'errors.notificationNotFound':
+    'Diese Benachrichtigung gibt es nicht mehr. Moeglicherweise wurde sie bereits gelesen oder entfernt.',
   'errors.settingNotFound':
     'Diese Einstellung gibt es nicht. Laden Sie die Seite neu, um die aktuelle Liste zu sehen.',
   'errors.settingValueInvalid':

@@ -49,11 +49,33 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import platform
+from .notifications import NotificationKind, kinds, notify
 from .settings import settings
 
 logger = logging.getLogger(__name__)
 
 _OWNER_EMAIL = text("select owner_email from public.tenants where id = :tenant_id")
+
+#: The one notification kind the starter ships a producer for.
+#:
+#: Registered here rather than centrally, the way an audit action is registered
+#: by the module that records it: the assistant is what produces this, so the
+#: assistant is what declares it. A product without the `ai` capability has
+#: neither the producer nor the kind, and a product that adds its own declares
+#: them beside the feature that raises them.
+APPROVAL_REQUESTED = NotificationKind(
+    key="ai.approval_requested",
+    summary="An assistant action is waiting for a person to approve it.",
+    # Something is blocked until somebody acts. Not an error -- nothing has
+    # gone wrong -- and not information either, which is what the middle
+    # severity is for.
+    default_severity="warning",
+)
+kinds.add(APPROVAL_REQUESTED)
+
+_APPROVER_SUBJECTS = text(
+    "select user_id, role from public.tenant_members where tenant_id = :tenant_id"
+)
 
 _FILE_BY_ID = text(
     "select name, size_bytes, ready_at from public.files "
@@ -158,6 +180,80 @@ async def approvers(
             seen.add(address)
             unique.append(address)
     return unique
+
+
+async def approver_subjects(session: AsyncSession, *, tenant_id: str) -> list[str]:
+    """Who to put a notification in front of, as subjects rather than addresses.
+
+    Deliberately a different source from `approvers` above, and the difference
+    is the point. A mail goes to an *address*, which the platform holds and
+    which may belong to somebody who has never signed in. A notification goes
+    to a *person who can open the product*, which is a row in
+    `tenant_members` — so the in-app half needs no platform call, works when
+    the Control Plane is unreachable, and cannot address somebody with no way
+    to read it.
+    """
+    result = await session.execute(_APPROVER_SUBJECTS, {"tenant_id": tenant_id})
+    return [
+        str(row.user_id)
+        for row in result
+        if isinstance(row.role, str) and "ai.approve" in permissions_for([row.role])
+    ]
+
+
+async def announce_awaiting_approval(
+    session: AsyncSession,
+    *,
+    tenant_id: str,
+    summaries: Sequence[ActionSummary],
+    product: str,
+    app_url: str,
+    requester: Requester,
+    request_text: str,
+    locale: Locale = DEFAULT_LOCALE,
+) -> int:
+    """Put the notice in the product as well as in the inbox. Returns how many.
+
+    **The same words as the mail, in the same language**, because `compose` is
+    called here too rather than a second wording being written for the feed. A
+    person who reads both should not have to work out whether they describe the
+    same thing.
+
+    Written on the request's own session, which is what rule 2 of ADR 0008 asks
+    for: the row belongs with the turn that produced it. The mail leaves
+    afterwards, from a background task, because that one can fail without
+    costing anybody anything.
+
+    Never raises. An assistant action that waits unannounced is bad; an
+    assistant action that *fails* because announcing it did is worse.
+    """
+    if not summaries:
+        return 0
+    try:
+        subject, plain, _ = compose(
+            summaries,
+            product=product,
+            app_url=app_url,
+            requester=requester,
+            request_text=request_text,
+            requested_at=datetime.now(UTC),
+            locale=locale,
+        )
+        lines = [line for line in plain.strip().splitlines() if line.strip()]
+        return await notify(
+            session,
+            tenant_id=tenant_id,
+            recipients=await approver_subjects(session, tenant_id=tenant_id),
+            kind=APPROVAL_REQUESTED.key,
+            title=subject,
+            # The opening sentence of the mail. Enough to act on from the
+            # drawer without opening anything; the link carries the rest.
+            body=lines[0] if lines else "",
+            url="/dashboard/assistant",
+        )
+    except Exception:
+        logger.exception("the approval notice could not be recorded in the product")
+        return 0
 
 
 def _size(size_bytes: object) -> str:

@@ -1,0 +1,25 @@
+import type { Translator } from '@{{projectSlug}}/i18n'
+import type { NotificationLabels } from '@{{projectSlug}}/ui'
+
+/**
+ * Every word the bell, the drawer and the centre draw, in the reader's
+ * language.
+ *
+ * Built here rather than inside the components, because nothing in
+ * `@{{projectSlug}}/ui` holds a sentence: a default string in a component is an
+ * English string shipped to a German customer. The same shape the assistant's
+ * labels use.
+ */
+export function notificationLabels(t: Translator): NotificationLabels {
+  return {
+    title: t('notifications.title'),
+    unread: (count: number) => t('notifications.unread', { count }),
+    empty: t('notifications.empty'),
+    emptyHint: t('notifications.emptyHint'),
+    markAllRead: t('notifications.markAllRead'),
+    markRead: t('notifications.markRead'),
+    dismiss: t('notifications.dismiss'),
+    close: t('notifications.close'),
+    viewAll: t('notifications.viewAll'),
+  }
+}

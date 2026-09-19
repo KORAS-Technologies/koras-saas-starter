@@ -17,6 +17,13 @@ services:
 capabilities:
   billing: true
   custom_domains: true
+  # In-app notifications for every product. Nothing external is needed -- the
+  # feed is a table and the bell is a component -- so it is on, and
+  # `--without notifications` removes the table, the routes, the page and the
+  # browser test together. It is refused alongside `--with ai`, because the
+  # assistant's approval notice is the one producer the starter ships and a
+  # notice with nowhere to land is worse than no notice.
+  notifications: true
   white_label: false
   # Off until a product wants an assistant: on, it needs the gateway service
   # and the provider keys a deployed gateway is refused without. Enable both

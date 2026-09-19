@@ -78,6 +78,14 @@ def test_a_person_is_offered_exactly_what_a_person_may_write() -> None:
         "grid.rememberFilters",
         "grid.rememberSort",
         "grid.rememberColumns",
+        # Added 2026-09-19 with the notification feed. All three
+        # `notifications.*` settings were offered and honoured by nothing from
+        # the day the framework shipped -- a customer could switch off
+        # notification emails and still receive them. `inAppEnabled` is
+        # honoured now; these two wait for the channel seam and the digest job,
+        # and until then they are not offered.
+        "notifications.emailEnabled",
+        "notifications.digestFrequency",
     }
     for setting in catalogue:
         if setting.key in unhonoured:

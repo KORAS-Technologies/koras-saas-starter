@@ -338,6 +338,49 @@ generated product has no page using the shared table, so the page that makes
 `grid.pageSize` observable lives in `koras-e2e-shop` and is that repository's
 own work rather than a sync.
 
+**The background job contract and in-app notifications shipped on 2026-09-19**,
+from the master platform plan in `docs/platform/`. Two things about them are
+worth carrying.
+
+**Nothing in this repository could enqueue a background job until that day.**
+ARQ was present, the worker ran, nine sweeps were registered — and every one of
+them was cron. The three request paths that kept working after the response
+used FastAPI background tasks, which run in the API process and are lost when
+it restarts. `koras-queue` was a one-line comment file that four services
+declared a dependency on. It now carries a task declaration, a job queue that
+says whether an enqueue was real, and a wrapper that applies a declared retry
+policy — and `tasks/product.py` gained `PRODUCT_TASKS` beside `PRODUCT_CRON_JOBS`,
+which answers the question docoris raised as its own OD-19. There is no
+dead-letter queue, deliberately: a destination nothing reads is not evidence.
+**The seam has no production caller yet**; its first are a notification
+dispatch and an import run, and its tests run real tasks through the wrapper
+rather than asserting it exists.
+
+**`notifications` was a capability declared `true` in both manifests that gated
+nothing** — no template map, no defaults entry, a two-line package — so
+`--without notifications` removed nothing while appearing to succeed. It now
+gates a table, a store, four routes, a bell, a drawer, a centre, a sweep and a
+browser suite, and `requires` refuses `--with ai --without notifications`. The
+assistant's approval notice reaches the product as well as the inbox, in the
+same words.
+
+**And six settings were being drawn and read by nothing.** Three under
+`notifications` and three under `files`, registered, translated into three
+languages, and rendered on the preferences page: a customer could switch off
+notification emails and still receive them. That is exactly the failure
+`surfaced=False` was introduced to prevent, four days earlier and in the same
+file. `notifications.inAppEnabled` is honoured now and the other two are
+unsurfaced; **the three `files.*` are still drawn and still enforced by
+nothing**, and the upload route applies a hardcoded 5 GiB ceiling that consults
+none of them. That half belongs to the import work.
+
+Running a freshly generated product's own tests found a second thing: its node
+suite was red on `develop`, because the settings framework added a
+`preferences` module to the navigation registry the same day and
+`navigation.test.ts` asserts the sidebar as an exact list. The starter's suite
+was green throughout. Only a generation run closes that gap, which is what
+Generator Integration is for.
+
 **What it has not had: a manual pass or an independent review.**
 `docs/features/settings-framework/manual-test-plan.md` has fifteen cases and
 fifteen blank verdicts as of 2026-09-19, and the first of them — change a page

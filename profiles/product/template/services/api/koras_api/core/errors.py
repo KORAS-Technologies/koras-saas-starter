@@ -69,6 +69,8 @@ class ApiErrorCode(StrEnum):
     RESTORE_NOT_TRANSITIONABLE = "restore_not_transitionable"
     RESTORE_ALREADY_REQUESTED = "restore_already_requested"
     RESTORE_OVERWRITE_UNCONFIRMED = "restore_overwrite_unconfirmed"
+    # notifications
+    NOTIFICATION_NOT_FOUND = "notification_not_found"
     # settings
     SETTING_NOT_FOUND = "setting_not_found"
     SETTING_VALUE_INVALID = "setting_value_invalid"

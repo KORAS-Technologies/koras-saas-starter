@@ -1,0 +1,122 @@
+'use server'
+
+import { revalidatePath } from 'next/cache'
+import {
+  dismissNotification as dismissRequest,
+  fetchNotifications,
+  markAllNotificationsRead as markAllRequest,
+  markNotificationRead as markReadRequest,
+} from '@{{projectSlug}}/api-client'
+import type { NotificationListResponse } from '@{{projectSlug}}/api-client'
+import type { NotificationItem, NotificationTone } from '@{{projectSlug}}/ui'
+import { signedInContext } from '../../../lib/access'
+import { apiBaseUrl, providerToken } from '../../../lib/session'
+
+/**
+ * The notification centre's server half, and the bell's.
+ *
+ * **No permission check here, unlike every other page's actions.** There is no
+ * notification permission to check: a feed is guarded by the row-level policy
+ * keyed to the verified subject, so the only thing that decides what these
+ * return is who the token says you are. A permission would make the bell a
+ * premium feature, and a member without it would have somewhere the product
+ * sends messages they can never read.
+ *
+ * Every mutation revalidates the dashboard rather than one path, because the
+ * count lives in the layout's header and the list lives on the page. Marking
+ * one read from the drawer on the Files page has to change the badge there,
+ * not on the notification centre nobody is looking at.
+ */
+
+const DASHBOARD = '/dashboard'
+
+async function session() {
+  const context = await signedInContext()
+  if (context === null) return null
+  const token = await providerToken()
+  const baseUrl = apiBaseUrl()
+  if (!token || !baseUrl) return null
+  return { baseUrl, token }
+}
+
+/**
+ * The feed and the count, for whoever is asking.
+ *
+ * Answers an empty feed rather than throwing when the API is unreachable. A
+ * bell is furniture: a product whose dashboard fails to render because the
+ * notification service is down has made a worse trade than one whose bell
+ * shows nothing. The page's own empty state is then indistinguishable from an
+ * outage, which is the cost, and it is the right way round.
+ */
+export async function loadNotifications(limit = 20): Promise<{
+  notifications: NotificationItem[]
+  unread: number
+}> {
+  const authed = await session()
+  if (!authed) return { notifications: [], unread: 0 }
+  try {
+    const answer: NotificationListResponse = await fetchNotifications({
+      baseUrl: authed.baseUrl,
+      token: authed.token,
+      limit,
+    })
+    return {
+      notifications: answer.notifications.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        title: row.title,
+        body: row.body,
+        url: row.url,
+        tone: tone(row.severity),
+        createdAt: row.created_at,
+        read: row.read_at !== null,
+      })),
+      unread: answer.unread,
+    }
+  } catch {
+    return { notifications: [], unread: 0 }
+  }
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  const authed = await session()
+  if (!authed) return
+  try {
+    await markReadRequest({ baseUrl: authed.baseUrl, token: authed.token, notificationId: id })
+  } catch {
+    // Already read, already gone, or never theirs. The API answers 404 for all
+    // three and tells them apart for nobody, so there is nothing here to
+    // report that would not also be a way to probe somebody else's ids.
+  }
+  revalidatePath(DASHBOARD, 'layout')
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  const authed = await session()
+  if (!authed) return
+  try {
+    await markAllRequest({ baseUrl: authed.baseUrl, token: authed.token })
+  } catch {
+    // Nothing to report: the next render shows what is actually true.
+  }
+  revalidatePath(DASHBOARD, 'layout')
+}
+
+export async function dismissNotification(id: string): Promise<void> {
+  const authed = await session()
+  if (!authed) return
+  try {
+    await dismissRequest({ baseUrl: authed.baseUrl, token: authed.token, notificationId: id })
+  } catch {
+    // The route answers 204 whether or not a row was there; a failure here is
+    // the network, and the next render is the answer.
+  }
+  revalidatePath(DASHBOARD, 'layout')
+}
+
+/** The API's vocabulary is closed and checked by a constraint; this is belt. */
+function tone(severity: string): NotificationTone {
+  return severity === 'success' || severity === 'warning' || severity === 'error'
+    ? severity
+    : 'info'
+}

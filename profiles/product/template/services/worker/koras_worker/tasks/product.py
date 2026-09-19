@@ -43,7 +43,43 @@ applies here and nothing enforces it.
 from __future__ import annotations
 
 from arq.cron import CronJob
+from koras_queue import BoundTask
 
 #: Read by `worker.py` and extended onto the starter's own list. Empty here,
 #: because the starter has no product domain; a generated project fills it in.
 PRODUCT_CRON_JOBS: list[CronJob] = []
+
+#: This product's own on-demand work: jobs a request asks for, rather than jobs
+#: a clock starts.
+#:
+#: The second half of this extension point, added on 2026-09-19. Until then
+#: `PRODUCT_CRON_JOBS` was the whole of it and it took cron jobs only, so a
+#: product that needed something done *when something happened* had two
+#: choices: edit `worker.py`, which is generated and reverts on the next sync,
+#: or add a cron job that polls a table every minute for things to do. Docoris
+#: recorded that as its OD-19 rather than writing the workaround.
+#:
+#: A `BoundTask` is a declaration and the coroutine that answers it::
+#:
+#:     from koras_api.jobs import REBUILD_INDEX
+#:     from koras_queue import BoundTask
+#:
+#:     from .search import rebuild_index
+#:
+#:     PRODUCT_TASKS: list[BoundTask] = [BoundTask(REBUILD_INDEX, rebuild_index)]
+#:
+#: **Declare the `TaskDefinition` where the API can import it**, not here. The
+#: API is what enqueues, and an API that imported the worker to find a task
+#: name would point the dependency arrow from a request at a sweep.
+#:
+#: Two things about the handler, both of which have teeth:
+#:
+#: **It declares its own tenant.** The envelope carries one and the enqueue
+#: refuses a blank, but nothing opens a transaction for you -- a handler that
+#: forgets `Tenant(...)` raises `UndeclaredCaller` rather than reading across
+#: tenants, which is the right failure and still a failure.
+#:
+#: **It is retried, so it must be safe to run twice.** The declared policy
+#: decides how often; at-least-once is the guarantee either way. A handler that
+#: is not idempotent needs `TRY_ONCE` and a visible failure instead.
+PRODUCT_TASKS: list[BoundTask] = []
