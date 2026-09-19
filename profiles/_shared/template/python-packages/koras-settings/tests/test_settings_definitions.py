@@ -1,4 +1,12 @@
-"""What a catalogue refuses at import, rather than at request time."""
+"""What a catalogue refuses at import, rather than at request time.
+
+**Named for its package, like every module in these directories.** Each
+`python-packages/*/tests/` is on the path as a top-level module with no
+`__init__.py`, so two packages carrying one filename are two modules with one
+name, and mypy refuses the pair when it checks the whole workspace. This file
+was `test_definitions_and_registry.py` and `koras-reporting` already had one --
+which is a good name for both, and available to neither.
+"""
 
 from __future__ import annotations
 
