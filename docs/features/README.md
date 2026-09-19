@@ -18,6 +18,13 @@ The division of labour:
 | Why a decision was taken | `docs/adr/` | `docs/adr/0003-koras-storage-audit-governance.md` |
 | How a subsystem works | `docs/` top level | `docs/STORAGE_ARCHITECTURE.md` |
 | What a feature is, its stories, criteria and tests | `docs/features/<slug>/` | this directory |
+| What several features share, and who may build what when | `docs/platform/` | `docs/platform/master-platform-plan.md` |
+
+`docs/platform/` was added on 2026-09-19, for the first piece of work here that
+planned three feature categories at once: it holds the audit they share, the
+dependency classification deciding which may run in parallel, and the ownership
+map that keeps two of them out of the same file. A feature directory still owns
+its own stories, criteria and tests.
 
 A generated **product** uses a different and narrower layout —
 `docs/features/<feature-id>-<slug>/` with six named sections, defined

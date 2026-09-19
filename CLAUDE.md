@@ -64,6 +64,11 @@ All planning and reference documents live in `docs/`, matching
 | `docs/SETTINGS_ARCHITECTURE.md`  | Settings as built: three levels, a snapshot per organisation, a catalogue declared in code |
 | `docs/SETTINGS_DEVELOPER_GUIDE.md` | How to add a setting, how to read one, and the four things that will bite |
 | `docs/adr/0007-koras-settings-framework.md` | The decision record for the settings framework, amended twice |
+| `docs/platform/master-platform-plan.md` | One audit and one plan for three feature categories: notifications, data import, Stripe provisioning |
+| `docs/platform/master-capability-matrix.md` | Every platform capability those three touch: exists, partial or absent, and where |
+| `docs/platform/gap-defect-register.md` | The 45 findings that audit produced, by category, with IDs |
+| `docs/platform/execution/` | One manifest per category, each executable without repeating the audit |
+| `docs/adr/0008-koras-platform-job-and-notification-contracts.md` | Why the job contract is built first, and why notification gets a dispatch point rather than a bus |
 
 ## Repository layout (target state)
 
@@ -290,8 +295,16 @@ deleting.
 **It was finished on 2026-09-16 and the shop is level with it.** Object
 retention, legal holds, audit search and export, tenant retention overrides,
 the governance contract, reconciliation, the expiry sweeps and backup with
-digest verification all ship; restore does not, and is blocked on ADR 0006
-question 3 rather than on a bucket. Two independent reviews ran and both
+digest verification all ship. **Restore ships too, and this line said otherwise
+until 2026-09-19** — `00026_restore_requests.sql`, `routers/restore.py`,
+`tasks/storage_restore.py`, the `/dashboard/restore` page and
+`e2e/restore.spec.ts` are all in the `storage_governance` template map, and the
+two-person rule works. The claim was true when ADR 0006 question 3 was open and
+outlived the work; `docs/BACKUP_AND_RESTORE.md` has said both halves are built
+since 2026-09-16, and the docoris audit found the contradiction independently
+and wrote "Believe the code." Recorded rather than quietly corrected, as
+PLAT-DEF-002, because this is R-042 landing on the file every session reads
+first for the second time. Two independent reviews ran and both
 returned BLOCK; every finding is fixed in `1b59f29` and after. `koras-e2e-shop`
 carries all of it as of `98d078e`, with migrations 00019-00025 applied to the
 dev database and both workflows green.
