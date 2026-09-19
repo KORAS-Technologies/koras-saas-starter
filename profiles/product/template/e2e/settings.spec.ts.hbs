@@ -1,0 +1,187 @@
+import { expect, test } from '@playwright/test'
+import { signInAs } from './support/session'
+
+/**
+ * The two settings surfaces, in a browser.
+ *
+ * **Read what this suite can and cannot reach before adding to it.**
+ * `playwright.config.ts` starts the web application and nothing else, and
+ * `signInAs` deliberately omits the `id_token` cookie because the product's API
+ * is not running here. Both settings pages therefore render their *degraded*
+ * state: the catalogue cannot be fetched, so neither draws a control.
+ *
+ * That is a narrow claim, and it is the one worth making automatically. Every
+ * other claim about settings already has a cheaper and stricter test -- the
+ * resolver, the coercion and the scope refusals are proven in
+ * `python-packages/koras-settings`, the catalogue and the wiring in the
+ * starter's structural suite, the isolation in `supabase/tests`. What none of
+ * them can prove is that these two addresses exist, that a person reaches them,
+ * that a person *without* `settings.manage` is told so before they try, and
+ * that a page whose API is unreachable says so rather than falling over. Those
+ * are claims about routing, authorisation and failure, and only a browser makes
+ * them.
+ *
+ * **What is deliberately not here: the round trip.** Changing `grid.pageSize`
+ * and watching a table repaginate needs an API, a database and rows, and the
+ * three of them are not in this harness. Stubbing one would prove the stub. It
+ * is in `docs/settings/manual-test-plan.md` instead, where a person runs it
+ * against a deployed environment, and the automated version of it lives in the
+ * test product, which has both a table and an API.
+ *
+ * Runs at 1440 and 375, like the shell suite.
+ */
+
+const MOBILE = 'mobile'
+
+test('neither settings surface is reachable signed out', async ({ page }) => {
+  for (const path of ['/dashboard/settings', '/dashboard/preferences']) {
+    await page.goto(path)
+    // The middleware turns it away before the route runs, so what a stranger
+    // gets is the sign-in page rather than a refusal rendered by a page that
+    // already composed itself. A route that rendered first and checked
+    // afterwards would leak the headings.
+    await expect(page).toHaveURL(/\/login/)
+    await expect(page.getByRole('heading', { level: 1 })).not.toHaveText('My preferences')
+  }
+})
+
+test('the least-privileged member reaches preferences, and is refused settings', async ({
+  page,
+  context,
+}) => {
+  // The contrast is the test. `member` holds `product.access` and nothing to do
+  // with settings, so the two addresses must answer differently: choosing your
+  // own theme needs no authority -- the nav module carries no
+  // `requiredPermissions` and the page asks for none -- while reading what the
+  // organisation decided needs `settings.read`, which this role has not got.
+  //
+  // Run against one role rather than two, because a suite that signed in as an
+  // administrator for the first half would prove only that an administrator can
+  // do things.
+  await signInAs(context, { roles: ['member'] })
+
+  await page.goto('/dashboard/preferences')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('My preferences')
+  await expect(page.getByText('These apply to you, on every device')).toBeVisible()
+
+  await page.goto('/dashboard/settings')
+  await expect(page.getByText('You do not have access to this area.')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Organisation settings' })).toHaveCount(0)
+})
+
+test('no role at all is refused the application, not just the page', async ({ page, context }) => {
+  // A different refusal, and worth separating: an empty role array is not a
+  // person with modest permissions, it is a person the product does not admit.
+  // Without this the test above could be read as "preferences needs no role",
+  // which is not true and would be a bad thing to believe.
+  await signInAs(context, { roles: [] })
+  await page.goto('/dashboard/preferences')
+  await expect(page.getByText('Your account has no access to this application.')).toBeVisible()
+})
+
+test('my preferences is in the navigation, for that same member', async ({
+  page,
+  context,
+}, testInfo) => {
+  await signInAs(context, { roles: ['member'] })
+  await page.goto('/dashboard')
+
+  if (testInfo.project.name === MOBILE) {
+    await page.getByRole('button', { name: 'Open navigation' }).click()
+  }
+
+  const link = page.getByRole('link', { name: 'My preferences' })
+  await expect(link).toBeVisible()
+  await link.click()
+  await expect(page).toHaveURL(/\/dashboard\/preferences$/)
+
+  // On a narrow screen the drawer closes behind the link it was used for, so
+  // the current-page marker is in the document and not visible. Reopening it is
+  // what a person does, and asserting without doing so would be asserting
+  // against a panel nobody can see.
+  if (testInfo.project.name === MOBILE) {
+    await page.getByRole('button', { name: 'Open navigation' }).click()
+  }
+  await expect(page.locator('[aria-current="page"]:visible')).toContainText('My preferences')
+})
+
+test('a page whose catalogue cannot be read says so, and does not fall over', async ({
+  page,
+  context,
+}) => {
+  await signInAs(context)
+
+  // The API is not running in this harness, which is the whole reason this
+  // assertion is worth having: the honest outcome of an unreachable catalogue
+  // is a sentence, not a stack trace and not an empty form that silently
+  // discards a save.
+  await page.goto('/dashboard/preferences')
+  await expect(page.getByTestId('preferences-unavailable')).toBeVisible()
+  await expect(page.getByTestId('preferences-form')).toHaveCount(0)
+
+  await page.goto('/dashboard/settings')
+  await expect(page.getByTestId('settings-unavailable')).toBeVisible()
+  await expect(page.getByTestId('organisation-settings')).toHaveCount(0)
+
+  // Nothing above depends on the browser console being quiet, so check it
+  // separately: a page that renders its fallback while throwing underneath is
+  // still broken.
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.reload()
+  expect(errors).toEqual([])
+})
+
+test('the organisation page tells a member they may not change it, before they try', async ({
+  page,
+  context,
+}) => {
+  // `billing_admin` is the role this notice exists for: it holds `settings.read`
+  // and not `settings.manage`, so it is the only kind of caller who can see the
+  // page and not change it. A plain `member` would prove nothing here -- they
+  // never reach the page at all, which the test above covers.
+  //
+  // The API refuses the write either way; that is the boundary, and it is
+  // tested where it lives. But a person who fills in a form and is refused on
+  // submit has been wasted.
+  await signInAs(context, { roles: ['billing_admin'] })
+  await page.goto('/dashboard/settings')
+
+  await expect(page.getByRole('heading', { name: 'Organisation settings' })).toBeVisible()
+  await expect(page.getByTestId('settings-readonly')).toBeVisible()
+  await expect(page.getByTestId('settings-readonly')).toHaveText(
+    'Only an administrator can change settings for the organisation.',
+  )
+})
+
+test('an administrator is not told that, on the same page', async ({ page, context }) => {
+  // The negative half. Without it the readonly notice could be unconditional
+  // and the test above would pass just as happily.
+  await signInAs(context, { roles: ['organization_admin'] })
+  await page.goto('/dashboard/settings')
+
+  await expect(page.getByRole('heading', { name: 'Organisation settings' })).toBeVisible()
+  await expect(page.getByTestId('settings-readonly')).toHaveCount(0)
+})
+
+test('the outcome of a save is announced rather than left to be noticed', async ({
+  page,
+  context,
+}) => {
+  // A save redirects to a page that looks exactly like the one it left, so the
+  // banner is the only difference between "saved" and "nothing happened". The
+  // query parameter is what the action redirects with; rendering it is what
+  // this checks.
+  await signInAs(context)
+
+  await page.goto('/dashboard/preferences?saved=ok')
+  const saved = page.getByTestId('preferences-outcome')
+  await expect(saved).toHaveAttribute('role', 'status')
+  await expect(saved).toHaveAttribute('data-outcome', 'ok')
+  await expect(saved).toHaveText('Saved.')
+
+  await page.goto('/dashboard/settings?saved=forbidden')
+  const refused = page.getByTestId('settings-outcome')
+  await expect(refused).toHaveAttribute('role', 'status')
+  await expect(refused).toHaveText('Only an administrator can change settings for the organisation.')
+})
