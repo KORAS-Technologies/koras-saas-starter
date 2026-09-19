@@ -45,7 +45,8 @@ from sqlalchemy import text
 
 from ..core.auth import AuthDep
 from ..core.database import DbSession
-from ..core.tenant import TenantDep
+from ..core.settings_store import write_member_values, write_tenant_values
+from ..core.tenant import TenantDep, require_subject
 
 router = APIRouter(tags=["tenant"])
 
@@ -103,6 +104,35 @@ class LocaleChoice(BaseModel):
     locale: str | None = Field(default=None, max_length=8)
 
 
+#: The setting the two locale routes read and write.
+#:
+#: They predate the settings framework and keep their own shape on purpose: the
+#: browser sends a language, not a settings patch, and `PUT /me/locale` is one
+#: request the shell makes on a control a person presses. What changed in
+#: `00031` is only where the value lands.
+LANGUAGE = "general.language"
+
+#: What the catalogue stores when nobody has chosen.
+#:
+#: Every tenant has a `general.language` row from the moment it is provisioned,
+#: because that is what a snapshot is. `auto` is how that row says "no opinion",
+#: and this API maps it back to null so the resolution chain in `packages/i18n`
+#: -- stored choice, cookie, tenant default, `Accept-Language`, product default
+#: -- behaves exactly as it did before the value moved.
+AUTOMATIC = "auto"
+
+
+def _chosen(stored: object) -> str | None:
+    """A stored language as this response reports it.
+
+    `auto` and an absent row are the same answer here: nobody chose, so the
+    caller should fall through to the next source. Keeping them distinct in the
+    table and identical in the response is what let the storage move without
+    the browser noticing.
+    """
+    return stored if isinstance(stored, str) and stored != AUTOMATIC else None
+
+
 def _require_supported(locale: str | None) -> str | None:
     """A stored language is one this product's frontend can render, or nothing.
 
@@ -139,14 +169,16 @@ async def tenant_settings(tenant: TenantDep, session: DbSession) -> TenantSettin
         text(
             "select t.name, t.slug, "
             "coalesce(s.branding, '{}'::jsonb), coalesce(s.features, '{}'::jsonb), "
-            "s.locale, p.locale "
+            "tv.value #>> '{}', mv.value #>> '{}' "
             "from public.tenants t "
             "left join public.tenant_settings s on s.tenant_id = t.id "
-            "left join public.member_preferences p "
-            "  on p.tenant_id = t.id and p.user_id = :user_id "
+            "left join public.tenant_setting_values tv "
+            "  on tv.tenant_id = t.id and tv.key = :language "
+            "left join public.member_setting_values mv "
+            "  on mv.tenant_id = t.id and mv.user_id = :user_id and mv.key = :language "
             "where t.id = :tenant_id"
         ),
-        {"tenant_id": tenant.id, "user_id": tenant.user_id},
+        {"tenant_id": tenant.id, "user_id": tenant.user_id, "language": LANGUAGE},
     )
     row = result.first()
 
@@ -163,8 +195,8 @@ async def tenant_settings(tenant: TenantDep, session: DbSession) -> TenantSettin
         slug=slug,
         branding=branding if isinstance(branding, dict) else {},
         features=features if isinstance(features, dict) else {},
-        locale=locale if isinstance(locale, str) else None,
-        member_locale=member_locale if isinstance(member_locale, str) else None,
+        locale=_chosen(locale),
+        member_locale=_chosen(member_locale),
     )
 
 
@@ -185,13 +217,15 @@ async def set_my_locale(
     choice made twice is a replacement rather than a conflict.
     """
     locale = _require_supported(body.locale)
-    await session.execute(
-        text(
-            "insert into public.member_preferences (tenant_id, user_id, locale) "
-            "values (cast(:tenant_id as uuid), :user_id, :locale) "
-            "on conflict (tenant_id, user_id) do update set locale = excluded.locale"
-        ),
-        {"tenant_id": tenant.id, "user_id": tenant.user_id, "locale": locale},
+    await write_member_values(
+        session,
+        tenant.id,
+        require_subject(tenant),
+        # Null clears the choice, and the framework stores that as `auto` rather
+        # than as no row. A person who has said "follow my browser" has made a
+        # choice, and it should survive their organisation changing its default
+        # -- which deleting the row would not.
+        {LANGUAGE: locale or AUTOMATIC},
     )
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -222,13 +256,6 @@ async def set_tenant_locale(
             detail="Only an administrator may set the organisation's language",
         )
     locale = _require_supported(body.locale)
-    await session.execute(
-        text(
-            "insert into public.tenant_settings (tenant_id, locale) "
-            "values (cast(:tenant_id as uuid), :locale) "
-            "on conflict (tenant_id) do update set locale = excluded.locale"
-        ),
-        {"tenant_id": tenant.id, "locale": locale},
-    )
+    await write_tenant_values(session, tenant.id, {LANGUAGE: locale or AUTOMATIC})
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

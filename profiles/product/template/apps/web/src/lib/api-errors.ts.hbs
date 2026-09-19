@@ -43,6 +43,12 @@ export function apiErrorMessage(t: Translator, code: string | null | undefined):
       return t('errors.uploadNotArrived')
     case 'upload_size_mismatch':
       return t('errors.uploadSizeMismatch')
+    case 'setting_not_found':
+      return t('errors.settingNotFound')
+    case 'setting_value_invalid':
+      return t('errors.settingValueInvalid')
+    case 'setting_scope_refused':
+      return t('errors.settingScopeRefused')
     case 'hold_not_found':
       return t('errors.holdNotFound')
     case 'hold_not_transitionable':

@@ -69,6 +69,10 @@ class ApiErrorCode(StrEnum):
     RESTORE_NOT_TRANSITIONABLE = "restore_not_transitionable"
     RESTORE_ALREADY_REQUESTED = "restore_already_requested"
     RESTORE_OVERWRITE_UNCONFIRMED = "restore_overwrite_unconfirmed"
+    # settings
+    SETTING_NOT_FOUND = "setting_not_found"
+    SETTING_VALUE_INVALID = "setting_value_invalid"
+    SETTING_SCOPE_REFUSED = "setting_scope_refused"
     # the assistant (its own errors carry `koras_ai.ErrorCode`; this one is the API's)
     TOOL_DENIED = "tool_denied"
     # the platform's private contract: machine callers, never a person

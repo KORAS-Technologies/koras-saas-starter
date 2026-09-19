@@ -140,13 +140,35 @@ Three constraints shaped the answer more than the requirements did.
    `routers/tenant.py`, the member-preferences isolation suite and the language
    e2e spec changed in the same commit.
 
-   **Amended 2026-09-17 on building it.** The move happens in migration `00031`
-   and lands with the settings API rather than with the tables. Dropping the
-   columns in the same phase that created the tables would have left
-   `routers/tenant.py` selecting a column that no longer exists for as long as
-   it took to build the router that replaces it -- a phase boundary in the
-   middle of a broken read. The tables arrive first and nothing reads them;
-   the columns go when there is somewhere else to read from.
+   **Amended 2026-09-17 on building it, twice.**
+
+   The move happens in migration `00031` and lands with the settings API rather
+   than with the tables. Dropping the columns in the same phase that created
+   the tables would have left `routers/tenant.py` selecting a column that no
+   longer exists for as long as it took to build the router that replaces it --
+   a phase boundary in the middle of a broken read. The tables arrive first and
+   nothing reads them; the columns go when there is somewhere else to read from.
+
+   And `general.language` defaults to `auto` rather than to a language, which
+   the design did not anticipate. Decision 2 gives every organisation-scoped
+   setting a row at provisioning; for every other setting the default is a real
+   value and seeding it changes nothing. Language was different, because a
+   request resolves it through a *chain* -- stored choice, cookie, tenant
+   default, `Accept-Language`, product default -- and a seeded `en` would sit in
+   the third position for every tenant that ever existed, so the fourth step
+   would never run again and a German browser would be answered in English.
+
+   The fix is not to exempt the setting from the snapshot. It is to make "no
+   opinion" a value somebody can hold rather than an absence that seeding
+   destroys: `auto` is stored, the API maps it back to null, and the chain
+   behaves exactly as it did. It is better than the absence was, because a
+   person can now choose to follow their browser -- which previously meant
+   clearing a preference they could not see. `ui.theme` already had the same
+   shape in `system`.
+
+   The general rule this produced, worth keeping: **a setting whose absence
+   means "infer it from context" must express that inference as one of its
+   values, or the snapshot will silently end the inference.**
 
    This is the largest piece of migration risk in the feature and it is taken on
    purpose. Registering a language setting while the old columns still answered

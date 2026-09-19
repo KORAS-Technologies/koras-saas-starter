@@ -813,6 +813,12 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'Este archivo no se puede eliminar: una retención legal lo conserva. Podrá eliminarse cuando se levante la retención.',
   'errors.fileQuarantined':
     'Este archivo está retenido porque un análisis de seguridad no lo consideró limpio. Consulte a un administrador si lo necesita.',
+  'errors.settingNotFound':
+    'Ese ajuste no existe. Vuelva a cargar la página para ver la lista actual.',
+  'errors.settingValueInvalid':
+    'Ese valor no se admite en este ajuste. El intervalo permitido se muestra al lado.',
+  'errors.settingScopeRefused':
+    'Este ajuste se decide para toda la organización y no puede cambiarse aquí.',
   'errors.holdNotFound':
     'Esa retención legal no existe.',
   'errors.holdNotTransitionable':

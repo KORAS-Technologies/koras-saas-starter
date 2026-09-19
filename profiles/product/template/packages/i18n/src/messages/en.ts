@@ -814,6 +814,12 @@ export const en = {
     'This file cannot be deleted: a legal hold is keeping it. It can be deleted once the hold is lifted.',
   'errors.fileQuarantined':
     'This file is being withheld because a security scan did not find it clean. Ask an administrator if you need it.',
+  'errors.settingNotFound':
+    'That setting does not exist. Reload the page to see the current list.',
+  'errors.settingValueInvalid':
+    'That value is not allowed for this setting. The allowed range is shown beside it.',
+  'errors.settingScopeRefused':
+    'This setting is decided for the whole organisation and cannot be changed here.',
   'errors.holdNotFound':
     'That legal hold does not exist.',
   'errors.holdNotTransitionable':

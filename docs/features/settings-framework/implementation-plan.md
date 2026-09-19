@@ -1,7 +1,7 @@
 # Settings & Preferences Framework — implementation plan
 
-Written 2026-09-17, at the close of Phase 1. Phases 2 and 3 are done; 4 onward
-are not started, as of 2026-09-17.
+Written 2026-09-17, at the close of Phase 1. Phases 2, 3 and 4 are done;
+5 onward are not started, as of 2026-09-17.
 
 ---
 
@@ -103,17 +103,28 @@ at least one policy on every table; `koras-settings` and the two new product
 suites pass; ruff and mypy `--strict` are clean; the full generator suite
 passes.
 
-### Phase 4 — API
+### Phase 4 — API  *(done 2026-09-17)*
 
-`routers/settings.py`, registered ungated in `main.py.hbs`; six audit actions;
-the new error codes with sentences in `en`, `de` and `es`; the platform routes;
-and `00031_settings_locale_migration.sql` with the changes to
-`routers/tenant.py`, `160_member_preferences_isolation.sql` and
-`e2e/language.spec.ts` that go with it.
+`routers/settings.py` with eight routes, registered ungated; six audit actions;
+three error codes with sentences in `en`, `de` and `es` and a branch in the web
+mapping; `require_subject` in `core/tenant.py`; and
+`00031_settings_locale_migration.sql` with the changes to `routers/tenant.py`
+and the isolation suite that go with it.
 
-Exit: the eight product routes answer; the three refusals return their codes;
-every audit action is registered and classified; no code reads a dropped
-column.
+**The platform routes moved to Phase 8.** They need three new entries in
+`contracts/product-platform.v1.json`, which is the one artifact kept
+byte-identical between this repository and `koras-control-plane` by hand.
+Changing it here without its consumer would leave the two out of step across a
+phase boundary, so the contract changes once, with the console that calls it.
+
+**`e2e/language.spec.ts` did not need changing.** The response shape is
+unchanged -- `locale` and `member_locale`, null when nobody chose -- because
+`auto` maps back to null. The storage moved and the browser cannot tell, which
+is the outcome that made the migration safe to take in one step.
+
+Exit, met: 46 unit tests pass in a generated product, covering the eight routes,
+the three refusals, the audit rows and the locale move; ruff and mypy `--strict`
+clean; the structural suite pins the router outside every capability gate.
 
 ### Phase 5 — provider
 

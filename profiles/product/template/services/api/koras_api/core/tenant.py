@@ -53,3 +53,27 @@ async def require_tenant(claims: AuthDep) -> TenantContext:
 
 
 TenantDep = Annotated[TenantContext, Depends(require_tenant)]
+
+
+def require_subject(tenant: TenantContext) -> str:
+    """The verified subject, for a route that writes something personal.
+
+    `TenantContext.user_id` is optional because the type serves the worker and
+    the platform's own calls as well as a customer's request, and neither of
+    those is anybody. A customer request always carries one -- `require_tenant`
+    puts the token's `sub` on the context -- so this raises rather than
+    returning null.
+
+    **Fail closed rather than silently.** Without it a personal write with no
+    subject would build a statement the policy matches nothing for: no row
+    written, no error raised, 200 answered, and the value the caller just set
+    is gone on the next read. A refusal naming the reason is a better day for
+    everybody than a preference that does not stick.
+    """
+    if not tenant.user_id:
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            ApiErrorCode.ROLE_REQUIRED,
+            "this request carries no verified subject, so it cannot act for a person",
+        )
+    return tenant.user_id

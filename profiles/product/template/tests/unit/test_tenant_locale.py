@@ -7,7 +7,7 @@ written, that the tenant default needs `settings.manage` and the personal
 choice does not, that the statements key on the resolved context rather than
 on anything in the body, and that the read reports both values. Whether the
 policies then admit the statement is the row-level security suite's claim
-(`supabase/tests/160_member_preferences_isolation.sql`), not this file's.
+(`supabase/tests/280_member_setting_values_isolation.sql`), not this file's.
 """
 
 from __future__ import annotations
@@ -45,16 +45,31 @@ class _Result:
     def first(self) -> tuple[Any, ...] | None:
         return self._row
 
+    def all(self) -> list[tuple[Any, ...]]:
+        """The before-image the settings store reads before it writes.
+
+        Empty: these tests are about which statement the route issues and with
+        what, not about what was there first. A store that read a row here
+        would change the audit detail and nothing else this file asserts.
+        """
+        return []
+
 
 class _Session:
     """Answers the settings read from one row and records every write."""
 
     def __init__(self, row: tuple[Any, ...] | None = None) -> None:
         self.row = row
-        self.statements: list[tuple[str, dict[str, Any]]] = []
+        self.statements: list[tuple[str, Any]] = []
         self.commits = 0
 
-    async def execute(self, statement: object, parameters: dict[str, Any]) -> _Result:
+    async def execute(
+        self,
+        statement: object,
+        # A dict for a single statement and a list of them for an executemany,
+        # which is what the settings store issues. Narrower would be a lie.
+        parameters: Any = None,  # noqa: ANN401
+    ) -> _Result:
         sql = " ".join(str(statement).split())
         self.statements.append((sql, parameters))
         return _Result(self.row if sql.startswith("select") else None)
@@ -62,7 +77,11 @@ class _Session:
     async def commit(self) -> None:
         self.commits += 1
 
-    def writes(self) -> list[tuple[str, dict[str, Any]]]:
+    def writes(self) -> list[tuple[str, Any]]:
+        # `Any`, because the settings store issues an executemany: a list of
+        # dicts where a single statement passes one. Claiming a dict here was
+        # true until the locale moved into the framework, and `tests/` is not
+        # in the workspace typecheck, so nothing would have said otherwise.
         return [(sql, params) for sql, params in self.statements if sql.startswith("insert")]
 
 
@@ -113,12 +132,26 @@ def test_the_read_carries_the_tenant_default_and_the_callers_own_choice() -> Non
     # The preference is joined on the verified subject, never on a parameter
     # the caller supplied: the body has no place to name one.
     sql, params = session.statements[0]
-    assert "public.member_preferences" in sql
-    assert params == {"tenant_id": TENANT, "user_id": SUBJECT}
+    assert "public.member_setting_values" in sql
+    assert params == {"tenant_id": TENANT, "user_id": SUBJECT, "language": "general.language"}
 
 
 def test_a_tenant_that_has_configured_nothing_has_no_languages_either() -> None:
     session = _Session(row=("Alpha", "alpha", {}, {}, None, None))
+    body = _install(session, MEMBER).get("/api/v1/tenant/settings").json()
+    assert body["locale"] is None and body["member_locale"] is None
+
+
+def test_the_seeded_value_reads_as_no_choice_at_all() -> None:
+    """`auto` and an absent row are the same answer to this route.
+
+    Every tenant holds a `general.language` row from the moment it is
+    provisioned, because that is what the settings snapshot does. If `auto`
+    reported as a language, every tenant would look as though it had chosen
+    one, `Accept-Language` would never be consulted again, and a German browser
+    would be answered in English.
+    """
+    session = _Session(row=("Alpha", "alpha", {}, {}, "auto", "auto"))
     body = _install(session, MEMBER).get("/api/v1/tenant/settings").json()
     assert body["locale"] is None and body["member_locale"] is None
 
@@ -129,9 +162,16 @@ def test_a_member_keeps_their_own_choice() -> None:
     assert answer.status_code == 204, answer.text
     assert session.commits == 1
     [(sql, params)] = session.writes()
-    assert sql.startswith("insert into public.member_preferences")
-    assert "on conflict (tenant_id, user_id) do update" in sql
-    assert params == {"tenant_id": TENANT, "user_id": SUBJECT, "locale": "de"}
+    assert sql.startswith("insert into public.member_setting_values")
+    assert "on conflict (tenant_id, user_id, key) do update" in sql
+    assert params == [
+        {
+            "tenant_id": TENANT,
+            "user_id": SUBJECT,
+            "key": "general.language",
+            "value": '"de"',
+        }
+    ]
 
 
 def test_a_member_can_clear_their_choice() -> None:
@@ -139,7 +179,10 @@ def test_a_member_can_clear_their_choice() -> None:
     answer = _install(session, MEMBER).put("/api/v1/me/locale", json={"locale": None})
     assert answer.status_code == 204, answer.text
     [(_, params)] = session.writes()
-    assert params["locale"] is None
+    # Cleared, and stored as a choice rather than as an absent row: "follow my
+    # browser" is something a person said, and it should survive their
+    # organisation changing its own default.
+    assert params[0]["value"] == '"auto"' 
 
 
 def test_a_language_the_product_cannot_speak_is_refused_before_anything_is_written() -> None:
@@ -169,15 +212,15 @@ def test_the_tenant_default_needs_settings_manage() -> None:
     assert answer.status_code == 204, answer.text
     assert session.commits == 1
     [(sql, params)] = session.writes()
-    assert sql.startswith("insert into public.tenant_settings")
-    assert "on conflict (tenant_id) do update" in sql
-    assert params == {"tenant_id": TENANT, "locale": "de"}
+    assert sql.startswith("insert into public.tenant_setting_values")
+    assert "on conflict (tenant_id, key) do update" in sql
+    assert params == [{"tenant_id": TENANT, "key": "general.language", "value": '"de"'}]
 
 
 def test_the_request_session_declares_the_subject() -> None:
     """The dependency that opens the session passes the verified subject on.
 
-    The policy on `member_preferences` reads `current_user_id()`, so a session
+    The policy on `member_setting_values` reads `current_user_id()`, so a session
     that declared the tenant alone would see and write no preference. This
     reads the declaration the product makes rather than the database's answer
     to it, which is the RLS suite's job.

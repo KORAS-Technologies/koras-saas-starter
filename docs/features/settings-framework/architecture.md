@@ -185,6 +185,14 @@ retried provisioning must not overwrite what somebody has since edited.
 Provenance goes on the tenant row — the global version it was copied from, when,
 and which actor. The brief's section 10 asks for all three.
 
+**A setting whose absence carries meaning needs a value that says so.** Seeding
+gives every organisation-scoped key a row, so any behaviour that keyed off "no
+row" stops happening the moment the framework arrives. `general.language` is the
+one such setting today, as of 2026-09-17: it resolves through a chain that falls
+through to `Accept-Language`, and a seeded language would end that. It defaults
+to `auto`, which the API maps back to null. A future setting with the same shape
+does the same thing rather than opting out of the snapshot.
+
 `GLOBAL_ONLY` settings are deliberately **not** copied. They have no
 organisation value by definition, so a row would be a value nobody may change
 and every reader would have to ignore.

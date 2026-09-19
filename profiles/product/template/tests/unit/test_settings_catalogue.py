@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from koras_api.settings_catalogue import catalogue
-from koras_api.settings_catalogue.standard import LOCALES
+from koras_api.settings_catalogue.standard import LANGUAGE_OPTIONS, LOCALES
 from koras_settings import Category, DataType, Scope
 
 API = Path(__file__).resolve().parents[2] / "services" / "api" / "koras_api"
@@ -114,7 +114,14 @@ def test_the_language_options_are_the_ones_the_api_accepts() -> None:
     )
 
     assert LOCALES == in_router
-    assert catalogue.require("general.language").options == LOCALES
+
+    # The setting offers one more than the API stores: `auto`, which is how a
+    # seeded row says "nobody chose". Without it the snapshot would put a real
+    # language in every tenant at provisioning, `Accept-Language` would never be
+    # consulted again, and a German browser would be answered in English.
+    language = catalogue.require("general.language")
+    assert language.options == ("auto", *LOCALES) == LANGUAGE_OPTIONS
+    assert language.default == "auto"
 
 
 def test_the_extension_point_ships_empty() -> None:

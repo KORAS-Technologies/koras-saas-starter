@@ -826,6 +826,12 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Diese Datei kann nicht gelöscht werden: Eine rechtliche Aufbewahrungspflicht hält sie. Nach deren Aufhebung ist das Löschen möglich.',
   'errors.fileQuarantined':
     'Diese Datei wird zurückgehalten, weil eine Sicherheitsprüfung sie nicht als unbedenklich eingestuft hat. Wenden Sie sich an eine Administratorin oder einen Administrator, wenn Sie sie benötigen.',
+  'errors.settingNotFound':
+    'Diese Einstellung gibt es nicht. Laden Sie die Seite neu, um die aktuelle Liste zu sehen.',
+  'errors.settingValueInvalid':
+    'Dieser Wert ist für diese Einstellung nicht zulässig. Der erlaubte Bereich steht daneben.',
+  'errors.settingScopeRefused':
+    'Diese Einstellung gilt für die gesamte Organisation und kann hier nicht geändert werden.',
   'errors.holdNotFound':
     'Diese Aufbewahrungssperre gibt es nicht.',
   'errors.holdNotTransitionable':

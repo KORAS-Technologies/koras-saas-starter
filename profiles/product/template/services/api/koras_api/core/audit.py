@@ -197,8 +197,53 @@ HOLD_ACTIONS = (
     ),
 )
 
+#: Changing a setting, at each of the three levels that may hold one.
+#:
+#: Administrative at the two levels that decide for other people, and activity
+#: at the one that decides for yourself. That is the same division `retention.
+#: changed` and `audit.searched` already sit either side of: a configuration
+#: change somebody may later have to account for, against an ordinary thing a
+#: person did.
+#:
+#: A person changing their own theme is not administrative however many times
+#: they do it, and classing it so would put a year of preference-fiddling in
+#: the same bucket as the rows an auditor asks for.
+SETTINGS_ACTIONS = (
+    AuditAction(
+        key="settings.tenant_initialized",
+        classification=Classification.ADMINISTRATIVE,
+        summary="A new tenant was given its copy of the platform's defaults.",
+    ),
+    AuditAction(
+        key="settings.tenant_changed",
+        classification=Classification.ADMINISTRATIVE,
+        summary="An administrator changed a setting for the whole organisation.",
+    ),
+    AuditAction(
+        key="settings.tenant_reset",
+        classification=Classification.ADMINISTRATIVE,
+        summary="A setting was reset to the platform's current value.",
+    ),
+    AuditAction(
+        key="settings.member_changed",
+        classification=Classification.ACTIVITY,
+        summary="Somebody changed a setting for themselves.",
+    ),
+    AuditAction(
+        key="settings.member_reset",
+        classification=Classification.ACTIVITY,
+        summary="Somebody cleared their own setting; their organisation's applies again.",
+    ),
+    AuditAction(
+        key="settings.refused",
+        classification=Classification.SECURITY,
+        summary="A settings write was refused: the scope or the permission forbade it.",
+    ),
+)
+
 actions.extend(STORAGE_ACTIONS)
 actions.extend(HOLD_ACTIONS)
+actions.extend(SETTINGS_ACTIONS)
 
 
 async def record(

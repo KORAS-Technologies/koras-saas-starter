@@ -496,7 +496,16 @@ tenant and subject, written by `PUT /api/v1/me/locale` under the member's own
 token and read under a policy keyed to `current_user_id()` as well as the
 tenant, so a colleague in the same tenant cannot read it. The organisation's
 default is `tenant_settings.locale`, written by `PUT /api/v1/tenant/settings/locale`
-by whoever holds `settings.manage`. Both ride on the `GET /api/v1/tenant/settings`
+by whoever holds `settings.manage`.
+
+> **Where those two live now (2026-09-17).** The settings framework took the
+> job. Migration `00031` moved both values to `general.language` in
+> `member_setting_values` and `tenant_setting_values`, dropped
+> `tenant_settings.locale` and dropped `member_preferences` altogether. The
+> paragraph above describes what was true when it was written, and the two
+> routes, the policies keyed to the subject and this response are all unchanged
+> — the only visible difference is that "follow my browser" is now a value a
+> person can choose (`auto`) rather than an absence they could not see. Both ride on the `GET /api/v1/tenant/settings`
 response the shell already reads for branding and features, so a signed-in
 page pays no extra request for its language; a visitor with no session reads
 neither and gets the public order. The stored choice outranks the cookie

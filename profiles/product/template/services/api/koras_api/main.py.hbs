@@ -30,7 +30,8 @@ from .routers import (
 {{#if capability.reporting}}    platform_reporting,
     reporting,
     reporting_schedules,
-{{/if}}    tenant,
+{{/if}}    settings as settings_router,
+    tenant,
 )
 
 
@@ -123,6 +124,27 @@ app.include_router(health.router, prefix="/api/v1")
 # can still be abusive.
 app.include_router(
     tenant.router,
+    prefix="/api/v1",
+    dependencies=[Depends(limit_authenticated)],
+)
+# Settings: the catalogue, what it resolves to for this caller, and the two
+# scopes a customer may write. Never capability-gated -- the shell resolves a
+# customer's settings before it paints, so a product generated without anything
+# optional still serves these.
+#
+# **Imported under another name, and it has to be.** This module already binds
+# `settings` to the process's configuration on line 12, and `from .routers
+# import settings` would rebind it to a module with no `environment` on it --
+# so the app would fail at import, in every generated product, on the line that
+# decides whether to publish the docs. Found on 2026-09-17 by running a
+# generated product's own tests; nothing about the template reads wrongly.
+#
+# Registered after `tenant`, which owns `/tenant/settings` and the two locale
+# routes. Neither router takes a path parameter at that level, so the order is
+# readability rather than resolution: the settings routes sit beside the tenant
+# ones a reader will compare them with.
+app.include_router(
+    settings_router.router,
     prefix="/api/v1",
     dependencies=[Depends(limit_authenticated)],
 )

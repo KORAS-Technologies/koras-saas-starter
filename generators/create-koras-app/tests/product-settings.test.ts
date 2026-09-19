@@ -33,6 +33,10 @@ function read(...segments: string[]): string {
   return readFileSync(join(PRODUCT, ...segments), 'utf8').split(String.fromCharCode(13)).join('')
 }
 
+function has(...segments: string[]): boolean {
+  return existsSync(join(PRODUCT, ...segments))
+}
+
 type Manifest = {
   template_map: { capabilities: Record<string, string | string[]> }
 }
@@ -222,5 +226,170 @@ describe('the snapshot at provisioning', () => {
     const seeding = read('services', 'api', 'koras_api', 'core', 'settings_store.py')
     expect(seeding).toContain('for definition in catalogue')
     expect(seeding).toContain('if definition.scope.admits_organization')
+  })
+})
+
+describe('the settings API', () => {
+  const main = read('services', 'api', 'koras_api', 'main.py.hbs')
+
+  it('registers the router outside every capability gate', () => {
+    // Between the import and the registration there is no `{{#if capability`
+    // wrapping either one. A product generated with nothing optional still
+    // serves these, because the shell reads them before it paints.
+    expect(main).toContain('settings as settings_router')
+    expect(main).toContain('settings_router.router')
+
+    const registration = main.split('settings_router.router')[0] ?? ''
+    const openGates = (registration.match(/\{\{#if capability\./g) ?? []).length
+    const closedGates = (registration.match(/\{\{\/if\}\}/g) ?? []).length
+    expect(openGates, 'the settings router sits inside an unclosed capability gate').toBe(
+      closedGates,
+    )
+  })
+
+  it('imports the router under another name than the process settings', () => {
+    // `from .core.settings import settings` binds the configuration; a plain
+    // `from .routers import settings` rebinds it to a module with no
+    // `environment` attribute, and the app fails at import in every generated
+    // product. Found on 2026-09-17 by running a generated product's tests.
+    expect(main).toContain('from .core.settings import settings')
+    expect(main).not.toMatch(/from \.routers import \([^)]*\n\s*settings,/)
+  })
+
+  it('answers each refusal with a code the web tier can translate', () => {
+    const errors = read('services', 'api', 'koras_api', 'core', 'errors.py')
+    for (const code of ['setting_not_found', 'setting_value_invalid', 'setting_scope_refused']) {
+      expect(errors, `${code} is not declared`).toContain(code)
+    }
+    // The sentence exists in every language, which `product-i18n` enforces
+    // generally; this asserts the branch that reaches it exists at all.
+    const mapping = read('apps', 'web', 'src', 'lib', 'api-errors.ts.hbs')
+    expect(mapping).toContain("t('errors.settingNotFound')")
+    expect(mapping).toContain("t('errors.settingValueInvalid')")
+    expect(mapping).toContain("t('errors.settingScopeRefused')")
+  })
+
+  it('needs no permission to resolve a caller’s own settings', () => {
+    // The shell reads this on every signed-in request. A permission here means
+    // a member without `settings.read` gets an unstyled page, not a refusal.
+    const router = read('services', 'api', 'koras_api', 'routers', 'settings.py')
+    const effective = router.split('async def effective(')[1]?.split('async def ')[0] ?? ''
+    expect(effective).not.toContain('_require(')
+    // And it takes no parameter naming a tenant or a person, which is what
+    // makes the absence of a permission safe rather than an oversight.
+    expect(effective).not.toContain('tenant_id:')
+    expect(effective).not.toContain('user_id:')
+  })
+
+  it('refuses a personal write that carries no verified subject', () => {
+    // Fail closed rather than silently: without the guard the statement is
+    // built, the policy matches nothing, 200 is answered, and the value the
+    // caller set is gone on the next read.
+    const core = read('services', 'api', 'koras_api', 'core', 'tenant.py')
+    expect(core).toContain('def require_subject(')
+    const router = read('services', 'api', 'koras_api', 'routers', 'settings.py')
+    expect(router).not.toContain('tenant.user_id')
+    expect(router).toContain('require_subject(tenant)')
+  })
+})
+
+describe('the language preference moves into the framework', () => {
+  const migration = read('supabase', 'migrations', '00031_settings_locale_migration.sql')
+
+  it('carries both stored halves across before dropping either', () => {
+    const tenantCopy = migration.indexOf('insert into public.tenant_setting_values')
+    const memberCopy = migration.indexOf('insert into public.member_setting_values')
+    const dropColumn = migration.indexOf('drop column if exists locale')
+    const dropTable = migration.indexOf('drop table if exists public.member_preferences')
+
+    for (const step of [tenantCopy, memberCopy, dropColumn, dropTable]) {
+      expect(step).toBeGreaterThan(-1)
+    }
+    expect(tenantCopy).toBeLessThan(dropColumn)
+    expect(memberCopy).toBeLessThan(dropTable)
+  })
+
+  it('leaves nothing reading the columns it drops', () => {
+    // The whole reason this migration is not in the same phase as the tables.
+    const router = read('services', 'api', 'koras_api', 'routers', 'tenant.py')
+    expect(router).not.toContain('public.member_preferences')
+    expect(router).not.toContain('s.locale')
+    expect(router).toContain('public.member_setting_values')
+  })
+
+  it('reads a seeded value as no choice at all', () => {
+    // Every tenant holds a `general.language` row from provisioning. If `auto`
+    // reported as a language, `Accept-Language` would never be consulted again
+    // and a German browser would be answered in English.
+    const standard = read('services', 'api', 'koras_api', 'settings_catalogue', 'standard.py')
+    expect(standard).toContain('LANGUAGE_OPTIONS: tuple[str, ...] = ("auto", *LOCALES)')
+
+    const router = read('services', 'api', 'koras_api', 'routers', 'tenant.py')
+    expect(router).toContain('AUTOMATIC = "auto"')
+    expect(router).toContain('def _chosen(')
+  })
+
+  it('keeps the suite that guarded the old table, under the new one', () => {
+    // `160_member_preferences_isolation.sql` guarded two sentences: a person
+    // may write their own row, and a colleague may not read it. The table is
+    // gone and the sentences are not.
+    expect(has('supabase', 'tests', '160_member_preferences_isolation.sql')).toBe(false)
+    const suite = read('supabase', 'tests', '280_member_setting_values_isolation.sql')
+    // The apostrophe is doubled in the SQL literal, so the assertion matches
+    // either side of it rather than the escaping.
+    expect(suite).toContain('row in the same tenant was visible')
+    expect(suite).toContain('no subject declared')
+  })
+})
+
+/**
+ * Not about settings, and here because settings is where it bit.
+ *
+ * Every `python-packages/*\/tests/` directory is on the path as a top-level
+ * module with no `__init__.py`, so two packages each carrying a `support.py`
+ * are two modules with one name. `mypy` refuses the pair rather than choosing
+ * one, and it refuses it only when it checks the whole workspace — a single
+ * package's suite runs perfectly well on its own, which is why this reached
+ * CI on 2026-09-17 with every local check green.
+ *
+ * The convention that avoids it is already in the tree twice
+ * (`reporting_support.py`, and now `settings_support.py`): a shared test helper
+ * is named for the package it serves.
+ */
+describe('test helpers do not collide across packages', () => {
+  it('gives every shared helper a name of its own', () => {
+    // Every directory whose `.py` files mypy sees as top-level modules.
+    const directories: string[] = [join(PRODUCT, 'tests', 'unit')]
+    for (const root of [join(SHARED, 'python-packages'), join(PRODUCT, 'python-packages')]) {
+      if (!existsSync(root)) continue
+      for (const entry of readdirSync(root, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue
+        directories.push(join(root, entry.name, 'tests'))
+      }
+    }
+
+    const seen = new Map<string, string>()
+    for (const tests of directories) {
+      if (existsSync(tests)) {
+        for (const file of readdirSync(tests)) {
+          // Only the helpers. A `test_*.py` name is already unique by habit,
+          // and pytest's own collection would complain long before mypy.
+          if (!file.endsWith('.py') || file.startsWith('test_')) continue
+          if (file === '__init__.py' || file === 'conftest.py') continue
+          const where = join(tests, file)
+          const first = seen.get(file)
+          expect(
+            first,
+            `${file} exists at ${where} and at ${first} — mypy refuses two ` +
+              'top-level modules with one name; name a helper for its package',
+          ).toBeUndefined()
+          seen.set(file, where)
+        }
+      }
+    }
+
+    // Not vacuous: the helpers it is meant to be comparing really are there.
+    expect(seen.has('settings_support.py')).toBe(true)
+    expect(seen.has('support.py')).toBe(true)
   })
 })

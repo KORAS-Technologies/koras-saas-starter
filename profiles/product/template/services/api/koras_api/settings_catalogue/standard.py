@@ -33,6 +33,29 @@ from koras_settings import Category, DataType, Scope, SettingDefinition, Status,
 #: the same way the permission catalogue is.
 LOCALES: tuple[str, ...] = ("en", "de", "es")
 
+#: What `general.language` offers: the catalogues, and letting the browser decide.
+#:
+#: **`auto` is why seeding this setting does not break language negotiation.**
+#: Every organisation-scoped setting gets a row at provisioning, holding the
+#: definition's default -- that is the snapshot, and it is what stops a platform
+#: change reaching a tenant that already exists. For every other setting the
+#: default is a real value and seeding it changes nothing.
+#:
+#: Language was the exception. A request resolves its language from the stored
+#: choice, then the cookie, then the tenant's default, then `Accept-Language`,
+#: then the product's own -- and a seeded default of `en` would sit in the third
+#: position for every tenant, so a German browser would be answered in English
+#: and the fourth step would never run again.
+#:
+#: The fix is to make "no opinion" a value somebody can hold rather than an
+#: absence that seeding destroys. `auto` is that value; the API maps it back to
+#: null, and the chain behaves exactly as it did. It is also better than the
+#: absence was: a person can now *choose* to follow their browser, which
+#: previously meant clearing a preference they could not see.
+#:
+#: The same shape `ui.theme` already has with `system`.
+LANGUAGE_OPTIONS: tuple[str, ...] = ("auto", *LOCALES)
+
 
 def _setting(
     key: str,
@@ -92,13 +115,15 @@ SETTINGS: list[SettingDefinition] = [
     # `member_preferences`. It is the same value at the same two levels, and
     # migration `00031` moves it here so there is one answer to "what language
     # does this person want" rather than two that can disagree.
+    #
+    # Defaults to `auto`, not to a language. See `LANGUAGE_OPTIONS`.
     _setting(
         "general.language",
         Category.GENERAL,
         DataType.ENUM,
-        "en",
+        "auto",
         Scope.GLOBAL_ORG_USER,
-        options=LOCALES,
+        options=LANGUAGE_OPTIONS,
         ui=UiControl.SELECT,
         order=20,
     ),

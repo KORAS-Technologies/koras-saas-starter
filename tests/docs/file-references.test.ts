@@ -86,6 +86,17 @@ const MOVED: Record<string, string> = {
   // path and the sentence about 2026-09-05 keeps the old one.
   'apps/marketing/src/app/page.tsx':
     'profiles/product/template/apps/marketing/src/app/[locale]/page.tsx.hbs',
+  // Named by PRODUCT_FRONTEND and by FOLLOW_UPS F20, both in dated accounts of
+  // the language work: `member_preferences` held one row per person per tenant
+  // and that suite asserted a colleague could not read it. The settings
+  // framework took the table's job on 2026-09-17 -- migration `00031` moves
+  // the rows into `member_setting_values` and drops it -- and the suite moved
+  // with it, keyed the same way and failing closed in the same place.
+  //
+  // Recorded rather than rewritten: both passages describe what was true when
+  // they were written, and editing the path would falsify that.
+  'supabase/tests/160_member_preferences_isolation.sql':
+    'profiles/product/template/supabase/tests/280_member_setting_values_isolation.sql',
 }
 
 function tracked(): string[] {
