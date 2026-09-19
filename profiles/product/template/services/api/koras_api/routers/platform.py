@@ -27,14 +27,16 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Response, status
+from koras_settings import SettingError, coerce
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..core import tenant_store
+from ..core import settings_store, tenant_store
 from ..core.database import PlatformSession
 from ..core.errors import ApiErrorCode, api_error
 from ..core.platform_auth import PlatformMachineDep
 from ..core.settings import settings
+from ..settings_catalogue import catalogue
 
 router = APIRouter(tags=["platform"])
 
@@ -274,3 +276,150 @@ async def _set_status(session: AsyncSession, tenant_id: str, new_status: str) ->
     if tenant is None:
         raise api_error(status.HTTP_404_NOT_FOUND, ApiErrorCode.TENANT_NOT_FOUND, "No such tenant")
     return _response(tenant)
+
+
+# ── Settings: what this product declares, and what the platform has set ──────
+#
+# Three routes, and the third is the first write the platform contract admits.
+#
+# The platform cannot learn a product's settings from its own database: a
+# definition is code in the product, and the console manages several products
+# that were not built alongside it. So the catalogue is published, and a console
+# renders a form from metadata rather than from anything it knew in advance.
+
+
+class SettingDefinitionView(BaseModel):
+    """One setting's definition, for a console that has never seen this product.
+
+    Metadata only, and no value at any scope. `label_key` is a key and never a
+    sentence: the words live in this product's own catalogues, so a console
+    shows the key when it has no translation of its own rather than inventing
+    one.
+    """
+
+    key: str
+    category: str
+    data_type: str
+    default: object
+    scope: str
+    label_key: str
+    description_key: str
+    options: list[str]
+    minimum: float | None
+    maximum: float | None
+    ui: str
+    order: int
+    org_admin_visible: bool
+    user_visible: bool
+
+
+class GlobalSettings(BaseModel):
+    """What the platform has set, and the version it is at.
+
+    A key absent from `values` resolves to the definition's own default, which
+    is the normal state of a new estate rather than a gap to fill. `version` is
+    zero when nobody has changed anything.
+    """
+
+    values: dict[str, object]
+    version: int
+
+
+class GlobalSettingsWrite(BaseModel):
+    """What the console is replacing.
+
+    `values` and nothing else. There is deliberately no tenant here, and the
+    route above it takes none: an organisation's settings are the snapshot that
+    makes a customer independent of platform changes, and a console able to
+    rewrite one would undo the point of taking it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    values: dict[str, object]
+
+
+@router.get("/settings/definitions", response_model=list[SettingDefinitionView])
+async def setting_definitions(_principal: PlatformMachineDep) -> list[SettingDefinitionView]:
+    """Every setting this product declares, in display order.
+
+    Unfiltered, unlike the customer-facing catalogue: the console is the
+    platform, and a setting hidden from a customer -- one nothing honours yet,
+    or one the platform sets on their behalf -- is exactly what an operator may
+    need to see. Deprecated definitions are left out, because nothing should be
+    set through a console that no surface offers.
+    """
+    return [
+        SettingDefinitionView(
+            key=definition.key,
+            category=str(definition.category),
+            data_type=str(definition.data_type),
+            default=list(definition.default)
+            if isinstance(definition.default, tuple)
+            else definition.default,
+            scope=str(definition.scope),
+            label_key=definition.label_key,
+            description_key=definition.description_key,
+            options=list(definition.options),
+            minimum=definition.minimum,
+            maximum=definition.maximum,
+            ui=str(definition.ui),
+            order=definition.order,
+            org_admin_visible=definition.org_admin_visible,
+            user_visible=definition.user_visible,
+        )
+        for definition in catalogue.offered()
+    ]
+
+
+@router.get("/settings/global", response_model=GlobalSettings)
+async def read_global_settings(
+    _principal: PlatformMachineDep, session: PlatformSession
+) -> GlobalSettings:
+    return GlobalSettings(
+        values=await settings_store.global_values(session),
+        version=await settings_store.global_version(session),
+    )
+
+
+@router.put("/settings/global", response_model=GlobalSettings)
+async def write_global_settings(
+    body: GlobalSettingsWrite,
+    _principal: PlatformMachineDep,
+    session: PlatformSession,
+) -> GlobalSettings:
+    """Replace the platform defaults, at a new version.
+
+    Every value is held to its own definition before anything is written, and
+    the whole request is refused on the first one that fails. A half-applied set
+    of defaults is the state hardest to account for afterwards: a tenant seeded
+    in between would carry some of an operator's intent and not the rest, at a
+    version that claims to name all of it.
+
+    A key nobody declared is refused rather than stored. A console renders from
+    this product's published catalogue, so a key that is not in it came from a
+    console built against a different version -- which is worth an error rather
+    than a row nothing will ever read.
+    """
+    accepted: dict[str, object] = {}
+    for key, raw in body.values.items():
+        definition = catalogue.get(key)
+        if definition is None:
+            raise api_error(
+                status.HTTP_404_NOT_FOUND,
+                ApiErrorCode.SETTING_NOT_FOUND,
+                f"this product declares no setting called {key!r}",
+            )
+        try:
+            value = coerce(definition, raw)
+        except SettingError as invalid:
+            raise api_error(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                ApiErrorCode.SETTING_VALUE_INVALID,
+                invalid.message,
+            ) from invalid
+        accepted[key] = list(value) if isinstance(value, tuple) else value
+
+    version, _written = await settings_store.write_global_values(session, accepted)
+    await session.commit()
+    return GlobalSettings(values=await settings_store.global_values(session), version=version)

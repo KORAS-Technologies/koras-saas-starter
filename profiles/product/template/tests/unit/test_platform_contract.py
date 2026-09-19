@@ -332,3 +332,39 @@ def test_the_governance_response_names_nothing_that_identifies_anybody() -> None
     every = set().union(*(_declared(s) for s in ("storage", "audit", "holds", "exports")))
     for forbidden in ("storage_key", "name", "actor_id", "uploaded_by", "reason", "details"):
         assert forbidden not in every, f"the platform contract would carry {forbidden}"
+
+
+def test_the_settings_write_can_reach_no_tenant() -> None:
+    """The first write route the contract admits, and the shape it rests on.
+
+    The rule recorded on 2026-09-16 is that the platform may act only in the
+    direction that keeps data. A configuration default qualifies; an
+    organisation's own settings do not, because they are the snapshot that makes
+    a customer independent of platform changes, and a console able to rewrite
+    one would undo the point of taking it.
+
+    What makes that structural rather than a promise: neither the route nor its
+    body has anywhere to name a tenant. A caller cannot ask for something the
+    request has no parameter to ask for -- the same property the customer-facing
+    tenant routes rely on.
+    """
+    assert CONTRACT["rules"]["settings_write_is_global_only"]["requirement"]
+
+    # This one router, not the concatenation `_router_source` builds: the
+    # capability routers are appended after it, so a segment bounded only by
+    # the next `@router.` runs past the end of this file and into their
+    # imports, which do name a tenant.
+    source = ROUTER.read_text(encoding="utf-8")
+    write = source.split('@router.put("/settings/global"')[1].split("@router.")[0]
+    for forbidden in ("tenant_id", "tenant:", "TenantDep", "organization_id"):
+        assert forbidden not in write, f"the settings write reaches {forbidden}"
+
+    # And the body accepts nothing but the values, so a caller that sends a
+    # tenant is refused rather than quietly ignored.
+    body = source.split("class GlobalSettingsWrite(BaseModel):")[1].split("@router.")[0]
+    assert 'extra="forbid"' in body
+    # The declared fields, read as declarations rather than by searching prose:
+    # the docstring above them explains at length that there is no tenant here,
+    # and a substring search would find the word in the explanation.
+    fields = re.findall(r"^    (\w+): ", body, re.MULTILINE)
+    assert fields == ["values"], fields

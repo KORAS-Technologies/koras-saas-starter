@@ -70,6 +70,43 @@
         "holds": ["tenant_id", "scope", "status", "holds"],
         "exports": ["tenant_id", "status", "exports", "rows_exported"]
       }
+    },
+    {
+      "method": "get",
+      "path": "/settings/definitions",
+      "summary": "Every setting this product declares: key, category, type, default, scope, bounds, options and the two i18n keys its label and description are looked up by. Metadata only, and no value at any scope. The platform cannot learn a product's settings from its own database -- a definition is code in the product -- so this is how a console renders a form for a product it was not built alongside.",
+      "response": {
+        "$comment": [
+          "Field names, declared because both sides read them by name and neither",
+          "would notice the other changing one.",
+          "",
+          "`label_key` is a key and never a sentence: the words live in the",
+          "product's own catalogues, so a console shows the key when it has no",
+          "translation of its own rather than pretending to have one."
+        ],
+        "fields": [
+          "key", "category", "data_type", "default", "scope", "label_key",
+          "description_key", "options", "minimum", "maximum", "ui", "order",
+          "org_admin_visible", "user_visible"
+        ]
+      }
+    },
+    {
+      "method": "get",
+      "path": "/settings/global",
+      "summary": "The platform defaults this product holds, and the version they are at. A key absent here resolves to the definition's own default, which is the normal state of a new estate rather than a gap to fill.",
+      "response": {
+        "$comment": [
+          "`version` is the monotonic counter a tenant records having been seeded",
+          "from. Zero is a real answer: nobody has changed anything yet."
+        ],
+        "fields": ["values", "version"]
+      }
+    },
+    {
+      "method": "put",
+      "path": "/settings/global",
+      "summary": "Replace the platform defaults this product holds, and bump the version. Reaches global settings and nothing else: it accepts no tenant and there is nowhere in it to name one, so an organisation's own values are unreachable from the console in either direction. A change here reaches tenants created afterwards and no tenant that already exists."
     }
   ],
   "rules": {
@@ -80,6 +117,10 @@
     "create_is_idempotent": {
       "requirement": "A repeated create with the same tenant_key returns the existing tenant with 200, never 201 and never 409.",
       "reason": "tenant_key is client-supplied and deterministic, which is what makes the call retryable. Answering 409 would turn a retry into a failure."
+    },
+    "settings_write_is_global_only": {
+      "requirement": "PUT /settings/global writes platform defaults and nothing tenant-scoped. It takes no tenant id, and a product implementing it must not derive one.",
+      "reason": "The first platform write route admitted by the rule recorded on 2026-09-16: the platform may only act in the direction that keeps data. A configuration default neither destroys nor discloses, which is what qualifies it. An organisation's settings are a different matter -- they are the snapshot that makes a customer independent of platform changes, and a console able to rewrite one would undo the point of taking it."
     },
     "no_direct_writes": {
       "requirement": "The Control Plane never writes to product business tables. Every interaction goes through these routes.",

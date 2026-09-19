@@ -342,3 +342,45 @@ def _changes(before: Mapping[str, Any], after: Mapping[str, Any]) -> list[Change
         for key, value in after.items()
         if before.get(key) != value
     ]
+
+
+async def write_global_values(
+    session: AsyncSession, values: Mapping[str, Any]
+) -> tuple[int, list[Change]]:
+    """Replace the platform's defaults, at a new version.
+
+    The only write the Control Plane makes to this schema, and the first write
+    route the platform contract admits. It reaches this table and nothing else:
+    there is no tenant parameter here or in the route above it, so an
+    organisation's own values are unreachable from the console in either
+    direction. That is the property ADR 0007 decision 6 rests on, and it is
+    structural rather than a check somebody could forget.
+
+    **Every row written in one call shares one version**, which is what makes
+    the number mean something: a tenant recording "seeded from version 4" is
+    recording one state of the defaults, not whichever rows happened to be
+    newest. The version is the previous maximum plus one, so it is monotonic
+    without a sequence to keep in step with the rows.
+
+    A change here reaches tenants created afterwards and no tenant that already
+    exists. That is the whole feature, and it is why this route can be admitted
+    at all: it cannot move a customer who is already running.
+    """
+    if not values:
+        return await global_version(session), []
+
+    before = await global_values(session)
+    version = await global_version(session) + 1
+
+    await session.execute(
+        text(
+            "insert into public.global_settings (key, value, version) "
+            "values (:key, cast(:value as jsonb), :version) "
+            "on conflict (key) do update set value = excluded.value, version = excluded.version"
+        ),
+        [
+            {"key": key, "value": as_json(value), "version": version}
+            for key, value in values.items()
+        ],
+    )
+    return version, _changes(before, values)

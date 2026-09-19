@@ -60,14 +60,30 @@ def test_every_grid_setting_the_table_reads_is_declared() -> None:
 
 
 def test_a_person_is_offered_exactly_what_a_person_may_write() -> None:
-    """Both directions.
+    """Both directions, allowing for a setting nothing honours yet.
 
-    The definition refuses one of them; nothing but this refuses the other, and
-    the other is the one that produces a preferences page missing a setting
-    somebody was told they could change.
+    The definition refuses a setting offered to a person no person may write;
+    nothing but this refuses the opposite, which produces a preferences page
+    missing something somebody was told they could change.
+
+    The exception is `surfaced=False`: a setting the product declares and no
+    code honours is shown on neither customer page, whatever its scope. Those
+    are named rather than derived, so removing `surfaced=False` from one and
+    forgetting its two translations is a failure here as well as in the
+    generator's catalogue test.
     """
+    unhonoured = {
+        "grid.allowColumnResize",
+        "grid.allowColumnReorder",
+        "grid.rememberFilters",
+        "grid.rememberSort",
+        "grid.rememberColumns",
+    }
     for setting in catalogue:
-        if setting.scope is Scope.GLOBAL_ORG_USER:
+        if setting.key in unhonoured:
+            assert not setting.user_visible, f"{setting.key} is offered and nothing honours it"
+            assert not setting.org_admin_visible, f"{setting.key} is shown and nothing honours it"
+        elif setting.scope is Scope.GLOBAL_ORG_USER:
             assert setting.user_visible, f"{setting.key} may be overridden and is never offered"
         else:
             assert not setting.user_visible, f"{setting.key} is offered and cannot be overridden"
