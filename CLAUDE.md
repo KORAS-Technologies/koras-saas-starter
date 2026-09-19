@@ -363,8 +363,14 @@ because the declared floor works. Found 2026-09-16; it belongs in
 `RISK_REGISTER.md`.
 
 **Next step:** `FOLLOW_UPS.md` opens with the order rather than leaving it to be
-re-derived. One entry is left — the F3/F2b pair, a Control Plane authorization
-decision arriving from two sides — plus the live sitting below.
+re-derived. Eight entries are ordered there as of 2026-09-19, the first being
+F27 — an independent review of the settings framework, then its manual pass.
+
+This line said "one entry is left" from 2026-09-15 until 2026-09-19, while that
+table carried seven rows. It was not a claim anything could check: the count
+lives in another file, in prose, and nothing compares the two. That is R-042
+exactly, on the file every session reads first, and it is recorded rather than
+quietly corrected because the same sentence has now been wrong twice.
 
 **2026-09-15 closed six of them.** F7 (the registration now answers what the
 registry stored, and the generator compares, which found two fields accepted and
