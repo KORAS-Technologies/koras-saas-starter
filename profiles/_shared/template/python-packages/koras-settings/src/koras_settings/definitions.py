@@ -251,6 +251,24 @@ class SettingDefinition:
                 f"setting {self.key!r} declares options but is a {self.data_type.value}"
             )
 
+        # A select with nothing to select from renders as an empty dropdown
+        # that shows no value and, because a select with no selected option
+        # submits no entry at all, cannot be changed from any page. That is
+        # what `grid.pageSize` did from the day this framework shipped until
+        # 2026-09-19 -- the one setting it was built to demonstrate, declared
+        # INTEGER with `ui=SELECT` and no options, found by the first
+        # independent review this framework had.
+        #
+        # Checked here rather than in the component, because this module's
+        # stated property is that a bad declaration is a traceback before the
+        # process starts. A control that silently does nothing is exactly the
+        # failure `surfaced` exists to prevent, arriving by a different door.
+        if self.ui is UiControl.SELECT and not self.options:
+            raise ValueError(
+                f"setting {self.key!r} is drawn as a select and offers no "
+                "options; a select with nothing in it cannot be read or changed"
+            )
+
         self._check_default_type()
         self._check_bounds()
 

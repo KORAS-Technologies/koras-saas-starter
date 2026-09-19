@@ -149,8 +149,29 @@ def test_the_catalogue_is_published_with_the_metadata_a_control_needs() -> None:
     assert page_size["label_key"] == "settings.def.grid.pageSize.label"
 
 
-def test_reading_the_catalogue_needs_the_read_permission() -> None:
+def test_a_plain_member_can_read_the_catalogue() -> None:
+    """The route needed `settings.read` until 2026-09-19, and that was total.
+
+    `ROLE_PERMISSIONS[MEMBER]` does not carry `settings.read`; this route is the
+    only source of the metadata the preferences page renders a control from;
+    and the page swallows the failure. So every plain member -- most of every
+    tenant -- opened their own preferences and was told the settings were
+    unavailable. Found by the first independent review this framework had.
+
+    What guards it is `TenantDep`: the catalogue is build metadata, identical
+    for every customer and holding nobody's values, and a resolved tenant is
+    the whole of the protection a list of setting names needs. The
+    organisation's *configuration* is a different route and still requires the
+    permission -- the case below.
+    """
     answer = _install(_Session(), MEMBER).get("/api/v1/settings/definitions")
+    assert answer.status_code == 200
+    assert any(item["key"] == "grid.pageSize" for item in answer.json())
+
+
+def test_reading_the_organisations_values_still_needs_the_read_permission() -> None:
+    """The permission did not go away; it went where the customer data is."""
+    answer = _install(_Session(), MEMBER).get("/api/v1/tenant/settings/values")
     assert answer.status_code == 403
     assert answer.json()["detail"]["code"] == "permission_missing"
 

@@ -237,7 +237,15 @@ SETTINGS: list[SettingDefinition] = [
         Scope.GLOBAL_ORG_USER,
         minimum=10,
         maximum=500,
-        ui=UiControl.SELECT,
+        # A number, not a select, and it was a select until 2026-09-19. An
+        # INTEGER has no `options`, the form's select renders `field.options`,
+        # and the result was an empty dropdown that displayed nothing and
+        # submitted nothing -- so the one setting this framework was built to
+        # demonstrate could not be changed from either page. The comment above
+        # says "with the five options below", and nothing ever read them into
+        # the control. `grid.pageSizeOptions` still decides what a *table's*
+        # own pager offers, which is where it is read.
+        ui=UiControl.NUMBER,
         order=10,
     ),
     # What the page-size control offers, which is the organisation's decision

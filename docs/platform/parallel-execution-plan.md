@@ -45,9 +45,12 @@ second one to merge rebases rather than guesses.
 
 ### Reserved ranges, re-allocated
 
-CAT-01 took `00032` from its own range. The rest stand: CAT-02 takes migrations
-`00036`-`00039` and RLS tests `320`-`340`; CAT-01 keeps `00033`-`00035` and
-`290`-`310`.
+CAT-01 took `00032` from its own range, and F27's secret-guard fix took `00033`
+out of it — a correction to shipped code needed a number and the ranges are for
+planned work. The rest stand: CAT-02 takes migrations `00036`-`00039` and RLS
+tests `320`-`340`; CAT-01 keeps `00034`-`00035` and `290`-`310`. **A fix to
+shipped code takes the next free number and says so here**, rather than waiting
+for a range.
 
 ### Why F27 is different
 

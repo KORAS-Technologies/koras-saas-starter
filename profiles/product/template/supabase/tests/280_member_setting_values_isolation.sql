@@ -165,6 +165,67 @@ begin
     when check_violation then null;
   end;
 
+  -- ── the four the guard used to let through ────────────────────────────────
+  --
+  -- Every one of these was stored by the shipped guard, which read the
+  -- top-level members of an object and nothing else. Found by the first
+  -- independent review of this framework on 2026-09-19 and fixed in `00033`.
+  -- Asserted here because a suite that only tests what the guard already
+  -- catches will keep passing while the guard is wrong -- which is exactly
+  -- what happened.
+  begin
+    insert into public.member_setting_values (tenant_id, user_id, key, value)
+    values ('00000000-0000-0000-0000-000000000001', 'user-alpha',
+            'integrations.config', '{"auth": {"token": "not-a-real-one"}}'::jsonb);
+    raise exception 'member_setting_values: a nested credential was accepted';
+  exception
+    when check_violation then null;
+  end;
+
+  begin
+    insert into public.member_setting_values (tenant_id, user_id, key, value)
+    values ('00000000-0000-0000-0000-000000000001', 'user-alpha',
+            'integrations.config', '[{"secret": "not-a-real-one"}]'::jsonb);
+    raise exception 'member_setting_values: a credential inside an array was accepted';
+  exception
+    when check_violation then null;
+  end;
+
+  begin
+    insert into public.member_setting_values (tenant_id, user_id, key, value)
+    values ('00000000-0000-0000-0000-000000000001', 'user-alpha',
+            'integrations.config',
+            '{"a": [{"b": {"apiKey": "not-a-real-one"}}]}'::jsonb);
+    raise exception 'member_setting_values: a credential three levels down was accepted';
+  exception
+    when check_violation then null;
+  end;
+
+  begin
+    insert into public.member_setting_values (tenant_id, user_id, key, value)
+    values ('00000000-0000-0000-0000-000000000001', 'user-alpha',
+            'integrations.webhookSigningKey', '"not-a-real-one"'::jsonb);
+    raise exception 'member_setting_values: a signing key was accepted';
+  exception
+    when check_violation then null;
+  end;
+
+  -- ── and the honest cases the guard must not refuse ────────────────────────
+  --
+  -- A guard that refuses ordinary values is a guard somebody turns off. The
+  -- scalar cases matter most: the deep walk raises on one, and the suppression
+  -- of that error has to read as "found nothing" rather than as "constraint
+  -- satisfied".
+  insert into public.member_setting_values (tenant_id, user_id, key, value)
+  values
+    ('00000000-0000-0000-0000-000000000001', 'user-alpha', 'grid.pageSize', '50'::jsonb),
+    ('00000000-0000-0000-0000-000000000001', 'user-alpha', 'shop.sortKey', '"name"'::jsonb),
+    ('00000000-0000-0000-0000-000000000001', 'user-alpha',
+     'files.allowedExtensions', '["pdf", "csv"]'::jsonb),
+    ('00000000-0000-0000-0000-000000000001', 'user-alpha',
+     'integrations.config', '{"endpoint": "https://example.test", "retries": 3}'::jsonb)
+  on conflict (tenant_id, user_id, key) do update set value = excluded.value;
+
   raise notice 'member setting values, secrets refused by the database: ok';
 end
 $$;

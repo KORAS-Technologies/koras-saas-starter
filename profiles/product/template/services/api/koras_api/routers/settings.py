@@ -299,22 +299,36 @@ def _as_detail(value: Any) -> str | int | bool:  # noqa: ANN401
 
 
 @router.get("/settings/definitions", response_model=list[DefinitionView])
-async def definitions(claims: AuthDep, _tenant: TenantDep) -> list[DefinitionView]:
+async def definitions(_tenant: TenantDep) -> list[DefinitionView]:
     """The catalogue, in display order.
 
-    `_tenant` is required and unused: a catalogue is the same for every customer
-    of this product, and the dependency is what makes the route reachable only
-    by somebody with a resolved tenant. Without it this would be the one
-    authenticated route any verified token could read, which is a wider door
-    than a list of setting names is worth.
+    **No permission, and it required `settings.read` until 2026-09-19.** That
+    was a defect, and a total one: `ROLE_PERMISSIONS[MEMBER]` does not carry
+    `settings.read`, this route is the only source of the metadata the
+    preferences page renders a control from, and the page swallows the failure
+    — so every plain member, which is most of every tenant, opened their own
+    preferences and was told the settings were unavailable. Found by the
+    independent review this framework had never had.
+
+    The permission was reasoned about for `/settings/effective` and for the
+    writes, and applied here by symmetry with a route it is not symmetric with.
+    **This publishes build metadata**: the same list of names, types, bounds and
+    i18n keys for every customer of this product, holding nobody's values.
+    `settings.read` guards the organisation's *configuration*, which is
+    `GET /tenant/settings/values`, and that route still requires it.
+
+    `_tenant` is required and unused: the dependency is what makes this
+    reachable only by somebody with a resolved tenant. Without it this would be
+    the one authenticated route any verified token could read, which is a wider
+    door than a list of setting names is worth — and it is the whole of the
+    protection this route needs.
 
     Deprecated definitions are left out. Rows holding one still resolve — code
     that reads it keeps working — and no surface offers it again.
 
-    System settings are left out too, whatever the caller's permission: they
-    are the platform's own and a customer has no page for them.
+    System settings are left out too, whatever the caller is: they are the
+    platform's own and a customer has no page for them.
     """
-    _require(claims, READ_PERMISSION, "reading the settings catalogue")
     return [_definition_view(setting) for setting in catalogue.offered() if not setting.system]
 
 

@@ -128,6 +128,50 @@ calls the provider.
 
 ---
 
+## Settings framework — SET
+
+The first independent review of the settings framework, 2026-09-19. Two
+reviewers, working in parallel, neither seeing the other's report. **Both
+returned BLOCK.** `docs/features/settings-framework/review.md` is the record
+and holds the detail; this carries the schedule.
+
+Four were fixed the same day and are listed there rather than here: SET-01 (a
+plain member could not use their own preferences page), SET-02 (the one setting
+the framework was built to demonstrate could not be changed), SET-03 (the
+secret guard looked one level deep and said it looked everywhere) and SET-04
+(its word list missed the commonest credential nouns).
+
+| ID | Type | Title | Severity | Status |
+|----|------|-------|----------|--------|
+| SET-05 | DEFECT | Saving one category creates a personal override for every field in it, detaching a member from their organisation's defaults for settings they never touched | High | OPEN |
+| SET-06 | DEFECT | The somebody-chose-this marker and the provisioning snapshot are incompatible as designed: every field on a new tenant reads as modified | High | OPEN |
+| SET-07 | DEFECT | The effective-settings route discloses what the tenant-values route gates behind a permission, making that permission decorative | High | OPEN |
+| SET-08 | GAP | `system` and deprecated status are enforced on display and on no write path | Medium | OPEN |
+| SET-09 | GAP | No size bound on a string, list or object value, on a route needing no permission | Medium | OPEN |
+| SET-10 | DEFECT | The audit helper commits, so a multi-key write is not atomic with its own trail | Medium | OPEN |
+| SET-11 | DEFECT | A reset announces one value and writes another when the platform row no longer validates | Medium | OPEN |
+| SET-12 | DEFECT | The global version is not monotonic and is computed read-then-write | Medium | OPEN |
+| SET-13 | DEFECT | Re-seeding pushes today's defaults into an existing tenant and leaves the provenance saying otherwise | Medium | OPEN |
+| SET-14 | GAP | The platform write route is unaudited and has no caller | Medium | OPEN |
+| SET-15 | GAP | A scope narrowed in a deploy leaves rows that can be neither used nor deleted, and nothing reports them | Medium | OPEN |
+| SET-16 | GAP | A string list has no emptiness or duplicate rule; clearing the allowed-extensions field permits nothing | Low | OPEN |
+| SET-17 | DEFECT | A refusal a docstring says is recorded is not | Low | OPEN |
+| SET-18 | GAP | Skipped values are reported as bare keys, losing which rung holds the bad one | Low | OPEN |
+| SET-19 | DEFECT | Caller-supplied strings reach the audit table on the permission-refusal path, unbounded | Low | OPEN |
+| SET-20 | GAP | The sensitive flag is honoured in one place and published nowhere, so no surface can mask a field | Low | OPEN |
+| SET-21 | DEFECT | Two load-bearing comments describe behaviour the code does not have | Low | OPEN |
+| SET-22 | TEST-GAP | No isolation suite ever tries to move a row, so all three `WITH CHECK` clauses are correct and entirely unexercised — deleting any would leave the suites green | High | OPEN |
+
+**The finding about the findings.** This is the third and fourth independent
+review this repository has commissioned and the third and fourth BLOCK. Two
+reviews of the storage and audit governance work returned BLOCK in September
+and every finding was real. Four for four is enough to plan around: **work here
+that has not been independently reviewed should be assumed to carry defects of
+this class**, and a schedule that does not budget for the review has budgeted
+for the rework instead.
+
+---
+
 ## Findings adopted from the docoris audit
 
 `docoris/docs/requirements/GAP-REGISTER.md` holds 229 rows, fifteen of them
