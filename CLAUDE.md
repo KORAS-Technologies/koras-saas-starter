@@ -60,7 +60,10 @@ All planning and reference documents live in `docs/`, matching
 | `docs/adr/0005-storage-object-hierarchy.md` | What is in an object key, and the five things deliberately left out |
 | `docs/adr/0006-backup-strategy.md` | Backup: what is settled, and the three questions that block building it |
 | `docs/features/README.md`         | The feature catalogue, and how it relates to the flat documents |
-| `docs/features/STATUS.md`         | Every SAG story, its class and its status |
+| `docs/features/STATUS.md`         | Every SAG story, its class and its status, and the settings framework's eleven phases |
+| `docs/SETTINGS_ARCHITECTURE.md`  | Settings as built: three levels, a snapshot per organisation, a catalogue declared in code |
+| `docs/SETTINGS_DEVELOPER_GUIDE.md` | How to add a setting, how to read one, and the four things that will bite |
+| `docs/adr/0007-koras-settings-framework.md` | The decision record for the settings framework, amended twice |
 
 ## Repository layout (target state)
 
@@ -292,6 +295,43 @@ question 3 rather than on a bucket. Two independent reviews ran and both
 returned BLOCK; every finding is fixed in `1b59f29` and after. `koras-e2e-shop`
 carries all of it as of `98d078e`, with migrations 00019-00025 applied to the
 dev database and both workflows green.
+
+**The settings framework shipped on 2026-09-19**, in the foundation rather than
+behind a capability, so every generated product has it. Three levels — the
+platform's default, the organisation's value, the person's preference — and no
+fourth. Definitions are declared in Python and registered at import, the way
+reports and audit actions already are; values live in three narrow key/value
+tables, `global_settings`, `tenant_setting_values` and `member_setting_values`,
+each with row-level security enabled and forced and a check constraint that
+refuses a secret-shaped key. A new organisation receives a **copy** of the
+applicable platform defaults inside the transaction that creates the tenant, and
+a later change to a default never reaches an organisation that already exists.
+`GET /settings/effective` answers everything in one request, resolved once in
+the dashboard layout, and the shared data table reads `grid.*` from there so
+that `<KorasDataTable data={records} />` works with no props. The Control Plane
+manages the platform defaults through an extended contract — it is not
+code-synced, so its half is a parallel implementation against
+`contracts/product-platform.v1.json`. `docs/SETTINGS_ARCHITECTURE.md` is the
+description.
+
+**Three things about it are worth carrying.** `general.language` replaced two
+columns that stored the same fact twice, and doing so produced a rule now in ADR
+0007: a setting whose absence means "infer it from context" must express that
+inference as one of its values, or the snapshot silently ends the inference —
+hence the `auto` value. Five `grid.*` settings ship registered but not drawn,
+marked `surfaced=False`, because the shared table does not honour them yet; a
+control that changes nothing is worse than one that is not offered. And the
+generated product has no page using the shared table, so the page that makes
+`grid.pageSize` observable lives in `koras-e2e-shop` and is that repository's
+own work rather than a sync.
+
+**What it has not had: a manual pass or an independent review.**
+`docs/features/settings-framework/manual-test-plan.md` has fifteen cases and
+fifteen blank verdicts as of 2026-09-19, and the first of them — change a page
+size, watch a table repaginate — is the thing the feature exists for and the one
+no automated test in this estate reaches. The e2e harness starts the web
+application alone, so its sixteen browser checks cover routing, refusal and
+degraded rendering and nothing that needs an API.
 
 **The two capabilities are declared.** `audit_governance` and
 `storage_governance`, both on by default, and what they gate is the *surface*

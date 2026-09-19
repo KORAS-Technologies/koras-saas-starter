@@ -1,7 +1,13 @@
-# Storage & Audit Governance — status
+# Feature status
 
-Planner tracking for both features. Status vocabulary is
-`docs/features/README.md`. Last reviewed 2026-09-16.
+Planner tracking for every feature in the catalogue. Status vocabulary is
+`docs/features/README.md`. Last reviewed 2026-09-19.
+
+It covered only Storage & Audit Governance until 2026-09-19, which is why the
+SAG sections carry story identifiers and the settings section does not: that
+work was run as eleven phases against a written brief rather than decomposed
+into stories, and inventing story numbers for it after the fact would make the
+two halves of this file look more alike than they are.
 
 ## SAG-F1 — Storage Architecture & Data Protection
 
@@ -85,6 +91,59 @@ Planner tracking for both features. Status vocabulary is
 **Neither feature is Done, and neither is close to it.** The gap is not code; it
 is that nothing independent has reviewed the code, and nobody has run the
 software against a real environment and written down what happened.
+
+## Settings & Preferences Framework
+
+Feature directory `docs/features/settings-framework/`. As built:
+`docs/SETTINGS_ARCHITECTURE.md`. Decision record
+`docs/adr/0007-koras-settings-framework.md`.
+
+| Phase | What it delivered | Status |
+|-------|-------------------|--------|
+| 1 | Audit, architecture, implementation plan, ADR | Built |
+| 2 | `koras-settings` — definitions, registry, coercion, resolver | Built |
+| 3 | Three tables, the snapshot, three isolation suites | Built |
+| 4 | The catalogue: 32 definitions in seven categories | Built |
+| 5 | The store and the eight product routes | Built |
+| 6 | The provider, the form, the field renderers | Built |
+| 7 | The two customer pages, i18n in three languages | Built |
+| 8 | The Control Plane's half, against an extended contract | Built |
+| 9 | The shop: the sync, and a page with enough rows to page | Built |
+| 10 | Verification across all three repositories | Built |
+| 11 | As-built documentation, sync matrix, manual test plan | Built |
+
+**Status: Part built, not Done.** Every phase shipped and every automated check
+passes. It is not `Done`, and the two reasons are worth naming rather than
+leaving in a table:
+
+1. **No manual pass has been run.** `manual-test-plan.md` has fifteen cases and
+   fifteen blank verdicts as of 2026-09-19. A blank verdict is not a pass.
+2. **No independent review.** Eleven phases across three repositories,
+   including three new tables with row-level security, a check constraint that
+   refuses secrets, and a platform write route that needed an ADR to justify
+   its direction — none of it has had eyes other than the ones that wrote it.
+
+### Five settings that resolve and do nothing
+
+`grid.allowColumnResize`, `grid.allowColumnReorder`, `grid.rememberFilters`,
+`grid.rememberSort` and `grid.rememberColumns` are registered, resolvable,
+scoped, audited and **not drawn on any page**, because the shared table does not
+honour them. They are in the brief's catalogue, so they are in the registry;
+they are marked `surfaced=False` so that nobody is offered a control that
+changes nothing.
+
+That is a deliberate half-measure and it is the largest outstanding piece of
+this feature. Either the table learns to honour them or they leave the
+catalogue; leaving them registered and invisible indefinitely is how a catalogue
+stops describing the product.
+
+### What has no automated proof
+
+The round trip. Changing a setting and watching a table repaginate needs an API,
+a database and rows; the e2e harness starts the web application alone. Sixteen
+browser checks cover routing, refusal and degraded rendering at 1440 and 375,
+and none of them covers the thing the feature is for. That is case TEST-SET-01
+in the manual plan, and it is first for that reason.
 
 ## Recommended order
 

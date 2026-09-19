@@ -54,6 +54,30 @@ The decision record for both halves is
 `docs/adr/0006-backup-strategy.md` carrying the detail of three of its
 decisions.
 
+### Settings & Preferences Framework
+
+Three levels — platform default, organisation, person — resolved once per
+request and read by shared components rather than fetched page by page.
+
+| Feature | Directory | Status as of 2026-09-19 |
+|---------|-----------|-------------------------|
+| Settings & Preferences Framework | `docs/features/settings-framework/` | Part built |
+
+`Part built` here does not mean half the stories shipped. Every phase shipped
+and every automated check passes; it is not `Done` because no manual pass and no
+independent review have been run, and because five `grid.*` settings are
+registered that nothing honours. `docs/features/STATUS.md` names both.
+
+The decision record is `docs/adr/0007-koras-settings-framework.md`, amended
+twice. The as-built description is `docs/SETTINGS_ARCHITECTURE.md` and the
+day-to-day is `docs/SETTINGS_DEVELOPER_GUIDE.md`.
+
+**This directory holds the design documents as they were written, before the
+work, and they are not edited to match what was built.** A design document
+revised after the fact stops being a record of what was decided. Where it and
+the as-built document disagree — the value tables were renamed, for one — the
+as-built one is right.
+
 ## Status vocabulary
 
 The starter has no prior status convention for features, so this one is
@@ -69,7 +93,7 @@ declared here rather than assumed:
 | Done | Built, plus the Definition of Done satisfied — reviews, evidence, acceptance |
 
 **Nothing here is `Done`.** No security review, privacy review or manual test
-pass has been executed against any of this work as of 2026-09-16, and the
+pass has been executed against any of this work as of 2026-09-19, and the
 Definition of Done in
 `profiles/product/template/.claude/orchestration/definition-of-done.md` is
 explicit that a feature is not done while any applicable condition is unmet.

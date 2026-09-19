@@ -266,10 +266,19 @@ and then never do, and two places storing one fact is how they disagree.
 ## What has no automated proof
 
 The e2e suite starts the web application and nothing else — no API, no database.
-It proves that both addresses exist, that a stranger is turned away, that a
-member with no role reaches My preferences, that a member without
-`settings.manage` is told so, and that a page whose catalogue cannot be read
-says so rather than falling over.
+Sixteen checks run at 1440 and 375, and they prove that both addresses exist,
+that a stranger is sent to sign in, that the least-privileged member reaches My
+preferences *and is refused the organisation's settings*, that a caller with
+`settings.read` and not `settings.manage` is told so before filling anything in,
+that an administrator is not told that, and that a page whose catalogue cannot
+be read says so rather than falling over.
+
+Writing them corrected two things this document would otherwise have claimed.
+Both refusals come from the **middleware**, as a 403 before the route runs,
+rather than from the `AccessDenied` component. And a session with no roles at
+all is refused the application entirely — `member` is the least-privileged
+caller who exists, and "My preferences needs no permission" means no *settings*
+permission, not no role.
 
 It does not prove the round trip. Changing `grid.pageSize` and watching a table
 repaginate needs an API, a database and rows; stubbing them would prove the

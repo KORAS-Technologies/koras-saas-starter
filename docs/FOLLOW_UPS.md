@@ -2269,6 +2269,50 @@ the work. Both reviewers returned BLOCK; everything they found is fixed and in
       governance contract. What it loses is search, export, the holds routes,
       the Audit page and the three sweeps.
 
+### F27 — the settings framework: what the first settings layer leaves out
+
+Opened 2026-09-19, the day the eleven phases finished. Nothing here is a
+defect; each is a decision taken deliberately, with the reason.
+
+- [ ] **Five settings that resolve and do nothing.** `grid.allowColumnResize`,
+      `grid.allowColumnReorder`, `grid.rememberFilters`, `grid.rememberSort`
+      and `grid.rememberColumns` are in the brief's catalogue, so they are
+      registered, scoped, resolvable and audited — and marked `surfaced=False`,
+      because the shared table does not honour any of them. A control a person
+      can change that changes nothing costs them the time to find out. The
+      resolution is one of two things and not a third: the table learns them,
+      or they leave the catalogue. Leaving them registered and invisible is how
+      a catalogue stops describing the product.
+- [ ] **No page in a generated product uses the shared table.** The grid
+      integration is the feature's most visible claim and the template has no
+      list long enough to page. The page that makes `grid.pageSize` observable
+      is in `koras-e2e-shop`, and it is that repository's own work. Until a
+      template page uses it, a freshly generated product ships a settings
+      surface whose largest category changes nothing a customer would see.
+- [ ] **The round trip has no automated proof.** `playwright.config.ts` starts
+      the web application and nothing else, so the sixteen browser checks in
+      `e2e/settings.spec.ts` cover routing, refusal and degraded rendering, and
+      cannot cover a save. Stubbing an API would prove the stub. Closing this
+      means a harness that runs the API and a database against a generated
+      product, which is a piece of infrastructure rather than a test, and it
+      would pay for more than this feature.
+- [ ] **No manual pass, no independent review.**
+      `docs/features/settings-framework/manual-test-plan.md` has fifteen cases
+      and fifteen blank verdicts. Three new tables with row-level security, a
+      check constraint that refuses secrets, and a platform write route that
+      needed an ADR to justify its direction have had no eyes but the ones that
+      wrote them. This is the same gap SAG-F2 carries, and for the same reason.
+- [ ] **Bulk import and export of settings.** The brief does not ask for it and
+      nothing needs it yet. It is recorded because it is the first thing anybody
+      asks for once a second product exists and somebody wants its defaults to
+      match the first's.
+- [ ] **No way to move existing organisations onto a new default.** By design —
+      the snapshot is the requirement, and "we changed the default and nothing
+      happened" is the correct outcome. But there is no deliberate act either:
+      if a platform default turns out to be wrong for everybody, the only route
+      today is a hand-written update per tenant. What it needs is a decision
+      about who may do it and what it records, not a script.
+
 ### F23 — the sign-in page, on a host of ours — opened 2026-09-09, built 2026-09-11 as the product's own page
 
 The one customer surface still drawn by ZITADEL is the sign-in page: ZITADEL
