@@ -6,6 +6,60 @@
 | **Written** | 2026-09-19. |
 | **Rests on** | `docs/platform/feature-dependency-map.md` for the edges; this document turns them into a schedule. |
 
+## The second wave, from 2026-09-19
+
+The first wave is built: PLAT-F1, CAT-01 Phases 0 and 1, CAT-03 Phases 0 and 1.
+The table below is the original plan and is kept because its reasoning still
+holds; this section is what the next three actually collide over.
+
+| Work | Verdict | Why |
+|---|---|---|
+| **CAT-02 Phases 0-1 — data import** | **START NOW** | Unblocked the moment PLAT-F1 landed |
+| **CAT-01 Phase 2 — channels and templates** | **SAFE TO PARALLELIZE** with CAT-02, under one rule | They meet in two files and nowhere else |
+| **F27 — the settings framework reviewed** | **PARALLEL AS A REVIEW; its fixes are not** | A review reads. What it finds wants to be fixed in a file CAT-01 Phase 2 is editing |
+| **CAT-03 Phase 2 — the provisioner** | **PERFECTLY PARALLEL, and deferred anyway** | A different repository and not one shared file — but its value is capped until F21 activates the account |
+
+### Where CAT-02 Phase 1 and CAT-01 Phase 2 actually meet
+
+Two files, and they were both already named in the ownership map below:
+
+- **`profiles/product/manifest.yaml`.** CAT-02 declares a new capability and its
+  path list; CAT-01 Phase 2 extends the notification capability's list with the
+  template registry. One hand applies both blocks, as the map says.
+- **`packages/i18n/src/messages/{en,de,es}.ts`.** Both append. Append-only in
+  three files in lockstep is low conflict risk and high breakage risk if one
+  language is forgotten, which a generator test already catches.
+
+**And two collisions that look real and are not.** CAT-02 does *not* touch
+`settings_catalogue/standard.py`: the three `files.*` settings are already
+surfaced, and what is wrong with them is that nothing enforces them — the fix is
+in the presign route, not the catalogue. And CAT-02 does not wait for CAT-01's
+channel seam, because the emitter contract it consumes shipped in Phase 0 with a
+no-op default.
+
+**The one to watch is the generator's settings test.** `product-settings.test.ts`
+asserts exact counts of surfaced and unsurfaced settings, and CAT-01 Phase 2
+changes both when it re-surfaces `notifications.emailEnabled`. That file has
+already been edited twice for counts in one day. If both streams touch it, the
+second one to merge rebases rather than guesses.
+
+### Reserved ranges, re-allocated
+
+CAT-01 took `00032` from its own range. The rest stand: CAT-02 takes migrations
+`00036`-`00039` and RLS tests `320`-`340`; CAT-01 keeps `00033`-`00035` and
+`290`-`310`.
+
+### Why F27 is different
+
+It is not a code stream. Its first half is a review, which reads and reports and
+collides with nothing. Its second half is fifteen manual cases against a running
+stack, which is a person at a browser rather than an agent — so it competes for
+*your* time rather than for any file. Run the review alongside the other two and
+hold its fixes until one of them lands, or take the review's findings as a third
+stream once they exist.
+
+---
+
 ## Verdict per category
 
 | Work | Verdict | Why |
@@ -58,7 +112,7 @@ another category asks rather than edits.
 | `profiles/product/defaults.yaml` | **Platform** | Yes | Same rule |
 | `supabase/migrations/` numbering | **Platform** | Yes | **Reserved ranges, allocated once:** CAT-01 takes `00032`–`00035`, CAT-02 takes `00036`–`00039`, PLAT-F1 takes none. A category that needs a fifth asks rather than taking `00040` |
 | `supabase/tests/` numbering | **Platform** | Yes | CAT-01 takes `290`–`310`, CAT-02 takes `320`–`340` |
-| `services/worker/koras_worker/worker.py.hbs` | **PLAT-F1** | Yes | Nobody else edits it. That is the whole point of the task registry: a product, and a category, adds work without touching the generated file |
+| `services/worker/koras_worker/worker.py.hbs` | **Platform** | Yes | **No *product* edits it** — that is what the task registry is for, and a product that edited it would carry a conflict into every sync. A *category* may: a starter-owned task has to be bound somewhere, and CAT-01 added a cron there on 2026-09-19. Amended because the original row read as absolute and would have told CAT-02 it was blocked when it is not |
 | `services/worker/koras_worker/tasks/product.py` | **PLAT-F1** | Yes | PLAT-F1 adds the task list beside the cron list; categories append to it |
 | `packages/permissions/src/index.ts` + the Python mirror | **Platform** | Yes | One string per category, applied together. A generator test fails if the two languages drift, so a half-applied change is caught |
 | `packages/branding/src/index.ts.hbs` navigation registry | **CAT-01**, then CAT-02 | Yes | CAT-01 adds the notification centre module in P1; CAT-02 adds the import module in P1. Sequence them a day apart, or hand both literals to one owner |
