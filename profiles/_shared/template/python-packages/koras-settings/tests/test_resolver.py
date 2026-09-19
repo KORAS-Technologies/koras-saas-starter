@@ -19,7 +19,7 @@ from koras_settings import (
     build_catalogue,
     resolve_all,
 )
-from support import setting
+from settings_support import setting
 
 CATALOGUE = build_catalogue([setting()])
 NOTHING: Mapping[str, object] = {}

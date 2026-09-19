@@ -1,5 +1,13 @@
 """One builder, so a test says only what it is about.
 
+**Named for its package, not `support`.** Every `python-packages/*/tests/`
+directory is on the path as a top-level module, with no `__init__.py`, so two
+packages each carrying a `support.py` are two modules with one name -- and
+`mypy` refuses the pair rather than choosing. `koras-ai` got there first;
+`tests/unit/reporting_support.py` in the product already follows the same rule.
+Found by CI on 2026-09-17, which is the only place it shows: a single package's
+suite runs perfectly well on its own.
+
 Every suite here needs a definition and almost none of them care what it says.
 A factory with overrides means a test about enum options names options and
 nothing else, which is what makes the failure message useful when one breaks.

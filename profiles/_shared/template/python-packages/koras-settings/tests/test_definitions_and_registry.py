@@ -11,7 +11,7 @@ from koras_settings import (
     Status,
     build_catalogue,
 )
-from support import setting
+from settings_support import setting
 
 
 def test_a_duplicate_key_is_refused() -> None:

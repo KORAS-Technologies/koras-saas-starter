@@ -14,7 +14,7 @@ from koras_settings import (
     coerce,
     valid,
 )
-from support import setting
+from settings_support import setting
 
 
 def test_an_integer_within_its_bounds_is_kept() -> None:
