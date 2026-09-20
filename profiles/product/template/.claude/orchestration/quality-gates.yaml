@@ -330,3 +330,12 @@ rules:
   - A mode trims which agents are planned for. It never trims which gates must be satisfied.
   - A gate whose owner the mode did not staff is closed by invoking that owner, unless the gate declares the mode in `owner_optional_in`.
   - An owner-optional closure carries every field in `owner_optional_closure.evidence_required`, or the gate is incomplete rather than passed.
+  # Protective guards only -- an invariant, a security property, capability
+  # isolation, policy enforcement, or a regression guard for a defect that once
+  # escaped. Ordinary unit tests are exempt: the cost is only worth paying where
+  # a silent pass is mistaken for a proof. The estate has shipped four guards
+  # that could not fail -- a decode fallback behind a codec that cannot raise, a
+  # regex holding a control byte, a capability assertion that named one package,
+  # and a boundary check whose own slice moved ahead of what it looked for. All
+  # four passed every run they ever had.
+  - A new or materially changed protective guard is shown to fail against at least one deliberate counter-example before its passing run counts as evidence. A guard that has only ever answered "nothing wrong here" has not yet been shown to be able to answer anything else.

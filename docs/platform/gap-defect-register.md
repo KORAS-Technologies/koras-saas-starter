@@ -30,6 +30,14 @@
 45 rows as of 2026-09-19. By type: 31 GAP, 12 DEF, 2 DEBT. By severity:
 4 Critical, 16 High, 18 Medium, 7 Low.
 
+**102 rows as of 2026-09-20**, the audit's 45 plus what four independent
+reviews, one settings framework, one round-trip harness and the first real
+lifecycle run of the engineering framework have added since. The figure above
+is kept because it describes the audit that opened this file; this one
+describes the file. Both are dated, because a count in prose is the thing
+R-042 exists to catch and this register has a section on exactly that
+(PLAT-DEF-010).
+
 The four Critical rows are PLAT-GAP-001, PLAT-DEF-001, BILL-DEF-001 and
 BILL-GAP-002. Only the first blocks a category from starting.
 
@@ -122,6 +130,7 @@ rows is one nobody can audit.
 | IMP-06 | GAP | `ImportTarget.permission` was enforced on `POST /imports` alone. `GET /imports/{id}/analysis` answers a preview of the customer's rows and did not check it. | Medium | Read 2026-09-19. | Fixed: every route that resolves a target checks it. | CAT-02 P1 | **CLOSED** |
 | IMP-07 | GAP | Three small ones carried: `suggest()` shadows fields that normalise alike; a duplicate-row error puts a row number under a column headed "Value"; `sniff_delimiter` split the whole text twice. The third is fixed, the first two are open. | Low | `docs/features/data-import/review.md` IMP-07. | The first with the next target that needs it; the second needs a row error that carries a parameter. | CAT-02 P2 | OPEN |
 | IMPORT-DEF-001 | DEFECT | The three file settings — maximum upload size, allowed extensions and files per upload — are drawn on the settings page and enforced by nothing; the upload route applies a hardcoded 5 GiB ceiling. | Critical | Instance of PLAT-DEF-001, verified 2026-09-19. | Phase 1 enforces all three at the presign route, which is where a ceiling can still refuse cheaply. | CAT-02 P1 | **PART CLOSED 2026-09-19** — `files.maxUploadSizeMb` and `files.allowedExtensions` are resolved in `core/storage.py:upload_limits` and enforced at the ticket, answering `upload_refused_by_policy`. `files.maxFilesPerUpload` is **not** enforced: the route issues one ticket per call and has no notion of a batch, so the setting is now `surfaced=False` rather than drawn and ignored. |
+| PLAT-DEF-010 | DEFECT | **Systemic — protective guards that are structurally incapable of failing.** Four separate instances, in four features, by four different mechanisms. Each was written to prove an invariant, each passed every run it ever had, and none of them could have reported anything else. | High | Four instances, each verified by making the guarded thing wrong and watching the guard stay green. **IMP-03**: `latin-1` sits inside `ENCODINGS` and maps all 256 byte values, so the decode fallback was unreachable and `replaced` was structurally always `False`; its unit test was a disjunction over that flag. **`product-import.test.ts:282`**: a literal `0x08` byte where `\b` was meant, giving `/^\s+raise\x08/m` — a pattern no Python file can match, so the "the notice must not re-raise" assertion never read the template. **`generation.test.ts:484`**: `not.toContain('koras_api')` asserted reporting was the only reason the worker image sees API code, which stopped being true when the outbox landed — it then failed on a correct Dockerfile, having until then only ever passed. **`product-roundtrip.test.ts`**: the first attempt at the round-trip boundary guard sliced to the first `...(ROUND_TRIP`, which is the defect itself — so reintroducing the defect moved the boundary ahead of what was being looked for and the guard passed. Found only because it was mutation-tested. | **Mitigated 2026-09-20, by rule rather than by fixing four files.** Each instance is fixed in its own row or commit; what closes the class is that `quality-gates.yaml` `rules` now requires a new or materially changed protective guard to be shown failing against a deliberate counter-example before its passing run counts as evidence, scoped to invariants, security properties, capability isolation, policy enforcement and regression guards — explicitly not to ordinary unit tests, where the cost is not worth paying. The fourth instance is the argument: a guard written *by* someone who had just spent a day on this class still could not fail, and only the counter-example found it. | — | FIXED |
 
 ---
 
@@ -191,6 +200,31 @@ and every finding was real. Four for four is enough to plan around: **work here
 that has not been independently reviewed should be assumed to carry defects of
 this class**, and a schedule that does not budget for the review has budgeted
 for the rework instead.
+
+---
+
+## Engineering framework — FW
+
+The first real lifecycle run of the V2.1 framework in a generated product,
+G7 R1 on 2026-09-20, and the generator-validation gap the same week's work
+exposed. `docs/features/engineering-framework/README.md` holds the narrative
+and the reasoning; this carries the schedule, because a finding that lives
+only in prose is one nothing can be held to.
+
+Nothing here was a wrong rule. Four of the five were a question the framework
+had never written down, which an agent then answered by judgement — correctly
+each time, and invisibly each time. A judgement nobody can see is
+indistinguishable from a skipped step, which is why each became a rule rather
+than a note.
+
+| ID | Type | Title | Severity | Evidence | Resolution | Phase | Status |
+|----|------|-------|----------|----------|------------|-------|--------|
+| FW-GAP-001 | GAP | A gate whose owner the execution mode does not staff had no declared way to close. FAST staffs neither `business-analyst` nor `solution-architect`, and `requirements_ready` and `architecture_ready` both apply `always`. | High | G7 R1, 2026-09-20. The Orchestrator resolved both gates correctly and left no record of having done so. | **Fixed 2026-09-20.** `owner_optional_in` declares the exception per gate and `owner_optional_closure` demands the seven fields that make a closure arguable. An agent set was never a way to switch a gate off, and `rules` now says so where a reader of either file meets it. | G7 R1 | FIXED |
+| FW-GAP-002 | GAP | The strongest proof of a change was its least governed artefact. A before-and-after console capture carried the whole claim, and nothing required it to be declared, retained, or looked at by anyone other than its author. | High | G7 R1, 2026-09-20. | **Fixed 2026-09-20.** `primary_evidence` names the artefact in the plan *before* the validating action, retains it under the existing `evidence_runs` policy, and requires a verifier who did not produce it — reading the capture, not necessarily re-running the scenario. | G7 R1 | FIXED |
+| FW-GAP-003 | GAP | Telemetry could be written before the event it described. A final count was recorded ahead of the thing it counted, with no mechanism distinguishing a measurement from a plan. | Medium | G7 R1, 2026-09-20. Not fabricated — the plan was stored where the history goes, which is the point: nothing separated the two. | **Fixed 2026-09-20.** Telemetry is an append-only event log, a correction is an amendment rather than an edit, and the summary is derived after the last applicable event. `UNKNOWN` is a value; `0` is a measurement. | G7 R1 | FIXED |
+| FW-DEF-001 | DEFECT | A long-lived Claude Code session listed 25 of the 40 agents; a fresh process listed all 40 from the same commit with no file changed. Agent discoverability degrades within a session. | Medium | G7 R1, 2026-09-20. Reproduced by restarting: the same commit, the same files, a different answer. | **Not ours to fix, and not fixed.** This is runtime behaviour of the tool, outside this repository; nothing here changed it and no claim is made that it did. The framework's own gap — that it said nothing about what to do — is FW-GAP-004. | — | OPEN |
+| FW-GAP-004 | GAP | The framework had no rule for an agent that is present at one moment and absent at the next, so a shortfall looked like a catalogue defect rather than a session one. | Medium | The mitigation half of FW-DEF-001, recorded separately so that fixing our gap is not mistaken for fixing the runtime. | **Fixed 2026-09-20.** `runtime_discovery` says to check the agents a plan needs before a lifecycle, classify a shortfall as session health, and restart rather than reorganise — because flattening the category directories would have "fixed" it and broken the catalogue. The canonical count was 40 before G7 and is 40 after it. | G7 R1 | FIXED |
+| FW-GAP-005 | GAP | Nothing parsed the TypeScript the generator emits. Every template test reads the file as text, and text is happy to contain a well-spelled fragment that no parser would accept. | High | The product's root layout rendered as `return (` followed by a JSX comment and then `<html>` — three syntax errors — while every string assertion about that file went on passing. Found during the hydration work, 2026-09-20. | **Fixed 2026-09-20.** `generators/create-koras-app/tests/rendered-typescript.test.ts` generates both profiles and parses every emitted `.ts` and `.tsx` with TypeScript's own parser, reporting file, line and diagnostic. Syntax only: a build already owns typechecking, and this catches what a build never reaches — a generated file no entry point imports. 240 files in about a second. | — | FIXED |
 
 ---
 
