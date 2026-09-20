@@ -22,9 +22,29 @@
 -- the quota without any of that being restated here — which is the whole
 -- argument for not giving imports their own bucket.
 --
--- `on delete restrict` rather than cascade: a file under an import run is
--- evidence of where rows came from, and deleting it should be refused while a
--- run still points at it rather than silently removing the run's own history.
+-- `on delete set null` rather than restrict, and the difference is a critical
+-- defect this table shipped with for a few hours on 2026-09-19.
+--
+-- It was `restrict`, on the reasoning that a source file is evidence of where
+-- rows came from. That confuses two things. A run's provenance is its columns,
+-- its mapping, its counts, its operation and who asked -- all of it on this
+-- row, none of it in the file. The bytes are the customer's own file and are
+-- subject to the same retention as anything else they uploaded; `restrict`
+-- made an import a way to make a file immortal, which is the opposite of what
+-- a retention floor is for.
+--
+-- And it did worse than that. This was the only foreign key onto
+-- `public.files` in the schema, so the object-retention sweep had never met a
+-- refusal and did not handle one: it marked the row `purged`, deleted the
+-- bytes from the bucket, then raised on the row delete and aborted -- leaving
+-- the object gone, the run pointing at it, and every later file that night
+-- unpurged. The next run picked the same row up first and raised again, so
+-- retention stopped for the whole product, permanently and silently.
+-- IMP-01 in `docs/features/data-import/review.md`.
+--
+-- Null is a state the code already had a sentence for: `source_bytes` raises
+-- `import.source.missing` and the page says "the file this import was started
+-- against is gone", in three languages.
 --
 -- ── Row errors are a table, not a column ─────────────────────────────────────
 --
@@ -44,7 +64,9 @@ create table public.import_runs (
   target         text not null,
   format         text not null default 'csv',
 
-  source_file_id uuid not null references public.files(id) on delete restrict,
+  -- Null once the file has been purged by retention. The run survives it: what
+  -- it remembers about the import is on this row, not in the bytes.
+  source_file_id uuid references public.files(id) on delete set null,
 
   -- What the reader worked out about the file, kept so a second look at the run
   -- does not have to read the file again to explain itself.

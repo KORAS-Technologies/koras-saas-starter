@@ -21,4 +21,9 @@ export interface DataTableLabels {
   next: string
   showing: (from: number, to: number, total: number) => string
   page: (page: number, pages: number) => string
+  /** Names one header's move control, e.g. "Move Amount left". A column's name
+   *  is in the label because "Move left" repeated across nine headers is nine
+   *  identical controls to a screen reader. */
+  moveColumnLeft: (column: string) => string
+  moveColumnRight: (column: string) => string
 }

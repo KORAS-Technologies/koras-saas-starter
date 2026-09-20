@@ -73,18 +73,23 @@ def test_a_person_is_offered_exactly_what_a_person_may_write() -> None:
     generator's catalogue test.
     """
     unhonoured = {
-        "grid.allowColumnResize",
-        "grid.allowColumnReorder",
+        # Two of the original five. The shared table learned column resizing,
+        # reordering and remembering an arrangement on 2026-09-19, so three of
+        # them left this set; these two stay, with a sharper reason than "the
+        # table does not honour them". The table has no filter and no sort, so
+        # they describe persistence of state it does not own -- a surface above
+        # it does. They leave when it grows sorting and filtering, or they
+        # leave the catalogue.
         "grid.rememberFilters",
         "grid.rememberSort",
-        "grid.rememberColumns",
         # Added 2026-09-19 with the notification feed. All three
         # `notifications.*` settings were offered and honoured by nothing from
         # the day the framework shipped -- a customer could switch off
-        # notification emails and still receive them. `inAppEnabled` is
-        # honoured now; these two wait for the channel seam and the digest job,
-        # and until then they are not offered.
-        "notifications.emailEnabled",
+        # notification emails and still receive them. `inAppEnabled` was
+        # honoured first; `emailEnabled` is honoured since CAT-01 Phase 2 moved
+        # the one mail a product sends onto the dispatch point, and left this
+        # set on 2026-09-19. The digest waits for an outbox to accumulate into,
+        # which is Phase 3.
         "notifications.digestFrequency",
         # Added 2026-09-19 with data import, which enforced the other two
         # file settings at the presign route and found this one has no

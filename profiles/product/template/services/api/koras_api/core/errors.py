@@ -79,6 +79,7 @@ class ApiErrorCode(StrEnum):
     IMPORT_OPERATION_REFUSED = "import_operation_refused"
     IMPORT_NOT_TRANSITIONABLE = "import_not_transitionable"
     IMPORT_QUEUE_UNAVAILABLE = "import_queue_unavailable"
+    IMPORT_FILE_TOO_LARGE = "import_file_too_large"
     # notifications
     NOTIFICATION_NOT_FOUND = "notification_not_found"
     # settings

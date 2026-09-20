@@ -23,14 +23,20 @@ SMTP to whichever provider the environment's SMTP_* settings name, and
 recorded rather than sent when no host is set -- so a product without a
 provider still runs and the log says what it would have sent.
 
-In which language: the one the request was made in, which the API learns
-from `Accept-Language` (`core/locale.py`). The approvers are other people,
-and what *they* read is not known to a product yet -- a member's stored
-preference and a tenant default are F20's other half -- so the requester's
-language stands in for the organization's until it is. What is translated
-is the notice's own sentences; the description of each action ("Delete the
-file X") is composed by `summarize` in English, because a per-tool catalogue
-is the assistant's to grow (FOLLOW_UPS F24).
+In which language: **each approver's own**, since CAT-01 Phase 2 on
+2026-09-19. `core/dispatch.py` reads a member's stored `general.language` and
+renders the template once per language; the request's own locale is the
+fallback for somebody whose stored preference the product does not hold. It
+used to be the requester's language for everybody, which meant writing to
+every approver in the language of the one person the notice is never sent to.
+What is translated is the notice's own sentences; the description of each
+action ("Delete the file X") is composed by `summarize` in English, because a
+per-tool catalogue is the assistant's to grow (FOLLOW_UPS F24).
+
+What this module is now: **the words, and nothing else.** It composes and it
+declares who may approve; it does not resolve recipients, write a row or send
+a mail. Those left for `core/recipients.py` and `core/dispatch.py` so that the
+second producer does not copy what the first one did.
 """
 
 from __future__ import annotations
@@ -43,18 +49,17 @@ from datetime import UTC, datetime
 from typing import Any
 
 from koras_ai import ActionStatus, ProposedAction
-from koras_auth.permissions import permissions_for
 from koras_email import DEFAULT_LOCALE, EmailSender, Locale, sender_for, translate
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import platform
-from .notifications import NotificationKind, kinds, notify
+from .dispatch import Rendered, Template
+from .notifications import NotificationKind, kinds
+from .recipients import Audience
 from .settings import settings
 
 logger = logging.getLogger(__name__)
 
-_OWNER_EMAIL = text("select owner_email from public.tenants where id = :tenant_id")
 
 #: The one notification kind the starter ships a producer for.
 #:
@@ -72,10 +77,6 @@ APPROVAL_REQUESTED = NotificationKind(
     default_severity="warning",
 )
 kinds.add(APPROVAL_REQUESTED)
-
-_APPROVER_SUBJECTS = text(
-    "select user_id, role from public.tenant_members where tenant_id = :tenant_id"
-)
 
 _FILE_BY_ID = text(
     "select name, size_bytes, ready_at from public.files "
@@ -138,122 +139,64 @@ def awaiting(actions: Sequence[ProposedAction]) -> list[ProposedAction]:
     return [a for a in actions if a.status is ActionStatus.AWAITING_APPROVAL]
 
 
-def approvers_from_members(members: object) -> list[str]:
-    """Active members whose role may approve, from the platform's member list."""
-    if not isinstance(members, list):
-        return []
-    found: list[str] = []
-    for member in members:
-        if not isinstance(member, dict):
-            continue
-        email = member.get("email")
-        role = member.get("role")
-        status = member.get("status", "active")
-        if not (isinstance(email, str) and email and isinstance(role, str)):
-            continue
-        if status != "active":
-            continue
-        if "ai.approve" in permissions_for([role]):
-            found.append(email.strip().lower())
-    return found
+#: Who may decide an assistant action, as a rule rather than a query.
+#:
+#: **One declaration, used by both channels.** This was two functions —
+#: `approvers` for the inbox and `approver_subjects` for the feed — each with
+#: `ai.approve` written into it, and a second producer would have copied both.
+#: `core/recipients.py` resolves the rule now and knows how the two halves
+#: differ. NOTIF-GAP-004.
+APPROVAL_AUDIENCE = Audience(permission="ai.approve", include_owner=True)
 
 
-async def approvers(
-    session: AsyncSession | None, *, tenant_id: str, organization_id: str, token: str
-) -> list[str]:
-    """Every address to tell, the owner first, each once."""
-    addresses: list[str] = []
-    if session is not None:
-        owner = (await session.execute(_OWNER_EMAIL, {"tenant_id": tenant_id})).scalar_one_or_none()
-        if isinstance(owner, str) and owner.strip():
-            addresses.append(owner.strip().lower())
-    if platform.configured() and token:
-        answer = await platform.read_portal(
-            "/api/portal/v1/members", organization_id=organization_id, token=token
-        )
-        body: Any = answer.body if answer is not None else None
-        addresses.extend(approvers_from_members(body))
-    seen: set[str] = set()
-    unique: list[str] = []
-    for address in addresses:
-        if address not in seen:
-            seen.add(address)
-            unique.append(address)
-    return unique
-
-
-async def approver_subjects(session: AsyncSession, *, tenant_id: str) -> list[str]:
-    """Who to put a notification in front of, as subjects rather than addresses.
-
-    Deliberately a different source from `approvers` above, and the difference
-    is the point. A mail goes to an *address*, which the platform holds and
-    which may belong to somebody who has never signed in. A notification goes
-    to a *person who can open the product*, which is a row in
-    `tenant_members` — so the in-app half needs no platform call, works when
-    the Control Plane is unreachable, and cannot address somebody with no way
-    to read it.
-    """
-    result = await session.execute(_APPROVER_SUBJECTS, {"tenant_id": tenant_id})
-    return [
-        str(row.user_id)
-        for row in result
-        if isinstance(row.role, str) and "ai.approve" in permissions_for([row.role])
-    ]
-
-
-async def announce_awaiting_approval(
-    session: AsyncSession,
-    *,
-    tenant_id: str,
+def approval_notice(
     summaries: Sequence[ActionSummary],
+    *,
     product: str,
     app_url: str,
     requester: Requester,
     request_text: str,
-    locale: Locale = DEFAULT_LOCALE,
-) -> int:
-    """Put the notice in the product as well as in the inbox. Returns how many.
+    requested_at: datetime | None = None,
+) -> Template:
+    """The approval notice, as a template the dispatch point can render.
 
-    **The same words as the mail, in the same language**, because `compose` is
-    called here too rather than a second wording being written for the feed. A
-    person who reads both should not have to work out whether they describe the
-    same thing.
+    **The same words in the feed and in the inbox**, because both come from
+    `compose`. A person who reads both should not have to work out whether they
+    describe the same thing, and before this the feed took the first line of
+    the mail by splitting it — which worked, and would have stopped working the
+    first time the mail grew a preamble.
 
-    Written on the request's own session, which is what rule 2 of ADR 0008 asks
-    for: the row belongs with the turn that produced it. The mail leaves
-    afterwards, from a background task, because that one can fail without
-    costing anybody anything.
-
-    Never raises. An assistant action that waits unannounced is bad; an
-    assistant action that *fails* because announcing it did is worse.
+    A template takes a language and nothing else. Everything a rendering needs
+    is captured here, at the point where the producer already has it, so the
+    dispatch point can render once per language rather than once per person and
+    never has to reach back into the request.
     """
-    if not summaries:
-        return 0
-    try:
-        subject, plain, _ = compose(
+    when = requested_at or datetime.now(UTC)
+
+    def render(locale: Locale) -> Rendered:
+        subject, plain, html_body = compose(
             summaries,
             product=product,
             app_url=app_url,
             requester=requester,
             request_text=request_text,
-            requested_at=datetime.now(UTC),
+            requested_at=when,
             locale=locale,
         )
         lines = [line for line in plain.strip().splitlines() if line.strip()]
-        return await notify(
-            session,
-            tenant_id=tenant_id,
-            recipients=await approver_subjects(session, tenant_id=tenant_id),
-            kind=APPROVAL_REQUESTED.key,
+        return Rendered(
             title=subject,
-            # The opening sentence of the mail. Enough to act on from the
-            # drawer without opening anything; the link carries the rest.
+            # The opening sentence. Enough to act on from the drawer without
+            # opening anything; the link carries the rest.
             body=lines[0] if lines else "",
             url="/dashboard/assistant",
+            severity=APPROVAL_REQUESTED.default_severity,
+            subject=subject,
+            text=plain,
+            html=html_body,
         )
-    except Exception:
-        logger.exception("the approval notice could not be recorded in the product")
-        return 0
+
+    return render
 
 
 def _size(size_bytes: object) -> str:
@@ -446,47 +389,3 @@ def _html_document(
         + "".join(rows)
         + "</table></td></tr></table></body></html>"
     )
-
-
-async def notify_awaiting_approval(
-    *,
-    recipients: Sequence[str],
-    summaries: Sequence[ActionSummary],
-    product: str,
-    app_url: str,
-    requester: Requester,
-    request_text: str,
-    requested_at: datetime | None = None,
-    tag: str = "ai-approval",
-    sender: EmailSender | None = None,
-    locale: Locale = DEFAULT_LOCALE,
-) -> int:
-    """Send one notice per recipient, in `locale`. Returns how many were sent or recorded."""
-    if not summaries or not recipients:
-        return 0
-    subject, body, html_body = compose(
-        summaries,
-        product=product,
-        app_url=app_url,
-        requester=requester,
-        request_text=request_text,
-        requested_at=requested_at or datetime.now(UTC),
-        locale=locale,
-    )
-    mailer = sender or mail_sender()
-    sent = 0
-    for address in recipients:
-        try:
-            outcome = await mailer.send(
-                to=address, subject=subject, body=body, tag=tag, html=html_body
-            )
-        except Exception:
-            logger.exception("approval notice to one approver could not be sent")
-            continue
-        sent += 1
-        if outcome.simulated:
-            logger.info(
-                "approval notice recorded, not sent (no mail host): %d action(s) waiting",
-                len(summaries),
-            )
-    return sent

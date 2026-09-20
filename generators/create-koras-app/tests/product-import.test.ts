@@ -281,7 +281,8 @@ describe('data import', () => {
   it('gives every import error code a sentence and a mapping', () => {
     const errors = read('services/api/koras_api/core/errors.py')
     const codes = [...errors.matchAll(/^\s+IMPORT_\w+ = "([a-z_]+)"$/gm)].map((match) => match[1]!)
-    expect(codes.length).toBe(8)
+    // Nine since the review: `import_file_too_large` is IMP-02's answer.
+    expect(codes.length).toBe(9)
 
     const mapping = read('apps/web/src/lib/api-errors.ts.hbs')
     const english = read('packages/i18n/src/messages/en.ts')
@@ -295,6 +296,92 @@ describe('data import', () => {
   /* ---------------------------------------------------------------------- */
   /* The tables                                                             */
   /* ---------------------------------------------------------------------- */
+
+  /* ---------------------------------------------------------------------- */
+  /* What the review found                                                  */
+  /* ---------------------------------------------------------------------- */
+
+  it('lets retention reach an import source rather than making it immortal', () => {
+    // IMP-01, and the worst defect this feature shipped with. `on delete
+    // restrict` was the only foreign key onto `public.files` in the schema, and
+    // the retention sweep -- which had never met a refusal -- marked the row
+    // purged, deleted the bytes, then raised on the row delete and aborted. It
+    // aborted again every night after, so no customer file was ever purged.
+    const migration = read('supabase/migrations/00036_imports.sql')
+    expect(migration).toContain('references public.files(id) on delete set null')
+    expect(migration).not.toContain('on delete restrict')
+    // Nullable, because that is what `set null` needs and what the store reads.
+    expect(migration).not.toMatch(/source_file_id\s+uuid\s+not null/)
+  })
+
+  it('keeps the sweep running when a row will not delete', () => {
+    // The other half, and the one that fixes the *class*: the next foreign key
+    // onto `files` must not be able to stop retention either.
+    const sweep = read('services/worker/koras_worker/tasks/storage_lifecycle.py')
+    expect(sweep).toContain('async def _forget(')
+    expect(sweep).toContain('await session.rollback()')
+    // No unguarded delete left: every caller goes through the helper.
+    const direct = [...sweep.matchAll(/await session\.execute\(_DELETE_ROW/g)]
+    expect(direct.length, '_DELETE_ROW is executed outside _forget').toBe(1)
+  })
+
+  it('bounds the source it reads into memory with a number, not a hope', () => {
+    // IMP-02. `source_bytes` selected `size_bytes` and never read it, while its
+    // docstring claimed the read was bounded by an upload ceiling whose default
+    // is five thousand megabytes.
+    const store = read('services/api/koras_api/core/imports.py')
+    expect(store).toContain('MAX_SOURCE_BYTES')
+    expect(store).toContain('import.source.too_large')
+    // Checked before the object is fetched, not after.
+    expect(store.indexOf('import.source.too_large')).toBeLessThan(store.indexOf('store.get('))
+    // And at the start of a run, so nobody maps forty columns first.
+    const router = read('services/api/koras_api/routers/imports.py')
+    expect(router).toContain('store.check_source(session, body.file_id)')
+  })
+
+  it('never decides an ambiguous number for the customer', () => {
+    // IMP-04. `float(value.replace(",", "."))` read `1,234` as 1.234 -- wrong
+    // by a factor of a thousand, silently. The same rule this module already
+    // applies to `%m/%d/%Y`.
+    //
+    // Asserted on the branch rather than on the file's text: the replacement
+    // quotes the old expression in its own docstring to explain what it fixed,
+    // and a substring search cannot tell a fix from the account of one.
+    const mapping = read('python-packages/koras-import/src/koras_import/mapping.py')
+    expect(mapping).toContain('import.error.ambiguous_decimal')
+    const branch = mapping.slice(mapping.indexOf('spec.kind is FieldKind.DECIMAL'))
+    expect(branch.slice(0, 120)).toContain('_check_decimal(value)')
+  })
+
+  it('can actually report that no strict encoding fitted', () => {
+    // IMP-03. `latin-1` maps all 256 byte values, so with it in `ENCODINGS` the
+    // loop always returned before its own fallback: `replaced` was structurally
+    // always False and the page's banner could never appear.
+    const reading = read('python-packages/koras-import/src/koras_import/reading.py')
+    expect(reading).toContain('ENCODINGS: tuple[str, ...] = ("utf-8-sig", "cp1252")')
+    expect(reading).toContain('FALLBACK_ENCODING = "latin-1"')
+  })
+
+  it('checks a target-s own permission on every route that resolves one', () => {
+    // IMP-06. It was on `start` alone, and `analysis` answers a preview of the
+    // customer's rows.
+    const router = read('services/api/koras_api/routers/imports.py')
+    const resolves = [...router.matchAll(/_target\(/g)].length
+    const checks = [...router.matchAll(/_require_target\(claims, target\)/g)].length
+    expect(checks, 'a route resolves a target without checking its permission').toBe(3)
+    expect(resolves).toBeGreaterThanOrEqual(checks)
+  })
+
+  it('answers a state conflict on validate with 409, before enqueueing', () => {
+    // IMP-05. It enqueued, then advanced, then let TransitionRefused escape as
+    // a 500 -- having already queued a job against a run the machine refused.
+    const router = read('services/api/koras_api/routers/imports.py')
+    const check = router.indexOf('may_move(run.state, RunState.VALIDATING)')
+    const enqueue = router.indexOf('await jobs.enqueue(')
+    expect(check).toBeGreaterThan(-1)
+    expect(check, 'the transition is checked after the enqueue').toBeLessThan(enqueue)
+    expect(router).toContain('HTTP_409_CONFLICT')
+  })
 
   it('forces row-level security on both tables and gives updates a check', () => {
     const migration = read('supabase/migrations/00036_imports.sql')

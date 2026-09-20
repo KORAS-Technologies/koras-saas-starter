@@ -840,6 +840,8 @@ export const en = {
     'This does not look like an email address',
   'imports.problem.extraCells':
     'This row has more cells than the file has columns',
+  'imports.problem.ambiguousDecimal':
+    'This could be read two ways and they differ by a thousand. Write it without a thousands separator.',
   'imports.problem.duplicateInFile':
     'Another row in this same file already has this value',
   'imports.error.forbidden':
@@ -968,6 +970,15 @@ export const en = {
   'settings.def.grid.stickyHeader.description': 'Headings stay in place while the rows scroll.',
   'settings.def.grid.rowDensity.label': 'Row height',
   'settings.def.grid.rowDensity.description': 'How tall table rows are.',
+  'settings.def.grid.allowColumnResize.label': 'Resizable columns',
+  'settings.def.grid.allowColumnResize.description':
+    'Let people drag the edge of a column to make it wider or narrower.',
+  'settings.def.grid.allowColumnReorder.label': 'Movable columns',
+  'settings.def.grid.allowColumnReorder.description':
+    'Let people move a column left or right in a table.',
+  'settings.def.grid.rememberColumns.label': 'Remember column layout',
+  'settings.def.grid.rememberColumns.description':
+    'Keep the widths and the order somebody arranged, on this device.',
   // ── Notifications ─────────────────────────────────────────────────────────
   'notifications.title': 'Notifications',
   'notifications.unread': '{count} unread',
@@ -984,6 +995,9 @@ export const en = {
   'notifications.hiddenBody': 'You have turned off notifications in the product. Turn them back on in your preferences.',
   'settings.def.notifications.inAppEnabled.label': 'Notifications in the product',
   'settings.def.notifications.inAppEnabled.description': 'Show notifications while you are signed in.',
+  'settings.def.notifications.emailEnabled.label': 'Notifications by email',
+  'settings.def.notifications.emailEnabled.description':
+    'Send an email as well, for things that are waiting on you.',
   'settings.def.files.maxUploadSizeMb.label': 'Largest file',
   'settings.def.files.maxUploadSizeMb.description': 'The biggest single file anyone here may upload, in megabytes.',
   'settings.def.files.allowedExtensions.label': 'Allowed file types',
@@ -1043,6 +1057,8 @@ export const en = {
   'grid.next': 'Next',
   'grid.showing': 'Showing {from} to {to} of {total}',
   'grid.page': 'Page {page} of {pages}',
+  'grid.moveColumnLeft': 'Move {column} left',
+  'grid.moveColumnRight': 'Move {column} right',
   'errors.tokenInvalid': 'Your session has expired. Sign in again.',
   'errors.tenantInactive': 'Your organisation is not active in this product.',
   'errors.roleRequired': 'Only an owner or administrator of your organisation can do that.',
@@ -1079,6 +1095,8 @@ export const en = {
     'This import has moved on, and that is no longer something it can do.',
   'errors.importQueueUnavailable':
     'Background work is not set up, so this file cannot be checked. An administrator has to configure it.',
+  'errors.importFileTooLarge':
+    'This file is larger than one import reads. Split it and import the parts separately.',
   'errors.uploadRefusedByPolicy':
     'This file is not allowed. Check its size and its file type against the settings for your organization.',
   'errors.fileUnderHold':

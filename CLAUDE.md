@@ -367,13 +367,37 @@ browser suite, and `requires` refuses `--with ai --without notifications`. The
 assistant's approval notice reaches the product as well as the inbox, in the
 same words.
 
+**Phase 2 followed the same day.** `core/dispatch.py` is the single in-process
+dispatch point ADR 0008 asked for — no bus — and `core/recipients.py` turns a
+rule into people. A producer now names *what happened*, *who should know* and
+*how to say it in a language*, and names no channel, table, template or
+address. The assistant's approval notice went from resolving its own audience
+twice, composing its own HTML and driving its own sender loop to one `dispatch`
+call; a notification is written on the caller's session and the mail it
+prepares is sent after the commit, because a row can be rolled back and a mail
+cannot.
+
+**Two things Phase 2 found are worth carrying.** A recipient's language now
+comes from *their own* stored setting rather than from the request — the notice
+used to go out in the language of the person who **asked**, who is the one
+person it is never sent to. And `notifications.emailEnabled` is
+`Scope.GLOBAL_ORG` rather than per person, which is a narrowing rather than an
+omission: a mail goes to an address, the product learns addresses from the
+platform's member list, and that list carries an email and a role and **no**
+ZITADEL subject — so a recipient it can mail is one it cannot match to a
+member, and a per-person switch would be a control nothing could ever read.
+Offering the rung anyway would have been the same failure `surfaced=False`
+exists to prevent. F26 records what the platform would have to answer.
+
 **And six settings were being drawn and read by nothing.** Three under
 `notifications` and three under `files`, registered, translated into three
 languages, and rendered on the preferences page: a customer could switch off
 notification emails and still receive them. That is exactly the failure
 `surfaced=False` was introduced to prevent, four days earlier and in the same
-file. `notifications.inAppEnabled` is honoured now and the other two are
-unsurfaced; the three `files.*` were still drawn and enforced by nothing until
+file. `notifications.inAppEnabled` was honoured first and `emailEnabled` since Phase
+2; `digestFrequency` stays unsurfaced, because a digest needs an outbox to
+accumulate into and that is Phase 3. The three `files.*` were still drawn and
+enforced by nothing until
 the import work took that half on 2026-09-19. Two of them —
 `files.maxUploadSizeMb` and `files.allowedExtensions` — are now resolved in
 `core/storage.py` and refused at the upload ticket, inside the hardcoded 5 GiB
@@ -432,6 +456,33 @@ extracted into `packages/ui`, and the preview drawn through the shared data
 table. None of them touches the safety properties above. No manual pass has run
 against any of it, and `koras-e2e-shop` — the one repository in the estate with
 a domain that could declare real targets — has not been synced.
+
+**It was reviewed the same day and the review returned BLOCK** — the third in
+three, after both governance reviews and the settings one. One critical
+finding, two high, three medium, all fixed;
+`docs/features/data-import/review.md` is the record.
+
+**The critical one was not in the import feature at all.** `import_runs` was
+the only foreign key onto `public.files` in the schema and it was `on delete
+restrict`, so the object-retention sweep — which had therefore never met a
+refusal and did not handle one — marked the row purged, deleted the customer's
+bytes from the bucket, then raised on the row delete and aborted. It met the
+same row first on every later run and aborted again, so **no customer file
+would ever have been purged again**, silently, and the governance contract
+would have gone on answering that retention was configured. The foreign key is
+`on delete set null` now, ADR 0009 is amended, and `storage_lifecycle._forget`
+makes the sweep survive any row it cannot delete — which is the half that fixes
+the class rather than the instance.
+
+**Two of the other five are worth carrying.** `source_bytes` selected
+`size_bytes` and never read it, so the whole source went into API memory
+bounded by an upload ceiling whose default is five thousand megabytes; it is
+64 MiB now, checked before the object is fetched. And `latin-1` sat inside
+`ENCODINGS`, where it maps all 256 byte values and therefore cannot raise — so
+the decode loop always returned before its own fallback, `replaced` was
+structurally always `False`, and a banner written in three languages could
+never appear. Its unit test was a disjunction over the flag and could not fail,
+which is the more useful half of that finding.
 
 **The two capabilities are declared.** `audit_governance` and
 `storage_governance`, both on by default, and what they gate is the *surface*

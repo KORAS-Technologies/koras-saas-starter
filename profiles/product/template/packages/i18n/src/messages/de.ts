@@ -849,6 +849,8 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Das sieht nicht nach einer E-Mail-Adresse aus',
   'imports.problem.extraCells':
     'Diese Zeile hat mehr Zellen, als die Datei Spalten hat',
+  'imports.problem.ambiguousDecimal':
+    'Das lässt sich auf zwei Arten lesen, die sich um das Tausendfache unterscheiden. Schreiben Sie es ohne Tausendertrennzeichen.',
   'imports.problem.duplicateInFile':
     'Eine andere Zeile derselben Datei hat diesen Wert bereits',
   'imports.error.forbidden':
@@ -977,6 +979,15 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'settings.def.grid.stickyHeader.description': 'Überschriften bleiben stehen, während die Zeilen scrollen.',
   'settings.def.grid.rowDensity.label': 'Zeilenhöhe',
   'settings.def.grid.rowDensity.description': 'Wie hoch Tabellenzeilen sind.',
+  'settings.def.grid.allowColumnResize.label': 'Spaltenbreite anpassbar',
+  'settings.def.grid.allowColumnResize.description':
+    'Spaltenränder lassen sich ziehen, um Spalten breiter oder schmaler zu machen.',
+  'settings.def.grid.allowColumnReorder.label': 'Spalten verschiebbar',
+  'settings.def.grid.allowColumnReorder.description':
+    'Spalten lassen sich in einer Tabelle nach links oder rechts verschieben.',
+  'settings.def.grid.rememberColumns.label': 'Spaltenlayout merken',
+  'settings.def.grid.rememberColumns.description':
+    'Breiten und Reihenfolge behalten, auf diesem Gerät.',
   // ── Benachrichtigungen ────────────────────────────────────────────────────
   'notifications.title': 'Benachrichtigungen',
   'notifications.unread': '{count} ungelesen',
@@ -993,6 +1004,9 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'notifications.hiddenBody': 'Sie haben Benachrichtigungen im Produkt ausgeschaltet. In Ihren Einstellungen koennen Sie sie wieder einschalten.',
   'settings.def.notifications.inAppEnabled.label': 'Benachrichtigungen im Produkt',
   'settings.def.notifications.inAppEnabled.description': 'Benachrichtigungen anzeigen, während Sie angemeldet sind.',
+  'settings.def.notifications.emailEnabled.label': 'Benachrichtigungen per E-Mail',
+  'settings.def.notifications.emailEnabled.description':
+    'Zusätzlich eine E-Mail senden, wenn etwas auf Sie wartet.',
   'settings.def.files.maxUploadSizeMb.label': 'Maximale Dateigröße',
   'settings.def.files.maxUploadSizeMb.description': 'Die größte einzelne Datei, die hier hochgeladen werden darf, in Megabyte.',
   'settings.def.files.allowedExtensions.label': 'Erlaubte Dateitypen',
@@ -1051,6 +1065,8 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'grid.next': 'Weiter',
   'grid.showing': '{from} bis {to} von {total}',
   'grid.page': 'Seite {page} von {pages}',
+  'grid.moveColumnLeft': '{column} nach links verschieben',
+  'grid.moveColumnRight': '{column} nach rechts verschieben',
   'errors.tokenInvalid': 'Ihre Sitzung ist abgelaufen. Melden Sie sich erneut an.',
   'errors.tenantInactive': 'Ihre Organisation ist in diesem Produkt nicht aktiv.',
   'errors.roleRequired':
@@ -1090,6 +1106,8 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Dieser Import ist weiter fortgeschritten; das ist jetzt nicht mehr möglich.',
   'errors.importQueueUnavailable':
     'Die Hintergrundverarbeitung ist nicht eingerichtet, daher kann diese Datei nicht geprüft werden. Das muss administrativ konfiguriert werden.',
+  'errors.importFileTooLarge':
+    'Diese Datei ist größer, als ein Import einlesen kann. Teilen Sie sie und importieren Sie die Teile einzeln.',
   'errors.uploadRefusedByPolicy':
     'Diese Datei ist nicht zulässig. Prüfen Sie Größe und Dateityp gegen die Einstellungen Ihrer Organisation.',
   'errors.fileUnderHold':

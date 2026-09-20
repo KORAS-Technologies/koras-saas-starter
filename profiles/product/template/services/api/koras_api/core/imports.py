@@ -52,7 +52,10 @@ class Run:
     target: str
     status: str
     format: str
-    source_file_id: str
+    #: None once retention has purged the file. The run survives it — what it
+    #: remembers about the import is on this row, not in the bytes — and every
+    #: route that needs the file answers `import.source.missing`.
+    source_file_id: str | None
     delimiter: str
     encoding: str
     columns: tuple[str, ...]
@@ -87,7 +90,7 @@ def _run(row: Any) -> Run:  # noqa: ANN401 - a driver row, shaped by the select
         target=row.target,
         status=row.status,
         format=row.format,
-        source_file_id=str(row.source_file_id),
+        source_file_id=str(row.source_file_id) if row.source_file_id else None,
         delimiter=row.delimiter,
         encoding=row.encoding,
         columns=tuple(row.columns or ()),
@@ -391,20 +394,40 @@ class SourceRefused(RuntimeError):
 #: an import is the one surface where a product parses a stranger's file.
 UNPARSEABLE_SCANS: frozenset[str] = frozenset({"pending", "skipped", "infected"})
 
+#: The largest source file this phase will read.
+#:
+#: **Not the upload ceiling**, which is what this used to rely on: `source_bytes`
+#: selected `size_bytes` and never looked at it, and its docstring claimed the
+#: read was "bounded by the upload ceiling rather than by hope" -- a ceiling
+#: whose default is five thousand megabytes. Two concurrent analyses of a four
+#: gigabyte upload take the API process out, and the route that does it is
+#: reachable by any member with `imports.manage` pressing a button twice.
+#: IMP-02 in `docs/features/data-import/review.md`.
+#:
+#: Sixty-four mebibytes is far above fifty thousand rows at any realistic width
+#: and far below anything that threatens the process. Phase 4 streams and this
+#: constant goes with it; until then the bound is a number rather than a hope.
+MAX_SOURCE_BYTES = 64 * 1024 * 1024
+
 _SOURCE = text(
     "select storage_key, size_bytes, status, scan_status, name "
     "from public.files where id = cast(:id as uuid)"
 )
 
 
-async def source_bytes(session: AsyncSession, store: Any, file_id: str) -> bytes:  # noqa: ANN401
-    """The uploaded file, or a refusal saying which of four things was wrong.
+async def check_source(session: AsyncSession, file_id: str | None) -> Any:  # noqa: ANN401
+    """Everything that can be known about a source without fetching it.
 
-    Held whole in memory, and bounded by the upload ceiling rather than by
-    hope. Phase 4 streams; this is the caller a streaming reader will replace,
-    and the reader it hands rows to already streams, so that change is here and
-    not in `koras_import`.
+    Split out so the same four refusals answer at `POST /imports`, where a
+    person has chosen a file and nothing else yet, as well as at the two routes
+    that read it. Being told at the start beats being told after forty columns
+    have been mapped.
     """
+    if not file_id:
+        # Purged by retention, which is a thing that now happens: the foreign
+        # key is `on delete set null` precisely so an import cannot make a
+        # customer's file immortal.
+        raise SourceRefused("import.source.missing")
     row = (await session.execute(_SOURCE, {"id": file_id})).first()
     if row is None:
         raise SourceRefused("import.source.missing")
@@ -412,6 +435,21 @@ async def source_bytes(session: AsyncSession, store: Any, file_id: str) -> bytes
         raise SourceRefused("import.source.not_ready")
     if (row.scan_status or "pending") in UNPARSEABLE_SCANS:
         raise SourceRefused("import.source.unscanned")
+    if int(row.size_bytes or 0) > MAX_SOURCE_BYTES:
+        raise SourceRefused("import.source.too_large")
+    return row
+
+
+async def source_bytes(session: AsyncSession, store: Any, file_id: str | None) -> bytes:  # noqa: ANN401
+    """The uploaded file, or a refusal saying which of five things was wrong.
+
+    Held whole in memory, and bounded by `MAX_SOURCE_BYTES` -- checked against
+    the size the index recorded, **before** the object is fetched, so an
+    oversized file costs a row read rather than a transfer. Phase 4 streams;
+    this is the caller a streaming reader will replace, and the reader it hands
+    rows to already streams, so that change is here and not in `koras_import`.
+    """
+    row = await check_source(session, file_id)
     try:
         return await store.get(row.storage_key)  # type: ignore[no-any-return]
     except Exception as error:  # noqa: BLE001 - the provider's own type is not ours
@@ -420,6 +458,7 @@ async def source_bytes(session: AsyncSession, store: Any, file_id: str) -> bytes
 
 
 __all__ = [
+    "MAX_SOURCE_BYTES",
     "PREVIEW",
     "Analysis",
     "ReadRefused",
@@ -428,6 +467,7 @@ __all__ = [
     "UNPARSEABLE_SCANS",
     "analyse",
     "begin_validation",
+    "check_source",
     "cancel",
     "check",
     "create",

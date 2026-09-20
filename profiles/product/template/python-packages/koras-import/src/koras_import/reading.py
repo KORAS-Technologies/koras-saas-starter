@@ -26,13 +26,24 @@ import csv
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
-#: Tried in order. UTF-8 first because it is right most of the time and wrong
-#: loudly; `cp1252` second because it is what a Windows spreadsheet produces
-#: and it decodes almost any byte, so it must never be tried first or it would
-#: silently mangle real UTF-8. `latin-1` last, which cannot fail, so the reader
-#: always produces something a person can look at rather than an error they
-#: cannot act on.
-ENCODINGS: tuple[str, ...] = ("utf-8-sig", "cp1252", "latin-1")
+#: Tried in order, **strictly**. UTF-8 first because it is right most of the
+#: time and wrong loudly; `cp1252` second because it is what a Windows
+#: spreadsheet produces and it decodes almost any byte, so it must never be
+#: tried first or it would silently mangle real UTF-8.
+#:
+#: `latin-1` is deliberately **not** in this tuple, and was until 2026-09-19.
+#: It maps all 256 byte values and so cannot raise, which meant the loop below
+#: always returned before reaching its own fallback: the fallback was
+#: unreachable, `Decoded.replaced` was always False, and the page's "some
+#: characters could not be read" banner could never be shown in any of the
+#: three languages it was written in. IMP-03 in
+#: `docs/features/data-import/review.md`.
+ENCODINGS: tuple[str, ...] = ("utf-8-sig", "cp1252")
+
+#: The last resort, used with replacement so the reader always produces
+#: something a person can look at rather than an error they cannot act on --
+#: and says that it did.
+FALLBACK_ENCODING = "latin-1"
 
 #: Sniffed from the header, in this order. Comma first; semicolon next, because
 #: it is what a European Excel writes; then tab and pipe.
@@ -56,10 +67,10 @@ class ReadRefused(ValueError):
 class Decoded:
     text: str
     encoding: str
-    #: True when characters could not be decoded and were replaced. The import
-    #: still proceeds — refusing a whole file because one cell has a stray byte
-    #: helps nobody — and the run records it, so a customer wondering why one
-    #: name looks wrong has an answer.
+    #: True when no strict encoding fitted and the file was read byte-for-byte
+    #: as `latin-1`. The import still proceeds — refusing a whole file because
+    #: one cell has a stray byte helps nobody — and the run records it, so a
+    #: customer wondering why one name looks wrong has an answer.
     replaced: bool
 
 
@@ -67,15 +78,27 @@ def decode(raw: bytes) -> Decoded:
     """Text, and which encoding produced it.
 
     Tries each encoding strictly before falling back, so a file that is really
-    UTF-8 is never read as `cp1252`. The last encoding cannot fail, so this
-    never raises.
+    UTF-8 is never read as `cp1252`. The fallback cannot fail, so this never
+    raises -- and when it is reached, the answer says so, which is the whole
+    point of `replaced`.
     """
     for encoding in ENCODINGS:
         try:
             return Decoded(raw.decode(encoding), encoding, replaced=False)
         except UnicodeDecodeError:
             continue
-    return Decoded(raw.decode("latin-1", errors="replace"), "latin-1", replaced=True)
+    # `replaced` is True because the fallback was *reached*, not because a
+    # character came back as U+FFFD. `latin-1` maps all 256 byte values, so
+    # `errors="replace"` never replaces anything and testing for the
+    # replacement character would be the same unreachable branch again, one
+    # level down. What the flag means is: no strict encoding fitted this file,
+    # so every byte was read as a latin-1 character and some of them are
+    # probably not what the person who exported it saw.
+    return Decoded(
+        raw.decode(FALLBACK_ENCODING, errors="replace"),
+        FALLBACK_ENCODING,
+        replaced=True,
+    )
 
 
 def sniff_delimiter(sample: str) -> str:
@@ -88,7 +111,11 @@ def sniff_delimiter(sample: str) -> str:
     comma and one semicolon is far more likely to be comma-separated with a
     semicolon in a label than the reverse.
     """
-    header = sample.splitlines()[0] if sample.splitlines() else ""
+    # Bounded before splitting. This read `sample.splitlines()[0]` and called
+    # `splitlines()` a second time to test the same thing, so a whole file was
+    # exploded into a list of lines twice to look at one of them.
+    lines = sample[:MAX_CELL].splitlines()
+    header = lines[0] if lines else ""
     best = ","
     most = 0
     for candidate in DELIMITERS:

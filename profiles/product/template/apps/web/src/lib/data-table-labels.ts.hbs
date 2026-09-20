@@ -25,5 +25,7 @@ export function dataTableLabels(t: Translator): DataTableLabels {
     showing: (from, to, total) =>
       t('grid.showing', { from: String(from), to: String(to), total: String(total) }),
     page: (page, pages) => t('grid.page', { page: String(page), pages: String(pages) }),
+    moveColumnLeft: (column) => t('grid.moveColumnLeft', { column }),
+    moveColumnRight: (column) => t('grid.moveColumnRight', { column }),
   }
 }

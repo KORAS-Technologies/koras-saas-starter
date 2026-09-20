@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from koras_auth import JWTClaims
 from koras_auth.permissions import permissions_for
 from koras_import import (
@@ -32,6 +32,8 @@ from koras_import import (
     MappingRefused,
     Operation,
     ReadRefused,
+    RunState,
+    may_move,
 )
 from pydantic import BaseModel, Field
 
@@ -249,6 +251,15 @@ async def start(
             f"{target.key} does not permit {operation}",
         )
 
+    # Everything knowable about the file before a column is mapped: that it
+    # exists, that the upload finished, that a scanner has cleared it, and that
+    # it is inside the ceiling one run reads. Told now rather than after forty
+    # columns have been mapped.
+    try:
+        await store.check_source(session, body.file_id)
+    except store.SourceRefused as refused:
+        raise _source_refusal(str(refused)) from refused
+
     run = await store.create(
         session,
         tenant_id=tenant.id,
@@ -285,6 +296,11 @@ async def analysis(
     _require(claims, "reading an import file")
     run = _run_or_404(await store.get(session, run_id))
     target = _target(run.target)
+    # The target's own permission here too, and not only on `start`.
+    # This route answers a preview of the file's rows, so a member who may
+    # import *something* but not this would otherwise read the contents of an
+    # upload the target was meant to gate. IMP-06 in the review.
+    _require_target(claims, target)
     raw = await _bytes(session, storage, run)
     try:
         found = store.analyse(raw, target)
@@ -317,6 +333,7 @@ async def set_mapping(
     _require(claims, "mapping an import")
     run = _run_or_404(await store.get(session, run_id))
     target = _target(run.target)
+    _require_target(claims, target)
     raw = await _bytes(session, storage, run)
 
     try:
@@ -383,6 +400,18 @@ async def validate(
     """
     _require(claims, "validating an import")
     run = _run_or_404(await store.get(session, run_id))
+
+    # **Before the enqueue, not after.** This advanced the run after enqueueing
+    # and did not catch the refusal, so a double-click on a run already
+    # `validating` answered 500 -- having already queued a second job against a
+    # run the machine had just refused to move. `cancel` has caught the same
+    # exception since it was written. IMP-05 in the review.
+    if not may_move(run.state, RunState.VALIDATING):
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            ApiErrorCode.IMPORT_NOT_TRANSITIONABLE,
+            f"an import run in {run.status} cannot be checked",
+        )
 
     # Read before anything is written. An unconfigured queue records and warns
     # rather than degrading quietly, and a route that answered 202 regardless
@@ -459,33 +488,43 @@ async def cancel(
     return _view(_run_or_404(await store.get(session, run_id)))
 
 
-async def _bytes(session: DbSession, storage: StorageDep, run: store.Run) -> bytes:
-    """The source file, or the refusal that says why not.
+def _source_refusal(code: str) -> HTTPException:
+    """One mapping from the store's refusal codes to answers, for both callers.
 
-    The scan check is here, and it is **stricter than a download**: the platform
-    withholds an infected file and lets a pending one be downloaded, because a
-    person opening a file they uploaded is making their own judgement. Parsing
-    is not that — the product reads the bytes itself and writes rows from them.
+    The scan refusal is **stricter than a download**: the platform withholds an
+    infected file and lets a pending one be downloaded, because a person opening
+    a file they uploaded is making their own judgement. Parsing is not that —
+    the product reads the bytes itself and writes rows from them.
     """
+    if code == "import.source.unscanned":
+        return api_error(
+            status.HTTP_409_CONFLICT,
+            ApiErrorCode.FILE_QUARANTINED,
+            "this file has not been checked for malware, and an import will "
+            "not read a file nobody has looked at",
+        )
+    if code == "import.source.missing":
+        return api_error(
+            status.HTTP_404_NOT_FOUND,
+            ApiErrorCode.FILE_NOT_FOUND,
+            "the file this import was started against is gone",
+        )
+    if code == "import.source.too_large":
+        return api_error(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            ApiErrorCode.IMPORT_FILE_TOO_LARGE,
+            "this file is larger than one import run reads in this release",
+        )
+    return api_error(
+        status.HTTP_409_CONFLICT,
+        ApiErrorCode.IMPORT_FILE_UNREADABLE,
+        "the file this import was started against could not be read",
+    )
+
+
+async def _bytes(session: DbSession, storage: StorageDep, run: store.Run) -> bytes:
+    """The source file, or the refusal that says why not."""
     try:
         return await store.source_bytes(session, storage.store, run.source_file_id)
     except store.SourceRefused as refused:
-        code = str(refused)
-        if code == "import.source.unscanned":
-            raise api_error(
-                status.HTTP_409_CONFLICT,
-                ApiErrorCode.FILE_QUARANTINED,
-                "this file has not been checked for malware, and an import will "
-                "not read a file nobody has looked at",
-            ) from refused
-        if code == "import.source.missing":
-            raise api_error(
-                status.HTTP_404_NOT_FOUND,
-                ApiErrorCode.FILE_NOT_FOUND,
-                "the file this import was started against is gone",
-            ) from refused
-        raise api_error(
-            status.HTTP_409_CONFLICT,
-            ApiErrorCode.IMPORT_FILE_UNREADABLE,
-            "the file this import was started against could not be read",
-        ) from refused
+        raise _source_refusal(str(refused)) from refused

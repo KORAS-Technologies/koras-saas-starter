@@ -290,8 +290,11 @@ SETTINGS: list[SettingDefinition] = [
         Scope.GLOBAL_ORG_USER,
         ui=UiControl.TOGGLE,
         order=50,
-        # Declared, and honoured by nothing as of 2026-09-19.
-        surfaced=False,
+        # Honoured since 2026-09-19: the shared table draws a resize
+        # handle on every column a caller has not marked `fixed`. The
+        # width is a per-viewer, per-device convenience and lives in
+        # browser storage; `grid.rememberColumns` decides whether it
+        # outlives the page.
     ),
     _setting(
         "grid.allowColumnReorder",
@@ -301,8 +304,10 @@ SETTINGS: list[SettingDefinition] = [
         Scope.GLOBAL_ORG_USER,
         ui=UiControl.TOGGLE,
         order=60,
-        # Declared, and honoured by nothing as of 2026-09-19.
-        surfaced=False,
+        # Honoured since 2026-09-19, as two buttons per header rather
+        # than a drag: a drag is invisible to a keyboard and awkward on
+        # a touch screen. A column marked `fixed` by its caller stays
+        # where it is whatever this says.
     ),
     _setting(
         "grid.rememberFilters",
@@ -334,8 +339,11 @@ SETTINGS: list[SettingDefinition] = [
         Scope.GLOBAL_ORG_USER,
         ui=UiControl.TOGGLE,
         order=90,
-        # Declared, and honoured by nothing as of 2026-09-19.
-        surfaced=False,
+        # Honoured since 2026-09-19. It decides *whether* an
+        # arrangement is kept, not what was arranged: where somebody
+        # dragged a column is per viewer, per table and per device, so
+        # it lives in browser storage rather than in a settings row per
+        # table per person that nobody could read.
     ),
     _setting(
         "grid.rowDensity",
@@ -373,14 +381,25 @@ SETTINGS: list[SettingDefinition] = [
         Category.NOTIFICATIONS,
         DataType.BOOLEAN,
         True,
-        Scope.GLOBAL_ORG_USER,
+        # **Organisation, not person**, and the narrowing is a decision rather
+        # than an oversight. A mail goes to an *address*; the product learns
+        # its members' addresses from the platform's member list, which carries
+        # an email and a role and **not** the ZITADEL subject. So a recipient
+        # the product can mail is a recipient it cannot match to a member, and
+        # a person-level switch on this setting would be a control that nothing
+        # could ever read. That is precisely the failure `surfaced=False` was
+        # introduced to prevent, and hiding it would have been the same mistake
+        # in a different place -- the honest fix is not to offer the rung.
+        #
+        # It becomes `GLOBAL_ORG_USER` the day the platform answers a subject
+        # beside the address. F26 in `docs/FOLLOW_UPS.md`.
+        Scope.GLOBAL_ORG,
         ui=UiControl.TOGGLE,
         order=20,
-        # Declared, and honoured by nothing as of 2026-09-19. The one mail a
-        # product sends -- the assistant's approval notice -- does not consult
-        # it. CAT-01 Phase 2 moves that send onto the dispatch point, and this
-        # is surfaced again in the same change.
-        surfaced=False,
+        # Surfaced again on 2026-09-19, when CAT-01 Phase 2 moved the one mail
+        # a product sends onto the dispatch point. `core/dispatch.py` resolves
+        # it through the settings resolver -- the same code the settings page
+        # displays -- so an organisation switching it off switches it off.
     ),
     _setting(
         "notifications.digestFrequency",
@@ -392,7 +411,8 @@ SETTINGS: list[SettingDefinition] = [
         ui=UiControl.SELECT,
         order=30,
         # Declared, and honoured by nothing as of 2026-09-19: there is no
-        # digest job. CAT-01 Phase 4.
+        # digest job, and Phase 2 deliberately did not build one -- a digest
+        # needs an outbox to accumulate into, which is Phase 3. CAT-01 Phase 4.
         surfaced=False,
     ),
     # ── Files ────────────────────────────────────────────────────────────────

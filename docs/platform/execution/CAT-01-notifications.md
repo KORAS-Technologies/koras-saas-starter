@@ -151,6 +151,26 @@ the drawer, focus handling and Escape.
 **Exit:** switching off notification emails switches off notification emails,
 asserted by a test. The approval notice arrives in the approver's language.
 
+**Met 2026-09-19, with one criterion narrowed and the narrowing recorded.**
+`core/dispatch.py` is the seam, `core/recipients.py` the resolver, and
+`tests/unit/test_dispatch.py` carries the exit criterion as a test with that
+name. The narrowing: `notifications.emailEnabled` is **organisation-scoped**
+rather than per person. A mail goes to an address; the product learns its
+members' addresses from the platform's member list, which carries an email
+and a role and no ZITADEL subject — so a recipient it can mail is one it
+cannot match to a member, and a person-level switch could never be read.
+Offering the rung anyway would have been the failure `surfaced=False` exists
+to prevent. It becomes per person when the platform answers a subject beside
+the address; F26 in `docs/FOLLOW_UPS.md`.
+
+**`notifications.digestFrequency` stays unsurfaced.** A digest needs an outbox
+to accumulate into, which is Phase 3, so Phase 2 deliberately did not build
+one. The template registry also landed in a narrower form than planned: a
+template is a function from a language to a rendering, registered by the
+producer beside its kind rather than in a central registry. One producer does
+not justify a registry, and the conventions are the same the moment a second
+one needs it.
+
 ### Phase 3 — Outbox, delivery log, retry
 
 *Requires PLAT-F1.*

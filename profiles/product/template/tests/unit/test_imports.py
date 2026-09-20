@@ -312,10 +312,25 @@ def test_a_file_over_the_ceiling_is_reported_rather_than_counted_exactly() -> No
     assert found.rows_seen <= small.max_rows + 1
 
 
-def test_a_byte_that_could_not_be_decoded_is_reported_not_hidden() -> None:
-    # A lone 0x81 is invalid UTF-8 and is not a cp1252 character either.
+def test_a_byte_no_strict_encoding_accepts_is_reported_not_hidden() -> None:
+    """A lone 0x81 is invalid UTF-8 and is not a cp1252 character either.
+
+    **This assertion was a disjunction until 2026-09-19** --
+    `replaced is True or encoding != "utf-8"` -- whose second clause is true
+    whenever the first is false, so it could not fail. It passed against a
+    `decode()` in which `replaced` was structurally always False, which is
+    IMP-03. Two assertions that can each fail, now.
+    """
     found = store.analyse(b"Name,Email\n\x81dam,adam@example.com\n", CUSTOMERS)
-    assert found.replaced is True or found.encoding != "utf-8"
+    assert found.replaced is True
+    assert found.encoding == "latin-1"
+
+
+def test_a_file_a_strict_encoding_accepts_is_not_flagged() -> None:
+    """The other half, without which the one above passes on a constant True."""
+    found = store.analyse(b"Name,Email\nAdam,adam@example.com\n", CUSTOMERS)
+    assert found.replaced is False
+    assert found.encoding == "utf-8-sig"
 
 
 def test_the_check_reads_every_row_and_reports_every_problem() -> None:
@@ -326,3 +341,41 @@ def test_the_check_reads_every_row_and_reports_every_problem() -> None:
     codes = {problem.code for problem in result.errors}
     assert "import.error.required" in codes
     assert "import.error.email" in codes
+
+
+# ── what the review found ────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_source_larger_than_the_ceiling_is_refused_before_it_is_fetched() -> None:
+    """IMP-02. The size was selected and never read, and the ceiling it claimed
+    to rely on defaults to five thousand megabytes."""
+    big = _File()
+    big.size_bytes = store.MAX_SOURCE_BYTES + 1
+    session = _Session([_Result([big])])
+    objects = _Store()
+    with pytest.raises(store.SourceRefused) as refused:
+        await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+    assert str(refused.value) == "import.source.too_large"
+    assert objects.read == [], "the object was fetched before its size was checked"
+
+
+@pytest.mark.asyncio
+async def test_a_source_at_the_ceiling_is_read() -> None:
+    """The boundary, so the check cannot be off by one in the strict direction."""
+    exact = _File()
+    exact.size_bytes = store.MAX_SOURCE_BYTES
+    session = _Session([_Result([exact])])
+    objects = _Store()
+    assert await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_a_run_whose_file_retention_purged_answers_missing() -> None:
+    """IMP-01. `source_file_id` is nullable now, because an import must not make
+    a customer's file immortal. Null is a state with a sentence already."""
+    session = _Session()
+    with pytest.raises(store.SourceRefused) as refused:
+        await store.source_bytes(session, _Store(), None)  # type: ignore[arg-type]
+    assert str(refused.value) == "import.source.missing"
+    assert session.statements == [], "a null id was sent to the database as a cast"

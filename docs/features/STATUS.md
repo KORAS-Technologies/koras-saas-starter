@@ -137,6 +137,17 @@ this feature. Either the table learns to honour them or they leave the
 catalogue; leaving them registered and invisible indefinitely is how a catalogue
 stops describing the product.
 
+**Three of the five closed on 2026-09-19.** The shared table learned column
+resizing, column reordering and remembering an arrangement, so
+`grid.allowColumnResize`, `grid.allowColumnReorder` and `grid.rememberColumns`
+are honoured and offered again. The same change gave the table a server-paging
+seam, which is IMPORT-GAP-006 from the other side — one component, two features
+blocked on it, built once rather than by either alone.
+
+`grid.rememberFilters` and `grid.rememberSort` remain hidden, with a sharper
+reason than before: the table has no filter and no sort, so they describe
+persistence of state it does not own.
+
 ### What has no automated proof
 
 The round trip. Changing a setting and watching a table repaginate needs an API,
@@ -144,6 +155,32 @@ a database and rows; the e2e harness starts the web application alone. Sixteen
 browser checks cover routing, refusal and degraded rendering at 1440 and 375,
 and none of them covers the thing the feature is for. That is case TEST-SET-01
 in the manual plan, and it is first for that reason.
+
+## Notification and communication framework
+
+Phases 0 and 1 shipped 2026-09-19; **Phase 2 the same day**. Stories are
+`NOTIF-*` in `docs/platform/execution/CAT-01-notifications.md`.
+
+| Piece | Phase | Status |
+|-------|-------|--------|
+| The `notifications` table, four policies, an isolation suite | 1 | **Built** |
+| Feed routes, bell, drawer, notification centre | 1 | **Built** |
+| Toast and banner primitives | 1 | **Built** — migrating the ~30 hand-rolled alert regions stays out of scope |
+| A channel seam, with email as the first adapter | 2 | **Built** — `core/dispatch.py` |
+| A recipient resolver taking a rule | 2 | **Built** — `core/recipients.py`, `Audience` |
+| `core/notify.py` onto the dispatch point | 2 | **Built** — the assistant's notice composes nothing and sends nothing |
+| `notifications.emailEnabled` honoured and surfaced | 2 | **Built**, narrowed to organisation scope |
+| The recipient's own language | 2 | **Built** for members; an address the platform gave has no resolvable language |
+| A template registry | 2 | **Built narrower** — a template is a function registered beside its kind; one producer does not justify a registry |
+| `notifications.digestFrequency` | 4 | Not started — needs the Phase 3 outbox |
+| Outbox, delivery log, retry | 3 | Not started |
+
+### What has no automated proof
+
+A notification arriving. The unit suite proves the seam decides correctly and
+the browser suite proves the bell and the drawer render; nothing exercises a
+producer through a real database to a real inbox. No mail has been sent by
+this path from a deployed product.
 
 ## Data import and migration framework
 
@@ -170,6 +207,23 @@ Phase 1 of four, shipped 2026-09-19. Stories are `IMPORT-US-*` in
 | IMPORT-US-012 | Cancel a running import | 3 | Part built — `cancel` refuses a commit in flight by state; there is no commit to cancel |
 | IMPORT-US-013 | Retry a failed import without losing its history | 3 | Not started |
 | IMPORT-US-014 | A large file works | 4 | Not started — bounded and **refused** rather than truncated, which is the rule audit exports follow |
+
+### The review
+
+An independent review ran on 2026-09-19, the day Phase 1 shipped, and
+returned **BLOCK**: one critical finding, two high, three medium, three low.
+All six of the first three grades are fixed; the three low ones are carried.
+`docs/features/data-import/review.md` is the record and IMP-01 to IMP-07 are
+rows in `docs/platform/gap-defect-register.md`.
+
+The critical one was not in the import feature. `import_runs` was the only
+foreign key onto `public.files` in the schema and it was `on delete
+restrict`, so the object-retention sweep — which had never met a refusal —
+deleted a customer's bytes, aborted on the row delete, and aborted on the
+same row every night after. No customer file would ever have been purged
+again, silently. That is the third BLOCK in three independent reviews in
+this repository, and the pattern is worth naming: work written and reviewed
+inside one session is not reviewed.
 
 ### What is deliberately unbuilt, and why
 

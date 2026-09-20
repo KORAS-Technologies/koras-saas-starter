@@ -246,10 +246,7 @@ def _check(spec: FieldSpec, value: str) -> str | None:
         except ValueError:
             return "import.error.integer"
     elif spec.kind is FieldKind.DECIMAL:
-        try:
-            float(value.replace(",", "."))
-        except ValueError:
-            return "import.error.decimal"
+        return _check_decimal(value)
     elif spec.kind is FieldKind.BOOLEAN:
         if value.lower() not in _TRUE | _FALSE:
             return "import.error.boolean"
@@ -259,6 +256,49 @@ def _check(spec: FieldSpec, value: str) -> str | None:
     elif spec.kind is FieldKind.EMAIL:
         if not _EMAIL.match(value):
             return "import.error.email"
+    return None
+
+
+def _check_decimal(value: str) -> str | None:
+    """A number, or which of two ways it is not one.
+
+    This did `float(value.replace(",", "."))`, which turned `1,234` -- a US
+    export meaning one thousand two hundred and thirty-four -- into `1.234`.
+    Not refused, not flagged, wrong by a factor of a thousand. IMP-04 in
+    `docs/features/data-import/review.md`.
+
+    The rule is the one this module already applies to dates twenty lines
+    above, and for the same reason: a value that is silently wrong half the
+    time is worse than one that is refused.
+
+    - **Both separators present.** The last one is the decimal point and the
+      other is thousands. Unambiguous in every locale, so it parses.
+    - **One separator, followed by exactly three digits, and nothing else.**
+      `1,234` and `1.234` each have two readings that differ by a thousand.
+      Refused, with a code of its own so the sentence can say what to do.
+    - **Anything else.** One separator followed by any other number of digits
+      is a decimal point in both conventions, so it parses.
+    """
+    dot = value.rfind(".")
+    comma = value.rfind(",")
+
+    if dot >= 0 and comma >= 0:
+        thousands = "," if dot > comma else "."
+        cleaned = value.replace(thousands, "")
+        cleaned = cleaned.replace(",", ".")
+    elif dot >= 0 or comma >= 0:
+        at = max(dot, comma)
+        tail = value[at + 1 :]
+        if len(tail) == 3 and tail.isdigit():
+            return "import.error.ambiguous_decimal"
+        cleaned = value.replace(",", ".")
+    else:
+        cleaned = value
+
+    try:
+        float(cleaned)
+    except ValueError:
+        return "import.error.decimal"
     return None
 
 

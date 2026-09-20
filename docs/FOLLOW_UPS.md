@@ -2281,15 +2281,21 @@ the work. Both reviewers returned BLOCK; everything they found is fixed and in
 Opened 2026-09-19, the day the eleven phases finished. Nothing here is a
 defect; each is a decision taken deliberately, with the reason.
 
-- [ ] **Five settings that resolve and do nothing.** `grid.allowColumnResize`,
-      `grid.allowColumnReorder`, `grid.rememberFilters`, `grid.rememberSort`
-      and `grid.rememberColumns` are in the brief's catalogue, so they are
-      registered, scoped, resolvable and audited — and marked `surfaced=False`,
-      because the shared table does not honour any of them. A control a person
-      can change that changes nothing costs them the time to find out. The
-      resolution is one of two things and not a third: the table learns them,
-      or they leave the catalogue. Leaving them registered and invisible is how
-      a catalogue stops describing the product.
+- [x] **Five settings that resolve and do nothing** — **three closed
+      2026-09-19.** The shared table learned column resizing, column reordering
+      and remembering an arrangement, so `grid.allowColumnResize`,
+      `grid.allowColumnReorder` and `grid.rememberColumns` are honoured and
+      offered again. It was built once for this and for IMPORT-GAP-006, which
+      names the same component from the other side; neither feature should have
+      built it alone.
+- [ ] **Two settings that still resolve and do nothing.**
+      `grid.rememberFilters` and `grid.rememberSort` stay `surfaced=False`, and
+      the reason is now sharper than "the table does not honour them": the
+      table has no filter and no sort, so they describe persistence of state it
+      does not own. A surface above it does. The resolution is one of two
+      things and not a third: the table grows sorting and filtering, or they
+      leave the catalogue. Leaving them registered and invisible is how a
+      catalogue stops describing the product.
 - [ ] **No page in a generated product uses the shared table.** The grid
       integration is the feature's most visible claim and the template has no
       list long enough to page. The page that makes `grid.pageSize` observable
@@ -2319,6 +2325,39 @@ defect; each is a decision taken deliberately, with the reason.
       if a platform default turns out to be wrong for everybody, the only route
       today is a hand-written update per tenant. What it needs is a decision
       about who may do it and what it records, not a script.
+
+### F26 — the platform's member list carries no subject
+
+Opened 2026-09-19, by CAT-01 Phase 2, which is the first work that needed the
+two halves to join and found that they do not.
+
+A notification has two destinations and this product knows its people
+differently in each. The feed goes to a **subject** — a row in
+`tenant_members`, somebody who can open the product. A mail goes to an
+**address** — `tenants.owner_email`, plus whatever
+`GET /api/portal/v1/members` holds. That answer carries an email and a role and
+**not** the ZITADEL subject, so an address cannot be matched back to a member.
+
+Three consequences, each paid rather than fixed as of 2026-09-19:
+
+- [ ] **A person-level email preference cannot exist.** `notifications.emailEnabled`
+      is `Scope.GLOBAL_ORG` for exactly this reason: a recipient the product
+      can mail is one it cannot match to a member, so a per-person switch would
+      be a control nothing could ever read. The rung is not offered rather than
+      offered and ignored.
+- [ ] **A mail cannot be written in the recipient's own language** unless they
+      are also resolved as a member. A member's stored `general.language` is
+      read for the feed; an address falls back to the organisation's.
+- [ ] **The same person can be told twice** — once as a subject and once as an
+      address — and `recipients.resolve` cannot tell that they are one person.
+      Today the two audiences barely overlap, because members rarely have
+      addresses the product holds, so this is latent rather than visible.
+
+What closes it is one field in the Control Plane's portal contract: the member
+list answering the subject beside the email. That is a change in
+`koras-control-plane` and a version of
+`contracts/product-platform.v1.json`, not a change here — which is why this is
+an entry rather than a defect.
 
 ### F28 — data import: what Phase 1 leaves out
 

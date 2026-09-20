@@ -837,8 +837,19 @@ describe('the settings catalogue speaks every language', () => {
 
   /** Every `_setting(` call, with whether it is hidden from both pages. */
   function declared(): { key: string; surfaced: boolean }[] {
+    // Comment lines are stripped before the flag is looked for. A definition's
+    // comment routinely *mentions* `surfaced=False` -- to say why a setting is
+    // hidden, or why a neighbouring one no longer is -- and a raw substring
+    // search cannot tell the flag from prose about the flag. That misread
+    // `notifications.emailEnabled` as hidden on the day it was surfaced, and it
+    // is the third time in two days a text search has been fooled this way.
+    const code = (body: string) =>
+      body
+        .split(String.fromCharCode(10))
+        .filter((line) => !line.trimStart().startsWith('#'))
+        .join(String.fromCharCode(10))
     return [...standard.matchAll(/_setting\(\s*\n\s*"([\w.]+)",([\s\S]*?)\n {4}\),/g)].map(
-      (match) => ({ key: match[1]!, surfaced: !match[2]!.includes('surfaced=False') }),
+      (match) => ({ key: match[1]!, surfaced: !code(match[2]!).includes('surfaced=False') }),
     )
   }
 
@@ -849,7 +860,7 @@ describe('the settings catalogue speaks every language', () => {
 
   it('gives every shown setting a label and a description, in all three', () => {
     const shown = declared().filter((setting) => setting.surfaced)
-    expect(shown.length).toBe(24)
+    expect(shown.length).toBe(28)
 
     for (const { locale, text } of catalogues) {
       for (const { key } of shown) {
@@ -868,7 +879,7 @@ describe('the settings catalogue speaks every language', () => {
     const hidden = declared()
       .filter((setting) => !setting.surfaced)
       .map((setting) => setting.key)
-    expect(hidden.length).toBe(8)
+    expect(hidden.length).toBe(4)
 
     const keys = new Set(
       catalogues
@@ -923,8 +934,10 @@ describe('the settings catalogue speaks every language', () => {
   })
 
   it('hides exactly the settings nothing honours', () => {
-    // Eight. Five the shared table does not read, two the notification work
-    // could not honour, and one the upload route cannot count -- it issues a
+    // Four. Two the shared table cannot read because it has no filter and no
+    // sort -- they describe persistence of state it does not own -- one the
+    // notification work still cannot honour, since a digest needs an outbox
+    // and that is Phase 3, and one the upload route cannot count -- it issues a
     // ticket per call and has no notion of a batch, so `files.maxFilesPerUpload`
     // was hidden on 2026-09-19 when the import work enforced the other two
     // `files.*` settings and found this one unenforceable as the route stands.
@@ -936,13 +949,9 @@ describe('the settings catalogue speaks every language', () => {
       .sort()
     expect(hidden).toEqual([
       'files.maxFilesPerUpload',
-      'grid.allowColumnReorder',
-      'grid.allowColumnResize',
-      'grid.rememberColumns',
       'grid.rememberFilters',
       'grid.rememberSort',
       'notifications.digestFrequency',
-      'notifications.emailEnabled',
     ])
 
     // And the code really does not read them, which is what makes hiding them

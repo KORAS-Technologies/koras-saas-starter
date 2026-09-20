@@ -87,6 +87,8 @@ export function apiErrorMessage(t: Translator, code: string | null | undefined):
       return t('errors.importNotTransitionable')
     case 'import_queue_unavailable':
       return t('errors.importQueueUnavailable')
+    case 'import_file_too_large':
+      return t('errors.importFileTooLarge')
     case 'file_under_hold':
       return t('errors.fileUnderHold')
     case 'file_quarantined':

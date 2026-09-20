@@ -14,7 +14,7 @@ os.environ.setdefault("ZITADEL_DOMAIN", "https://example.invalid")
 os.environ.setdefault("ZITADEL_PROJECT_ID", "0")
 
 from koras_ai import ActionStatus, Operation, ProposedAction  # noqa: E402
-from koras_api.core import notify  # noqa: E402
+from koras_api.core import dispatch, notify, recipients  # noqa: E402
 from koras_email import RecordingEmailSender  # noqa: E402
 
 FILE_ID = "31055174-7afb-4a70-8e3b-1bb0b5dd250b"
@@ -64,6 +64,36 @@ class _Session:
         return "Owner@Acme.test"
 
 
+class _Members:
+    """A session that answers the two reads `recipients.resolve` makes."""
+
+    def __init__(
+        self,
+        members: list[tuple[str, str]],
+        member_settings: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
+        self._members = members
+        self._settings = member_settings or {}
+        self.reads: list[str] = []
+
+    async def execute(self, statement: object, parameters: dict[str, Any]) -> Any:  # noqa: ANN401
+        sql = str(statement)
+        self.reads.append(sql)
+        if "tenant_members" in sql:
+            rows = [
+                type("Row", (), {"user_id": user, "role": role})()
+                for user, role in self._members
+            ]
+            return type("Result", (), {"all": lambda _self: rows})()
+        if "owner_email" in sql:
+            return type("Result", (), {"scalar_one_or_none": lambda _self: "Owner@Acme.test"})()
+        # The member settings read, which `settings_store.member_values` makes
+        # and which unpacks each row as a (key, value) pair.
+        user = parameters.get("user_id", "")
+        pairs = list(self._settings.get(str(user), {}).items())
+        return type("Result", (), {"all": lambda _self: pairs})()
+
+
 def test_only_owners_and_administrators_who_are_active_are_told() -> None:
     members = [
         {"email": "Owner@Acme.test", "role": "organization_owner", "status": "active"},
@@ -74,8 +104,20 @@ def test_only_owners_and_administrators_who_are_active_are_told() -> None:
         {"role": "organization_owner", "status": "active"},
         "not a member",
     ]
-    assert notify.approvers_from_members(members) == ["owner@acme.test", "admin@acme.test"]
-    assert notify.approvers_from_members({"members": []}) == []
+    # Moved to `core/recipients.py` in CAT-01 Phase 2 and given the permission
+    # as an argument: it was hardcoded to `ai.approve` in a module the
+    # assistant owns, which is the wrong place for a rule any producer needs.
+    assert recipients.addresses_from_members(members, "ai.approve") == [
+        "owner@acme.test",
+        "admin@acme.test",
+    ]
+    assert recipients.addresses_from_members({"members": []}, "ai.approve") == []
+    # A different permission resolves a different audience, which is the
+    # whole point of taking it as an argument: the billing administrator holds
+    # `reports.export` and does not hold `ai.approve`.
+    assert "billing@acme.test" in recipients.addresses_from_members(
+        members, "reports.export"
+    )
 
 
 async def test_a_delete_is_described_by_the_file_it_would_delete() -> None:
@@ -179,45 +221,94 @@ def test_html_escapes_what_a_person_typed() -> None:
     assert "&lt;x&gt;.md" in html
 
 
-async def test_one_notice_per_approver_with_an_html_body_and_none_when_nothing_waits() -> None:
+async def test_the_mail_dispatch_prepared_is_sent_once_per_address() -> None:
+    """`dispatch` prepares; `send` delivers. The split is so that a mail leaves
+    only after the caller's transaction has committed — a feed row can be
+    rolled back and a mail cannot."""
     sender = RecordingEmailSender()
+    mail = [
+        dispatch.Mail(
+            to="owner@acme.test",
+            subject="Sample: an action is waiting",
+            text="Go to the assistant page.",
+            html="<p>Delete the file a.md</p>",
+            tag="ai.approval_requested",
+        ),
+        dispatch.Mail(
+            to="admin@acme.test",
+            subject="Sample: an action is waiting",
+            text="Go to the assistant page.",
+            html="<p>Delete the file a.md</p>",
+            tag="ai.approval_requested",
+        ),
+    ]
+    assert await dispatch.send(sender, mail) == 2
+    assert [m["to"] for m in sender.sent] == ["owner@acme.test", "admin@acme.test"]
+    assert sender.sent[0]["tag"] == "ai.approval_requested"
+    assert "Delete the file a.md" in (sender.sent[0]["html"] or "")
+
+    quiet = RecordingEmailSender()
+    assert await dispatch.send(quiet, []) == 0
+    assert quiet.sent == []
+
+
+async def test_a_send_that_fails_does_not_stop_the_rest() -> None:
+    """The thing the customer asked for has already happened by the time these
+    go out. One provider refusal must not cost the other nine their notice."""
+
+    class _Flaky:
+        def __init__(self) -> None:
+            self.seen: list[str] = []
+
+        @property
+        def simulated(self) -> bool:
+            return False
+
+        async def send(self, *, to: str, **_: object) -> object:
+            self.seen.append(to)
+            if to == "bad@acme.test":
+                raise RuntimeError("the provider refused")
+            return type("Sent", (), {"simulated": False})()
+
+    sender = _Flaky()
+    mail = [
+        dispatch.Mail(to=address, subject="s", text="t", html="<p>h</p>")
+        for address in ("bad@acme.test", "good@acme.test")
+    ]
+    assert await dispatch.send(sender, mail) == 1  # type: ignore[arg-type]
+    assert sender.seen == ["bad@acme.test", "good@acme.test"]
+
+
+def test_the_approval_template_says_the_same_thing_in_both_bodies() -> None:
+    """The feed used to take the mail's first line by splitting the plain text.
+    That worked, and would have stopped working the first time the mail grew a
+    preamble. One template renders both now."""
     summary = notify.ActionSummary("files.delete", "destructive", "Delete the file a.md", "1 KB")
-    sent = await notify.notify_awaiting_approval(
-        recipients=["owner@acme.test", "admin@acme.test"],
-        summaries=[summary],
+    render = notify.approval_notice(
+        [summary],
         product="Sample",
         app_url="",
         requester=REQUESTER,
         request_text="delete a.md",
         requested_at=WHEN,
-        tag="ai-approval:act-1",
-        sender=sender,
     )
-    assert sent == 2
-    assert [m["to"] for m in sender.sent] == ["owner@acme.test", "admin@acme.test"]
-    assert sender.sent[0]["tag"] == "ai-approval:act-1"
-    assert sender.sent[0]["html"] is not None and "Delete the file a.md" in sender.sent[0]["html"]
-    assert "assistant page" in sender.sent[0]["body"]
+    english = render("en")
+    assert english.title == english.subject
+    assert english.url == "/dashboard/assistant"
+    assert english.html is not None and "Delete the file a.md" in english.html
+    assert english.body and english.body in english.text
 
-    quiet = RecordingEmailSender()
-    assert (
-        await notify.notify_awaiting_approval(
-            recipients=["owner@acme.test"],
-            summaries=[],
-            product="Sample",
-            app_url="",
-            requester=REQUESTER,
-            request_text="",
-            sender=quiet,
-        )
-        == 0
-    )
-    assert quiet.sent == []
+    # A language in, that language out. The one thing a template is for.
+    german = render("de")
+    assert german.subject != english.subject
 
 
-async def test_approvers_come_from_the_owner_row_and_the_platform(
+async def test_an_audience_resolves_the_owner_and_the_platforms_members(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """One rule, both halves. The owner contributes an address with no subject,
+    because the tenant row holds the address and not the person."""
+
     class _Answer:
         body = [{"email": "admin@acme.test", "role": "organization_admin", "status": "active"}]
 
@@ -225,12 +316,72 @@ async def test_approvers_come_from_the_owner_row_and_the_platform(
         assert path.endswith("/members") and token == "tok"  # noqa: S105
         return _Answer()
 
-    monkeypatch.setattr(notify.platform, "configured", lambda: True)
-    monkeypatch.setattr(notify.platform, "read_portal", _read_portal)
-    found = await notify.approvers(
-        _Session(None),  # type: ignore[arg-type]
+    monkeypatch.setattr(recipients.platform, "configured", lambda: True)
+    monkeypatch.setattr(recipients.platform, "read_portal", _read_portal)
+
+    found = await recipients.resolve(
+        _Members([]),  # type: ignore[arg-type]
         tenant_id="tenant-1",
+        audience=recipients.Audience(permission="ai.approve", include_owner=True),
         organization_id="org-1",
         token="tok",  # noqa: S106
     )
-    assert found == ["owner@acme.test", "admin@acme.test"]
+    assert sorted(person.email or "" for person in found) == [
+        "admin@acme.test",
+        "owner@acme.test",
+    ]
+    # Neither has a subject, so neither gets a feed row. That is the asymmetry
+    # `recipients.py` exists to make visible rather than paper over.
+    assert recipients.subjects_of(found) == []
+
+
+async def test_a_member_is_resolved_with_their_own_language() -> None:
+    """NOTIF-DEF-003. The notice went out in the language of the person who
+    asked, who is the one person it is never sent to."""
+    session = _Members(
+        [("user-1", "organization_admin"), ("user-2", "member")],
+        member_settings={"user-1": {"general.language": "de"}},
+    )
+    found = await recipients.resolve(
+        session,  # type: ignore[arg-type]
+        tenant_id="tenant-1",
+        audience=recipients.Audience(permission="ai.approve"),
+        fallback_locale="es",
+    )
+    assert [(p.subject, p.locale, p.locale_is_theirs) for p in found] == [
+        ("user-1", "de", True)
+    ]
+
+
+async def test_a_member_with_no_stored_language_falls_back_to_the_organisation() -> None:
+    session = _Members([("user-1", "organization_admin")])
+    [person] = await recipients.resolve(
+        session,  # type: ignore[arg-type]
+        tenant_id="tenant-1",
+        audience=recipients.Audience(permission="ai.approve"),
+        fallback_locale="es",
+    )
+    assert (person.locale, person.locale_is_theirs) == ("es", False)
+
+
+async def test_auto_is_not_a_language_to_write_in() -> None:
+    """ADR 0007 makes `auto` a value rather than an absence, and there is no
+    context to infer from in a background send."""
+    session = _Members(
+        [("user-1", "organization_admin")],
+        member_settings={"user-1": {"general.language": "auto"}},
+    )
+    [person] = await recipients.resolve(
+        session,  # type: ignore[arg-type]
+        tenant_id="tenant-1",
+        audience=recipients.Audience(permission="ai.approve"),
+        fallback_locale="de",
+    )
+    assert (person.locale, person.locale_is_theirs) == ("de", False)
+
+
+def test_an_audience_that_names_nobody_is_refused_at_the_call_site() -> None:
+    """A rule resolving to nobody is a question for the caller; a rule that
+    *cannot* resolve to anybody is a bug, and fails where it is written."""
+    with pytest.raises(ValueError, match="say who it is for"):
+        recipients.Audience()

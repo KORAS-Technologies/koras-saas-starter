@@ -838,6 +838,8 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'Esto no parece una dirección de correo electrónico',
   'imports.problem.extraCells':
     'Esta fila tiene más celdas que columnas tiene el archivo',
+  'imports.problem.ambiguousDecimal':
+    'Esto se puede leer de dos maneras que difieren en mil veces. Escríbalo sin separador de millares.',
   'imports.problem.duplicateInFile':
     'Otra fila de este mismo archivo ya tiene este valor',
   'imports.error.forbidden':
@@ -966,6 +968,15 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'settings.def.grid.stickyHeader.description': 'Los encabezados se quedan fijos mientras las filas se desplazan.',
   'settings.def.grid.rowDensity.label': 'Altura de fila',
   'settings.def.grid.rowDensity.description': 'Qué altura tienen las filas de una tabla.',
+  'settings.def.grid.allowColumnResize.label': 'Columnas redimensionables',
+  'settings.def.grid.allowColumnResize.description':
+    'Permitir arrastrar el borde de una columna para hacerla más ancha o más estrecha.',
+  'settings.def.grid.allowColumnReorder.label': 'Columnas movibles',
+  'settings.def.grid.allowColumnReorder.description':
+    'Permitir mover una columna a la izquierda o a la derecha en una tabla.',
+  'settings.def.grid.rememberColumns.label': 'Recordar la disposición de columnas',
+  'settings.def.grid.rememberColumns.description':
+    'Conservar los anchos y el orden que alguien haya dispuesto, en este dispositivo.',
   // ── Notificaciones ────────────────────────────────────────────────────────
   'notifications.title': 'Notificaciones',
   'notifications.unread': '{count} sin leer',
@@ -982,6 +993,9 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'notifications.hiddenBody': 'Ha desactivado las notificaciones en el producto. Puede volver a activarlas en sus preferencias.',
   'settings.def.notifications.inAppEnabled.label': 'Notificaciones en el producto',
   'settings.def.notifications.inAppEnabled.description': 'Mostrar notificaciones mientras esté conectado.',
+  'settings.def.notifications.emailEnabled.label': 'Notificaciones por correo',
+  'settings.def.notifications.emailEnabled.description':
+    'Enviar también un correo cuando algo esté esperando por usted.',
   'settings.def.files.maxUploadSizeMb.label': 'Archivo más grande',
   'settings.def.files.maxUploadSizeMb.description': 'El archivo individual más grande que se puede subir aquí, en megabytes.',
   'settings.def.files.allowedExtensions.label': 'Tipos de archivo permitidos',
@@ -1040,6 +1054,8 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'grid.next': 'Siguiente',
   'grid.showing': 'Mostrando {from} a {to} de {total}',
   'grid.page': 'Página {page} de {pages}',
+  'grid.moveColumnLeft': 'Mover {column} a la izquierda',
+  'grid.moveColumnRight': 'Mover {column} a la derecha',
   'errors.tokenInvalid': 'Su sesión ha caducado. Inicie sesión de nuevo.',
   'errors.tenantInactive': 'Su organización no está activa en este producto.',
   'errors.roleRequired': 'Solo un propietario o administrador de su organización puede hacer eso.',
@@ -1077,6 +1093,8 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'Esta importación ha avanzado y eso ya no es posible.',
   'errors.importQueueUnavailable':
     'El trabajo en segundo plano no está configurado, así que este archivo no se puede comprobar. Tiene que configurarlo una persona administradora.',
+  'errors.importFileTooLarge':
+    'Este archivo es más grande de lo que lee una importación. Divídalo e importe las partes por separado.',
   'errors.uploadRefusedByPolicy':
     'Este archivo no se admite. Compruebe su tamaño y su tipo frente a la configuración de su organización.',
   'errors.fileUnderHold':

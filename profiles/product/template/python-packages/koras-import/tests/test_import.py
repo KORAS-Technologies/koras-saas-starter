@@ -17,6 +17,8 @@ from collections.abc import Mapping
 
 import pytest
 from koras_import import (
+    ENCODINGS,
+    FALLBACK_ENCODING,
     FieldKind,
     FieldSpec,
     Format,
@@ -24,6 +26,7 @@ from koras_import import (
     MappingRefused,
     Operation,
     ReadRefused,
+    Row,
     RunState,
     TargetRegistry,
     TransitionRefused,
@@ -40,6 +43,7 @@ from koras_import import (
     sniff_delimiter,
     suggest,
     validate,
+    validate_row,
     wrote_nothing,
 )
 
@@ -477,3 +481,71 @@ def test_a_refused_move_names_both_states_and_what_was_allowed() -> None:
 def test_a_target_says_which_formats_it_accepts() -> None:
     assert CUSTOMERS.accepts(Format.CSV)
     assert not CUSTOMERS.accepts(Format.XLSX)
+
+
+# ── what the review found ────────────────────────────────────────────────────
+
+
+def test_a_file_no_strict_encoding_fits_says_so() -> None:
+    """IMP-03. `latin-1` was in `ENCODINGS` and maps all 256 byte values, so the
+    loop always returned before its own fallback: the fallback was unreachable
+    and `replaced` was structurally always False. The page's "some characters
+    could not be read" banner could never appear, in any of three languages."""
+    decoded = decode(b"name\n\x81dam\n")
+    assert decoded.replaced is True
+    assert decoded.encoding == "latin-1"
+    # And the strict pair still wins where either fits, so this is a fallback
+    # rather than a new default.
+    assert decode(b"name\nAda\n").replaced is False
+    assert decode("name\nMünchen\n".encode("cp1252")).replaced is False
+
+
+def test_latin1_is_not_one_of_the_strict_encodings() -> None:
+    """Asserted structurally, because that membership is the whole defect and
+    re-adding it would make every behavioural test above pass again."""
+    assert "latin-1" not in ENCODINGS
+    assert FALLBACK_ENCODING == "latin-1"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        # Unambiguous: both separators present, so the last one is the point.
+        ("1,234.56", None),
+        ("1.234,56", None),
+        ("1234.56", None),
+        ("1234,56", None),
+        # Unambiguous: one separator, and not three digits after it.
+        ("1,5", None),
+        ("1.5", None),
+        ("12,34", None),
+        ("1.2345", None),
+        ("-3,7", None),
+        # Ambiguous: one separator, exactly three digits after. These differ by
+        # a factor of a thousand depending on which continent wrote the file,
+        # and `float(value.replace(",", "."))` silently picked one.
+        ("1,234", "import.error.ambiguous_decimal"),
+        ("1.234", "import.error.ambiguous_decimal"),
+        ("99,000", "import.error.ambiguous_decimal"),
+        # Not a number at all.
+        ("abc", "import.error.decimal"),
+        ("1 234", "import.error.decimal"),
+    ],
+)
+def test_a_decimal_is_parsed_or_refused_and_never_guessed(
+    value: str, expected: str | None
+) -> None:
+    """IMP-04, and the same rule this module already applies to `%m/%d/%Y`: a
+    value that is silently wrong half the time is worse than one refused."""
+    spec = FieldSpec(name="amount", label_key="x", kind=FieldKind.DECIMAL)
+    target = ImportTarget(
+        key="shop.prices",
+        label_key="x",
+        permission="imports.manage",
+        fields=(FieldSpec(name="sku", label_key="x", required=True), spec),
+        match_keys=("sku",),
+    )
+    resolved = resolve(target, ("SKU", "Amount"), {"SKU": "sku", "Amount": "amount"})
+    row = Row(number=2, cells={"SKU": "a", "Amount": value}, short=False, long=False)
+    codes = [problem.code for problem in validate_row(target, resolved, row)]
+    assert codes == ([] if expected is None else [expected])

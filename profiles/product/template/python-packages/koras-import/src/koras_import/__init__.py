@@ -67,6 +67,7 @@ from .mapping import (
 from .reading import (
     DELIMITERS,
     ENCODINGS,
+    FALLBACK_ENCODING,
     MAX_CELL,
     PREVIEW_ROWS,
     Decoded,
@@ -105,6 +106,7 @@ __all__ = [
     "COMMIT_RUN",
     "DELIMITERS",
     "ENCODINGS",
+    "FALLBACK_ENCODING",
     "MAX_CELL",
     "MAX_REPORTED_ERRORS",
     "PREVIEW_ROWS",

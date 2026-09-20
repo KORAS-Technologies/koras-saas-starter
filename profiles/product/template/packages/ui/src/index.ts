@@ -169,3 +169,14 @@ export {
   sizeOptions,
 } from './data-table/paging'
 export type { Paging } from './data-table/paging'
+// Pure, and exported for the same reason `paging` is: this package has no test
+// runner, and the starter's suite executes these directly.
+export {
+  MAX_COLUMN_WIDTH,
+  MIN_COLUMN_WIDTH,
+  applyArrangement,
+  clampWidth,
+  parseArrangement,
+  storageKey,
+} from './data-table/columns'
+export type { Arrangement } from './data-table/columns'

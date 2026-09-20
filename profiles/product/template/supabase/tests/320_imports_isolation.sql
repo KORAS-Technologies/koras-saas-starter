@@ -209,13 +209,30 @@ begin
     when check_violation then null;
   end;
 
-  -- A file under a run is evidence of where rows came from.
-  begin
-    delete from public.files where id = '00000000-0000-0000-0000-0000000000f1';
-    raise exception 'files: a source file was deleted while a run pointed at it';
-  exception
-    when foreign_key_violation then null;
-  end;
+  -- Retention reaches an import source exactly as it reaches anything else.
+  --
+  -- This asserted the opposite until 2026-09-19: the foreign key was
+  -- `on delete restrict` and this case proved the delete was refused. That
+  -- refusal is what made the object-retention sweep abort -- after marking the
+  -- row purged and deleting the bytes -- and abort again every night after,
+  -- so no customer file was ever purged again. IMP-01 in
+  -- `docs/features/data-import/review.md`.
+  --
+  -- The run survives the file: what it remembers about the import is on its own
+  -- row, and the routes answer `import.source.missing` for a null.
+  delete from public.files where id = '00000000-0000-0000-0000-0000000000f1';
+  if exists (
+    select 1 from public.import_runs
+    where id = '00000000-0000-0000-0000-0000000000a1'
+      and source_file_id is not null
+  ) then
+    raise exception 'import_runs: a purged source file did not null the reference';
+  end if;
+  if not exists (
+    select 1 from public.import_runs where id = '00000000-0000-0000-0000-0000000000a1'
+  ) then
+    raise exception 'import_runs: purging the source file took the run with it';
+  end if;
 
   raise notice 'import runs, the database keeps the two-actor rule: ok';
 end

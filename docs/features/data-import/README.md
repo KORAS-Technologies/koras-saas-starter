@@ -11,7 +11,10 @@ reads the report. There is no commit route, no commit task, and no control on
 the page that could write a row — absent rather than disabled, because a
 disabled button promises a thing the product cannot do.
 
-No manual pass has been run against any of it.
+**An independent review ran on 2026-09-19 and returned BLOCK.** One
+critical finding, two high and three medium; all six are fixed, three low
+ones are carried. `review.md` here is the record. No manual pass has been
+run against any of it.
 
 ## The documents
 
@@ -21,6 +24,7 @@ No manual pass has been run against any of it.
 | `docs/adr/0009-import-runs-are-not-a-third-export.md` | Why an import run has its own table rather than reusing the export pattern | Before Phase 1 code |
 | `architecture.md` (here) | What was actually built, and where it departs from the plan | After |
 | `manual-test-plan.md` (here) | The cases no automated test in this estate reaches | After |
+| `review.md` (here) | The independent review, its six findings and what each one broke | After |
 
 The plan is left as it was written. Where it and `architecture.md` disagree,
 the as-built one is right — a design document edited after the fact stops being

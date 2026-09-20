@@ -310,9 +310,9 @@ async def retry_stranded(
             logger.warning("a stranded object still could not be removed from the bucket")
             still += 1
             continue
-        await session.execute(_DELETE_ROW, {"id": row.id})
-        await session.commit()
-        await session.execute(_PROVISIONING)
+        if not await _forget(session, row.id):
+            still += 1
+            continue
         cleared += 1
     return cleared, still
 
@@ -359,12 +359,44 @@ async def purge_expired(
             {"size_bytes": int(row.size_bytes)},
         )
         await session.execute(_PROVISIONING)
-        await session.execute(_DELETE_ROW, {"id": row.id})
-        await session.commit()
-        await session.execute(_PROVISIONING)
+        if not await _forget(session, row.id):
+            stranded += 1
+            continue
         purged += 1
 
     return purged, held, stranded
+
+
+async def _forget(session: AsyncSession, file_id: str) -> bool:
+    """Remove the index row, or say it could not be and leave the sweep running.
+
+    **The sweep aborted here until 2026-09-19**, and the consequence was as bad
+    as this job gets. `import_runs.source_file_id` was the first foreign key
+    onto `public.files` and it was `on delete restrict`, so the delete raised --
+    after the row had been marked `purged` and after the bytes had been removed
+    from the bucket. The exception escaped, the rest of the night's files were
+    never purged, and the next run met the same row first and raised again. No
+    customer file was ever purged after that, silently, for as long as the
+    product ran. IMP-01 in `docs/features/data-import/review.md`.
+
+    The foreign key is fixed too, and this is the part that makes the *class*
+    fixed: the next reference onto `files` cannot stop retention, because a row
+    that will not delete is counted as stranded and the sweep goes on. A
+    stranded row is already this job's own backlog, retried at the start of the
+    next run, so it is a state the product knows how to carry.
+    """
+    try:
+        await session.execute(_DELETE_ROW, {"id": file_id})
+        await session.commit()
+    except Exception:
+        # Never a bare re-raise: the whole point is that one undeletable row
+        # must not stop the other ninety-nine.
+        logger.exception("a purged file's index row could not be removed")
+        await session.rollback()
+        await session.execute(_PROVISIONING)
+        return False
+    await session.execute(_PROVISIONING)
+    return True
 
 
 async def _record(

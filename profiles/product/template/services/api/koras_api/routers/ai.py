@@ -38,6 +38,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..core import notify
 from ..core.ai import AiDep, AiFactoryDep, AiTurnLimit, TenantAI, refusal
 from ..core.database import tenant_session
+from ..core.dispatch import Event, dispatch
+from ..core.dispatch import send as send_notifications
 from ..core.errors import ApiErrorCode, api_error
 from ..core.locale import RequestLocale
 from ..core.settings import PRODUCT_NAME, settings
@@ -365,69 +367,72 @@ async def _flush(ai: TenantAI) -> None:
 async def _tell_approvers(
     ai: TenantAI, background: BackgroundTasks, turn: Turn, request_text: str, locale: str
 ) -> None:
-    """Queue the approval notice for the actions this turn left waiting.
+    """Announce the actions this turn left waiting, and queue the mail.
 
-    Recipients and the words describing each action are resolved here, on
-    the request's session, and the mail is sent after the response. A
-    failure to find or tell anybody is logged and never fails the turn: the
-    action still waits in the assistant, which is where it waited before
-    there was a notice at all.
+    The words describing each action are resolved here, on the request's
+    session, and everything after that is `core/dispatch.py`'s: who may
+    approve, what language each of them reads, whether each of them wants a
+    mail, and which rows to write. A failure to find or tell anybody is logged
+    and never fails the turn — the action still waits in the assistant, which
+    is where it waited before there was a notice at all.
 
-    `locale` is the request's, from `Accept-Language`: the language the
-    person was reading when they asked, and the best a product knows of the
-    organization's until members carry a stored preference.
+    `locale` is the request's, from `Accept-Language`, and since CAT-01 Phase 2
+    it is **only the fallback**: for somebody whose own stored language the
+    product does not hold. It used to be the language the whole notice went out
+    in, which meant writing to every approver in the language of the person who
+    asked — the one person the notice is never sent to.
     """
     waiting = notify.awaiting(turn.actions)
-    if not waiting:
+    if not waiting or ai.session is None:
         return
     try:
-        recipients = await notify.approvers(
-            ai.session,
-            tenant_id=ai.context.tenant_id,
-            organization_id=ai.context.organization_id,
-            token=ai.token,
-        )
         summaries = await notify.summarize(
             ai.session, tenant_id=ai.context.tenant_id, actions=waiting
         )
     except Exception:
-        _log.exception("approvers could not be resolved; the action waits unannounced")
+        _log.exception("the actions could not be described; they wait unannounced")
         return
 
     requester = notify.Requester(
         id=ai.context.user_id, name=ai.requester_name, email=ai.requester_email
     )
 
-    # In the product first, and on this request's own session: a notification
-    # is tenant data and belongs with the turn that produced it. The commit is
-    # deliberate rather than left to whatever runs next -- the turn and its
-    # actions are already written by this point, so there is no partial state
-    # to publish, and a notice that depended on a later commit would be a
-    # notice that vanished whenever the route returned by another path.
-    if ai.session is not None:
-        await notify.announce_awaiting_approval(
-            ai.session,
+    # One call, two channels. `dispatch` resolves who may approve, reads each
+    # person's own language and each person's own preference, writes the feed
+    # rows on this session and hands back the mail it did not send.
+    #
+    # `locale` here is the request's, and it is now only the **fallback** --
+    # for somebody whose own language the product does not hold. The notice
+    # used to go out in the language of the person who asked, which is the one
+    # person it is never sent to. NOTIF-DEF-003.
+    outcome = await dispatch(
+        ai.session,
+        Event(
+            kind=notify.APPROVAL_REQUESTED.key,
             tenant_id=ai.context.tenant_id,
-            summaries=summaries,
-            product=PRODUCT_NAME,
-            app_url=settings.next_public_app_url,
-            requester=requester,
-            request_text=request_text,
-            locale=resolve_locale(locale),
-        )
-        await ai.session.commit()
-
-    background.add_task(
-        notify.notify_awaiting_approval,
-        recipients=recipients,
-        summaries=summaries,
-        product=PRODUCT_NAME,
-        app_url=settings.next_public_app_url,
-        requester=requester,
-        request_text=request_text,
-        tag=f"ai-approval:{waiting[0].id}",
-        locale=resolve_locale(locale),
+            audience=notify.APPROVAL_AUDIENCE,
+            render=notify.approval_notice(
+                summaries,
+                product=PRODUCT_NAME,
+                app_url=settings.next_public_app_url,
+                requester=requester,
+                request_text=request_text,
+            ),
+            fallback_locale=resolve_locale(locale),
+            organization_id=ai.context.organization_id,
+            token=ai.token,
+        ),
     )
+
+    # The commit is deliberate rather than left to whatever runs next -- the
+    # turn and its actions are already written by this point, so there is no
+    # partial state to publish, and a notice that depended on a later commit
+    # would be one that vanished whenever the route returned by another path.
+    await ai.session.commit()
+
+    # After the commit, never on the session: a mail cannot be rolled back.
+    if outcome.mail:
+        background.add_task(send_notifications, notify.mail_sender(), outcome.mail)
 
 
 @router.post("/ai/conversations/{conversation_id}/messages", response_model=TurnView)

@@ -1,6 +1,7 @@
 # ADR 0009 — An import run is not a third export
 
-**Status.** Accepted, 2026-09-19. The decision CAT-02 Phase 0 owed itself before
+**Status.** Accepted, 2026-09-19. **Amended the same day** — see *Amendment 1*
+at the end, which reverses one sentence of the reasoning below. The decision CAT-02 Phase 0 owed itself before
 any migration was written, recorded as PLAT-GAP-006 in
 `docs/platform/gap-defect-register.md`.
 
@@ -70,3 +71,31 @@ fourth subject of this shape should re-open the question rather than copy a
 third time — and should read this first, because the argument above is about
 meaning and not about column overlap, and a fourth table that *does* mean "ask
 for a file, wait, fetch it" belongs with the exports rather than with the runs.
+
+## Amendment 1 — the source file is not evidence, 2026-09-19
+
+The migration this decision produced wrote
+`source_file_id ... on delete restrict`, on the reasoning that a source file is
+"evidence of where rows came from". **That sentence is withdrawn.**
+
+A run's provenance is its columns, its mapping, its counts, its operation and
+who asked. All of that is on the run row and none of it is in the file. The
+bytes are the customer's own file and are subject to the same retention as
+anything else they uploaded; treating them as the run's evidence made an import
+a way to make a file immortal, which is the opposite of what a retention floor
+is for.
+
+It also did concrete damage, which is what found it. `import_runs` was the only
+foreign key onto `public.files` in the schema, so the object-retention sweep had
+never met a refusal and did not handle one: it marked the row purged, deleted
+the bytes from the bucket, then raised on the row delete and aborted — and
+aborted again on the same row every night after, so no customer file was ever
+purged again. IMP-01 in `docs/features/data-import/review.md`.
+
+The foreign key is `on delete set null` and `source_file_id` is nullable. A run
+whose source has been purged answers `import.source.missing`, a path that
+already existed and was already translated in three languages.
+
+**Nothing else in this ADR changes.** The argument for a separate table — ten
+states against three, two actors, an artefact that is an output of failure —
+stands, and so does the borrowing list, minus this line.
