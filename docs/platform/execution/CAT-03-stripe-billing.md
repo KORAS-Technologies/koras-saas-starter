@@ -128,6 +128,24 @@ Never mutate the meaning of an existing recurring price. A dry run is the
 default, and an apply is explicit — the same shape as the generator's Terraform
 runner, which never auto-applies.
 
+**2a is blocked, and on a decision rather than on engineering.** Written
+2026-09-20, on reading the schema rather than the plan. `public.plans` holds
+two price *references* and nothing else — no amount, no currency, no
+interval — and `00028_billing.sql` states the rule outright: "A reference,
+never an amount: what it costs lives with the provider." The table above
+therefore cannot be built as written: *Absent → create* would have to invent
+the amount it creates the price with, and *exists and the configuration
+changed* has no configuration on this side to compare. Amounts are fetched
+live from the provider and cached for ten minutes (`billing/prices.py`),
+which is a deliberate design and the direct cause.
+
+Unblocking it is one decision: does the Koras catalogue hold a price of its
+own? Holding one makes the platform the source of truth and the provider a
+projection, which is what a provisioner needs and what the recorded decision
+declined. Not holding one means there is no provisioner, only the drift
+check below, and the dashboard stays the place a price is born. Either is
+defensible; guessing is not, so nothing was built.
+
 **2b — Catalogue drift detection (BILL-GAP-004).**
 A second check in the reconciliation registry, beside the subscription check
 that already runs every fifteen minutes. Detected conditions: a catalogue price
@@ -146,6 +164,34 @@ Classified, never silently repaired:
 **No provider resource is ever deleted to repair drift.** The engine's existing
 policy vocabulary already distinguishes automatic from manual repair; this adds
 a check, not a second engine.
+
+**Built 2026-09-20** as `billing.catalogue`, beside the subscription check.
+Six conditions, none repaired — every one of them is a price somebody made in
+a dashboard, and the engine's rule is that a provider resource is never edited
+or deleted to fix drift:
+
+| Condition | Type | Severity |
+|---|---|---|
+| A plan on sale whose price the provider does not know | MISSING | Critical |
+| A price the provider has archived, still sold | MISMATCH | Critical |
+| A price in `price_id_month` that recurs yearly, or the reverse | MISMATCH | Critical |
+| One plan sold in two currencies across its intervals | MISMATCH | High |
+| One price id sold by two plans | MISMATCH | High |
+| A lookup key that is not the one `price_lookup_key` would build | MISMATCH | Low |
+| The provider unconfigured or unreachable | UNREACHABLE | Medium |
+
+**The third row is the one the check exists for.** Both sides are present,
+both look right, and the customer is billed on a cycle nobody chose. Nothing
+else in the estate would notice it — not the pricing page, which shows the
+amount the provider gives for whichever price it is handed; not the checkout,
+which succeeds; and not the subscription check, which compares a subscription
+against the provider that created it and so finds them in agreement.
+
+Two conditions the plan lists are **not** built and are named rather than
+quietly dropped: *a provider price with no catalogue mapping* needs a list
+endpoint the adapter does not have (it fetches by id), and *a resource in the
+wrong environment* is already refused at the client by `EnvironmentMismatch`
+rather than observed as drift.
 
 ### Phase 3 — Versioning, currencies, the free plan
 

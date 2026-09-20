@@ -505,6 +505,37 @@ took effect. The regression tests added with the fixes assert a statement count
 and a CSS property for that reason. `docs/features/notifications/review.md` has
 all six findings.
 
+**`koras-e2e-shop` was brought level on 2026-09-20**, and it had fallen further
+behind than one sync: it never received PLAT-F1 or CAT-01 Phase 1 at all, so it
+carried a `notifications` capability in `.koras/project.yaml` and none of the
+feature — and it had been missing `00033_settings_secret_guard.sql` since the
+settings review wrote it. Seventy-eight files, verified at 55 turbo tasks, ruff,
+mypy over 133 files and 911 pytest.
+
+**The sync method needed a correction worth carrying.** The three-way compare
+assumes the repository's files all come from one starter commit, and they do
+not — it is hand-carried file by file, so for nine files the shop's copy was an
+*older starter* than the merge base rather than its own work. A three-way merge
+reads that as a conflict and invites a wrong resolution. What distinguishes the
+two is asking what the repository *added*, not what it differs by:
+`diff(base, repository)` showing only removals means there is nothing to
+preserve.
+
+**CAT-03 Phase 2b shipped to the Control Plane on 2026-09-20** as
+`billing.catalogue`, the reconciliation engine's eighth check: it reads back
+every price the platform *offers* rather than only the ones it has sold. The
+finding worth the check is a price in the monthly column that recurs yearly —
+both sides present, both looking right, the customer billed on a cycle nobody
+chose, and nothing else in the estate able to notice.
+
+**Phase 2a is blocked, and on a decision rather than on engineering.** The plan
+has a provisioner read the Koras catalogue and create the prices it names.
+There is no such catalogue: `public.plans` holds two price *references* and no
+amount, no currency and no interval, because `00028_billing.sql` decided that
+"what it costs lives with the provider". A provisioner would have to invent the
+amount it creates a price with. Unblocking it means deciding the platform holds
+a price of its own, which reverses that decision.
+
 **The two capabilities are declared.** `audit_governance` and
 `storage_governance`, both on by default, and what they gate is the *surface*
 rather than the record: only `00025_file_backups.sql` is a gated migration. A
