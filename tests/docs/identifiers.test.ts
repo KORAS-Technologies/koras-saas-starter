@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { documents } from './documents.js'
 
 /**
  * An identifier named in a document has to exist in the code.
@@ -137,6 +138,68 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   collection_runs: 'a Control Plane table recording each collection attempt; no product has one',
   end_behavior: "a Stripe subscription-schedule field the Control Plane's adapter sends",
   txcd_10103001: 'a Stripe tax code, set on the product in the Stripe dashboard rather than in any file',
+  // ── Another repository's names ───────────────────────────────────────────
+  //
+  // `PROFILE_SYNC_MATRIX.md` and the settings-framework audit are
+  // cross-repository documents -- the first says so in its opening line -- and
+  // name symbols in `koras-control-plane`. Each must stay absent here: this
+  // repository holding one would mean a boundary had moved, which is the
+  // reason CLAUDE.md gives for not naming another repository's schema.
+  ENTITLEMENT_CATALOGUE: 'koras-control-plane: its entitlement catalogue',
+  PLAN_CATALOGUE: 'koras-control-plane: its commercial catalogue',
+  MODEL_ALIASES: 'koras-control-plane: its AI routing table',
+  AI_PROVIDERS: 'koras-control-plane: its AI routing table',
+  ROUTING_TEMPLATES: 'koras-control-plane: its AI routing table',
+  NAVIGATION_GROUPS: 'koras-control-plane: its console navigation',
+  collect_estate: 'koras-control-plane: a collector in its platform health sweep',
+  collect_product: 'koras-control-plane: a collector in its platform health sweep',
+  collection_runs_collector_known: 'koras-control-plane: a check constraint in its schema',
+  product_activity: 'koras-control-plane: a table in its schema',
+  resource_kind: 'koras-control-plane: a column in its schema',
+  price_lookup_key: 'koras-control-plane: a column in its commercial catalogue',
+  subscription_entitlements: 'koras-control-plane: a table in its schema',
+  plan_id: 'koras-control-plane: a column in its schema',
+  default_enabled: 'koras-control-plane: a column in its product-settings schema',
+  default_limit: 'koras-control-plane: a column in its product-settings schema',
+  default_period: 'koras-control-plane: a column in its product-settings schema',
+  user_preferences: 'koras-control-plane: a table in its schema',
+  shop_products: 'koras-e2e-shop: a table in that product, not in the factory',
+  test_a_multipart_entity_tag_is_absent_rather_than_wrong:
+    'koras-control-plane: a test named in the sync matrix as its half of the story',
+  test_a_byte_that_could_not_be_decoded_is_reported_not_hidden:
+    'a test the data-import review proposed by name; the suite it describes asserts both halves without it',
+  storage_policies_config_holds_no_secrets: 'koras-control-plane: a test in its suite',
+  user_facing_workflow: 'a condition name the framework considered and did not add',
+
+  // ── Named by a design document to record that it was declined ────────────
+  //
+  // These are the strongest kind of exemption: the document names the field in
+  // order to say the field does not exist. `audit-event-model.md` has a column
+  // headed "where the original proposal's fields went", and each row below is
+  // one that went nowhere on purpose. If one ever appears in the code, the
+  // decision was reversed and the document is wrong -- which this catches.
+  actor_display: 'audit-event-model declines it: a display name is a copy of data that changes',
+  retention_policy_id: 'audit-event-model: not stored, because retention resolves from the class',
+  correlation_id: 'audit-event-model: real and useful, kept in `details` rather than a column',
+  event_type: 'audit-event-model: the envelope calls it `action`',
+  before_state: 'the settings audit names it as a shape it did not adopt',
+  after_state: 'the settings audit names it as a shape it did not adopt',
+  first_name: 'the data-import review uses it as an example column in a worked mapping',
+  SEQUENCE: 'the settings audit quotes it as a SQL keyword, not a symbol',
+
+  // ── This register's own status vocabulary ────────────────────────────────
+  //
+  // `gap-defect-register.md` declares these in its own rules section and uses
+  // them as cell values. They are the vocabulary of a document rather than
+  // constants in code, and none of them should ever appear as a symbol.
+  FIXED: 'gap-defect-register: a row status',
+  PARTIAL: 'gap-defect-register: a row status',
+  DEFERRED: 'gap-defect-register: a row status',
+  WONT_FIX: 'gap-defect-register: a row status',
+  IN_PROGRESS: 'gap-defect-register: a row status',
+  CONFLICTING: 'master-capability-matrix: a cell value',
+  DUPLICATED: 'master-capability-matrix: a cell value',
+  NEEDS_REFACTOR: 'master-capability-matrix: a cell value',
 }
 
 function tracked(): string[] {
@@ -171,12 +234,6 @@ function codeText(): string {
   return all
 }
 
-function documents(): string[] {
-  const docs = readdirSync(join(ROOT, 'docs'))
-    .filter((name) => name.endsWith('.md'))
-    .map((name) => `docs/${name}`)
-  return [...docs, 'CLAUDE.md']
-}
 
 const SCREAMING = /^[A-Z][A-Z0-9_]{4,}$/
 const SNAKE = /^[a-z][a-z0-9]*(_[a-z0-9]+)+$/

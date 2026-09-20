@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
+import { documents } from './documents.js'
 import { join } from 'node:path'
 
 /**
@@ -120,18 +121,6 @@ const EXEMPT: Record<string, Array<{ phrase: string; reason: string }>> = {
   ],
 }
 
-function documents(): string[] {
-  const found: string[] = []
-  const walk = (dir: string): void => {
-    for (const name of readdirSync(join(ROOT, dir)).sort()) {
-      const relative = `${dir}/${name}`
-      if (statSync(join(ROOT, relative)).isDirectory()) walk(relative)
-      else if (name.endsWith('.md')) found.push(relative)
-    }
-  }
-  walk('docs')
-  return found
-}
 
 export interface Hedge {
   line: number

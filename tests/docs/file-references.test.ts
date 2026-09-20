@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { documents } from './documents.js'
 
 /**
  * A path named in a document has to exist, or be exempt for a stated reason
@@ -58,6 +59,51 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   // the template does not contain it, which is the whole of SYNC_BACKLOG B6.
   // The exemption goes when B6 does, and this test will say so.
   'e2e/support/key.json': 'SYNC_BACKLOG B6 names it to record that the template lacks it',
+
+  // ── Written by a generated product, never by the factory ─────────────────
+  //
+  // Same class as `.koras/project.yaml` above: the adoption guide says "if the
+  // product created one", and the factory ships the example it is created from.
+  '.claude/orchestration/product-profile.yaml':
+    'a product creates it from product-profile.example.yaml; the factory has only the example',
+
+  // ── Deliberately not built, and named to say so ──────────────────────────
+  'templates/feature/execution-plan.md':
+    'v2-to-v2-1 lists it under "What was deliberately not built": the execution plan is an output contract, not a per-feature document',
+
+  // ── Another repository's paths ───────────────────────────────────────────
+  //
+  // `docs/features/PROFILE_SYNC_MATRIX.md` and the settings-framework audit and
+  // sync matrix are cross-repository documents by design -- the first says so in
+  // its own opening line -- so they name paths in `koras-control-plane` and in
+  // `docoris`. Those must stay absent *here*: this repository holding one would
+  // mean a boundary had moved, which is the same reason CLAUDE.md gives for not
+  // naming another repository's schema.
+  'apps/admin/src/lib/navigation.ts': 'koras-control-plane: its console navigation',
+  'apps/admin/src/components/ui/DataTable.tsx': 'koras-control-plane: its console table',
+  'packages/ui/src/sidebar-frame.tsx': 'koras-control-plane: its console shell',
+  'billing/prices.py': 'koras-control-plane: its commercial catalogue',
+  'koras_platform/ai.py': 'koras-control-plane: its platform package',
+  'koras_platform/plans.py': 'koras-control-plane: its platform package',
+  'python-packages/koras-platform/src/koras_platform/plans.py': 'koras-control-plane: the same file, fully qualified',
+  'services/worker/koras_worker/product_settings.py': 'koras-control-plane: its worker',
+  'supabase/migrations/00006_commercial.sql': 'koras-control-plane: its migration series, which is not this one',
+  'supabase/migrations/00045_product_settings.sql': 'koras-control-plane: its migration series, which is not this one',
+  'tests/contract/reference_product.py': 'koras-control-plane: its contract suite',
+  'tests/contract/test_product_platform_contract.py': 'koras-control-plane: its contract suite',
+  'tests/unit/test_migration_numbering.py': 'koras-control-plane: its unit suite',
+  'docoris/docs/architecture/IMPORT.md': 'docoris: quoted by the platform plan as the product-side record',
+  'docoris/docs/requirements/GAP-REGISTER.md': 'docoris: the register this one adopts three rows from',
+
+  // ── Named by a plan as work not done ─────────────────────────────────────
+  //
+  // The settings framework's implementation plan lists the suites it would add.
+  // Absent is the correct state while the plan is unexecuted, and the moment
+  // somebody creates one this test says the plan needs a past tense.
+  'koras-settings/tests/test_scopes.py': 'settings-framework implementation plan: a suite it proposed',
+  'tests/rls/test_rls_coverage.py': 'settings-framework implementation plan: a suite it proposed',
+  'tests/unit/test_settings_audit.py': 'settings-framework implementation plan: a suite it proposed',
+  'tests/unit/test_settings_rbac.py': 'settings-framework implementation plan: a suite it proposed',
 }
 
 /**
@@ -106,6 +152,19 @@ function tracked(): string[] {
 }
 
 /** Every suffix of every tracked path, with `.hbs` also stripped. */
+/** Every file extension some tracked file actually uses. */
+let EXTENSIONS: Set<string> | undefined
+function extensions(): Set<string> {
+  if (!EXTENSIONS) {
+    EXTENSIONS = new Set<string>()
+    for (const file of tracked()) {
+      const found = /\.([a-zA-Z0-9]{1,7})$/.exec(file)?.[1]
+      if (found) EXTENSIONS.add(found.toLowerCase())
+    }
+  }
+  return EXTENSIONS
+}
+
 function suffixes(): Set<string> {
   const all = new Set<string>()
   for (const file of tracked()) {
@@ -117,12 +176,6 @@ function suffixes(): Set<string> {
   return all
 }
 
-function documents(): string[] {
-  const docs = readdirSync(join(ROOT, 'docs'))
-    .filter((name) => name.endsWith('.md'))
-    .map((name) => `docs/${name}`)
-  return [...docs, 'CLAUDE.md']
-}
 
 function referencedPaths(doc: string): string[] {
   const text = readFileSync(join(ROOT, doc), 'utf8')
@@ -132,6 +185,16 @@ function referencedPaths(doc: string): string[] {
     if (token.includes(' ') || !token.includes('/')) continue
     if (!/\.[a-z]{1,7}$/.test(token)) continue
     if (token.includes('*') || token.includes('<')) continue
+    // `packages/i18n/src/messages/{en,de,es}.ts` names three files at once.
+    // A brace expansion is a way of writing several paths, not one path.
+    if (token.includes('{') || token.includes('}')) continue
+    // `core/imports.prepare` is the `prepare` function in `core/imports.py`,
+    // and reads as a path because `.prepare` looks like an extension. An
+    // extension no tracked file uses is not one: this keeps the filter honest
+    // without a list of suffixes somebody has to maintain, and a genuine new
+    // file type is known the moment one is committed.
+    const suffix = /\.([a-z]{1,7})$/.exec(token)?.[1]
+    if (!suffix || !extensions().has(suffix)) continue
     if (/^(https?:|--|\$|#|\.\.\/)/.test(token)) continue
     // Another repository, named on purpose. SYNC_BACKLOG is mostly this;
     // PRODUCT_SIGN_IN cites ZITADEL's own source for the behaviour of a

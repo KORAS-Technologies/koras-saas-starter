@@ -41,7 +41,7 @@ All planning and reference documents live in `docs/`, matching
 | `docs/PRODUCT_APP_SHELL.md`      | The authenticated product shell: navigation registry, access model, product settings |
 | `docs/PRODUCT_SHELL_AUDIT.md`    | What the signed-in surface was before that shell, and the gaps it closes |
 | `docs/BILLING_DESIGN.md`         | Card at signup, charge at trial end: Stripe Managed Payments behind an adapter, phases and test evidence |
-| `docs/PRODUCT_SIGN_IN.md`        | The product's own sign-in page: how a customer signs in without seeing ZITADEL, and what is not yet checked live |
+| `docs/PRODUCT_SIGN_IN.md`        | The product's own sign-in page: how a customer signs in without seeing ZITADEL, and what was not yet checked live as of 2026-09-12 |
 | `docs/AI_FOUNDATION_ASSESSMENT.md` | What the repository had before the AI foundation, what it lacked, and where the request conflicted with decisions already made |
 | `docs/AI_FOUNDATION_PLAN.md`     | The AI foundation in phases: files, decisions, tests |
 | `docs/AI_ARCHITECTURE.md`        | The AI foundation as built: one runtime in the API, aliases in product code, the gateway as the only provider |
