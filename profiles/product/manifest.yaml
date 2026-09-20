@@ -69,6 +69,11 @@ capabilities:
   # service. The general audit table is not here -- it is foundation, and
   # reporting is one of the modules that records to it.
   reporting: true
+  # Data import: the engine, the target registry, the run, the dry run and the
+  # page. Off by default -- a product with nothing to import should not carry
+  # the surface, and unlike notifications there is no product for which the
+  # answer is plainly yes.
+  data_import: true
   # The surface over the audit record: search, export, legal holds and the
   # Audit page. On by default. The record itself is not here and never will
   # be -- `audit` above is the foundation that writes it, and `audit_events`
@@ -154,6 +159,27 @@ template_map:
       - services/worker/koras_worker/tasks/ai_retention.py
       - apps/web/src/app/dashboard/assistant
       - e2e/assistant.spec.ts
+    # Data import. The whole of it is gated, including the engine package: an
+    # import target names a table the *product* owns, so a product that
+    # imports nothing has no use for a parser, a state machine or a run.
+    #
+    # The migration is gated by the same rule the notification one is: no
+    # foundation code and no foundation migration reaches `import_runs`. The
+    # only thing outside the gate is the `imports.manage` permission, which is
+    # in the catalogue always -- a permission string costs nothing and a
+    # catalogue that changed shape with a capability would make the two
+    # languages disagree.
+    data_import:
+      - python-packages/koras-import
+      - services/api/koras_api/imports
+      - services/api/koras_api/core/imports.py
+      - services/api/koras_api/routers/imports.py
+      - services/worker/koras_worker/tasks/imports.py
+      - supabase/migrations/00036_imports.sql
+      - supabase/tests/320_imports_isolation.sql
+      - tests/unit/test_imports.py
+      - apps/web/src/app/dashboard/imports
+      - e2e/imports.spec.ts
     # In-app notifications: the table, the emitter, the routes, the page and
     # the browser test.
     #

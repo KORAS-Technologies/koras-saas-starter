@@ -69,6 +69,24 @@ export function apiErrorMessage(t: Translator, code: string | null | undefined):
       return t('errors.restoreAlreadyRequested')
     case 'restore_overwrite_unconfirmed':
       return t('errors.restoreOverwriteUnconfirmed')
+    case 'upload_refused_by_policy':
+      return t('errors.uploadRefusedByPolicy')
+    case 'import_target_not_found':
+      return t('errors.importTargetNotFound')
+    case 'import_run_not_found':
+      return t('errors.importRunNotFound')
+    case 'import_mapping_refused':
+      return t('errors.importMappingRefused')
+    case 'import_file_unreadable':
+      return t('errors.importFileUnreadable')
+    case 'import_too_many_rows':
+      return t('errors.importTooManyRows')
+    case 'import_operation_refused':
+      return t('errors.importOperationRefused')
+    case 'import_not_transitionable':
+      return t('errors.importNotTransitionable')
+    case 'import_queue_unavailable':
+      return t('errors.importQueueUnavailable')
     case 'file_under_hold':
       return t('errors.fileUnderHold')
     case 'file_quarantined':

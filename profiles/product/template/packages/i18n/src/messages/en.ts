@@ -724,6 +724,128 @@ export const en = {
     'You do not have permission to restore files.',
   'restore.error.unavailable':
     'Restores cannot be reached at the moment. Try again shortly.',
+  'imports.title':
+    'Data import',
+  'imports.description':
+    'Bring records in from a spreadsheet. Upload a file, say which column is which, and see exactly what would happen before anything is written.',
+  'imports.startTitle':
+    'Start an import',
+  'imports.startDescription':
+    'Choose what you are importing and how duplicates should be treated, then pick the file.',
+  'imports.target':
+    'What to import',
+  'imports.operation':
+    'Existing records',
+  'imports.operationHint':
+    'What should happen to a row that matches a record you already have.',
+  'imports.file':
+    'File',
+  'imports.ceiling':
+    'Up to {rows} rows in one run. Accepted formats: {formats}.',
+  'imports.mapTitle':
+    'Match the columns',
+  'imports.mapDescription':
+    'Each column in your file goes to one field, or to nothing at all. Columns whose headings matched exactly are filled in already.',
+  'imports.mapColumn':
+    'Which field the column "{column}" goes to',
+  'imports.column':
+    'Column',
+  'imports.sample':
+    'First value',
+  'imports.field':
+    'Field',
+  'imports.ignore':
+    'Do not import',
+  'imports.check':
+    'Check the file',
+  'imports.checking':
+    'Checking…',
+  'imports.discard':
+    'Discard this import',
+  'imports.tooManyRows':
+    'This file has more rows than one run takes. Split it and import the parts separately.',
+  'imports.replaced':
+    'Some characters in this file could not be read and were replaced. Check the preview before continuing.',
+  'imports.resultTitle':
+    'What would happen',
+  'imports.summary':
+    '{rows} rows read, {valid} of them ready to import, {errors} problems found.',
+  'imports.wroteNothing':
+    'Nothing has been written. This was a check, and your records are untouched.',
+  'imports.showReport':
+    'Show the problems',
+  'imports.reportCut':
+    'Only the first problems are listed. Fix these and check the file again.',
+  'imports.row':
+    'Row',
+  'imports.problem':
+    'Problem',
+  'imports.value':
+    'Value',
+  'imports.historyTitle':
+    'Recent imports',
+  'imports.noRuns':
+    'Nothing has been imported yet.',
+  'imports.noTargets':
+    'This product does not accept any imports yet.',
+  'imports.state':
+    'State',
+  'imports.rows':
+    'Rows',
+  'imports.started':
+    'Started',
+  'imports.op.create':
+    'Add every row as a new record',
+  'imports.op.update':
+    'Only update records that already exist',
+  'imports.op.upsert':
+    'Update where it matches, add where it does not',
+  'imports.op.skipDuplicate':
+    'Add new records and leave matches alone',
+  'imports.state.created':
+    'Waiting to be matched up',
+  'imports.state.mapped':
+    'Columns matched, not yet checked',
+  'imports.state.validating':
+    'Checking the file…',
+  'imports.state.validated':
+    'Checked. Nothing was written.',
+  'imports.state.validationFailed':
+    'Problems found. Nothing was written.',
+  'imports.state.commitRequested':
+    'Waiting to be imported',
+  'imports.state.committing':
+    'Importing…',
+  'imports.state.committed':
+    'Imported',
+  'imports.state.failed':
+    'This import could not be finished',
+  'imports.state.cancelled':
+    'Cancelled',
+  'imports.problem.required':
+    'This field is needed and the cell is empty',
+  'imports.problem.tooLong':
+    'This value is longer than the field allows',
+  'imports.problem.notAnOption':
+    'This is not one of the values the field accepts',
+  'imports.problem.integer':
+    'This should be a whole number',
+  'imports.problem.decimal':
+    'This should be a number',
+  'imports.problem.boolean':
+    'This should be yes or no',
+  'imports.problem.date':
+    'This should be a date, written as YYYY-MM-DD',
+  'imports.problem.email':
+    'This does not look like an email address',
+  'imports.problem.extraCells':
+    'This row has more cells than the file has columns',
+  'imports.problem.duplicateInFile':
+    'Another row in this same file already has this value',
+  'imports.error.forbidden':
+    'You do not have permission to import records.',
+  'imports.error.unavailable':
+    'Imports cannot be reached at the moment. Try again shortly.',
   'audit.title':
     'Audit',
   'audit.description':
@@ -866,8 +988,6 @@ export const en = {
   'settings.def.files.maxUploadSizeMb.description': 'The biggest single file anyone here may upload, in megabytes.',
   'settings.def.files.allowedExtensions.label': 'Allowed file types',
   'settings.def.files.allowedExtensions.description': 'Which file extensions may be uploaded.',
-  'settings.def.files.maxFilesPerUpload.label': 'Files at once',
-  'settings.def.files.maxFilesPerUpload.description': 'How many files may be uploaded in one go.',
   'settings.def.files.previewEnabled.label': 'Preview files',
   'settings.def.files.previewEnabled.description': 'Show a preview instead of only a file name.',
   'settings.def.reporting.defaultDateRange.label': 'Default period',
@@ -943,6 +1063,24 @@ export const en = {
     'A restore of this file is already waiting to be decided.',
   'errors.restoreOverwriteUnconfirmed':
     'This request replaces the existing file. Approve it saying so, or ask for a new copy instead.',
+  'errors.importTargetNotFound':
+    'This product does not accept an import of that kind.',
+  'errors.importRunNotFound':
+    'That import cannot be found.',
+  'errors.importMappingRefused':
+    'The columns cannot be matched up as they are. The message says which one.',
+  'errors.importFileUnreadable':
+    'This file could not be read. Check that it is a CSV saved with a heading row.',
+  'errors.importTooManyRows':
+    'This file has more rows than one import takes. Split it and import the parts separately.',
+  'errors.importOperationRefused':
+    'That is not something this import is allowed to do.',
+  'errors.importNotTransitionable':
+    'This import has moved on, and that is no longer something it can do.',
+  'errors.importQueueUnavailable':
+    'Background work is not set up, so this file cannot be checked. An administrator has to configure it.',
+  'errors.uploadRefusedByPolicy':
+    'This file is not allowed. Check its size and its file type against the settings for your organization.',
   'errors.fileUnderHold':
     'This file cannot be deleted: a legal hold is keeping it. It can be deleted once the hold is lifted.',
   'errors.fileQuarantined':

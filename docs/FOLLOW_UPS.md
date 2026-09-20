@@ -23,13 +23,14 @@ recommendation rather than a record — revise it, do not preserve it.
 | Order | Entry | What is left, and why it is here | Rough cost |
 |-------|-------|----------------------------------|------------|
 | 1 | **F27 — the settings framework, reviewed and exercised** — *the review ran on 2026-09-19 and returned BLOCK from both reviewers; four findings fixed, eighteen carried as SET-05 to SET-22 in `docs/platform/gap-defect-register.md`. The manual pass is still NOT EXECUTED and is the half only a person can do.* | Two halves, and the first is the only item on this table that is work on code written this week. An independent review: three new tables with row-level security, a check constraint that refuses secrets, eight routes over tenant-scoped data and a platform write route that needed an ADR to justify its direction, none of it seen by anybody but the session that wrote it. The precedent is not encouraging — two independent reviews of the governance work both returned BLOCK, and every finding was real. Then the manual pass: `docs/features/settings-framework/manual-test-plan.md`, fifteen cases and fifteen blank verdicts, whose first case is the thing the feature exists for and the one no automated test in this estate reaches. It is first because a review's value decays as work is built on top of what it would have found. | ~1 day for the review, ~half a day for the pass |
-| 2 | **F21 — live mode** | The only entry with money on the other end. Every phase is built and every test-mode box closed on 2026-09-15, including a signup watched from the form through Stripe's checkout to the owner's password. What remains is the walk from test mode to live: activate the account, make the live catalogue, mint a restricted live key, register a prod webhook endpoint, configure the customer portal, and sign up once yourself with a real card and cancel inside the trial. `koras-control-plane/docs/runbooks/stripe-go-live.md` steps 1, 3, 5 and 7, in that order. Nothing here is code. | ~½ day at the Stripe dashboard |
-| 3 | **The live sitting** | Three things needing the same estate and the same credentials, which is why they are one item and not three: **R-036**'s second provision-and-teardown now that Cloudflare is in the inventory; the **F17 token audience**; and one `--register-only` for `koras-e2e-shop`, which would be the estate's first *confirmed* registration now that the Control Plane echoes what it stored. Run separately they pay the setup cost three times. | ~half a day |
-| 4 | **F23 — the other three environments** | dev has the product's own sign-in and a customer has signed in on it. test, stg and prod need two ZITADEL writes per instance that only a person can make — grant the worker `IAM_LOGIN_CLIENT`, set the Console application to Login V2 — and then the instance feature flipped, **and only after the environment is promoted**, because with the feature off ZITADEL sends sign-ins to the application's base URI and `/login` is a 404 there. | ~1h per environment |
-| 5 | **F3 + F2b** | One Control Plane authorization decision arriving from two sides: may a product hold a credential that can rewrite its own registry entry, and if not, what is the narrower machine role. Not urgent while there is one product — the risk is one product's CI holding write access to *other* products' entries, and as of 2026-09-15 the blast radius is still itself. Deploy-time registration stays off until it is answered. | ½ day to decide, more to build |
-| 6 | **F19 — the DNS half of the asset fetch** | The branding route refuses raw addresses and private suffixes at two gates, and a *name* that resolves to a private address still passes both. Closing it needs resolving the host, refusing loopback, RFC1918, link-local and unique-local answers, and connecting to the address rather than the name — which needs the socket rather than `fetch`. | ~half a day |
-| 7 | **F22 — Files** | Six items, each waiting on a real trigger rather than on time: multipart uploads (a file over 5 GB), an orphan sweep, the `customer-owned` and `azure-blob` policies, a real upload in CI, a foreign bucket's origin in the browser policy, and quota by period. | ~1 day per item |
-| 8 | **F25 — reporting** | Three items, none of which blocks a product registering reports today: `reporting.api` enforcement becomes real with the first machine caller, pre-aggregation when a table outgrows a range scan, and report names in the customer's language when somebody asks for one. | ~1 day per item |
+| 2 | **F28 — data import Phase 1, reviewed and exercised** | The same shape as row 1, one day later and on newer code. Phase 1 shipped on 2026-09-19: two new tables with row-level security, eight routes over a customer's own records, a mapping allowlist that decides which columns an import may ever reach, a parser fed files from outside the product, and the first enqueued job this repository has ever had. None of it has been seen by anybody but the session that wrote it, and `docs/features/data-import/manual-test-plan.md` has twenty-two cases and twenty-two blank verdicts. The parser is the part worth an independent look first: it is the only code in the estate that reads a file a stranger chose. | ~1 day for the review, ~half a day for the pass |
+| 3 | **F21 — live mode** | The only entry with money on the other end. Every phase is built and every test-mode box closed on 2026-09-15, including a signup watched from the form through Stripe's checkout to the owner's password. What remains is the walk from test mode to live: activate the account, make the live catalogue, mint a restricted live key, register a prod webhook endpoint, configure the customer portal, and sign up once yourself with a real card and cancel inside the trial. `koras-control-plane/docs/runbooks/stripe-go-live.md` steps 1, 3, 5 and 7, in that order. Nothing here is code. | ~½ day at the Stripe dashboard |
+| 4 | **The live sitting** | Three things needing the same estate and the same credentials, which is why they are one item and not three: **R-036**'s second provision-and-teardown now that Cloudflare is in the inventory; the **F17 token audience**; and one `--register-only` for `koras-e2e-shop`, which would be the estate's first *confirmed* registration now that the Control Plane echoes what it stored. Run separately they pay the setup cost three times. | ~half a day |
+| 5 | **F23 — the other three environments** | dev has the product's own sign-in and a customer has signed in on it. test, stg and prod need two ZITADEL writes per instance that only a person can make — grant the worker `IAM_LOGIN_CLIENT`, set the Console application to Login V2 — and then the instance feature flipped, **and only after the environment is promoted**, because with the feature off ZITADEL sends sign-ins to the application's base URI and `/login` is a 404 there. | ~1h per environment |
+| 6 | **F3 + F2b** | One Control Plane authorization decision arriving from two sides: may a product hold a credential that can rewrite its own registry entry, and if not, what is the narrower machine role. Not urgent while there is one product — the risk is one product's CI holding write access to *other* products' entries, and as of 2026-09-15 the blast radius is still itself. Deploy-time registration stays off until it is answered. | ½ day to decide, more to build |
+| 7 | **F19 — the DNS half of the asset fetch** | The branding route refuses raw addresses and private suffixes at two gates, and a *name* that resolves to a private address still passes both. Closing it needs resolving the host, refusing loopback, RFC1918, link-local and unique-local answers, and connecting to the address rather than the name — which needs the socket rather than `fetch`. | ~half a day |
+| 8 | **F22 — Files** | Six items, each waiting on a real trigger rather than on time: multipart uploads (a file over 5 GB), an orphan sweep, the `customer-owned` and `azure-blob` policies, a real upload in CI, a foreign bucket's origin in the browser policy, and quota by period. | ~1 day per item |
+| 9 | **F25 — reporting** | Three items, none of which blocks a product registering reports today: `reporting.api` enforcement becomes real with the first machine caller, pre-aggregation when a table outgrows a range scan, and report names in the customer's language when somebody asks for one. | ~1 day per item |
 
 **F21 and F23 do not contend with the top row.** They are a person at a dashboard and two ZITADEL writes per instance; nothing in either is code, so an order that reads as a queue is misleading for those two. Run them whenever the dashboard is open.
 
@@ -78,6 +79,9 @@ deliberately leaves out is below, and the first item is a real model call.
 
 F25 — the reporting framework shipped on 2026-09-14 as the `reporting`
 capability; what it deliberately leaves out is below.
+
+F28 — data import Phase 1 shipped on 2026-09-19 as the `data_import`
+capability, off by default; what it leaves out is below.
 
 Entries are grouped below by *why they are undone*, and numbered by *when they
 were opened*. Those two orders cannot both run in sequence, so this is the
@@ -2315,6 +2319,57 @@ defect; each is a decision taken deliberately, with the reason.
       if a platform default turns out to be wrong for everybody, the only route
       today is a hand-written update per tenant. What it needs is a decision
       about who may do it and what it records, not a script.
+
+### F28 — data import: what Phase 1 leaves out
+
+Opened 2026-09-19, the day Phase 1 shipped. The phase boundary is deliberate —
+a run reaches `validated`, which is a terminal state that wrote nothing — so
+most of what is missing is Phase 2 and lives in
+`docs/platform/execution/CAT-02-data-import.md` rather than here. What is here
+is the three Phase 1 items that were planned and not built, plus the two kinds
+of proof nobody has.
+
+- [ ] **`files.maxFilesPerUpload` is hidden rather than enforced.** The other
+      two `files.*` settings are resolved at the upload ticket now; this one
+      cannot be, because the presign route issues one ticket per call and has
+      no notion of a batch. Hiding it is the honest position of the two
+      available today — a control that changes nothing costs a person the time
+      to find out — but it is a setting in the brief's catalogue that the
+      product does not offer, which is the same shape as F27's five `grid.*`.
+      Closing it means a batch ticket route, not a check.
+- [ ] **No shared upload primitive.** IMPORT-GAP-007 asked for the Files page's
+      ticket-and-progress flow to be extracted into `packages/ui` rather than
+      written a second time. It was written a second time — about two dozen
+      lines — because the import flow needs the same three steps in a different
+      order and extracting a working page's uploader inside a feature branch is
+      a refactor with no test that would catch its regressions. The third
+      caller is what should pay for the extraction.
+- [ ] **The preview does not go through the shared data table.** Its columns
+      vary per file and are built at runtime, which is not something that table
+      takes; it also paginates on the client, which is IMPORT-GAP-006 and is
+      the same constraint F27 records from the settings side. The preview is a
+      bounded head of 200 rows in a plain table. Both are fixed by the same
+      piece of work — a table that takes a column set and a page callback — and
+      neither feature should build it alone.
+- [ ] **No manual pass.** Twenty-two cases, twenty-two blank verdicts. The e2e
+      harness starts the web application alone, so the four browser checks
+      cover routing, refusal and degraded rendering, and nothing that needs an
+      API, a queue or a bucket. No file has been imported through a deployed
+      product, and the dry run has never executed against a real Redis.
+- [ ] **No independent review.** Of the parser especially. `koras_import.reading`
+      is the only code in this estate that parses a file chosen by somebody
+      outside the product, and the scan gate in front of it refuses `pending`,
+      which means it is unreachable until a scanner exists — so as of
+      2026-09-19 the gate is protecting code nobody has read.
+- [ ] **`koras-e2e-shop` is not level with this.** It is the one repository in
+      the estate with a domain that could declare real import targets, and
+      declaring one is what would make the registry, the mapping and the
+      permission observable rather than asserted. Nothing has been synced.
+- [ ] **No audit action is registered for an import.** IMPORT-US-016 is a
+      Phase 2 story and the run row already records who asked, but a product
+      answering "who loaded these records" from the audit log cannot do so
+      today. It is recorded here because the audit registry is the kind of
+      thing added when the feature lands, not after.
 
 ### F23 — the sign-in page, on a host of ours — opened 2026-09-09, built 2026-09-11 as the product's own page
 

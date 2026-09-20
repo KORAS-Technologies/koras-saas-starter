@@ -1,0 +1,72 @@
+import { AccessDenied, Banner, Container } from '@{{projectSlug}}/ui'
+import { can, signedInContext } from '../../../lib/access'
+import { currentLocale, translator } from '../../../lib/locale'
+import { ImportPanel } from './ImportPanel'
+import { importLabels } from './labels'
+import { listRuns, listTargets } from './actions'
+
+/**
+ * Data import: upload a file, say which column is which, and see what would
+ * happen — without anything happening.
+ *
+ * **`imports.manage`, and no entitlement.** The permission is administrative
+ * and is held by owners and administrators alone, because an import writes
+ * rows of a customer's own records and the history shows their column
+ * headings. There is no plan gate, for the same reason Restore has none: a
+ * customer who cannot get their data *in* has not bought a product, and a
+ * capability sold separately here would be sold to somebody who has not
+ * started using the product yet.
+ *
+ * The page checks the permission and the API checks it again with the same
+ * token, because a check in this process is a check a typed URL never reaches.
+ *
+ * Both lists are read on the server so the first paint has content. A product
+ * that registers no import targets renders a sentence saying so rather than an
+ * empty picker — an empty select is indistinguishable from a page that failed
+ * to load.
+ */
+export const dynamic = 'force-dynamic'
+
+export default async function ImportsPage() {
+  const [context, locale, t] = await Promise.all([signedInContext(), currentLocale(), translator()])
+  if (context === null || !can(context.access, 'imports.manage')) {
+    return <AccessDenied locale={locale} />
+  }
+
+  const [targets, runs] = await Promise.all([listTargets(), listRuns()])
+  const labels = importLabels(t)
+  const failure =
+    targets.status === 'error'
+      ? targets.message
+      : runs.status === 'error'
+        ? runs.message
+        : null
+
+  return (
+    <div className="py-12" data-testid="imports">
+      <Container>
+        <h1 className="font-display text-2xl font-bold text-ink">{t('imports.title')}</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">
+          {t('imports.description')}
+        </p>
+        {failure === null ? (
+          <ImportPanel
+            targets={targets.status === 'ok' ? targets.value : []}
+            initialRuns={runs.status === 'ok' ? runs.value : []}
+            labels={labels}
+          />
+        ) : (
+          // The banner *instead of* the panel, not above it. An unreachable
+          // API leaves the target list empty, and an empty list renders "this
+          // product does not accept any imports yet" -- which is a different
+          // claim from "the list could not be read", and the worse of the two
+          // to make wrongly. The same reasoning the Restore page applies to an
+          // empty backup catalogue.
+          <div className="mt-6" data-testid="imports-error">
+            <Banner tone="error">{failure}</Banner>
+          </div>
+        )}
+      </Container>
+    </div>
+  )
+}

@@ -1,0 +1,208 @@
+'use server'
+
+import {
+  ApiError,
+  cancelImportRun as cancelImportRunRequest,
+  completeUpload as completeUploadRequest,
+  fetchImportAnalysis,
+  fetchImportErrors,
+  fetchImportRuns,
+  fetchImportTargets,
+  requestUpload as requestUploadRequest,
+  setImportMapping as setImportMappingRequest,
+  startImportRun as startImportRunRequest,
+  validateImportRun as validateImportRunRequest,
+} from '@{{projectSlug}}/api-client'
+import type {
+  ImportAnalysisView,
+  ImportRowErrorView,
+  ImportRunView,
+  ImportTargetView,
+  UploadTicket,
+} from '@{{projectSlug}}/api-client'
+import { revalidatePath } from 'next/cache'
+import { can, signedInContext } from '../../../lib/access'
+import { apiErrorMessage } from '../../../lib/api-errors'
+import { translator } from '../../../lib/locale'
+import { apiBaseUrl, providerToken } from '../../../lib/session'
+
+/**
+ * The Imports page's server half.
+ *
+ * **Every action checks `imports.manage`, reads included.** A run names a
+ * customer's own records and its mapping shows their column headings, so the
+ * history is not less sensitive than the act — and the API checks the same
+ * permission again with the same token, because a check in this process is a
+ * check a typed URL never reaches.
+ *
+ * The one exception in shape, not in authority, is the upload ticket: the file
+ * is uploaded through the ordinary `/files` route with the `imports` category,
+ * so a source file inherits retention, legal hold, reconciliation, virus
+ * scanning and the storage quota without any of that being restated here. What
+ * this file adds is the permission: `files.upload` is not enough to feed an
+ * import, because the import is what writes rows.
+ */
+
+export type ActionResult<T> = { status: 'ok'; value: T } | { status: 'error'; message: string }
+
+async function session() {
+  const context = await signedInContext()
+  if (context === null || !can(context.access, 'imports.manage')) return null
+  const token = await providerToken()
+  const baseUrl = apiBaseUrl()
+  if (!token || !baseUrl) return null
+  return { baseUrl, token }
+}
+
+async function explain(error: unknown): Promise<string> {
+  const t = await translator()
+  if (error instanceof ApiError) {
+    const coded = apiErrorMessage(t, error.code)
+    if (coded !== null) return coded
+    if (error.status === 403) return t('imports.error.forbidden')
+  }
+  return t('imports.error.unavailable')
+}
+
+async function denied<T>(): Promise<ActionResult<T>> {
+  return { status: 'error', message: (await translator())('imports.error.forbidden') }
+}
+
+export async function listTargets(): Promise<ActionResult<ImportTargetView[]>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    return { status: 'ok', value: await fetchImportTargets(auth) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function listRuns(): Promise<ActionResult<ImportRunView[]>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    return { status: 'ok', value: await fetchImportRuns(auth) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+/**
+ * A ticket for the source file, on the `imports` shelf.
+ *
+ * The category is decided here rather than accepted from the browser, which is
+ * the point of having a server action at all: a caller cannot ask for a
+ * document ticket and then feed the file to a run, nor the other way about.
+ */
+export async function requestSourceUpload(input: {
+  name: string
+  sizeBytes: number
+  contentType: string
+  checksumSha256?: string | null
+}): Promise<ActionResult<UploadTicket>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    return {
+      status: 'ok',
+      value: await requestUploadRequest({
+        ...auth,
+        name: input.name,
+        sizeBytes: input.sizeBytes,
+        contentType: input.contentType,
+        checksumSha256: input.checksumSha256,
+        category: 'imports',
+      }),
+    }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function completeSourceUpload(
+  fileId: string,
+  checksumSha256?: string | null,
+): Promise<ActionResult<null>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    await completeUploadRequest({ ...auth, fileId, checksumSha256 })
+    return { status: 'ok', value: null }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function startRun(input: {
+  target: string
+  fileId: string
+  operation: string
+}): Promise<ActionResult<ImportRunView>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    const run = await startImportRunRequest({ ...auth, ...input })
+    revalidatePath('/dashboard/imports')
+    return { status: 'ok', value: run }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function analyseRun(runId: string): Promise<ActionResult<ImportAnalysisView>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    return { status: 'ok', value: await fetchImportAnalysis({ ...auth, runId }) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function saveMapping(
+  runId: string,
+  mapping: Record<string, string>,
+): Promise<ActionResult<ImportRunView>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    return { status: 'ok', value: await setImportMappingRequest({ ...auth, runId, mapping }) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function validateRun(runId: string): Promise<ActionResult<ImportRunView>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    const run = await validateImportRunRequest({ ...auth, runId })
+    revalidatePath('/dashboard/imports')
+    return { status: 'ok', value: run }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function listErrors(runId: string): Promise<ActionResult<ImportRowErrorView[]>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    return { status: 'ok', value: await fetchImportErrors({ ...auth, runId, limit: 200 }) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+export async function cancelRun(runId: string): Promise<ActionResult<ImportRunView>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    const run = await cancelImportRunRequest({ ...auth, runId })
+    revalidatePath('/dashboard/imports')
+    return { status: 'ok', value: run }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}

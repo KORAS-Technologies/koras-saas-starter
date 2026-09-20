@@ -53,7 +53,11 @@ dependencies = [
   "koras-settings",
   "koras-storage",
   "koras-queue",
-  # Mail, and the language it is written in. Always present: the assistant's
+{{#if capability.data_import}}  # The import engine: targets, the reader, the mapping and the state
+  # machine. No database driver of its own -- a commit runs on the caller's
+  # session.
+  "koras-import",
+{{/if}}  # Mail, and the language it is written in. Always present: the assistant's
   # approval notice needs the sender, and every request resolves its locale
   # through the catalogue (`core/locale.py`) whether or not it sends anything.
   "koras-email",
@@ -85,7 +89,8 @@ koras-observability = { workspace = true }
 koras-audit = { workspace = true }
 koras-storage = { workspace = true }
 koras-queue = { workspace = true }
-koras-email = { workspace = true }
+{{#if capability.data_import}}koras-import = { workspace = true }
+{{/if}}koras-email = { workspace = true }
 {{#if capability.reporting}}koras-reporting = { workspace = true }
 {{/if}}{{#if capability.ai}}koras-ai = { workspace = true }
 {{/if}}

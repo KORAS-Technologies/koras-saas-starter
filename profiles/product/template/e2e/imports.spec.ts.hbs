@@ -1,0 +1,73 @@
+import { expect, test } from '@playwright/test'
+import { signInAs } from './support/session'
+
+/**
+ * The data import page, in a browser without an API.
+ *
+ * The suite runs against `next start` with a session secret and no API, so
+ * every read fails. That is the state worth proving: the page renders its
+ * frame and says plainly that nothing answered, rather than rendering an empty
+ * picker — which on this page would read as "this product accepts no imports",
+ * a different claim from "the list could not be read" and the worse of the two
+ * to make wrongly.
+ *
+ * What a browser can prove without a database is that the surface is
+ * reachable, honest when the thing behind it is not answering, carries no
+ * control that could write anything, and works at a phone width. The state
+ * machine, the mapping allowlist and the tenant scoping are proved by the
+ * API's own tests and the row-level security suite.
+ */
+
+test('the page renders its frame and says when nothing answers', async ({ page, context }) => {
+  await signInAs(context)
+  await page.goto('/dashboard/imports')
+
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Data import')
+  await expect(page.getByTestId('imports')).toBeVisible()
+
+  // Scoped by test id: the shell carries its own live region, and an unscoped
+  // alert query would assert on whichever rendered first.
+  await expect(page.getByTestId('imports-error')).toBeVisible()
+  await expect(page.locator('#main-content')).toHaveCount(1)
+})
+
+test('an unreachable API is not reported as a product with no imports', async ({
+  page,
+  context,
+}) => {
+  await signInAs(context)
+  await page.goto('/dashboard/imports')
+
+  // The distinction this page exists to keep: the panel and its "no imports
+  // yet" sentence are absent entirely, because neither is true — nobody asked
+  // the API and lived to tell.
+  await expect(page.getByTestId('imports-panel')).toHaveCount(0)
+  await expect(page.getByText('This product does not accept any imports yet.')).toHaveCount(0)
+})
+
+test('nothing on the page can write a record', async ({ page, context }) => {
+  await signInAs(context)
+  await page.goto('/dashboard/imports')
+
+  // The safety property of Phase 1, asserted from the outside. There is no
+  // commit, no import-now and no confirmation dialog anywhere on this surface,
+  // whether or not the API is answering.
+  await expect(page.getByRole('button', { name: /commit/i })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /import now/i })).toHaveCount(0)
+})
+
+test('it is usable at a phone width', async ({ page, context }) => {
+  await signInAs(context)
+  await page.setViewportSize({ width: 375, height: 800 })
+  await page.goto('/dashboard/imports')
+
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  await expect(page.getByTestId('imports')).toBeVisible()
+
+  // Nothing overflows sideways. The mapping and report tables live in
+  // `overflow-x-auto` containers, so the page itself must not scroll.
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+  )
+  expect(overflows).toBe(false)
+})

@@ -45,6 +45,10 @@ PRODUCT_PERMISSIONS: tuple[str, ...] = (
     "audit.view",
     "audit.export",
     "audit.legal_hold",
+    # Data import. Administrative, and held by owners and administrators alone
+    # -- neither the security nor the billing administrator has a reason to
+    # load customer records. Mirrors the TypeScript catalogue.
+    "imports.manage",
 )
 
 _EVERYONE: tuple[str, ...] = (

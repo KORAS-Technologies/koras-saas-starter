@@ -48,6 +48,7 @@ class ApiErrorCode(StrEnum):
     FILE_QUARANTINED = "file_quarantined"
     FILE_UNDER_HOLD = "file_under_hold"
     STORAGE_UNAVAILABLE = "storage_unavailable"
+    UPLOAD_REFUSED_BY_POLICY = "upload_refused_by_policy"
     # reporting
     REPORT_NOT_FOUND = "report_not_found"
     SCHEDULE_NOT_FOUND = "schedule_not_found"
@@ -69,6 +70,15 @@ class ApiErrorCode(StrEnum):
     RESTORE_NOT_TRANSITIONABLE = "restore_not_transitionable"
     RESTORE_ALREADY_REQUESTED = "restore_already_requested"
     RESTORE_OVERWRITE_UNCONFIRMED = "restore_overwrite_unconfirmed"
+    # data import
+    IMPORT_TARGET_NOT_FOUND = "import_target_not_found"
+    IMPORT_RUN_NOT_FOUND = "import_run_not_found"
+    IMPORT_MAPPING_REFUSED = "import_mapping_refused"
+    IMPORT_FILE_UNREADABLE = "import_file_unreadable"
+    IMPORT_TOO_MANY_ROWS = "import_too_many_rows"
+    IMPORT_OPERATION_REFUSED = "import_operation_refused"
+    IMPORT_NOT_TRANSITIONABLE = "import_not_transitionable"
+    IMPORT_QUEUE_UNAVAILABLE = "import_queue_unavailable"
     # notifications
     NOTIFICATION_NOT_FOUND = "notification_not_found"
     # settings

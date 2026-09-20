@@ -86,6 +86,10 @@ def test_a_person_is_offered_exactly_what_a_person_may_write() -> None:
         # and until then they are not offered.
         "notifications.emailEnabled",
         "notifications.digestFrequency",
+        # Added 2026-09-19 with data import, which enforced the other two
+        # file settings at the presign route and found this one has no
+        # moment to apply: one ticket, one file.
+        "files.maxFilesPerUpload",
     }
     for setting in catalogue:
         if setting.key in unhonoured:

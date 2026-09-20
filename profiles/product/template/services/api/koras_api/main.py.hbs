@@ -22,6 +22,8 @@ from .routers import (
     audit_exports,
 {{/if}}    files,
     health,
+{{#if capability.data_import}}    imports,
+{{/if}}
 {{#if capability.storage_governance}}    restore,
 {{/if}}
 {{#if capability.audit_governance}}    holds,
@@ -167,7 +169,22 @@ app.include_router(
     prefix="/api/v1",
     dependencies=[Depends(limit_authenticated)],
 )
-{{#if capability.notifications}}# A person's own feed. No permission on any route, like `/me/settings`: what
+{{#if capability.data_import}}# Loading a file of records into a table this product owns. Upload, map, dry
+# run -- and nothing here writes a row of a target table: a run reaching
+# `validated` is a terminal state that wrote nothing, which is what makes a dry
+# run a dry run rather than a promise. `imports.manage` on every route, reads
+# included: a run names a customer's own records and the mapping shows their
+# column headings.
+#
+# `/imports/targets` is registered inside the router ahead of `/imports/{id}`,
+# because Starlette matches in registration order and would otherwise read
+# "targets" as a run id.
+app.include_router(
+    imports.router,
+    prefix="/api/v1",
+    dependencies=[Depends(limit_authenticated)],
+)
+{{/if}}{{#if capability.notifications}}# A person's own feed. No permission on any route, like `/me/settings`: what
 # protects a feed is the policy keyed to the verified subject, and a permission
 # would make the bell a premium feature. No route writes one either -- a
 # notification is produced by the thing that happened, server-side, because a

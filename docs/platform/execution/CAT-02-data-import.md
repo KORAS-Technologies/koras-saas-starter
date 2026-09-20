@@ -6,7 +6,7 @@
 | **Feature name** | Data import and migration framework |
 | **Owner** | CAT-02 lead |
 | **Written** | 2026-09-19 |
-| **Status** | Blocked on PLAT-F1 as of 2026-09-19. No code written |
+| **Status** | **Phase 1 built 2026-09-19.** PLAT-F1 shipped the same day and this is its first caller. Phases 2-4 not started. Three Phase 1 items deliberately unbuilt — see `docs/features/data-import/architecture.md` |
 | **Read first** | `docs/platform/master-platform-plan.md` §7, §9; `docs/platform/feature-dependency-map.md`; `docs/platform/gap-defect-register.md` IMPORT rows; and `docoris/docs/architecture/IMPORT.md`, which is a requirements source written by the product that needs this |
 
 ## Objective
@@ -34,7 +34,7 @@ to know something about a target, the target declares it.
 
 | Dependency | Class | State |
 |---|---|---|
-| **PLAT-F1 job contract** | **HARD, from Phase 1** | Absent as of 2026-09-19. **This is the blocker** |
+| **PLAT-F1 job contract** | **HARD, from Phase 1** | **Satisfied 2026-09-19.** `koras-queue` ships, and the dry run is its first caller |
 | Auth, tenant context, forced RLS | HARD | Satisfied |
 | Storage upload ticket and quota | HARD | Satisfied |
 | Storage governance: retention, hold, reconciliation | HARD | Satisfied, and inherited free by using the existing imports category |
@@ -125,6 +125,13 @@ started, completed, completed with errors, failed, cancelled.
 
 **Exit:** a customer uploads a CSV, maps it, runs a dry run, and sees what would
 happen. Nothing is written.
+
+**Met 2026-09-19, with three exceptions recorded rather than quietly dropped.**
+`files.maxFilesPerUpload` is unsurfaced rather than enforced, the upload flow was
+not extracted into a shared primitive, and the preview is a plain table rather than
+the shared one. Each is a row in `docs/platform/gap-defect-register.md` and each is
+explained in `docs/features/data-import/architecture.md`. None affects the
+exit criterion itself: nothing is written.
 
 ### Phase 2 — Commit, row errors, error file
 

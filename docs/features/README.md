@@ -85,6 +85,25 @@ revised after the fact stops being a record of what was decided. Where it and
 the as-built document disagree — the value tables were renamed, for one — the
 as-built one is right.
 
+### Data import and migration framework
+
+Upload a file, map its columns, see what would happen, and — from Phase 2 —
+commit. The engine knows no product's table names; a product declares what may
+be imported the way it already declares reports, settings and audit actions.
+
+| Feature | Directory | Status as of 2026-09-19 |
+|---------|-----------|-------------------------|
+| Data import and migration framework | `docs/features/data-import/` | Part built |
+
+`Part built` here means Phase 1 of four. A run reaches `validated`, which is a
+terminal state that wrote nothing; there is no commit route, no commit task and
+no control on the page that could write a row. Three Phase 1 plan items were
+deliberately not built and are named in `data-import/architecture.md` rather
+than left to be rediscovered.
+
+The plan is `docs/platform/execution/CAT-02-data-import.md` and the decision
+record is `docs/adr/0009-import-runs-are-not-a-third-export.md`.
+
 ## Status vocabulary
 
 The starter has no prior status convention for features, so this one is

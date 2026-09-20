@@ -1,0 +1,133 @@
+import type { Translator } from '@{{projectSlug}}/i18n'
+
+/**
+ * Every sentence the import panel renders, resolved on the server.
+ *
+ * The panel is a client component, so it cannot hold a translator: the
+ * catalogue would be in the browser bundle and the request's language would
+ * not be. Built here instead, from the same translator the page already has,
+ * and passed down as plain strings — the arrangement the Restore and Files
+ * panels use for the same reason.
+ *
+ * Two of these are maps rather than strings. A run's state and a row error's
+ * code both arrive from the API as stable identifiers, and mapping them here
+ * means a state the catalogue has no sentence for falls back to the identifier
+ * rather than rendering nothing. That fallback is deliberate: a new state
+ * should look untranslated, not invisible.
+ */
+export interface ImportLabels {
+  startTitle: string
+  startDescription: string
+  target: string
+  operation: string
+  operationHint: string
+  file: string
+  ceiling: string
+  mapTitle: string
+  mapDescription: string
+  mapColumn: string
+  column: string
+  sample: string
+  field: string
+  ignore: string
+  check: string
+  checking: string
+  discard: string
+  tooManyRows: string
+  replaced: string
+  resultTitle: string
+  summary: string
+  wroteNothing: string
+  showReport: string
+  reportCut: string
+  row: string
+  problem: string
+  value: string
+  historyTitle: string
+  noRuns: string
+  noTargets: string
+  state: string
+  rows: string
+  started: string
+  operations: Record<string, string>
+  states: Record<string, string>
+  problems: Record<string, string>
+}
+
+export function importLabels(t: Translator): ImportLabels {
+  const operations: Record<string, string> = {
+    create: t('imports.op.create'),
+    update: t('imports.op.update'),
+    upsert: t('imports.op.upsert'),
+    skip_duplicate: t('imports.op.skipDuplicate'),
+  }
+  // Every member of `koras_import.RunState`, including the four Phase 2 only
+  // reaches. They are translated now rather than when the commit ships,
+  // because the state machine already has them and a run that somehow arrives
+  // in one should not render a bare identifier.
+  const states: Record<string, string> = {
+    created: t('imports.state.created'),
+    mapped: t('imports.state.mapped'),
+    validating: t('imports.state.validating'),
+    validated: t('imports.state.validated'),
+    validation_failed: t('imports.state.validationFailed'),
+    commit_requested: t('imports.state.commitRequested'),
+    committing: t('imports.state.committing'),
+    committed: t('imports.state.committed'),
+    failed: t('imports.state.failed'),
+    cancelled: t('imports.state.cancelled'),
+  }
+  // Keyed by the exact codes `koras_import.mapping` raises. A code with no
+  // sentence falls back to the identifier in the panel, which is what makes a
+  // new rule look untranslated rather than invisible.
+  const problems: Record<string, string> = {
+    'import.error.required': t('imports.problem.required'),
+    'import.error.too_long': t('imports.problem.tooLong'),
+    'import.error.not_an_option': t('imports.problem.notAnOption'),
+    'import.error.integer': t('imports.problem.integer'),
+    'import.error.decimal': t('imports.problem.decimal'),
+    'import.error.boolean': t('imports.problem.boolean'),
+    'import.error.date': t('imports.problem.date'),
+    'import.error.email': t('imports.problem.email'),
+    'import.error.extra_cells': t('imports.problem.extraCells'),
+    'import.error.duplicate_in_file': t('imports.problem.duplicateInFile'),
+  }
+  return {
+    startTitle: t('imports.startTitle'),
+    startDescription: t('imports.startDescription'),
+    target: t('imports.target'),
+    operation: t('imports.operation'),
+    operationHint: t('imports.operationHint'),
+    file: t('imports.file'),
+    ceiling: t('imports.ceiling'),
+    mapTitle: t('imports.mapTitle'),
+    mapDescription: t('imports.mapDescription'),
+    mapColumn: t('imports.mapColumn'),
+    column: t('imports.column'),
+    sample: t('imports.sample'),
+    field: t('imports.field'),
+    ignore: t('imports.ignore'),
+    check: t('imports.check'),
+    checking: t('imports.checking'),
+    discard: t('imports.discard'),
+    tooManyRows: t('imports.tooManyRows'),
+    replaced: t('imports.replaced'),
+    resultTitle: t('imports.resultTitle'),
+    summary: t('imports.summary'),
+    wroteNothing: t('imports.wroteNothing'),
+    showReport: t('imports.showReport'),
+    reportCut: t('imports.reportCut'),
+    row: t('imports.row'),
+    problem: t('imports.problem'),
+    value: t('imports.value'),
+    historyTitle: t('imports.historyTitle'),
+    noRuns: t('imports.noRuns'),
+    noTargets: t('imports.noTargets'),
+    state: t('imports.state'),
+    rows: t('imports.rows'),
+    started: t('imports.started'),
+    operations,
+    states,
+    problems,
+  }
+}

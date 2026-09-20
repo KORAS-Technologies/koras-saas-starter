@@ -430,6 +430,14 @@ SETTINGS: list[SettingDefinition] = [
         maximum=100,
         ui=UiControl.NUMBER,
         order=30,
+        # Declared, and honoured by nothing as of 2026-09-19 -- unlike the
+        # other two files settings, which the presign route now enforces.
+        # There is nothing here to honour it *on*: the upload route mints
+        # one ticket for one file and the browser sends them one at a time,
+        # so a limit on how many go at once has no moment to apply. It is
+        # unsurfaced until a multi-file upload exists rather than left
+        # offering a number nothing reads.
+        surfaced=False,
     ),
     _setting(
         "files.previewEnabled",

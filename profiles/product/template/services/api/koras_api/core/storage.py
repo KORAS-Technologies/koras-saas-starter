@@ -18,6 +18,7 @@ successful read.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Annotated, Any
 
@@ -32,11 +33,22 @@ from koras_storage import (
     Unsupported,
     resolve_destination,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import platform
 from .errors import ApiErrorCode, api_error
 from .settings import PRODUCT_CODE, settings
 from .tenant import TenantDep
+
+logger = logging.getLogger(__name__)
+
+#: One object, one request. Multipart uploads are a later phase; a file larger
+#: than this is refused with a message rather than failing midway.
+#:
+#: Here rather than in the route since 2026-09-19, because the settings that
+#: narrow it are resolved here and two constants for one number is how they
+#: come to disagree. The route imports it.
+MAX_OBJECT_BYTES = 5 * 1024**3
 
 #: The platform capability that gates the Files module. Named once here and
 #: once in `packages/branding`'s navigation registry; the generator's
@@ -158,3 +170,96 @@ async def tenant_storage(
 
 
 StorageDep = Annotated[TenantStorage, Depends(tenant_storage)]
+
+
+# ── what a customer may upload ───────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class UploadLimits:
+    """The organisation's own ceiling on an upload, from the settings catalogue.
+
+    Three settings were declared, translated into three languages and drawn on
+    the settings page from the day the framework shipped, and **read by nothing
+    at all** until 2026-09-19: the upload route applied a hardcoded 5 GiB and
+    consulted none of them. A customer could tighten "Largest file" to 10 MB
+    and watch a 2 GB upload succeed.
+
+    Two of them are honoured here. `files.maxFilesPerUpload` is not, because
+    there is no route to honour it on -- the ticket route mints one ticket for
+    one file, and the browser uploads one at a time -- so it is unsurfaced
+    rather than left offering something nothing can apply.
+    """
+
+    #: Bytes. Never above the hard ceiling: a setting widens nothing.
+    max_bytes: int
+    #: Lower-case, without the dot. Empty means every extension.
+    extensions: tuple[str, ...]
+
+    def refuses(self, name: str, size_bytes: int) -> str | None:
+        """The reason this upload is refused, or nothing."""
+        if size_bytes > self.max_bytes:
+            return "size"
+        if self.extensions:
+            _, _, suffix = name.rpartition(".")
+            if not suffix or suffix.lower() not in self.extensions:
+                return "extension"
+        return None
+
+
+async def upload_limits(session: AsyncSession, tenant_id: str) -> UploadLimits:
+    """Resolve the two enforceable file limits for this organisation.
+
+    Resolved rather than read: the ladder is the organisation's value over the
+    platform's over the definition's default, and doing it here with the
+    framework's own resolver is what keeps the number the settings page shows
+    and the number the route applies the same number.
+
+    Never raises. A settings table that cannot be read gives the hard ceiling
+    and no extension list, which is the behaviour the route had before any of
+    this existed -- an upload page that fails because a preference lookup was
+    unavailable would be a worse trade than one that is briefly permissive.
+    """
+    from koras_settings import resolve
+
+    from ..settings_catalogue import catalogue
+    from .settings_store import global_values, tenant_values
+
+    megabytes = 5_000
+    extensions: tuple[str, ...] = ()
+    try:
+        globals_ = await global_values(session)
+        tenants_ = await tenant_values(session, tenant_id)
+        # `resolve` answers the value *and* anything it skipped reaching it.
+        # The skipped half is dropped here on purpose: a stored value that no
+        # longer satisfies its own definition is already reported on the
+        # settings page, and an upload is not the place to learn about it.
+        size, _ = resolve(
+            catalogue.require("files.maxUploadSizeMb"),
+            global_values=globals_,
+            organization_values=tenants_,
+            member_values={},
+        )
+        allowed, _ = resolve(
+            catalogue.require("files.allowedExtensions"),
+            global_values=globals_,
+            organization_values=tenants_,
+            member_values={},
+        )
+        if isinstance(size.value, int) and not isinstance(size.value, bool):
+            megabytes = size.value
+        if isinstance(allowed.value, (list, tuple)):
+            extensions = tuple(
+                str(item).strip().lstrip(".").lower()
+                for item in allowed.value
+                if str(item).strip()
+            )
+    except Exception:  # noqa: BLE001 - a preference lookup must not fail an upload
+        logger.exception("the upload limits could not be resolved; using the ceiling")
+
+    # A setting narrows and never widens: the 5 GiB ceiling is about what the
+    # provider and this service can carry, and no customer preference changes
+    # that.
+    return UploadLimits(
+        max_bytes=min(megabytes * 1024 * 1024, MAX_OBJECT_BYTES), extensions=extensions
+    )

@@ -1746,7 +1746,32 @@ export const productConfig: ProductConfig = {
         requiredEntitlements: ['storage.files'],
         lockedBehavior: 'lock',
       },
-{{#if capability.notifications}}
+{{#if capability.data_import}}
+      // Data import. Generated only with the `data_import` capability, which
+      // is what ships the run store, the engine and the page.
+      //
+      // `imports.manage` and no entitlement. The permission is administrative
+      // because an import writes rows of a customer's own records, so an
+      // ordinary member does not see the module at all -- hidden rather than
+      // locked, since there is nothing to upsell. The absence of a plan gate is
+      // the decision: a customer who cannot get their data *in* has not bought
+      // a product, and selling the way in separately sells it to somebody who
+      // has not started using the product yet.
+      //
+      // Administration rather than primary. Importing is something set up once
+      // and revisited rarely, and it sits beside Team and Settings, which is
+      // where an administrator already goes.
+      {
+        id: 'imports',
+        label: 'Data import',
+        icon: 'layers',
+        href: '/dashboard/imports',
+        group: 'administration',
+        order: 30,
+        requiredPermissions: ['imports.manage'],
+        requiredCapabilities: ['data_import'],
+      },
+{{/if}}{{#if capability.notifications}}
       // The notification centre: everything the bell's drawer does not show.
       // No `requiredPermissions` and no entitlement, deliberately — a feed is
       // guarded by the row-level policy keyed to the caller's own subject, and

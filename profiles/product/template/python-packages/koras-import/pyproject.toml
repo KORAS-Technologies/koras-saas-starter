@@ -1,0 +1,30 @@
+[project]
+name = "koras-import"
+version = "0.1.0"
+requires-python = ">=3.12"
+# No dependencies, and that is the design. The framework reads a file into
+# rows, resolves a mapping and validates -- none of which needs a database
+# driver, an HTTP client or a spreadsheet library. CSV is the standard
+# library's; XLSX arrives in Phase 3 and brings `openpyxl`, which the API
+# already declares for the reporting writers.
+#
+# Keeping I/O out of here is what lets the engine be tested without a
+# database and promoted without a rewrite: a target is a declaration, and the
+# session a commit runs on belongs to the caller.
+#
+# `koras-queue` is the one exception and it is a declaration too. `jobs.py`
+# names the two background tasks a run needs, and it lives here because the API
+# enqueues them and the worker binds them -- so either other home would make
+# one service import the other. `TaskDefinition` carries no coroutine, which is
+# exactly what makes that possible.
+dependencies = ["koras-queue"]
+
+[tool.uv.sources]
+koras-queue = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/koras_import"]

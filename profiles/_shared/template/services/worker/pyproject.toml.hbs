@@ -20,7 +20,9 @@ dependencies = [
   "koras-logging",
   "koras-observability",
   "koras-queue",
-  # The reconciliation sweep asks the bucket what it holds and compares it
+{{#if capability.data_import}}  # The validation job reads a file through the same engine the API does.
+  "koras-import",
+{{/if}}  # The reconciliation sweep asks the bucket what it holds and compares it
   # with the index. Foundation, like the index.
   "koras-storage",
 {{#if capability.reporting}}  # Scheduled delivery: the framework renders the file, the mail package
@@ -36,7 +38,8 @@ koras-platform = { workspace = true }
 koras-logging = { workspace = true }
 koras-observability = { workspace = true }
 koras-queue = { workspace = true }
-koras-storage = { workspace = true }
+{{#if capability.data_import}}koras-import = { workspace = true }
+{{/if}}koras-storage = { workspace = true }
 {{#if capability.reporting}}koras-reporting = { workspace = true }
 koras-email = { workspace = true }
 {{/if}}

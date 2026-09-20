@@ -12,6 +12,7 @@ from .tasks import example_task
 {{#if capability.ai}}from .tasks.ai_retention import purge_ai_history
 {{/if}}from .tasks.audit_retention import purge_audit_history
 {{#if capability.audit_governance}}from .tasks.governance_expiry import expire_audit_exports, expire_legal_holds
+{{/if}}{{#if capability.data_import}}from .tasks.imports import bound as import_tasks
 {{/if}}{{#if capability.notifications}}from .tasks.notifications import purge_notifications
 {{/if}}from .tasks.product import PRODUCT_CRON_JOBS, PRODUCT_TASKS
 {{#if capability.reporting}}from .tasks.reporting import deliver_scheduled_reports
@@ -68,7 +69,13 @@ class WorkerSettings(WorkerSettingsBase):
     # `worker_functions` applies each task's declared retry policy and timeout
     # and refuses a name bound twice, so a collision is a traceback here rather
     # than one handler silently shadowing another in production.
-    functions = [example_task, *worker_functions(PRODUCT_TASKS)]
+    functions = [
+        example_task,
+{{#if capability.data_import}}        # The dry run a person is waiting on. The first enqueued work in this
+        # product, and the reason the seam above exists.
+        *worker_functions(import_tasks()),
+{{/if}}        *worker_functions(PRODUCT_TASKS),
+    ]
     # Before the first cron fires, not after. A sweep that deleted across
     # tenants once has already done it.
     #

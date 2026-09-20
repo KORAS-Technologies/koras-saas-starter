@@ -24,6 +24,11 @@ capabilities:
   # assistant's approval notice is the one producer the starter ships and a
   # notice with nowhere to land is worse than no notice.
   notifications: true
+  # Off until a product has something to import into. The engine is real and
+  # tested, and a target names a table the product owns -- so a freshly
+  # generated project would carry a page offering nothing. `--with data_import`
+  # when the first target exists.
+  data_import: false
   white_label: false
   # Off until a product wants an assistant: on, it needs the gateway service
   # and the provider keys a deployed gateway is refused without. Enable both

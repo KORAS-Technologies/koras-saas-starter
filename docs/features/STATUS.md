@@ -145,6 +145,52 @@ browser checks cover routing, refusal and degraded rendering at 1440 and 375,
 and none of them covers the thing the feature is for. That is case TEST-SET-01
 in the manual plan, and it is first for that reason.
 
+## Data import and migration framework
+
+Phase 1 of four, shipped 2026-09-19. Stories are `IMPORT-US-*` in
+`docs/platform/execution/CAT-02-data-import.md`.
+
+| Story | Title | Phase | Status |
+|-------|-------|-------|--------|
+| IMPORT-US-017 | Declare what may be imported without touching the engine | 0 | **Built** — `ImportTarget`, `TargetRegistry`, and an empty product-owned list |
+| IMPORT-US-001 | Upload a spreadsheet of existing records | 1 | **Built** — an ordinary `/files` ticket on the `imports` shelf |
+| IMPORT-US-002 | Map my columns to the product's fields | 1 | **Built** |
+| IMPORT-US-003 | Be told at mapping time that a required column is missing, by name | 1 | **Built** — a 422 naming the field, from the mapping route |
+| IMPORT-US-004 | A dry run that writes nothing | 1 | **Built** — and asserted structurally, not just by behaviour |
+| IMPORT-US-005 | See what the first rows will look like | 1 | **Built** — a bounded head of 200 rows, in a plain table rather than the shared one |
+| IMPORT-US-015 | A member without the permission is refused | 1 | **Built** — hidden in the sidebar, refused on the route |
+| IMPORT-US-006 | Every problem reported in one pass | 2 | **Built early** — `validate` makes one pass and reports every problem in every row, including in-file duplicates |
+| IMPORT-US-007 | Download a file naming every bad row | 2 | Not started |
+| IMPORT-US-008 | Choose whether a duplicate is skipped or updated | 2 | Part built — the operation is chosen and stored; nothing acts on it yet |
+| IMPORT-US-009 | A commit that either fully happens or does not | 2 | Not started |
+| IMPORT-US-010 | See my past imports and what each did | 2 | Part built — the history renders; there is nothing committed to see |
+| IMPORT-US-016 | Every import attributable and audited | 2 | Not started — the run records who asked; no audit action is registered yet |
+| IMPORT-US-018 | Be told when a long import finishes | 2 | Not started — CAT-01's emitter exists and is not called |
+| IMPORT-US-011 | Save a mapping and reuse it | 3 | Not started |
+| IMPORT-US-012 | Cancel a running import | 3 | Part built — `cancel` refuses a commit in flight by state; there is no commit to cancel |
+| IMPORT-US-013 | Retry a failed import without losing its history | 3 | Not started |
+| IMPORT-US-014 | A large file works | 4 | Not started — bounded and **refused** rather than truncated, which is the rule audit exports follow |
+
+### What is deliberately unbuilt, and why
+
+Three Phase 1 plan items were not built. Each is a row in
+`docs/platform/gap-defect-register.md` and each is named in
+`docs/features/data-import/architecture.md`: `files.maxFilesPerUpload` is
+unsurfaced rather than enforced, the upload flow was not extracted into a
+shared primitive, and the preview does not go through the shared data table.
+None of them touches the safety properties.
+
+### What has no automated proof
+
+Everything a person does with a real file. The e2e harness starts the web
+application alone, so its four browser checks cover routing, refusal and
+degraded rendering and nothing that needs an API, a queue or a bucket. No file
+has been imported through a deployed product, and `koras-e2e-shop` — the one
+repository in the estate with a domain that could declare real targets — has
+not been synced.
+`docs/features/data-import/manual-test-plan.md` has twenty-two cases and
+twenty-two blank verdicts.
+
 ## Recommended order
 
 **SAG-F2 has no unbuilt stories left.** Everything below is either review,

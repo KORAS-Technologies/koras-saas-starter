@@ -722,6 +722,128 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'No tiene permiso para restaurar archivos.',
   'restore.error.unavailable':
     'Las restauraciones no estan disponibles en este momento. Intentelo en breve.',
+  'imports.title':
+    'Importación de datos',
+  'imports.description':
+    'Traiga registros desde una hoja de cálculo. Suba un archivo, indique a qué corresponde cada columna y vea exactamente qué pasaría antes de que se escriba nada.',
+  'imports.startTitle':
+    'Iniciar una importación',
+  'imports.startDescription':
+    'Elija qué va a importar y cómo tratar los duplicados, y después seleccione el archivo.',
+  'imports.target':
+    'Qué se importa',
+  'imports.operation':
+    'Registros existentes',
+  'imports.operationHint':
+    'Qué debe ocurrir con una fila que coincide con un registro que ya tiene.',
+  'imports.file':
+    'Archivo',
+  'imports.ceiling':
+    'Hasta {rows} filas por ejecución. Formatos admitidos: {formats}.',
+  'imports.mapTitle':
+    'Emparejar las columnas',
+  'imports.mapDescription':
+    'Cada columna de su archivo va a un campo, o a ninguno. Las columnas cuyo encabezado coincidió exactamente ya están emparejadas.',
+  'imports.mapColumn':
+    'A qué campo va la columna «{column}»',
+  'imports.column':
+    'Columna',
+  'imports.sample':
+    'Primer valor',
+  'imports.field':
+    'Campo',
+  'imports.ignore':
+    'No importar',
+  'imports.check':
+    'Comprobar el archivo',
+  'imports.checking':
+    'Comprobando…',
+  'imports.discard':
+    'Descartar esta importación',
+  'imports.tooManyRows':
+    'Este archivo tiene más filas de las que admite una ejecución. Divídalo e importe las partes por separado.',
+  'imports.replaced':
+    'Algunos caracteres de este archivo no se pudieron leer y se sustituyeron. Revise la vista previa antes de continuar.',
+  'imports.resultTitle':
+    'Qué pasaría',
+  'imports.summary':
+    '{rows} filas leídas, {valid} listas para importar, {errors} problemas encontrados.',
+  'imports.wroteNothing':
+    'No se ha escrito nada. Esto era una comprobación y sus registros están intactos.',
+  'imports.showReport':
+    'Mostrar los problemas',
+  'imports.reportCut':
+    'Solo se enumeran los primeros problemas. Corríjalos y vuelva a comprobar el archivo.',
+  'imports.row':
+    'Fila',
+  'imports.problem':
+    'Problema',
+  'imports.value':
+    'Valor',
+  'imports.historyTitle':
+    'Importaciones recientes',
+  'imports.noRuns':
+    'Todavía no se ha importado nada.',
+  'imports.noTargets':
+    'Este producto todavía no admite ninguna importación.',
+  'imports.state':
+    'Estado',
+  'imports.rows':
+    'Filas',
+  'imports.started':
+    'Iniciada',
+  'imports.op.create':
+    'Añadir cada fila como registro nuevo',
+  'imports.op.update':
+    'Actualizar solo los registros que ya existen',
+  'imports.op.upsert':
+    'Actualizar donde coincida y añadir donde no',
+  'imports.op.skipDuplicate':
+    'Añadir registros nuevos y dejar las coincidencias como están',
+  'imports.state.created':
+    'Pendiente de emparejar',
+  'imports.state.mapped':
+    'Columnas emparejadas, sin comprobar',
+  'imports.state.validating':
+    'Comprobando el archivo…',
+  'imports.state.validated':
+    'Comprobado. No se escribió nada.',
+  'imports.state.validationFailed':
+    'Se encontraron problemas. No se escribió nada.',
+  'imports.state.commitRequested':
+    'Pendiente de importar',
+  'imports.state.committing':
+    'Importando…',
+  'imports.state.committed':
+    'Importado',
+  'imports.state.failed':
+    'Esta importación no se pudo terminar',
+  'imports.state.cancelled':
+    'Cancelada',
+  'imports.problem.required':
+    'Este campo es necesario y la celda está vacía',
+  'imports.problem.tooLong':
+    'Este valor es más largo de lo que admite el campo',
+  'imports.problem.notAnOption':
+    'Este no es uno de los valores que acepta el campo',
+  'imports.problem.integer':
+    'Aquí se espera un número entero',
+  'imports.problem.decimal':
+    'Aquí se espera un número',
+  'imports.problem.boolean':
+    'Aquí se espera sí o no',
+  'imports.problem.date':
+    'Aquí se espera una fecha con el formato AAAA-MM-DD',
+  'imports.problem.email':
+    'Esto no parece una dirección de correo electrónico',
+  'imports.problem.extraCells':
+    'Esta fila tiene más celdas que columnas tiene el archivo',
+  'imports.problem.duplicateInFile':
+    'Otra fila de este mismo archivo ya tiene este valor',
+  'imports.error.forbidden':
+    'No tiene permiso para importar registros.',
+  'imports.error.unavailable':
+    'Las importaciones no están disponibles en este momento. Vuelva a intentarlo en breve.',
   'audit.title':
     'Auditoría',
   'audit.description':
@@ -864,8 +986,6 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'settings.def.files.maxUploadSizeMb.description': 'El archivo individual más grande que se puede subir aquí, en megabytes.',
   'settings.def.files.allowedExtensions.label': 'Tipos de archivo permitidos',
   'settings.def.files.allowedExtensions.description': 'Qué extensiones de archivo se pueden subir.',
-  'settings.def.files.maxFilesPerUpload.label': 'Archivos a la vez',
-  'settings.def.files.maxFilesPerUpload.description': 'Cuántos archivos se pueden subir de una vez.',
   'settings.def.files.previewEnabled.label': 'Vista previa de archivos',
   'settings.def.files.previewEnabled.description': 'Mostrar una vista previa en lugar de solo el nombre.',
   'settings.def.reporting.defaultDateRange.label': 'Periodo predeterminado',
@@ -941,6 +1061,24 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'Ya hay una restauración de este archivo esperando una decisión.',
   'errors.restoreOverwriteUnconfirmed':
     'Esta solicitud sustituye el archivo existente. Apruébela indicándolo, o solicite una copia nueva en su lugar.',
+  'errors.importTargetNotFound':
+    'Este producto no admite una importación de ese tipo.',
+  'errors.importRunNotFound':
+    'No se encuentra esa importación.',
+  'errors.importMappingRefused':
+    'Las columnas no se pueden emparejar tal como están. El mensaje indica cuál.',
+  'errors.importFileUnreadable':
+    'No se pudo leer este archivo. Compruebe que es un CSV guardado con una fila de encabezados.',
+  'errors.importTooManyRows':
+    'Este archivo tiene más filas de las que admite una importación. Divídalo e importe las partes por separado.',
+  'errors.importOperationRefused':
+    'Eso no es algo que esta importación pueda hacer.',
+  'errors.importNotTransitionable':
+    'Esta importación ha avanzado y eso ya no es posible.',
+  'errors.importQueueUnavailable':
+    'El trabajo en segundo plano no está configurado, así que este archivo no se puede comprobar. Tiene que configurarlo una persona administradora.',
+  'errors.uploadRefusedByPolicy':
+    'Este archivo no se admite. Compruebe su tamaño y su tipo frente a la configuración de su organización.',
   'errors.fileUnderHold':
     'Este archivo no se puede eliminar: una retención legal lo conserva. Podrá eliminarse cuando se levante la retención.',
   'errors.fileQuarantined':

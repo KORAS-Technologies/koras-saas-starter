@@ -733,6 +733,128 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Sie haben keine Berechtigung, Dateien wiederherzustellen.',
   'restore.error.unavailable':
     'Wiederherstellungen sind derzeit nicht erreichbar. Versuchen Sie es in Kuerze erneut.',
+  'imports.title':
+    'Datenimport',
+  'imports.description':
+    'Datensätze aus einer Tabelle übernehmen. Datei hochladen, Spalten zuordnen und genau sehen, was passieren würde, bevor etwas geschrieben wird.',
+  'imports.startTitle':
+    'Import starten',
+  'imports.startDescription':
+    'Wählen Sie, was importiert wird und wie mit Doppelungen umgegangen werden soll, und wählen Sie dann die Datei.',
+  'imports.target':
+    'Was importiert wird',
+  'imports.operation':
+    'Vorhandene Datensätze',
+  'imports.operationHint':
+    'Was mit einer Zeile geschehen soll, die zu einem vorhandenen Datensatz passt.',
+  'imports.file':
+    'Datei',
+  'imports.ceiling':
+    'Bis zu {rows} Zeilen pro Durchlauf. Zulässige Formate: {formats}.',
+  'imports.mapTitle':
+    'Spalten zuordnen',
+  'imports.mapDescription':
+    'Jede Spalte Ihrer Datei geht in genau ein Feld – oder in keines. Spalten, deren Überschrift genau passte, sind bereits zugeordnet.',
+  'imports.mapColumn':
+    'In welches Feld die Spalte „{column}“ geht',
+  'imports.column':
+    'Spalte',
+  'imports.sample':
+    'Erster Wert',
+  'imports.field':
+    'Feld',
+  'imports.ignore':
+    'Nicht importieren',
+  'imports.check':
+    'Datei prüfen',
+  'imports.checking':
+    'Wird geprüft…',
+  'imports.discard':
+    'Import verwerfen',
+  'imports.tooManyRows':
+    'Diese Datei hat mehr Zeilen, als ein Durchlauf aufnimmt. Teilen Sie sie und importieren Sie die Teile einzeln.',
+  'imports.replaced':
+    'Einige Zeichen in dieser Datei konnten nicht gelesen werden und wurden ersetzt. Prüfen Sie die Vorschau, bevor Sie fortfahren.',
+  'imports.resultTitle':
+    'Was passieren würde',
+  'imports.summary':
+    '{rows} Zeilen gelesen, davon {valid} importierbar, {errors} Probleme gefunden.',
+  'imports.wroteNothing':
+    'Es wurde nichts geschrieben. Dies war eine Prüfung; Ihre Datensätze sind unverändert.',
+  'imports.showReport':
+    'Probleme anzeigen',
+  'imports.reportCut':
+    'Es werden nur die ersten Probleme aufgeführt. Beheben Sie diese und prüfen Sie die Datei erneut.',
+  'imports.row':
+    'Zeile',
+  'imports.problem':
+    'Problem',
+  'imports.value':
+    'Wert',
+  'imports.historyTitle':
+    'Letzte Importe',
+  'imports.noRuns':
+    'Es wurde noch nichts importiert.',
+  'imports.noTargets':
+    'Dieses Produkt nimmt noch keine Importe entgegen.',
+  'imports.state':
+    'Status',
+  'imports.rows':
+    'Zeilen',
+  'imports.started':
+    'Gestartet',
+  'imports.op.create':
+    'Jede Zeile als neuen Datensatz anlegen',
+  'imports.op.update':
+    'Nur vorhandene Datensätze aktualisieren',
+  'imports.op.upsert':
+    'Aktualisieren, wo es passt, sonst neu anlegen',
+  'imports.op.skipDuplicate':
+    'Neue Datensätze anlegen, vorhandene unberührt lassen',
+  'imports.state.created':
+    'Wartet auf die Zuordnung',
+  'imports.state.mapped':
+    'Spalten zugeordnet, noch nicht geprüft',
+  'imports.state.validating':
+    'Datei wird geprüft…',
+  'imports.state.validated':
+    'Geprüft. Es wurde nichts geschrieben.',
+  'imports.state.validationFailed':
+    'Probleme gefunden. Es wurde nichts geschrieben.',
+  'imports.state.commitRequested':
+    'Wartet auf den Import',
+  'imports.state.committing':
+    'Wird importiert…',
+  'imports.state.committed':
+    'Importiert',
+  'imports.state.failed':
+    'Dieser Import konnte nicht abgeschlossen werden',
+  'imports.state.cancelled':
+    'Abgebrochen',
+  'imports.problem.required':
+    'Dieses Feld wird benötigt und die Zelle ist leer',
+  'imports.problem.tooLong':
+    'Dieser Wert ist länger, als das Feld zulässt',
+  'imports.problem.notAnOption':
+    'Das ist keiner der Werte, die das Feld annimmt',
+  'imports.problem.integer':
+    'Hier wird eine ganze Zahl erwartet',
+  'imports.problem.decimal':
+    'Hier wird eine Zahl erwartet',
+  'imports.problem.boolean':
+    'Hier wird Ja oder Nein erwartet',
+  'imports.problem.date':
+    'Hier wird ein Datum im Format JJJJ-MM-TT erwartet',
+  'imports.problem.email':
+    'Das sieht nicht nach einer E-Mail-Adresse aus',
+  'imports.problem.extraCells':
+    'Diese Zeile hat mehr Zellen, als die Datei Spalten hat',
+  'imports.problem.duplicateInFile':
+    'Eine andere Zeile derselben Datei hat diesen Wert bereits',
+  'imports.error.forbidden':
+    'Sie haben keine Berechtigung, Datensätze zu importieren.',
+  'imports.error.unavailable':
+    'Importe sind derzeit nicht erreichbar. Bitte versuchen Sie es in Kürze erneut.',
   'audit.title':
     'Prüfprotokoll',
   'audit.description':
@@ -875,8 +997,6 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'settings.def.files.maxUploadSizeMb.description': 'Die größte einzelne Datei, die hier hochgeladen werden darf, in Megabyte.',
   'settings.def.files.allowedExtensions.label': 'Erlaubte Dateitypen',
   'settings.def.files.allowedExtensions.description': 'Welche Dateiendungen hochgeladen werden dürfen.',
-  'settings.def.files.maxFilesPerUpload.label': 'Dateien auf einmal',
-  'settings.def.files.maxFilesPerUpload.description': 'Wie viele Dateien auf einmal hochgeladen werden dürfen.',
   'settings.def.files.previewEnabled.label': 'Dateivorschau',
   'settings.def.files.previewEnabled.description': 'Eine Vorschau anzeigen statt nur des Dateinamens.',
   'settings.def.reporting.defaultDateRange.label': 'Standardzeitraum',
@@ -954,6 +1074,24 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Für diese Datei wartet bereits eine Wiederherstellung auf eine Entscheidung.',
   'errors.restoreOverwriteUnconfirmed':
     'Diese Anfrage ersetzt die vorhandene Datei. Genehmigen Sie sie ausdrücklich als Ersetzung, oder fordern Sie stattdessen eine neue Kopie an.',
+  'errors.importTargetNotFound':
+    'Dieses Produkt nimmt keinen Import dieser Art entgegen.',
+  'errors.importRunNotFound':
+    'Dieser Import wurde nicht gefunden.',
+  'errors.importMappingRefused':
+    'Die Spalten lassen sich so nicht zuordnen. Die Meldung nennt, welche.',
+  'errors.importFileUnreadable':
+    'Diese Datei konnte nicht gelesen werden. Prüfen Sie, ob es eine CSV-Datei mit Kopfzeile ist.',
+  'errors.importTooManyRows':
+    'Diese Datei hat mehr Zeilen, als ein Import aufnimmt. Teilen Sie sie und importieren Sie die Teile einzeln.',
+  'errors.importOperationRefused':
+    'Das darf dieser Import nicht tun.',
+  'errors.importNotTransitionable':
+    'Dieser Import ist weiter fortgeschritten; das ist jetzt nicht mehr möglich.',
+  'errors.importQueueUnavailable':
+    'Die Hintergrundverarbeitung ist nicht eingerichtet, daher kann diese Datei nicht geprüft werden. Das muss administrativ konfiguriert werden.',
+  'errors.uploadRefusedByPolicy':
+    'Diese Datei ist nicht zulässig. Prüfen Sie Größe und Dateityp gegen die Einstellungen Ihrer Organisation.',
   'errors.fileUnderHold':
     'Diese Datei kann nicht gelöscht werden: Eine rechtliche Aufbewahrungspflicht hält sie. Nach deren Aufhebung ist das Löschen möglich.',
   'errors.fileQuarantined':

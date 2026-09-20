@@ -1,0 +1,434 @@
+'use client'
+
+import { Banner, Button, Card, SelectField } from '@{{projectSlug}}/ui'
+import type {
+  ImportAnalysisView,
+  ImportRowErrorView,
+  ImportRunView,
+  ImportTargetView,
+} from '@{{projectSlug}}/api-client'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  analyseRun,
+  cancelRun,
+  completeSourceUpload,
+  listErrors,
+  listRuns,
+  requestSourceUpload,
+  saveMapping,
+  startRun,
+  validateRun,
+} from './actions'
+import type { ImportLabels } from './labels'
+
+/**
+ * Upload, map, dry run -- and nothing else.
+ *
+ * The panel deliberately has no control that writes a row of a target table.
+ * A run reaches `validated`, which is a terminal state that wrote nothing, and
+ * a person reads the report. The commit is Phase 2 and will arrive with its own
+ * confirmation and its own actor; a disabled "Commit" button here would promise
+ * a thing this product cannot yet do.
+ *
+ * Three refusals a person can hit are worth naming, because each is a sentence
+ * rather than a silence: a file whose headings the target cannot use, a file
+ * over the row ceiling, and a queue that is not configured. The last is a 503
+ * from the API rather than an accepted request, because a dry run that is
+ * promised and never happens leaves somebody watching a spinner forever.
+ */
+
+/** A digest of what is about to be sent, where the browser can take one. */
+async function digestOf(file: File): Promise<string | null> {
+  try {
+    if (!globalThis.crypto?.subtle) return null
+    const hashed = await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer())
+    return Array.from(new Uint8Array(hashed))
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('')
+  } catch {
+    return null
+  }
+}
+
+async function put(url: string, headers: Record<string, string>, file: File): Promise<void> {
+  const response = await fetch(url, { method: 'PUT', headers, body: file })
+  if (!response.ok) throw new Error(`the bucket answered ${response.status}`)
+}
+
+/** Which runs are still moving, and so worth asking about again. */
+const IN_FLIGHT = new Set(['validating', 'committing'])
+
+function fill(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? '')
+}
+
+export function ImportPanel({
+  targets,
+  initialRuns,
+  labels,
+}: {
+  targets: ImportTargetView[]
+  initialRuns: ImportRunView[]
+  labels: ImportLabels
+}) {
+  const [runs, setRuns] = useState<ImportRunView[]>(initialRuns)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const [targetKey, setTargetKey] = useState<string>(targets[0]?.key ?? '')
+  const [operation, setOperation] = useState<string>(targets[0]?.operations[0] ?? '')
+  const [run, setRun] = useState<ImportRunView | null>(null)
+  const [analysis, setAnalysis] = useState<ImportAnalysisView | null>(null)
+  const [mapping, setMapping] = useState<Record<string, string>>({})
+  const [problems, setProblems] = useState<ImportRowErrorView[] | null>(null)
+  const input = useRef<HTMLInputElement>(null)
+
+  const target = targets.find((candidate) => candidate.key === targetKey) ?? null
+
+  const refresh = useCallback(async () => {
+    const answer = await listRuns()
+    if (answer.status === 'ok') {
+      setRuns(answer.value)
+      setRun((current) =>
+        current === null ? null : (answer.value.find((row) => row.id === current.id) ?? current),
+      )
+    }
+  }, [])
+
+  // A dry run happens in the worker, so the page has to ask. The polling stops
+  // the moment nothing is moving: a page left open on a finished run should
+  // cost the API nothing.
+  useEffect(() => {
+    if (run === null || !IN_FLIGHT.has(run.status)) return
+    const timer = setInterval(() => void refresh(), 3000)
+    return () => clearInterval(timer)
+  }, [run, refresh])
+
+  const choose = useCallback(
+    async (file: File) => {
+      if (target === null) return
+      setBusy(true)
+      setError(null)
+      setProblems(null)
+      setAnalysis(null)
+      try {
+        const checksum = await digestOf(file)
+        const ticket = await requestSourceUpload({
+          name: file.name,
+          sizeBytes: file.size,
+          contentType: file.type || 'text/csv',
+          checksumSha256: checksum,
+        })
+        if (ticket.status === 'error') {
+          setError(ticket.message)
+          return
+        }
+        await put(ticket.value.upload_url, ticket.value.headers, file)
+        const done = await completeSourceUpload(ticket.value.file_id, checksum)
+        if (done.status === 'error') {
+          setError(done.message)
+          return
+        }
+        const started = await startRun({
+          target: target.key,
+          fileId: ticket.value.file_id,
+          operation,
+        })
+        if (started.status === 'error') {
+          setError(started.message)
+          return
+        }
+        setRun(started.value)
+        const found = await analyseRun(started.value.id)
+        if (found.status === 'error') {
+          setError(found.message)
+          return
+        }
+        setAnalysis(found.value)
+        setMapping(found.value.suggested)
+        await refresh()
+      } catch (failure) {
+        setError(failure instanceof Error ? failure.message : String(failure))
+      } finally {
+        setBusy(false)
+        if (input.current) input.current.value = ''
+      }
+    },
+    [operation, refresh, target],
+  )
+
+  const check = useCallback(async () => {
+    if (run === null) return
+    setBusy(true)
+    setError(null)
+    try {
+      const saved = await saveMapping(run.id, mapping)
+      if (saved.status === 'error') {
+        setError(saved.message)
+        return
+      }
+      const queued = await validateRun(run.id)
+      if (queued.status === 'error') {
+        setError(queued.message)
+        return
+      }
+      setRun(queued.value)
+      await refresh()
+    } finally {
+      setBusy(false)
+    }
+  }, [mapping, refresh, run])
+
+  const report = useCallback(async () => {
+    if (run === null) return
+    const answer = await listErrors(run.id)
+    if (answer.status === 'error') {
+      setError(answer.message)
+      return
+    }
+    setProblems(answer.value)
+  }, [run])
+
+  const stop = useCallback(async () => {
+    if (run === null) return
+    setBusy(true)
+    const answer = await cancelRun(run.id)
+    setBusy(false)
+    if (answer.status === 'error') {
+      setError(answer.message)
+      return
+    }
+    setRun(answer.value)
+    await refresh()
+  }, [refresh, run])
+
+  if (targets.length === 0) {
+    return <Banner tone="info">{labels.noTargets}</Banner>
+  }
+
+  // Built outside the JSX: a prop given an object literal opens with two
+  // braces, which the generator reads as a Handlebars expression.
+  const ceiling =
+    target === null
+      ? ''
+      : fill(labels.ceiling, {
+          rows: String(target.max_rows),
+          formats: target.formats.join(', '),
+        })
+
+  return (
+    <div className="mt-8 space-y-8" data-testid="imports-panel">
+      {error === null ? null : <Banner tone="error">{error}</Banner>}
+
+      <Card>
+        <h2
+          className="font-display text-lg font-semibold text-ink"
+          data-testid="imports-start"
+        >
+          {labels.startTitle}
+        </h2>
+        <p className="mt-1 text-sm text-ink-muted">{labels.startDescription}</p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <SelectField
+            id="import-target"
+            label={labels.target}
+            value={targetKey}
+            onChange={(event) => {
+              const next = event.target.value
+              setTargetKey(next)
+              const chosen = targets.find((candidate) => candidate.key === next)
+              setOperation(chosen?.operations[0] ?? '')
+            }}
+          >
+            {targets.map((candidate) => (
+              <option key={candidate.key} value={candidate.key}>
+                {candidate.key}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField
+            id="import-operation"
+            label={labels.operation}
+            hint={labels.operationHint}
+            value={operation}
+            onChange={(event) => setOperation(event.target.value)}
+          >
+            {(target?.operations ?? []).map((name) => (
+              <option key={name} value={name}>
+                {labels.operations[name] ?? name}
+              </option>
+            ))}
+          </SelectField>
+        </div>
+        <p className="mt-3 text-xs text-ink-muted">{ceiling}</p>
+        <div className="mt-4">
+          <label className="text-sm font-medium text-ink" htmlFor="import-file">
+            {labels.file}
+          </label>
+          <input
+            id="import-file"
+            ref={input}
+            type="file"
+            accept=".csv,.tsv,text/csv"
+            disabled={busy}
+            className="mt-1 block w-full text-sm text-ink"
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file) void choose(file)
+            }}
+          />
+        </div>
+      </Card>
+
+      {run === null || analysis === null ? null : (
+        <Card>
+          <h2 className="font-display text-lg font-semibold text-ink">{labels.mapTitle}</h2>
+          <p className="mt-1 text-sm text-ink-muted">{labels.mapDescription}</p>
+          {analysis.over_ceiling ? <Banner tone="warning">{labels.tooManyRows}</Banner> : null}
+          {analysis.replaced ? <Banner tone="warning">{labels.replaced}</Banner> : null}
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase text-ink-muted">
+                  <th className="py-2 pr-4">{labels.column}</th>
+                  <th className="py-2 pr-4">{labels.sample}</th>
+                  <th className="py-2">{labels.field}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {analysis.columns.map((column) => (
+                  <tr key={column} className="border-t border-border">
+                    <td className="py-2 pr-4 font-medium text-ink">{column}</td>
+                    <td className="py-2 pr-4 text-ink-muted">
+                      {analysis.preview[0]?.[column] ?? ''}
+                    </td>
+                    <td className="py-2">
+                      <SelectField
+                        id={`import-map-${column}`}
+                        label={fill(labels.mapColumn, { column })}
+                        value={mapping[column] ?? ''}
+                        onChange={(event) => {
+                          const value = event.target.value
+                          setMapping((current) => {
+                            const next = { ...current }
+                            if (value === '') delete next[column]
+                            else next[column] = value
+                            return next
+                          })
+                        }}
+                      >
+                        <option value="">{labels.ignore}</option>
+                        {(target?.fields ?? []).map((field) => (
+                          <option key={field.name} value={field.name}>
+                            {field.name}
+                          </option>
+                        ))}
+                      </SelectField>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Button
+              type="button"
+              onClick={() => void check()}
+              disabled={busy || analysis.over_ceiling}
+            >
+              {busy ? labels.checking : labels.check}
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => void stop()} disabled={busy}>
+              {labels.discard}
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {run === null ? null : (
+        <Card>
+          <h2 className="font-display text-lg font-semibold text-ink">{labels.resultTitle}</h2>
+          <p className="mt-1 text-sm text-ink-muted">{labels.states[run.status] ?? run.status}</p>
+          {run.error === null ? null : <Banner tone="error">{run.error}</Banner>}
+          {run.status === 'validated' ? (
+            <p className="mt-3 text-sm text-ink">
+              {fill(labels.summary, {
+                rows: String(run.rows_total),
+                valid: String(run.rows_valid),
+                errors: String(run.errors_total),
+              })}
+            </p>
+          ) : null}
+          {run.status === 'validated' ? <Banner tone="info">{labels.wroteNothing}</Banner> : null}
+          {run.errors_total > 0 ? (
+            <div className="mt-4">
+              <Button type="button" variant="secondary" onClick={() => void report()}>
+                {labels.showReport}
+              </Button>
+              {run.errors_cut ? (
+                <p className="mt-2 text-xs text-ink-muted">{labels.reportCut}</p>
+              ) : null}
+            </div>
+          ) : null}
+          {problems === null ? null : (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase text-ink-muted">
+                    <th className="py-2 pr-4">{labels.row}</th>
+                    <th className="py-2 pr-4">{labels.column}</th>
+                    <th className="py-2 pr-4">{labels.problem}</th>
+                    <th className="py-2">{labels.value}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {problems.map((problem, index) => (
+                    <tr
+                      key={`${problem.row}-${problem.column}-${index}`}
+                      className="border-t border-border"
+                    >
+                      <td className="py-2 pr-4 tabular-nums">{problem.row}</td>
+                      <td className="py-2 pr-4">{problem.column}</td>
+                      <td className="py-2 pr-4">{labels.problems[problem.code] ?? problem.code}</td>
+                      <td className="py-2 text-ink-muted">{problem.value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      <Card>
+        <h2 className="font-display text-lg font-semibold text-ink">{labels.historyTitle}</h2>
+        {runs.length === 0 ? (
+          <p className="mt-2 text-sm text-ink-muted">{labels.noRuns}</p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase text-ink-muted">
+                  <th className="py-2 pr-4">{labels.target}</th>
+                  <th className="py-2 pr-4">{labels.state}</th>
+                  <th className="py-2 pr-4">{labels.rows}</th>
+                  <th className="py-2">{labels.started}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((row) => (
+                  <tr key={row.id} className="border-t border-border">
+                    <td className="py-2 pr-4">{row.target}</td>
+                    <td className="py-2 pr-4">{labels.states[row.status] ?? row.status}</td>
+                    <td className="py-2 pr-4 tabular-nums">{row.rows_total}</td>
+                    <td className="py-2 text-ink-muted">{row.created_at}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  )
+}

@@ -68,6 +68,8 @@ All planning and reference documents live in `docs/`, matching
 | `docs/platform/master-capability-matrix.md` | Every platform capability those three touch: exists, partial or absent, and where |
 | `docs/platform/gap-defect-register.md` | The 45 findings that audit produced, by category, with IDs |
 | `docs/platform/execution/` | One manifest per category, each executable without repeating the audit |
+| `docs/features/data-import/` | Data import as built: Phase 1 stops at the dry run, and the three plan items it deliberately left |
+| `docs/adr/0009-import-runs-are-not-a-third-export.md` | Why an import run has its own table rather than a third copy of the export pattern |
 | `docs/adr/0008-koras-platform-job-and-notification-contracts.md` | Why the job contract is built first, and why notification gets a dispatch point rather than a bus |
 
 ## Repository layout (target state)
@@ -354,7 +356,8 @@ which answers the question docoris raised as its own OD-19. There is no
 dead-letter queue, deliberately: a destination nothing reads is not evidence.
 **The seam has no production caller yet**; its first are a notification
 dispatch and an import run, and its tests run real tasks through the wrapper
-rather than asserting it exists.
+rather than asserting it exists. **Its first caller arrived the same day**: the
+import dry run, which is the only enqueue in the repository as of 2026-09-19.
 
 **`notifications` was a capability declared `true` in both manifests that gated
 nothing** — no template map, no defaults entry, a two-line package — so
@@ -370,9 +373,13 @@ languages, and rendered on the preferences page: a customer could switch off
 notification emails and still receive them. That is exactly the failure
 `surfaced=False` was introduced to prevent, four days earlier and in the same
 file. `notifications.inAppEnabled` is honoured now and the other two are
-unsurfaced; **the three `files.*` are still drawn and still enforced by
-nothing**, and the upload route applies a hardcoded 5 GiB ceiling that consults
-none of them. That half belongs to the import work.
+unsurfaced; the three `files.*` were still drawn and enforced by nothing until
+the import work took that half on 2026-09-19. Two of them —
+`files.maxUploadSizeMb` and `files.allowedExtensions` — are now resolved in
+`core/storage.py` and refused at the upload ticket, inside the hardcoded 5 GiB
+ceiling rather than instead of it. The third, `files.maxFilesPerUpload`, is
+`surfaced=False`: the presign route issues one ticket per call and has no
+notion of a batch, so there is nothing for it to count.
 
 Running a freshly generated product's own tests found a second thing: its node
 suite was red on `develop`, because the settings framework added a
@@ -388,6 +395,43 @@ size, watch a table repaginate — is the thing the feature exists for and the o
 no automated test in this estate reaches. The e2e harness starts the web
 application alone, so its sixteen browser checks cover routing, refusal and
 degraded rendering and nothing that needs an API.
+
+**Data import Phase 1 shipped on 2026-09-19**, as a product capability,
+`data_import`, **off by default** — unlike reporting and the governance pair,
+because an import target is something a product declares and a product that
+declares none would get a page listing nothing. `koras-import` is the engine:
+targets, a registry, a CSV reader, a mapping resolver, a row validator and a
+ten-state machine, and it knows no table name of any product. The API carries a
+run store over `import_runs` and `import_row_errors`, eight routes all behind
+`imports.manage` including the reads, and the page is `/dashboard/imports`
+behind no plan. `docs/features/data-import/architecture.md` is the description
+and `docs/adr/0009-import-runs-are-not-a-third-export.md` is why the run has its
+own table.
+
+**What Phase 1 does is stop.** A run reaches `validated`, which is a terminal
+state that wrote nothing; there is no commit route, no commit task and no
+control on the page that could write a row — absent rather than disabled. That
+is asserted structurally rather than behaviourally: the generator's test scans
+the run store for every `insert into public.X` and requires X to be one of the
+two import tables, so a commit added later without its own confirmation cannot
+sail past.
+
+**Three things about it are worth carrying.** The mapping is an allowlist that
+*refuses* an undeclared field rather than dropping it, because dropping it is
+how an import writes a column it was never meant to reach. A file whose scan is
+`pending` or `skipped` is not parsed, which is **narrower than a download** on
+purpose — and the consequence is stated rather than hidden: with no scanner
+configured every file is `pending`, so a product without one cannot import at
+all. And an unconfigured queue is a 503 rather than a 202, because a dry run
+that is promised and never happens leaves somebody watching a spinner forever.
+
+**Three Phase 1 plan items were deliberately not built**, and are named in
+`docs/features/data-import/architecture.md` rather than left to be
+rediscovered: `files.maxFilesPerUpload`, the upload primitive that was to be
+extracted into `packages/ui`, and the preview drawn through the shared data
+table. None of them touches the safety properties above. No manual pass has run
+against any of it, and `koras-e2e-shop` — the one repository in the estate with
+a domain that could declare real targets — has not been synced.
 
 **The two capabilities are declared.** `audit_governance` and
 `storage_governance`, both on by default, and what they gate is the *surface*

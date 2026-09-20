@@ -24,7 +24,7 @@ from __future__ import annotations
 import base64
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -41,7 +41,12 @@ from ..core.database import DbSession
 from ..core.errors import ApiErrorCode, api_error
 from ..core.file_hooks import hooks, run_after_upload
 from ..core.file_scan import withheld
-from ..core.storage import STORAGE_ENTITLEMENT, StorageDep
+from ..core.storage import (
+    MAX_OBJECT_BYTES,
+    STORAGE_ENTITLEMENT,
+    StorageDep,
+    upload_limits,
+)
 from ..core.tenant import TenantDep
 
 router = APIRouter(tags=["files"])
@@ -58,9 +63,6 @@ CredentialsDep = Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)
 UPLOAD_URL_SECONDS = 15 * 60
 DOWNLOAD_URL_SECONDS = 5 * 60
 
-#: One object, one request. Multipart uploads are a later phase; a file
-#: larger than this is refused with a message rather than failing midway.
-MAX_OBJECT_BYTES = 5 * 1024**3
 
 _MANAGERS = (OrganizationRole.OWNER, OrganizationRole.ADMIN)
 
@@ -107,6 +109,12 @@ class UploadRequest(BaseModel):
     #: match, so a corrupted transfer fails at the bucket rather than arriving
     #: as a file whose claim nobody can check.
     checksum_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    #: Which shelf the object goes on. Two of the eight are offered to a
+    #: caller: a document, which is what a person uploads on the Files page,
+    #: and an import source. The rest -- exports, generated, archives, temp --
+    #: are written by the product about itself, and a caller that could choose
+    #: one could hide a file among the artefacts a sweep may remove.
+    category: Literal["documents", "imports"] = "documents"
 
 
 class CompleteRequest(BaseModel):
@@ -253,6 +261,34 @@ async def request_upload(
             details={"reason": "entitlement", "size_bytes": body.size_bytes},
         )
     _require_grant(storage)
+
+    # The organisation's own ceiling, resolved from the settings catalogue.
+    # Three settings were drawn on the settings page and read by nothing at all
+    # until 2026-09-19: a customer could set "Largest file" to 10 MB and watch
+    # a 2 GB upload succeed. Checked before the quota because it is the cheaper
+    # refusal and the more specific sentence.
+    limits = await upload_limits(session, tenant.id)
+    refusal = limits.refuses(body.name, body.size_bytes)
+    if refusal is not None:
+        await _record(
+            session,
+            tenant_id=tenant.id,
+            actor_id=claims.sub,
+            action="storage.upload.refused",
+            target_id="-",
+            outcome="denied",
+            details={"reason": refusal, "size_bytes": body.size_bytes},
+        )
+        raise api_error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            ApiErrorCode.UPLOAD_REFUSED_BY_POLICY,
+            (
+                "this file is larger than the organisation allows"
+                if refusal == "size"
+                else "this organisation does not allow that kind of file"
+            ),
+        )
+
     limit = storage.grant.limit_bytes
     if limit is not None:
         used = await _used_bytes(session, tenant.id)
@@ -273,13 +309,15 @@ async def request_upload(
             )
 
     file_id = str(uuid.uuid4())
-    key = object_key(tenant.id, file_id, body.name, category=Category.DOCUMENTS)
+    key = object_key(tenant.id, file_id, body.name, category=Category(body.category))
     content_type = body.content_type or "application/octet-stream"
     await session.execute(
         text(
             "insert into public.files "
-            "(id, tenant_id, storage_key, name, size_bytes, content_type, status, uploaded_by) "
-            "values (:id, :tenant_id, :key, :name, :size, :content_type, 'pending', :who)"
+            "(id, tenant_id, storage_key, name, size_bytes, content_type, category, "
+            "status, uploaded_by) "
+            "values (:id, :tenant_id, :key, :name, :size, :content_type, :category, "
+            "'pending', :who)"
         ),
         {
             "id": file_id,
@@ -288,6 +326,7 @@ async def request_upload(
             "name": safe_filename(body.name),
             "size": body.size_bytes,
             "content_type": content_type,
+            "category": body.category,
             "who": claims.sub,
         },
     )

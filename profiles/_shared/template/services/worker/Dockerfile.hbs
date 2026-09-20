@@ -44,8 +44,22 @@ COPY services/worker/koras_worker/ ./services/worker/koras_worker/
 # namespace package, so `koras_api.reporting` resolves and nothing else of
 # `koras_api` exists here.
 COPY services/api/koras_api/reporting/ ./services/api/koras_api/reporting/
-ENV PYTHONPATH=/app/services/api
+{{/if}}{{#if capability.data_import}}# The import targets and the run store, for the validation job. Same
+# arrangement and the same reason: the worker reads what a product declared
+# without depending on the API's distribution.
+#
+# Its own block rather than nested inside the reporting one. It was nested
+# until 2026-09-19, which meant `--with data_import --without reporting` built
+# a worker with neither the targets nor the run store on its path -- and the
+# job's graceful `importlib` failure would have turned that into a run stuck in
+# `validating` rather than a build error.
+COPY services/api/koras_api/imports/ ./services/api/koras_api/imports/
+COPY services/api/koras_api/core/imports.py ./services/api/koras_api/core/imports.py
 {{/if}}
+# Unconditional: two capabilities put a namespace package here and a third
+# would be a third place to remember. An empty directory on the path costs
+# nothing, and a missing one is a stuck job rather than a loud failure.
+ENV PYTHONPATH=/app/services/api
 
 # The workspace members again, now that their sources are here.
 #

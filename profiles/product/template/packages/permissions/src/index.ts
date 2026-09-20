@@ -105,6 +105,15 @@ export const PRODUCT_PERMISSIONS = [
   'audit.view',
   'audit.export',
   'audit.legal_hold',
+  // Loading a file of somebody else's records into this product's own tables.
+  // Administrative, and only that: the requirements call it a
+  // tenant-administrator capability, and an import is the one customer-facing
+  // action that writes rows nobody typed. Owners and administrators hold every
+  // permission, so this names no role explicitly and is deliberately absent
+  // from the security and billing administrators -- neither of whom has a
+  // reason to load customer records, and a permission granted because it
+  // seemed harmless is how a role stops meaning anything.
+  'imports.manage',
 ] as const
 
 export type ProductPermission = (typeof PRODUCT_PERMISSIONS)[number]

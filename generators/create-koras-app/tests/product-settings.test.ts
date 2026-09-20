@@ -849,7 +849,7 @@ describe('the settings catalogue speaks every language', () => {
 
   it('gives every shown setting a label and a description, in all three', () => {
     const shown = declared().filter((setting) => setting.surfaced)
-    expect(shown.length).toBe(25)
+    expect(shown.length).toBe(24)
 
     for (const { locale, text } of catalogues) {
       for (const { key } of shown) {
@@ -868,7 +868,7 @@ describe('the settings catalogue speaks every language', () => {
     const hidden = declared()
       .filter((setting) => !setting.surfaced)
       .map((setting) => setting.key)
-    expect(hidden.length).toBe(7)
+    expect(hidden.length).toBe(8)
 
     const keys = new Set(
       catalogues
@@ -923,14 +923,19 @@ describe('the settings catalogue speaks every language', () => {
   })
 
   it('hides exactly the settings nothing honours', () => {
-    // Seven. Five the shared table does not read, and two the notification
-    // work could not honour yet. When one is honoured, its `surfaced=False`
-    // goes and its two strings arrive in the same commit.
+    // Eight. Five the shared table does not read, two the notification work
+    // could not honour, and one the upload route cannot count -- it issues a
+    // ticket per call and has no notion of a batch, so `files.maxFilesPerUpload`
+    // was hidden on 2026-09-19 when the import work enforced the other two
+    // `files.*` settings and found this one unenforceable as the route stands.
+    // When one is honoured, its `surfaced=False` goes and its two strings
+    // arrive in the same commit.
     const hidden = declared()
       .filter((setting) => !setting.surfaced)
       .map((setting) => setting.key)
       .sort()
     expect(hidden).toEqual([
+      'files.maxFilesPerUpload',
       'grid.allowColumnReorder',
       'grid.allowColumnResize',
       'grid.rememberColumns',
@@ -949,6 +954,30 @@ describe('the settings catalogue speaks every language', () => {
     for (const key of hidden.filter((k) => k.startsWith('grid.'))) {
       expect(table).not.toContain(key)
     }
+
+    // The upload path, which is the only place a per-upload count could be
+    // enforced. The other two `files.*` settings are read there; this one is
+    // not, and that is what makes hiding it honest.
+    //
+    // Asserted against `catalogue.require(...)` rather than the file's text:
+    // `storage.py` names the key in a comment saying why it is not read, and a
+    // substring search cannot tell an explanation from an enforcement.
+    const limits = read('services', 'api', 'koras_api', 'core', 'storage.py')
+    const presign = read('services', 'api', 'koras_api', 'routers', 'files.py')
+    const resolved = new Set(
+      [limits, presign]
+        .flatMap((file) => [...file.matchAll(/catalogue\.require\("([\w.]+)"\)/g)])
+        .map((match) => match[1]!),
+    )
+    for (const key of hidden.filter((k) => k.startsWith('files.'))) {
+      expect([...resolved], `${key} is resolved by the upload path`).not.toContain(key)
+    }
+    // And the two that *are* enforced stay offered, so this is a statement
+    // about one setting rather than about the family.
+    expect([...resolved]).toContain('files.maxUploadSizeMb')
+    expect([...resolved]).toContain('files.allowedExtensions')
+    expect(hidden).not.toContain('files.maxUploadSizeMb')
+    expect(hidden).not.toContain('files.allowedExtensions')
 
     // The mail path, which is what would honour `emailEnabled`, and the worker,
     // which is what would honour a digest. Neither does yet.

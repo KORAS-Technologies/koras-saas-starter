@@ -469,6 +469,17 @@ export function fetchFiles(options: RequestOptions): Promise<FileList> {
   return request<FileList>('/api/v1/files', options)
 }
 
+/**
+ * Which shelf an upload lands on.
+ *
+ * `documents` is what a person uploaded to keep; `imports` is a source file
+ * fed to a run and read once. The distinction is in the object key, so the two
+ * are separable later -- by a retention rule, by a sweep, by a report -- which
+ * is the whole reason it is decided at the ticket rather than inferred from
+ * whoever happens to read the file afterwards.
+ */
+export type UploadCategory = 'documents' | 'imports'
+
 export function requestUpload(
   options: RequestOptions & {
     name: string
@@ -477,6 +488,8 @@ export function requestUpload(
     /** Signed into the upload URL, so the provider stores it and can be asked
      *  for it later. Without it no upload can ever be corroborated. */
     checksumSha256?: string | null
+    /** Defaults to `documents`, which is what every caller before imports meant. */
+    category?: UploadCategory
   },
 ): Promise<UploadTicket> {
   return request<UploadTicket>('/api/v1/files/uploads', options, {
@@ -486,6 +499,7 @@ export function requestUpload(
       size_bytes: options.sizeBytes,
       content_type: options.contentType,
       checksum_sha256: options.checksumSha256 ?? null,
+      category: options.category ?? 'documents',
     },
   })
 }
@@ -1645,5 +1659,145 @@ export function fetchAuditExportUrl(
   return request<DownloadTicket>(
     `/api/v1/audit/exports/${encodeURIComponent(options.exportId)}/download`,
     options,
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/* Data import                                                                */
+/* -------------------------------------------------------------------------- */
+
+// Every one of these needs `imports.manage`, reads included -- a run names a
+// customer's own records and its mapping shows their column headings, so the
+// history is not less sensitive than the act. The client does not enforce
+// that; the API does. It is written here so a caller wiring a page knows which
+// members will ever see an answer.
+
+export interface ImportFieldView {
+  name: string
+  label_key: string
+  kind: string
+  required: boolean
+  options: string[]
+}
+
+export interface ImportTargetView {
+  key: string
+  label_key: string
+  fields: ImportFieldView[]
+  match_keys: string[]
+  operations: string[]
+  formats: string[]
+  max_rows: number
+}
+
+export interface ImportRunView {
+  id: string
+  target: string
+  status: string
+  operation: string
+  columns: string[]
+  mapping: Record<string, string>
+  rows_total: number
+  rows_valid: number
+  errors_total: number
+  /** The report was truncated: there were more problems than it stores. */
+  errors_cut: boolean
+  error: string | null
+  requested_by: string
+  created_at: string
+  finished_at: string | null
+}
+
+export interface ImportAnalysisView {
+  columns: string[]
+  /** Source column -> target field, for columns whose heading matched exactly. */
+  suggested: Record<string, string>
+  preview: Record<string, string>[]
+  rows_seen: number
+  over_ceiling: boolean
+  /** A character the file's encoding could not represent was substituted. */
+  replaced: boolean
+}
+
+export interface ImportRowErrorView {
+  row: number
+  column: string
+  field: string
+  code: string
+  value: string
+}
+
+export function fetchImportTargets(options: RequestOptions): Promise<ImportTargetView[]> {
+  return request<ImportTargetView[]>('/api/v1/imports/targets', options)
+}
+
+export function fetchImportRuns(options: RequestOptions): Promise<ImportRunView[]> {
+  return request<ImportRunView[]>('/api/v1/imports', options)
+}
+
+export function fetchImportRun(
+  options: RequestOptions & { runId: string },
+): Promise<ImportRunView> {
+  return request<ImportRunView>(`/api/v1/imports/${encodeURIComponent(options.runId)}`, options)
+}
+
+export function startImportRun(
+  options: RequestOptions & { target: string; fileId: string; operation: string },
+): Promise<ImportRunView> {
+  return request<ImportRunView>('/api/v1/imports', options, {
+    method: 'POST',
+    body: { target: options.target, file_id: options.fileId, operation: options.operation },
+  })
+}
+
+export function fetchImportAnalysis(
+  options: RequestOptions & { runId: string },
+): Promise<ImportAnalysisView> {
+  return request<ImportAnalysisView>(
+    `/api/v1/imports/${encodeURIComponent(options.runId)}/analysis`,
+    options,
+  )
+}
+
+export function setImportMapping(
+  options: RequestOptions & { runId: string; mapping: Record<string, string> },
+): Promise<ImportRunView> {
+  return request<ImportRunView>(
+    `/api/v1/imports/${encodeURIComponent(options.runId)}/mapping`,
+    options,
+    { method: 'PUT', body: { mapping: options.mapping } },
+  )
+}
+
+export function validateImportRun(
+  options: RequestOptions & { runId: string },
+): Promise<ImportRunView> {
+  return request<ImportRunView>(
+    `/api/v1/imports/${encodeURIComponent(options.runId)}/validate`,
+    options,
+    { method: 'POST', body: {} },
+  )
+}
+
+export function fetchImportErrors(
+  options: RequestOptions & { runId: string; limit?: number; after?: number },
+): Promise<ImportRowErrorView[]> {
+  const query = new URLSearchParams()
+  if (options.limit !== undefined) query.set('limit', String(options.limit))
+  if (options.after !== undefined) query.set('after', String(options.after))
+  const suffix = query.size > 0 ? `?${query.toString()}` : ''
+  return request<ImportRowErrorView[]>(
+    `/api/v1/imports/${encodeURIComponent(options.runId)}/errors${suffix}`,
+    options,
+  )
+}
+
+export function cancelImportRun(
+  options: RequestOptions & { runId: string },
+): Promise<ImportRunView> {
+  return request<ImportRunView>(
+    `/api/v1/imports/${encodeURIComponent(options.runId)}/cancel`,
+    options,
+    { method: 'POST', body: {} },
   )
 }
