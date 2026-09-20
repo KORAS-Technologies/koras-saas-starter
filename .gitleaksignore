@@ -1,0 +1,38 @@
+# Findings reviewed and dismissed, one exact fingerprint each.
+#
+# A fingerprint is `<commit>:<path>:<rule>:<line>`, so an entry here dismisses
+# ONE finding in ONE historical commit. It is the narrowest mechanism gitleaks
+# offers, and the narrowness is the point: the alternatives all suppress things
+# nobody has looked at. Disabling `generic-api-key` would hide every future
+# key; lowering entropy would hide them globally; allowlisting the path or the
+# directory would hide whatever lands there next; allowlisting the commit would
+# hide everything else in the same commit.
+#
+# `.gitleaks.toml` holds the allowlists that are about a *class* of file -- the
+# profile templates, the test fixtures, and one real historical leak whose
+# credentials were destroyed. This file holds individual false positives.
+#
+# Why a fingerprint and not a `#gitleaks:allow` comment on the line: the
+# Security workflow scans history with `fetch-depth: 0`. A comment lives in the
+# working tree, and the blob as it existed in the offending commit does not
+# contain it -- so the comment would silence the finding on the current commit
+# and the historical one would fail the job forever.
+#
+# An entry is only valid for the commit it names. If the file is edited the
+# line moves, a new fingerprint appears, and it is reviewed again rather than
+# inherited. That is intended.
+
+# generic-api-key, entropy 3.56, in the notification recipient resolver:
+#
+#     _platform_addresses(
+#         organization_id=organization_id, token=token, permission=...
+#     )
+#
+# `token` is a parameter being passed through to a helper -- the function's own
+# argument, named the same as the keyword it fills. There is no literal here
+# and nothing to rotate. The value it eventually carries is a platform token
+# minted at request time and never stored in this repository.
+#
+# Reviewed 2026-09-20, after it failed the Security workflow on every push
+# since 8d7ed3b. False positive.
+8d7ed3b8ae39e9044ac463335341f4853696c3e0:profiles/product/template/services/api/koras_api/core/recipients.py:generic-api-key:211
