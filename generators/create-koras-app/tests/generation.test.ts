@@ -51,6 +51,27 @@ function makeCtx(profile: ProfileName, slug: string, overrides: Overrides = {}, 
   })
 }
 
+/**
+ * Every path under the API's package that the worker image copies.
+ *
+ * The invariant is that this set equals exactly what the *enabled* capabilities
+ * need -- not that it is empty, and not that it is small. The worker reaches
+ * these modules through `importlib` with a graceful failure, so a COPY that is
+ * missing is a job that silently never runs, and a COPY that is present without
+ * a capability asking for it is the API's configuration surface arriving in the
+ * worker by accident. Only an exact comparison can see both.
+ *
+ * This replaced `not.toContain('koras_api')`, which asserted that reporting was
+ * the *only* reason the worker could see API code. That was true when it was
+ * written and stopped being true when the outbox landed, and the assertion then
+ * failed on a Dockerfile that was correct.
+ */
+function workerApiCopies(dockerfile: string): string[] {
+  return [...dockerfile.matchAll(/^COPY\s+(services\/api\/koras_api\/\S*)/gm)]
+    .map((match) => match[1]!)
+    .sort()
+}
+
 async function generate(profile: ProfileName, slug: string, overrides: Overrides = {}) {
   const ctx = makeCtx(profile, slug, overrides)
   const { fileList } = await writeFiles(ctx, renderTemplate(ctx))
@@ -440,9 +461,14 @@ describe('the reporting capability', () => {
     expect(gen.read('services/api/koras_api/main.py')).toContain('reporting.router')
     expect(gen.read('services/api/koras_api/main.py')).toContain('reporting_schedules.router')
     expect(gen.read('services/worker/koras_worker/worker.py')).toContain('deliver_scheduled_reports')
-    // The worker image carries the API's catalogue package, and only that.
+    // The worker image carries the API's catalogue package, and -- because
+    // `notifications` is on by default -- the outbox store the send sweep
+    // reads. Exactly those two, and nothing else of the API.
     const dockerfile = gen.read('services/worker/Dockerfile')
-    expect(dockerfile).toContain('COPY services/api/koras_api/reporting/')
+    expect(workerApiCopies(dockerfile)).toEqual([
+      'services/api/koras_api/core/outbox.py',
+      'services/api/koras_api/reporting/',
+    ])
     expect(dockerfile).toContain('PYTHONPATH=/app/services/api')
     expect(gen.read('services/worker/pyproject.toml')).toContain('koras-reporting')
     expect(gen.read('local/config/secrets.manifest')).toContain('REPORT_EXPORT_RETENTION_DAYS')
@@ -481,8 +507,52 @@ describe('the reporting capability', () => {
     // The plan snapshot is the contract's, not reporting's: it stays.
     expect(gen.has('supabase/migrations/00015_tenant_plans.sql')).toBe(true)
     expect(gen.read('services/api/koras_api/routers/platform.py')).toContain('/tenants/{tenant_id}/plan')
-    expect(gen.read('services/worker/Dockerfile')).not.toContain('koras_api')
+    // Removing reporting removes the catalogue package from the worker image
+    // and nothing else. `notifications` is untouched by this flag, so the
+    // outbox store stays -- the send sweep runs in this worker and reads it,
+    // and a product without analytics still tells people things.
+    expect(workerApiCopies(gen.read('services/worker/Dockerfile'))).toEqual([
+      'services/api/koras_api/core/outbox.py',
+    ])
     expect(gen.read('services/worker/pyproject.toml')).not.toContain('koras-reporting')
+  })
+})
+
+// ── the worker image's coupling to the API ───────────────────────────────────
+
+/**
+ * What the worker is allowed to know about the API, per capability.
+ *
+ * The worker and the API are separate deployments with separate manifests. The
+ * worker reaches a handful of API modules by path, on `PYTHONPATH`, because the
+ * alternative is a second implementation of the thing the API already decided
+ * -- a second notification emitter, a second report catalogue -- and two of
+ * those drift silently. The price is that every such path is coupling, so each
+ * one is owned by the capability that needs it and disappears with it.
+ *
+ * The other half is asserted in the reporting block above: with both
+ * capabilities on, the set is exactly the union of the two.
+ */
+describe('the worker image copies only what the enabled capabilities need', () => {
+  it('drops the outbox with notifications, and keeps the rest', async () => {
+    const gen = await generate('product', 'sampleapp-nonotify', { without: ['notifications'] })
+    // `reporting` is still on, so its catalogue package is still here. Removing
+    // notifications must not reach it, and removing reporting must not reach
+    // the outbox -- each flag owns its own paths and no others.
+    expect(workerApiCopies(gen.read('services/worker/Dockerfile'))).toEqual([
+      'services/api/koras_api/reporting/',
+    ])
+    // The dispatch point and everything it pulls in belong to `data_import`,
+    // which requires `notifications` and is off by default. None of them may
+    // appear because a different capability happened to be enabled.
+    const dockerfile = gen.read('services/worker/Dockerfile')
+    for (const module of ['dispatch.py', 'notifications.py', 'recipients.py', 'outbox.py']) {
+      expect(dockerfile, `${module} is notifications' and should be gone`).not.toContain(module)
+    }
+    // Still set, and deliberately unconditional: the directory is a namespace
+    // package two capabilities write into, and an empty one costs nothing
+    // while a missing one is a job that never runs.
+    expect(dockerfile).toContain('PYTHONPATH=/app/services/api')
   })
 })
 

@@ -79,6 +79,13 @@ jobs:
             # Policies do the scoping here, so the strict checks apply.
             rls_flags: ""
             components: ""
+            # Owns the round trip: a real database, this product's own API and
+            # a local identity provider, so a change can be shown to reach
+            # storage and come back. Stated positively and per entry, because
+            # the condition was once "every slug except the minimal one" --
+            # which silently included the Control Plane, whose template has no
+            # `e2e/support/seed.sql` and never could.
+            roundtrip: true
           # Optional components, which no run generated until 2026-08-25 and
           # which nothing therefore checked. Both defects found on the day this
           # entry was added were in templates only these flags select: the
@@ -88,6 +95,9 @@ jobs:
             slug: integration-product-full
             rls_flags: ""
             components: "--with marketing,ai_gateway,scheduler,ai"
+            # Also owns it: the optional components change the shell the round
+            # trip signs in to, and this is the only row that generates them.
+            roundtrip: true
           # The other direction. Removing a component must leave a project that
           # still builds -- a workspace reference to something no longer
           # generated fails here rather than for whoever passed the flag.
@@ -97,6 +107,10 @@ jobs:
             slug: integration-product-minimal
             rls_flags: ""
             components: "--without admin,worker,reporting"
+            # No worker and no reporting, so there is no send sweep and no
+            # scheduled delivery for a round trip to exercise. This row exists
+            # to prove such a project still builds; it runs no browser at all.
+            roundtrip: false
           - profile: control-plane
             slug: integration-control-plane
             # No tenant model and no policies: RLS is a deny-by-default
@@ -104,6 +118,11 @@ jobs:
             # would deny the owner too and every query would return nothing.
             rls_flags: "-v deny_all_by_default=1"
             components: ""
+            # The Control Plane has no round trip and no fixture for one: its
+            # template carries `e2e/support/session.ts` and neither the seed nor
+            # the local identity provider the product's harness starts. Its own
+            # browser suite still runs, against its own degraded shell.
+            roundtrip: false
 
     steps:
       - uses: actions/checkout@v5
@@ -203,7 +222,7 @@ jobs:
       # `postgres` would have produced a suite where every isolation assertion
       # passed vacuously. Its own guard caught that the first time this ran.
       - name: Prepare the round-trip database
-        if: matrix.slug != 'integration-product-minimal'
+        if: matrix.roundtrip
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
         env:
           PGPASSWORD: rlstest
@@ -226,8 +245,13 @@ jobs:
         env:
           # Its presence is what starts the identity provider and the API and
           # adds the `roundtrip` project. Absent -- which is every developer's
-          # laptop -- the suite is exactly what it was.
-          E2E_DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+          # laptop, and every row above that does not own the round trip -- the
+          # suite is exactly what it was.
+          #
+          # Empty rather than unset for a row without it, because a step cannot
+          # conditionally omit an environment key. The config reads `?? ''` and
+          # treats empty as absent, which is the same path a laptop takes.
+          E2E_DATABASE_URL: ${{ matrix.roundtrip && 'postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e' || '' }}
         run: pnpm e2e
 
       # The trace that explains a failure, which is the half `koras-control-plane`'s

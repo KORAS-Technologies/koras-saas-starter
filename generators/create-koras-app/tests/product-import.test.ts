@@ -37,6 +37,14 @@ import { templatePath } from './template-path'
 const PRODUCT = join(templatePath('product', 'package.json.hbs'), '..')
 const PROFILE = join(PRODUCT, '..')
 
+/**
+ * A bare `raise` statement at the start of an indented line.
+ *
+ * `\b` so that the word "raised" in a sentence is not one, and no `g` flag so
+ * that `.test()` is stateless and two calls agree.
+ */
+const BARE_RAISE = /^\s+raise\b/m
+
 function read(...segments: string[]): string {
   return readFileSync(join(PRODUCT, ...segments), 'utf8').split(String.fromCharCode(13)).join('')
 }
@@ -278,9 +286,21 @@ describe('data import', () => {
     // a finished import into a failed job, and a retried job writes the rows
     // again.
     expect(body).toContain('except Exception:')
-    expect(body, 'the notice can fail an import that already happened').not.toMatch(
-      /^\s+raise/m,
+    // The pattern is checked against a known-prohibited body and a known-good
+    // one before it is trusted against the template. It carried a literal
+    // backspace byte where `\b` was meant from 2026-09-20 until 2026-09-20 --
+    // `/^\s+raise\x08/m` cannot match anything a Python file contains, so the
+    // assertion below passed without ever reading the template. A pattern that
+    // is only ever asked for a negative answer cannot tell "nothing prohibited
+    // here" apart from "this regex matches nothing at all", which is why both
+    // directions are asserted rather than the one the template needs.
+    expect(BARE_RAISE.test('    try:\n        pass\n    except Exception:\n        raise\n')).toBe(
+      true,
     )
+    expect(BARE_RAISE.test('    # a notification that cannot be raised must not fail\n')).toBe(
+      false,
+    )
+    expect(body, 'the notice can fail an import that already happened').not.toMatch(BARE_RAISE)
     // In-app only, and it is a property of the template rather than a flag.
     const notice = read('services/api/koras_api/core/import_notify.py')
     expect(notice).toContain('html=None')

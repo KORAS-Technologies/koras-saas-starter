@@ -51,10 +51,45 @@ describe('the round-trip harness', () => {
     // database are the ones that catch a focus trap.
     expect(config).toContain("const DATABASE_URL = process.env.E2E_DATABASE_URL ?? ''")
     expect(config).toContain('const ROUND_TRIP = Boolean(DATABASE_URL)')
-    // Without it the API address is not even passed to the web application,
-    // which is what leaves the shell in the degraded state every other test
-    // asserts against.
-    expect(config).toContain('...(ROUND_TRIP ? { NEXT_PUBLIC_API_URL: API_URL } : {})')
+  })
+
+  it('never points the degraded server at an API, in any mode', () => {
+    // The one that `desktop` and `mobile` reach through the suite-wide
+    // `baseURL`. It is the first entry in `webServer`, and it must not learn
+    // the API's address even when the round trip is on.
+    //
+    // This assertion replaced `toContain('...(ROUND_TRIP ? { NEXT_PUBLIC_API_URL
+    // : API_URL } : {})')`, which pinned the opposite arrangement: one shared
+    // server that was handed the API whenever a database was offered. Turning
+    // the round trip on therefore moved every other project onto the API too,
+    // and 59 specs that assert the degraded shell in English failed on German
+    // copy -- with nothing wrong in the product. A test that names the
+    // expression it expects cannot see that; one that names the *property*
+    // can, which is why this reads the server's own block.
+    // Sliced between two `command:` keys rather than to the first
+    // `...(ROUND_TRIP`, because the defect this guards against *is* a
+    // `...(ROUND_TRIP` spread inside this very block -- so that boundary moved
+    // ahead of the thing being looked for and the check passed with the defect
+    // reintroduced. Each `webServer` entry starts with `command:`, so the next
+    // one is the end of this entry whatever is added inside it.
+    const start = config.indexOf('next start -p ${PORT}')
+    expect(start, 'the degraded server is the one on ${PORT}').toBeGreaterThan(-1)
+    //
+    // Comment lines are dropped before looking, because the block explains at
+    // length why the variable is absent and naming it is the clearest way to
+    // do that. A guard that cannot tell an explanation from an assignment
+    // forces the explanation out of the file.
+    const degraded = config
+      .slice(start, config.indexOf('command:', start))
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('//'))
+      .join('\n')
+    expect(degraded).not.toContain('NEXT_PUBLIC_API_URL')
+    // And the round trip gets a server of its own, on its own port, which is
+    // the only place that address appears.
+    expect(config).toContain('const ROUNDTRIP_PORT = Number(process.env.E2E_ROUNDTRIP_PORT ?? 3214)')
+    expect(config).toContain('NEXT_PUBLIC_API_URL: API_URL')
+    expect(config).toContain('next start -p ${ROUNDTRIP_PORT}')
   })
 
   it('keeps the round-trip tests out of the other projects', () => {
@@ -64,6 +99,12 @@ describe('the round-trip harness', () => {
     expect(desktop).toContain('testIgnore: /roundtrip\\//')
     expect(config).toContain("name: 'roundtrip'")
     expect(config).toContain('testMatch: /roundtrip\\//')
+    // The other direction, and the one that was missing: the round-trip
+    // project must also be the only one pointed at the API-backed server.
+    // Splitting the projects without splitting the servers is what left every
+    // project sharing one environment.
+    const roundtrip = config.slice(config.indexOf("name: 'roundtrip'"))
+    expect(roundtrip).toContain('baseURL: ROUNDTRIP_URL')
   })
 
   it('verifies a real token against a real key', () => {

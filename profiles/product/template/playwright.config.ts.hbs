@@ -24,10 +24,21 @@ import { defineConfig, devices } from '@playwright/test'
  * ## The round trip, when a database is offered
  *
  * Set `E2E_DATABASE_URL` and three more servers start: a local identity
- * provider, this product's API against that database, and the web application
- * pointed at both. The `roundtrip` project then runs, and nothing else changes
- * — every existing test still runs against the degraded shell, because that
+ * provider, this product's API against that database, and a *second* copy of
+ * the web application pointed at both. The `roundtrip` project then runs
+ * against that second copy, and nothing else changes — every existing test
+ * still runs against the first server and the degraded shell, because that
  * state is a claim worth keeping true.
+ *
+ * **The second server is the whole point, and it was once shared.** Until
+ * 2026-09-20 the round trip handed `NEXT_PUBLIC_API_URL` to the one web
+ * server, so turning the database on moved `desktop` and `mobile` onto the API
+ * as well. Their specs assert the degraded shell in English; with an API
+ * answering, the shell resolved a stored language and 59 of them failed on
+ * German copy. The product was correct throughout — only the harness had
+ * changed what those projects faced, while this comment said it had not. Each
+ * project now names the server it owns, so the two states cannot be confused
+ * for one another again.
  *
  * **Why it is worth the wiring.** Settings, notifications and data import each
  * record, in their own status document, that the round trip has no automated
@@ -62,6 +73,27 @@ const PORT = Number(process.env.E2E_PORT ?? 3210)
  */
 const DATABASE_URL = process.env.E2E_DATABASE_URL ?? ''
 const ROUND_TRIP = Boolean(DATABASE_URL)
+
+/**
+ * The round trip's own web application, on its own port.
+ *
+ * **Two servers from one build, because the environment is the thing under
+ * test.** `NEXT_PUBLIC_API_URL` is read on the server -- `apps/web/src/lib`
+ * reads it through `next/headers`, so every caller is a server component, a
+ * route handler or a server action -- which means two `next start` processes
+ * from the same build can hold different values, and no second build is paid
+ * for.
+ *
+ * It exists because the alternative was handing that variable to the *one*
+ * shared server, which silently moved `desktop` and `mobile` onto the API too.
+ * Their specs assert the degraded shell in English; with an API answering, the
+ * shell resolved a stored language instead and 59 of them failed on translated
+ * copy. Nothing about the product was wrong. The harness had quietly changed
+ * what those projects were pointed at, which is the one thing this file's own
+ * comment promised it would not do.
+ */
+const ROUNDTRIP_PORT = Number(process.env.E2E_ROUNDTRIP_PORT ?? 3214)
+const ROUNDTRIP_URL = `http://localhost:${ROUNDTRIP_PORT}`
 
 const API_PORT = Number(process.env.E2E_API_PORT ?? 3213)
 const IDENTITY_PORT = Number(process.env.E2E_IDENTITY_PORT ?? 3212)
@@ -124,7 +156,13 @@ export default defineConfig({
           {
             name: 'roundtrip',
             testMatch: /roundtrip\//,
-            use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+            use: {
+              ...devices['Desktop Chrome'],
+              viewport: { width: 1440, height: 900 },
+              // The only project pointed at the API-backed server. Every other
+              // project keeps the `baseURL` above, which is the degraded shell.
+              baseURL: ROUNDTRIP_URL,
+            },
           },
         ]
       : []),
@@ -142,9 +180,10 @@ export default defineConfig({
         // skipped verification would pass however broken authorisation became.
         SESSION_SECRET:
           process.env.SESSION_SECRET ?? 'e2e-session-secret-at-least-32-characters-long',
-        // Unset without a database, which is what leaves the shell in its
-        // documented degraded state for every other test.
-        ...(ROUND_TRIP ? { NEXT_PUBLIC_API_URL: API_URL } : {}),
+        // `NEXT_PUBLIC_API_URL` is never set here, in any mode. This is the
+        // degraded-shell server, and `desktop` and `mobile` are its only
+        // callers. The round trip gets its own server below rather than
+        // borrowing this one -- see `ROUNDTRIP_PORT`.
       },
     },
 {{#if apps.marketing}}
@@ -195,7 +234,32 @@ export default defineConfig({
               // faked, and each has a documented answer for being absent —
               // which is itself worth exercising: this is the shape a product
               // runs in before its first deployment.
-              NEXT_PUBLIC_APP_URL: `http://localhost:${PORT}`,
+              //
+              // The round trip's application, not the degraded one: this is
+              // the address the API puts in anything it addresses back to the
+              // product, and the round trip is the only project talking to it.
+              NEXT_PUBLIC_APP_URL: ROUNDTRIP_URL,
+            },
+          },
+          {
+            // The same build as the degraded server above, started a second
+            // time on its own port with the API address set. Two processes
+            // rather than one shared one, because `desktop` and `mobile` assert
+            // the shell *without* an API and this project asserts it *with*
+            // one -- and a single server cannot be both.
+            //
+            // No rebuild: `next build` ran once, and `NEXT_PUBLIC_API_URL` is
+            // read on the server by `apps/web/src/lib/session`, so the value
+            // is this process's environment rather than something inlined into
+            // a client bundle.
+            command: `pnpm --filter @{{projectSlug}}/web exec next start -p ${ROUNDTRIP_PORT}`,
+            url: `${ROUNDTRIP_URL}/login`,
+            reuseExistingServer: !process.env.CI,
+            timeout: 120_000,
+            env: {
+              SESSION_SECRET:
+                process.env.SESSION_SECRET ?? 'e2e-session-secret-at-least-32-characters-long',
+              NEXT_PUBLIC_API_URL: API_URL,
             },
           },
         ]
