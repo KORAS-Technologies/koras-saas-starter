@@ -81,7 +81,7 @@ export function ProductLogo({
   const text = size === 'sm' ? 'text-base' : 'text-lg'
 
   const content = (
-    <span className={cn('inline-flex items-center gap-2.5', className)}>
+    <span className={cn('inline-flex min-w-0 items-center gap-2.5', className)}>
       {source ? (
         // A plain <img>, not `next/image`: a brand asset of known size, needing
         // no optimisation pipeline and no remote-host configuration. The Next
@@ -101,7 +101,16 @@ export function ProductLogo({
       {showName && (
         <span
           className={cn(
-            'font-display font-bold tracking-tight',
+            // Truncates, and the chain of `min-w-0` above it is what lets it.
+            // A flex item will not shrink below its content by default, so
+            // without this the product's name sets a floor on the width of
+            // the whole header row -- and everything to its right, the
+            // notification bell and the account menu among them, gets pushed
+            // off the edge of a phone. Which name overflows and at what width
+            // then depends on the font the platform happens to fall back to,
+            // so it passed here and failed in CI. The name is the one thing
+            // on that row that can be abbreviated; a button cannot.
+            'min-w-0 truncate font-display font-bold tracking-tight',
             text,
             tone === 'dark' ? 'text-white' : 'text-ink',
           )}
@@ -117,7 +126,7 @@ export function ProductLogo({
   return (
     <Link
       href={href}
-      className="inline-flex rounded-sm"
+      className="inline-flex min-w-0 rounded-sm"
       aria-label={showName ? undefined : product.name}
     >
       {content}

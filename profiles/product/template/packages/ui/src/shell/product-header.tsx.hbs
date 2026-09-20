@@ -97,7 +97,10 @@ export function ProductHeader({
 
         <WorkspaceBadge name={identity.organizationName} locale={locale} />
 
-        <div className="ml-auto flex items-center gap-2">
+        {/* `shrink-0`: the controls keep their size and the product's name
+            truncates instead. The other way round, a long name pushes the
+            bell and the account menu off a phone screen. */}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           {actions}
           {/* Both hidden below `sm`, where the header has three controls
               competing for the width already. Each choice still applies -- they
