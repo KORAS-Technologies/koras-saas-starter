@@ -1,6 +1,7 @@
 'use client'
 
 import { cn } from '../lib/cn'
+import { withCount } from './types'
 import type { NotificationItem, NotificationLabels, NotificationTone } from './types'
 
 /**
@@ -68,7 +69,7 @@ export function NotificationList({
               {item.read ? null : (
                 // The text alternative for the rule and the weight. A screen
                 // reader gets the word; a sighted reader gets the mark.
-                <span className="sr-only"> — {labels.unread(1)}</span>
+                <span className="sr-only"> — {withCount(labels.unread, 1)}</span>
               )}
             </p>
             {item.body ? <p className="mt-0.5 text-sm text-ink-muted">{item.body}</p> : null}

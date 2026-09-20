@@ -13,7 +13,13 @@ import type { NotificationLabels } from '@{{projectSlug}}/ui'
 export function notificationLabels(t: Translator): NotificationLabels {
   return {
     title: t('notifications.title'),
-    unread: (count: number) => t('notifications.unread', { count }),
+    // The template, not a finished sentence: the translator returns a message
+    // unchanged when it is given no parameters, so this is the right locale's
+    // "{count} unread" and the component fills in the number it already has.
+    // It was a closure until 2026-09-20, which React refused to serialise into
+    // the client bell -- and since the bell is in the layout, that refusal
+    // broke every signed-in page.
+    unread: t('notifications.unread'),
     empty: t('notifications.empty'),
     emptyHint: t('notifications.emptyHint'),
     markAllRead: t('notifications.markAllRead'),

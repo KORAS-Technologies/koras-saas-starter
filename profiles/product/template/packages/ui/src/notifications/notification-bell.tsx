@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from 'react'
 import { Drawer } from '../primitives/drawer'
 import { Icon } from '../primitives/icon'
 import { NotificationList } from './notification-list'
+import { withCount } from './types'
 import type { NotificationItem, NotificationLabels } from './types'
 
 /**
@@ -72,7 +73,7 @@ export function NotificationBell({
          */}
         <span className="sr-only">
           {labels.title}
-          {unread > 0 ? `, ${labels.unread(unread)}` : ''}
+          {unread > 0 ? `, ${withCount(labels.unread, unread)}` : ''}
         </span>
         <Icon name="bell" className="h-5 w-5" />
         {unread > 0 ? (
@@ -100,7 +101,7 @@ export function NotificationBell({
         testId="notification-drawer"
       >
         <div className="flex items-center justify-between border-b border-line px-4 py-2">
-          <p className="text-xs text-ink-muted">{labels.unread(unread)}</p>
+          <p className="text-xs text-ink-muted">{withCount(labels.unread, unread)}</p>
           <button
             type="button"
             data-testid="mark-all-read"

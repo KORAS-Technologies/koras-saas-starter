@@ -40,6 +40,9 @@ export type { Toast, ToastTone } from './primitives/toast'
 
 export { NotificationBell } from './notifications/notification-bell'
 export { NotificationList } from './notifications/notification-list'
+// The formatter for the `unread` label template. Public because the product's
+// own notification centre is a client component that draws the same count.
+export { withCount } from './notifications/types'
 export type {
   NotificationItem,
   NotificationLabels,

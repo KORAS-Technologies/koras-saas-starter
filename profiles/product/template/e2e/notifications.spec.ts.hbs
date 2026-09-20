@@ -89,7 +89,14 @@ test('the centre is reachable from the drawer and renders its own frame', async 
   await expect(page).toHaveURL(/\/dashboard\/notifications$/)
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Notifications')
   await expect(page.getByTestId('notification-centre')).toBeVisible()
-  await expect(page.getByTestId('notifications-empty')).toBeVisible()
+  // Scoped to the centre, because the drawer is in the layout and the Drawer
+  // primitive renders its panel in both states -- hidden when closed, so that
+  // a trigger's `aria-controls` resolves before the first open. Its own empty
+  // state is therefore in the DOM of every signed-in page, and an unscoped
+  // locator matches two elements and asserts neither.
+  await expect(
+    page.getByTestId('notification-centre').getByTestId('notifications-empty'),
+  ).toBeVisible()
   await expect(page.locator('#main-content')).toHaveCount(1)
 })
 
