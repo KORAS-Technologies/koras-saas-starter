@@ -37,6 +37,17 @@ because the factory has no manual QA environment and no product to screenshot.
 
 ## Catalogue
 
+### Engineering framework
+
+Not a product capability: the orchestration contract the product profile
+ships, and the one feature directory here that describes how features
+themselves are built.
+
+| Feature | Directory | Status as of 2026-09-19 |
+|---------|-----------|-------------------------|
+| Multi-agent framework V2.1 | `engineering-framework/` | Shipped 2026-09-19. Architecture in `docs/ENGINEERING_FRAMEWORK.md`; as of 2026-09-19 not yet exercised by a real product lifecycle. |
+
+
 ### Storage & Audit Governance
 
 A platform capability in two independently manageable halves.

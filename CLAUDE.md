@@ -70,6 +70,8 @@ All planning and reference documents live in `docs/`, matching
 | `docs/platform/execution/` | One manifest per category, each executable without repeating the audit |
 | `docs/features/data-import/` | Data import as built: Phase 1 stops at the dry run, and the three plan items it deliberately left |
 | `docs/adr/0009-import-runs-are-not-a-third-export.md` | Why an import run has its own table rather than a third copy of the export pattern |
+| `docs/ENGINEERING_FRAMEWORK.md` | The product's multi-agent framework: one vocabulary, risk by boundary, gate reuse, bounded loops |
+| `docs/adr/0010-koras-engineering-framework-v2-1.md` | The decision record for V2.1 of that framework |
 | `docs/adr/0008-koras-platform-job-and-notification-contracts.md` | Why the job contract is built first, and why notification gets a dispatch point rather than a bus |
 
 ## Repository layout (target state)

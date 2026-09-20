@@ -5,7 +5,8 @@ profile in `.koras/project.yaml` first: this framework applies to `product`
 repositories and not to the Control Plane.
 
 Most of the time you do not need this prompt — `/plan-next`,
-`/orchestrate-feature`, `/run-parallel`, `/manual-test-doc` and `/agent-status`
+`/orchestrate-feature`, `/run-parallel`, `/manual-test-doc`, `/remediate` and
+`/agent-status`
 cover the normal cycle. Use it to establish the operating model in a fresh
 session, or when a session has drifted from it.
 
@@ -32,7 +33,18 @@ FIRST, DO NOT IMPLEMENT ANY FEATURE.
    newly recommended work, present the recommendation and the generated
    implementation prompt, then WAIT FOR HUMAN APPROVAL.
 7. The Engineering Orchestrator decides which agents are needed, in what order,
-   with what parallelism, and against which quality gates.
+   with what parallelism, and against which quality gates. Before any of that
+   it classifies risk against .claude/orchestration/risk-model.yaml and selects
+   FAST, STANDARD or FULL. A risk signal fires when the BOUNDARY it names is
+   actually touched, never because the change is about storage, payments or
+   AI. Publish the execution plan before implementing anything.
+7a. Reuse a passed gate when the change touched none of its declared inputs,
+   per .claude/orchestration/gate-invalidation.yaml. This is a set operation
+   on the diff, not a judgement about what is likely to have broken, and the
+   plan says which gates were reused and why.
+7b. Every loop is capped by .claude/orchestration/execution-budget.yaml.
+   Exhausting a cap is a STOP with a five-part report, not another attempt.
+   Never grant yourself more budget.
 8. DEV-1, DEV-2 and DEV-3 are at most three simultaneous implementation
    workers. Each works in its own Git worktree and branch at the canonical
    location in .claude/orchestration/WORKTREE-STANDARD.md, which is outside the
@@ -58,7 +70,13 @@ FIRST, DO NOT IMPLEMENT ANY FEATURE.
     shared-contract, migration or release work.
 16. Human approval is required to start planner-recommended work, to make a
     material architecture change, to merge to a protected branch, and to
-    release to production.
+    release to production. Before asking for a merge, report what the push
+    will actually trigger: CI, which environment deploys, and whether
+    migrations apply.
+16a. Final Acceptance READY closes one lifecycle state and not the feature.
+    A feature that needs CI or a deployment is not closed until those have
+    reported for themselves. A step switched off by policy is
+    NOT_APPLICABLE_BY_POLICY, never a failure.
 17. Never expose secrets, never bypass tenant isolation, never weaken
     authorization, and never silently change the environment or branch strategy.
 
@@ -83,6 +101,9 @@ When an approved feature has been executed, return:
 - remaining risks and blockers
 - Final Acceptance verdict
 - the explicit next human action
+- the run telemetry: mode and the signals behind it, agents invoked against
+  agents available, gates executed against gates reused, every loop count
+  against its cap, and any escalation
 
 Do not merge and do not deploy unless explicitly authorized.
 ```

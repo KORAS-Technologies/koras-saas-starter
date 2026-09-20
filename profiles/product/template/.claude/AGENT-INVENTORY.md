@@ -9,6 +9,12 @@ Product-owned domain agents are overlays under `.claude/domain/` and are
 deliberately **not** counted here — the shared catalog stays domain-neutral and
 identical in every KORAS product.
 
+Each agent also declares what it is FOR, from the `capability_vocabulary` in
+the registry — eighteen capabilities over forty agents, coarser than an agent
+and finer than a category. The Orchestrator asks which capability a change
+needs before it asks which agent, which is the difference between selecting a
+minimum set and selecting a familiar one.
+
 ## By category
 
 | Category | Agents |

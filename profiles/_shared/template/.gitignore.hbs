@@ -9,6 +9,16 @@ dist/
 out/
 build/
 *.tsbuildinfo
+# Written by Next itself on every dev run and every build, in each Next app,
+# and rewritten without asking. Ignored rather than tracked, which is the
+# convention Next's own create-next-app ships and which this repository
+# already half-followed: eslint.config.mjs has ignored it since the
+# applications existed, so tracking it would have meant a file that is
+# generated, linted by nothing, and appears as a change after every run.
+#
+# The symptom that prompted the decision was three of them turning up as
+# untracked noise in a worktree during a feature, repeatedly.
+next-env.d.ts
 
 # Python
 __pycache__/

@@ -10,6 +10,10 @@ Report:
 - gate status per feature, and which gates have not yet run
 - blocking CRITICAL/HIGH findings and their owners
 - the ready queue and the blocked queue, with what each is blocked on
+- each feature's lifecycle state from `lifecycle.yaml`, and for anything past a merge, whether CI, the deployment and the environment check have actually reported
+- any deployment component left FAILED or NOT_DEPLOYED, and what is safe to retry
+- anything switched off by policy, shown as NOT_APPLICABLE_BY_POLICY rather than as a failure or an omission
+- the execution budget spent per feature, and anything at its cap
 - the next human gate awaiting a decision
 
 If a worktree exists outside the canonical location in `WORKTREE-STANDARD.md`, or inside the repository, report it as a defect to be cleaned up.

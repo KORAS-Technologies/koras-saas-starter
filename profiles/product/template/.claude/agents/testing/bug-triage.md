@@ -38,6 +38,8 @@ Do not activate it otherwise. Most agents stay dormant for most features.
 
 ## Boundaries
 
+- Routing a failure is bounded by `.claude/orchestration/execution-budget.yaml`. The same failure routed a third time is not a routing problem; it is `repeated_gate_failure`, and it escalates to a human rather than going round again.
+
 - Never fix the defect; routing and diagnosis are the deliverable.
 - Never downgrade a severity to unblock a gate.
 - Never close a failure as a flake without evidence that it is one.

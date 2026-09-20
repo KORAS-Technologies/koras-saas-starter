@@ -140,6 +140,22 @@ product-profile capability, template-owned here rather than shared.
   environment and reports PASS, FAIL or BLOCKED. A screenshot comes from the
   step it documents. BLOCKED, with a reason, is the correct answer when
   execution is impossible; an invented PASS never is.
+- **The mode is chosen from boundaries, not from subject areas.**
+  `risk-model.yaml` selects FAST, STANDARD or FULL from what a change
+  actually touches. A change *about* storage that alters no key, policy or
+  retention has not met `storage_data_boundary`; one that never mentions
+  storage and widens what a tool may read has. A mode changes planning and
+  evidence depth and never switches a gate off.
+- **A passed gate is reused when nothing it depends on changed.** Each gate
+  declares its inputs; `gate-invalidation.yaml` derives the rest. A
+  browser-test correction re-runs the browser gate, CI and acceptance, and
+  reuses the other twenty-one. Reuse is a fact about the diff, never a
+  prediction that nothing broke.
+- **Nothing loops forever.** `execution-budget.yaml` caps every loop, and
+  exhausting one is an escalation to a person rather than another attempt.
+- **READY is not done.** Final Acceptance reports on the local tree. CI, the
+  deployment and the environment check report for themselves, and
+  `lifecycle.yaml` is where a feature is actually closed.
 - **Domain knowledge stays in `.claude/domain/`.** The forty shared agents are
   identical in every KORAS product and carry no product business rules. This
   product's rules live in its own domain overlay, and a rule copied into a

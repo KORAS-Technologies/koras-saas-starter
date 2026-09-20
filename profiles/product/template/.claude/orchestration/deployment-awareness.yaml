@@ -1,0 +1,114 @@
+schema_version: 1
+
+# What a push does, and what a deployment left behind.
+#
+# Two things V2 could not answer, both of which a person needs BEFORE they
+# say yes.
+#
+# The first is that a push is not a synchronisation. In this estate a push to
+# `develop` runs CI and deploys the whole of dev: migrations, four services
+# and three applications. A human asked to approve "a push" is being asked to
+# approve that, and they can only weigh it if they are told.
+#
+# The second is that "deployed" is not one fact. One real run applied the
+# migration, started four components, crash-looped the worker, never reached
+# the three applications, and skipped registration. Reported as a failure it
+# hides that the schema moved; reported as a success it hides that the worker
+# is down. It was neither, and there was nowhere to record what it was.
+
+# Branch to effect. Taken from the workflows in .github/workflows/, and the
+# branch-to-environment mapping is immutable (docs/ENVIRONMENT_STRATEGY.md in
+# the starter; changing it needs an ADR).
+#
+# The Orchestrator reports this from the workflows as they ACTUALLY ARE in
+# the repository at the time, not from this table. The table says what to
+# look for and what the answer normally is; a product that has changed its
+# workflows gets its own answer, and a difference between the two is worth
+# reporting rather than smoothing over.
+push_impact:
+  read_from:
+    - .github/workflows/ci.yml
+    - .github/workflows/deploy-dev.yml
+    - .github/workflows/deploy-test.yml
+    - .github/workflows/deploy-stg.yml
+    - .github/workflows/deploy-prod.yml
+  branches:
+    develop: { ci: true, deploys: dev }
+    test: { ci: true, deploys: test }
+    staging: { ci: true, deploys: stg }
+    main: { ci: true, deploys: prod }
+  report_before_approval:
+    - the branch being pushed to
+    - whether CI runs
+    - which environment deploys, and which do not
+    - whether migrations apply in that deployment
+    - which services and applications that deployment touches
+    - anything switched off by policy, named as such
+  rule: >-
+    A human is never asked to approve a push without being told what the push
+    triggers. "Push to develop" and "deploy the whole of dev, migrations
+    included" are the same act and only one of them sounds like one.
+
+# What a deployment consists of, in the order deploy.yml runs it. A run
+# records a state for EVERY component, including the ones it never reached:
+# a component with no entry is indistinguishable from one that succeeded and
+# was not worth mentioning.
+components:
+  order:
+    - database        # migrate
+    - services        # api, worker, scheduler, ai-gateway
+    - applications    # web, admin, marketing
+    - verification    # the API serves and reports the right environment
+    - registration    # off by default, by policy
+  states:
+    NEW: Deployed for the first time in this environment.
+    UPDATED: Redeployed over a working previous version.
+    FAILED: Attempted and did not come up.
+    NOT_DEPLOYED: Never attempted, because something earlier stopped the run.
+    SKIPPED: Deliberately not attempted in this run.
+    NOT_APPLICABLE_BY_POLICY: Switched off by policy. Not a failure.
+
+# The half that matters after a partial run: what is safe to do next.
+partial_deployment:
+  record: A state for every component, plus what the run reached and where it stopped.
+  # The rule this exists to write down. A migration that applied is applied;
+  # re-running the pipeline because a LATER stage failed re-applies nothing
+  # in the best case and is destructive in the worst, and the worker failing
+  # says nothing whatever about the schema.
+  never:
+    - Re-run a migration because a later stage failed.
+    - Treat FAILED and NOT_DEPLOYED as the same thing. One came up wrong; the other never started.
+    - Report a run as successful because the stage that failed was the last one.
+    - Roll forward past a FAILED component on the assumption it will settle.
+  retry_safety:
+    database: Only when the migration itself failed, and only after establishing what applied. Never as a side effect of retrying something later.
+    services: Safe. A service is redeployed, not accumulated.
+    applications: Safe.
+    verification: Safe, and cheap. It is a read.
+    registration: Safe, and a no-op while disabled by policy.
+  unknown_state:
+    # An unknown deployment state is the one case where guessing is worse
+    # than stopping, because both available guesses are wrong in different
+    # directions.
+    outcome: BLOCKED
+    escalation: unknown_deployment_state
+    rule: An unverified assumption about what is deployed is not a state; it is a hope, and it is recorded as BLOCKED.
+
+# Where a deployment failure actually lives. A repository search proves
+# nothing about a value that lives in Doppler, and the commonest wrong
+# conclusion is "the setting is missing" when the setting is present and
+# malformed.
+diagnosis:
+  trace_in_order:
+    - the configuration provider (Doppler), for the environment concerned
+    - the workflow that reads it
+    - the deployment platform's own configuration
+    - the application's settings class, and what it does with a bad value
+  classify_as_one_of:
+    - a repository defect
+    - an environment configuration defect
+    - a deployment infrastructure defect
+  never:
+    - Conclude a value is absent because a grep of the repository did not find it.
+    - Change a value in an external configuration provider without human approval.
+    - Print a configuration value while diagnosing. The name and the fault are the report.

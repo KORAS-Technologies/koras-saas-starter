@@ -1,0 +1,175 @@
+schema_version: 1
+
+# Where a feature actually is, from approval to closed.
+#
+# V2 stopped at Final Acceptance. That is a local verdict about a local tree,
+# and treating it as the end has a specific consequence: everything after the
+# merge -- CI, the deployment, whether the services that were supposed to
+# start actually started -- happened outside the model, so a feature could be
+# "done" while a worker crash-looped in dev.
+#
+# Two enumerations describe sequence in this package and they are NOT the
+# same list:
+#
+#   workflow.yaml engineering_flow   Inside one feature, up to acceptance.
+#                                    Stages, freeze points, budgets.
+#   lifecycle.yaml states            The feature's own state, including
+#                                    everything after the merge.
+#
+# The join is declared below rather than left to be inferred, and the
+# orchestration test asserts that this file does not restate the flow's
+# stages. One sequence written twice is how the two come to disagree about
+# what has happened.
+engineering_flow_join:
+  covers_states: [IMPLEMENTING, TESTING, LOCAL_ACCEPTANCE_READY]
+  rule: >-
+    The engineering flow runs inside those three states and owns their
+    internal ordering. LOCAL_ACCEPTANCE_READY is reached when the flow
+    reaches `pass_or_escalate` with a PASS.
+
+# Statuses come from quality-gates.yaml. They are not restated here, for the
+# same reason: a policy-disabled step must mean the same thing in both files
+# or it means nothing in either.
+statuses_from: .claude/orchestration/quality-gates.yaml
+
+# NOT EVERY FEATURE REACHES EVERY STATE, and a state a feature never needed
+# is not a gap in its record. `applicable_when` says which ones are skipped
+# rather than pending -- the difference between a feature that is finished
+# and one that is waiting for something nobody is going to do.
+states:
+  - id: PLANNED
+    means: Recommended and approved. Nothing has been built.
+    entered_by: human_gate
+    human_gate: start_planner_recommended_feature
+
+  - id: IMPLEMENTING
+    means: A worker is building it, in its own worktree and branch.
+
+  - id: TESTING
+    means: Verification is running, and defects are being fixed within budget.
+
+  - id: LOCAL_ACCEPTANCE_READY
+    means: final-acceptance reports READY against the local tree.
+    requires_gates: [final_acceptance]
+    # READY is not done, and this is the line V2 blurred. It is a statement
+    # about a tree on one machine: nothing has been merged, nothing has been
+    # deployed, and nothing has run anywhere a customer could reach.
+    not_yet: [merged, pushed, deployed, closed]
+
+  - id: MERGE_READY
+    means: A human has been asked to merge, and has been told what merging will trigger.
+    requires: [push_impact_reported]
+    human_gate: merge_to_protected_branch
+
+  - id: MERGED
+    means: The change is on the target branch.
+
+  - id: PUSHED
+    means: The branch is pushed, and whatever that triggers has started.
+
+  - id: CI_VERIFIED
+    means: The required pipeline gates passed on the pushed commit.
+    requires_gates: [ci_verified]
+    applicable_when: The repository runs CI on the target branch.
+    # Local evidence and pipeline evidence are different evidence. A suite
+    # that passes on one machine and fails in CI has told you something
+    # about the machine, and a feature that needs CI is not closed until CI
+    # has actually said so.
+    local_evidence_does_not_satisfy: true
+
+  - id: DEV_DEPLOYED
+    means: Every component this change deploys reached a recorded state.
+    requires_gates: [deployment_preflight]
+    applicable_when: The push triggers a deployment of this environment.
+    # "Deployed" is not one fact. See deployment-awareness.yaml: a run where
+    # the migration applied, four services started and the worker crash-looped
+    # is a partial deployment, and recording it as DEPLOYED is how the next
+    # person inherits a broken estate that reads as fine.
+    component_states_required: true
+
+  - id: DEV_VERIFIED
+    means: The deployed environment was checked and answered correctly.
+    requires_gates: [environment_verified]
+    applicable_when: The change reached a deployed environment.
+
+  - id: CLOSED
+    means: Every applicable state above is satisfied, and nothing is pending.
+    requires:
+      - every applicable state reached
+      - no gate left FAIL, PENDING_HUMAN or PENDING_EXTERNAL
+      - every BLOCKED carries a documented reason a person accepted
+    # A feature is not closed by running out of things anybody felt like
+    # doing. NOT_APPLICABLE and NOT_APPLICABLE_BY_POLICY are both fine here;
+    # PENDING is not.
+
+rules:
+  - A local PASS never satisfies a state whose evidence is a pipeline or an environment.
+  - A state that does not apply is recorded NOT_APPLICABLE, with the reason it does not apply, and never left blank.
+  - A step switched off by policy is NOT_APPLICABLE_BY_POLICY and is never counted as a failure of the feature.
+  - Merge and production release remain human gates. Reaching MERGE_READY asks for the decision; it does not make it.
+  - A feature that cannot leave a state because something outside this repository has not happened is PENDING_EXTERNAL, not FAIL.
+
+# A story is accepted on its own terms. An epic is accepted on the terms no
+# single story could satisfy.
+#
+# V2 had one acceptance, so every story in an epic either ran the full
+# cross-story suite -- paying the epic's bill four times over -- or ran
+# nothing, and the seams between stories were verified by nobody. The seam
+# is where the defects are: four stories that each pass alone can still
+# contradict each other about a shared state.
+#
+# This lives here rather than in its own file because it is the same
+# lifecycle at a wider scope, and a second file describing a second
+# lifecycle is how the two come to disagree about what closed means.
+epic_acceptance:
+  story:
+    scope: One story. Its own gates, its own evidence, its own closure.
+    # A story is NOT held open waiting for its siblings. Closing it is what
+    # makes it safe to build the next one on top.
+    runs: Every gate applicable to that story, and no cross-story gate.
+
+  epic:
+    scope: The stories together, once the last one has closed.
+    when: Every story in the epic has reached CLOSED.
+    runs:
+      - cross-story browser verification, over paths that span more than one story
+      - integration regression on the combined result, not on each branch
+      - one manual workflow pass end to end, where the epic has a user-facing workflow
+      - accessibility review across the combined surface, where the epic added or changed one
+      - security review across the combined surface, where any story met a floor signal
+      - epic final acceptance
+    gate_reuse: >-
+      Story gates are reused. The epic pass exists to test the seams between
+      stories, and re-running each story's own gates proves only what the
+      story already proved.
+
+  never:
+    - Running the epic suite after every story. That is the epic's bill, paid once per story, for a seam that is not finished yet.
+    - Closing an epic because its stories all closed. The seams were not covered by any of them.
+    - Holding a story open until the epic is done. A story that cannot close cannot be built on.
+
+  risk_exception: >-
+    A story that meets a floor signal in risk-model.yaml and touches a
+    surface a sibling story also touches runs the cross-story check
+    immediately rather than waiting for the epic. Deferring a tenancy or
+    authorization seam until the end means building on it first.
+
+# The standing example of the distinction, and the reason the status exists.
+#
+# Product-side registration with the Control Plane is complete, tested, and
+# deliberately switched off: the only identity that can register a product is
+# the estate-wide `registrar`, and putting its key in one product's CI turns
+# that product's deployment credentials into estate-wide registry write
+# access. The register job in deploy.yml says so at length, and it is off
+# unless KORAS_DEPLOY_REGISTRATION is explicitly set.
+#
+# Reported as a failure, it teaches everybody to ignore the deployment
+# report. Reported as NOT_APPLICABLE, it looks like nobody ever wanted it.
+# It is neither.
+policy_disabled_steps:
+  control_plane_registration:
+    status: NOT_APPLICABLE_BY_POLICY
+    why: The only available identity carries estate-wide registry authority.
+    tracked_as: F2b and F3 in the starter's docs/FOLLOW_UPS.md
+    switched_by: the KORAS_DEPLOY_REGISTRATION repository variable
+    refreshed_instead_by: running --register-only from the factory, which holds that credential legitimately

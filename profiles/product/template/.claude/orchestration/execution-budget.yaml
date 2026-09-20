@@ -1,0 +1,95 @@
+schema_version: 1
+
+# How many times the framework may try before it stops and asks a person.
+#
+# V2 had no answer to that question, anywhere. Nothing limited a retry, so
+# the only thing deciding when to stop was whether the next attempt looked
+# promising -- and it always does. One real feature lifecycle produced five
+# accessibility cycles, five code reviews, five browser runs, five evidence
+# audits, six manual QA passes and three final acceptances, and every
+# individual decision to go round again was defensible. That is the shape of
+# an unbounded loop: not one bad judgement, but no point at which judgement
+# was required.
+#
+# A budget does not make the work better. It makes the framework admit, at a
+# stated point, that it is not converging -- and hand the problem to somebody
+# who can change the terms.
+
+# A RETRY IS NOT A CYCLE, and conflating the two is how a budget becomes
+# either useless or absurd.
+#
+#   retry  The same gate, run again with NOTHING changed. There is exactly
+#          one honest reason for this -- a flaky environment -- and if the
+#          second run disagrees with the first, that is contradictory
+#          evidence and a human decision, not a best-of-three.
+#
+#   cycle  A defect was found, something was CHANGED, and the gate runs
+#          again against different inputs. This is the loop worth having,
+#          and the one worth bounding.
+definitions:
+  retry: A gate re-run with no change to its inputs.
+  cycle: A gate re-run after a change made in response to what it found.
+
+budget:
+  # Per feature, not per gate and not per day. See `counting` below.
+  max_gate_retries: 1
+  max_test_fix_cycles: 2
+  max_reviewer_cycles: 2
+  max_documentation_audits: 1
+  max_final_acceptance_attempts: 2
+  same_agent_max_invocations: 2
+
+counting:
+  scope: One feature, from the approved execution plan to closure.
+  # The rule that decides whether this is a budget or a formality. A counter
+  # that resets when the code changes counts nothing, because the code
+  # changing is what a cycle IS.
+  resets_on:
+    - the feature closing
+    - a human explicitly granting further budget, recorded with the reason
+  never_resets_on:
+    - a new commit
+    - a new branch, worktree or session
+    - a targeted remediation
+    - re-running the orchestrator
+  # `same_agent_max_invocations` counts an agent being asked to do the same
+  # job again. An agent invoked once for each of three independent findings
+  # has been invoked once, three times over, and that is not a loop.
+  same_agent_counts: Invocations against the same gate or the same finding.
+
+escalation:
+  # Trigger -> outcome. Every outcome is one of `outcomes` below; there is no
+  # third answer, and in particular there is no "carry on and note it".
+  repeated_gate_failure: HUMAN_REVIEW
+  budget_exhausted: HUMAN_REVIEW
+  contradictory_evidence: HUMAN_REVIEW
+  new_finding_after_final_rereview: HUMAN_REVIEW
+  mode_lowering_requested: HUMAN_REVIEW
+  unavailable_manual_validation: BLOCKED
+  environment_failure: BLOCKED
+  unknown_deployment_state: BLOCKED
+
+outcomes:
+  HUMAN_REVIEW:
+    meaning: The framework has stopped converging. A person decides what changes - the code, the requirement, the gate, or the budget.
+    agent_may_continue: false
+  BLOCKED:
+    meaning: The work cannot proceed for a reason no agent can remove. Not a failure of the feature, and never recorded as one.
+    agent_may_continue: false
+
+# What the Orchestrator says when it stops. All five, every time: a stop
+# report missing "what remains unknown" reads as a finished investigation,
+# which is the one thing it is not.
+stop_report:
+  - what failed
+  - what was attempted, and how many times
+  - what evidence exists, and where
+  - what remains unknown
+  - the recommended human decision
+
+rules:
+  - No loop in this framework is unbounded. A path with no cap is a defect in this file.
+  - Exhausting a budget is a STOP, never a warning, and never a reason to lower a gate.
+  - A budget is never spent to avoid an escalation, and an escalation is never deferred because budget remains.
+  - Granting further budget is a human act, recorded with its reason, and it does not clear the history it extends.
+  - BLOCKED is not FAIL. A feature blocked on an unavailable environment has not failed a gate; it has not run one.

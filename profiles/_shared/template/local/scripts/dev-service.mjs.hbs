@@ -7,6 +7,7 @@
 // without this they would look for a .env inside services/<name>/, which is not
 // where the repository keeps it.
 import { spawn } from 'node:child_process'
+import { forwardSignals, groupSpawnOptions } from './process-tree.mjs'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -109,11 +110,14 @@ const child = spawn('uv', ['run', ...COMMANDS[service](port)], {
   stdio: 'inherit',
   shell: process.platform === 'win32',
   env,
+  ...groupSpawnOptions,
 })
 
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => child.kill(signal))
-}
+// `uv` is the child; Python is below it, and on Windows cmd.exe is above it
+// because `shell` is needed to resolve uv. Signalling the child alone leaves
+// the server holding its port and its file handles -- which is how a stopped
+// QA stack came to block removing a worktree.
+forwardSignals(child)
 
 child.on('exit', (code, signal) => {
   process.exit(signal ? 1 : (code ?? 1))

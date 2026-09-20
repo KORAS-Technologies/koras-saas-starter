@@ -147,7 +147,11 @@ for environment in "${ENVIRONMENTS[@]}"; do
   present=$(doppler secrets --project "$PROJECT" --config "$environment" \
               --only-names --json 2>/dev/null || echo '{}')
 
-  while read -r name class source; do
+  # `type` is read and unused here, so that the manifest's fourth column is
+  # not swallowed into `source` -- which would corrupt every `derived` row.
+  # Typed validation is config-typecheck.sh; this tool writes values and never
+  # inspects them.
+  while read -r name class source type; do
     case "$class" in local|"") continue ;; esac
 
     if grep -q "\"${name}\"" <<<"$present" && [ "$OVERWRITE" -eq 0 ]; then

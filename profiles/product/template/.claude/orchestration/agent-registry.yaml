@@ -16,6 +16,49 @@ schema_version: 1
 # the number of files on disk by the orchestration validation test. It cannot
 # drift from either without a test failing.
 
+# What each agent is FOR, coarser than an agent and finer than a category.
+#
+# The Orchestrator asks "what capability does this change need?" before it
+# asks "which agent?", which is the difference between selecting a minimum set
+# and selecting a familiar one. Eighteen capabilities over forty agents is the
+# useful middle: `category` is too coarse to route on -- it puts a unit test,
+# a browser run and a manual pass in one bucket called `testing` -- and an
+# agent id is too fine, because it is the answer rather than the question.
+#
+# Declared here so that it stays one vocabulary. An agent may not invent a
+# capability, and a capability nothing supplies is deleted rather than kept:
+# both are asserted, for the same reason `conditions.yaml` asserts them.
+#
+# Three requested routing fields are deliberately NOT stored here, because
+# each is already recorded somewhere that cannot drift from the thing it
+# describes, and a second copy is how the two come to disagree:
+#
+#   which gates an agent may close -> the `owner` field in quality-gates.yaml
+#   which conditions activate it   -> activation-rules.yaml
+#   whether it may block           -> blocking_severities plus the gate it owns
+#
+# The orchestration test derives all three and checks them against this file,
+# so the router has the answers without this file having to repeat them.
+capability_vocabulary:
+  - coordinate               # run the plan; assign; enforce gates
+  - plan_product             # recommend what to build next
+  - analyse_impact           # what this change reaches
+  - specify_requirements     # what done means, in acceptance criteria
+  - design_solution          # architecture, data, security or experience design
+  - implement                # write production code
+  - prepare_test_state       # fixtures, tenants, named accounts
+  - verify_automated         # unit, component, API, integration
+  - verify_browser           # a real browser, at real widths
+  - verify_human             # a person executing steps, including accessibility
+  - verify_nonfunctional     # performance, security testing, AI evaluation
+  - verify_integration       # the converged result, not each branch
+  - triage_failure           # route a failure to the owner of the defect
+  - review_independent       # judge work somebody else did
+  - record_evidence          # write down what was executed, from what happened
+  - document                 # what a user or operator must now know
+  - deliver                  # migration, pipeline, observability, release
+  - accept                   # walk the Definition of Done and report
+
 developer_pool:
   workers: [developer-1, developer-2, developer-3]
   max_parallel: 3
@@ -41,201 +84,241 @@ agents:
     title: Engineering Orchestrator
     definition: .claude/agents/orchestration/engineering-orchestrator.md
     modifies_production_code: no
+    capabilities: [coordinate]
   - id: product-planner
     category: planning
     title: Product & Feature Planner
     definition: .claude/agents/planning/product-planner.md
     modifies_production_code: no
+    capabilities: [plan_product]
   - id: business-analyst
     category: planning
     title: Business Analyst
     definition: .claude/agents/planning/business-analyst.md
     modifies_production_code: no
+    capabilities: [specify_requirements]
   - id: solution-architect
     category: planning
     title: Solution Architect
     definition: .claude/agents/planning/solution-architect.md
     modifies_production_code: no
+    capabilities: [design_solution]
   - id: data-architect
     category: planning
     title: Data Architect
     definition: .claude/agents/planning/data-architect.md
     modifies_production_code: no
+    capabilities: [design_solution]
   - id: security-architect
     category: planning
     title: Security Architect
     definition: .claude/agents/planning/security-architect.md
     modifies_production_code: no
+    capabilities: [design_solution]
   - id: ux-ui-designer
     category: planning
     title: UX/UI Designer
     definition: .claude/agents/planning/ux-ui-designer.md
     modifies_production_code: no
+    capabilities: [design_solution]
   - id: impact-analysis
     category: planning
     title: Dependency & Impact Analyst
     definition: .claude/agents/planning/impact-analysis.md
     modifies_production_code: no
+    capabilities: [analyse_impact]
   - id: developer-1
     category: development
     title: Developer Worker 1 (DEV-1)
     definition: .claude/agents/development/developer-1.md
     modifies_production_code: yes
+    capabilities: [implement]
   - id: developer-2
     category: development
     title: Developer Worker 2 (DEV-2)
     definition: .claude/agents/development/developer-2.md
     modifies_production_code: yes
+    capabilities: [implement]
   - id: developer-3
     category: development
     title: Developer Worker 3 (DEV-3)
     definition: .claude/agents/development/developer-3.md
     modifies_production_code: yes
+    capabilities: [implement]
   - id: frontend-specialist
     category: development
     title: Frontend Specialist
     definition: .claude/agents/development/frontend-specialist.md
     modifies_production_code: yes
+    capabilities: [implement]
   - id: backend-specialist
     category: development
     title: Backend / API Specialist
     definition: .claude/agents/development/backend-specialist.md
     modifies_production_code: yes
+    capabilities: [implement]
   - id: database-specialist
     category: development
     title: Database Specialist
     definition: .claude/agents/development/database-specialist.md
     modifies_production_code: yes
+    capabilities: [implement]
   - id: integration-specialist
     category: development
     title: Integration Specialist
     definition: .claude/agents/development/integration-specialist.md
     modifies_production_code: yes
+    capabilities: [implement]
   - id: ai-specialist
     category: development
     title: AI / LLM Specialist
     definition: .claude/agents/development/ai-specialist.md
     modifies_production_code: yes
+    capabilities: [implement]
   - id: workflow-specialist
     category: development
     title: Workflow & Automation Specialist
     definition: .claude/agents/development/workflow-specialist.md
     modifies_production_code: yes
+    capabilities: [implement]
   - id: test-data
     category: testing
     title: Test Data Agent
     definition: .claude/agents/testing/test-data.md
     modifies_production_code: limited
+    capabilities: [prepare_test_state]
   - id: unit-test
     category: testing
     title: Unit & Component Test Agent
     definition: .claude/agents/testing/unit-test.md
     modifies_production_code: limited
+    capabilities: [verify_automated]
   - id: api-integration-test
     category: testing
     title: API & Integration Test Agent
     definition: .claude/agents/testing/api-integration-test.md
     modifies_production_code: limited
+    capabilities: [verify_automated]
   - id: e2e-test
     category: testing
     title: E2E Automation Agent
     definition: .claude/agents/testing/e2e-test.md
     modifies_production_code: limited
+    capabilities: [verify_browser]
   - id: manual-qa
     category: testing
     title: Manual QA Agent
     definition: .claude/agents/testing/manual-qa.md
     modifies_production_code: no
+    capabilities: [verify_human]
   - id: accessibility-qa
     category: testing
     title: Accessibility QA Agent
     definition: .claude/agents/testing/accessibility-qa.md
     modifies_production_code: limited
+    capabilities: [verify_human]
   - id: performance-qa
     category: testing
     title: Performance QA Agent
     definition: .claude/agents/testing/performance-qa.md
     modifies_production_code: limited
+    capabilities: [verify_nonfunctional]
   - id: security-test
     category: testing
     title: Security Testing Agent
     definition: .claude/agents/testing/security-test.md
     modifies_production_code: limited
+    capabilities: [verify_nonfunctional]
   - id: ai-evaluation
     category: testing
     title: AI Evaluation Agent
     definition: .claude/agents/testing/ai-evaluation.md
     modifies_production_code: limited
+    capabilities: [verify_nonfunctional, review_independent]
   - id: bug-triage
     category: testing
     title: Bug & Failure Triage Agent
     definition: .claude/agents/testing/bug-triage.md
     modifies_production_code: no
+    capabilities: [triage_failure]
   - id: code-reviewer
     category: review
     title: Code Reviewer
     definition: .claude/agents/review/code-reviewer.md
     modifies_production_code: no
+    capabilities: [review_independent]
   - id: architecture-reviewer
     category: review
     title: Architecture Reviewer
     definition: .claude/agents/review/architecture-reviewer.md
     modifies_production_code: no
+    capabilities: [review_independent]
   - id: security-reviewer
     category: review
     title: Security Reviewer
     definition: .claude/agents/review/security-reviewer.md
     modifies_production_code: no
+    capabilities: [review_independent]
   - id: qa-reviewer
     category: review
     title: QA Evidence Reviewer
     definition: .claude/agents/review/qa-reviewer.md
     modifies_production_code: no
+    capabilities: [review_independent]
   - id: privacy-compliance-reviewer
     category: review
     title: Privacy & Compliance Reviewer
     definition: .claude/agents/review/privacy-compliance-reviewer.md
     modifies_production_code: no
+    capabilities: [review_independent]
   - id: test-documentation
     category: documentation
     title: Test Documentation Agent
     definition: .claude/agents/documentation/test-documentation.md
     modifies_production_code: limited
+    capabilities: [record_evidence]
   - id: technical-writer
     category: documentation
     title: Technical Writer
     definition: .claude/agents/documentation/technical-writer.md
     modifies_production_code: limited
+    capabilities: [document]
   - id: migration-upgrade
     category: delivery
     title: Migration & Upgrade Agent
     definition: .claude/agents/delivery/migration-upgrade.md
     modifies_production_code: limited
+    capabilities: [deliver]
   - id: devops-cicd
     category: delivery
     title: DevOps & CI/CD Agent
     definition: .claude/agents/delivery/devops-cicd.md
     modifies_production_code: yes
+    capabilities: [deliver]
   - id: observability-sre
     category: delivery
     title: Observability & SRE Agent
     definition: .claude/agents/delivery/observability-sre.md
     modifies_production_code: yes
+    capabilities: [deliver]
   - id: release-manager
     category: delivery
     title: Release Manager
     definition: .claude/agents/delivery/release-manager.md
     modifies_production_code: limited
+    capabilities: [deliver]
   - id: integration-regression
     category: delivery
     title: Integration & Regression Agent
     definition: .claude/agents/delivery/integration-regression.md
     modifies_production_code: limited
+    capabilities: [verify_integration]
   - id: final-acceptance
     category: delivery
     title: Final Acceptance Agent
     definition: .claude/agents/delivery/final-acceptance.md
     modifies_production_code: no
+    capabilities: [accept]
 
 agent_count: 40
 category_counts:

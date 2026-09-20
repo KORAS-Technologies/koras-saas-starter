@@ -1,0 +1,70 @@
+schema_version: 1
+
+# What a run reports about itself when it finishes.
+#
+# Engineering telemetry, not product analytics: it is about how the framework
+# executed, it contains no customer data, and nothing collects or transmits
+# it. The Orchestrator prints it at the end of a run and it goes in the
+# feature's release notes.
+#
+# It exists because V2.1's central claims are quantities, and V2 could not
+# produce one of them. "Too many reviews" was an impression. "Five reviewer
+# cycles, two of them after the code had stopped changing" is a fact somebody
+# can act on -- and so is "eleven gates reused, none re-run unnecessarily",
+# which is the claim this framework most needs to be held to.
+#
+# Deliberately not a store, a dashboard or a time series. One report, at the
+# end of one run, in the place the run is already being written up. Anything
+# more is an observability platform for a process that runs a few times a
+# week.
+
+report:
+  routing:
+    - execution_mode
+    - risk_signals_fired
+    - risk_signals_rejected
+    - mode_overridden_by_human
+  agents:
+    - agents_invoked
+    - invocations_per_agent
+    # The number the whole framework is judged on. Forty exist; a feature
+    # that used eight and needed eight is the result being aimed at.
+    - agents_available_but_not_activated
+  gates:
+    - gates_executed
+    - gates_reused
+    - gates_invalidated
+    - gates_not_applicable
+    - gates_not_applicable_by_policy
+  loops:
+    - test_fix_cycles
+    - reviewer_cycles
+    - documentation_audits
+    - final_acceptance_attempts
+    - retries
+    - remediation_cycles
+    - budget_caps_reached
+    - human_escalations
+  lifecycle:
+    - state_reached
+    - states_not_applicable
+    - deployment_components_by_state
+  effort:
+    - elapsed_time_if_available
+
+rules:
+  - Reported at the end of a run, and reported honestly. A run that escalated reports the escalation, not the work that preceded it.
+  - Counts come from what happened, never from what the plan said would happen. A plan that predicted two reviews and got five reports five.
+  - No customer data, no personal data, no secret, and no configuration value.
+  - Nothing is collected, transmitted or stored outside the repository.
+  - A count that was not tracked is reported as unknown, not as zero. Zero is a measurement.
+
+# The comparison worth making, once there are several runs to compare. Not
+# automated here -- that is a later step, and automating a comparison before
+# anybody has looked at two reports by hand is how the wrong thing gets
+# measured precisely.
+worth_comparing:
+  - gates reused against gates executed, which is whether reuse is actually working
+  - reviewer cycles against the cap, which is whether the cap binds or merely exists
+  - the mode selected against the gates that turned out to matter, which is whether the risk model is right
+  - agents activated against agents that produced a finding, which is whether routing is minimal or merely smaller

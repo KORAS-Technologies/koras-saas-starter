@@ -1,0 +1,180 @@
+schema_version: 1
+
+# Which execution mode a change gets, and why.
+#
+# Deterministic: the same change classified twice gives the same answer, and
+# the answer always carries the rule that produced it. A mode with no stated
+# rationale is not a classification, it is a preference.
+#
+# THE RULE THIS FILE EXISTS TO ENFORCE
+#
+# A signal is a BOUNDARY, never a subject area. "This feature is about
+# storage" is not a signal; "this feature changes who may read an object" is.
+# The difference matters in both directions, and both are expensive:
+#
+#   - Matching the label over-classifies. A change to the wording on the files
+#     page is not a data-boundary change, and running it as FULL teaches
+#     everybody that FULL means nothing.
+#   - Matching the label under-classifies too, which is worse. A change that
+#     never mentions storage and quietly widens what a tool may read is a
+#     floor signal, and a label matcher would call it a copy fix.
+#
+# So every signal below carries a `boundary` -- what must actually be touched
+# -- and a `not_this` -- the nearby change that looks like it and is not. Both
+# are required, and the orchestration test asserts both are present on every
+# signal. A signal nobody can write a `not_this` for is a label, and does not
+# belong here.
+#
+# Signals reference `conditions.yaml`, so the vocabulary stays one vocabulary.
+# The condition is necessary and never sufficient: a signal fires only when
+# the condition holds AND the boundary is actually touched.
+
+# Any one of these present => FULL. No arithmetic, no combination needed.
+# Being wrong about any of them is either expensive or silent, usually both.
+floor_signals:
+  authentication_or_session:
+    condition: security_boundary
+    boundary: How a principal is authenticated, or how a session is issued, refreshed, verified or revoked.
+    not_this: Copy, layout or navigation on a page that merely sits behind sign-in.
+
+  authorization_or_permission:
+    condition: security_boundary
+    boundary: How a permission is defined, granted, evaluated or enforced, including any new check and any relaxation of one.
+    not_this: Showing or hiding a control the server already refuses. A client-side guard is not the boundary.
+
+  tenant_isolation:
+    condition: security_boundary
+    boundary: Anything deciding which tenant's rows a principal can reach - row-level security, a tenant predicate, a shared cache key, a cross-tenant join.
+    not_this: A query that is already tenant-scoped gaining an unrelated filter or column.
+
+  secret_or_credential_handling:
+    condition: security_boundary
+    boundary: Where a secret is read from, how it is passed, how long it lives, or which code can see it.
+    not_this: Naming a setting that is not a secret, or adding a non-secret to the manifest.
+
+  destructive_or_irreversible_data_change:
+    condition: database_or_data
+    boundary: A migration or code path that drops, rewrites, purges or forgets data a customer could not reproduce, including a retention or expiry rule deciding when that happens.
+    not_this: An additive column, an index, or a backfill that only writes rows which were absent.
+
+  storage_data_boundary:
+    condition: database_or_data
+    boundary: Object keys, the provider seam, classification, retention, legal hold, scanning, or anything deciding which object a principal may read, write or delete.
+    not_this: Presentation of a file list, an upload button's wording, or an icon for a file type.
+
+  payment_or_subscription:
+    condition: api_or_integration
+    boundary: What a customer is charged, what a plan entitles them to, or how a provider's webhook is verified and applied.
+    not_this: Pricing copy, a plan comparison table, or a currency format.
+
+  ai_authority_or_data_reach:
+    condition: ai
+    boundary: What a tool may do, what a prompt or retrieval step may reach, whether an action needs approval, or which provider a call is routed to.
+    not_this: The wording of assistant output, a model name shown in the interface, or configuration that alters neither authority nor reach.
+
+  sensitive_or_regulated_data_path:
+    condition: sensitive_or_regulated_data
+    boundary: A new path along which personal, sensitive or regulated data is collected, stored, exported or transmitted.
+    not_this: Moving a field already on that path from one screen to another.
+
+  platform_contract:
+    condition: api_or_integration
+    boundary: A contract something outside this repository reads - the Control Plane registration or governance contract, a public API shape, or a webhook payload.
+    not_this: An internal endpoint no other repository calls.
+
+# Present, with no floor signal => STANDARD. Changes that can go wrong in
+# ways a diff does not show, without being at a boundary.
+elevating_signals:
+  schema_change:
+    condition: database_or_data
+    boundary: Any additive change to a table, column, index or policy.
+    not_this: A query change that reads what is already there.
+
+  background_work:
+    condition: scheduled_or_background
+    boundary: Work that happens after the response, where a failure is invisible to the person who caused it.
+    not_this: A synchronous call that happens to be slow.
+
+  external_integration:
+    condition: api_or_integration
+    boundary: A call to, or a callback from, a service outside this estate.
+    not_this: A call between this repository's own services.
+
+  multi_step_user_workflow:
+    condition: user_interface
+    boundary: A sequence a person completes, where a wrong state leaves them stuck or half way through.
+    not_this: One screen's styling, copy or layout.
+
+  business_rule_change:
+    condition: business_workflow
+    boundary: A rule deciding an outcome, a state transition, or what a customer is entitled to see.
+    not_this: A label for a state whose rules did not change.
+
+  deployment_or_infrastructure:
+    condition: release_or_migration
+    boundary: How a service is built, configured, deployed or promoted.
+    not_this: A comment or documentation change inside a pipeline file.
+
+  performance_exposure:
+    condition: performance_sensitive
+    boundary: A hot path, a high-volume path, or a query, payload or bundle that could grow without bound.
+    not_this: A change on a path that runs once per session.
+
+  cross_feature_convergence:
+    condition: cross_feature_or_release
+    boundary: Concurrent work converging, or a contract more than one feature reads.
+    not_this: Two features touching neither the same files nor the same contract.
+
+# Combinations that raise STANDARD to FULL. Deliberately short: a long list of
+# combinations is arithmetic wearing a costume, and arithmetic is what gets
+# gamed. This one is a failure this estate has actually had.
+combinations:
+  - signals: [schema_change, cross_feature_convergence]
+    mode: FULL
+    reason: >-
+      Migration ordering across converging work. Each branch's migration is
+      correct alone, and the order they land in is decided by nothing - which
+      is the defect neither branch's tests can see.
+
+# Evaluated in order. The first rule that matches decides.
+selection:
+  - rule: any_floor_signal
+    mode: FULL
+  - rule: any_declared_combination
+    mode: FULL
+  - rule: any_elevating_signal
+    mode: STANDARD
+  - rule: no_signal_and_every_fast_requirement_holds
+    mode: FAST
+  - rule: otherwise
+    mode: STANDARD
+# The fallback is STANDARD rather than FAST, deliberately. A change nobody can
+# classify is not a small one; it is one nobody has understood yet.
+
+rationale:
+  required: true
+  must_state:
+    - every signal that fired, by id
+    - the boundary each fired signal names, and what in this change touches it
+    - the selection rule that decided the mode
+    - every signal considered and rejected, where the change looked like it met one
+  # The last line is what keeps this honest. A classification listing only
+  # what fired cannot be argued with. One that says "this looked like
+  # storage_data_boundary and is not, because it changes only list rendering"
+  # can be, and being arguable is the point.
+
+override:
+  # A human may always overrule the model. The record is what makes that safe.
+  raise:
+    allowed: always
+    record: The new mode, and who chose it.
+  lower:
+    allowed: with_written_rationale
+    record:
+      - the mode the model selected, and the mode being used instead
+      - every floor signal being waived, named individually
+      - the written reason, in the execution plan and in final acceptance
+    # Lowering past a floor signal is the highest-consequence decision in this
+    # file, so it is never implicit and never a silence: waived signals are
+    # named one at a time, not summarised as a count.
+    never: An agent may not lower a mode. Only a human may.

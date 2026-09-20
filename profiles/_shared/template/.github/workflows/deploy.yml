@@ -242,6 +242,23 @@ jobs:
           fi
           echo "Key set reachable: $keys"
 
+      - name: Every typed setting holds a value of the shape it declares
+        # The name checks above prove a setting exists. They cannot see that a
+        # boolean holds `truefalse`, which is what two concatenated values
+        # produce -- and that exact value once crash-looped a worker AFTER
+        # this pipeline had already applied its migration. The schema had
+        # moved and the services had not.
+        #
+        # So this runs here, in the last job before `migrate`, and it reads
+        # values rather than names. Only settings carrying a TYPE in
+        # secrets.manifest are fetched, anything whose name looks like a
+        # credential is refused rather than read, and no value is ever
+        # printed -- the report is the name, the declared type and the fault.
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: |
+          bash local/scripts/config-typecheck.sh "${{ inputs.environment }}"
+
   migrate:
     name: Migrate (${{ inputs.environment }})
     needs: settings

@@ -62,7 +62,18 @@ evidence package. If the environment is unavailable, mark execution BLOCKED
 rather than inventing evidence.
 ```
 
-## 6. Check where everything stands
+## 6. Fix one failure without restarting the feature
+
+```text
+/remediate DOC-127. The browser test asserts the old empty-state copy. Root
+cause established from the run output. Fix the assertion only.
+```
+
+The change class is `e2e_test`, so the browser gate, CI and acceptance
+re-run, and the other twenty-one gates are reused — including manual QA,
+accessibility, both reviews and regression. You are told which, and why.
+
+## 7. Check where everything stands
 
 ```text
 /agent-status
@@ -71,7 +82,7 @@ rather than inventing evidence.
 Worker assignments, active worktrees, feature stages, blocking findings, the
 ready and blocked queues, and the next human gate.
 
-## 7. The feature documentation structure
+## 8. The feature documentation structure
 
 Defined authoritatively in
 `.claude/orchestration/documentation-policy.yaml`. Templates for every file are
@@ -106,10 +117,16 @@ docs/features/<feature-id>-<slug>/
     release-notes.md
 ```
 
-## 8. The model, in one paragraph
+## 9. The model, in one paragraph
 
 The 40 shared agents are **definitions, not 40 running processes**. Almost all
 of them are dormant for any given feature. The Planner recommends; a human
 authorizes; the Orchestrator activates the minimum required set and allocates
 up to three isolated developer workers; no agent verifies or accepts its own
 work; and merge and production release stay human decisions.
+
+What V2.1 added is not more orchestration. It is the ability to answer two
+questions the framework previously could not: *did anything relevant to this
+gate change* — so a passed gate can be reused instead of re-run — and *when
+do we stop trying* — so a loop ends in a person rather than in another
+attempt.

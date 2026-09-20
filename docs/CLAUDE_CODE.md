@@ -25,7 +25,7 @@ koras-saas-starter/
       skills/koras-profile-product/            the profile skill
       orchestration/                           the multi-agent framework
       agents/<category>/                       40 engineering agent definitions
-      commands/                                5 orchestration commands
+      commands/                                6 orchestration commands
       domain/                                  domain contract, template, example
       templates/feature/                       feature documentation templates
       AGENT-INVENTORY.md MASTER-PROMPT.md PRODUCT-USAGE-EXAMPLES.md
@@ -58,6 +58,22 @@ count matches the number of definition files, that every id named in
 registered agent, that every documented file has a template, and that the 40
 definitions are not 40 copies of one file. Configuration describing other
 configuration fails silently; this is what makes it fail loudly.
+
+### What the framework decides, and where that is written down
+
+The orchestration tree is not one contract but several small ones, each
+owning one question: `conditions.yaml` what kind of change this is,
+`risk-model.yaml` and `execution-modes.yaml` how much machinery it gets,
+`gate-invalidation.yaml` what may be reused, `execution-budget.yaml` when to
+stop trying and ask a person, and `lifecycle.yaml` when a feature is actually
+finished rather than merely accepted locally.
+
+`docs/ENGINEERING_FRAMEWORK.md` is the architecture,
+`docs/features/engineering-framework/` the design and the upgrade path, and
+`docs/adr/0010-koras-engineering-framework-v2-1.md` the decision. The
+orchestration test validates all of it, including the things that otherwise
+fail silently: a condition nobody declared, a gate depending on its own
+output, a capability no agent supplies.
 
 ### Why the skills are flat
 

@@ -1,0 +1,116 @@
+schema_version: 1
+
+# The one applicability vocabulary.
+#
+# A condition is a single fact about a change: "this feature touches a security
+# boundary", "this feature adds a surface a person can see". Four other files
+# ask whether a condition holds and act on the answer -- which agents to
+# activate, which gates apply, which documents are required, and (from V2.1)
+# how risk is classified and which gate results survive a change.
+#
+# It exists because those files each invented their own words for the same
+# fact. Measured on 2026-09-19, before this file: `activation-rules.yaml`
+# declared 14 conditions, `quality-gates.yaml` matched on 10 and
+# `documentation-policy.yaml` on 5, and the number of tokens shared by all
+# three was ZERO. `user_interface`, `user_facing` and `business_workflow_or_ui_
+# change` were three spellings of one question; `security`,
+# `security_risk_triggered` and `security_or_sensitive_data` were three more.
+#
+# Nothing caught it. The orchestration test checked every *agent id* in those
+# files against the registry and never checked a condition against anything,
+# because there was nothing to check one against. A gate could therefore
+# declare that it applies under a condition the Orchestrator has no way to
+# evaluate, and the only symptom is a gate that quietly never fires.
+#
+# Rules:
+#   - Every applicability token in this package is declared here, or is the
+#     reserved token below.
+#   - A condition with no consumer is deleted, not kept for later. An unused
+#     condition is a fourth vocabulary waiting to happen.
+#   - A condition is a property of the *change*, never of the schedule, the
+#     team or the calendar.
+#
+# All four of these properties are asserted by
+# `generators/create-koras-app/tests/orchestration.test.ts`.
+
+# `always` is not a condition -- it asks nothing and can never be false. It is
+# reserved so that a gate can say "every feature" without a condition that
+# would then need a trigger nobody could write.
+reserved:
+  - always
+
+conditions:
+  user_interface:
+    trigger: The change adds or alters any surface a user or an operator can see.
+
+  business_workflow:
+    trigger: The change alters the steps, states or rules of a business process, whether or not the screens change.
+
+  api_or_integration:
+    trigger: The change adds or alters an endpoint, a service behaviour, or an integration with something outside this repository.
+
+  database_or_data:
+    trigger: The change adds or alters tables, columns, policies, indexes, or the data already stored in them.
+
+  security_boundary:
+    trigger: >-
+      The change touches a boundary that decides who may do what: authentication,
+      authorization, tenant isolation, secrets, uploads, webhooks, redirects or
+      server-side fetches.
+    note: >-
+      The boundary, not the subject area. A change to how a permission is
+      evaluated meets this; a change to the wording on a page that mentions
+      permissions does not.
+
+  sensitive_or_regulated_data:
+    trigger: The change collects, stores, exports or transmits personal, sensitive or regulated data.
+
+  ai:
+    trigger: >-
+      The change alters model-facing behaviour: an agent, a tool and the
+      authority it carries, a prompt, retrieval, grounding, or model routing.
+    note: >-
+      What the assistant can do or be made to do. Presentation of AI output, and
+      configuration that changes neither authority nor data reach, does not meet
+      this.
+
+  scheduled_or_background:
+    trigger: The change enqueues work, schedules a task, or adds or alters a recurring job.
+
+  performance_sensitive:
+    trigger: The change is on a hot path, handles high volume, or risks an unbounded query, payload or bundle.
+
+  architecture_impact:
+    trigger: The change crosses a package, service or contract boundary, or introduces a pattern the repository does not already have.
+
+  domain_feature:
+    trigger: The change depends on the product's own business rules rather than on platform mechanics alone.
+    note: >-
+      Evaluated against the product's `.claude/domain/` overlay. It activates no
+      shared agent, deliberately: the agent that answers it is product-owned, so
+      the shared catalogue stays domain-neutral.
+
+  operational_configuration:
+    trigger: The change adds or alters something an operator configures, switches on, or has to run.
+
+  needs_test_state:
+    trigger: The change cannot be verified without realistic fixtures, more than one tenant, or named accounts.
+
+  release_or_migration:
+    trigger: The work includes a migration, a dependency upgrade, or promotion between environments.
+
+  cross_feature_or_release:
+    trigger: Concurrent features are converging, a shared contract changed, or a release is being assembled.
+
+  documentation_impact:
+    trigger: The change alters what a user or an operator must know, or makes existing documentation wrong.
+
+  automated_verification_executed:
+    trigger: Any automated verification actually ran for this change.
+    note: >-
+      A record-keeping condition rather than a risk one: it decides whether an
+      executed-results document is required, and it is false for a change whose
+      gates were all reused rather than run.
+
+  gate_failure:
+    trigger: Any automated or manual verification has failed.

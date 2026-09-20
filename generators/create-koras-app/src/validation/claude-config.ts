@@ -68,6 +68,14 @@ export const CLAUDE_PROFILE_SKILLS: Record<string, string> = {
  * contract in it looks entirely normal until an agent follows it.
  */
 export const PRODUCT_ORCHESTRATION_PATHS = [
+  '.claude/orchestration/conditions.yaml',
+  '.claude/orchestration/risk-model.yaml',
+  '.claude/orchestration/execution-modes.yaml',
+  '.claude/orchestration/execution-budget.yaml',
+  '.claude/orchestration/gate-invalidation.yaml',
+  '.claude/orchestration/lifecycle.yaml',
+  '.claude/orchestration/deployment-awareness.yaml',
+  '.claude/orchestration/telemetry.yaml',
   '.claude/orchestration/agent-registry.yaml',
   '.claude/orchestration/activation-rules.yaml',
   '.claude/orchestration/workflow.yaml',

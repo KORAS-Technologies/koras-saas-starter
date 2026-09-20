@@ -1,0 +1,294 @@
+schema_version: 1
+
+# When a passed gate may be trusted again, and when it must be run again.
+#
+# This is the change V2.1 exists for. V2 recorded nothing about a gate beyond
+# whether it had passed, so there was no way to answer "did anything relevant
+# to this change?" -- and with no answer, the only safe habit is to re-run
+# everything, which is exactly what happened. One real lifecycle re-ran the
+# browser suite five times, the evidence audit five times and manual QA six
+# times, mostly to re-establish things nothing had touched.
+#
+# The rule is one sentence: A GATE IS INVALIDATED WHEN A CHANGE TOUCHES ONE
+# OF ITS INPUTS, AND REUSED WHEN IT DOES NOT.
+#
+# The matrix is not written here. Each gate declares its own `inputs` in
+# `quality-gates.yaml`, and the matrix is derived from them. A standalone
+# change-class-to-gate table would be a second copy of that relationship, and
+# it would be wrong the first time somebody added a gate and updated only one
+# of the two.
+
+# What kind of thing changed. Distinct from `conditions.yaml`, which
+# describes the FEATURE; a change class describes one EDIT. A feature that
+# meets `user_interface` can perfectly well produce an edit whose only class
+# is `documentation`, and the whole point of this file is that the second
+# fact does not inherit the consequences of the first.
+#
+# A path belongs to the most specific class that matches it. The order below
+# is that order, most specific first.
+change_classes:
+  feature_scope:
+    paths:
+      - docs/features/*/requirements/**
+      - docs/features/*/design/**
+    means: What the feature is for, and what it was agreed to be.
+
+  manual_evidence:
+    paths:
+      - docs/features/*/testing/manual/**
+    means: What a person executed, and what they saw.
+
+  documentation:
+    paths:
+      - docs/**
+      - '*.md'
+      - '**/*.md'
+    means: Prose, other than the feature's own scope and evidence.
+
+  database_migration_or_policy:
+    paths:
+      - supabase/migrations/**
+      - '**/*.sql'
+    means: Schema, policy, index or data shape.
+
+  e2e_test:
+    paths:
+      - e2e/**
+    means: A browser test.
+
+  automated_test_python:
+    paths:
+      - tests/**
+      - '**/test_*.py'
+      - '**/*_test.py'
+    means: A Python test.
+
+  automated_test_node:
+    paths:
+      - '**/*.test.ts'
+      - '**/*.test.tsx'
+      - '**/__tests__/**'
+    means: A Node test.
+
+  deployment_config:
+    paths:
+      - .github/workflows/**
+      - infrastructure/**
+      - '**/fly.toml'
+      - '**/vercel.json'
+      - local/config/**
+    means: How a service is built, configured, deployed or promoted.
+
+  dependency:
+    paths:
+      - '**/package.json'
+      - pnpm-lock.yaml
+      - '**/pyproject.toml'
+      - uv.lock
+    means: What the code depends on.
+
+  backend_code:
+    paths:
+      - services/**
+      - python-packages/**
+    means: Server-side production code.
+
+  frontend_code:
+    paths:
+      - apps/**
+      - packages/**
+    means: Client-side production code.
+
+# What is written down when a gate passes, so that reuse is a claim about
+# facts rather than about memory.
+#
+# Deliberately NOT a machine-written store in V2.1 -- that is a later step,
+# and building the store before the contract is how the store ends up
+# recording the wrong fields. What matters now is that every field needed to
+# answer "may this be reused?" is named, and that none of them is "how
+# thorough it felt".
+gate_result:
+  fields:
+    gate: The gate id, from quality-gates.yaml.
+    status: One of the statuses declared in quality-gates.yaml.
+    commit_sha: The commit the gate ran against.
+    change_classes: The classes present in the tree at that commit, for this feature.
+    evidence: Where the executed output actually is.
+    timestamp: When it ran.
+    environment: Where it ran, for anything that touched a running system.
+    command: What was executed, verbatim, for anything automated.
+  # A field nobody could check is not evidence. Each of these can be checked
+  # against something outside the record: the commit exists, the file exists,
+  # the command can be run again.
+
+reuse:
+  rule: >-
+    A recorded PASS may be reused for the current change when no change class
+    present in that change appears in the gate's `inputs`, and the recorded
+    result is not older than the current code freeze.
+  requires:
+    - the recorded result is PASS
+    - no input class of the gate is among the change's classes
+    - the evidence the record points at still exists
+    - the result is not older than the current code freeze
+  never_reused:
+    - A result whose evidence cannot be produced on request.
+    - A result from a different feature, branch or environment.
+    - A FAIL or a BLOCKED. Only a PASS is reusable; the others are re-run or escalated.
+  not_a_reason:
+    - elapsed time
+    - that the gate is slow, flaky or expensive
+    - that the last run was thorough
+    - that nobody expects the result to have changed
+  # The last one is the whole discipline. "Nobody expects it to have changed"
+  # is a prediction; "no input class changed" is a fact about the diff.
+
+# FULL restricts reuse rather than forbidding it. The restriction is the code
+# freeze: in FULL, a review or security result from before the current freeze
+# is not reused even when no input class changed, because at a boundary the
+# question is not only "did the inputs change" but "has anyone looked at this
+# arrangement as it now stands".
+mode_overrides:
+  FAST: { reuse: permitted }
+  STANDARD: { reuse: permitted }
+  FULL:
+    reuse: restricted
+    restriction: A result recorded before the current code freeze is not reused, whatever its inputs.
+
+# A failure with a proven, narrow root cause does not restart the feature.
+#
+# The E18-F01 case exactly: a browser test asserted something untrue, the fix
+# was to the browser test, and what followed was a full lifecycle re-run. The
+# Python suite, the Node suite, the row-level security suite, the security
+# review, manual QA, accessibility and regression were all re-established
+# against code that had not moved.
+targeted_remediation:
+  when:
+    - the root cause is established, not suspected
+    - the change needed is narrow and its classes are known
+    - no floor signal in risk-model.yaml is touched by the fix
+  report:
+    - the root cause, and the evidence for it
+    - the scope affected
+    - the scope actually changed, by change class
+    - the gates invalidated, and why
+    - the gates reused, and the input classes that were untouched
+    - the validation now required
+    - whether a human decision is needed
+  never:
+    - Widening the fix because the area was open anyway.
+    - Reusing a gate whose inputs the fix touched, because the fix was small.
+    - Treating remediation as a fresh feature with a fresh budget. Counters carry over.
+
+# Worked cases, asserted mechanically by the orchestration test rather than
+# left as illustration. Each names the classes of one edit and the gates that
+# must come out invalidated.
+scenarios:
+  documentation_only_correction:
+    change_classes: [documentation]
+    # CI is in the list because this repository's pipeline runs the
+    # documentation tests: a prose-only change really can turn it red. It is
+    # also one pipeline run, which is the cheap half of the bill - what this
+    # scenario saves is the manual pass, the accessibility pass and the
+    # reviews.
+    invalidates: [documentation_audit, ci_verified, final_acceptance]
+    reuses_must_include:
+      - automated_tests_pass
+      - e2e_pass
+      - manual_qa_pass
+      - accessibility_pass
+      - security_review
+      - independent_code_review
+      - regression_pass
+      - documentation_complete
+
+  e2e_test_only_correction:
+    change_classes: [e2e_test]
+    invalidates: [e2e_pass, ci_verified, final_acceptance]
+    # Everything the E18-F01 remediation re-ran and did not need to. The
+    # row-level security suite is covered by api_integration_tests_pass and
+    # security_review, which is where RLS is actually verified in this
+    # estate - named here so that "reuse RLS" is not quietly dropped for
+    # want of a gate with that word in it.
+    reuses_must_include:
+      - automated_tests_pass
+      - api_integration_tests_pass
+      - manual_qa_pass
+      - accessibility_pass
+      - screenshot_evidence_complete
+      - qa_evidence_audit
+      - security_review
+      - architecture_review
+      - independent_code_review
+      - regression_pass
+      - documentation_complete
+
+  backend_change:
+    change_classes: [backend_code]
+    invalidates:
+      - implementation_complete
+      - automated_tests_pass
+      - api_integration_tests_pass
+      - e2e_pass
+      - manual_qa_pass
+      - independent_code_review
+      - architecture_review
+      - security_review
+      - privacy_review
+      - ai_evaluation
+      - domain_review
+      - qa_evidence_audit
+      - documentation_complete
+      - regression_pass
+      - ci_verified
+      - environment_verified
+      - final_acceptance
+    reuses_must_include:
+      - requirements_ready
+      - impact_analyzed
+      - architecture_ready
+      - screenshot_evidence_complete
+      - accessibility_pass
+      - documentation_audit
+      - deployment_preflight
+
+  frontend_change:
+    change_classes: [frontend_code]
+    reuses_must_include:
+      - requirements_ready
+      - impact_analyzed
+      - architecture_ready
+      - api_integration_tests_pass
+      - privacy_review
+      - documentation_audit
+    invalidates_must_include:
+      - accessibility_pass
+      - screenshot_evidence_complete
+      - e2e_pass
+      - independent_code_review
+
+  migration_or_policy_change:
+    change_classes: [database_migration_or_policy]
+    invalidates_must_include:
+      - api_integration_tests_pass
+      - security_review
+      - privacy_review
+      - impact_analyzed
+      - architecture_ready
+      - regression_pass
+
+  deployment_config_only:
+    change_classes: [deployment_config]
+    # No product gate. The artefacts did not change, so re-running the
+    # product's tests would prove something nobody doubted. What it does
+    # invalidate is the deployment's own gates.
+    invalidates_must_include:
+      - deployment_preflight
+      - environment_verified
+    reuses_must_include:
+      - automated_tests_pass
+      - e2e_pass
+      - manual_qa_pass
+      - independent_code_review
+      - security_review
+      - regression_pass

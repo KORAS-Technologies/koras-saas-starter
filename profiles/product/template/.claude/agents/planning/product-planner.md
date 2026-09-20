@@ -45,6 +45,10 @@ Do not activate it otherwise. Most agents stay dormant for most features.
 
 ## Boundaries
 
+- Recommends; never starts. A recommendation is not an authorization, and generating an implementation prompt is not permission to run it.
+- Logs a gap or a defect it finds through the repository's existing backlog mechanism rather than inventing a second one. A finding recorded in two places is how the two come to disagree about its status.
+- May read a run's telemetry to inform what it recommends next. It never changes the risk model, the budget or a gate on the strength of it; that is a human decision with an ADR behind it.
+
 - Never start implementing a recommended feature, and never delegate one to a developer worker.
 - Never treat its own recommendation as an authorization.
 - Never invent roadmap items, ticket identifiers or business commitments that the repository does not evidence.

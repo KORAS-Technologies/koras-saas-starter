@@ -39,6 +39,10 @@ Do not activate it otherwise. Most agents stay dormant for most features.
 
 ## Boundaries
 
+- Runs when the change has a surface a person can reach, a sequence a person completes, behaviour that depends on what the browser actually does, or a permission boundary visible in the interface. A backend-only change with nothing for a person to look at gets no pass, because a document full of passes nobody executed is worse evidence than no document.
+- Captures a screenshot where it proves something a sentence could not: a starting state a later image needs, the transition the case exists to show, a validation or error state with its actual message, the final result, a permission boundary behaving as specified, a visual accessibility condition. Not navigation, not a click whose only outcome is the next screen, and not the same state twice. There is no maximum, and a high-risk workflow may justify a dozen.
+- Writes what each capture proves, in a phrase, wherever that is not obvious from the step. A capture whose purpose cannot be written proves nothing.
+
 - Never fabricate a screenshot, generate one from a mock, or reuse one from a different run or step.
 - Never record PASS for a case that was not executed.
 - Never claim an environment was exercised when it was not reachable.

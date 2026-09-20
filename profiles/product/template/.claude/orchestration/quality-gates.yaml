@@ -19,82 +19,231 @@ human_gates:
 
 blocking_severities: [CRITICAL, HIGH]
 
+# Every status a gate result can carry. Declared ONCE, here, because a gate
+# is the thing that has a status: `lifecycle.yaml` reads this list rather
+# than restating it, and a second copy is how the two come to disagree about
+# whether a policy-disabled step counts as a failure.
+statuses:
+  PASS: The gate ran and was satisfied.
+  FAIL: The gate ran and was not satisfied.
+  BLOCKED: The gate could not run for a reason no agent can remove. Not a failure.
+  NOT_APPLICABLE: No condition requiring this gate was met.
+  NOT_APPLICABLE_BY_POLICY: >-
+    The step exists and is deliberately switched off by policy. Distinct from
+    NOT_APPLICABLE, which means it was never called for - and from FAIL, which
+    is what a policy-disabled step looks like to anything that cannot tell the
+    difference. Product-side Control Plane registration is the standing
+    example: it is off because the only available identity carries estate-wide
+    registry authority, and a run that reports it as a failure teaches people
+    to ignore the report.
+  PENDING_HUMAN: Waiting on a human decision, not on work.
+  PENDING_EXTERNAL: Waiting on something outside this repository.
+
 # Each gate names the agent that reports it. `independent: true` means the
 # agent that implemented the work may never be the one that closes the gate.
+#
+# `applies` is the reserved token `always`, one condition id from
+# `conditions.yaml`, or a list of them meaning any-of. It used to be free text:
+# six of the ten spellings in this file named a condition nothing else in the
+# package declared, so a gate could describe an applicability the Orchestrator
+# had no way to evaluate and the only symptom was a gate that never fired.
+#
+# `inputs` lists the change classes from `gate-invalidation.yaml` whose change
+# makes this gate's last result untrue. It is the whole of the invalidation
+# matrix: a gate is invalidated when a change touches one of its inputs, and
+# reused when it does not. Writing it per gate rather than as a separate
+# change-class-to-gate table is deliberate - a standalone table is a second
+# copy of this relationship, and the two would drift the first time a gate
+# was added.
+#
+# A GATE'S OWN OUTPUT IS NEVER ONE OF ITS INPUTS. Manual QA produces the
+# manual evidence, so `manual_evidence` is not one of its inputs; if it were,
+# writing down the result would invalidate the run that produced it, forever.
+# The evidence audit is the gate that takes `manual_evidence`, because
+# auditing it is what that gate is for.
+# `stage` is `pre_acceptance` by default and `post_merge` for the three
+# gates that cannot possibly run before a merge. The split exists because
+# final acceptance is a verdict about a LOCAL TREE: making it wait on CI
+# would deadlock it, and letting it close while CI is unrun is how a feature
+# comes to be "done" with a worker crash-looping in dev. Final acceptance
+# requires every applicable pre_acceptance gate; CLOSED requires the rest.
 feature_gates:
   - id: requirements_ready
     owner: business-analyst
     applies: always
+    inputs: [feature_scope]
   - id: impact_analyzed
     owner: impact-analysis
     applies: always
+    # Not every code edit. Impact analysis answers "what does this reach",
+    # and an edit inside the area it already analysed does not change that
+    # answer - a new migration, a new dependency or a changed scope does.
+    inputs: [feature_scope, database_migration_or_policy, dependency]
   - id: architecture_ready
     owner: solution-architect
     applies: always
+    inputs: [feature_scope, database_migration_or_policy, dependency]
   - id: implementation_complete
     owner: developer_pool
     applies: always
+    inputs: [backend_code, frontend_code, database_migration_or_policy]
   - id: automated_tests_pass
     owner: unit-test
     applies: always
     evidence: Actual executed results. A claim is not a result.
+    inputs:
+      - backend_code
+      - frontend_code
+      - database_migration_or_policy
+      - automated_test_node
+      - automated_test_python
+      - dependency
   - id: api_integration_tests_pass
     owner: api-integration-test
-    applies: api_or_integration_or_database
+    applies: [api_or_integration, database_or_data]
+    inputs: [backend_code, database_migration_or_policy, automated_test_python, dependency]
   - id: e2e_pass
     owner: e2e-test
-    applies: user_facing
+    applies: user_interface
+    # The E18-F01 case. An invalid assertion in a browser test is fixed by
+    # changing the browser test, and this is the only product gate that
+    # touches `e2e_test`.
+    inputs: [frontend_code, backend_code, e2e_test]
   - id: manual_qa_pass
     owner: manual-qa
-    applies: user_facing
+    applies: user_interface
     independent: true
     evidence: Per-case PASS/FAIL/BLOCKED against a real environment, with build and account context.
+    inputs: [frontend_code, backend_code, database_migration_or_policy]
   - id: screenshot_evidence_complete
     owner: test-documentation
-    applies: user_facing
+    applies: user_interface
     evidence: Genuine screenshots from executed steps, at the canonical paths.
+    # A screenshot goes stale when the surface it shows changes, and only then.
+    inputs: [frontend_code]
   - id: accessibility_pass
     owner: accessibility-qa
-    applies: user_facing
+    applies: user_interface
+    inputs: [frontend_code]
   - id: independent_code_review
     owner: code-reviewer
     applies: always
     independent: true
+    inputs: [backend_code, frontend_code, database_migration_or_policy]
   - id: architecture_review
     owner: architecture-reviewer
     applies: architecture_impact
     independent: true
+    inputs: [backend_code, frontend_code, database_migration_or_policy, dependency, feature_scope]
   - id: security_review
     owner: security-reviewer
-    applies: security_risk_triggered
+    applies: security_boundary
     independent: true
+    inputs: [backend_code, frontend_code, database_migration_or_policy, dependency]
   - id: privacy_review
     owner: privacy-compliance-reviewer
     applies: sensitive_or_regulated_data
     independent: true
+    inputs: [backend_code, database_migration_or_policy]
   - id: ai_evaluation
     owner: ai-evaluation
     applies: ai
     independent: true
+    inputs: [backend_code, dependency]
   - id: domain_review
     owner: domain_registry
     applies: domain_feature
     independent: true
     note: Resolved from .claude/domain/domain-registry.yaml, which each product owns.
+    inputs: [backend_code, frontend_code, feature_scope]
   - id: qa_evidence_audit
     owner: qa-reviewer
-    applies: user_facing
+    applies: user_interface
     independent: true
+    # The gate that DOES take manual_evidence, because auditing it is the job.
+    inputs: [manual_evidence, frontend_code, backend_code]
   - id: documentation_complete
     owner: technical-writer
-    applies: user_or_operator_visible_change
+    applies: documentation_impact
+    # What makes documentation wrong is the code changing, not the document
+    # changing. `documentation` is deliberately absent: it is this gate's
+    # output.
+    inputs: [backend_code, frontend_code, database_migration_or_policy, deployment_config, feature_scope]
+  - id: documentation_audit
+    owner: qa-reviewer
+    applies: documentation_impact
+    independent: true
+    # One audit, after the quality freeze, and the only product gate a
+    # documentation-only change invalidates. Added in V2.1: the engineering
+    # flow named this stage and no gate existed for it, so a documentation
+    # correction had nothing to re-run and in practice re-ran everything.
+    inputs: [documentation, feature_scope]
   - id: regression_pass
     owner: integration-regression
-    applies: cross_feature_or_shared_contract_or_release
+    applies: cross_feature_or_release
+    inputs: [backend_code, frontend_code, database_migration_or_policy, dependency]
   - id: final_acceptance
     owner: final-acceptance
     applies: always
     independent: true
+    stage: pre_acceptance
+    # Everything. Acceptance is the one gate that cannot be reused across any
+    # change, because its question is "is all of this true right now".
+    inputs:
+      - feature_scope
+      - backend_code
+      - frontend_code
+      - database_migration_or_policy
+      - automated_test_node
+      - automated_test_python
+      - e2e_test
+      - manual_evidence
+      - documentation
+      - deployment_config
+      - dependency
+
+  # Post-merge. None of these can run on a local tree, and none of them is
+  # satisfied by a local result that looks the same.
+  - id: ci_verified
+    owner: devops-cicd
+    applies: always
+    stage: post_merge
+    evidence: The pipeline run for the pushed commit, by id. A local suite passing is different evidence about a different machine.
+    # Everything, like final_acceptance and for the same reason: a pipeline
+    # result is a fact about one commit. CI here also runs the documentation
+    # tests, so a prose-only change really can turn it red - which is why
+    # `documentation` is in this list and not only the code classes.
+    inputs:
+      - feature_scope
+      - backend_code
+      - frontend_code
+      - database_migration_or_policy
+      - automated_test_node
+      - automated_test_python
+      - e2e_test
+      - manual_evidence
+      - documentation
+      - deployment_config
+      - dependency
+  - id: deployment_preflight
+    owner: devops-cicd
+    applies: always
+    stage: post_merge
+    # Runs before anything is migrated or deployed. What it checks is in
+    # deployment-awareness.yaml and, from V2.1, includes typed configuration
+    # values rather than only the presence of names.
+    evidence: The preflight job for this deployment, and what it validated.
+    inputs: [deployment_config, dependency]
+  - id: environment_verified
+    owner: observability-sre
+    applies: always
+    stage: post_merge
+    evidence: The deployed environment answering, and every component carrying a recorded state.
+    inputs:
+      - backend_code
+      - frontend_code
+      - database_migration_or_policy
+      - deployment_config
 
 rules:
   - An implementation agent never closes a gate marked independent for its own work.
@@ -102,3 +251,6 @@ rules:
   - A gate whose evidence was not produced is not passed; it is incomplete.
   - BLOCKED is a valid manual QA outcome. It is never counted as a pass.
   - Final Acceptance reports READY or NOT READY. READY is not authorization to merge or deploy.
+  - Final Acceptance requires every applicable pre_acceptance gate, and never waits on a post_merge one.
+  - A post_merge gate is never satisfied by local evidence, however identical the command was.
+  - A gate result is reused only under gate-invalidation.yaml. Reuse is a claim about inputs, never about elapsed time or about how thorough the last run felt.

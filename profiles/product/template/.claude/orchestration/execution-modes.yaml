@@ -1,0 +1,104 @@
+schema_version: 1
+
+# How much machinery a change gets.
+#
+# A mode is a ROUTING STRATEGY, not a quota. It does not name a number of
+# agents and no test asserts one, because agent count is not a measure of
+# anything: a one-line copy fix reviewed by six agents and a tenancy change
+# reviewed by six agents are not equally well reviewed.
+#
+# What a mode actually changes is narrow, deliberately:
+#
+#   1. the always-considered agent set -- the planning depth a change gets
+#      before anybody writes code;
+#   2. whether gate results may be reused across a product-code change
+#      (see gate-invalidation.yaml);
+#   3. the evidence depth expected of manual verification
+#      (see documentation-policy.yaml).
+#
+# What a mode NEVER changes:
+#
+#   - which gates apply. That is decided by the conditions the change meets,
+#     in `quality-gates.yaml`, and a mode cannot switch a gate off. FAST is
+#     not permission to skip a security review; it is the statement that no
+#     condition requiring one was met.
+#   - independence. An implementation agent never closes its own gate, in any
+#     mode.
+#   - the four human gates.
+#
+# The mode is chosen by `risk-model.yaml` from the conditions the change
+# meets. It is never chosen by preference, by deadline, or by how the last
+# feature was run.
+
+modes:
+  FAST:
+    summary: A small, isolated change whose blast radius is visible in the diff.
+    # FAST is the only mode that trims the always-considered set, and it trims
+    # exactly two: a separate requirements pass and a separate architecture
+    # pass. Both are answering a question a one-package change has already
+    # answered.
+    always_consider:
+      - engineering-orchestrator
+      - impact-analysis
+      - unit-test
+      - code-reviewer
+      - final-acceptance
+    planning: Impact analysis only. No separate requirements or architecture pass.
+    gate_reuse: permitted
+    evidence_depth: minimal
+    # FAST must be EARNED, not defaulted to. Every one of these must hold, and
+    # the risk model refuses FAST if any signal at all is present.
+    requires:
+      - No floor signal and no elevating signal in risk-model.yaml.
+      - The change stays inside one package, application or service.
+      - No migration, and no change to a stored schema or policy.
+      - No new runtime dependency.
+      - No change to a contract another repository reads.
+
+  STANDARD:
+    summary: An ordinary product feature.
+    always_consider:
+      - engineering-orchestrator
+      - impact-analysis
+      - business-analyst
+      - solution-architect
+      - unit-test
+      - code-reviewer
+      - final-acceptance
+    planning: Requirements and architecture pass before implementation.
+    gate_reuse: permitted
+    evidence_depth: standard
+
+  FULL:
+    summary: A change at a boundary where being wrong is expensive or invisible.
+    # STANDARD plus one: an independent architecture look, whether or not the
+    # change crossed a package boundary. A boundary change that looks local is
+    # the one worth a second pair of eyes, and it is precisely the case
+    # `architecture_impact` does not catch.
+    always_consider:
+      - engineering-orchestrator
+      - impact-analysis
+      - business-analyst
+      - solution-architect
+      - architecture-reviewer
+      - unit-test
+      - code-reviewer
+      - final-acceptance
+    planning: Requirements, architecture and an explicit statement of the boundary at risk.
+    # A review or a security gate that passed before the product code changed
+    # says nothing about the code that exists now. In FAST and STANDARD that
+    # judgement is made per gate by the invalidation matrix; in FULL the
+    # matrix is not consulted for review and security gates -- they re-run.
+    gate_reuse: restricted
+    evidence_depth: thorough
+    rationale_must_name_boundary: true
+
+# FULL is not "run everything". The Orchestrator still selects the minimum
+# sufficient set: the mode's always-considered agents, plus the agents the
+# conditions bring in, and nothing else. A FULL feature that activates forty
+# agents is the same defect as a FAST one that does.
+never:
+  - A mode may not switch off a gate whose condition is met.
+  - A mode may not waive independence.
+  - A mode may not satisfy a human gate.
+  - A mode may not be chosen to fit a schedule.

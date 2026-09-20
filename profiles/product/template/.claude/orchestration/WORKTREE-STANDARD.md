@@ -50,6 +50,55 @@ can reach them, under any name.
 git worktree add ../.koras-worktrees/<repository>/<feature-id> -b feature/<feature-id>-<slug>
 ```
 
+## Before the worker starts
+
+A worktree is a checkout, not an environment. It arrives with whatever
+`node_modules` and virtual environments the branch's lockfiles imply and
+nothing installed, and the failure that follows is misleading rather than
+obvious: a build fails locally, passes in CI, and the difference is a
+dependency the branch added and this directory never installed. One feature
+lost a cycle to exactly that.
+
+So, in order, and before any build or test:
+
+1. Create or reuse the worktree, at the canonical location.
+2. Verify the branch is the one intended, and the tree is clean.
+3. Compare the lockfiles against the last install in this worktree —
+   `pnpm-lock.yaml` and `uv.lock`.
+4. Synchronise only if they differ. A reinstall that was not needed costs
+   minutes on every cycle and hides nothing.
+5. Verify the tooling the branch needs is present.
+6. Only then build or test.
+
+A local failure that has not passed step 3 is not yet evidence of anything.
+
+## Stopping what the worktree started
+
+Stopping a dev command stops the command, not what it started. Every one of
+them has something below it: `dev-service` spawns `uv`, which spawns Python,
+and on Windows goes through `cmd.exe` as well; `dev-app` spawns Node running
+Next, which forks its own workers.
+
+One session ended with an orphaned worker holding port 8000 and an open
+handle on the API executable, which blocked removing the whole worktree —
+long after the process that appeared to own it had gone.
+
+Teardown is therefore, in order:
+
+1. Stop the QA services.
+2. Terminate the **process tree**, not the visible parent.
+   `local/scripts/process-tree.mjs` is what the dev wrappers use: a process
+   group on POSIX, `taskkill /T /F` on Windows.
+3. Verify the ports are released.
+4. Verify no handle remains on files inside the worktree, where the platform
+   makes that visible.
+5. Remove the worktree.
+6. `git worktree prune`.
+7. Verify the directory is gone.
+
+Never kill by name, and never kill a process this worktree did not start. The
+target is the tree below a known pid, not everything that looks similar.
+
 ## Removing one
 
 ```bash

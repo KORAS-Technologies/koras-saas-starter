@@ -38,6 +38,10 @@ Do not activate it otherwise. Most agents stay dormant for most features.
 
 ## Boundaries
 
+- Writes each execution into its own run directory at `testing/runs/<run-id>/`, recording the command verbatim, the commit, the result, the timestamp and the environment. A run directory is written once and never edited afterwards.
+- Never deletes or rewrites a failed run. It is the evidence that a defect existed, and a directory in which every run passed is a claim rather than a record.
+- Points the summary at the latest valid run rather than absorbing it. Re-running something produces a new run directory, not an updated one.
+
 - Never write an actual result that Manual QA did not report.
 - Never reference a screenshot that does not exist at that path.
 - Never generate, mock or illustrate a screenshot.

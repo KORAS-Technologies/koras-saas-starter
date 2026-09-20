@@ -40,12 +40,78 @@ workflow:
       - ai-evaluation
       - final-acceptance
 
+  # The engineering flow inside one feature, and the two points at which it
+  # stops being open-ended.
+  #
+  # This is the *within-feature* sequence. The feature's overall state --
+  # including everything after a merge -- is `lifecycle.yaml`, which is a
+  # different question with different answers, and the two are deliberately
+  # not one list.
+  #
+  # Freeze points exist because V2 had no moment after which a correction was
+  # cheap. Every fix, of anything, put the whole feature back in play: a
+  # sentence rewritten in a results document could and did trigger another
+  # review, another audit and another acceptance. A freeze is not a ban on
+  # changing things. It is a declaration of what a change from here costs.
+  engineering_flow:
+    - stage: implement
+    - stage: test_and_fix
+      bounded_by: max_test_fix_cycles
+    - freeze: code_freeze
+      # From here, a change to PRODUCT code is no longer free. It invalidates
+      # gates per gate-invalidation.yaml and it consumes budget. A change to
+      # tests, fixtures or documentation does neither by itself.
+      after: Automated verification passes on the implemented change.
+      invalidates_on_change: product_code
+      consumes_budget: true
+    - stage: primary_review
+      bounded_by: max_reviewer_cycles
+      independent: true
+    - stage: fix_if_required
+    - stage: one_re_review
+      # The re-review is the last one. A finding that appears after it is
+      # `new_finding_after_final_rereview`, which escalates rather than
+      # starting a third round -- because a third round is the point at which
+      # the reviews have stopped agreeing with each other.
+      independent: true
+      escalates_beyond: new_finding_after_final_rereview
+    - freeze: quality_freeze
+      # The freeze that would have saved the most time in the lifecycle this
+      # framework was rewritten from. After it, a documentation correction is
+      # a documentation correction: it invalidates the documentation audit and
+      # final acceptance, and NOTHING else.
+      after: Review is closed with no unresolved CRITICAL or HIGH finding.
+      invalidates_on_change: documentation_only_changes_invalidate_documentation_gates_only
+      exception: >-
+        Unless the correction reveals an implementation defect - the document
+        was right and the code was wrong. That is a code change discovered by
+        writing prose, it re-opens the engineering flow at test_and_fix, and
+        it is recorded as such rather than as a documentation fix.
+    - stage: final_documentation
+    - stage: documentation_audit
+      bounded_by: max_documentation_audits
+      independent: true
+    - stage: final_acceptance
+      bounded_by: max_final_acceptance_attempts
+      independent: true
+    - stage: pass_or_escalate
+      # There is no third outcome. "Nearly ready" is NOT READY.
+
+  budget:
+    contract: .claude/orchestration/execution-budget.yaml
+    # Named here so that the flow above cannot acquire an unbounded stage
+    # without somebody noticing the omission.
+    unbounded_stages_forbidden: true
   rework:
     failed_gate_route: bug-triage
     # The agent that fixed a defect does not confirm the fix. Re-verification
     # returns to the agent that originally found it.
     require_independent_reverification: true
     blocking_severities: [CRITICAL, HIGH]
+    # Rework is the loop V2 could not exit. It is bounded now, and exhausting
+    # the bound is a stop rather than a slower loop.
+    bounded_by: .claude/orchestration/execution-budget.yaml
+    on_budget_exhausted: HUMAN_REVIEW
 
   integration:
     # Run before Final Acceptance whenever scope is wider than one feature.

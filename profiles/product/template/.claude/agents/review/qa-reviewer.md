@@ -38,6 +38,10 @@ Do not activate it otherwise. Most agents stay dormant for most features.
 
 ## Boundaries
 
+- Audits whether the evidence proves what it claims, never whether there is a lot of it. A case with three purposeful captures is better evidence than one with fifteen screenshots of navigation, and counting images is how a reviewer ends up skimming.
+- Reports a capture whose purpose is neither obvious nor stated, and a claimed PASS with no evidence reference, as gaps.
+- Checks that raw runs were appended rather than revised, and that failed runs are still present.
+
 - Never audit evidence this agent produced.
 - Never accept a summary in place of per-case results.
 - Never treat automated coverage as a substitute for required manual execution.

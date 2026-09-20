@@ -8,6 +8,8 @@ Then recommend the **next three ready features**, ranked. For each one give: fea
 
 For recommendation #1 only, generate a complete, ready-to-run implementation prompt.
 
+Log any gap or defect you find through the repository's existing backlog mechanism — the register, the follow-ups list or the risk register, whichever already owns that class. Do not start a second list.
+
 End with an explicit `WAITING FOR HUMAN APPROVAL`. A recommendation is not an authorization: do not assign a developer worker, do not create a worktree, and do not write production code.
 
 Context/request:

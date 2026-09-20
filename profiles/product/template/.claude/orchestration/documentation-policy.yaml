@@ -29,20 +29,143 @@ documentation:
     - testing/test-plan.md
     - release/release-notes.md
 
-  required_for_user_facing_features:
-    - design/ux-design.md
-    - testing/manual/manual-test-guide.md
-    - testing/manual/manual-test-results.md
-    - testing/manual/screenshots/
-    - documentation/user-guide.md
+  # condition id -> the documents that condition requires. Keys come from
+  # `conditions.yaml` and nowhere else.
+  #
+  # This replaced a field called `required_for_user_facing_features`, which
+  # carried an applicability token inside a field name where nothing could
+  # check it -- and where it disagreed with both of the other two spellings of
+  # the same question. A condition named in a key is a condition a test can
+  # resolve; a condition named in a field name is a comment.
+  required_by_condition:
+    user_interface:
+      - design/ux-design.md
+      - testing/manual/manual-test-guide.md
+      - testing/manual/manual-test-results.md
+      - testing/manual/screenshots/
+      - documentation/user-guide.md
+    business_workflow:
+      - design/functional-design.md
+    operational_configuration:
+      - documentation/admin-guide.md
+    security_boundary:
+      - security/threat-model.md
+      - security/security-review.md
+    sensitive_or_regulated_data:
+      - security/threat-model.md
+      - security/security-review.md
+    cross_feature_or_release:
+      - testing/regression-results.md
+    automated_verification_executed:
+      - testing/automated-test-results.md
 
-  conditional:
-    design/functional-design.md: business_workflow_or_ui_change
-    documentation/admin-guide.md: configurable_or_operational_feature
-    security/threat-model.md: security_or_sensitive_data
-    security/security-review.md: security_or_sensitive_data
-    testing/regression-results.md: cross_feature_or_shared_contract_or_release
-    testing/automated-test-results.md: any_automated_verification_executed
+  # WHEN each kind of document is written.
+  #
+  # V2 said what to write and never when, and the order it produced was the
+  # expensive one: narrative documents written alongside the code, then
+  # rewritten every time the code moved, each rewrite pulling an audit and an
+  # acceptance behind it. Planning documents genuinely must come first; a
+  # user guide genuinely cannot be right until the thing it describes has
+  # stopped changing.
+  timing:
+    before_implementation:
+      - requirements/user-story.md
+      - design/technical-design.md
+      - design/functional-design.md
+      - design/ux-design.md
+      - security/threat-model.md
+      - testing/test-plan.md
+    during_implementation:
+      # Appended as things happen. Never rewritten to look tidier later.
+      - testing/runs/
+    after_the_code_settles:
+      # Written once, after code freeze. Writing these earlier does not save
+      # time; it spends it twice.
+      - documentation/user-guide.md
+      - documentation/admin-guide.md
+      - security/security-review.md
+      - release/release-notes.md
+    audited_once:
+      # One consistency audit, after the quality freeze. See the
+      # documentation_audit gate.
+      - the whole feature directory
+
+  # Raw evidence is APPENDED, never revised.
+  #
+  # A summary that is edited until it matches the latest run has destroyed
+  # the only thing evidence is for: the ability to check later what actually
+  # happened. A run that failed is a historical fact, and a directory of runs
+  # where every one passed is not a record, it is a claim.
+  evidence_runs:
+    path: testing/runs/<run-id>/
+    run_id: <YYYY-MM-DD>-<nn>
+    each_run_records:
+      - the command, verbatim
+      - the commit under test
+      - the result
+      - the timestamp
+      - the environment, for anything that touched a running system
+      - the output or artefacts
+    rules:
+      - A run directory is written once and never edited afterwards.
+      - A failed run stays. Deleting it removes the evidence that a defect existed.
+      - A summary document points at the latest valid run; it does not absorb or replace it.
+      - Re-running something produces a new run directory, not an updated one.
+
+  # WHEN a manual pass is required, rather than for everything.
+  #
+  # Manual QA is not being reduced here; it is being aimed. A backend-only
+  # change with no surface a person can reach has nothing for a person to
+  # look at, and requiring a pass anyway produces the worst possible
+  # artefact: a document full of passes nobody really executed.
+  manual_qa:
+    required_when:
+      - the change alters something a person sees, reads or operates
+      - the change alters a sequence a person completes
+      - correctness depends on what the browser actually does, not on what the server returned
+      - a permission or tenant boundary is visible in the interface
+    not_required_when:
+      - the change has no surface a person can reach
+      - automated verification observes exactly what a person would, at the same level
+    never:
+      - A pass recorded for a case that was not executed.
+      - A pass inferred from an automated result. An automated result is different evidence.
+      - Reducing manual QA because the schedule is tight. That is an escalation, not a decision.
+    blocked_is_an_answer: >-
+      BLOCKED, with the reason, is the correct outcome when execution is
+      impossible. It is never counted as a pass, and it is never a failure of
+      the feature.
+
+  # WHICH screenshots are worth keeping.
+  #
+  # One real feature produced roughly 164 screenshots for about 20 manual
+  # cases -- eight per case, most of them a click on the way to somewhere.
+  # The cost is not storage. It is that a reviewer cannot tell which images
+  # prove anything, so the evidence gets skimmed, and skimmed evidence is the
+  # same as no evidence with more effort spent.
+  #
+  # There is no maximum. A capture earns its place by proving something a
+  # sentence could not, and a high-risk workflow that needs a dozen should
+  # have a dozen.
+  screenshots:
+    capture_when_it_proves:
+      - a starting state a later image is meaningless without
+      - the transition the case exists to demonstrate
+      - a validation or error state, showing the actual message
+      - the final result the expected outcome describes
+      - a permission or tenant boundary behaving as specified
+      - an accessibility condition that is visual - focus, contrast, a visible state
+    do_not_capture:
+      - navigation on the way to the thing being tested
+      - a click whose only outcome is the next screen
+      - the same state twice because a later step happened to pass through it
+      - anything a step's written actual result already establishes
+    no_maximum: true
+    higher_risk_may_justify_more: true
+    # The field that makes the policy self-enforcing. A capture whose purpose
+    # cannot be written in a phrase is a capture that proves nothing, and
+    # writing that phrase is how the author notices.
+    purpose_required_when_not_obvious: true
 
   # One path shape for evidence, so `qa-reviewer` can check it mechanically.
   #   testing/manual/screenshots/<test-case-id>/step-01-<description>.png
@@ -80,6 +203,11 @@ documentation:
     - actual_result
     - verdict          # PASS | FAIL | BLOCKED, and nothing else
     - evidence_reference
+    # What each capture proves, where that is not obvious from the step. The
+    # field exists to make the screenshot policy self-enforcing: a capture
+    # whose purpose cannot be written in a phrase is one that proves nothing,
+    # and writing the phrase is how the author finds that out.
+    - evidence_purpose
 
   evidence_rules:
     actual_execution_only: true
@@ -91,3 +219,5 @@ documentation:
     commit_and_environment_required: true
     tester_and_run_date_required: true
     automated_results_do_not_satisfy_manual_gate: true
+    raw_runs_are_append_only: true
+    historical_failed_runs_are_retained: true

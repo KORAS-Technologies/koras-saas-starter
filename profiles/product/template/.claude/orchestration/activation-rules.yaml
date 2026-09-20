@@ -2,11 +2,16 @@ schema_version: 1
 
 # Which agents a feature actually needs.
 #
-# The Orchestrator starts from `always_consider`, adds the conditional sets
-# whose trigger the feature matches, and stops. Activating all 40 agents for
-# one feature is a defect in orchestration, not diligence.
+# The Orchestrator starts from `always_consider`, adds the set for every
+# condition the change meets, and stops. Activating all 40 agents for one
+# feature is a defect in orchestration, not diligence.
 #
-# Every id here is validated against agent-registry.yaml.
+# Every agent id here is validated against `agent-registry.yaml`, and every
+# key of `conditional` is validated against `conditions.yaml`. The triggers
+# used to live in this file; they moved to `conditions.yaml` when the gates
+# and the documentation policy turned out to be asking the same questions in
+# different words. This file now answers one question only -- given a
+# condition, which agents -- and the condition itself is defined once.
 
 always_consider:
   - engineering-orchestrator
@@ -17,65 +22,29 @@ always_consider:
   - code-reviewer
   - final-acceptance
 
+# condition id -> the agents that condition brings in. Additive; a feature
+# commonly meets several. A condition may legitimately activate no shared
+# agent -- `domain_feature` is answered by a product-owned agent, and
+# `operational_configuration`, `business_workflow` and
+# `automated_verification_executed` decide documents rather than staffing --
+# and those conditions are simply absent here.
 conditional:
-  user_interface:
-    trigger: The feature adds or changes any surface a user or operator can see.
-    agents: [ux-ui-designer, frontend-specialist, e2e-test, manual-qa, accessibility-qa, test-documentation, qa-reviewer]
-
-  api_or_integration:
-    trigger: The feature adds or changes an endpoint, service behaviour or external integration.
-    agents: [backend-specialist, integration-specialist, api-integration-test]
-
-  database_or_data:
-    trigger: The feature adds or changes tables, columns, policies, indexes or stored data.
-    agents: [data-architect, database-specialist, migration-upgrade, security-test]
-
-  security:
-    trigger: The feature touches authentication, authorization, tenancy, secrets, uploads, webhooks, redirects or server-side fetches.
-    agents: [security-architect, security-test, security-reviewer]
-
-  sensitive_or_regulated_data:
-    trigger: The feature collects, stores, exports or transmits personal, sensitive or regulated data.
-    agents: [privacy-compliance-reviewer, security-reviewer]
-
-  ai:
-    trigger: The feature uses the ai capability - assistant, agent, tool, prompt, retrieval or model routing.
-    agents: [ai-specialist, ai-evaluation, security-reviewer]
-
-  scheduled_or_background:
-    trigger: The feature enqueues work, schedules a task or adds a recurring job.
-    agents: [workflow-specialist, api-integration-test, observability-sre]
-
-  performance_sensitive:
-    trigger: The feature is on a hot path, handles high volume, or risks an unbounded query or bundle.
-    agents: [performance-qa, observability-sre]
-
-  architecture_impact:
-    trigger: The feature crosses a package, service or contract boundary, or introduces a new pattern.
-    agents: [architecture-reviewer]
-
-  needs_test_state:
-    trigger: The feature cannot be verified without realistic fixtures, multiple tenants or named accounts.
-    agents: [test-data]
-
-  release_or_migration:
-    trigger: The work includes a migration, a dependency upgrade, or promotion between environments.
-    agents: [migration-upgrade, devops-cicd, release-manager, observability-sre]
-
-  cross_feature_or_release:
-    trigger: Concurrent features are converging, a shared contract changed, or a release is being assembled.
-    agents: [integration-regression, release-manager]
-
-  gate_failure:
-    trigger: Any automated or manual verification has failed.
-    agents: [bug-triage]
-
-  documentation_impact:
-    trigger: The feature changes what a user or operator must know, or invalidates existing documentation.
-    agents: [technical-writer]
+  user_interface: [ux-ui-designer, frontend-specialist, e2e-test, manual-qa, accessibility-qa, test-documentation, qa-reviewer]
+  api_or_integration: [backend-specialist, integration-specialist, api-integration-test]
+  database_or_data: [data-architect, database-specialist, migration-upgrade, security-test]
+  security_boundary: [security-architect, security-test, security-reviewer]
+  sensitive_or_regulated_data: [privacy-compliance-reviewer, security-reviewer]
+  ai: [ai-specialist, ai-evaluation, security-reviewer]
+  scheduled_or_background: [workflow-specialist, api-integration-test, observability-sre]
+  performance_sensitive: [performance-qa, observability-sre]
+  architecture_impact: [architecture-reviewer]
+  needs_test_state: [test-data]
+  release_or_migration: [migration-upgrade, devops-cicd, release-manager, observability-sre]
+  cross_feature_or_release: [integration-regression, release-manager]
+  documentation_impact: [technical-writer]
+  gate_failure: [bug-triage]
 
 notes:
   - The Planner recommends work; the Orchestrator selects agents and execution order.
   - Domain agents are product-owned overlays under .claude/domain/ and are not part of this shared registry.
-  - A conditional set is additive; a feature commonly matches several.
   - An implementation agent never satisfies a review or acceptance role for its own work.

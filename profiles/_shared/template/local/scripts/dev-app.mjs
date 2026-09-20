@@ -9,6 +9,7 @@
 // that cmd.exe does not expand, and package.json scripts run under whatever
 // shell the platform provides.
 import { spawn } from 'node:child_process'
+import { forwardSignals, groupSpawnOptions } from './process-tree.mjs'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -60,13 +61,12 @@ const nextBin = createRequire(join(process.cwd(), 'package.json')).resolve('next
 const child = spawn(process.execPath, [nextBin, 'dev', '--port', port], {
   stdio: 'inherit',
   shell: false,
+  ...groupSpawnOptions,
 })
 
-// Forward the signals a dev server is expected to honour, so Ctrl-C still stops
-// Next rather than orphaning it behind this wrapper.
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => child.kill(signal))
-}
+// Forward to the whole tree, not just the child. Next forks its own workers,
+// and signalling the wrapper alone leaves them holding the port.
+forwardSignals(child)
 
 child.on('exit', (code, signal) => {
   process.exit(signal ? 1 : (code ?? 1))

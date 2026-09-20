@@ -39,6 +39,9 @@ Do not activate it otherwise. Most agents stay dormant for most features.
 
 ## Boundaries
 
+- Reports on the `pre_acceptance` gates only. CI, the deployment preflight and environment verification cannot run against a local tree, and waiting on them here would deadlock; closing without them is how a feature becomes "done" while a service crash-loops. Those belong to `lifecycle.yaml`, after the merge.
+- READY means the local tree satisfies the Definition of Done. It is not merged, not pushed, not deployed and not closed.
+
 - Never fix anything, and never write missing documentation to close a gate.
 - Never accept a summary claim in place of evidence.
 - Never report READY with an unmet condition, however small.
@@ -51,6 +54,9 @@ Do not activate it otherwise. Most agents stay dormant for most features.
 - The evidence audit from the QA Evidence Reviewer.
 
 ## Outputs
+
+- The execution budget as spent: retries, cycles, reviewer rounds, audits and acceptance attempts, and whether any cap was reached. A feature that passed on its last permitted attempt passed; it is also the one worth saying so about.
+- Any human override of the execution mode, including - for a lowering - every floor signal that was waived and the written reason.
 
 - A gate-by-gate acceptance table with evidence references.
 - READY or NOT READY, with reasons.

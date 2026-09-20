@@ -31,14 +31,34 @@ BLOCKED is never counted as a pass.
 | **Test data** | <accounts, records, values> |
 | **Verdict** | **PASS** / **FAIL** / **BLOCKED** |
 
-| Step | Action | Expected result | Actual result | Evidence |
-|------|--------|-----------------|---------------|----------|
-| 1 | <action> | <expected> | <what actually happened> | `screenshots/<TEST-CASE-ID>/step-01-<description>.png` |
-| 2 | | | | |
+| Step | Action | Expected result | Actual result | Evidence | What it proves |
+|------|--------|-----------------|---------------|----------|----------------|
+| 1 | <action> | <expected> | <what actually happened> | `screenshots/<TEST-CASE-ID>/step-01-<description>.png` | <a phrase, where the capture's purpose is not obvious> |
+| 2 | | | | | |
+
+Not every step carries a screenshot. Capture where it proves something a
+sentence could not — a starting state a later image needs, the transition
+this case exists to show, a validation or error state with its actual
+message, the final result, a permission boundary behaving as specified, or a
+visual accessibility condition. Not navigation, and not a click whose only
+outcome is the next screen. There is no maximum; a high-risk workflow may
+justify a dozen. A capture whose purpose cannot be written in a phrase is one
+that proves nothing.
 
 **If BLOCKED — reason:** <why execution was impossible: environment, access, data, upstream failure. Required.>
 
 ---
+
+## Raw runs
+
+Each execution is appended at `testing/runs/<run-id>/` and is never edited
+afterwards. This document points at the latest valid run; it does not replace
+it, and a failed run stays where it is — it is the evidence that a defect
+existed.
+
+| Run | Commit | Result | Runs directory |
+|-----|--------|--------|----------------|
+| <YYYY-MM-DD>-01 | <sha> | <PASS / FAIL / BLOCKED> | `testing/runs/<run-id>/` |
 
 ## Defects raised
 

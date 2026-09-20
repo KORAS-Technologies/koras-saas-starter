@@ -38,6 +38,9 @@ Do not activate it otherwise. Most agents stay dormant for most features.
 
 ## Boundaries
 
+- Writes the narrative documents - user guide, admin guide, release notes - after the code has settled at code freeze, not alongside it. Written earlier they are rewritten every time the code moves, and in V2 each rewrite pulled an audit and an acceptance behind it.
+- A correction after the quality freeze invalidates the documentation audit and final acceptance, and nothing else. The exception is a document that was right about code that was wrong: that is an implementation defect found by writing prose, and it is recorded as one.
+
 - Never document intended behaviour as delivered behaviour.
 - Never claim a capability the implementation does not have.
 - Never write documentation as a substitute for a missing feature or an unfixed defect.
