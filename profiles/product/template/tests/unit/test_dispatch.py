@@ -123,6 +123,32 @@ class _Session:
         return None
 
 
+class _Counting(_Session):
+    """Records which tables were read, so a cost can be asserted."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401
+        super().__init__(*args, **kwargs)
+        self.statements: list[str] = []
+
+    async def execute(self, statement: object, parameters: Any = None) -> Any:  # noqa: ANN401
+        self.statements.append(str(statement))
+        return await super().execute(statement, parameters)
+
+    def tally(self) -> dict[str, int]:
+        names = (
+            "global_settings",
+            "tenant_setting_values",
+            "member_setting_values",
+            "tenant_members",
+        )
+        found = dict.fromkeys(names, 0)
+        for sql in self.statements:
+            for name in names:
+                if name in sql:
+                    found[name] += 1
+        return found
+
+
 def _event(session_free: Audience | None = None, **kw: Any) -> Event:  # noqa: ANN401
     return Event(
         kind=TEST_KIND.key,
@@ -330,16 +356,95 @@ async def test_an_audience_that_resolves_nobody_is_not_an_error() -> None:
     assert outcome == dispatch.Dispatched()
 
 
-async def test_an_unreadable_preference_fails_open() -> None:
-    """The right direction for this switch: the alternative is silently telling
-    nobody anything."""
+class _Broken(_Session):
+    """A session whose settings tables will not answer."""
 
-    class _Broken(_Session):
-        async def execute(self, statement: object, parameters: Any = None) -> Any:  # noqa: ANN401
-            if "global_settings" in str(statement):
-                raise RuntimeError("the settings table is unreadable")
-            return await super().execute(statement, parameters)
+    async def execute(self, statement: object, parameters: Any = None) -> Any:  # noqa: ANN401
+        if "settings" in str(statement):
+            raise RuntimeError("the settings tables are unreadable")
+        return await super().execute(statement, parameters)
 
+
+async def test_an_unreadable_preference_leaves_the_feed_written() -> None:
+    """The feed fails **open**: the worst case is a notification somebody did
+    not want, in a list they can clear."""
     session = _Broken([("user-1", "organization_admin")])
     outcome = await dispatch.dispatch(session, _event())  # type: ignore[arg-type]
     assert outcome.in_app == 1
+
+
+async def test_an_unreadable_preference_holds_the_mail() -> None:
+    """Mail fails **closed**, and the asymmetry is the decision. DISP-03.
+
+    A mail sent to somebody who switched mail off cannot be recalled. A mail
+    withheld because a preference could not be read costs them nothing they
+    have not already got, because the feed row exists either way — holding it
+    loses the second copy of a notification, not the notification.
+    """
+    session = _Broken([], owner="owner@acme.test")
+    outcome = await dispatch.dispatch(
+        session,  # type: ignore[arg-type]
+        _event(session_free=Audience(include_owner=True)),
+    )
+    assert outcome.mail == ()
+    # Distinguishable from an opt-out, because only one of the two is worth
+    # anybody's attention.
+    assert "owner@acme.test:email_unknown" in outcome.skipped
+
+
+async def test_the_shared_scopes_are_read_once_however_many_recipients() -> None:
+    """DISP-01. The platform's defaults and the organisation's values cannot
+    change during one dispatch, and they were read once per person per channel:
+    eleven times each for ten approvers, on the request path, while somebody
+    waited for an assistant to answer.
+
+    Asserted as a count rather than as a shape, because the defect was
+    invisible to every assertion about what was decided.
+    """
+    counts: dict[int, dict[str, int]] = {}
+    for many in (1, 10):
+        session = _Counting(
+            [(f"user-{n}", "organization_admin") for n in range(many)],
+            owner="owner@acme.test",
+        )
+        await dispatch.dispatch(
+            session,  # type: ignore[arg-type]
+            _event(session_free=Audience(permission="settings.read", include_owner=True)),
+        )
+        counts[many] = session.tally()
+
+    for table in ("global_settings", "tenant_setting_values", "tenant_members"):
+        assert counts[1][table] == 1, f"{table} is read more than once for one recipient"
+        assert counts[10][table] == 1, f"{table} is read once per recipient"
+
+    # A member's own row is read once per person -- not once for their language
+    # and again for each channel, which is what made it twenty for ten.
+    assert counts[1]["member_setting_values"] == 1
+    assert counts[10]["member_setting_values"] == 10
+
+
+async def test_a_template_is_rendered_once_per_language_in_both_channels() -> None:
+    """DISP-02. The feed grouped by language and the inbox did not, so a
+    template doing real work did it once per recipient in the inbox half. The
+    test that claimed otherwise used a case with no addresses in it."""
+    calls: list[str] = []
+
+    def counting(locale: str) -> Rendered:
+        calls.append(locale)
+        return render(locale)
+
+    session = _Session(
+        [("a", "organization_admin"), ("b", "organization_admin")],
+        owner="owner@acme.test",
+    )
+    outcome = await dispatch.dispatch(
+        session,  # type: ignore[arg-type]
+        _event(
+            session_free=Audience(permission="settings.read", include_owner=True),
+            render=counting,
+        ),
+    )
+    # Two feed rows and one mail, all in English, from one rendering.
+    assert outcome.in_app == 2
+    assert len(outcome.mail) == 1
+    assert calls == ["en"]

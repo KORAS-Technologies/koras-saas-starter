@@ -486,6 +486,25 @@ structurally always `False`, and a banner written in three languages could
 never appear. Its unit test was a disjunction over the flag and could not fail,
 which is the more useful half of that finding.
 
+**Both seams were reviewed on 2026-09-20 and the review returned BLOCK** —
+the fourth from four independent reviews here, and the rate is not going down.
+Neither seam was wrong about what it decided; both were wrong about what they
+cost. The dispatch point read all three settings scopes on every call and was
+called once per person per channel, so ten approvers cost fifty-four statements
+on the request path while somebody waited for an assistant to answer; it is
+twenty-four now, of which twenty are the irreducible per-person row read and
+feed insert. And the shared table rendered with `table-layout: auto`, under
+which a width on a cell is a hint the browser satisfies *after* content — so a
+resized column got wider and never narrower, on exactly the columns anybody
+would want to narrow, which made `grid.allowColumnResize` a control that half
+worked on the day it was surfaced.
+
+**Both classes were invisible to every assertion those seams shipped with**,
+because all of them ask what was decided rather than what it cost or whether it
+took effect. The regression tests added with the fixes assert a statement count
+and a CSS property for that reason. `docs/features/notifications/review.md` has
+all six findings.
+
 **The two capabilities are declared.** `audit_governance` and
 `storage_governance`, both on by default, and what they gate is the *surface*
 rather than the record: only `00025_file_backups.sql` is a gated migration. A

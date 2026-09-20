@@ -37,7 +37,7 @@ contract change and is F26 in `docs/FOLLOW_UPS.md`.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -106,7 +106,23 @@ class Audience:
             )
 
 
-async def _locale_of(session: AsyncSession, tenant_id: str, subject: str) -> tuple[Locale, bool]:
+#: How one member's stored values are read. Injected so a caller that is
+#: already reading them — `dispatch.Preferences` is — reads each person's row
+#: **once** rather than once for their language and again for each channel.
+#: Ten approvers cost twenty reads of ten rows before this, which is DISP-01.
+MemberReader = Callable[[str], Awaitable[Mapping[str, Any]]]
+
+
+def _reader(session: AsyncSession, tenant_id: str) -> MemberReader:
+    """The default, for a caller with nothing to share."""
+
+    async def read(subject: str) -> Mapping[str, Any]:
+        return await member_values(session, tenant_id, subject)
+
+    return read
+
+
+async def _locale_of(read: MemberReader, subject: str) -> tuple[Locale, bool]:
     """A member's own language, and whether it is really theirs.
 
     Read from the member's stored settings rather than from the request, which
@@ -117,7 +133,7 @@ async def _locale_of(session: AsyncSession, tenant_id: str, subject: str) -> tup
     context in a background send, so it falls back like an absent value.
     """
     try:
-        values = await member_values(session, tenant_id, subject)
+        values = await read(subject)
     except Exception:
         logger.exception("a recipient's language could not be read; using the default")
         return DEFAULT_LOCALE, False
@@ -141,17 +157,21 @@ async def resolve(
     organization_id: str = "",
     token: str = "",
     fallback_locale: Locale = DEFAULT_LOCALE,
+    read_member: MemberReader | None = None,
 ) -> list[Recipient]:
     """Everyone the rule names, each once, with their language where known.
 
     Never raises. A rule that resolves to nobody returns an empty list and logs
     it — which is a question for the caller, not a failure of the send.
 
-    One settings read per member. That is fine for an audience of approvers and
-    would not be for an audience of every member of a large organisation; when
-    a producer needs the second shape, this is the function that grows a bulk
+    One settings read per member, and **one** rather than two since 2026-09-20:
+    `read_member` lets a caller that is already reading those rows share its
+    cache. That is still a read per member, which is fine for an audience of
+    approvers and would not be for every member of a large organisation; when a
+    producer needs the second shape, this is the function that grows a bulk
     read rather than each caller growing a cache.
     """
+    read = read_member or _reader(session, tenant_id)
     by_key: dict[str, Recipient] = {}
 
     def add(candidate: Recipient) -> None:
@@ -184,7 +204,7 @@ async def resolve(
                 wanted.add(str(row.user_id))
 
     for subject in sorted(wanted):
-        locale, theirs = await _locale_of(session, tenant_id, subject)
+        locale, theirs = await _locale_of(read, subject)
         add(
             Recipient(
                 subject=subject,
@@ -270,6 +290,7 @@ def subjects_of(people: Sequence[Recipient]) -> list[str]:
 
 __all__ = [
     "Audience",
+    "MemberReader",
     "Recipient",
     "addresses_from_members",
     "resolve",

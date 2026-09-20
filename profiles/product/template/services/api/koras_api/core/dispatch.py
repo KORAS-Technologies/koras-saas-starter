@@ -53,6 +53,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from koras_email import DEFAULT_LOCALE, EmailSender, Locale
 from koras_settings import resolve as resolve_setting
@@ -137,44 +138,104 @@ class Dispatched:
     skipped: tuple[str, ...] = field(default_factory=tuple)
 
 
-async def _enabled(
-    session: AsyncSession,
-    *,
-    key: str,
-    tenant_id: str,
-    subject: str | None,
-) -> bool:
-    """Whether this person wants this channel, resolved the way the page shows it.
+class Preferences:
+    """Everyone's answers to the channel switches, read once per dispatch.
 
-    Through `koras_settings.resolve` rather than by reading a row, so the answer
-    the send uses and the answer the settings page displays are produced by the
-    same code. That is the property the settings framework exists for, and the
-    reason `notifications.emailEnabled` could be switched off while mail kept
-    arriving is that nothing here consulted it at all.
+    **This was a function, and it read all three scopes on every call.** It is
+    called once per person per channel, so the platform's defaults and the
+    organisation's values — two row sets that cannot change during one dispatch
+    — were re-read once per person per channel, and each member's own row twice.
+    Ten approvers cost fifty-four statements where a dozen would do, on the
+    request path, while somebody waited for an assistant to answer. DISP-01 in
+    `docs/features/notifications/review.md`.
 
-    A recipient with no subject — an address the platform gave — has no member
-    preference to read, so the organisation's value decides. Recorded in
-    `recipients.py` as the cost of an address that cannot be matched to a
-    person.
+    It would have passed review by behaviour forever: every test asserted what
+    was decided and none asked what it cost.
 
-    Never raises: an unreadable settings table must not stop a notification. It
-    fails **open**, which is the right direction for this particular switch —
-    the alternative is silently telling nobody anything.
+    What is *not* cached is the resolution itself. That still goes through
+    `koras_settings.resolve`, because it is the property worth keeping — the
+    answer the send uses and the answer the settings page shows are produced by
+    the same code, and the reason `notifications.emailEnabled` could be switched
+    off while mail kept arriving is that nothing consulted it at all.
     """
-    try:
-        definition = catalogue.require(key)
-        resolved, _ = resolve_setting(
-            definition,
-            global_values=await global_values(session),
-            organization_values=await tenant_values(session, tenant_id),
-            member_values=(
-                await member_values(session, tenant_id, subject) if subject else {}
-            ),
-        )
-    except Exception:
-        logger.exception("the %s preference could not be resolved; assuming on", key)
-        return True
-    return bool(resolved.value)
+
+    def __init__(self, session: AsyncSession, tenant_id: str) -> None:
+        self._session = session
+        self._tenant_id = tenant_id
+        self._global: dict[str, Any] | None = None
+        self._organization: dict[str, Any] | None = None
+        self._members: dict[str, dict[str, Any]] = {}
+        #: True once any read has failed. The callers use it to decide which way
+        #: to fail, and it is remembered rather than re-attempted: a settings
+        #: table that would not answer once will not answer nine more times in
+        #: the same request, and trying is nine more waits.
+        self.unreadable = False
+
+    async def _shared(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        if self._global is None or self._organization is None:
+            try:
+                self._global = await global_values(self._session)
+                self._organization = await tenant_values(self._session, self._tenant_id)
+            except Exception:
+                logger.exception("the settings for %s could not be read", self._tenant_id)
+                self.unreadable = True
+                self._global = self._global or {}
+                self._organization = self._organization or {}
+        return self._global, self._organization
+
+    async def member_values(self, subject: str) -> dict[str, Any]:
+        """One member's own values, for a caller that needs them too.
+
+        `recipients.resolve` reads a member's language, and it used to do so
+        through its own path — so every person's row was read once for their
+        language and again for each channel. Sharing this cache is what makes
+        that one read. DISP-01.
+        """
+        return await self._member(subject)
+
+    async def _member(self, subject: str | None) -> dict[str, Any]:
+        """One person's own values. An address the platform gave has none.
+
+        Recorded in `recipients.py` as the cost of an address that cannot be
+        matched to a person: the organisation's value decides for them.
+        """
+        if not subject:
+            return {}
+        if subject not in self._members:
+            try:
+                self._members[subject] = await member_values(
+                    self._session, self._tenant_id, subject
+                )
+            except Exception:
+                logger.exception("a recipient's preferences could not be read")
+                self.unreadable = True
+                self._members[subject] = {}
+        return self._members[subject]
+
+    async def wants(self, key: str, subject: str | None, *, when_unknown: bool) -> bool:
+        """Whether this person wants this channel.
+
+        `when_unknown` is the caller's decision about which way to fail, and the
+        two channels answer it differently on purpose. DISP-03.
+        """
+        shared, organization = await self._shared()
+        mine = await self._member(subject)
+        try:
+            resolved, _ = resolve_setting(
+                catalogue.require(key),
+                global_values=shared,
+                organization_values=organization,
+                member_values=mine,
+            )
+        except Exception:
+            logger.exception("the %s preference could not be resolved", key)
+            self.unreadable = True
+            return when_unknown
+        if self.unreadable:
+            # A value resolved from rows that could not be read is the
+            # definition's default wearing a customer's clothes. Say so.
+            return when_unknown
+        return bool(resolved.value)
 
 
 async def dispatch(session: AsyncSession, event: Event) -> Dispatched:
@@ -183,12 +244,14 @@ async def dispatch(session: AsyncSession, event: Event) -> Dispatched:
     Never raises. Every failure is a log line and a count, because the producer
     is in the middle of doing the thing the customer actually asked for.
     """
-    try:
-        kinds.require(event.kind)
-    except KeyError:
-        # A programming error, and the only one worth raising for: a kind
-        # nobody registered means nothing can classify, retain or translate it.
-        raise
+    # Raises, and it is the only thing here that does: a kind nobody registered
+    # means nothing can classify, retain or translate it, which is a mistake at
+    # the call site rather than a delivery failure.
+    kinds.require(event.kind)
+
+    # Built before the audience is resolved, so the language read and the two
+    # channel reads share one cache per person rather than three.
+    wants = Preferences(session, event.tenant_id)
 
     try:
         people = await resolve_audience(
@@ -198,6 +261,7 @@ async def dispatch(session: AsyncSession, event: Event) -> Dispatched:
             organization_id=event.organization_id,
             token=event.token,
             fallback_locale=event.fallback_locale,
+            read_member=wants.member_values,
         )
     except Exception:
         logger.exception("the audience for %s could not be resolved", event.kind)
@@ -207,8 +271,11 @@ async def dispatch(session: AsyncSession, event: Event) -> Dispatched:
         return Dispatched()
 
     skipped: list[str] = []
-    in_app = await _to_feed(session, event, people, skipped)
-    mail = await _to_mail(session, event, people, skipped)
+    # One rendering cache for the whole dispatch, so neither channel re-renders
+    # a language the other already did.
+    say = _renderer(event)
+    in_app = await _to_feed(session, event, people, skipped, wants, say)
+    mail = await _to_mail(event, people, skipped, wants, say)
     return Dispatched(
         recipients=len(people),
         in_app=in_app,
@@ -217,35 +284,63 @@ async def dispatch(session: AsyncSession, event: Event) -> Dispatched:
     )
 
 
+def _renderer(event: Event) -> Callable[[Locale], Rendered | None]:
+    """The template, called at most once per language.
+
+    Both channels share one of these. The feed grouped by language and the
+    inbox did not, so a template doing real work did it once per recipient in
+    the inbox half — and the test that asserted "once per language" used a case
+    with no addresses in it, so it could not see. DISP-02.
+
+    `None` for a language the template refused to render, so a failure costs
+    that language and not the dispatch.
+    """
+    done: dict[Locale, Rendered | None] = {}
+
+    def render(locale: Locale) -> Rendered | None:
+        if locale not in done:
+            try:
+                done[locale] = event.render(locale)
+            except Exception:
+                logger.exception(
+                    "notification %s could not be rendered in %s", event.kind, locale
+                )
+                done[locale] = None
+        return done[locale]
+
+    return render
+
+
 async def _to_feed(
     session: AsyncSession,
     event: Event,
     people: Sequence[Recipient],
     skipped: list[str],
+    wants: Preferences,
+    say: Callable[[Locale], Rendered | None],
 ) -> int:
     """The in-app half: one row per member who wants one.
 
-    Grouped by language so a rendering is done once per language rather than
-    once per person, and so two people who share a language provably see the
+    Grouped by language so two people who share a language provably see the
     same words.
+
+    **Fails open.** A settings table that cannot be read leaves the feed row
+    written, because the worst case is a notification somebody did not want in
+    a list they can clear — against a notification nobody got at all.
     """
     wanted: dict[Locale, list[str]] = {}
     for person in people:
         if person.subject is None:
             continue
-        if not await _enabled(
-            session, key=IN_APP_SETTING, tenant_id=event.tenant_id, subject=person.subject
-        ):
+        if not await wants.wants(IN_APP_SETTING, person.subject, when_unknown=True):
             skipped.append(f"{person.subject}:in_app_off")
             continue
         wanted.setdefault(person.locale, []).append(person.subject)
 
     written = 0
     for locale, subjects in sorted(wanted.items()):
-        try:
-            rendered = event.render(locale)
-        except Exception:
-            logger.exception("notification %s could not be rendered in %s", event.kind, locale)
+        rendered = say(locale)
+        if rendered is None:
             continue
         written += await notify(
             session,
@@ -261,16 +356,23 @@ async def _to_feed(
 
 
 async def _to_mail(
-    session: AsyncSession,
     event: Event,
     people: Sequence[Recipient],
     skipped: list[str],
+    wants: Preferences,
+    say: Callable[[Locale], Rendered | None],
 ) -> list[Mail]:
     """The inbox half: a message per address that wants one, ready to send.
 
     Prepared here and sent by the caller after its commit, because a mail
     cannot be rolled back and a feed row can. A template with no mail form
     contributes nothing, which is how a kind becomes in-app only.
+
+    **Fails closed**, unlike the feed, and the asymmetry is the decision. A mail
+    sent to somebody who switched mail off cannot be recalled; a mail withheld
+    because a preference could not be read costs them nothing they have not
+    already got, **because the feed row exists either way**. Holding it loses
+    the second copy of a notification, not the notification. DISP-03.
     """
     prepared: list[Mail] = []
     for person in people:
@@ -279,17 +381,17 @@ async def _to_mail(
             # this is not a failure and is counted so a test can see it.
             skipped.append(f"{person.subject or '?'}:no_address")
             continue
-        if not await _enabled(
-            session, key=EMAIL_SETTING, tenant_id=event.tenant_id, subject=person.subject
-        ):
-            skipped.append(f"{person.email}:email_off")
-            continue
-        try:
-            rendered = event.render(person.locale)
-        except Exception:
-            logger.exception(
-                "notification %s could not be rendered in %s", event.kind, person.locale
+        if not await wants.wants(EMAIL_SETTING, person.subject, when_unknown=False):
+            # Distinguishable on purpose: a dispatch that held mail because it
+            # could not read a preference is a different event from one that
+            # held it because somebody opted out, and only the first is worth
+            # anybody's attention.
+            skipped.append(
+                f"{person.email}:{'email_unknown' if wants.unreadable else 'email_off'}"
             )
+            continue
+        rendered = say(person.locale)
+        if rendered is None:
             continue
         if rendered.html is None or not rendered.subject.strip():
             skipped.append(f"{person.email}:no_mail_form")
@@ -336,6 +438,7 @@ __all__ = [
     "EMAIL_SETTING",
     "IN_APP_SETTING",
     "Dispatched",
+    "Preferences",
     "Event",
     "Mail",
     "Rendered",

@@ -175,6 +175,24 @@ Phases 0 and 1 shipped 2026-09-19; **Phase 2 the same day**. Stories are
 | `notifications.digestFrequency` | 4 | Not started — needs the Phase 3 outbox |
 | Outbox, delivery log, retry | 3 | Not started |
 
+### The review
+
+An independent review of the dispatch seam and the table seam ran on
+2026-09-20 and returned **BLOCK**: two high, three medium, one low, all
+fixed. `docs/features/notifications/review.md` is the record and DISP-01 to
+TBL-03 are rows in `docs/platform/gap-defect-register.md`.
+
+Neither seam was wrong about what it decided; both were wrong about what
+they cost, and one of the table's two new controls did not visibly work.
+The dispatch point made about five database round trips per recipient on
+the request path, and a resized column could not be made narrower because
+the table's layout was `auto`. Both classes were invisible to every
+assertion either seam shipped with, because those all ask what was decided
+rather than what it cost or whether it took effect.
+
+That is four BLOCKs from four independent reviews here. The rate is not
+going down.
+
 ### What has no automated proof
 
 A notification arriving. The unit suite proves the seam decides correctly and

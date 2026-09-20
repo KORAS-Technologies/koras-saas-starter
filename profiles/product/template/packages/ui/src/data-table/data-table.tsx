@@ -249,11 +249,23 @@ export function KorasDataTable<T>({
   // server's declared order and the arrangement lands immediately after.
   const [arrangement, setArrangement] = useState<Arrangement | null>(null)
   useEffect(() => {
-    if (remembers && tableId) setArrangement(readArrangement(tableId))
+    if (!remembers || !tableId) return
+    const stored = readArrangement(tableId)
+    latest.current = stored
+    setArrangement(stored)
   }, [remembers, tableId])
+
+  // The same value as the state, kept where an event handler can read it
+  // without being a state updater. `setArrangement` used to carry the write
+  // inside its updater, which React may call more than once -- Strict Mode
+  // does so deliberately -- and an updater is required to be pure. The write
+  // is idempotent so nothing broke; the pattern breaks the next time something
+  // in one is not. TBL-03.
+  const latest = useRef<Arrangement | null>(null)
 
   const remember = useCallback(
     (next: Arrangement | null) => {
+      latest.current = next
       setArrangement(next)
       if (remembers && tableId) writeArrangement(tableId, next)
     },
@@ -290,7 +302,12 @@ export function KorasDataTable<T>({
       if (!active) return
       const width = clampWidth(active.startWidth + (event.clientX - active.startX))
       if (width === null) return
-      setArrangement((current) => ({ ...current, widths: { ...current?.widths, [active.key]: width } }))
+      const next = {
+        ...latest.current,
+        widths: { ...latest.current?.widths, [active.key]: width },
+      }
+      latest.current = next
+      setArrangement(next)
     },
     [],
   )
@@ -300,11 +317,9 @@ export function KorasDataTable<T>({
     drag.current = null
     // Written once, at the end of the gesture, rather than on every pointer
     // move: a drag across a wide table is hundreds of events and each one
-    // would be a synchronous write.
-    setArrangement((current) => {
-      if (remembers && tableId) writeArrangement(tableId, current)
-      return current
-    })
+    // would be a synchronous write. From the ref rather than from a state
+    // updater, which is TBL-03.
+    if (remembers && tableId) writeArrangement(tableId, latest.current)
   }, [remembers, tableId])
 
   const moveColumn = useCallback(
@@ -321,7 +336,13 @@ export function KorasDataTable<T>({
     [arranged, arrangement, remember],
   )
 
-  if (data.length === 0) {
+  // **Not while loading.** For a client-paged table an empty array means an
+  // empty list and this sentence is right. For a served one the first render
+  // has no rows because they have not arrived, so every server-paged table
+  // would open by saying there is nothing there and then contradicting itself
+  // — which is the worst sentence on the page to show wrongly, and the same
+  // argument the Restore page applies to an empty backup catalogue. TBL-02.
+  if (data.length === 0 && !loading) {
     return (
       <div className={cn('rounded-lg border border-line p-6 text-center', className)}>
         <p className="text-sm text-ink-muted" data-testid={`${testId}-empty`}>
@@ -334,11 +355,27 @@ export function KorasDataTable<T>({
 
   const cellPadding = density === 'compact' ? 'py-1.5 pr-4' : 'py-3 pr-4'
 
+  // **A width is only a width under fixed layout.** With `table-layout: auto`
+  // — the default, and what this used all of 2026-09-19 — a `width` on a cell
+  // is a hint the browser satisfies *after* content, so dragging a column
+  // wider worked and dragging it narrower did nothing, on exactly the columns
+  // anybody would want to narrow. TBL-01.
+  //
+  // Automatic layout stays the default, because it is the better one for a
+  // table nobody has arranged: it sizes columns to what is in them. The switch
+  // happens the moment somebody sets a width, and only then.
+  const arrangedWidths = Object.keys(widths).length > 0
+
   return (
     <div className={className} data-testid={testId} data-density={density}>
       {/* Its own scroller, so a wide table never widens the page. */}
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-left text-sm">
+        <table
+          className={cn(
+            'w-full border-collapse text-left text-sm',
+            arrangedWidths && 'table-fixed',
+          )}
+        >
           <caption className="sr-only">{caption}</caption>
           <thead
             className={cn(
@@ -363,6 +400,10 @@ export function KorasDataTable<T>({
                     'group relative font-semibold text-ink',
                     column.align === 'right' && 'text-right',
                     !widths[column.key] && column.width,
+                    // Clipped under fixed layout: content that no longer fits
+                    // must not be what decides the width, or narrowing is
+                    // undone by the first long cell.
+                    arrangedWidths && 'truncate',
                     column.hideBelow && HIDE_BELOW[column.hideBelow],
                   )}
                 >
@@ -427,6 +468,7 @@ export function KorasDataTable<T>({
                       // figures that does not line up is harder to read than
                       // one that is not aligned at all.
                       column.align === 'right' && 'text-right tabular-nums',
+                      arrangedWidths && 'truncate',
                       column.hideBelow && HIDE_BELOW[column.hideBelow],
                     )}
                   >

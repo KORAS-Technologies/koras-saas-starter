@@ -107,10 +107,10 @@ describe('the notification dispatch point', () => {
     // Turning one off must not turn the other off: each channel reads its own.
     const feed = seam.slice(seam.indexOf('async def _to_feed('), seam.indexOf('async def _to_mail('))
     const mail = seam.slice(seam.indexOf('async def _to_mail('), seam.indexOf('async def send('))
-    expect(feed).toContain('key=IN_APP_SETTING')
-    expect(feed).not.toContain('key=EMAIL_SETTING')
-    expect(mail).toContain('key=EMAIL_SETTING')
-    expect(mail).not.toContain('key=IN_APP_SETTING')
+    expect(feed).toContain('wants(IN_APP_SETTING,')
+    expect(feed).not.toContain('EMAIL_SETTING')
+    expect(mail).toContain('wants(EMAIL_SETTING,')
+    expect(mail).not.toContain('IN_APP_SETTING')
   })
 
   it('offers the email preference only at a level something can read', () => {
@@ -158,6 +158,44 @@ describe('the notification dispatch point', () => {
     expect(route).toContain('fallback_locale=resolve_locale(locale)')
   })
 
+  it('reads each scope once rather than once per person per channel', () => {
+    // DISP-01. `_enabled` was a function that read all three scopes on every
+    // call, and it is called once per person per channel: eleven reads each of
+    // the platform's defaults and the organisation's values for ten approvers,
+    // on the request path.
+    const seam = read('services/api/koras_api/core/dispatch.py')
+    expect(seam).toContain('class Preferences:')
+    // Nothing outside the reader touches the stores directly any more.
+    const outside = seam.slice(seam.indexOf('async def dispatch('))
+    expect(outside).not.toContain('await global_values(')
+    expect(outside).not.toContain('await tenant_values(')
+    expect(outside).not.toContain('await member_values(')
+    // And the resolver shares the reader's cache rather than keeping its own.
+    expect(seam).toContain('read_member=wants.member_values')
+    const audience = read('services/api/koras_api/core/recipients.py')
+    expect(audience).toContain('read_member: MemberReader | None = None')
+  })
+
+  it('fails open on the feed and closed on the mail', () => {
+    // DISP-03. A mail sent to somebody who switched mail off cannot be
+    // recalled; a mail withheld costs them nothing, because the feed row
+    // exists either way.
+    const seam = read('services/api/koras_api/core/dispatch.py')
+    expect(seam).toContain('wants(IN_APP_SETTING, person.subject, when_unknown=True)')
+    expect(seam).toContain('wants(EMAIL_SETTING, person.subject, when_unknown=False)')
+  })
+
+  it('renders once per language in both channels, not once per person', () => {
+    // DISP-02. The inbox half called the template per recipient, and the test
+    // that claimed otherwise used a case with no addresses in it.
+    const seam = read('services/api/koras_api/core/dispatch.py')
+    expect(seam).toContain('def _renderer(')
+    const mail = seam.slice(seam.indexOf('async def _to_mail('), seam.indexOf('async def send('))
+    expect(mail, 'the inbox half renders for itself').not.toContain('event.render(')
+    const feed = seam.slice(seam.indexOf('async def _to_feed('), seam.indexOf('async def _to_mail('))
+    expect(feed).not.toContain('event.render(')
+  })
+
   it('ships its own suite', () => {
     expect(has('tests/unit/test_dispatch.py')).toBe(true)
     const suite = read('tests/unit/test_dispatch.py')
@@ -167,5 +205,8 @@ describe('the notification dispatch point', () => {
     )
     expect(suite).toContain('test_one_persons_preference_does_not_silence_another')
     expect(suite).toContain('test_mail_is_returned_rather_than_sent')
+    // The cost, asserted as a count: the defect was invisible to every
+    // assertion about what was decided.
+    expect(suite).toContain('test_the_shared_scopes_are_read_once_however_many_recipients')
   })
 })

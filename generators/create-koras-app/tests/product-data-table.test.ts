@@ -176,7 +176,8 @@ describe('the table itself', () => {
     // the client does not agree with and React logs a hydration failure. The
     // Files page found this the hard way with time zones on 2026-09-17.
     expect(table).toContain('useEffect(() => {')
-    expect(table).toContain('if (remembers && tableId) setArrangement(readArrangement(tableId))')
+    expect(table).toContain('const stored = readArrangement(tableId)')
+    expect(table).toContain('setArrangement(stored)')
     const render = table.indexOf('const [arrangement, setArrangement] = useState<Arrangement | null>(null)')
     expect(render).toBeGreaterThan(-1)
     expect(table).not.toContain('useState(readArrangement(')
@@ -184,9 +185,38 @@ describe('the table itself', () => {
 
   it('writes once at the end of a resize, not on every pointer move', () => {
     const end = table.slice(table.indexOf('const onResizeEnd'), table.indexOf('const moveColumn'))
-    expect(end).toContain('writeArrangement(tableId, current)')
+    expect(end).toContain('writeArrangement(tableId, latest.current)')
     const move = table.slice(table.indexOf('const onResizeMove'), table.indexOf('const onResizeEnd'))
     expect(move).not.toContain('writeArrangement')
+  })
+
+  it('makes a stored width actually bind', () => {
+    // TBL-01. Under `table-layout: auto` -- the default, and what this used on
+    // the day the control was surfaced -- a width on a cell is a hint the
+    // browser satisfies after content. Dragging a column wider worked and
+    // dragging it narrower did nothing, on exactly the columns anybody would
+    // want to narrow.
+    expect(table).toContain('const arrangedWidths = Object.keys(widths).length > 0')
+    expect(table).toContain("arrangedWidths && 'table-fixed'")
+    // And cells clip, or the first long value forces the column open again.
+    expect(table).toContain("arrangedWidths && 'truncate'")
+  })
+
+  it('does not say the list is empty while it is still loading', () => {
+    // TBL-02. For a served table the first render has no rows because they
+    // have not arrived; saying "nothing here yet" and then contradicting it is
+    // the worst sentence on the page to show wrongly.
+    expect(table).toContain('if (data.length === 0 && !loading) {')
+  })
+
+  it('keeps its state updaters pure', () => {
+    // TBL-03. React may call an updater more than once -- Strict Mode does so
+    // deliberately -- so a write inside one can happen twice.
+    expect(table).toContain('const latest = useRef<Arrangement | null>(null)')
+    expect(table).toContain('if (remembers && tableId) writeArrangement(tableId, latest.current)')
+    expect(table, 'a write still happens inside a state updater').not.toMatch(
+      /setArrangement\(\(current\) => \{[\s\S]*?writeArrangement/,
+    )
   })
 
   it('will not move a column its caller fixed', () => {
