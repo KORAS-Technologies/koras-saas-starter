@@ -88,8 +88,13 @@ that names **each waived floor signal individually**, and no agent may do it.
 
 ## A mode changes cost, never standards
 
-FAST, STANDARD and FULL differ in planning depth, evidence depth and whether
-gate results may be reused across a code freeze. A mode cannot switch off a
+FAST, STANDARD and FULL differ in planning depth and in whether gate results
+may be reused across a code freeze. They do **not** differ in evidence: gates
+are selected by the conditions a change meets, and whether a *person* must
+satisfy one is decided by `documentation-policy.yaml`. A mode that could
+lower evidence would be a mode switching off a gate, which is forbidden two
+lines below — so the `evidence_depth` field that once implied otherwise was
+removed on 2026-09-20, after the first real FAST run showed nothing read it. A mode cannot switch off a
 gate whose condition is met, cannot waive independence, and cannot satisfy a
 human gate — all three are asserted. FULL adds one agent to STANDARD. It is
 not an instruction to run everything.
@@ -162,6 +167,14 @@ given a type, refuses any whose name looks like a credential even when typed,
 and never prints a value.
 
 ## Evidence is aimed, and appended
+
+Two questions, asked once each: `quality-gates.yaml` decides whether a gate
+*concerns* a change, and `documentation-policy.yaml` decides whether a
+*person* must satisfy it. Each names the other rather than answering both.
+Where automated verification observes exactly what a person would, the three
+human-evidence gates are NOT_APPLICABLE with the clause named — never PASS,
+and never BLOCKED, because "a person was not needed" and "a person was needed
+and unavailable" are different facts.
 
 Manual QA is required where a person can reach the surface, complete the
 sequence, or see the boundary — and is not softened anywhere else: every

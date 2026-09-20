@@ -114,11 +114,17 @@ feature_gates:
     applies: user_interface
     independent: true
     evidence: Per-case PASS/FAIL/BLOCKED against a real environment, with build and account context.
+    # WHETHER A PERSON MUST RUN IT is a second question, and not this file's.
+    # `applies` says the gate concerns this change; documentation-policy says
+    # whether automated verification already observes what a person would. A
+    # pointer rather than a copy, like `statuses_from` in lifecycle.yaml.
+    human_evidence_decided_by: .claude/orchestration/documentation-policy.yaml
     inputs: [frontend_code, backend_code, database_migration_or_policy]
   - id: screenshot_evidence_complete
     owner: test-documentation
     applies: user_interface
     evidence: Genuine screenshots from executed steps, at the canonical paths.
+    human_evidence_decided_by: .claude/orchestration/documentation-policy.yaml
     # A screenshot goes stale when the surface it shows changes, and only then.
     inputs: [frontend_code]
   - id: accessibility_pass
@@ -160,6 +166,7 @@ feature_gates:
     owner: qa-reviewer
     applies: user_interface
     independent: true
+    human_evidence_decided_by: .claude/orchestration/documentation-policy.yaml
     # The gate that DOES take manual_evidence, because auditing it is the job.
     inputs: [manual_evidence, frontend_code, backend_code]
   - id: documentation_complete

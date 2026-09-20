@@ -119,6 +119,19 @@ documentation:
   # look at, and requiring a pass anyway produces the worst possible
   # artefact: a document full of passes nobody really executed.
   manual_qa:
+    # The gates this clause governs. `quality-gates.yaml` decides whether each
+    # of them CONCERNS a change; this decides whether a PERSON has to satisfy
+    # it. Both halves are needed and they are different questions, so each
+    # file names the other rather than answering both.
+    #
+    # Named explicitly because the first real FAST run found the gap: a
+    # two-line CSS fix, fully covered by four existing browser assertions,
+    # selected a manual pass, a screenshot pack and an evidence audit, and
+    # nothing said which file decided. 2026-09-20.
+    governs_gates:
+      - manual_qa_pass
+      - screenshot_evidence_complete
+      - qa_evidence_audit
     required_when:
       - the change alters something a person sees, reads or operates
       - the change alters a sequence a person completes
@@ -127,6 +140,16 @@ documentation:
     not_required_when:
       - the change has no surface a person can reach
       - automated verification observes exactly what a person would, at the same level
+    # When a clause above holds, the three gates are NOT_APPLICABLE with the
+    # clause named -- never PASS, and never BLOCKED. BLOCKED would say a
+    # person was needed and unavailable, which is a different and worse fact
+    # than a person not being needed.
+    when_not_required_record: NOT_APPLICABLE, naming the clause
+    # The exemption is about who observes, never about how much time there is.
+    never_exempted_because:
+      - the change is small
+      - the schedule is tight
+      - a person is unavailable
     never:
       - A pass recorded for a case that was not executed.
       - A pass inferred from an automated result. An automated result is different evidence.

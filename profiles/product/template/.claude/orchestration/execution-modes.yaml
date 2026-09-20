@@ -13,8 +13,20 @@ schema_version: 1
 #      before anybody writes code;
 #   2. whether gate results may be reused across a product-code change
 #      (see gate-invalidation.yaml);
-#   3. the evidence depth expected of manual verification
-#      (see documentation-policy.yaml).
+#
+# What a mode does NOT change is evidence. There used to be an
+# `evidence_depth` field here -- minimal, standard, thorough -- and it was a
+# field that read as though it controlled something and could not: gates are
+# selected by the conditions a change meets, and the rule two lines below
+# forbids a mode from switching one off. A FAST change that alters a visible
+# surface still gets the user_interface gates, and the question of whether a
+# HUMAN must satisfy one is answered by documentation-policy.yaml, not here.
+#
+# It was removed on 2026-09-20, after the first real FAST run: a two-line CSS
+# fix selected eleven gates including a manual pass, `evidence_depth: minimal`
+# said otherwise, and nothing read it. A field nobody reads is worse than an
+# absent one, because it answers a question in the reader's head that the
+# framework has not actually answered.
 #
 # What a mode NEVER changes:
 #
@@ -45,7 +57,6 @@ modes:
       - final-acceptance
     planning: Impact analysis only. No separate requirements or architecture pass.
     gate_reuse: permitted
-    evidence_depth: minimal
     # FAST must be EARNED, not defaulted to. Every one of these must hold, and
     # the risk model refuses FAST if any signal at all is present.
     requires:
@@ -67,7 +78,6 @@ modes:
       - final-acceptance
     planning: Requirements and architecture pass before implementation.
     gate_reuse: permitted
-    evidence_depth: standard
 
   FULL:
     summary: A change at a boundary where being wrong is expensive or invisible.
@@ -90,7 +100,6 @@ modes:
     # judgement is made per gate by the invalidation matrix; in FULL the
     # matrix is not consulted for review and security gates -- they re-run.
     gate_reuse: restricted
-    evidence_depth: thorough
     rationale_must_name_boundary: true
 
 # FULL is not "run everything". The Orchestrator still selects the minimum

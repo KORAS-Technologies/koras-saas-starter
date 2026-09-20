@@ -160,7 +160,6 @@ interface ExecutionModes {
       always_consider: string[]
       planning: string
       gate_reuse: string
-      evidence_depth: string
       requires?: string[]
     }
   >
@@ -246,6 +245,7 @@ interface QualityGates {
     independent?: boolean
     inputs: string[]
     stage?: string
+    human_evidence_decided_by?: string
   }>
 }
 
@@ -259,10 +259,13 @@ interface DocumentationPolicy {
     timing: Record<'before_implementation' | 'during_implementation' | 'after_the_code_settles' | 'audited_once', string[]>
     evidence_runs: { path: string; run_id: string; each_run_records: string[]; rules: string[] }
     manual_qa: {
+      governs_gates: string[]
       required_when: string[]
       not_required_when: string[]
       never: string[]
       blocked_is_an_answer: string
+      when_not_required_record: string
+      never_exempted_because: string[]
     }
     screenshots: {
       capture_when_it_proves: string[]
@@ -2074,6 +2077,90 @@ describe('V2.1 is documented where the repository keeps its documentation', () =
     expect(feature).toMatch(/Nothing executes any of this/)
     expect(feature).toMatch(/gate-result record is specified, not written/i)
     expect(feature).toMatch(/koras orchestrate/)
+  })
+})
+
+describe('applicability and human evidence are two questions, each asked once', () => {
+  /**
+   * Found by the first real FAST run, on 2026-09-20. A two-line CSS fix in a
+   * product classified FAST -- correctly, no signal fired -- and then selected
+   * eleven gates including a manual QA pass, a screenshot pack and an
+   * evidence audit, for a change four existing browser assertions already
+   * covered exactly.
+   *
+   * Three files each had a defensible answer and together had none:
+   *
+   *   execution-modes      FAST.evidence_depth: minimal
+   *   quality-gates        manual_qa_pass.applies: user_interface  -> applies
+   *   documentation-policy not_required_when: automated verification
+   *                        observes exactly what a person would    -> not required
+   *
+   * `evidence_depth` was the worst of the three, because nothing read it. A
+   * mode may not switch a gate off -- that rule predates this -- so a field
+   * implying a mode controls evidence could never have been honoured.
+   */
+
+  const doc = docPolicy.documentation
+
+  it('lets no mode claim to decide evidence', () => {
+    // The field is gone. A mode changes planning depth and reuse; gates come
+    // from conditions, and whether a person must satisfy one comes from the
+    // documentation policy.
+    for (const [name, mode] of Object.entries(execModes.modes)) {
+      expect(
+        Object.keys(mode),
+        `${name} declares evidence_depth, which nothing reads and no mode may decide`,
+      ).not.toContain('evidence_depth')
+    }
+    const text = readFileSync(join(ORCHESTRATION, 'execution-modes.yaml'), 'utf8')
+    expect(text).not.toMatch(/^\s+evidence_depth:/m)
+  })
+
+  it('points every human-evidence gate at the file that decides', () => {
+    const governed = doc.manual_qa.governs_gates
+    expect(governed.length).toBeGreaterThan(0)
+    for (const id of governed) {
+      const gate = gates.feature_gates.find((g) => g.id === id)
+      expect(gate, `documentation-policy governs unknown gate ${id}`).toBeDefined()
+      expect(
+        gate?.human_evidence_decided_by,
+        `${id} does not say which file decides whether a person is needed`,
+      ).toContain('documentation-policy.yaml')
+    }
+  })
+
+  it('points back, so neither file answers the other half alone', () => {
+    // The pointer resolves in both directions: a gate that defers must be
+    // governed, and a governed gate must defer. One-way would let a gate
+    // quietly stop being covered.
+    const deferring = gates.feature_gates
+      .filter((g) => g.human_evidence_decided_by !== undefined)
+      .map((g) => g.id)
+    expect(deferring.sort()).toEqual([...doc.manual_qa.governs_gates].sort())
+  })
+
+  it('records an exemption as not-applicable, never as passed or blocked', () => {
+    // BLOCKED would say a person was needed and unavailable. That is a
+    // different and worse fact than a person not being needed, and the two
+    // must not be recorded the same way.
+    expect(doc.manual_qa.when_not_required_record).toMatch(/NOT_APPLICABLE/)
+    expect(Object.keys(gates.statuses)).toContain('NOT_APPLICABLE')
+  })
+
+  it('exempts on who observes, never on how much time there is', () => {
+    const never = doc.manual_qa.never_exempted_because.join(' ').toLowerCase()
+    expect(never).toMatch(/small/)
+    expect(never).toMatch(/schedule/)
+    expect(never).toMatch(/unavailable/)
+    // And the original no-softening rules still stand.
+    expect(doc.evidence_rules.automated_results_do_not_satisfy_manual_gate).toBe(true)
+    expect(doc.manual_qa.never.join(' ')).toMatch(/inferred from an automated result/i)
+  })
+
+  it('keeps the two clauses that can actually be evaluated', () => {
+    const clauses = doc.manual_qa.not_required_when.join(' ').toLowerCase()
+    expect(clauses).toMatch(/no surface a person can reach/)
+    expect(clauses).toMatch(/observes exactly what a person would/)
   })
 })
 
