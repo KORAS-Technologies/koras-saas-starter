@@ -320,6 +320,58 @@ agents:
     modifies_production_code: no
     capabilities: [accept]
 
+# WHETHER THE CATALOG IS ACTUALLY THERE, which is a different question from
+# whether it is correct.
+#
+# Everything else in this file is a claim about the repository, and the
+# orchestration test checks it against the files on disk. None of that says
+# anything about what the tool running the agents can currently SEE. During
+# G7 a long-lived session listed 25 of these 40; a fresh process listed all
+# 40, from the same commit, with no file changed. The catalog was never the
+# problem.
+#
+# That distinction matters because the tempting repair is the destructive
+# one. An agent that has gone missing looks exactly like an agent that is
+# filed wrongly, and the obvious fix -- flatten the category directories,
+# rename something, add a replacement agent -- changes a correct repository
+# to work around a runtime that has since recovered. The count below is
+# canonical and a discovery shortfall is never evidence against it.
+#
+# The framework does not control the runtime and does not pretend to. What it
+# can do is say when to look, what to look at, and what not to do about it.
+runtime_discovery:
+  # BEFORE A LIFECYCLE STARTS, not continuously and not exhaustively. The
+  # execution plan already names the agents the change needs; those are the
+  # ones whose absence would actually stop something.
+  check_before: starting a lifecycle
+  check_scope: the agents the published execution plan selects
+  # Deliberately not all forty. A forty-agent probe before a two-line fix is
+  # the same over-activation defect this framework exists to prevent, paid in
+  # startup instead of in review.
+  full_catalog_check_when:
+    - validating the framework itself
+    - a G7 or equivalent conformance run
+    - diagnosing a discovery shortfall
+  on_required_agent_missing:
+    # It is a fact about the tool, not about the repository, and classifying
+    # it correctly is most of the fix.
+    classify_as: SESSION_OR_TOOL_HEALTH
+    then:
+      - Stop before the gate that agent owns. Do not run past it.
+      - Restart Claude Code as a clean process.
+      - Re-check discovery for the agents the plan requires.
+      - Resume only if the evidence recorded so far is still coherent across the restart.
+      - If it is not, re-run the affected gates rather than carrying a record that spans two sessions unexplained.
+    record_as: >-
+      An event in the telemetry log, and a note in the execution plan. A
+      restart that nobody wrote down looks later like a gap in the evidence.
+    never:
+      - Substituting a different agent silently. A gate closed by the wrong owner is not that gate.
+      - Reorganising, flattening or renaming the agent directories to make discovery work.
+      - Adding a replacement or workaround agent. The canonical count is 40.
+      - Changing `agent_count` or `category_counts` to match what a session happened to list.
+      - Continuing past the affected gate and reconciling afterwards.
+
 agent_count: 40
 category_counts:
   orchestration: 1

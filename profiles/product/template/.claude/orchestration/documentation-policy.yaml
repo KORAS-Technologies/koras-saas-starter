@@ -112,6 +112,92 @@ documentation:
       - A summary document points at the latest valid run; it does not absorb or replace it.
       - Re-running something produces a new run directory, not an updated one.
 
+  # THE ONE ARTEFACT THAT ACTUALLY PROVES THE CHANGE.
+  #
+  # A feature produces a lot of evidence and most of it is corroborating: the
+  # suite still passes, the page still renders, the reviewer found nothing.
+  # Usually exactly one artefact is the proof -- the before-and-after that
+  # shows the reported defect happening and then not happening. For GR-250 it
+  # was a browser console with the warning in it, and then the same console
+  # without it, and the framework required none of that: not that it be
+  # captured, not that it be kept, and not that anybody but the author look
+  # at it. The strongest proof in the lifecycle was the least governed thing
+  # in it.
+  #
+  # So it is declared. One block, per feature, naming what will prove the
+  # change before the thing that proves it is run.
+  primary_evidence:
+    # Declared in the execution plan, BEFORE the validating action. Not
+    # after: evidence chosen once the result is known is a result with a
+    # label on it. Declaring it first is what makes the prediction falsifiable
+    # -- the author has to say what they expect to see while they can still
+    # be wrong about it.
+    declared: before the validating action, in the execution plan
+    required_when: the change is made in response to an observed defect, or its correctness is not visible in an automated result
+    fields:
+      - type                    # from `types` below
+      - producer                # the agent or person who captures it
+      - raw_evidence_location   # a path under evidence_runs, written once
+      - independent_verifier    # an agent that did not produce it
+      - claim_proved            # what this evidence establishes
+      - claim_not_proved        # what it does not, and what would be needed
+    types:
+      - test_output             # a suite, a case, a command and its result
+      - console_capture         # what a browser or a process actually printed
+      - log                     # a service log over the window that matters
+      - api_response            # the response itself, headers and status included
+      - screenshot              # a rendered state, where rendering is the claim
+      - generated_artifact      # a produced file, migration or build output
+      - other                   # anything else, described explicitly rather than left blank
+    # Raw capture goes in a run directory under `evidence_runs` above and
+    # obeys its rules: written once, never revised, a failed run retained.
+    # This block points at that policy rather than restating it -- a second
+    # retention rule is how the two come to disagree about whether a run may
+    # be edited.
+    retained_under: evidence_runs
+    # INDEPENDENT VERIFICATION IS NOT RE-EXECUTION. The verifier's question is
+    # "does this artefact support the claim made about it", and reading a
+    # retained capture answers that. Re-running the scenario answers a
+    # different and sometimes impossible question -- a race, a first-load
+    # warning or a one-off migration may not be reproducible on demand, and
+    # requiring reproduction would mean the least reproducible defects get
+    # the weakest evidence.
+    independent_verification:
+      required: true
+      # The one thing it may not be. Everything else is a matter of what the
+      # claim needs.
+      verifier_is_not_the_producer: true
+      satisfied_by:
+        - reviewing the retained raw capture against the claim
+        - re-running the scenario, where that is cheap and deterministic
+        - an independent observation of the same behaviour by other means
+      in_FAST: >-
+        Reviewing the retained capture is sufficient. FAST does not staff a
+        second execution of the scenario, and demanding one would make the
+        contract something a FAST change quietly skips instead of something
+        it does.
+    # BOTH HALVES, ALWAYS. A console with no warning in it proves the warning
+    # is not printed on that path, in that browser, on that load. It does not
+    # prove the component hydrates correctly, and a record that says only the
+    # first thing invites the second to be assumed. The field is not optional
+    # and "nothing" is not an answer to it.
+    both_claims_required: true
+    never:
+      - Declaring the evidence after the result is known.
+      - A primary evidence block whose verifier is its producer.
+      - "`claim_not_proved` left empty because nothing came to mind."
+      - Summarising a capture in place of retaining it. The summary is not the evidence.
+      - Treating the absence of an error as proof of a behaviour nobody observed.
+    # Deliberately NOT made universal. This does not require a screenshot, a
+    # manual pass, a browser run or an evidence audit for every change --
+    # those are decided by `manual_qa` below and by the conditions in
+    # quality-gates.yaml, and turning one declaration into four mandatory
+    # gates is exactly the over-activation the framework was rewritten to
+    # stop. A change whose correctness the automated suite already shows
+    # declares that suite's output as its primary evidence, and that is the
+    # whole of the obligation.
+    proportionality: One block per feature, naming one artefact. Not a new gate.
+
   # WHEN a manual pass is required, rather than for everything.
   #
   # Manual QA is not being reduced here; it is being aimed. A backend-only

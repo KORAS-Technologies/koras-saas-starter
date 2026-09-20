@@ -55,7 +55,7 @@ orchestration/
 9. **Close.** CI, the deployment and the environment check report for
    themselves. A feature that needs them is not closed until they have.
 
-## Five things this contract exists to prevent
+## Six things this contract exists to prevent
 
 - **Over-activation.** Running all 40 agents for a one-line change is a defect
   in orchestration. `activation-rules.yaml` is the answer to "which of these
@@ -79,6 +79,33 @@ orchestration/
 - **Fabricated evidence.** A PASS is the cheapest thing in the pipeline to
   produce. Manual QA executes against a real environment or reports BLOCKED;
   `qa-reviewer` audits that the evidence is real.
+- **A record written before the thing it records.** Nothing here was
+  fabricated when a run's final count was written ahead of the event it
+  counted — the plan was simply stored where the history goes, and by the
+  time the event happened the summary already said what it would be.
+  `telemetry.yaml` appends events as they occur, corrects them with
+  amendments rather than edits, and derives the summary afterwards. A metric
+  nobody watched is UNKNOWN; 0 is a measurement.
+
+## When the agents are not there
+
+`agent-registry.yaml` describes 40 agents and a test checks that description
+against the files on disk. Neither says anything about what the tool running
+them can currently see, and those came apart once: a long-lived session listed
+25 of the 40, a fresh process listed all 40 from the same commit, and no file
+had changed.
+
+The repair worth warning about is the destructive one. A missing agent looks
+exactly like a misfiled one, and flattening the category directories or adding
+a replacement changes a correct repository to work around a runtime that has
+since recovered.
+
+So: before a lifecycle starts, check that the agents *the plan selects* are
+discoverable — not all forty, which is the same over-activation defect paid at
+startup. If a required agent has gone missing, it is session health, not
+repository shape. Stop before that agent's gate, restart Claude Code, re-check,
+and resume only if the evidence so far still hangs together. `runtime_discovery`
+in `agent-registry.yaml` is the rule.
 
 ## Domain knowledge
 

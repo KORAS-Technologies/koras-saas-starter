@@ -76,8 +76,31 @@ and re-copied by `create-koras-app --refresh-modules`. Fix a skill there.
 | `.claude/skills/koras-*/` | The twelve common Koras skills |
 | `.claude/skills/koras-profile-product/` | This repository's profile skill |
 | `.claude/commands/` | `/feature`, `/review`, `/test`, `/ui-review` |
-| `.claude/agents/` | `architect`, `frontend`, `reviewer`, `tester` |
+| `.claude/agents/*.md` | `architect`, `frontend`, `reviewer`, `tester` — the four legacy agents the four legacy commands use. Not the agent catalogue |
+| `.claude/agents/<category>/` | The canonical catalogue: 40 agents in seven categories. See `.claude/AGENT-INVENTORY.md` |
+| `.claude/orchestration/` | The engineering contract — conditions, risk, modes, gates, budgets, lifecycle, telemetry |
+| `.claude/templates/feature/` | The feature documentation templates the policy maps to |
 | `.claude/external-skills.yaml` | Pinned external skills, locked in `.claude/external-skills.lock.json` |
+
+### Two sets of agents, and which one is current
+
+The canonical agent architecture is the **40 definitions under
+`.claude/agents/<category>/`** — 7 planning, 9 development, 10 testing,
+5 review, 2 documentation, 6 delivery, 1 orchestration. They are registered in
+`.claude/orchestration/agent-registry.yaml`, which is the authority on the
+count, and the orchestration contract routes to them by capability. Almost all
+of them stay dormant for any given feature; invoking all 40 is a defect in
+orchestration, not diligence.
+
+The **four files at the top of `.claude/agents/`** — `architect.md`,
+`frontend.md`, `reviewer.md`, `tester.md` — predate that architecture. They
+carry no agent frontmatter, so Claude Code does not register them as agents,
+and they are deliberately not part of the 40. They are retained because
+`/feature`, `/review`, `/test` and `/ui-review` still read them, and deleting
+them would break four working commands to tidy a directory listing. Treat them
+as guidance for those commands and as nothing else: they are not the catalogue,
+they are not a shorter version of it, and a count of this repository's agents
+is 40, not 44.
 
 ### Before implementing anything
 

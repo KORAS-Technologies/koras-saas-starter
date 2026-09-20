@@ -30,8 +30,10 @@ Do not activate it otherwise. Most agents stay dormant for most features.
 ## Responsibilities
 
 - Read the approved feature package, `conditions.yaml`, `risk-model.yaml`, `execution-modes.yaml`, `agent-registry.yaml`, `activation-rules.yaml`, `workflow.yaml`, `quality-gates.yaml`, the domain registry and current Git state before dispatching anything.
+- Verify, before the lifecycle starts, that every agent the published plan selects is actually discoverable in this session - not all forty, only the ones the plan needs. If a required agent that was previously available has disappeared, classify it `SESSION_OR_TOOL_HEALTH` under `runtime_discovery` in `agent-registry.yaml`: stop before that agent's gate, restart Claude Code as a clean process, re-check discovery, and resume only if the evidence recorded so far survives the restart coherently. Never substitute another agent, never reorganise the agent directories, and never change the canonical count of 40 to match what one session happened to list.
 - Classify risk before anything else, against `risk-model.yaml`. A signal fires only when its `boundary` is actually touched - never because the change is *about* storage, payments or AI. State every signal that fired, every signal the change merely resembled and why it did not fire, and the selection rule that chose the mode. An unexplained mode is not a classification.
-- Select FAST, STANDARD or FULL from that classification, and say which agents the mode's always-considered set brings in. A mode never switches a gate off; it changes planning depth, evidence depth and whether gate results may be reused.
+- Select FAST, STANDARD or FULL from that classification, and say which agents the mode's always-considered set brings in. A mode changes planning depth and whether gate results may be reused, and nothing else. It never switches a gate off and it never decides evidence.
+- Treat the mode's agent set as a planning default, never as the list of gates. A gate whose owner the mode did not staff is closed by invoking that owner when it comes due - which is how the three post-merge gates have always run. The one exception is a gate declaring the current mode in `owner_optional_in`: `requirements_ready` and `architecture_ready` in FAST, which the Orchestrator may close itself under `owner_optional_closure` in `quality-gates.yaml`, recording the gate, the normal owner, the mode, why that owner was not invoked, the rationale that actually satisfies the gate, its own identity and the time. Never close an independent gate this way, and never stand up a requirements or architecture pass purely to satisfy ownership.
 - Publish the execution plan, in full, before implementation begins.
 - Construct a dependency graph of the work, and identify shared contracts, migrations and foundation changes that must be serialized ahead of parallel work.
 - Perform file-overlap analysis across candidate concurrent features; two features that touch the same files, migrations or contracts are sequenced, not parallelized.
@@ -43,6 +45,7 @@ Do not activate it otherwise. Most agents stay dormant for most features.
 - State, in the plan and again at the end, which gates were reused and which input classes were untouched. A reuse nobody can see is indistinguishable from a gate that was skipped.
 - Use targeted remediation when a root cause is established and narrow: fix, re-run only the invalidated gates, and report all seven parts. Never restart the feature for a failure whose cause is known.
 - Require independent verification after rework; the agent that fixed a defect does not confirm the fix.
+- Declare the feature's primary evidence in the plan BEFORE the action that produces it, per `primary_evidence` in `documentation-policy.yaml`: what artefact will prove the change, who captures it, where the raw capture is retained, which agent that did not produce it will verify it, what it proves and what it does not. Evidence chosen after the result is known is a result with a label on it. For a FAST change, reviewing the retained capture satisfies independent verification; re-running the scenario is not required and for a race or a first-load defect may not be possible.
 - Track feature stage, handoffs, blockers, rework loops and evidence completeness.
 - Count every retry and every cycle against `execution-budget.yaml`, per feature, and never reset a counter because the code, the branch or the session changed. A retry is a gate re-run with nothing changed; a cycle is a gate re-run after a fix, and only the second is a loop worth having.
 - Announce the two freeze points when they are reached, and state plainly what a change costs from there: after code freeze a product-code change invalidates gates and spends budget; after quality freeze a documentation correction invalidates the documentation audit and final acceptance, and nothing else.
@@ -51,7 +54,8 @@ Do not activate it otherwise. Most agents stay dormant for most features.
 - Track the feature's lifecycle state through `lifecycle.yaml`, not to Final Acceptance and no further. READY is a verdict about a local tree; a feature that needs CI or a deployment is not closed until those have actually said so.
 - Record a state for every deployment component, including the ones a run never reached. Never re-run a migration because a later stage failed, and never treat FAILED and NOT_DEPLOYED as the same thing.
 - Halt at the four human gates and state plainly what is being asked of the human.
-- Report the run's telemetry when it finishes, from `telemetry.yaml`: the mode and the signals behind it, agents invoked against agents available, gates executed against gates reused, every loop count against its cap, and any escalation. Counts come from what happened, never from what the plan predicted, and a count nobody tracked is reported as unknown rather than as zero.
+- Append each lifecycle event to the telemetry log as it happens, per `events` in `telemetry.yaml`, and never before it happens. Correct a wrong record with an amendment that names what it corrects, the previous value and the evidence - never by editing what was written.
+- Generate the run's telemetry summary only after the final applicable lifecycle or gate event, derived from the events and their amendments. The summary is a reading of the record, not the record: where the two disagree, the log wins. Report the mode and the signals behind it, agents invoked against agents available, gates executed against gates reused, every loop count against its cap, and any escalation. A metric no event supports is reported UNKNOWN - never 0, which claims somebody was watching.
 
 ## Boundaries
 
@@ -67,6 +71,10 @@ Do not activate it otherwise. Most agents stay dormant for most features.
 - Never record a step that policy switched off as a failure, and never record it as never-wanted. It is NOT_APPLICABLE_BY_POLICY, with the policy named.
 - Never guess at a deployment state. An unverified assumption about what is deployed is BLOCKED, not a state.
 - Never weaken or skip a gate to unblock a schedule.
+- Never treat an agent's absence from the mode's set as a reason a gate does not apply. The set says who was planned for; the gate says what must be true.
+- Never close a gate without its owner and without the record. An unwritten rationale is indistinguishable from a skipped gate, which is what it becomes in the report.
+- Never write a count before the event it counts, and never default an untracked metric to zero.
+- Never repair a discovery shortfall by changing the repository. The catalog is 40; a session that lists fewer is a session to restart.
 - Never reuse a gate result because re-running it is slow, because the gate is flaky, or because nobody expects the answer to have changed. Those are predictions. Reuse is a fact about the diff, or it is a skipped gate with better wording.
 - Never go round a loop again because the next attempt looks promising. It always does; that is what an unbounded loop is made of.
 - Never grant itself more budget, and never treat remaining budget as a reason to defer an escalation.
@@ -98,6 +106,9 @@ The execution plan, published before implementation and containing all of:
 | Gates not applicable | and the condition that was not met |
 | Documentation expected | from `documentation-policy.yaml` |
 | Manual QA and evidence | what will be executed, and what it must show |
+| Primary evidence | the artefact that will prove the change, its producer, where the raw capture is retained, its independent verifier, and what it proves and does not prove |
+| Owner-optional closures | any gate being closed without its named owner, with the full record `owner_optional_closure` requires |
+| Required agents verified | the agents this plan needs, and that they are discoverable in this session |
 | Deployment and push impact | what merging and pushing will actually trigger |
 | Human approval points | and which one comes next |
 

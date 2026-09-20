@@ -67,10 +67,44 @@ interface Registry {
   }
   agents: RegistryAgent[]
   capability_vocabulary: string[]
+  runtime_discovery: {
+    check_before: string
+    check_scope: string
+    full_catalog_check_when: string[]
+    on_required_agent_missing: {
+      classify_as: string
+      then: string[]
+      record_as: string
+      never: string[]
+    }
+  }
 }
 
 interface Telemetry {
   schema_version: number
+  events: {
+    append_only: boolean
+    written_when: string
+    immutable_once_written: boolean
+    each_event_records: string[]
+    event_kinds: string[]
+    never: string[]
+  }
+  amendments: {
+    append_only: boolean
+    silent_rewrite_forbidden: boolean
+    each_amendment_records: string[]
+    never: string[]
+  }
+  derived_summary: {
+    derived_from: string[]
+    generated_after: string
+    is_source_of_truth: boolean
+    source_of_truth: string
+    regenerating_is_safe: boolean
+    never: string[]
+  }
+  unknown: { when: string; render_as: string; zero_requires: string; never: string[] }
   report: Record<string, string[]>
   rules: string[]
   worth_comparing: string[]
@@ -246,7 +280,15 @@ interface QualityGates {
     inputs: string[]
     stage?: string
     human_evidence_decided_by?: string
+    owner_optional_in?: string[]
   }>
+  owner_optional_closure: {
+    permitted_when: string[]
+    evidence_required: string[]
+    status: string
+    never: string[]
+  }
+  rules: string[]
 }
 
 interface DocumentationPolicy {
@@ -258,6 +300,22 @@ interface DocumentationPolicy {
     required_by_condition: Record<string, string[]>
     timing: Record<'before_implementation' | 'during_implementation' | 'after_the_code_settles' | 'audited_once', string[]>
     evidence_runs: { path: string; run_id: string; each_run_records: string[]; rules: string[] }
+    primary_evidence: {
+      declared: string
+      required_when: string
+      fields: string[]
+      types: string[]
+      retained_under: string
+      independent_verification: {
+        required: boolean
+        verifier_is_not_the_producer: boolean
+        satisfied_by: string[]
+        in_FAST: string
+      }
+      both_claims_required: boolean
+      never: string[]
+      proportionality: string
+    }
     manual_qa: {
       governs_gates: string[]
       required_when: string[]
@@ -2008,7 +2066,15 @@ describe('a run says what it did, and the Planner still cannot start anything', 
       'utf8',
     )
     expect(body).toMatch(/telemetry\.yaml/)
-    expect(body).toMatch(/unknown rather than as zero/)
+    // Was `unknown rather than as zero`. Same rule, and since G7 the token
+    // it must use is named: UNKNOWN, never 0, because 0 claims somebody was
+    // watching and saw nothing happen.
+    expect(body).toMatch(/UNKNOWN - never 0/)
+    // And the half G7 found missing: not merely honest counts, but counts
+    // that may not be written until the event they count has happened.
+    expect(body).toMatch(/never before it happens/)
+    expect(body).toMatch(/only after the final applicable lifecycle or gate event/)
+    expect(body).toMatch(/amendment/)
   })
 })
 
@@ -2510,5 +2576,399 @@ describe('every orchestration file parses', () => {
     for (const file of PRODUCT.fileList.filter((f) => f.startsWith('.claude/'))) {
       expect(PRODUCT.read(file), file).not.toMatch(/\{\{[a-zA-Z]/)
     }
+  })
+})
+
+/**
+ * G7 R1 remediation.
+ *
+ * Four separate things the first full lifecycle run found, and one piece of
+ * documentation it disproved. None of them was a wrong rule; all four were a
+ * rule the framework had not written down, which an agent then resolved by
+ * judgement -- correctly each time, and invisibly each time. A judgement
+ * nobody can see is indistinguishable from a skipped step, and the whole
+ * point of this package is that the two never look alike.
+ */
+describe('a gate whose owner the mode did not staff', () => {
+  const FAST = execModes.modes.FAST
+  const byId = (id: string) => gates.feature_gates.find((g) => g.id === id)!
+
+  it('is still a gate, in every mode', () => {
+    // The premise. If either of these stopped applying `always`, the
+    // owner-optional machinery below would be solving a problem that no
+    // longer exists -- and would be quietly excusing two real gates.
+    expect(byId('requirements_ready').applies).toBe('always')
+    expect(byId('architecture_ready').applies).toBe('always')
+    expect(FAST.always_consider).not.toContain('business-analyst')
+    expect(FAST.always_consider).not.toContain('solution-architect')
+  })
+
+  it('names the modes it may be closed without, rather than leaving it to judgement', () => {
+    expect(byId('requirements_ready').owner_optional_in).toEqual(['FAST'])
+    expect(byId('architecture_ready').owner_optional_in).toEqual(['FAST'])
+  })
+
+  it('allows it for nothing else, and never for an independent gate', () => {
+    const optional = gates.feature_gates.filter((g) => g.owner_optional_in)
+    expect(optional.map((g) => g.id).sort()).toEqual(['architecture_ready', 'requirements_ready'])
+    for (const gate of optional) {
+      expect(gate.independent, `${gate.id} is independent and may not be self-closed`).toBeFalsy()
+    }
+  })
+
+  it('names only real modes', () => {
+    const modes = Object.keys(execModes.modes)
+    for (const gate of gates.feature_gates) {
+      for (const mode of gate.owner_optional_in ?? []) expect(modes).toContain(mode)
+    }
+  })
+
+  it('demands more record than the closure it permits', () => {
+    // Every field the incident asked for. A closure missing any of them is
+    // the judgement call again, with a form around it.
+    expect(gates.owner_optional_closure.evidence_required).toEqual([
+      'gate',
+      'normal_owner',
+      'mode',
+      'owner_not_invoked_because',
+      'rationale',
+      'closed_by',
+      'recorded_at',
+    ])
+    // PASS, not NOT_APPLICABLE: the gate was satisfied, not skipped, and
+    // recording it as inapplicable would lose the rationale that satisfied
+    // it.
+    expect(gates.owner_optional_closure.status).toMatch(/PASS/)
+    expect(gates.owner_optional_closure.status).toMatch(/Never NOT_APPLICABLE/)
+  })
+
+  it('forbids the three ways this becomes a loophole', () => {
+    const never = gates.owner_optional_closure.never.join(' ')
+    expect(never).toMatch(/mode the gate does not list/)
+    expect(never).toMatch(/independent gate/)
+    expect(never).toMatch(/purely to satisfy ownership/)
+  })
+
+  it('keeps the general rule general: the mode trims who is asked, not what is true', () => {
+    const rules = gates.rules.join(' ')
+    expect(rules).toMatch(/never trims which gates must be satisfied/)
+    expect(rules).toMatch(/owner_optional_in/)
+    expect(execModes.never.join(' ')).toMatch(/may not excuse a gate because it did not staff/)
+  })
+
+  it('leaves every other always-gate owned by an agent somebody must invoke', () => {
+    // The consistency check. An `always` gate whose owner is outside every
+    // mode's set and which has no owner_optional_in is not a defect -- it is
+    // the default, and the three post-merge gates are it. What would be a
+    // defect is a gate nobody can tell which case it is in.
+    const staffed = new Set(Object.values(execModes.modes).flatMap((m) => m.always_consider))
+    const unstaffed = gates.feature_gates.filter(
+      (g) =>
+        g.applies === 'always' &&
+        !staffed.has(g.owner) &&
+        g.owner !== 'developer_pool' &&
+        !g.owner_optional_in,
+    )
+    expect(unstaffed.every((g) => g.stage === 'post_merge')).toBe(true)
+    expect(unstaffed.map((g) => g.owner).sort()).toEqual([
+      'devops-cicd',
+      'devops-cicd',
+      'observability-sre',
+    ])
+  })
+})
+
+describe('the one artefact that actually proves the change', () => {
+  const pe = docPolicy.documentation.primary_evidence
+  const gateById = (id: string) => gates.feature_gates.find((g) => g.id === id)!
+
+  it('is declared before the action that produces it', () => {
+    expect(pe.declared).toMatch(/before the validating action/)
+    expect(pe.never.join(' ')).toMatch(/after the result is known/)
+  })
+
+  it('carries every field a later reader needs to check it', () => {
+    expect(pe.fields).toEqual([
+      'type',
+      'producer',
+      'raw_evidence_location',
+      'independent_verifier',
+      'claim_proved',
+      'claim_not_proved',
+    ])
+  })
+
+  it('admits the kinds of proof a real change actually produces', () => {
+    for (const kind of [
+      'test_output',
+      'console_capture',
+      'log',
+      'api_response',
+      'screenshot',
+      'generated_artifact',
+      'other',
+    ]) {
+      expect(pe.types).toContain(kind)
+    }
+  })
+
+  it('retains the raw capture under the existing append-only policy, not a second one', () => {
+    // A parallel retention rule is how the two come to disagree about
+    // whether a run may be edited.
+    expect(pe.retained_under).toBe('evidence_runs')
+    expect(docPolicy.documentation.evidence_runs.rules.join(' ')).toMatch(/never edited/)
+  })
+
+  it('requires a verifier, and requires it not to be the producer', () => {
+    expect(pe.independent_verification.required).toBe(true)
+    expect(pe.independent_verification.verifier_is_not_the_producer).toBe(true)
+    expect(pe.never.join(' ')).toMatch(/verifier is its producer/)
+  })
+
+  it('does not make independent verification mean re-running the scenario', () => {
+    const satisfied = pe.independent_verification.satisfied_by.join(' ')
+    expect(satisfied).toMatch(/reviewing the retained raw capture/)
+    expect(pe.independent_verification.in_FAST).toMatch(/retained capture is sufficient/)
+  })
+
+  it('states what the evidence does not prove, and will not take silence for an answer', () => {
+    expect(pe.both_claims_required).toBe(true)
+    expect(pe.fields).toContain('claim_proved')
+    expect(pe.fields).toContain('claim_not_proved')
+    expect(pe.never.join(' ')).toMatch(/claim_not_proved` left empty/)
+  })
+
+  it('makes nothing else universally mandatory', () => {
+    // The failure mode of a good idea: one declaration becomes four gates.
+    // Manual QA, screenshots and the evidence audit stay governed by the
+    // condition that already decides them.
+    expect(pe.proportionality).toMatch(/Not a new gate/)
+    expect(gates.feature_gates.map((g) => g.id)).not.toContain('primary_evidence')
+    for (const id of ['manual_qa_pass', 'screenshot_evidence_complete', 'qa_evidence_audit']) {
+      expect(gateById(id).applies).toBe('user_interface')
+    }
+  })
+})
+
+describe('a count is written after the thing it counts', () => {
+  it('records events as they happen, and forbids writing one before it does', () => {
+    expect(telemetry.events.append_only).toBe(true)
+    expect(telemetry.events.immutable_once_written).toBe(true)
+    expect(telemetry.events.written_when).toMatch(/occurs, not when it is planned/)
+    expect(telemetry.events.never.join(' ')).toMatch(/before it happens/)
+  })
+
+  it('gives an event enough to be checked against something', () => {
+    expect(telemetry.events.each_event_records).toEqual([
+      'event',
+      'subject',
+      'outcome',
+      'at',
+      'source',
+    ])
+    // The owner-optional closure is a lifecycle event like any other, or it
+    // is a decision with no trace outside the plan that proposed it.
+    expect(telemetry.events.event_kinds).toContain('gate_closed_owner_optional')
+  })
+
+  it('corrects by appending, never by rewriting', () => {
+    expect(telemetry.amendments.append_only).toBe(true)
+    expect(telemetry.amendments.silent_rewrite_forbidden).toBe(true)
+    expect(telemetry.amendments.each_amendment_records).toEqual([
+      'at',
+      'amends',
+      'previous_value',
+      'corrected_value',
+      'reason',
+      'evidence',
+    ])
+    expect(telemetry.amendments.never.join(' ')).toMatch(/by editing it/)
+  })
+
+  it('derives the summary, after the last applicable event, from the log', () => {
+    expect(telemetry.derived_summary.derived_from).toEqual(['events', 'amendments'])
+    expect(telemetry.derived_summary.generated_after).toMatch(
+      /final applicable lifecycle or gate event/,
+    )
+    expect(telemetry.derived_summary.never.join(' ')).toMatch(/still outstanding/)
+  })
+
+  it('keeps the summary from becoming the record it summarises', () => {
+    expect(telemetry.derived_summary.is_source_of_truth).toBe(false)
+    expect(telemetry.derived_summary.source_of_truth).toBe('the event log')
+  })
+
+  it('says UNKNOWN when nobody was watching, and reserves zero for a measurement', () => {
+    expect(telemetry.unknown.render_as).toBe('UNKNOWN')
+    expect(telemetry.unknown.zero_requires).toMatch(/event record/)
+    const never = telemetry.unknown.never.join(' ')
+    expect(never).toMatch(/Defaulting an untracked metric to 0/)
+    // An absent row reads as nothing to report, which is the same lie told
+    // more quietly.
+    expect(never).toMatch(/Omitting a metric that is UNKNOWN/)
+    expect(telemetry.rules.join(' ')).toMatch(/reported as unknown, not as zero/)
+  })
+})
+
+describe('when an agent that was there is not there', () => {
+  const rd = registry.runtime_discovery
+
+  it('is checked before a lifecycle, against the plan rather than the catalog', () => {
+    expect(rd.check_before).toMatch(/starting a lifecycle/)
+    expect(rd.check_scope).toMatch(/execution plan selects/)
+  })
+
+  it('reserves the full forty-agent sweep for validating the framework itself', () => {
+    expect(rd.full_catalog_check_when.join(' ')).toMatch(/validating the framework itself/)
+    expect(rd.full_catalog_check_when.join(' ')).toMatch(/G7/)
+  })
+
+  it('classifies it as session health, not as repository shape', () => {
+    expect(rd.on_required_agent_missing.classify_as).toBe('SESSION_OR_TOOL_HEALTH')
+    const then = rd.on_required_agent_missing.then.join(' ')
+    expect(then).toMatch(/Stop before the gate/)
+    expect(then).toMatch(/Restart Claude Code/)
+    expect(then).toMatch(/Re-check discovery/)
+    expect(then).toMatch(/Resume only if the evidence/)
+  })
+
+  it('forbids every repair that changes a correct repository', () => {
+    // The fresh-process experiment: 25 of 40 in a long-lived session, 40 of
+    // 40 in a clean one, same commit, no file changed. Flattening the
+    // categories would have "fixed" it and broken the catalog.
+    const never = rd.on_required_agent_missing.never.join(' ')
+    expect(never).toMatch(/Substituting a different agent silently/)
+    expect(never).toMatch(/flattening or renaming the agent directories/i)
+    expect(never).toMatch(/Adding a replacement or workaround agent/)
+    expect(never).toMatch(/Changing `agent_count`/)
+  })
+
+  it('leaves the canonical count exactly where it was', () => {
+    // Pinned to the literal, not to the file's own self-description: the
+    // existing count test compares the registry with itself and would follow
+    // a wrong number down.
+    expect(registry.agent_count).toBe(40)
+    expect(registry.agents).toHaveLength(40)
+    expect(registry.category_counts).toEqual({
+      planning: 7,
+      development: 9,
+      testing: 10,
+      review: 5,
+      documentation: 2,
+      delivery: 6,
+      orchestration: 1,
+    })
+  })
+
+  it('keeps the nested category layout that a discovery shortfall invites flattening', () => {
+    for (const agent of registry.agents) {
+      expect(agent.definition).toBe(`.claude/agents/${agent.category}/${agent.id}.md`)
+      expect(existsSync(join(PRODUCT_TEMPLATE, agent.definition))).toBe(true)
+    }
+    const nested = readdirSync(join(PRODUCT_TEMPLATE, '.claude/agents'), { withFileTypes: true })
+    expect(
+      nested
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name)
+        .sort(),
+    ).toEqual([
+      'delivery',
+      'development',
+      'documentation',
+      'orchestration',
+      'planning',
+      'review',
+      'testing',
+    ])
+  })
+})
+
+describe('the four legacy files are legacy, and say so', () => {
+  const LEGACY = ['architect', 'frontend', 'reviewer', 'tester']
+
+  it('are not registered agents, and never silently become forty-four', () => {
+    for (const id of LEGACY) expect(AGENT_IDS).not.toContain(id)
+    expect(AGENT_IDS).toHaveLength(40)
+  })
+
+  it('carry no frontmatter, which is what keeps them unregistered', () => {
+    // The mechanism, asserted rather than assumed. Adding frontmatter to any
+    // of these would register a forty-first agent that no registry, gate or
+    // activation rule knows about, and nothing else here would notice.
+    for (const id of LEGACY) {
+      for (const gen of [PRODUCT, CONTROL_PLANE]) {
+        expect(gen.read(`.claude/agents/${id}.md`).startsWith('---')).toBe(false)
+      }
+    }
+  })
+
+  it('keep the four legacy commands working', () => {
+    for (const command of ['feature', 'review', 'test', 'ui-review']) {
+      expect(PRODUCT.has(`.claude/commands/${command}.md`)).toBe(true)
+      expect(CONTROL_PLANE.has(`.claude/commands/${command}.md`)).toBe(true)
+    }
+  })
+
+  it('are no longer documented as the product agent catalog', () => {
+    // The actual G7 finding. A product's CLAUDE.md listed `.claude/agents/`
+    // as these four and mentioned the forty nowhere, so a reader of the
+    // generated repository concluded its catalog was four.
+    const claude = PRODUCT.read('CLAUDE.md')
+    expect(claude).toMatch(/40 agents in seven categories/)
+    expect(claude).toMatch(/\.claude\/orchestration\//)
+    expect(claude).toMatch(/legacy/i)
+    expect(claude).toMatch(/not the catalogue/i)
+    expect(claude).toMatch(/is 40, not 44/)
+  })
+
+  it('is fixed in the generator source rather than only in what it produced', () => {
+    const template = readFileSync(
+      join(STARTER_ROOT, 'profiles/product/template/CLAUDE.md.hbs'),
+      'utf8',
+    )
+    expect(template).toMatch(/40 agents in seven categories/)
+    const starter = readFileSync(join(STARTER_ROOT, 'CLAUDE.md'), 'utf8')
+    expect(starter).toMatch(/40 agents rather than 44/)
+  })
+})
+
+describe('the G7 corrections reach a product and stop at the Control Plane', () => {
+  it('ships every corrected contract to a generated product', () => {
+    const product = (p: string) => PRODUCT.read(p)
+    expect(product('.claude/orchestration/quality-gates.yaml')).toContain('owner_optional_closure')
+    expect(product('.claude/orchestration/execution-modes.yaml')).toContain('owner_optional_closure')
+    expect(product('.claude/orchestration/documentation-policy.yaml')).toContain('primary_evidence')
+    expect(product('.claude/orchestration/telemetry.yaml')).toContain('derived_summary')
+    expect(product('.claude/orchestration/agent-registry.yaml')).toContain('runtime_discovery')
+    const orchestrator = product('.claude/agents/orchestration/engineering-orchestrator.md')
+    expect(orchestrator).toContain('owner_optional_closure')
+    expect(orchestrator).toContain('primary_evidence')
+    expect(orchestrator).toContain('SESSION_OR_TOOL_HEALTH')
+    expect(orchestrator).toContain('UNKNOWN')
+  })
+
+  it('stops the stale claim that a mode decides evidence', () => {
+    // `evidence_depth` was removed from execution-modes.yaml on 2026-09-20
+    // and the Orchestrator went on telling agents a mode changes it.
+    const orchestrator = PRODUCT.read('.claude/agents/orchestration/engineering-orchestrator.md')
+    expect(orchestrator).not.toMatch(/changes planning depth, evidence depth/)
+    expect(orchestrator).toMatch(/It never switches a gate off and it never decides evidence/)
+  })
+
+  it('gives the Control Plane none of it', () => {
+    for (const path of [
+      '.claude/orchestration/quality-gates.yaml',
+      '.claude/orchestration/telemetry.yaml',
+      '.claude/orchestration/agent-registry.yaml',
+      '.claude/orchestration/documentation-policy.yaml',
+      '.claude/agents/orchestration/engineering-orchestrator.md',
+    ]) {
+      expect(CONTROL_PLANE.has(path), `${path} reached the Control Plane`).toBe(false)
+    }
+    // The four legacy agents are shared configuration and stay shared.
+    for (const id of ['architect', 'frontend', 'reviewer', 'tester']) {
+      expect(CONTROL_PLANE.has(`.claude/agents/${id}.md`)).toBe(true)
+    }
+    expect(CONTROL_PLANE.read('CLAUDE.md')).not.toContain('owner_optional_closure')
   })
 })

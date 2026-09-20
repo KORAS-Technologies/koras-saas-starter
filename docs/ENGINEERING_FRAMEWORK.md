@@ -99,6 +99,21 @@ gate whose condition is met, cannot waive independence, and cannot satisfy a
 human gate — all three are asserted. FULL adds one agent to STANDARD. It is
 not an instruction to run everything.
 
+An agent set is also not a gate list. `always_consider` is a *planning*
+default; it says who is staffed before anyone knows what the change touched.
+`devops-cicd` and `observability-sre` are in no mode's set and their three
+post-merge gates run for every feature, which is the general rule: a gate
+whose owner the mode did not plan for invokes that owner when it comes due.
+The single exception is `owner_optional_in`, declared per gate, on
+`requirements_ready` and `architecture_ready` in FAST only. There the
+Orchestrator may close the gate itself under `owner_optional_closure` —
+recording the gate, the normal owner, the mode, why that owner was not
+invoked, the rationale that satisfies the gate, its own identity and the
+time. It is on no independent gate and never will be, and standing up a
+requirements pass purely to satisfy ownership is the cost the mode exists to
+avoid, paid anyway. G7 R1 resolved both gates correctly by judgement and left
+no record; the record is the change.
+
 ## Gate reuse
 
 Each gate declares the change classes its result depends on. A gate is
@@ -176,6 +191,17 @@ human-evidence gates are NOT_APPLICABLE with the clause named — never PASS,
 and never BLOCKED, because "a person was not needed" and "a person was needed
 and unavailable" are different facts.
 
+One artefact usually does the proving, and it used to be the least governed
+thing in the lifecycle. `primary_evidence` names it in the execution plan
+**before** the validating action runs: its type, its producer, where the raw
+capture is retained under `evidence_runs`, the agent that did not produce it
+who will verify it, and both what it proves and what it does not. Independent
+verification is not re-execution — reading the retained capture answers the
+verifier's question, and in FAST that is explicitly enough, because a race or
+a first-load warning may not reproduce on demand and the least reproducible
+defects should not get the weakest evidence. It adds no gate: a change whose
+correctness the suite already shows declares that output and is done.
+
 Manual QA is required where a person can reach the surface, complete the
 sequence, or see the boundary — and is not softened anywhere else: every
 verdict rule, the no-fabrication rules and PASS/FAIL/BLOCKED all survive
@@ -197,13 +223,44 @@ The exception: a floor-signal story touching a surface a sibling also touches
 runs its cross-story check immediately, because deferring a tenancy seam
 means building on it first.
 
-## What it reports
+## What it reports, and when it may say it
 
 At the end of a run: the mode and the signals behind it, agents invoked
 against agents available, gates executed against gates reused, every loop
 count against its cap, the lifecycle state reached, and any escalation.
 Engineering telemetry only — no customer data, nothing transmitted, nothing
 stored outside the repository.
+
+The rules always forbade inventing a number; they did not say when one may be
+written down, and that was the same defect wearing a different hat. In G7 R1 a
+final count was recorded before the event it counted had happened — nothing
+fabricated, just the plan stored where the history goes. So the report is
+derived rather than kept. Events are appended as they occur and are immutable;
+a correction is an **amendment** naming what it corrects, the previous value,
+the reason and the evidence, never an edit; and the summary is generated after
+the last applicable lifecycle or gate event, from events plus amendments.
+Where the summary and the log disagree the log wins, because the summary is a
+reading of the record rather than the record. A metric no event supports is
+**UNKNOWN** — not 0, which claims somebody was watching.
+
+## When the agents are not there
+
+`agent-registry.yaml` describes 40 agents and the test checks that description
+against the files on disk. Neither says what the tool sees in any one
+session, and
+those came apart during G7: one long-lived session listed 25 of the 40, a
+fresh process listed all 40 from the same commit, and no file had changed.
+
+The dangerous repair is the obvious one — a missing agent looks exactly like a
+misfiled one, and flattening the categories or adding a replacement changes a
+correct repository to work around a runtime that has since recovered. So
+`runtime_discovery` says: before a lifecycle, check that the agents *the plan
+selects* are discoverable, not all forty, which would be over-activation paid
+at startup. A full sweep is for validating the framework itself. A required
+agent that has vanished is `SESSION_OR_TOOL_HEALTH`: stop before its gate,
+restart Claude Code, re-check, and resume only if the evidence so far survives
+the restart. Never substitute silently, never reorganise the directories, and
+never move the canonical count off 40.
 
 ## What it deliberately is not
 

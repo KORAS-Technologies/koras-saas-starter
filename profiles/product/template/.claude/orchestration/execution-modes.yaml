@@ -34,6 +34,23 @@ schema_version: 1
 #     in `quality-gates.yaml`, and a mode cannot switch a gate off. FAST is
 #     not permission to skip a security review; it is the statement that no
 #     condition requiring one was met.
+#
+# AN AGENT SET IS NOT A GATE LIST. `always_consider` is a PLANNING default:
+# it says which agents are staffed up front, before anybody knows what the
+# change turned out to touch. It does not say which gates apply, and an agent
+# missing from it is not an agent that may not be invoked -- `devops-cicd`
+# and `observability-sre` appear in no mode's set at all, and their three
+# post-merge gates run for every feature in every mode. The general rule is
+# that a gate whose owner the mode did not plan for still invokes that owner
+# when the gate comes due.
+#
+# The one narrow exception is `owner_optional_closure` in `quality-gates.yaml`,
+# which lets the Orchestrator close `requirements_ready` and
+# `architecture_ready` in FAST on a written record rather than by standing up
+# a requirements pass a one-package change has already answered. It is
+# declared per gate, it is on no independent gate, and the record it demands
+# is longer than the closure it permits -- deliberately, because the rationale
+# IS the gate.
 #   - independence. An implementation agent never closes its own gate, in any
 #     mode.
 #   - the four human gates.
@@ -55,7 +72,11 @@ modes:
       - unit-test
       - code-reviewer
       - final-acceptance
-    planning: Impact analysis only. No separate requirements or architecture pass.
+    planning: >-
+      Impact analysis only. No separate requirements or architecture pass -
+      so `requirements_ready` and `architecture_ready`, which still apply,
+      are closed by the Orchestrator under `owner_optional_closure` in
+      quality-gates.yaml, with the rationale recorded in the plan.
     gate_reuse: permitted
     # FAST must be EARNED, not defaulted to. Every one of these must hold, and
     # the risk model refuses FAST if any signal at all is present.
@@ -108,6 +129,7 @@ modes:
 # agents is the same defect as a FAST one that does.
 never:
   - A mode may not switch off a gate whose condition is met.
+  - A mode may not excuse a gate because it did not staff that gate's owner. It invokes the owner, or it closes the gate under `owner_optional_closure` and writes the record.
   - A mode may not waive independence.
   - A mode may not satisfy a human gate.
   - A mode may not be chosen to fit a schedule.

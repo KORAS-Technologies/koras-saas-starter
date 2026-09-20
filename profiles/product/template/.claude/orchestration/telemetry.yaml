@@ -18,6 +18,106 @@ schema_version: 1
 # more is an observability platform for a process that runs a few times a
 # week.
 
+# HOW A COUNT COMES TO EXIST, which V2.1 did not say.
+#
+# The rules below already forbade inventing a number. They did not say when a
+# number may be written down, and that turned out to be the same defect wearing
+# a different hat: in G7 R1 a final count was written BEFORE the event it
+# counted had happened. Nothing was fabricated -- the plan was simply recorded
+# as though it were the history, and by the time the event occurred the summary
+# already said what it would be. A summary written ahead of the thing it
+# summarises is a prediction, and a prediction stored in the place a fact goes
+# is worse than no fact at all.
+#
+# So the report is derived rather than kept. Three pieces:
+#
+#   events      what happened, appended as it happened, never edited
+#   amendments  a correction, appended, naming what it corrects
+#   summary     computed from the two, after the last applicable event
+#
+# The same shape as `evidence_runs` in documentation-policy.yaml, and for the
+# same reason: the only thing a record is for is the ability to check later
+# what actually happened, and a record that can be revised cannot do that.
+
+# APPEND-ONLY. An event is written when the thing occurs, and it is immutable
+# once written. Not when the thing is planned, not when it is expected to
+# finish, and not in a batch at the end from memory.
+events:
+  append_only: true
+  written_when: the event occurs, not when it is planned and not when the run ends
+  immutable_once_written: true
+  each_event_records:
+    - event            # what happened, from `event_kinds`
+    - subject          # the gate, agent, loop, state or component it concerns
+    - outcome          # the status, count or verdict, where the event carries one
+    - at               # timestamp
+    - source           # what observed it, so a reader can go and look
+  event_kinds:
+    - mode_selected
+    - agent_invoked
+    - gate_executed
+    - gate_reused
+    - gate_invalidated
+    - gate_closed_owner_optional   # the closure record in quality-gates.yaml
+    - loop_iteration
+    - budget_cap_reached
+    - escalation_raised
+    - human_gate_reached
+    - lifecycle_state_reached
+    - deployment_component_state
+  never:
+    - Writing an event before it happens.
+    - Editing an event after it is written. A correction is an amendment.
+    - Reconstructing the log at the end of a run from what the plan said.
+    - Deleting an event because the thing it records was later undone. It still happened.
+
+# A CORRECTION IS A NEW RECORD. The wrong value stays visible, because the
+# fact that it was once recorded wrongly is itself worth knowing -- it is how
+# a reader learns which numbers in this framework are shaky.
+amendments:
+  append_only: true
+  silent_rewrite_forbidden: true
+  each_amendment_records:
+    - at                # when the correction was made
+    - amends            # the event, or the field of it, being corrected
+    - previous_value    # what was recorded before
+    - corrected_value   # what it should have said
+    - reason            # why it was wrong
+    - evidence          # what establishes the corrected value
+  never:
+    - Amending an event by editing it.
+    - An amendment with no evidence. That is a second guess, not a correction.
+    - Amending the summary. The summary is derived; amend the event it came from.
+
+# DERIVED, AND LAST. The summary is a view over events plus amendments, and it
+# is generated after the final applicable lifecycle or gate event -- CLOSED for
+# a feature that reaches it, or the escalation for one that stops. It is not
+# the historical source of truth and nothing reads it as one: a disagreement
+# between the summary and the log is resolved in favour of the log, every time.
+derived_summary:
+  derived_from: [events, amendments]
+  generated_after: the final applicable lifecycle or gate event for the run
+  is_source_of_truth: false
+  source_of_truth: the event log
+  regenerating_is_safe: true
+  never:
+    - Generating it while an applicable event is still outstanding.
+    - Recording a value in it that no event supports.
+    - Treating it as the record. It is a reading of the record.
+
+# UNKNOWN IS A VALUE. Zero is a measurement and means the thing was watched
+# for and did not happen; UNKNOWN means nobody watched. Reporting the second
+# as the first is the quietest way this report can lie, because zero is also
+# the answer everybody hopes for.
+unknown:
+  when: no event supports a value for the metric
+  render_as: UNKNOWN
+  zero_requires: an event record from which zero actually follows
+  never:
+    - Defaulting an untracked metric to 0.
+    - Inferring a count from the plan when no event recorded it.
+    - Omitting a metric that is UNKNOWN. An absent row reads as nothing to report.
+
 report:
   routing:
     - execution_mode
@@ -58,6 +158,9 @@ rules:
   - No customer data, no personal data, no secret, and no configuration value.
   - Nothing is collected, transmitted or stored outside the repository.
   - A count that was not tracked is reported as unknown, not as zero. Zero is a measurement.
+  - Every count in the report is derived from the event log. A number with no event behind it is UNKNOWN.
+  - An event is appended when it happens. The final summary is generated after the last applicable event, never before.
+  - A correction is an amendment that names what it corrects and why. Nothing recorded is ever rewritten in place.
 
 # The comparison worth making, once there are several runs to compare. Not
 # automated here -- that is a later step, and automating a comparison before

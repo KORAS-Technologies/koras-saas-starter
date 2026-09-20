@@ -71,6 +71,12 @@ feature_gates:
   - id: requirements_ready
     owner: business-analyst
     applies: always
+    # The gate applies in every mode. FAST does not staff a separate
+    # requirements pass, so in FAST the Orchestrator may close this one
+    # itself under `owner_optional_closure` below - with the rationale
+    # written down. See the note on that block: a mode trims who is
+    # ASKED, never what must be TRUE.
+    owner_optional_in: [FAST]
     inputs: [feature_scope]
   - id: impact_analyzed
     owner: impact-analysis
@@ -82,6 +88,11 @@ feature_gates:
   - id: architecture_ready
     owner: solution-architect
     applies: always
+    # As requirements_ready. A change that stays inside one package, adds no
+    # dependency and alters no stored schema has already answered the
+    # architecture question by being that change, and FAST is exactly the
+    # set of changes for which that is true.
+    owner_optional_in: [FAST]
     inputs: [feature_scope, database_migration_or_policy, dependency]
   - id: implementation_complete
     owner: developer_pool
@@ -252,6 +263,61 @@ feature_gates:
       - database_migration_or_policy
       - deployment_config
 
+# CLOSING A GATE WHOSE NAMED OWNER WAS NOT STAFFED.
+#
+# `execution-modes.yaml` trims the always-considered AGENT SET. It has never
+# been allowed to switch a gate off, and it still is not. But the two facts
+# met in the first real FAST run and nothing said what happens: FAST staffs
+# neither `business-analyst` nor `solution-architect`, and `requirements_ready`
+# and `architecture_ready` both apply `always`. The Orchestrator resolved both
+# by judgement, correctly, and left no record that could be argued with. A
+# judgement nobody can see is indistinguishable from a skipped gate.
+#
+# So the rule is written down instead. Gate applicability and named-agent
+# invocation are two different things:
+#
+#   applicability  the gate's question must be answered -> `applies`
+#   invocation     who is asked to answer it            -> `owner`
+#
+# A gate whose owner is not in the mode's set is NOT thereby excused. The
+# default, for every gate in this file, is that the owner is invoked when the
+# gate comes due even though the mode did not plan for it -- which is how the
+# three post_merge gates have always worked, since `devops-cicd` and
+# `observability-sre` are in no mode's always-considered set and their gates
+# run regardless.
+#
+# `owner_optional_in` is the narrow exception to that default, and it is
+# declared per gate rather than inferred. It says: in these modes, the
+# Orchestrator may close this gate on the record instead of invoking the
+# owner. It is only on the two lightweight PLANNING gates, because those are
+# the only two whose question a FAST change has already answered by being a
+# FAST change. It is on no review gate, no security gate, no evidence gate and
+# no independent gate, and it never will be.
+owner_optional_closure:
+  permitted_when:
+    - The gate declares the current execution mode in `owner_optional_in`.
+    - The gate is not marked `independent`.
+    - Every field in `evidence_required` below is recorded.
+  # Recorded in the execution plan when the plan is published, and again in
+  # final acceptance. Not at the end: a rationale written after the gate was
+  # needed is a justification, and the point of writing it first is that the
+  # Orchestrator has to notice it is making the claim.
+  evidence_required:
+    - gate                      # the gate being closed this way
+    - normal_owner              # the agent named in `owner`
+    - mode                      # the execution mode that permits it
+    - owner_not_invoked_because # why the mode did not staff that agent
+    - rationale                 # what actually satisfies the gate's question
+    - closed_by                 # the orchestrator identity closing it
+    - recorded_at               # timestamp, or the lifecycle event reference
+  status: PASS, with the closure record attached. Never NOT_APPLICABLE.
+  never:
+    - Closing a gate this way in a mode the gate does not list.
+    - Closing an independent gate this way, in any mode.
+    - Invoking `business-analyst` or `solution-architect` purely to satisfy ownership. That is the cost the mode exists to avoid, paid anyway.
+    - Recording the closure without the rationale. The rationale is the gate.
+    - Treating a closure record as reusable. It is evidence about one change.
+
 rules:
   - An implementation agent never closes a gate marked independent for its own work.
   - A CRITICAL or HIGH finding blocks its gate until fixed and independently reverified.
@@ -261,3 +327,6 @@ rules:
   - Final Acceptance requires every applicable pre_acceptance gate, and never waits on a post_merge one.
   - A post_merge gate is never satisfied by local evidence, however identical the command was.
   - A gate result is reused only under gate-invalidation.yaml. Reuse is a claim about inputs, never about elapsed time or about how thorough the last run felt.
+  - A mode trims which agents are planned for. It never trims which gates must be satisfied.
+  - A gate whose owner the mode did not staff is closed by invoking that owner, unless the gate declares the mode in `owner_optional_in`.
+  - An owner-optional closure carries every field in `owner_optional_closure.evidence_required`, or the gate is incomplete rather than passed.
