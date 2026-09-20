@@ -528,13 +528,28 @@ finding worth the check is a price in the monthly column that recurs yearly —
 both sides present, both looking right, the customer billed on a cycle nobody
 chose, and nothing else in the estate able to notice.
 
-**Phase 2a is blocked, and on a decision rather than on engineering.** The plan
-has a provisioner read the Koras catalogue and create the prices it names.
-There is no such catalogue: `public.plans` holds two price *references* and no
-amount, no currency and no interval, because `00028_billing.sql` decided that
-"what it costs lives with the provider". A provisioner would have to invent the
-amount it creates a price with. Unblocking it means deciding the platform holds
-a price of its own, which reverses that decision.
+**Phase 2a was answered on 2026-09-20, and the answer was neither option.**
+The plan has a provisioner read the Koras catalogue and create the prices it
+names; there was no such catalogue, because `00028_billing.sql` decided that
+"what it costs lives with the provider". The catalogue now holds an *intent* — three
+nullable columns there recording what a plan was meant to cost — compared by
+`billing.catalogue` and rendered nowhere, so the provider stays authoritative
+for everything a customer sees or pays. The columns are named in
+`koras-control-plane/docs/COMMERCIAL_CATALOGUE.md`; naming them here would be
+this repository vouching for another's schema, which the identifier test
+rightly refuses. That narrows the rule
+rather than reversing it, and closes the one drift the check could not see: an
+amount edited by hand in a dashboard.
+
+**No provisioner is built, deliberately.** Creating a price needs a Managed
+Payments tax code — a product without an eligible one cannot be sold at all —
+a Stripe price is immutable in amount so no two-way sync can exist, and the
+by-hand step is three clicks per plan for a catalogue nobody has created in
+live mode even once. BILL-GAP-003 is declined with that reasoning rather than
+left PLANNED.
+
+**A plan with no recorded intent is unchecked, not clean**, and a test asserts
+that distinction. An expectation nobody stated is not a fact about the price.
 
 **The two capabilities are declared.** `audit_governance` and
 `storage_governance`, both on by default, and what they gate is the *surface*
