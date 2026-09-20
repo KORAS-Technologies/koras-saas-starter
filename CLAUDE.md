@@ -573,26 +573,44 @@ since 2026-08-25: `generator-integration.yml` carries an
 each built, linted, typechecked, tested and run through the RLS suite. The claim
 outlived the work by four days, in the one file every session reads first.
 
-**What is verified, and how.** CI, Security and Generator Integration all run on
-`develop`. All three were red from 2026-09-05 to 2026-09-12 while this line said
-green: the docs tests on identifiers the billing switch and the sign-in page
-introduced, mypy on a worker settings class that never subclassed arq's base,
-and CodeQL unable to check out a repository that had gone private. The first
-two are fixed and green again. The third was decided on 2026-09-14: Code
-Security was enabled on the private repository, CodeQL uploads its results,
-and the `continue-on-error` a Copilot pull request had put on the job the same
-afternoon was removed the same evening, because a job that stays green while
-its upload fails is R-030 again with a different cause. Generator Integration
-was red from the afternoon of 2026-09-14 until that evening, on the AI
-capability's files leaking into products generated without it; the four
-fixes are in commit 2b8fbb3 and after. Generator Integration generates both profiles and
-lints, builds, typechecks and tests each, runs the row-level security suite
-against a real Postgres, mutation-tests that suite by removing `force` and
-requiring it to fail, and — since 2026-09-01 — **opens a browser**: the product
-template ships a Playwright suite and the job runs it against the project it
-just generated, at 375 and 1440 (FOLLOW_UPS F18). Local `pnpm lint`, `typecheck` and `test` cover Python as
-well as JavaScript; they did not until 2026-08-25, and `turbo` was replaying
-cached results across template edits until the same day (R-035).
+**What is verified, and how.** The required validation workflows on `develop`
+are **CI**, **Security** and **Generator Integration**. That is the list of
+gates; it is not a status report.
+
+**Do not infer their current status from this document.** Check the workflow
+results for the branch and commit you are actually working on — `gh run list
+--branch develop` — before claiming anything about them. This paragraph said
+all three were green from 2026-09-05 to 2026-09-12 while all three were red,
+and said it again through the five commits before 2026-09-20 while Security
+was failing and Generator Integration was being cancelled at its time limit.
+Twice is a pattern, and the pattern is that a sentence about a live system
+decays the moment it is written. That is R-042 on the file every session reads
+first.
+
+**Last validated baseline: 2026-09-20, commit `2d62a82`.** CI passed. Security
+failed on one gitleaks finding — `generic-api-key` at `recipients.py:211`,
+reviewed as a false positive and suppressed by fingerprint in `dcffeab`.
+Generator Integration was cancelled at its 30-minute limit, which read as a
+slow suite and was a crash: the notification bell passed a function across a
+server/client boundary, so every signed-in page threw and 72+ browser tests
+each failed on a 30s timeout. Fixed in `728d916`; the generated product's full
+browser suite then passed locally in 1.4 minutes, 137 passed and 0 failed.
+**Neither fix had been through CI when this was written** — that is exactly
+the claim to verify rather than inherit.
+
+**What Generator Integration actually does**, which is capability rather than
+status: it generates both profiles and lints, builds, typechecks and tests
+each, runs the row-level security suite against a real Postgres,
+mutation-tests that suite by removing `force` and requiring it to fail, and —
+since 2026-09-01 — **opens a browser**, running the product template's
+Playwright suite against the project it just generated, at 375 and 1440
+(FOLLOW_UPS F18). Its browser step is the only thing in this estate that
+renders the generated application; the starter's own suites never do, which is
+why a defect that broke every dashboard page could pass every local check.
+
+Local `pnpm lint`, `typecheck` and `test` cover Python as well as JavaScript;
+they did not until 2026-08-25, and `turbo` was replaying cached results across
+template edits until the same day (R-035).
 
 **Registration, in one paragraph.** A product registers itself with the Control
 Plane after `terraform apply`, from `generators/create-koras-app/src/registration/`,
