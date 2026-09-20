@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import ts from 'typescript'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -18,6 +19,59 @@ import { join } from 'node:path'
  */
 
 const PROFILES = join(__dirname, '..', '..', '..', 'profiles')
+
+/**
+ * Every JSX element in a template, with the attribute names it carries.
+ *
+ * Read from the syntax tree because the claims below are about *which element*
+ * has an attribute, and text matching cannot answer that -- it answers whether
+ * two strings appear near each other, which a line break, a reordered
+ * attribute or a second element of the same name defeats. That weakness is not
+ * hypothetical here: the assertion this replaced counted occurrences of
+ * `suppressHydrationWarning` and would have been satisfied by two on `<body>`.
+ *
+ * `layout.tsx.hbs` parses as TSX because its Handlebars is confined to
+ * comments and string bodies, so no rendering is needed to ask.
+ */
+interface JsxElementShape {
+  tag: string
+  attributes: string[]
+}
+
+function jsxElements(source: string): JsxElementShape[] {
+  const file = ts.createSourceFile('layout.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const found: JsxElementShape[] = []
+  const visit = (node: ts.Node): void => {
+    const opening = ts.isJsxOpeningElement(node)
+      ? node
+      : ts.isJsxSelfClosingElement(node)
+        ? node
+        : undefined
+    if (opening !== undefined) {
+      found.push({
+        tag: opening.tagName.getText(file),
+        attributes: opening.attributes.properties.flatMap((property) =>
+          ts.isJsxAttribute(property) ? [property.name.getText(file)] : [],
+        ),
+      })
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(file)
+  return found
+}
+
+/** The tag names carrying `suppressHydrationWarning`, sorted and deduplicated. */
+function suppressedElements(source: string): string[] {
+  return [
+    ...new Set(
+      jsxElements(source)
+        .filter((element) => element.attributes.includes('suppressHydrationWarning'))
+        .map((element) => element.tag),
+    ),
+  ].sort()
+}
+
 const PRODUCT = join(PROFILES, 'product', 'template')
 const SHARED = join(PROFILES, '_shared', 'template')
 const CONTROL_PLANE = join(PROFILES, 'control-plane', 'template')
@@ -370,29 +424,48 @@ describe('the theme script and the hydration warning it necessarily causes', () 
     expect(rootLayout).toContain('THEME_SCRIPT')
   })
 
-  it('suppresses the warning on the element the script actually mutates', () => {
-    expect(rootLayout).toMatch(/<html[^>]*suppressHydrationWarning/)
+  it('suppresses the warning on exactly the two elements the browser mutates', () => {
+    // Read from the syntax tree rather than matched against the text. The
+    // question is which *element* carries the attribute, and a regular
+    // expression answers a weaker question -- whether the word appears near a
+    // tag name -- which a line break or a reordered attribute defeats. This
+    // file parses as TSX (its Handlebars is confined to comments and string
+    // bodies), so the real answer is available cheaply.
+    expect(suppressedElements(rootLayout)).toEqual(['html', 'script'])
+  })
+
+  it('puts that suppression on the nonce-bearing script', () => {
+    // GR-250-WEB upstream. The nonce is the reason, so the attribute has to be
+    // on the element that carries a nonce -- not on some other script added
+    // later, which would leave the real mismatch reported and a different
+    // element silenced.
+    const script = jsxElements(rootLayout).find((element) => element.tag === 'script')
+    expect(script?.attributes).toContain('nonce')
+    expect(script?.attributes).toContain('suppressHydrationWarning')
   })
 
   it('suppresses it nowhere else', () => {
-    // `suppressHydrationWarning` covers one element's own attributes and
-    // text, not its descendants -- so one attribute on `<html>` is narrow,
-    // and a second one anywhere below it would be someone silencing a real
-    // mismatch with the same tool.
-    // The attribute, not the comment that explains it: the prose names it
-    // too, and counting both would make this assertion about paragraph
-    // length.
-    const asAttribute = rootLayout.match(/suppressHydrationWarning(?=[\s/>])/g) ?? []
-    expect(asAttribute).toHaveLength(1)
-    expect(rootLayout).not.toMatch(/<body[^>]*suppressHydrationWarning/)
+    // `suppressHydrationWarning` covers one element's own attributes and text,
+    // not its descendants, so each of the two is narrow and neither reaches
+    // the other. A third would be someone silencing a real mismatch with the
+    // same tool.
+    for (const element of jsxElements(rootLayout)) {
+      if (element.tag === 'html' || element.tag === 'script') continue
+      expect(element.attributes, `${element.tag} suppresses hydration`).not.toContain(
+        'suppressHydrationWarning',
+      )
+    }
   })
 
   it('says why, where the next person will read it', () => {
     // An unexplained suppression is indistinguishable from one added to make
     // a warning go away, which is the thing it must never be used for.
-    expect(rootLayout).toMatch(/suppressHydrationWarning` belongs on the <html> element/)
+    expect(rootLayout).toMatch(/appears twice below, on two elements, for two/)
     expect(rootLayout).toMatch(/before React/)
-    expect(rootLayout).toMatch(/and never its descendants/)
+    expect(rootLayout).toContain('descendants')
+    // The nonce half has to say *why* the browser empties it, or the next
+    // reader cannot tell an expected mismatch from a silenced one.
+    expect(rootLayout).toMatch(/clear the `nonce` content attribute/)
   })
 
   it('explains it in a comment the compiler accepts', () => {
@@ -402,7 +475,7 @@ describe('the theme script and the hydration warning it necessarily causes', () 
     // sails past, because they all match strings against a template nothing
     // in this repository compiles. The explanation therefore goes above the
     // `return`, as an ordinary line comment.
-    expect(rootLayout).toMatch(/\/\/ `suppressHydrationWarning` belongs on the <html> element/)
+    expect(rootLayout).toMatch(/\/\/ `suppressHydrationWarning` appears twice below/)
     expect(rootLayout).not.toMatch(/return \(\s*\{\/\*/)
   })
 })

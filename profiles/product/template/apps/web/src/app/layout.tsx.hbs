@@ -73,16 +73,31 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const locale = await currentLocale()
   const t = createTranslator(locale)
 
-  // `suppressHydrationWarning` belongs on the <html> element and only there.
-  // THEME_SCRIPT below runs before React and writes `color-scheme` onto
-  // `document.documentElement`, so by the time hydration compares the two, the
-  // client has a `style` attribute the server never rendered. That is the
-  // intended behaviour -- it is what stops a reader who chose dark getting a
-  // light flash -- and the warning is React reporting it faithfully.
+  // `suppressHydrationWarning` appears twice below, on two elements, for two
+  // unrelated reasons. Each is a mismatch the browser creates on purpose after
+  // the server rendered, and neither is something a product should fix.
   //
-  // It suppresses exactly one level: that element's own attributes and text,
-  // and never its descendants. A genuine mismatch anywhere inside the tree
-  // still reports.
+  // **On <html>: the appearance.** THEME_SCRIPT runs before React and writes
+  // `color-scheme` onto `document.documentElement`, so by the time hydration
+  // compares the two, the client has a `style` attribute the server never
+  // rendered. That is the intended behaviour -- it is what stops a reader who
+  // chose dark getting a light flash -- and the warning is React reporting it
+  // faithfully.
+  //
+  // **On the script: the nonce.** The policy is nonce-based, and the HTML
+  // specification requires a browser to clear the `nonce` content attribute
+  // once it has been used, keeping the value in an internal slot instead. That
+  // is a defence against exfiltrating the nonce with an attribute selector, so
+  // the emptying *is* the security control working. React then compares
+  // `nonce="<the real value>"` from the server against `nonce=""` in the DOM
+  // and reports a mismatch on every page.
+  //
+  // **The first does not cover the second, and cannot.** Suppression is exactly
+  // one level deep: an element's own attributes and text, never its
+  // descendants. The script is inside <head>, so <html> reaches it no more than
+  // it reaches anything else in the tree -- which is the property that makes
+  // both of these narrow rather than a blanket. A genuine mismatch anywhere
+  // else still reports, and neither of these is licence to silence a third.
   return (
     <html lang={locale} dir={localeDirection(locale)} suppressHydrationWarning>
       {/*
@@ -92,7 +107,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         `color-scheme: light dark` and the browser follows the machine.
       */}
       <head>
-        <script nonce={nonce} dangerouslySetInnerHTML={themeScript} />
+        <script nonce={nonce} suppressHydrationWarning dangerouslySetInnerHTML={themeScript} />
       </head>
       {/*
         The brand tokens are applied once, here, as CSS custom properties. The
