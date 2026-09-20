@@ -278,12 +278,33 @@ async def test_an_audience_resolves_the_owner_and_the_platforms_members(
     class _Answer:
         body = [{"email": "admin@acme.test", "role": "organization_admin", "status": "active"}]
 
-    async def _read_portal(path: str, *, organization_id: str, token: str) -> _Answer:
-        assert path.endswith("/members") and token == "tok"  # noqa: S105
-        return _Answer()
+    class _Platform:
+        """Only the two members `resolve` reaches on this path.
 
-    monkeypatch.setattr(recipients.platform, "configured", lambda: True)
-    monkeypatch.setattr(recipients.platform, "read_portal", _read_portal)
+        Patched through `recipients._platform` rather than onto `core.platform`
+        itself, which is what the removed `recipients.platform` attribute used
+        to allow. That form did two things this does not: it reached into a
+        module every other test shares and rebound attributes on it, and it
+        only worked while the import was eager. `core.platform` builds the
+        API's `Settings()` at import, so the import became lazy on 2026-09-20
+        to keep the worker off the API's configuration surface -- and the
+        attribute this test patched stopped existing.
+
+        The seam is therefore the resolver, not the module: the import stays
+        lazy, the real `core.platform` is never imported or mutated here, and
+        the fake is local to this test.
+        """
+
+        @staticmethod
+        def configured() -> bool:
+            return True
+
+        @staticmethod
+        async def read_portal(path: str, *, organization_id: str, token: str) -> _Answer:
+            assert path.endswith("/members") and token == "tok"  # noqa: S105
+            return _Answer()
+
+    monkeypatch.setattr(recipients, "_platform", lambda: _Platform)
 
     found = await recipients.resolve(
         _Members([]),  # type: ignore[arg-type]
