@@ -9,8 +9,10 @@ import type {
 } from '@{{projectSlug}}/api-client'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  allErrors,
   analyseRun,
   cancelRun,
+  commitRun,
   completeSourceUpload,
   listErrors,
   listRuns,
@@ -22,13 +24,25 @@ import {
 import type { ImportLabels } from './labels'
 
 /**
- * Upload, map, dry run -- and nothing else.
+ * Upload, map, check -- and, since Phase 2, confirm.
  *
- * The panel deliberately has no control that writes a row of a target table.
- * A run reaches `validated`, which is a terminal state that wrote nothing, and
- * a person reads the report. The commit is Phase 2 and will arrive with its own
- * confirmation and its own actor; a disabled "Commit" button here would promise
- * a thing this product cannot yet do.
+ * **The confirm control is absent rather than disabled for a target that
+ * declares no writer.** `committable` is false for such a target and no button
+ * renders at all, which is the shape the whole panel had before a commit
+ * existed: a disabled control promises a thing this product cannot do, and a
+ * person cannot tell "not yet" from "not for you".
+ *
+ * **Confirming is a second act by a person, and it says what it will do.** The
+ * run moves to `commit_requested` and a worker does the writing, so the panel
+ * polls the way it already polls a dry run. `committed_by` is what the run
+ * records, separately from `requested_by`, and they are frequently the same
+ * person -- the fact worth keeping is that somebody read a dry run and said
+ * yes.
+ *
+ * **The report downloads.** A person fixing a file works in a spreadsheet, not
+ * in a table on a web page, and the criterion for a failed run is that they can
+ * get every bad row out. The screen still shows the first page, because most
+ * files are wrong in one obvious way and scrolling beats downloading.
  *
  * Three refusals a person can hit are worth naming, because each is a sentence
  * rather than a silence: a file whose headings the target cannot use, a file
@@ -84,6 +98,11 @@ export function ImportPanel({
   const input = useRef<HTMLInputElement>(null)
 
   const target = targets.find((candidate) => candidate.key === targetKey) ?? null
+  // **The run's own target, not the picker's.** They are the same until
+  // somebody changes the picker with a run in progress, and then the confirm
+  // control would be answering a question about a different import.
+  const runTarget =
+    run === null ? null : (targets.find((candidate) => candidate.key === run.target) ?? null)
 
   const refresh = useCallback(async () => {
     const answer = await listRuns()
@@ -178,6 +197,60 @@ export function ImportPanel({
       setBusy(false)
     }
   }, [mapping, refresh, run])
+
+  const confirm = useCallback(async () => {
+    if (run === null) return
+    setBusy(true)
+    setError(null)
+    try {
+      const queued = await commitRun(run.id)
+      if (queued.status === 'error') {
+        setError(queued.message)
+        return
+      }
+      setRun(queued.value)
+      await refresh()
+    } finally {
+      setBusy(false)
+    }
+  }, [refresh, run])
+
+  const download = useCallback(async () => {
+    if (run === null) return
+    setBusy(true)
+    try {
+      const answer = await allErrors(run.id)
+      if (answer.status === 'error') {
+        setError(answer.message)
+        return
+      }
+      const header = [labels.row, labels.column, labels.field, labels.problem, labels.value]
+      const lines = [header, ...answer.value.map((problem) => [
+        String(problem.row),
+        problem.column,
+        problem.field,
+        labels.problems[problem.code] ?? problem.code,
+        problem.value,
+      ])]
+      // Quoted unconditionally, and every quote doubled. A cell holding a
+      // comma, a newline or a quote is exactly the kind of cell an import
+      // rejects, so the error report is the one file in this product most
+      // likely to contain all three.
+      const csv = lines
+        .map((cells) => cells.map((cell) => '"' + cell.split('"').join('""') + '"').join(','))
+        .join(String.fromCharCode(13, 10))
+      const url = URL.createObjectURL(
+        new Blob([String.fromCharCode(0xfeff) + csv], { type: 'text/csv;charset=utf-8' }),
+      )
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `import-${run.id}-errors.csv`
+      link.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setBusy(false)
+    }
+  }, [labels, run])
 
   const report = useCallback(async () => {
     if (run === null) return
@@ -360,15 +433,42 @@ export function ImportPanel({
             </p>
           ) : null}
           {run.status === 'validated' ? <Banner tone="info">{labels.wroteNothing}</Banner> : null}
+          {run.status === 'validated' && runTarget?.committable === true ? (
+            <div className="mt-4 space-y-2" data-testid="imports-confirm">
+              <p className="text-sm text-ink-muted">{labels.confirmHint}</p>
+              <Button type="button" onClick={() => void confirm()} disabled={busy}>
+                {busy ? labels.committing : labels.confirm}
+              </Button>
+            </div>
+          ) : null}
+          {run.status === 'validated' && runTarget?.committable !== true ? (
+            <Banner tone="info">{labels.notCommittable}</Banner>
+          ) : null}
+          {run.status === 'committed' ? (
+            <p className="mt-3 text-sm text-ink" data-testid="imports-committed">
+              {fill(labels.wrote, {
+                created: String(run.rows_valid),
+                total: String(run.rows_total),
+              })}
+            </p>
+          ) : null}
           {run.errors_total > 0 ? (
-            <div className="mt-4">
+            <div className="mt-4 flex flex-wrap gap-2">
               <Button type="button" variant="secondary" onClick={() => void report()}>
                 {labels.showReport}
               </Button>
-              {run.errors_cut ? (
-                <p className="mt-2 text-xs text-ink-muted">{labels.reportCut}</p>
-              ) : null}
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void download()}
+                disabled={busy}
+              >
+                {labels.downloadReport}
+              </Button>
             </div>
+          ) : null}
+          {run.errors_total > 0 && run.errors_cut ? (
+            <p className="mt-2 text-xs text-ink-muted">{labels.reportCut}</p>
           ) : null}
           {problems === null ? null : (
             <div className="mt-4 overflow-x-auto">

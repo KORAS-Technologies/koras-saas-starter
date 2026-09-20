@@ -6,6 +6,7 @@ import { SubmitButton } from '../primitives/submit-button'
 import {
   describeValue,
   optionLabel,
+  withValue,
   type SettingField,
   type SettingGroup,
   type SettingsFormLabels,
@@ -125,7 +126,7 @@ function Field({
             // does not say which one, and a screen reader reads the buttons in
             // a list with nothing else around them.
             aria-label={`${labels.reset}: ${field.label}`}
-            title={labels.resetTo(readable(field, field.inherited, labels))}
+            title={withValue(labels.resetTo, readable(field, field.inherited, labels))}
           >
             {labels.reset}
           </button>

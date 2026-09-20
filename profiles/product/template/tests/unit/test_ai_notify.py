@@ -15,7 +15,6 @@ os.environ.setdefault("ZITADEL_PROJECT_ID", "0")
 
 from koras_ai import ActionStatus, Operation, ProposedAction  # noqa: E402
 from koras_api.core import dispatch, notify, recipients  # noqa: E402
-from koras_email import RecordingEmailSender  # noqa: E402
 
 FILE_ID = "31055174-7afb-4a70-8e3b-1bb0b5dd250b"
 REQUESTER = notify.Requester(id="390639721715368755", name="Kora K", email="kora@acme.test")
@@ -221,62 +220,29 @@ def test_html_escapes_what_a_person_typed() -> None:
     assert "&lt;x&gt;.md" in html
 
 
-async def test_the_mail_dispatch_prepared_is_sent_once_per_address() -> None:
-    """`dispatch` prepares; `send` delivers. The split is so that a mail leaves
-    only after the caller's transaction has committed — a feed row can be
-    rolled back and a mail cannot."""
-    sender = RecordingEmailSender()
-    mail = [
-        dispatch.Mail(
-            to="owner@acme.test",
-            subject="Sample: an action is waiting",
-            text="Go to the assistant page.",
-            html="<p>Delete the file a.md</p>",
-            tag="ai.approval_requested",
-        ),
-        dispatch.Mail(
-            to="admin@acme.test",
-            subject="Sample: an action is waiting",
-            text="Go to the assistant page.",
-            html="<p>Delete the file a.md</p>",
-            tag="ai.approval_requested",
-        ),
-    ]
-    assert await dispatch.send(sender, mail) == 2
-    assert [m["to"] for m in sender.sent] == ["owner@acme.test", "admin@acme.test"]
-    assert sender.sent[0]["tag"] == "ai.approval_requested"
-    assert "Delete the file a.md" in (sender.sent[0]["html"] or "")
+async def test_the_notice_is_owed_rather_than_sent_from_the_request() -> None:
+    """CAT-01 Phase 3 moved the send out of the request entirely.
 
-    quiet = RecordingEmailSender()
-    assert await dispatch.send(quiet, []) == 0
-    assert quiet.sent == []
+    `dispatch` used to hand prepared mail back and the route handed it to a
+    FastAPI background task -- which runs in the API process and is lost when
+    it restarts, so a deploy during a send lost the send with no record that it
+    was ever owed. Now a row is written on the caller's own session, so the
+    message is owed exactly when the thing that caused it committed, and the
+    worker's sweep is what delivers it.
+
+    Asserted on `dispatch` rather than on the route, because the route is where
+    it would be easiest to quietly add a send back.
+    """
+    assert not hasattr(dispatch, "send"), (
+        "dispatch sends again; the whole point of the outbox is that it does not"
+    )
 
 
-async def test_a_send_that_fails_does_not_stop_the_rest() -> None:
-    """The thing the customer asked for has already happened by the time these
-    go out. One provider refusal must not cost the other nine their notice."""
-
-    class _Flaky:
-        def __init__(self) -> None:
-            self.seen: list[str] = []
-
-        @property
-        def simulated(self) -> bool:
-            return False
-
-        async def send(self, *, to: str, **_: object) -> object:
-            self.seen.append(to)
-            if to == "bad@acme.test":
-                raise RuntimeError("the provider refused")
-            return type("Sent", (), {"simulated": False})()
-
-    sender = _Flaky()
-    mail = [
-        dispatch.Mail(to=address, subject="s", text="t", html="<p>h</p>")
-        for address in ("bad@acme.test", "good@acme.test")
-    ]
-    assert await dispatch.send(sender, mail) == 1  # type: ignore[arg-type]
-    assert sender.seen == ["bad@acme.test", "good@acme.test"]
+async def test_a_message_that_could_not_even_be_written_down_is_counted() -> None:
+    """Counted, never raised. A notification that could not be recorded must
+    not undo the turn that produced it -- the action still waits in the
+    assistant, which is where it waited before there was a notice at all."""
+    assert "unrecorded" in dispatch.Dispatched.__dataclass_fields__
 
 
 def test_the_approval_template_says_the_same_thing_in_both_bodies() -> None:

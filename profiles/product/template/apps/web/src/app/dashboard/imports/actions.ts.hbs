@@ -3,6 +3,7 @@
 import {
   ApiError,
   cancelImportRun as cancelImportRunRequest,
+  commitImportRun as commitImportRunRequest,
   completeUpload as completeUploadRequest,
   fetchImportAnalysis,
   fetchImportErrors,
@@ -185,11 +186,55 @@ export async function validateRun(runId: string): Promise<ActionResult<ImportRun
   }
 }
 
+export async function commitRun(runId: string): Promise<ActionResult<ImportRunView>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    const run = await commitImportRunRequest({ ...auth, runId })
+    revalidatePath('/dashboard/imports')
+    return { status: 'ok', value: run }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
 export async function listErrors(runId: string): Promise<ActionResult<ImportRowErrorView[]>> {
   const auth = await session()
   if (auth === null) return denied()
   try {
     return { status: 'ok', value: await fetchImportErrors({ ...auth, runId, limit: 200 }) }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+/**
+ * Every bad row, not the first page of them.
+ *
+ * The exit criterion for the commit is that a customer whose import failed can
+ * download a file naming **every** bad row, and `listErrors` answers a page.
+ * So this pages until the report is exhausted, bounded by the number the run
+ * itself recorded rather than by trust in the loop terminating.
+ *
+ * Read here rather than assembled in the browser because the paging is the
+ * server's business and because the browser would otherwise hold the token.
+ */
+export async function allErrors(runId: string): Promise<ActionResult<ImportRowErrorView[]>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  const PAGE = 500
+  const collected: ImportRowErrorView[] = []
+  try {
+    let after = 0
+    for (;;) {
+      const page = await fetchImportErrors({ ...auth, runId, limit: PAGE, after })
+      collected.push(...page)
+      if (page.length < PAGE) break
+      const last = page[page.length - 1]
+      if (last === undefined || last.row <= after) break
+      after = last.row
+    }
+    return { status: 'ok', value: collected }
   } catch (error) {
     return { status: 'error', message: await explain(error) }
   }

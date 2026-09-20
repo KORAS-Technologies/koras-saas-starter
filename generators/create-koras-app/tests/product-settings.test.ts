@@ -1051,7 +1051,13 @@ describe('the two settings surfaces', () => {
   })
 
   it('names what a reset would restore, before it is pressed', () => {
-    expect(form).toContain('labels.resetTo(')
+    // `withValue(labels.resetTo, …)`, not `labels.resetTo(…)`. This object
+    // crosses into a client component, and a function cannot: it threw on
+    // every product whose API answered, and no suite saw it until the
+    // round-trip harness rendered the page with an API behind it.
+    // PLAT-DEF-008.
+    expect(form).toContain('withValue(labels.resetTo,')
+    expect(form).not.toContain('labels.resetTo(')
     // And says which setting it resets, because "Reset" alone beside
     // twenty-seven fields says nothing to a screen reader.
     expect(form).toContain('aria-label={`${labels.reset}: ${field.label}`}')

@@ -18,9 +18,11 @@ import { templatePath } from './template-path'
  * resolve its own audience twice, build its own HTML and drive its own sender
  * loop. If a route regains any of that, the seam is a seam in name only.
  *
- * **The feed is written on the caller's session and mail is not sent on it.**
- * ADR 0008 rule 2. A row can be rolled back and a mail cannot, so `dispatch`
- * hands the mail back and the route sends it after its commit.
+ * **Both channels are written on the caller's session, and nothing is sent on
+ * it.** ADR 0008 rule 2. A row can be rolled back and a mail cannot -- so
+ * since CAT-01 Phase 3 the mail is an outbox row rather than a message handed
+ * back, owed exactly when the thing that caused it committed, and the worker's
+ * sweep is what sends.
  *
  * **A preference is read through the resolver.** Not from a row. The whole
  * reason `notifications.emailEnabled` could be switched off while mail kept
@@ -69,22 +71,38 @@ describe('the notification dispatch point', () => {
     expect(route, 'a route drives its own sender loop').not.toContain('notify_awaiting_approval')
   })
 
-  it('sends the mail after the commit and never on the session', () => {
+  it('owes the mail on the caller-s own session and sends none of it', () => {
+    /*
+     * CAT-01 Phase 3 replaced what this test used to assert.
+     *
+     * It required the route to queue the send *after* its commit, through a
+     * FastAPI background task -- right for Phase 2, and the exact arrangement
+     * PLAT-F1 exists to replace: such a task runs in the API process and is
+     * lost when it restarts. A deploy during a send lost the send, with
+     * nothing anywhere recording that a message had been owed.
+     *
+     * Now the row is written on the caller's own session, so a message is owed
+     * exactly when the thing that caused it committed -- one transaction, so
+     * neither can exist without the other -- and the worker's sweep delivers
+     * it.
+     */
     const route = read('services/api/koras_api/routers/ai.py')
-    const commit = route.indexOf('await ai.session.commit()')
-    const send = route.indexOf('background.add_task(send_notifications')
-    expect(commit).toBeGreaterThan(-1)
-    expect(send).toBeGreaterThan(-1)
-    expect(send, 'the mail is queued before the commit').toBeGreaterThan(commit)
+    expect(route, 'the route sends from the request again').not.toMatch(
+      /background\.add_task\([^)]*(mail|send)/,
+    )
+    expect(route).toContain('await ai.session.commit()')
 
-    // And `dispatch` itself prepares rather than sends: nothing in it awaits a
-    // sender. `send` is a separate function the caller reaches for.
     const seam = read('services/api/koras_api/core/dispatch.py')
+    // Nothing in the dispatch point sends. There is no `send` any more, and
+    // nothing here awaits a sender.
+    expect(seam).not.toContain('async def send(')
     const dispatchBody = seam.slice(
       seam.indexOf('async def dispatch('),
       seam.indexOf('async def _to_feed('),
     )
     expect(dispatchBody).not.toContain('sender')
+    // The outbox row goes on the session the caller handed in.
+    expect(dispatchBody).toContain('outbox.enqueue(')
   })
 
   it('reads a preference through the resolver rather than from a row', () => {
@@ -106,7 +124,7 @@ describe('the notification dispatch point', () => {
     expect(seam).toContain("EMAIL_SETTING = 'notifications.emailEnabled'".replace(/'/g, '"'))
     // Turning one off must not turn the other off: each channel reads its own.
     const feed = seam.slice(seam.indexOf('async def _to_feed('), seam.indexOf('async def _to_mail('))
-    const mail = seam.slice(seam.indexOf('async def _to_mail('), seam.indexOf('async def send('))
+    const mail = seam.slice(seam.indexOf('async def _to_mail('), seam.indexOf('__all__'))
     expect(feed).toContain('wants(IN_APP_SETTING,')
     expect(feed).not.toContain('EMAIL_SETTING')
     expect(mail).toContain('wants(EMAIL_SETTING,')
@@ -190,7 +208,7 @@ describe('the notification dispatch point', () => {
     // that claimed otherwise used a case with no addresses in it.
     const seam = read('services/api/koras_api/core/dispatch.py')
     expect(seam).toContain('def _renderer(')
-    const mail = seam.slice(seam.indexOf('async def _to_mail('), seam.indexOf('async def send('))
+    const mail = seam.slice(seam.indexOf('async def _to_mail('), seam.indexOf('__all__'))
     expect(mail, 'the inbox half renders for itself').not.toContain('event.render(')
     const feed = seam.slice(seam.indexOf('async def _to_feed('), seam.indexOf('async def _to_mail('))
     expect(feed).not.toContain('event.render(')

@@ -39,8 +39,36 @@ configured, and an account holding `imports.manage`.
 | 21 | Open the page with the API stopped | The error banner, and **no** picker. Never "this product does not accept any imports yet" | |
 | 22 | Check the browser console throughout | No hydration warnings, no uncaught errors | |
 
+## Phase 2 — the commit
+
+Added 2026-09-20. These need a product that declares a **committable** target;
+a generated product declares none, so they run in `koras-e2e-shop` or in
+Docoris and nowhere else. Every verdict is blank: NOT EXECUTED.
+
+| # | Case | Expected | Verdict |
+|---|------|----------|---------|
+| 23 | Check a clean 20-row file, then press *Import these records* | The run moves to *Confirming…* then *Imported*, and says how many were written | |
+| 24 | After case 23, count rows in the target table | Exactly 20 more, each carrying the run id if the target attributes to the run | |
+| 25 | Press the confirm control twice quickly | The second is refused with a 409. **One** copy of the records exists | |
+| 26 | Make the writer raise on row 15 of 20, then confirm | The run is *Failed* with a sentence, and the target table has **zero** new rows. This is the criterion the phase exists for | |
+| 27 | Make the writer raise, and check the audit log afterwards | `import.run.committed` is there for the confirmation; the failure is on the run row, not a fourth audit action | |
+| 28 | Confirm a run against a target whose writer was removed | No confirm control renders at all; a POST to the route answers `import_not_committable` | |
+| 29 | Kill the worker mid-commit, then look at the run | It stays in *Confirming…*. The target table has zero new rows. It is findable | |
+| 30 | Unset `REDIS_URL` on the API, then confirm | 503 with the queue sentence, **and** the run is marked failed rather than left looking confirmed | |
+| 31 | After a successful commit, open the bell | A notice saying the import finished, in the recipient's own language, linking to `/dashboard/imports` | |
+| 32 | Switch `notifications.inAppEnabled` off for that member and repeat case 31 | No notice. Nothing else changes | |
+| 33 | After case 31, check the mail inbox | **Nothing.** The notice is in-app only, and this case exists so that stays deliberate | |
+| 34 | Import a file whose rows duplicate existing records, with *skip duplicates* | The counts distinguish created from skipped, and they sum to the file's rows | |
+| 35 | Repeat case 34 with *update matching* | The counts show updates, and no duplicate records exist | |
+| 36 | Make a file with 12 bad rows, check it, press *Download every problem* | A CSV opens in a spreadsheet with 12 rows plus a header; the row numbers match the source file's left margin | |
+| 37 | Put a comma, a quote and a newline into a bad cell, then do case 36 | The spreadsheet shows one row, not three, with the cell intact | |
+| 38 | Change a target's field rules, then confirm a run checked before the change | Refused, naming that the rows no longer pass. Nothing is written | |
+| 39 | Sign in as a member without the target's own permission and POST the commit route | 403, and `import.run.refused` is recorded | |
+| 40 | Switch to German and repeat cases 23, 26 and 36 | Every state, sentence and column heading in German. No bare identifiers | |
+
 ## What a pass would not prove
 
-Cases 1–22 exercise Phase 1 only. None of them writes a row, because nothing in
-Phase 1 can. The commit, its atomicity, its idempotency and the error file are
-Phase 2 and have no cases here yet.
+Cases 1–22 exercise Phase 1 and write nothing. Cases 23–40 exercise the commit.
+Neither set reaches XLSX or JSON, saved mapping profiles, cancelling a commit in
+flight, or a file at the row ceiling under real latency — those are Phases 3
+and 4.

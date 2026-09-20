@@ -78,7 +78,11 @@ export default async function PreferencesPage({
     modified: t('preferences.modified'),
     inheritedFrom: t('preferences.inherited'),
     reset: t('settings.values.reset'),
-    resetTo: (value: string) => t('preferences.resetTo', { value }),
+    // A template, not a closure: this object is handed to a client
+    // component, and a function cannot cross that boundary. The
+    // translator returns a message unchanged when given no parameters,
+    // so the placeholder survives for `withValue` to fill.
+    resetTo: t('preferences.resetTo'),
     listHint: t('settings.values.listHint'),
     on: t('settings.values.on'),
     off: t('settings.values.off'),

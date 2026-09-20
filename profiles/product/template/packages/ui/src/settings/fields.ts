@@ -62,7 +62,20 @@ export interface SettingsFormLabels {
   inheritedFrom: string
   reset: string
   /** `{value}` — what pressing reset would leave behind. */
-  resetTo: (value: string) => string
+  /**
+   * A template carrying `{value}`, **not** a function.
+   *
+   * `SettingsForm` is a client component and this object crosses that
+   * boundary. React cannot serialise a function across it and throws --
+   * which, because this is the settings form, took the whole preferences
+   * page down on every product whose API answered. It was a closure until
+   * 2026-09-20 and was found by the round-trip harness on its first run,
+   * because every suite before it rendered the page in its API-less state
+   * and never reached the form.
+   *
+   * Fill it with `withValue`.
+   */
+  resetTo: string
   /** For a list control, so a person knows how to separate entries. */
   listHint: string
   on: string
@@ -95,4 +108,17 @@ export function describeValue(value: SettingValue, labels: SettingsFormLabels): 
 export function optionLabel(field: SettingField, value: SettingValue): string {
   const match = field.options.find((option) => option.value === String(value))
   return match ? match.label : String(value)
+}
+
+
+/**
+ * Put a value into a label template.
+ *
+ * The counterpart of `withCount` in `notifications/types.ts`, and here for the
+ * same reason: a label that needs a number or a word in it must be a string
+ * crossing the server/client boundary and a function on this side of it, or the
+ * page throws.
+ */
+export function withValue(template: string, value: string): string {
+  return template.replace(/\{value\}/g, value)
 }

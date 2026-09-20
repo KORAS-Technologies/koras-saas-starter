@@ -151,6 +151,42 @@ exit criterion itself: nothing is written.
 **Exit:** a commit that fails leaves nothing behind, and the customer can
 download a file naming every bad row.
 
+**Met 2026-09-20, with two items answered differently from the plan and one
+not built.**
+
+The commit writes through a `Writer` the product declares on its target, in one
+transaction that also carries the run's own `committed` row — so the two cannot
+disagree — and records a failure in a second transaction opened after the first
+has rolled back, which is the only arrangement where a failure is both recorded
+and leaves nothing behind. The job declares `attempts=1`: a retry after a write
+that committed and then failed later would write a customer's records twice,
+and nothing outside the transaction can tell that case from a clean failure.
+
+**The error file is a CSV built in the browser, not the source with a column
+appended.** The plan's shape — the worker writes it to the exports category and
+a signed URL fetches it — is the audit-export shape, and it buys durability for
+a file whose whole life is one download by the person looking at the report. The
+rows are already stored, paged and localised; what was missing was a way to take
+them away. `allErrors` pages the report to exhaustion and the panel writes the
+file. If somebody later needs the source *annotated* rather than the problems
+listed, that is a different artefact and the plan's shape is right for it.
+
+**Idempotency is two locks, not a client key.** The state machine refuses a
+second `commit_requested` and the enqueue carries `commit:{run_id}`. A client
+key would be a third, and its failure mode — a client that generates a new key
+per retry — is the one the other two already cover.
+
+**Progress as counts on the run row is not built.** A row counter would need the
+worker to write outside its one transaction, which is the property this phase
+exists to protect. A run in `committing` says so and nothing more.
+
+IMPORT-US-016 is met by halves, and the halves are named in
+`docs/features/data-import/architecture.md`: the request is audited
+(`import.run.started`, `import.run.committed`, `import.run.refused`) and the
+outcome is the run row rather than a fourth action, because auditing from the
+worker would mean the worker satisfying the API's whole configuration surface
+to write one row.
+
 ### Phase 3 — Formats, mapping profiles, retry, cancellation
 
 - XLSX, reusing the spreadsheet dependency already declared, first sheet or a

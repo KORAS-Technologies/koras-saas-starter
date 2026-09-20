@@ -22,6 +22,7 @@ import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 #: The shape an audit action, a report key and a task name already use.
 _DOTTED = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
@@ -136,6 +137,23 @@ class ImportTarget:
     #: none, because nobody can tell which half.
     max_rows: int = 50_000
     validator: RowValidator | None = None
+    #: How this product writes these rows. `None` means the target is readable
+    #: and validatable and **cannot be committed** -- which is a legitimate
+    #: state rather than an unfinished one: it is what every target was before
+    #: Phase 2, and what a target somebody only wants to dry-run stays.
+    #:
+    #: Typed loosely here because `koras_import.writing` imports this module,
+    #: and the honest alternative -- a protocol in a third module both import --
+    #: buys nothing for one callable. `writing.Writer` is the shape.
+    writer: Any | None = None
+    #: Whether this product stores the run beside each record it writes.
+    #:
+    #: Declared rather than detected, because the engine hands `run_id` to the
+    #: writer and cannot see what the writer does with it. A target that says
+    #: true and does not is lying somewhere a person can find, which is better
+    #: than a promise nobody wrote down: "where did this record come from" is
+    #: the question an import exists to keep answerable.
+    attributes_to_run: bool = False
     tags: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
@@ -170,6 +188,14 @@ class ImportTarget:
             raise ValueError(f"target {self.key} names no permission")
         if self.max_rows < 1:
             raise ValueError(f"target {self.key} has a max_rows below 1")
+        if self.writer is not None and not callable(self.writer):
+            raise ValueError(f"target {self.key} declares a writer that is not callable")
+        if self.attributes_to_run and self.writer is None:
+            # A claim about what a writer does, on a target that has none.
+            raise ValueError(
+                f"target {self.key} says it attributes rows to the run and declares "
+                "no writer to do it"
+            )
 
     @property
     def field_names(self) -> tuple[str, ...]:
@@ -187,6 +213,11 @@ class ImportTarget:
 
     def accepts(self, fmt: Format) -> bool:
         return fmt in self.formats
+
+    @property
+    def committable(self) -> bool:
+        """Whether a run against this target can be asked to write anything."""
+        return self.writer is not None
 
 
 class TargetRegistry:

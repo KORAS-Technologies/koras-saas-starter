@@ -14,6 +14,7 @@ from .tasks import example_task
 {{#if capability.audit_governance}}from .tasks.governance_expiry import expire_audit_exports, expire_legal_holds
 {{/if}}{{#if capability.data_import}}from .tasks.imports import bound as import_tasks
 {{/if}}{{#if capability.notifications}}from .tasks.notifications import purge_notifications
+from .tasks.outbox import send_owed_notifications
 {{/if}}from .tasks.product import PRODUCT_CRON_JOBS, PRODUCT_TASKS
 {{#if capability.reporting}}from .tasks.reporting import deliver_scheduled_reports
 {{/if}}{{#if capability.storage_governance}}from .tasks.storage_backup import back_up_storage
@@ -95,6 +96,12 @@ class WorkerSettings(WorkerSettingsBase):
         # product wrote about content that still exists, so forgetting one
         # costs the customer nothing they cannot see elsewhere.
         cron(purge_notifications, hour=3, minute=19),
+        # Every minute, unlike every other job here, and the interval is the
+        # feature. A notification is something a person is waiting on; a
+        # nightly sweep would make "you have an action to approve" arrive the
+        # following morning. Claiming is `skip locked`, so a run that overruns
+        # its minute costs a second worker nothing.
+        cron(send_owed_notifications, second=0),
 {{/if}}{{#if capability.audit_governance}}        # Export artifacts past their expiry. On by default, unlike the two
         # storage sweeps: those remove a customer's own content, while this
         # removes an artifact the product generated with a date the product

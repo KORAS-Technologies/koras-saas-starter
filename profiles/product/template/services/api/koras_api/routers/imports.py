@@ -27,6 +27,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from koras_auth import JWTClaims
 from koras_auth.permissions import permissions_for
 from koras_import import (
+    COMMIT_RUN,
     VALIDATE_RUN,
     ImportTarget,
     MappingRefused,
@@ -38,6 +39,7 @@ from koras_import import (
 from pydantic import BaseModel, Field
 
 from ..core import imports as store
+from ..core.audit import record
 from ..core.auth import AuthDep
 from ..core.database import DbSession
 from ..core.errors import ApiErrorCode, api_error
@@ -120,6 +122,10 @@ class TargetView(BaseModel):
     operations: list[str]
     formats: list[str]
     max_rows: int
+    #: False for a target that declares no writer. The page needs this to know
+    #: whether to offer a confirm control at all -- absent rather than disabled,
+    #: which is the shape Phase 1 used for the whole feature.
+    committable: bool
 
 
 class RunView(BaseModel):
@@ -135,6 +141,8 @@ class RunView(BaseModel):
     errors_cut: bool
     error: str | None
     requested_by: str
+    #: Null until somebody confirms. The second actor.
+    committed_by: str | None
     created_at: datetime
     finished_at: datetime | None
 
@@ -182,6 +190,7 @@ def _view(run: store.Run) -> RunView:
         errors_cut=run.errors_cut,
         error=run.error,
         requested_by=run.requested_by,
+        committed_by=run.committed_by,
         created_at=run.created_at,
         finished_at=run.finished_at,
     )
@@ -212,6 +221,7 @@ async def targets(claims: AuthDep, _tenant: TenantDep) -> list[TargetView]:
             operations=[operation.value for operation in target.operations],
             formats=[fmt.value for fmt in target.formats],
             max_rows=target.max_rows,
+            committable=target.committable,
         )
         for target in registry
     ]
@@ -267,6 +277,19 @@ async def start(
         source_file_id=body.file_id,
         requested_by=require_subject(tenant),
         operation=operation,
+    )
+    # In the same transaction as the run: an activity row for a run that does
+    # not exist, or a run with no record of having been started, are both
+    # worse than either alone.
+    await record(
+        session,
+        tenant_id=tenant.id,
+        actor_id=require_subject(tenant),
+        action="import.run.started",
+        target_type="import_run",
+        target_id=run.id,
+        outcome="ok",
+        details={"target": run.target, "operation": run.operation},
     )
     await session.commit()
     return _view(run)
@@ -434,6 +457,132 @@ async def validate(
     await store.begin_validation(session, run)
     await session.commit()
     return _view(_run_or_404(await store.get(session, run_id)))
+
+
+@router.post(
+    "/imports/{run_id}/commit",
+    response_model=RunView,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def commit(
+    run_id: str,
+    claims: AuthDep,
+    tenant: TenantDep,
+    session: DbSession,
+    jobs: JobsDep,
+) -> RunView:
+    """Confirm a checked run, and let the worker write it.
+
+    **The second actor.** `requested_by` started the run; `committed_by` is
+    written here, by whoever confirmed. They are frequently the same person and
+    the table records them separately anyway, because the fact worth keeping is
+    that somebody looked at a dry run and said yes.
+
+    A run with errors never reaches this route, and not because the route
+    checks: validation lands such a run in `validation_failed`, and the state
+    machine has no move from there to `commit_requested`. The 409 below is what
+    a double-click gets, and what a run somebody else already committed gets.
+
+    202 and the worker does the writing -- for the same reason the dry run does,
+    and one more: the write is one transaction over a file at the row ceiling,
+    which is not a thing to hold a request open for.
+    """
+    _require(claims, "committing an import")
+    run = _run_or_404(await store.get(session, run_id))
+    target = _target(run.target)
+    _require_target(claims, target)
+
+    if not target.committable:
+        # A target that declares no writer can be uploaded, mapped and checked
+        # and never written. Refused in the same words the page uses, rather
+        # than accepted and failed a minute later by a worker: a person who
+        # cannot import this should learn it before they confirm.
+        await _refused(session, tenant, run, "the target accepts no writer")
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            ApiErrorCode.IMPORT_NOT_COMMITTABLE,
+            f"{target.key} can be checked but not written",
+        )
+
+    if not may_move(run.state, RunState.COMMIT_REQUESTED):
+        await _refused(session, tenant, run, f"the run is in {run.status}")
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            ApiErrorCode.IMPORT_NOT_TRANSITIONABLE,
+            f"an import run in {run.status} cannot be committed",
+        )
+
+    # Recorded before the enqueue, and committed before it, so the run is in
+    # `commit_requested` by the time any worker can pick the job up. The other
+    # order has a window in which a worker reads a run still `validated` and
+    # refuses its own job.
+    await store.request_commit(session, run, by=require_subject(tenant))
+    # In the same transaction as the move, so the audit row and the run's own
+    # record of who confirmed it cannot disagree.
+    await record(
+        session,
+        tenant_id=tenant.id,
+        actor_id=require_subject(tenant),
+        action="import.run.committed",
+        target_type="import_run",
+        target_id=run.id,
+        outcome="ok",
+        details={"target": run.target, "operation": run.operation, "rows": run.rows_valid},
+    )
+    await session.commit()
+
+    queued = await jobs.enqueue(
+        COMMIT_RUN,
+        tenant_id=tenant.id,
+        payload={"run_id": run.id},
+        actor_id=require_subject(tenant),
+        # The whole point of an idempotency key here rather than on the dry run:
+        # two confirmations of the same run must not write the rows twice. The
+        # state machine already refuses the second request, so this is the
+        # second lock rather than the first -- worth having, because the two
+        # protect against different failures and the cost of being wrong is a
+        # customer's records imported twice.
+        idempotency_key=f"commit:{run.id}",
+    )
+    if queued.simulated:
+        # The run is already `commit_requested` and the enqueue did nothing, so
+        # say so rather than leaving a person watching a state that will never
+        # change. Failed rather than reverted to `validated`: a run that was
+        # confirmed *was* confirmed, and the record of who confirmed it is the
+        # part worth keeping.
+        fresh = _run_or_404(await store.get(session, run_id))
+        await store.fail(
+            session, fresh, "background work is not configured, so this import was not written"
+        )
+        await session.commit()
+        raise api_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            ApiErrorCode.IMPORT_QUEUE_UNAVAILABLE,
+            "background work is not configured, so this import cannot be written",
+        )
+
+    return _view(_run_or_404(await store.get(session, run_id)))
+
+async def _refused(
+    session: DbSession, tenant: TenantDep, run: store.Run, why: str
+) -> None:
+    """Record a refused commit, and commit that record.
+
+    Its own commit because the request is about to raise: an audit row written
+    on a session that then raises is an audit row nobody keeps, and a refusal
+    nobody keeps is the one class of event most worth having.
+    """
+    await record(
+        session,
+        tenant_id=tenant.id,
+        actor_id=require_subject(tenant),
+        action="import.run.refused",
+        target_type="import_run",
+        target_id=run.id,
+        outcome="denied",
+        details={"target": run.target, "why": why},
+    )
+    await session.commit()
 
 
 @router.get("/imports/{run_id}/errors", response_model=list[RowErrorView])

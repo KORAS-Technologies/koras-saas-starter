@@ -188,6 +188,27 @@ one needs it.
 **Exit:** a mail server refusing connections for ten minutes loses no
 notification, and the delivery log says what happened to each.
 
+**Met 2026-09-20, except the fourth bullet.** `notification_outbox` is
+written by `dispatch` on the caller's own session, so a message is owed
+exactly when the thing that caused it committed; the worker claims what is
+due every minute with `for update skip locked`, counts the attempt on the
+claim, and records the provider's own message id — which `koras_email.Sent`
+has carried since it was written and every call site discarded. Five
+attempts over about fifty-one minutes, then `abandoned` with the reason on
+the row, which is the whole difference from the log line it replaces.
+
+The delivery record is on the same row rather than in a second table. Every
+question anybody asks joins them, a message has one final outcome, and a
+second table would need its own retention, policy and sweep. The cost is
+that a retried message overwrites its last error; `attempts` and
+`last_failed_at` make that legible and a per-attempt history is Phase 4's
+problem if anybody wants one.
+
+**Escalation is not built.** A rule that widens the audience when a critical
+notification goes unacknowledged needs an acknowledgement, and nothing in
+the product has one: a feed row is read or unread, which is not the same
+claim. It is named here rather than quietly dropped.
+
 ### Phase 4 — Digests and announcements
 
 - A digest job honouring the frequency setting that has offered three values and

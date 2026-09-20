@@ -769,7 +769,19 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'imports.summary':
     '{rows} filas leídas, {valid} listas para importar, {errors} problemas encontrados.',
   'imports.wroteNothing':
-    'No se ha escrito nada. Esto era una comprobación y sus registros están intactos.',
+    'Todavía no se ha escrito nada. Confirme abajo cuando las cifras sean correctas.',
+  'imports.confirm':
+    'Importar estos registros',
+  'imports.confirmHint':
+    'Esto escribe los registros en {product}. No se puede deshacer desde esta página.',
+  'imports.committing':
+    'Importando…',
+  'imports.notCommittable':
+    'Esta importación se puede comprobar pero no escribir. Todavía no hay nada en este producto que acepte estos registros.',
+  'imports.wrote':
+    '{created} de {total} registros se han importado.',
+  'imports.downloadReport':
+    'Descargar todos los problemas',
   'imports.showReport':
     'Mostrar los problemas',
   'imports.reportCut':
@@ -1093,6 +1105,8 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'Esta importación ha avanzado y eso ya no es posible.',
   'errors.importQueueUnavailable':
     'El trabajo en segundo plano no está configurado, así que este archivo no se puede comprobar. Tiene que configurarlo una persona administradora.',
+  'errors.importNotCommittable':
+    'Esta importación se puede comprobar pero no escribir. Todavía no hay nada en este producto que acepte estos registros.',
   'errors.importFileTooLarge':
     'Este archivo es más grande de lo que lee una importación. Divídalo e importe las partes por separado.',
   'errors.uploadRefusedByPolicy':

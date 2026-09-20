@@ -34,18 +34,23 @@ provider is not one either. `dispatch` returns what each channel did and never
 raises, because a producer is in the middle of doing the thing the customer
 actually asked for.
 
-**The feed is written on the caller's session; mail is not sent on it.**
-ADR 0008 rule 2 again: the row belongs with the transaction that produced it,
-so a rollback takes the notification with it. A mail cannot be rolled back, so
-it goes out after the commit, from a background task — which is why `dispatch`
-returns the mail as *pending work* rather than sending it itself.
+**Both halves are written on the caller's session.** ADR 0008 rule 2: a
+notification belongs with the transaction that produced it, so a rollback takes
+it with it. The feed row is that notification; the mail is a *row saying a mail
+is owed*, which can be rolled back even though a mail cannot.
+
+That is the change Phase 3 made, on 2026-09-20. Until then `dispatch` handed
+prepared mail back and the caller handed it to a FastAPI background task — the
+arrangement PLAT-F1 was built to replace, because such a task runs in the API
+process and is lost when it restarts. A deploy during a send lost the send, and
+a mail server refusing connections for ten minutes lost every notification
+raised in those ten minutes with nothing anywhere saying so.
 
 ## What is deliberately not here
 
-No outbox, no delivery log, no retry, no digest. Those are Phase 3 and Phase 4,
-and each needs a table. A notification that fails to send today is a log line,
-which is honest for a product whose only producer is an approval notice, and
-would not be for one that sends invoices.
+No digest, which is Phase 4 and needs the outbox this now writes to. No
+escalation — a rule that widens the audience when a critical notification goes
+unacknowledged — because nothing in the product yet has an acknowledgement.
 """
 
 from __future__ import annotations
@@ -55,11 +60,12 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from koras_email import DEFAULT_LOCALE, EmailSender, Locale
+from koras_email import DEFAULT_LOCALE, Locale
 from koras_settings import resolve as resolve_setting
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..settings_catalogue import catalogue
+from . import outbox
 from .notifications import Severity, kinds, notify
 from .recipients import Audience, Recipient
 from .recipients import resolve as resolve_audience
@@ -123,6 +129,9 @@ class Mail:
     html: str
     #: The notification kind, dotted, which goes into the Message-ID.
     tag: str = "notification"
+    #: Which language it was rendered in. Stored with it, because a retry must
+    #: send the message that was decided rather than re-render it.
+    locale: Locale = DEFAULT_LOCALE
 
 
 @dataclass(frozen=True)
@@ -131,8 +140,13 @@ class Dispatched:
 
     recipients: int = 0
     in_app: int = 0
-    #: Not sent — *prepared*. The caller sends these after its commit.
+    #: Owed. One outbox row per message, written on the caller's session and
+    #: sent by the worker after the caller's transaction commits. The caller
+    #: does not send them and has nothing to do with them.
     mail: tuple[Mail, ...] = field(default_factory=tuple)
+    #: Messages that could not even be written down. Counted rather than
+    #: raised, because a notification must not undo the thing that caused it.
+    unrecorded: int = 0
     #: People a channel deliberately skipped, by reason. A preference is a
     #: reason; so is having no address.
     skipped: tuple[str, ...] = field(default_factory=tuple)
@@ -276,11 +290,30 @@ async def dispatch(session: AsyncSession, event: Event) -> Dispatched:
     say = _renderer(event)
     in_app = await _to_feed(session, event, people, skipped, wants, say)
     mail = await _to_mail(event, people, skipped, wants, say)
+
+    # Written here, on the caller's session, so a message is owed exactly when
+    # the thing that caused it happened. The worker sends them.
+    unrecorded = 0
+    for message in mail:
+        recorded = await outbox.enqueue(
+            session,
+            tenant_id=event.tenant_id,
+            kind=event.kind,
+            recipient=message.to,
+            locale=message.locale,
+            subject=message.subject,
+            body_text=message.text,
+            body_html=message.html,
+        )
+        if recorded is None:
+            unrecorded += 1
+
     return Dispatched(
         recipients=len(people),
         in_app=in_app,
         mail=tuple(mail),
         skipped=tuple(skipped),
+        unrecorded=unrecorded,
     )
 
 
@@ -403,35 +436,10 @@ async def _to_mail(
                 text=rendered.text,
                 html=rendered.html,
                 tag=event.kind,
+                locale=person.locale,
             )
         )
     return prepared
-
-
-async def send(sender: EmailSender, mail: Sequence[Mail]) -> int:
-    """Send what `dispatch` prepared. Returns how many left.
-
-    Called after the caller's commit, from a background task. Every failure is
-    swallowed and logged: the thing the customer asked for has already
-    happened, and a send that fails must not undo it. Phase 3 gives this an
-    outbox so a failure is a row somebody can retry rather than a log line.
-    """
-    sent = 0
-    for message in mail:
-        try:
-            await sender.send(
-                to=message.to,
-                subject=message.subject,
-                body=message.text,
-                html=message.html,
-                # Names the kind of message, so a duplicate in an inbox is
-                # recognisable as a duplicate rather than a second event.
-                tag=message.tag,
-            )
-            sent += 1
-        except Exception:
-            logger.exception("a notification mail could not be sent")
-    return sent
 
 
 __all__ = [
@@ -444,5 +452,4 @@ __all__ = [
     "Rendered",
     "Template",
     "dispatch",
-    "send",
 ]

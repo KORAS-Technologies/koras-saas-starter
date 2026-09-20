@@ -344,3 +344,65 @@ describe('the shell belongs to the product profile alone', () => {
     }
   })
 })
+
+describe('the theme script and the hydration warning it necessarily causes', () => {
+  /**
+   * GR-250-WEB, found in a generated product.
+   *
+   * `THEME_SCRIPT` runs in `<head>`, before React, and writes `color-scheme`
+   * onto `document.documentElement`. That is the whole point of it: the
+   * appearance is correct at first paint, so a reader who chose dark never
+   * sees a light flash. It also means the client's `<html>` carries a `style`
+   * attribute the server never rendered, and React reports that at hydration
+   * -- correctly, and every time.
+   *
+   * The fix is to say so in the one place it is true, rather than to stop the
+   * script writing before hydration, which would reintroduce the flash.
+   */
+  const rootLayout = read(PRODUCT, 'apps', 'web', 'src', 'app', 'layout.tsx.hbs')
+
+  it('still paints the chosen appearance before React runs', () => {
+    // The premise. If the script stopped running ahead of hydration, the
+    // suppression below would be hiding a real mismatch instead of an
+    // intended one.
+    const themeToggle = read(PRODUCT, 'packages', 'ui', 'src', 'shell', 'theme-toggle.tsx.hbs')
+    expect(themeToggle).toContain('document.documentElement.style.colorScheme')
+    expect(rootLayout).toContain('THEME_SCRIPT')
+  })
+
+  it('suppresses the warning on the element the script actually mutates', () => {
+    expect(rootLayout).toMatch(/<html[^>]*suppressHydrationWarning/)
+  })
+
+  it('suppresses it nowhere else', () => {
+    // `suppressHydrationWarning` covers one element's own attributes and
+    // text, not its descendants -- so one attribute on `<html>` is narrow,
+    // and a second one anywhere below it would be someone silencing a real
+    // mismatch with the same tool.
+    // The attribute, not the comment that explains it: the prose names it
+    // too, and counting both would make this assertion about paragraph
+    // length.
+    const asAttribute = rootLayout.match(/suppressHydrationWarning(?=[\s/>])/g) ?? []
+    expect(asAttribute).toHaveLength(1)
+    expect(rootLayout).not.toMatch(/<body[^>]*suppressHydrationWarning/)
+  })
+
+  it('says why, where the next person will read it', () => {
+    // An unexplained suppression is indistinguishable from one added to make
+    // a warning go away, which is the thing it must never be used for.
+    expect(rootLayout).toMatch(/suppressHydrationWarning` belongs on the <html> element/)
+    expect(rootLayout).toMatch(/before React/)
+    expect(rootLayout).toMatch(/and never its descendants/)
+  })
+
+  it('explains it in a comment the compiler accepts', () => {
+    // Written after getting this wrong. A `{/* ... */}` block placed between
+    // `return (` and `<html>` is not a JSX comment -- there is no element for
+    // it to be a child of -- and it is a syntax error that every check here
+    // sails past, because they all match strings against a template nothing
+    // in this repository compiles. The explanation therefore goes above the
+    // `return`, as an ordinary line comment.
+    expect(rootLayout).toMatch(/\/\/ `suppressHydrationWarning` belongs on the <html> element/)
+    expect(rootLayout).not.toMatch(/return \(\s*\{\/\*/)
+  })
+})

@@ -173,11 +173,13 @@ template_map:
       - python-packages/koras-import
       - services/api/koras_api/imports
       - services/api/koras_api/core/imports.py
+      - services/api/koras_api/core/import_notify.py
       - services/api/koras_api/routers/imports.py
       - services/worker/koras_worker/tasks/imports.py
       - supabase/migrations/00036_imports.sql
       - supabase/tests/320_imports_isolation.sql
       - tests/unit/test_imports.py
+      - tests/unit/test_import_commit.py
       - apps/web/src/app/dashboard/imports
       - e2e/imports.spec.ts
     # In-app notifications: the table, the emitter, the routes, the page and
@@ -199,6 +201,11 @@ template_map:
       - services/api/koras_api/routers/notifications.py
       - services/worker/koras_worker/tasks/notifications.py
       - supabase/migrations/00032_notifications.sql
+      - supabase/migrations/00037_notification_outbox.sql
+      - services/api/koras_api/core/outbox.py
+      - services/worker/koras_worker/tasks/outbox.py
+      - supabase/tests/300_notification_outbox_isolation.sql
+      - tests/unit/test_outbox.py
       - supabase/tests/290_notifications_isolation.sql
       - tests/unit/test_notifications.py
       - apps/web/src/app/dashboard/notifications
@@ -290,6 +297,12 @@ template_map:
 # manifest schema for why this is refused rather than switched on silently.
 requires:
   ai: [ai_gateway, notifications]
+  # The commit tells whoever started and whoever confirmed the run that it is
+  # over, through the same dispatch point the assistant uses. Refused rather
+  # than degraded: a commit is minutes of work in a worker and the person who
+  # confirmed it has closed the page, so an import framework whose completion
+  # notice silently does nothing is one whose runs appear to hang.
+  data_import: [notifications]
 
 # Directories copied verbatim from the starter into the generated project.
 # Terraform modules stay single-sourced here rather than being duplicated

@@ -1,0 +1,89 @@
+import { expect, test } from '@playwright/test'
+import { signInAs } from '../support/session'
+
+/**
+ * A change reaches the database and comes back.
+ *
+ * This is the case three features say nothing automated reaches.
+ * `docs/features/settings-framework/manual-test-plan.md` opens with it —
+ * *change a page size, watch a table repaginate* — and calls it "the thing the
+ * feature exists for and the one no automated test in this estate reaches".
+ *
+ * **Everything here is real.** A real Postgres with this product's own
+ * migrations, this product's own API, a token the API verifies against a JWKS
+ * it discovers, row-level security enforced the way it is in production. The
+ * only local thing is the identity provider, and `e2e/support/identity.mjs`
+ * explains why that is the honest place to put the seam.
+ *
+ * **Selectors are `data-setting` and `data-testid`, not labels.** A label is
+ * the translated catalogue's English string, so a test matching one would
+ * break when somebody improves the wording — and pass when the control stopped
+ * being wired to anything, because the label is rendered either way.
+ *
+ * Each test writes what it needs and reads it back. None depends on a fixture
+ * having pre-seeded a value, because a suite that asserted against seeded data
+ * drifts into proving that the seed script works.
+ */
+
+const PAGE_SIZE = '[data-setting="grid.pageSize"] input'
+
+test('a signed-in person reaches their own organisation', async ({ page, context }) => {
+  // The first thing to fail if the fixture and the token disagree. The seed's
+  // `zitadel_org_id`, the token's organisation claim and the session cookie's
+  // have to be one value; when they are not, every later test signs in
+  // successfully and then sees nothing, which reads as a broken feature rather
+  // than a broken fixture.
+  await signInAs(context)
+  await page.goto('/dashboard/preferences')
+
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  // The API answered. Without a resolved tenant this page says so instead, and
+  // that sentence is the degraded state every other project in this suite runs
+  // in — the opposite of what this one is for.
+  await expect(page.getByTestId('preferences-unavailable')).toHaveCount(0)
+  await expect(page.locator(PAGE_SIZE)).toBeVisible()
+})
+
+test('a page size chosen here survives a reload', async ({ page, context }) => {
+  await signInAs(context)
+  await page.goto('/dashboard/preferences')
+
+  // Read what it is and choose the other, so this does not depend on what the
+  // platform default happens to be today.
+  const before = await page.locator(PAGE_SIZE).inputValue()
+  const after = before === '25' ? '50' : '25'
+  await page.locator(PAGE_SIZE).fill(after)
+  await page.getByTestId('save-grid').click()
+
+  // Announced before it is believed. Reloading immediately would race the
+  // write and fail intermittently, which is how a suite gets deleted.
+  await expect(page.getByTestId('preferences-outcome')).toContainText(/./)
+
+  await page.reload()
+  await expect(page.locator(PAGE_SIZE)).toHaveValue(after)
+})
+
+test('what one person chose is not what another sees', async ({ page, context, browser }) => {
+  // The property row-level security exists for, checked from a browser rather
+  // than from a SQL suite. A settings store that ignored the subject entirely
+  // would pass every other test in this file.
+  await signInAs(context)
+  await page.goto('/dashboard/preferences')
+  await page.locator(PAGE_SIZE).fill('100')
+  await page.getByTestId('save-grid').click()
+  await expect(page.getByTestId('preferences-outcome')).toContainText(/./)
+  await page.reload()
+  await expect(page.locator(PAGE_SIZE)).toHaveValue('100')
+
+  const other = await browser.newContext()
+  try {
+    // A second member of the same organisation, seeded beside the first.
+    await signInAs(other, { subject: 'e2e-colleague', email: 'colleague@example.com' })
+    const theirs = await other.newPage()
+    await theirs.goto('/dashboard/preferences')
+    await expect(theirs.locator(PAGE_SIZE)).toBeVisible()
+    await expect(theirs.locator(PAGE_SIZE)).not.toHaveValue('100')
+  } finally {
+    await other.close()
+  }
+})

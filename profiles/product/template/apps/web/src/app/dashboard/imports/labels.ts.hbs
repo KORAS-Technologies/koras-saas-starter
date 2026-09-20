@@ -38,7 +38,13 @@ export interface ImportLabels {
   resultTitle: string
   summary: string
   wroteNothing: string
+  confirm: string
+  confirmHint: string
+  committing: string
+  notCommittable: string
+  wrote: string
   showReport: string
+  downloadReport: string
   reportCut: string
   row: string
   problem: string
@@ -116,7 +122,15 @@ export function importLabels(t: Translator): ImportLabels {
     resultTitle: t('imports.resultTitle'),
     summary: t('imports.summary'),
     wroteNothing: t('imports.wroteNothing'),
+    confirm: t('imports.confirm'),
+    // The product's own name, filled here rather than in the panel: the panel
+    // is a client component and the name is a server-side setting.
+    confirmHint: t('imports.confirmHint').replace('{product}', '{{projectName}}'),
+    committing: t('imports.committing'),
+    notCommittable: t('imports.notCommittable'),
+    wrote: t('imports.wrote'),
     showReport: t('imports.showReport'),
+    downloadReport: t('imports.downloadReport'),
     reportCut: t('imports.reportCut'),
     row: t('imports.row'),
     problem: t('imports.problem'),

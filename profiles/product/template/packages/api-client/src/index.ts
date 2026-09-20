@@ -1688,6 +1688,13 @@ export interface ImportTargetView {
   operations: string[]
   formats: string[]
   max_rows: number
+  /**
+   * False for a target that declares no writer: it can be uploaded, mapped and
+   * checked, and never written. The page offers no confirm control at all in
+   * that case — absent rather than disabled, which is the shape the whole
+   * feature used before a commit existed.
+   */
+  committable: boolean
 }
 
 export interface ImportRunView {
@@ -1704,6 +1711,8 @@ export interface ImportRunView {
   errors_cut: boolean
   error: string | null
   requested_by: string
+  /** Null until somebody confirms. The second actor, and the point of the table. */
+  committed_by: string | null
   created_at: string
   finished_at: string | null
 }
@@ -1774,6 +1783,16 @@ export function validateImportRun(
 ): Promise<ImportRunView> {
   return request<ImportRunView>(
     `/api/v1/imports/${encodeURIComponent(options.runId)}/validate`,
+    options,
+    { method: 'POST', body: {} },
+  )
+}
+
+export function commitImportRun(
+  options: RequestOptions & { runId: string },
+): Promise<ImportRunView> {
+  return request<ImportRunView>(
+    `/api/v1/imports/${encodeURIComponent(options.runId)}/commit`,
     options,
     { method: 'POST', body: {} },
   )

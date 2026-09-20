@@ -191,9 +191,43 @@ jobs:
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
         run: pnpm e2e:install
 
+      # The round trip's own database, and the role the API insists on.
+      #
+      # Separate from `koras_rls` above so the two suites cannot see each
+      # other's rows: a browser test that wrote into the schema the isolation
+      # suite reads would make one of them fail for the other's reasons.
+      #
+      # `nobypassrls` is not a preference. The API refuses to start on a
+      # connection whose role is granted BYPASSRLS -- "every tenant policy is
+      # inert and queries can return other tenants' rows" -- and connecting as
+      # `postgres` would have produced a suite where every isolation assertion
+      # passed vacuously. Its own guard caught that the first time this ran.
+      - name: Prepare the round-trip database
+        if: matrix.slug != 'integration-product-minimal'
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        env:
+          PGPASSWORD: rlstest
+          PGHOST: localhost
+          PGUSER: postgres
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -q -d postgres \
+            -c "drop database if exists koras_e2e" -c "create database koras_e2e"
+
+          export PGDATABASE=koras_e2e
+          for file in supabase/migrations/*.sql; do
+            psql -v ON_ERROR_STOP=1 -q -f "$file"
+          done
+          psql -v ON_ERROR_STOP=1 -q -f e2e/support/seed.sql
+
       - name: End-to-end (browser)
         if: matrix.slug != 'integration-product-minimal'
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        env:
+          # Its presence is what starts the identity provider and the API and
+          # adds the `roundtrip` project. Absent -- which is every developer's
+          # laptop -- the suite is exactly what it was.
+          E2E_DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
         run: pnpm e2e
 
       # The trace that explains a failure, which is the half `koras-control-plane`'s

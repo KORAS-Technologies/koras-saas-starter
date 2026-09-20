@@ -780,7 +780,19 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'imports.summary':
     '{rows} Zeilen gelesen, davon {valid} importierbar, {errors} Probleme gefunden.',
   'imports.wroteNothing':
-    'Es wurde nichts geschrieben. Dies war eine Prüfung; Ihre Datensätze sind unverändert.',
+    'Es wurde noch nichts geschrieben. Bestätigen Sie unten, wenn die Zahlen stimmen.',
+  'imports.confirm':
+    'Diese Datensätze importieren',
+  'imports.confirmHint':
+    'Damit werden die Datensätze in {product} geschrieben. Das lässt sich auf dieser Seite nicht rückgängig machen.',
+  'imports.committing':
+    'Wird importiert …',
+  'imports.notCommittable':
+    'Dieser Import kann geprüft, aber nicht geschrieben werden. In diesem Produkt nimmt noch nichts diese Datensätze entgegen.',
+  'imports.wrote':
+    '{created} von {total} Datensätzen wurden importiert.',
+  'imports.downloadReport':
+    'Alle Probleme herunterladen',
   'imports.showReport':
     'Probleme anzeigen',
   'imports.reportCut':
@@ -1106,6 +1118,8 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Dieser Import ist weiter fortgeschritten; das ist jetzt nicht mehr möglich.',
   'errors.importQueueUnavailable':
     'Die Hintergrundverarbeitung ist nicht eingerichtet, daher kann diese Datei nicht geprüft werden. Das muss administrativ konfiguriert werden.',
+  'errors.importNotCommittable':
+    'Dieser Import kann geprüft, aber nicht geschrieben werden. In diesem Produkt nimmt noch nichts diese Datensätze entgegen.',
   'errors.importFileTooLarge':
     'Diese Datei ist größer, als ein Import einlesen kann. Teilen Sie sie und importieren Sie die Teile einzeln.',
   'errors.uploadRefusedByPolicy':

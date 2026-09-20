@@ -177,7 +177,9 @@ generated from it.
 .claude/
   CLAUDE.md                     Shared Koras engineering instructions
   commands/                     /feature, /review, /test, /ui-review
-  agents/                       architect, frontend, reviewer, tester
+  agents/                       architect, frontend, reviewer, tester - legacy, for the four
+                                commands above. No frontmatter, so Claude Code does not
+                                register them; not the 40-agent catalogue below
   skills/koras-*/               The twelve common Koras skills
   skills/frontend-design/          skills/webapp-testing/          } Vendored external skills, pinned in
   skills/react-best-practices/    } .claude/external-skills.yaml and locked in
@@ -210,6 +212,17 @@ asserts both directions, plus the things that otherwise fail silently — that t
 registry count matches the files on disk, that every agent id named in the
 workflow, activation rules and gates resolves, that every documented file has a
 template, and that the 40 definitions are not 40 copies of one file.
+
+Those forty live under `profiles/product/template/.claude/agents/<category>/`
+and are registered in `agent-registry.yaml`, which is the authority on the
+count. The four files in the root `.claude/agents/` are a different and older
+thing: they carry no agent frontmatter, Claude Code does not register them as
+agents, and they exist so that `/feature`, `/review`, `/test` and `/ui-review`
+keep working. They are not a subset of the forty and not a summary of them, and
+a generated product has 40 agents rather than 44. Both statements are in the
+product's own `CLAUDE.md`, from `profiles/product/template/CLAUDE.md.hbs`,
+because a product that reads only the four-file line concludes its catalogue is
+four.
 
 This starter is the factory, not a generated project: it carries the common
 configuration and no overlay. Profile rules are *authored* here, not applied
@@ -434,13 +447,32 @@ behind no plan. `docs/features/data-import/architecture.md` is the description
 and `docs/adr/0009-import-runs-are-not-a-third-export.md` is why the run has its
 own table.
 
-**What Phase 1 does is stop.** A run reaches `validated`, which is a terminal
-state that wrote nothing; there is no commit route, no commit task and no
-control on the page that could write a row — absent rather than disabled. That
-is asserted structurally rather than behaviourally: the generator's test scans
-the run store for every `insert into public.X` and requires X to be one of the
-two import tables, so a commit added later without its own confirmation cannot
-sail past.
+**Phase 1 stopped at `validated`. Phase 2 — the commit — shipped on
+2026-09-20.** The product declares a `Writer` on its target and the engine calls
+it; that is the only thing in the path that may write a record, and it is what
+keeps the rule the plan states first — no product table name reaches the engine.
+A target with no writer is not committable, absent rather than disabled all the
+way down: the API answers `committable: false`, the page draws no control, and
+the route refuses.
+
+**The atomicity is three transactions, in order, and the order is the design.**
+One holds the writer's work *and* the run's `committed` row, and commits once —
+both halves matter, because a run marked committed whose rows rolled back
+claims an import that did not happen, and rows under a run still `committing`
+can be committed again and go in twice. The failure is recorded in a **second**
+transaction, opened after the first has rolled back, which is the only
+arrangement where a failure is both recorded and leaves nothing behind. The
+notice is a third, last, and swallows everything. The job declares
+`attempts=1`: nothing outside the transaction can tell a clean failure from a
+write that committed and then failed later, and the cost of guessing wrong is a
+customer's records imported twice.
+
+None of that is visible to a test that reads template text, so the generator's
+test asserts the shape instead — exactly two commits and two sessions on the
+path, a rollback before every recorded failure, `record_commit` before `fail` —
+each a thing somebody could undo in one plausible edit. The Phase 1 scan for
+`insert into public.X` in the run store is kept: the store still touches only
+the two import tables.
 
 **Three things about it are worth carrying.** The mapping is an allowlist that
 *refuses* an undeclared field rather than dropping it, because dropping it is
@@ -451,12 +483,42 @@ configured every file is `pending`, so a product without one cannot import at
 all. And an unconfigured queue is a 503 rather than a 202, because a dry run
 that is promised and never happens leaves somebody watching a spinner forever.
 
+**Two Phase 2 decisions departed from the plan, and one item was not built.**
+The error file is a CSV the browser writes from a report paged to exhaustion,
+rather than the source with a column appended written by the worker to the
+exports category — durability bought for a file whose whole life is one
+download. Idempotency is two locks, the state machine and
+`idempotency_key=commit:{run_id}`, rather than a client key whose failure mode
+they already cover. And progress-as-counts is **not** built: a row counter would
+need the worker to write outside its one transaction, which is the property the
+phase exists to protect.
+
+**The completion notice is in-app only, and the reason is worth carrying.** The
+audience is two subjects — who started the run and who confirmed it — and a
+subject carries no address in the product's own tables; the one place addresses
+live is the platform's member list, which needs a caller's token, and a worker
+has no token. So the template returns `html=None` and the mail half skips.
+`data_import` therefore **requires** `notifications`, refused rather than
+degraded.
+
+Reaching the one dispatch point from the worker cost one fix elsewhere.
+`core/recipients` imported `core/platform`, which builds the API's `Settings()`
+at import, so anything importing recipients needed the API's whole environment.
+That import is now made at the point of use. The worker also declared neither
+`koras-audit`, `koras-settings`, `koras-auth` nor — under `notifications`
+without `reporting` — `koras-email`, while importing all four; because those
+modules are reached by `importlib` with a graceful failure, the symptom would
+have been a job that silently never ran. Both are fixed, and a generated
+worker is now loaded in its own environment to prove it rather than asserted
+about.
+
 **Three Phase 1 plan items were deliberately not built**, and are named in
 `docs/features/data-import/architecture.md` rather than left to be
 rediscovered: `files.maxFilesPerUpload`, the upload primitive that was to be
 extracted into `packages/ui`, and the preview drawn through the shared data
 table. None of them touches the safety properties above. No manual pass has run
-against any of it, and `koras-e2e-shop` — the one repository in the estate with
+against any of it, no independent review has run against Phase 2, and
+`koras-e2e-shop` — the one repository in the estate with
 a domain that could declare real targets — has not been synced.
 
 **It was reviewed the same day and the review returned BLOCK** — the third in
@@ -550,6 +612,56 @@ left PLANNED.
 
 **A plan with no recorded intent is unchecked, not clean**, and a test asserts
 that distinction. An expectation nobody stated is not a fact about the price.
+
+**The browser suite can reach a database since 2026-09-20.** Set
+`E2E_DATABASE_URL` and three more servers start: a local identity provider,
+the product's own API against that database, and the web application pointed at
+both. It is opt-in, so a laptop with no Postgres runs exactly what it ran
+before — a suite that failed without one is a suite people stop running. What
+is local is the *provider*, not the verification: the API discovers a JWKS and
+checks an RS256 signature, the audience, the issuer and the expiry exactly as it
+does in production, and nothing in it is relaxed to accept a test token.
+
+**It earned itself on the first run, twice.** The API refused to start on a
+connection whose role bypasses row-level security — so the first attempt, as
+`postgres`, was stopped by the product's own guard rather than producing a
+suite in which every isolation assertion passed vacuously. And then
+`SettingsFormLabels.resetTo` turned out to be a closure handed to a client
+component: React cannot serialise a function across that boundary, so **the
+preferences page threw on every product whose API answered**. That is the same
+defect as the notification bell in `728d916`, in a different feature, and it
+was invisible to every suite here because the page renders its API-less state
+before it reaches the form.
+
+Two lessons worth keeping. A label that needs a value in it crosses the
+boundary as a **template** and is filled on the client — `withCount` for the
+bell, `withValue` for the settings form, and the next one will be the third. And
+a suite that cannot reach the API cannot see anything the API's presence
+changes, which is most of what a customer does.
+
+**A notification is owed rather than in flight, since 2026-09-20.** CAT-01
+Phase 3: `dispatch` writes a `notification_outbox` row on the caller's own
+session, so a message is owed exactly when the thing that caused it committed,
+and a worker sweep claims what is due every minute and sends it. What it
+replaces is a FastAPI background task — the arrangement PLAT-F1 exists to
+replace everywhere else, because such a task runs in the API process and is
+lost on restart. A deploy during a send lost the send; a mail server refusing
+connections for ten minutes lost every notice raised in them, with nothing
+saying so.
+
+Five attempts over about fifty-one minutes, then `abandoned` **with the reason
+on the row** — the whole difference from the log line it replaces. No
+dead-letter queue, per ADR 0008: a destination nothing reads is not evidence.
+And the provider's own message id is kept at last: `koras_email.Sent` has
+carried it since it was written and every call site discarded it, which left no
+way to connect a row here to a line in a mail provider's log.
+
+**The outbox has no tenant select policy at all**, and that is a stronger claim
+than isolation. The table holds the rendered body of every notification,
+including ones addressed to a colleague, so a member who could read it could
+read what the product wrote to somebody else. A customer's context may insert
+and nothing more; `300_notification_outbox_isolation.sql` proves the absence
+rather than assuming it.
 
 **The two capabilities are declared.** `audit_governance` and
 `storage_governance`, both on by default, and what they gate is the *surface*

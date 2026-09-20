@@ -39,7 +39,6 @@ from ..core import notify
 from ..core.ai import AiDep, AiFactoryDep, AiTurnLimit, TenantAI, refusal
 from ..core.database import tenant_session
 from ..core.dispatch import Event, dispatch
-from ..core.dispatch import send as send_notifications
 from ..core.errors import ApiErrorCode, api_error
 from ..core.locale import RequestLocale
 from ..core.settings import PRODUCT_NAME, settings
@@ -430,9 +429,15 @@ async def _tell_approvers(
     # would be one that vanished whenever the route returned by another path.
     await ai.session.commit()
 
-    # After the commit, never on the session: a mail cannot be rolled back.
-    if outcome.mail:
-        background.add_task(send_notifications, notify.mail_sender(), outcome.mail)
+    # Nothing to send here any more. `dispatch` wrote an outbox row per message
+    # on the same session, so a mail is owed exactly when the turn that caused
+    # it committed, and the worker's sweep is what delivers it. The background
+    # task this replaced ran in the API process and was lost on restart --
+    # which is the arrangement PLAT-F1 exists to replace. CAT-01 Phase 3.
+    if outcome.unrecorded:
+        _log.error(
+            "%d approval notice(s) could not be added to the outbox", outcome.unrecorded
+        )
 
 
 @router.post("/ai/conversations/{conversation_id}/messages", response_model=TurnView)

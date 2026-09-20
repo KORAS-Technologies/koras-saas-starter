@@ -46,6 +46,13 @@ VALIDATE_RUN = TaskDefinition(
 COMMIT_RUN = TaskDefinition(
     name="imports.commit",
     summary="Write the rows of a validated import run, all or nothing.",
+    # **One attempt, and it is the important half of this declaration.** A
+    # commit writes a customer's records. A retry after a write that committed
+    # and then failed somewhere later would write them twice, and the engine
+    # cannot tell those cases apart from out here. A failed commit is recorded
+    # on the run, the customer is told, and a person decides whether to try
+    # again -- which is the same answer the two-actor rule gives everywhere
+    # else in this feature.
     retry=RetryPolicy(attempts=1),
     timeout_seconds=900,
     tags=("import",),

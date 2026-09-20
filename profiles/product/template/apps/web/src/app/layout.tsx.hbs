@@ -73,8 +73,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const locale = await currentLocale()
   const t = createTranslator(locale)
 
+  // `suppressHydrationWarning` belongs on the <html> element and only there.
+  // THEME_SCRIPT below runs before React and writes `color-scheme` onto
+  // `document.documentElement`, so by the time hydration compares the two, the
+  // client has a `style` attribute the server never rendered. That is the
+  // intended behaviour -- it is what stops a reader who chose dark getting a
+  // light flash -- and the warning is React reporting it faithfully.
+  //
+  // It suppresses exactly one level: that element's own attributes and text,
+  // and never its descendants. A genuine mismatch anywhere inside the tree
+  // still reports.
   return (
-    <html lang={locale} dir={localeDirection(locale)}>
+    <html lang={locale} dir={localeDirection(locale)} suppressHydrationWarning>
       {/*
         Applied before the first paint, ahead of React and ahead of hydration.
         It reads one key and sets one property; anybody who has not chosen an

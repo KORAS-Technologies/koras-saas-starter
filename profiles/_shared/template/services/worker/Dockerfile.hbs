@@ -44,6 +44,10 @@ COPY services/worker/koras_worker/ ./services/worker/koras_worker/
 # namespace package, so `koras_api.reporting` resolves and nothing else of
 # `koras_api` exists here.
 COPY services/api/koras_api/reporting/ ./services/api/koras_api/reporting/
+{{/if}}{{#if capability.notifications}}# The outbox store, for the send sweep. Same arrangement and the same
+# reason: the worker sends what the API decided to send, without depending on
+# the API's distribution.
+COPY services/api/koras_api/core/outbox.py ./services/api/koras_api/core/outbox.py
 {{/if}}{{#if capability.data_import}}# The import targets and the run store, for the validation job. Same
 # arrangement and the same reason: the worker reads what a product declared
 # without depending on the API's distribution.
@@ -55,6 +59,23 @@ COPY services/api/koras_api/reporting/ ./services/api/koras_api/reporting/
 # `validating` rather than a build error.
 COPY services/api/koras_api/imports/ ./services/api/koras_api/imports/
 COPY services/api/koras_api/core/imports.py ./services/api/koras_api/core/imports.py
+COPY services/api/koras_api/core/import_notify.py ./services/api/koras_api/core/import_notify.py
+# And the dispatch point itself, because the commit tells whoever confirmed the
+# run that it finished, and there is exactly one place a notification leaves
+# from. Five modules rather than a re-implementation in the worker -- a second
+# emitter is how the two drift, and the drift is invisible until somebody
+# compares two notifications nobody reads side by side.
+#
+# None of these reaches the API's settings. `core/recipients` imported
+# `core/platform` -- which builds `Settings()` at import -- until 2026-09-20,
+# when that import became lazy for exactly this reason: a worker that had to
+# satisfy the API's whole environment to announce a finished import is a worker
+# with the API's configuration surface.
+COPY services/api/koras_api/core/dispatch.py ./services/api/koras_api/core/dispatch.py
+COPY services/api/koras_api/core/notifications.py ./services/api/koras_api/core/notifications.py
+COPY services/api/koras_api/core/recipients.py ./services/api/koras_api/core/recipients.py
+COPY services/api/koras_api/core/settings_store.py ./services/api/koras_api/core/settings_store.py
+COPY services/api/koras_api/settings_catalogue/ ./services/api/koras_api/settings_catalogue/
 {{/if}}
 # Unconditional: two capabilities put a namespace package here and a third
 # would be a third place to remember. An empty directory on the path costs

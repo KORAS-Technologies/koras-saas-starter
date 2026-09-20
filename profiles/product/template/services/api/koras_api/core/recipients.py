@@ -46,10 +46,28 @@ from koras_email import DEFAULT_LOCALE, SUPPORTED_LOCALES, Locale
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import platform
 from .settings_store import member_values
 
 logger = logging.getLogger(__name__)
+
+
+def _platform() -> Any:  # noqa: ANN401 - the platform client module
+    """The platform client, imported at the point of use rather than at import.
+
+    **Deliberate, and the reason is the worker.** `core.platform` reads the
+    API's own `Settings()` at import, which is built at import too -- so a plain
+    import here would mean anything importing this module needs the API's whole
+    environment. The import commit dispatches from the worker, and a worker that
+    had to satisfy the API's settings to announce a finished import would be a
+    worker with the API's configuration surface, which is the boundary the
+    worker image is built to keep.
+
+    Reached only on the branch that needs it: an audience resolved by permission
+    in a request that carried a token. A background send never gets there.
+    """
+    from . import platform
+
+    return platform
 
 _MEMBERS = text(
     "select user_id, role from public.tenant_members where tenant_id = :tenant_id"
@@ -226,7 +244,7 @@ async def resolve(
             # No subject: the tenant row holds the address and not the person.
             add(Recipient(subject=None, email=owner.strip().lower(), locale=fallback_locale))
 
-    if audience.permission and platform.configured() and token and organization_id:
+    if audience.permission and token and organization_id and _platform().configured():
         for address in await _platform_addresses(
             organization_id=organization_id, token=token, permission=audience.permission
         ):
@@ -249,7 +267,7 @@ async def _platform_addresses(
     both halves.
     """
     try:
-        answer = await platform.read_portal(
+        answer = await _platform().read_portal(
             "/api/portal/v1/members", organization_id=organization_id, token=token
         )
     except Exception:

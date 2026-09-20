@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from koras_audit import AuditAction, Classification, actions
 from koras_import import (
     ImportTarget,
     ReadRefused,
@@ -44,6 +45,50 @@ logger = logging.getLogger(__name__)
 #: client as of 2026-09-19, so a preview is a head of the file rather than the
 #: file — and two hundred rows is enough to see whether a mapping is right.
 PREVIEW = 200
+
+
+# ── what this capability records ─────────────────────────────────────────────
+#
+# Registered here, by the module the capability owns, the way storage registers
+# its own and the assistant registers its notification kind. A product without
+# `data_import` declares none of these.
+#
+# **Three actions, and the commit outcome is deliberately not one of them.** The
+# writing happens in a worker, and `core/audit` reaches `core/database`, which
+# reaches the API's own `Settings()` -- so auditing the outcome from the worker
+# would mean the worker satisfying the API's whole configuration surface to
+# write one row. What the worker produces instead is the run itself: `status`,
+# `error`, the three counts, `committed_by` and `finished_at`, on a row that is
+# queryable, tenant-scoped and retained. The security-relevant fact -- who
+# authorised a write of somebody's records, against which target, under which
+# operation -- is known in the request, and that is what is audited here.
+#
+# It is written down rather than left to be noticed because "every import
+# attributable and audited" is a story (IMPORT-US-016), and half of it is met
+# by a table rather than by the audit log.
+IMPORT_ACTIONS = (
+    AuditAction(
+        key="import.run.started",
+        classification=Classification.ACTIVITY,
+        summary="An import run was created against a target, before any mapping.",
+    ),
+    AuditAction(
+        key="import.run.committed",
+        classification=Classification.AUDIT,
+        summary=(
+            "A person confirmed a checked import run, authorising it to write "
+            "records. The run row records what was written."
+        ),
+    ),
+    AuditAction(
+        key="import.run.refused",
+        classification=Classification.SECURITY,
+        summary="A commit was refused: the target accepts no writer, or the run could not move.",
+    ),
+)
+
+for _action in IMPORT_ACTIONS:
+    actions.add(_action)
 
 
 @dataclass(frozen=True)
@@ -281,6 +326,42 @@ async def record_validation(
     return landed
 
 
+async def request_commit(session: AsyncSession, run: Run, *, by: str) -> None:
+    """A person has confirmed. The worker has not started.
+
+    The second actor, and the reason this table is not an export: `committed_by`
+    is written here rather than at the end, because the fact worth recording is
+    *who decided*, and a run that failed while committing still had somebody
+    decide it.
+    """
+    await _advance(session, run, RunState.COMMIT_REQUESTED, committed_by=by)
+
+
+async def begin_commit(session: AsyncSession, run: Run) -> None:
+    await _advance(session, run, RunState.COMMITTING, started_at=datetime.now().astimezone())
+
+
+async def record_commit(
+    session: AsyncSession, run: Run, *, created: int, updated: int, skipped: int
+) -> None:
+    """Mark a run committed, in the same transaction that wrote its rows.
+
+    **Deliberately not its own transaction.** If this commits and the rows do
+    not, the run claims an import that did not happen; if the rows commit and
+    this does not, the run can be committed again and the rows go in twice.
+    One transaction is what makes neither possible, and it is why the caller
+    passes the session it wrote with rather than opening another.
+    """
+    await _advance(
+        session,
+        run,
+        RunState.COMMITTED,
+        rows_total=created + updated + skipped,
+        rows_valid=created + updated,
+        finished_at=datetime.now().astimezone(),
+    )
+
+
 async def errors(
     session: AsyncSession, run_id: str, *, limit: int = 100, after: int = 0
 ) -> list[RowError]:
@@ -350,24 +431,61 @@ def analyse(raw: bytes, target: ImportTarget) -> Analysis:
     )
 
 
-def check(raw: bytes, target: ImportTarget, run: Run) -> Validation:
-    """The dry run itself: every row, one pass, every problem.
+def _parse(raw: bytes, target: ImportTarget, run: Run) -> tuple[Any, list[Any]]:
+    """The mapping and the rows, resolved once. Shared by the dry run and the commit.
 
-    Raises `ReadRefused` for a file that is not a table at all and
-    `MappingRefused` for a mapping the target will not take — both of which are
-    the run failing rather than the data being wrong, and the route and the job
-    tell them apart.
+    One reader for both passes on purpose: a commit that parsed differently
+    from the validation that approved it would write rows nobody checked, and
+    the difference would be invisible -- both would look like they had run.
     """
     decoded = decode(raw)
     lines = decoded.text.splitlines(keepends=True)
     header = read_header(lines, delimiter=run.delimiter)
     resolved = resolve(target, header.columns, run.mapping)
-    rows = read_rows(
-        lines, header=header, delimiter=run.delimiter, limit=target.max_rows
+    rows = list(
+        read_rows(lines, header=header, delimiter=run.delimiter, limit=target.max_rows)
     )
+    return resolved, rows
+
+
+def check(raw: bytes, target: ImportTarget, run: Run) -> Validation:
+    """The dry run itself: every row, one pass, every problem.
+
+    Raises `ReadRefused` for a file that is not a table at all and
+    `MappingRefused` for a mapping the target will not take -- both of which are
+    the run failing rather than the data being wrong, and the route and the job
+    tell them apart.
+    """
     from koras_import import validate
 
+    resolved, rows = _parse(raw, target, run)
     return validate(target, resolved, rows)
+
+
+def prepare(
+    raw: bytes, target: ImportTarget, run: Run
+) -> tuple[Validation, tuple[Mapping[str, str], ...]]:
+    """What to write, and the verdict that says whether it may be.
+
+    **The file is validated again here**, rather than the commit trusting the
+    verdict the dry run stored. It costs one pass over a file already bounded by
+    the target's ceiling, and it closes the gap between "somebody checked this"
+    and "this is what goes in": between the two, a deploy may have changed the
+    target's own field specifications, and the run's stored counts would still
+    say it was clean.
+
+    Both are returned rather than one raising, because the caller wants to say
+    *which* rows are wrong, and a refusal carrying a sentence cannot.
+    """
+    from koras_import import validate
+
+    resolved, rows = _parse(raw, target, run)
+    verdict = validate(target, resolved, rows)
+    mapped = tuple(
+        {field: row.cells.get(column, "").strip() for field, column in resolved.fields.items()}
+        for row in rows
+    )
+    return verdict, mapped
 
 
 # ── the source file ──────────────────────────────────────────────────────────
@@ -466,6 +584,7 @@ __all__ = [
     "SourceRefused",
     "UNPARSEABLE_SCANS",
     "analyse",
+    "begin_commit",
     "begin_validation",
     "check_source",
     "cancel",
@@ -474,7 +593,9 @@ __all__ = [
     "errors",
     "fail",
     "get",
+    "record_commit",
     "record_validation",
+    "request_commit",
     "recent",
     "source_bytes",
     "set_mapping",

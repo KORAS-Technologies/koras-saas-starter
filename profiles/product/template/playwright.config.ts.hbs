@@ -15,14 +15,65 @@ import { defineConfig, devices } from '@playwright/test'
  * build rather than `next dev`: the shell's client boundaries, the middleware
  * and the CSP nonce all behave differently there, and the build is what ships.
  *
- * **No API, deliberately.** `NEXT_PUBLIC_API_URL` is unset, so the tenant read
- * fails and the shell falls back to this product's own branding and no optional
- * features — which is a supported state, not a broken one, and it is the state
- * a new customer is in. A suite that needed a database to check a focus trap
- * would be a suite nobody runs.
+ * **No API by default, deliberately.** `NEXT_PUBLIC_API_URL` is unset, so the
+ * tenant read fails and the shell falls back to this product's own branding and
+ * no optional features — which is a supported state, not a broken one, and it
+ * is the state a new customer is in. A suite that needed a database to check a
+ * focus trap would be a suite nobody runs.
+ *
+ * ## The round trip, when a database is offered
+ *
+ * Set `E2E_DATABASE_URL` and three more servers start: a local identity
+ * provider, this product's API against that database, and the web application
+ * pointed at both. The `roundtrip` project then runs, and nothing else changes
+ * — every existing test still runs against the degraded shell, because that
+ * state is a claim worth keeping true.
+ *
+ * **Why it is worth the wiring.** Settings, notifications and data import each
+ * record, in their own status document, that the round trip has no automated
+ * proof; that is why each has a manual plan nobody has run. And the class it
+ * catches has already reached a running product: a notification label was a
+ * closure passed from a server component to a client one, React could not
+ * serialise it, and because the bell lives in the dashboard layout the throw
+ * took down every signed-in page. It shipped green through every suite in this
+ * repository and was found by a person opening the product.
+ *
+ * **Nothing is bypassed to make it work.** The API discovers the identity
+ * provider's JWKS and verifies an RS256 signature, the audience, the issuer and
+ * the expiry exactly as it does in production; what is local is the provider,
+ * not the verification. `e2e/support/identity.mjs` says why that matters.
+ *
+ * It does not replace the manual plans. It replaces their repeatable half.
  */
 
 const PORT = Number(process.env.E2E_PORT ?? 3210)
+
+/**
+ * A database to run the API against, or nothing.
+ *
+ * Its presence is the whole switch. Absent — which is the default, and what a
+ * developer running `pnpm e2e` on a laptop has — the suite is exactly what it
+ * was: one web server, no API, and the degraded shell. Present, the round trip
+ * runs as well.
+ *
+ * Opt-in rather than opt-out on purpose. A suite that fails when Postgres is
+ * not running is a suite people stop running, and the sixteen checks that need
+ * no database are the ones that catch a focus trap.
+ */
+const DATABASE_URL = process.env.E2E_DATABASE_URL ?? ''
+const ROUND_TRIP = Boolean(DATABASE_URL)
+
+const API_PORT = Number(process.env.E2E_API_PORT ?? 3213)
+const IDENTITY_PORT = Number(process.env.E2E_IDENTITY_PORT ?? 3212)
+// `127.0.0.1` rather than `localhost`, everywhere these two are named. On a
+// machine that resolves `localhost` to `::1` first, a server bound to the
+// IPv4 address is never reached and Playwright waits the full two minutes
+// for a process that started correctly.
+const API_URL = `http://127.0.0.1:${API_PORT}`
+const IDENTITY_URL = `http://127.0.0.1:${IDENTITY_PORT}`
+//: The audience the API checks and the suite mints against. One value, read by
+//: both, because two would verify against each other and pass.
+const PROJECT_ID = process.env.E2E_PROJECT_ID ?? 'e2e-project'
 {{#if apps.marketing}}
 /**
  * The marketing site is a second application on a second origin, and the
@@ -55,8 +106,28 @@ export default defineConfig({
     // Two viewports, because the shell is two different components below and
     // above `lg` — a drawer and a sidebar — and testing one of them would test
     // half the navigation.
-    { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } },
-    { name: 'mobile', use: { ...devices['Desktop Chrome'], viewport: { width: 375, height: 812 } } },
+    {
+      name: 'desktop',
+      testIgnore: /roundtrip\//,
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+    },
+    {
+      name: 'mobile',
+      testIgnore: /roundtrip\//,
+      use: { ...devices['Desktop Chrome'], viewport: { width: 375, height: 812 } },
+    },
+    // One viewport for the round trip. What it checks is whether a change
+    // reaches a database and comes back, which is the same answer at every
+    // width, and the layouts are covered above.
+    ...(ROUND_TRIP
+      ? [
+          {
+            name: 'roundtrip',
+            testMatch: /roundtrip\//,
+            use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+          },
+        ]
+      : []),
   ],
   webServer: [
     {
@@ -71,6 +142,9 @@ export default defineConfig({
         // skipped verification would pass however broken authorisation became.
         SESSION_SECRET:
           process.env.SESSION_SECRET ?? 'e2e-session-secret-at-least-32-characters-long',
+        // Unset without a database, which is what leaves the shell in its
+        // documented degraded state for every other test.
+        ...(ROUND_TRIP ? { NEXT_PUBLIC_API_URL: API_URL } : {}),
       },
     },
 {{#if apps.marketing}}
@@ -81,5 +155,50 @@ export default defineConfig({
       timeout: 120_000,
     },
 {{/if}}
+    ...(ROUND_TRIP
+      ? [
+          {
+            // Started before the API, because the API fetches its discovery
+            // document on the first token it is asked to verify and a
+            // provider that is not there yet is a 500 on the first request.
+            command: 'node e2e/support/identity.mjs',
+            url: `${IDENTITY_URL}/.well-known/openid-configuration`,
+            reuseExistingServer: !process.env.CI,
+            timeout: 30_000,
+            // Both, and they have to agree: the API pins the issuer, so a
+            // token minted under one spelling of this address and verified
+            // against another is rejected with the same 401 a forged one gets.
+            env: { E2E_IDENTITY_PORT: String(IDENTITY_PORT), E2E_IDENTITY_URL: IDENTITY_URL },
+          },
+          {
+            // `--directory`, because the API is a workspace member and the
+            // module is not importable from the repository root -- which
+            // fails as a two-minute timeout rather than as an error.
+            command:
+              `uv run --directory services/api uvicorn koras_api.main:app` +
+              ` --host 127.0.0.1 --port ${API_PORT} --log-level warning`,
+            // The real path, not `/health`: every route of this API is under
+            // `/api/v1`, and polling the wrong one is a two-minute wait for a
+            // process that started correctly.
+            url: `${API_URL}/api/v1/health`,
+            reuseExistingServer: !process.env.CI,
+            timeout: 120_000,
+            env: {
+              ENVIRONMENT: 'dev',
+              DATABASE_URL: DATABASE_URL,
+              // The local provider. The API discovers its JWKS from here and
+              // verifies signatures against it; nothing about that path is
+              // different from production.
+              ZITADEL_DOMAIN: IDENTITY_URL,
+              ZITADEL_PROJECT_ID: PROJECT_ID,
+              // No platform, no Redis, no bucket. Each is absent rather than
+              // faked, and each has a documented answer for being absent —
+              // which is itself worth exercising: this is the shape a product
+              // runs in before its first deployment.
+              NEXT_PUBLIC_APP_URL: `http://localhost:${PORT}`,
+            },
+          },
+        ]
+      : []),
   ],
 })

@@ -101,6 +101,14 @@ from .targets import (
     TargetRegistry,
     build_registry,
 )
+from .writing import (
+    Writer,
+    WriteRefused,
+    WriteRequest,
+    Written,
+    check_total,
+    rows_from,
+)
 
 __all__ = [
     "COMMIT_RUN",
@@ -130,7 +138,12 @@ __all__ = [
     "TransitionRefused",
     "VALIDATE_RUN",
     "Validation",
+    "WriteRefused",
+    "WriteRequest",
+    "Writer",
+    "Written",
     "build_registry",
+    "check_total",
     "count_rows",
     "decode",
     "is_terminal",
@@ -140,6 +153,7 @@ __all__ = [
     "read_rows",
     "require_move",
     "resolve",
+    "rows_from",
     "sniff_delimiter",
     "suggest",
     "validate",

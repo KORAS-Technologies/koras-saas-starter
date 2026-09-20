@@ -141,7 +141,10 @@ export { STANDARD_SETTING_KEYS } from './settings/types'
 export { chooseValue, sameShape, settingValue } from './settings/value'
 export { parseEffectiveSettings } from './settings/parse'
 export { SettingsForm } from './settings/settings-form'
-export { describeValue, optionLabel } from './settings/fields'
+// `withValue` is public for the same reason `withCount` is: a label that
+// needs a value in it must cross the server/client boundary as a string, so
+// the component holding the value is the one that fills it.
+export { describeValue, optionLabel, withValue } from './settings/fields'
 export type {
   SettingField,
   SettingFieldOption,

@@ -22,6 +22,18 @@ dependencies = [
   "koras-queue",
 {{#if capability.data_import}}  # The validation job reads a file through the same engine the API does.
   "koras-import",
+  # The commit reaches `koras_api.core.imports`, which registers this
+  # capability's audit actions at import, and the completion notice reaches the
+  # dispatch point, which resolves recipients and their settings. All three are
+  # imports the worker makes, so all three are declared -- an undeclared one
+  # resolves through somebody else's dependency until the day it does not, and
+  # here the failure would be an `importlib` skip, which is a job that silently
+  # never runs.
+  "koras-audit",
+  "koras-settings",
+  "koras-auth",
+{{/if}}{{#if capability.notifications}}  # The outbox sweep sends what the API decided to send.
+  "koras-email",
 {{/if}}  # The reconciliation sweep asks the bucket what it holds and compares it
   # with the index. Foundation, like the index.
   "koras-storage",
@@ -29,8 +41,8 @@ dependencies = [
   # sends it. The product's report catalogue itself is reached by path;
   # see the Dockerfile.
   "koras-reporting",
-  "koras-email",
-{{/if}}]
+{{#unless capability.notifications}}  "koras-email",
+{{/unless}}{{/if}}]
 
 [tool.uv.sources]
 koras-database = { workspace = true }
@@ -39,7 +51,11 @@ koras-logging = { workspace = true }
 koras-observability = { workspace = true }
 koras-queue = { workspace = true }
 {{#if capability.data_import}}koras-import = { workspace = true }
+koras-audit = { workspace = true }
+koras-settings = { workspace = true }
+koras-auth = { workspace = true }
+{{/if}}{{#if capability.notifications}}koras-email = { workspace = true }
 {{/if}}koras-storage = { workspace = true }
 {{#if capability.reporting}}koras-reporting = { workspace = true }
-koras-email = { workspace = true }
-{{/if}}
+{{#unless capability.notifications}}koras-email = { workspace = true }
+{{/unless}}{{/if}}

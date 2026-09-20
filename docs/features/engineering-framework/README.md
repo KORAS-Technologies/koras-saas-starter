@@ -78,9 +78,50 @@ than quietly fixed.
 - **Typed preflight covers 15 product settings and 2 Control Plane
   settings** as of 2026-09-19. Everything untyped is unreadable to that tool
   by design, and extending coverage is incremental.
-- **No generated product has run a feature through V2.1 yet.** The framework
-  is validated by its own tests and by generation; it has not been exercised
-  by a real lifecycle.
+- **One generated product has now run a feature through V2.1.** Docoris,
+  G7 R1, 2026-09-20. It is validated by its own tests, by generation, and by
+  exactly one real lifecycle -- which found four things, below. One case
+  study is not a sample.
+
+## What the first real lifecycle found
+
+G7 R1 ran a feature end to end in a generated product. Nothing it hit was a
+wrong rule. All four were a question the framework had not written down, which
+an agent then answered by judgement -- correctly each time, and invisibly each
+time. A judgement nobody can see is indistinguishable from a skipped step.
+
+- **A gate whose owner the mode did not staff.** FAST staffs neither
+  `business-analyst` nor `solution-architect`; `requirements_ready` and
+  `architecture_ready` both apply `always`. The Orchestrator resolved both and
+  left no record. Now `owner_optional_in` declares the exception per gate, and
+  `owner_optional_closure` demands the seven fields that make the closure
+  arguable. Agent sets were never a way to switch gates off, and that is now
+  stated where a reader of either file will meet it.
+- **The strongest proof was the least governed artefact.** A before-and-after
+  console capture carried the whole claim, and nothing required it to be
+  declared, retained or independently looked at. `primary_evidence` names it
+  in the plan before the validating action, retains it under the existing
+  `evidence_runs` policy, and requires a verifier who did not produce it --
+  reading the capture, not necessarily re-running the scenario.
+- **A final count written before the event it counted.** Not fabricated: the
+  plan was stored where the history goes. Telemetry is now an append-only
+  event log, corrections are amendments rather than edits, and the summary is
+  derived after the last applicable event. UNKNOWN is a value; 0 is a
+  measurement.
+- **Agents that were there and then were not.** A long-lived session listed 25
+  of the 40; a fresh process listed all 40 from the same commit with no file
+  changed. `runtime_discovery` says to check the agents the plan needs before
+  a lifecycle, classify a shortfall as session health, and restart rather than
+  reorganise -- because flattening the category directories would have
+  "fixed" it and broken the catalog.
+
+Also corrected, and not a framework defect: a generated product's `CLAUDE.md`
+listed `.claude/agents/` as the four legacy files and mentioned the forty
+nowhere, so a reader of the product concluded its catalog was four. The four
+are retained -- `/feature`, `/review`, `/test` and `/ui-review` read them, and
+they carry no frontmatter so Claude Code never registered them as agents --
+and the generator template now says which set is which. The canonical count
+was 40 before G7 and is 40 after it.
 
 ## Recommended next, in order
 

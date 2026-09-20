@@ -771,7 +771,19 @@ export const en = {
   'imports.summary':
     '{rows} rows read, {valid} of them ready to import, {errors} problems found.',
   'imports.wroteNothing':
-    'Nothing has been written. This was a check, and your records are untouched.',
+    'Nothing has been written yet. Confirm below when the numbers look right.',
+  'imports.confirm':
+    'Import these records',
+  'imports.confirmHint':
+    'This writes the records into {product}. It cannot be undone from this page.',
+  'imports.committing':
+    'Importing…',
+  'imports.notCommittable':
+    'This import can be checked but not written. Nothing in this product accepts these records yet.',
+  'imports.wrote':
+    '{created} of {total} records were imported.',
+  'imports.downloadReport':
+    'Download every problem',
   'imports.showReport':
     'Show the problems',
   'imports.reportCut':
@@ -1095,6 +1107,8 @@ export const en = {
     'This import has moved on, and that is no longer something it can do.',
   'errors.importQueueUnavailable':
     'Background work is not set up, so this file cannot be checked. An administrator has to configure it.',
+  'errors.importNotCommittable':
+    'This import can be checked but not written. Nothing in this product accepts these records yet.',
   'errors.importFileTooLarge':
     'This file is larger than one import reads. Split it and import the parts separately.',
   'errors.uploadRefusedByPolicy':

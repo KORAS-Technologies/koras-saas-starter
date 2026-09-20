@@ -1,3 +1,6 @@
+import { createPrivateKey, createSign } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { BrowserContext } from '@playwright/test'
 import { mintSession } from '@{{projectSlug}}/auth'
 import type { OrganizationRole } from '@{{projectSlug}}/permissions'
@@ -14,6 +17,9 @@ import type { OrganizationRole } from '@{{projectSlug}}/permissions'
  * Nothing is bypassed. The middleware verifies this signature on every request,
  * so a test signs in the way a person does and is refused the same way.
  */
+/** Written by `identity.mjs` when the round-trip harness starts. */
+const KEY_FILE = resolve(process.cwd(), '.e2e', 'identity.json')
+
 const SESSION_SECRET =
   process.env.SESSION_SECRET ?? 'e2e-session-secret-at-least-32-characters-long'
 
@@ -22,6 +28,10 @@ export async function signInAs(
   options: {
     roles?: OrganizationRole[]
     email?: string
+    /** Which person. The round-trip suite needs two to check that one
+     *  member's preference is not another's, and `seed.sql` has a row for
+     *  each; a subject with no row resolves no membership. */
+    subject?: string
     organizationId?: string
     /** Defaults true. A caller without a second factor is bounced to enrolment,
      *  so a suite that omitted it would be testing a route nobody reaches. */
@@ -30,7 +40,7 @@ export async function signInAs(
 ): Promise<void> {
   const cookie = await mintSession(
     {
-      userId: 'e2e-subject',
+      userId: options.subject ?? 'e2e-subject',
       email: options.email ?? 'member@example.com',
       name: 'E2E Member',
       organizationRoles: options.roles ?? ['organization_admin'],
@@ -51,8 +61,85 @@ export async function signInAs(
       sameSite: 'Lax',
     },
   ])
-  // Deliberately no `id_token`. That cookie is forwarded to this product's API,
-  // which is not running here, and sending a fake one would test a path the
-  // suite cannot follow. Its absence is the documented degraded state: the
-  // shell paints itself from the product's own branding.
+  // The API token, when there is an API to send it to.
+  //
+  // Without the round-trip harness there is none, and its absence is the
+  // documented degraded state the rest of the suite checks: the shell paints
+  // itself from the product's own branding and every read reports the API
+  // unreachable. Sending a fake one there would test a path nothing follows.
+  //
+  // With the harness, this is a **real** token: RS256, signed by a key the
+  // local provider publishes, verified by the API against the JWKS it
+  // discovers. Nothing in the API is relaxed to accept it.
+  const token = await apiToken({
+    subject: options.subject ?? 'e2e-subject',
+    email: options.email ?? 'member@example.com',
+    organizationId: options.organizationId ?? 'e2e-organization',
+    roles: options.roles ?? ['organization_admin'],
+  })
+  if (token) {
+    await context.addCookies([
+      {
+        name: 'id_token',
+        value: token,
+        domain: 'localhost',
+        path: '/',
+        httpOnly: true,
+        sameSite: 'Lax',
+      },
+    ])
+  }
+}
+
+/** Whether the round-trip harness is running, for a test that needs the API. */
+export function apiIsRunning(): boolean {
+  return existsSync(KEY_FILE)
+}
+
+/**
+ * An access token the API will accept, or nothing when no provider is running.
+ *
+ * `aud` carries the project id because that is what ZITADEL puts in an access
+ * token and what `verify_token` checks; `iss` is pinned to the local provider
+ * for the same reason the real one is. An expiry of an hour is long enough for
+ * a suite and short enough that a leaked file is worthless.
+ */
+async function apiToken(claims: {
+  subject: string
+  email: string
+  organizationId: string
+  roles: readonly string[]
+}): Promise<string | null> {
+  if (!existsSync(KEY_FILE)) return null
+  const { issuer, keyId, privateJwk } = JSON.parse(readFileSync(KEY_FILE, 'utf8'))
+  const key = createPrivateKey({ key: privateJwk, format: 'jwk' })
+  const now = Math.floor(Date.now() / 1000)
+
+  const header = { alg: 'RS256', typ: 'JWT', kid: keyId }
+  const payload = {
+    iss: issuer,
+    sub: claims.subject,
+    aud: [process.env.E2E_PROJECT_ID ?? 'e2e-project'],
+    iat: now,
+    exp: now + 3600,
+    email: claims.email,
+    // ZITADEL's own shape, not this product's, so it is written out rather
+    // than guessed: the roles claim is an **object** keyed by role name whose
+    // values map organisation id to primary domain, and `_organization_id`
+    // reads the organisation out of it. A helper that sent a list here would
+    // mint a token the API accepts and then resolve no roles and no tenant --
+    // which reads as a broken feature rather than a broken fixture.
+    'urn:zitadel:iam:org:id': claims.organizationId,
+    'urn:zitadel:iam:org:project:roles': Object.fromEntries(
+      claims.roles.map((role) => [role, { [claims.organizationId]: 'e2e.localhost' }]),
+    ),
+    // A second factor, because the shell bounces a caller without one to
+    // enrolment and a suite that omitted it would be testing that route.
+    amr: ['pwd', 'mfa'],
+  }
+  const encode = (value: object) =>
+    Buffer.from(JSON.stringify(value)).toString('base64url')
+  const signing = `${encode(header)}.${encode(payload)}`
+  const signature = createSign('RSA-SHA256').update(signing).sign(key).toString('base64url')
+  return `${signing}.${signature}`
 }
