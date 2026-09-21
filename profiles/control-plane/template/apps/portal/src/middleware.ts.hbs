@@ -13,6 +13,21 @@ import { readSession } from '@{{projectSlug}}/auth'
 const PUBLIC_PATHS = ['/login', '/api/auth']
 
 /**
+ * Next's development runtime compiles modules with `eval`, so `next dev` cannot
+ * hydrate under a policy that refuses it (GR-248): the page arrives, the React
+ * runtime is refused, and nothing on it becomes interactive. The keyword below
+ * is granted to that one execution mode.
+ *
+ * An equality, deliberately. `next build` inlines `process.env.NODE_ENV`, so a
+ * production build compiles this to the empty string and the keyword never
+ * reaches the bundle at all. Testing for "not production" instead would admit
+ * `test`, `undefined` and whatever else ever lands there -- and every Koras
+ * environment, dev and test and stg and prod alike, is a production Next build,
+ * so it is the build mode and never the deployment stage that decides this.
+ */
+const DEVELOPMENT_EVAL = process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''
+
+/**
  * A per-request nonce, and the policy that makes it worth having.
  *
  * `frame-ancestors 'none'` is the one that matters most here: this application
@@ -28,7 +43,7 @@ const PUBLIC_PATHS = ['/login', '/api/auth']
 function contentSecurityPolicy(nonce: string, connectSrc: string): string {
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${DEVELOPMENT_EVAL}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self'",
