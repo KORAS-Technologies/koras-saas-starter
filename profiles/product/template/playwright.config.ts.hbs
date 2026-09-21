@@ -116,6 +116,35 @@ const PROJECT_ID = process.env.E2E_PROJECT_ID ?? 'e2e-project'
 const MARKETING_PORT = Number(process.env.E2E_MARKETING_PORT ?? 3211)
 const MARKETING_URL = `http://localhost:${MARKETING_PORT}`
 {{/if}}
+{{#if apps.admin}}
+/**
+ * The operations application, started only so its production policy can be
+ * read. It emits its own Content-Security-Policy from its own middleware -- a
+ * second copy of the same function -- so a policy checked on `web` alone is a
+ * policy checked on half the applications that have one.
+ */
+const ADMIN_PORT = Number(process.env.E2E_ADMIN_PORT ?? 3215)
+const ADMIN_URL = `http://localhost:${ADMIN_PORT}`
+{{/if}}
+
+/**
+ * The origins `csp.spec.ts` reads, as `label=origin` pairs.
+ *
+ * Set here rather than derived in the spec so that the ports live in one place:
+ * a spec recomputing `E2E_ADMIN_PORT ?? 3215` would be a second copy of a
+ * default, and the two would drift the day somebody changed one. Playwright
+ * evaluates this config in the parent process before workers are spawned, so
+ * the value reaches them through the environment they inherit.
+ *
+ * Marketing is deliberately absent: it emits no policy at all, and listing it
+ * would turn a real gap into a passing test.
+ */
+process.env.E2E_CSP_ORIGINS ??= [
+  `web=http://localhost:${PORT}`,
+{{#if apps.admin}}
+  `admin=${ADMIN_URL}`,
+{{/if}}
+].join(',')
 
 export default defineConfig({
   testDir: './e2e',
@@ -192,6 +221,21 @@ export default defineConfig({
       url: `${MARKETING_URL}/`,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
+    },
+{{/if}}
+{{#if apps.admin}}
+    {
+      // Started for `csp.spec.ts` alone. Its policy comes from its own copy of
+      // `contentSecurityPolicy()`, so nothing about `web` passing says anything
+      // about this one.
+      command: `pnpm --filter @{{projectSlug}}/admin exec next start -p ${ADMIN_PORT}`,
+      url: `${ADMIN_URL}/login`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      env: {
+        SESSION_SECRET:
+          process.env.SESSION_SECRET ?? 'e2e-session-secret-at-least-32-characters-long',
+      },
     },
 {{/if}}
     ...(ROUND_TRIP

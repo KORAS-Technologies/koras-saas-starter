@@ -479,3 +479,70 @@ describe('the theme script and the hydration warning it necessarily causes', () 
     expect(rootLayout).not.toMatch(/return \(\s*\{\/\*/)
   })
 })
+
+// ── R1: the production CSP guard is pointed at production servers ────────────
+
+describe('the CSP guard reads production servers, and all of them', () => {
+  /**
+   * R1 asserts a *runtime* policy, which makes its value entirely dependent on
+   * what the harness starts. Two things could quietly undo it and neither would
+   * fail a browser run: pointing a server at `next dev`, where the policy is
+   * the same today and will not be once a development allowance exists; and
+   * dropping an application from `E2E_CSP_ORIGINS`, which leaves the suite
+   * green with half the coverage.
+   *
+   * So these are asserted here rather than left to the browser, where "an
+   * application nobody checked" is indistinguishable from "an application that
+   * passed".
+   */
+  const configs = {
+    product: read(PRODUCT, 'playwright.config.ts.hbs'),
+    'control-plane': read(join(PROFILES, 'control-plane', 'template'), 'playwright.config.ts.hbs'),
+  }
+
+  it('starts every CSP-bearing application with next start', () => {
+    for (const [profile, config] of Object.entries(configs)) {
+      const commands = [...config.matchAll(/command:\s*`([^`]+)`/g)].map((match) => match[1] as string)
+      expect(commands.length, `${profile}: no webServer commands`).toBeGreaterThan(0)
+      for (const command of commands) {
+        // `identity.mjs` and the API are not Next applications and emit no
+        // policy; every Next one must be a production server.
+        if (!command.includes('next ')) continue
+        expect(command, `${profile}: a Next server that is not next start`).toContain('next start')
+        expect(command, `${profile}: a Next server running next dev`).not.toContain('next dev')
+      }
+    }
+  })
+
+  it('names every application that emits a policy', () => {
+    // Marketing is absent on purpose: it emits no policy, and listing it would
+    // turn a real gap into a passing test.
+    const origins = (profile: keyof typeof configs): string[] =>
+      [...(configs[profile].match(/E2E_CSP_ORIGINS[\s\S]*?\.join/) ?? [''])[0].matchAll(/`(\w+)=/g)].map(
+        (match) => match[1] as string,
+      )
+    expect(origins('product').sort()).toEqual(['admin', 'web'])
+    expect(origins('control-plane').sort()).toEqual(['admin', 'portal'])
+  })
+
+  it('builds the applications it starts', () => {
+    // A server whose `.next` does not exist exits immediately and takes the
+    // whole suite with it -- so `pnpm e2e` has to build every application it
+    // then starts. Generator Integration builds the whole workspace first and
+    // would not have noticed; a developer's laptop would have, immediately.
+    const e2eScript = (manifest: string): string =>
+      (manifest.match(/"e2e":\s*"([^"]*)"/) ?? ['', ''])[1] as string
+
+    const product = e2eScript(read(PRODUCT, 'package.json.hbs'))
+    expect(product, 'product e2e script not found').toContain('turbo run build')
+    expect(product, 'product e2e starts admin without building it').toContain(
+      '--filter=@{{projectSlug}}/admin',
+    )
+
+    const controlPlane = e2eScript(read(join(PROFILES, 'control-plane', 'template'), 'package.json.hbs'))
+    expect(controlPlane, 'control-plane e2e script not found').toContain('turbo run build')
+    expect(controlPlane, 'control-plane e2e starts portal without building it').toContain(
+      '--filter=@{{projectSlug}}/portal',
+    )
+  })
+})

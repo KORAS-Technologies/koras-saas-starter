@@ -1426,7 +1426,7 @@ describe.each(['product', 'control-plane'] as const)('%s secret scaffold', (prof
         ?.split(/\s+/)[1]
 
     expect(classOf('NODE_ENV')).toBe('local')
-    // Both profiles, since 2026-09-21. Mail is deployable in each: a product
+    // Both profiles, since 2026-09-20. Mail is deployable in each: a product
     // sends the assistant's approval notice, and the Control Plane sends
     // provisioning mail through `smtplib` from settings it reads out of
     // Doppler. This assertion used to say `profile === 'product' ? 'optional'

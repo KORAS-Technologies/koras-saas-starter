@@ -16,7 +16,7 @@
     "test": "turbo run test && pnpm test:py",
     "test:py": "uv run pytest",
     "dev": "turbo run dev",
-    "e2e": "turbo run build --filter=@{{projectSlug}}/web{{#if apps.marketing}} --filter=@{{projectSlug}}/marketing{{/if}} && tsc --noEmit -p tsconfig.e2e.json && playwright test",
+    "e2e": "turbo run build --filter=@{{projectSlug}}/web{{#if apps.admin}} --filter=@{{projectSlug}}/admin{{/if}}{{#if apps.marketing}} --filter=@{{projectSlug}}/marketing{{/if}} && tsc --noEmit -p tsconfig.e2e.json && playwright test",
     "e2e:install": "playwright install --with-deps chromium",
     "bootstrap": "bash local/scripts/bootstrap.sh",
     "stack:ports": "bash local/scripts/ports.sh --reset",

@@ -22,6 +22,23 @@ import { defineConfig, devices } from '@playwright/test'
 
 const PORT = Number(process.env.E2E_PORT ?? 3220)
 
+/**
+ * The customer-facing portal, started so its production policy can be read.
+ *
+ * It carries its own copy of `contentSecurityPolicy()`, identical to the
+ * admin application's but a separate file, so a policy checked on `admin`
+ * alone leaves half of this profile's CSP-bearing applications unproven.
+ */
+const PORTAL_PORT = Number(process.env.E2E_PORTAL_PORT ?? 3221)
+const PORTAL_URL = `http://localhost:${PORTAL_PORT}`
+
+/**
+ * The origins `csp.spec.ts` reads, as `label=origin` pairs. Set here so the
+ * ports live in one place; Playwright evaluates this config before workers are
+ * spawned, so they inherit it.
+ */
+process.env.E2E_CSP_ORIGINS ??= [`admin=http://localhost:${PORT}`, `portal=${PORTAL_URL}`].join(',')
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
@@ -39,17 +56,32 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [{ name: 'admin', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
-    command: `pnpm --filter @{{projectSlug}}/admin exec next start -p ${PORT}`,
-    url: `http://localhost:${PORT}/login`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-    env: {
-      // The application refuses a signing key shorter than 32 characters, so a
-      // test value has to be a real one. The suite signs cookies with this and
-      // the middleware verifies them: nothing is bypassed, and a suite that
-      // skipped verification would pass however broken authorisation became.
-      SESSION_SECRET: process.env.SESSION_SECRET ?? 'e2e-session-secret-at-least-32-characters-long',
+  webServer: [
+    {
+      command: `pnpm --filter @{{projectSlug}}/admin exec next start -p ${PORT}`,
+      url: `http://localhost:${PORT}/login`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      env: {
+        // The application refuses a signing key shorter than 32 characters, so
+        // a test value has to be a real one. The suite signs cookies with this
+        // and the middleware verifies them: nothing is bypassed, and a suite
+        // that skipped verification would pass however broken authorisation
+        // became.
+        SESSION_SECRET:
+          process.env.SESSION_SECRET ?? 'e2e-session-secret-at-least-32-characters-long',
+      },
     },
-  },
+    {
+      // Started for `csp.spec.ts` alone.
+      command: `pnpm --filter @{{projectSlug}}/portal exec next start -p ${PORTAL_PORT}`,
+      url: `${PORTAL_URL}/login`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      env: {
+        SESSION_SECRET:
+          process.env.SESSION_SECRET ?? 'e2e-session-secret-at-least-32-characters-long',
+      },
+    },
+  ],
 })

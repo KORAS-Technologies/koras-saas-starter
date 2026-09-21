@@ -130,7 +130,7 @@ describe('the settings manifest classifies every setting deliberately', () => {
   })
 
   it('does not forbid the Control Plane the mail settings it reads', () => {
-    // These were `local` until 2026-09-21. The deployed Control Plane reads
+    // These were `local` until 2026-09-20. The deployed Control Plane reads
     // them -- `services/worker/koras_worker/settings.py` declares them and its
     // own comment says they should become required once they are in Doppler
     // for every environment -- and all four of its configs hold them today.
