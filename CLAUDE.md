@@ -764,7 +764,39 @@ Twice is a pattern, and the pattern is that a sentence about a live system
 decays the moment it is written. That is R-042 on the file every session reads
 first.
 
-**Last validated baseline: 2026-09-20, commit `2d62a82`.** CI passed. Security
+**Last validated baseline: 2026-09-21, commit `62780bc`** — CI, Security and
+Generator Integration all green at attempt 1 on the merge commit itself. That
+is a status, not a capability: check the branch you are on rather than
+inheriting this line, for the reason the paragraph above gives twice.
+
+**The post-G7 hardened baseline is `62780bc`.** It supersedes `7199f85` as the
+current framework baseline; `7199f85` remains the historical G7 R2 accepted
+one. FW-HARDEN-001 fixed three findings G7 R2 recorded and left: a fresh
+Windows checkout could not pass the framework's own 40-agent validation suite
+(41 of 499 failed, now 557 of 557 on a real CRLF checkout); the change-class
+globs were rooted at a generated product so every factory-resident product
+path classified as nothing and every gate read as reusable; and the derived
+telemetry summary and final acceptance could not both be satisfied.
+
+**What that cycle is actually worth remembering for.** Three times a remedy
+created the next defect — the FW-GAP-010 fix rebuilt FW-GAP-010 with `CLOSED`
+in place of `final_acceptance`, and the FW-GAP-006 fix reproduced FW-GAP-006
+by silently stripping eleven gates, including independent code review, from 26
+product files. **Both were invisible to a fully green suite**, and each was
+caught by the independent gate after the one that made it: review returned
+BLOCK, acceptance returned FAIL then PASS. The common factor is an assertion
+that asks what a contract *says* rather than what it *does*, and both gaps are
+now closed by assertions that measure an effect. On this evidence the
+independent gates are the only thing that catches that class.
+
+Four findings are open from it and recorded rather than fixed: FW-GAP-011
+(the factory's own source is outside the classifier's declared domain),
+FW-GAP-012 (`tests/**` classes a Node test as Python), FW-GAP-013 (19 paths
+the vocabulary has no class for) and FW-DEF-003 (`product-governance.test.ts`
+times out its 120-second hook under parallel load and passes alone — G7 R2
+logged the same timeout on `7199f85`, so it predates the work).
+
+**Previous baseline: 2026-09-20, commit `2d62a82`.** CI passed. Security
 failed on one gitleaks finding — `generic-api-key` at `recipients.py:211`,
 reviewed as a false positive and suppressed by fingerprint in `dcffeab`.
 Generator Integration was cancelled at its 30-minute limit, which read as a

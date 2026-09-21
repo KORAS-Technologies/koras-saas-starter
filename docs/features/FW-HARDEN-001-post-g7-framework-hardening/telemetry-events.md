@@ -79,3 +79,10 @@ which is a fair thing to catch in the one table whose whole value is order.
 | 35 | agent_invoked | final-acceptance | attempt 2, independent, against `bc3ddac` | 18:40Z | the final-acceptance record beside this file |
 | 36 | gate_executed | final_acceptance | **PASS** — 0 CRITICAL, 0 HIGH, 0 MEDIUM; 3 LOW, all documentation wording | 18:46Z | the final-acceptance record beside this file |
 | 37 | loop_iteration | remediation cycle 3 | the three LOWs corrected: a scale label wrong in three places, a reassurance stronger than the evidence, and an amendment table out of order | 18:50Z | this log |
+| 38 | human_gate_reached | merge_to_protected_branch | **APPROVED** by the repository owner | 23:10Z | this session |
+| 39 | lifecycle_state_reached | merged | `62780bc`, --no-ff into develop, content identical to the accepted branch | 23:11Z | `git log` |
+| 40 | gate_executed | ci_verified | PASS — CI 35666451350, attempt 1, 7m57s, on `62780bc` | 23:20Z | GitHub Actions |
+| 41 | gate_executed | security | PASS — Security 35666451418, attempt 1, 1m59s | 23:14Z | GitHub Actions |
+| 42 | gate_executed | generator_integration | PASS — Generator Integration 35666451341, attempt 1, 10m7s. FW-DEF-003 did not recur under CI load, and no PLAT-DEF-013 signature appeared. | 23:22Z | GitHub Actions |
+| 43 | lifecycle_state_reached | summary finalised | the derived summary written, immediately before the closure transition and after every other event — the rule this cycle wrote, followed on its own run | 23:30Z | `release/telemetry-summary.md` |
+| 44 | lifecycle_state_reached | CLOSED | every applicable state reached; no gate left FAIL, PENDING_HUMAN or PENDING_EXTERNAL; the summary finalised and agreeing with this log | 23:31Z | `.claude/orchestration/lifecycle.yaml` |
