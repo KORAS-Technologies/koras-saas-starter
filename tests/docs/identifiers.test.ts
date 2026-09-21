@@ -232,6 +232,23 @@ function codeText(): string {
   let all = ''
   for (const file of tracked()) {
     if (file.endsWith('.md')) continue
+    // Everything under `docs/`, not only its Markdown. The failure message
+    // below says "no file outside docs/ contains them", and until 2026-09-21
+    // this loop did not mean it: it skipped `.md` and read every other tracked
+    // file, wherever it lived. Nothing under `docs/` was anything else, so the
+    // gap never showed -- the only non-Markdown files there were two empty
+    // `.gitkeep`s.
+    //
+    // G7R2-F01 made it show. Raw agent transcripts are retained as `.txt`,
+    // because the prose gates walk `.md` and a captured transcript is output
+    // rather than documentation (FW-GAP-007). That put substantive prose under
+    // `docs/` in a non-Markdown file for the first time, and this loop read it
+    // as code -- so an identifier an agent merely *mentioned* in a transcript
+    // began counting as one the repository *has*. Both directions break: a
+    // document could name an invented identifier and pass because a transcript
+    // said it, and an `ABSENT_ON_PURPOSE` exemption could read as stale for the
+    // same reason. The second is what failed, on `FIXED`.
+    if (file.startsWith('docs/')) continue
     if (file === 'tests/docs/identifiers.test.ts') continue
     try {
       all += readFileSync(join(ROOT, file), 'utf8')

@@ -1,0 +1,111 @@
+I have everything I need, verified against the tree rather than the prose.
+
+---
+
+# FINAL ACCEPTANCE — G7R2-F01 "Honour the high-contrast accessibility setting" — ATTEMPT 2 of 2
+
+**Tree accepted:** worktree `C:/repos/Projects/.koras-worktrees/koras-saas-starter/G7R2-F01`, HEAD **`fe46617`**, branch `feature/G7R2-F01-honour-high-contrast`. Feature `e677b54`, doc corrections `dc4a946`, record corrections `fe46617`. `develop` at `48e762a`. Mode **FAST**, `user_interface`, no floor signal.
+
+## First: were attempt-1's two blockers fixed, and fixed the right way?
+
+**Blocker 2 (untracked re-validation) — FIXED, correctly.** `testing/runs/2026-09-21-09/` (README + `pnpm-test-after-doc-corrections.txt`, 409 docs / 2191 / 120 / 21 / 7, EXIT=0) is now committed in `fe46617`. It is framed with what it does *not* establish ("one machine … a post-merge gate is never satisfied by a local result"), routing the canonical check to `ci_verified`. `fe46617` changed **0 files outside `docs/`** — so the correction commit does not itself repeat `dc4a946`'s mistake. This one is clean.
+
+**Blocker 1 (false "no executable change") — NOT FIXED in the append-only log; and the fix introduced a new inaccuracy.** This is the finding that holds the verdict, and it is the exact class attempt-1 blocked on.
+
+The literal false phrase does **not** live in event 33. I read the whole log (`telemetry-events.md`):
+- **Event 32** (19:15Z): `loop_iteration | documentation correction after the audit | six findings addressed; documentation only, no executable change` → source `qa-evidence-audit.md`. `git show dc4a946` proves event 32 **and** the `tests/docs/file-references.test.ts` edit were committed together in `dc4a946`. So event 32, as committed, asserts "no executable change" about a commit that changed an executable file. **This is the false statement.**
+- **Event 33** (19:15Z): `gate_invalidated | documentation_audit, final_acceptance | the post-audit documentation corrections invalidate exactly these two and nothing else`. Event 33 does **not** contain "no executable change"; its accounting claim is correct.
+
+The amendment appended in `fe46617` (`telemetry-amendments.md`, 19:40Z) names **"event 33, and the closing section of `qa-evidence-audit.md`"** and states they "said … **no executable change** was made." Consequence:
+1. **Event 32 remains standing and uncorrected.** No amendment names it. Walking the append-only log, a reader still reads "no executable change" at event 32 with nothing beside it saying otherwise — precisely the defect attempt-1 refused to pass.
+2. **The amendment is itself now inaccurate.** It attributes to event 33 a phrase event 33 never contained. Cross-checking event 33 against the amendment, the amendment misdescribes it.
+
+`qa-evidence-audit.md` itself *was* corrected properly (in place, but naming what it corrects — "This section first read 'no executable change was made'. It was false…" — acceptable for an audit doc, which is not the append-only log). And the append-only log was correctly not edited in place. But the amendment was aimed at the wrong event number — an error inherited from attempt-1's own mis-citation and from this attempt's brief, both of which say "event 33." The result is that the phrase "no executable change" is still in the record, uncorrected, at **event 32**.
+
+## A. Definition of Done, item by item
+
+**Always (1–8):**
+1. Traceability — **MET.** AC1–AC8 → code (`product-shell.tsx.hbs`, `tokens.css`) and executed checks; independent review answers all eight.
+2. Automated tests pass, executed — **MET (frozen tree).** `pnpm-test-attempt-3-green.txt`: 2191+400+120+21 Node, 7 Python, EXIT=0, verified by me. Accepted tree (`fe46617`) docs count is unstated and routed to `ci_verified`; the committed 409 run is for `dc4a946`.
+3. Matches approved design — **MET.** Two `packages/ui` files, exactly as scoped.
+4. Independent review, no CRITICAL/HIGH — **MET.** `code-reviewer` (did not write it) → PASS, 0/0, 2 LOW.
+5. Tenant/authz/validation/secret — **MET.** Emitted attribute is literal `'high'`, never the stored value; no such surface.
+6. Nothing disabled/weakened — **MET.** Six guards mutation-proven; the seventh honestly disclosed as not mutation-tested.
+7. Documentation updated incl. made-wrong docs — **NOT MET.** The record still misstates `dc4a946` as "no executable change" at telemetry event 32, and the amendment meant to fix it misdescribes event 33. This is documentation the change made wrong, not corrected.
+8. `final-acceptance` READY — **see verdict (NOT READY).**
+
+**User-facing (9–14):** 9 browser desktop+mobile + console — **MET** (`playwright-roundtrip-147-passed.txt`, real API/DB). 10 manual QA 5/5 PASS — **MET.** 11 every case PASS/FAIL/BLOCKED — **MET.** 12 genuine screenshots at canonical paths, mapped — **MET** (PNG magic bytes confirmed `89 50 4e 47`; the two disclosed byte-identical pairs remain honestly disclosed). 13 WCAG 2.2 AA by keyboard/focus — **MET** (21.00:1 body, weakest 4.06:1 > 3.0, recomputed by qa-reviewer). 14 qa-reviewer independent audit — **MET** (both audits PASS; six findings actioned).
+
+**Risk triggers (15–19) — NOT APPLICABLE.** No floor signal fired; reviewer independently found no security/tenancy/data/AI/domain surface. Each named with its unmet condition. Defensible.
+
+**Wider scope (20–22) — NOT APPLICABLE.** 20: no migration/schema/policy. 21: single feature, no converging work. 22: the factory deploys nothing of its own. All reasoned, none blank.
+
+## B. Planner / Orchestrator separation — CLEAN
+`planner-output.txt` ends "I recommend only; I have started nothing, routed no agents, and created no worktree." Orchestrator owns `execution-plan.md`, routing and gates; invented no requirement (scope is exactly "honour highContrast," siblings named as still-dead).
+
+## C. 40-agent discovery — SOUND, shortfall handled
+`runs/2026-09-21-02`: three fresh processes. Probe 1 under-reported by three (37/40, elided the alphabetically-first three); the failed probe is retained, probes 2 and 3 resolve to 40, classified as an instrument defect, explicitly not FW-DEF-001 and not contradictory-evidence. I confirm 40 registered agent files exist (44 incl. 4 legacy). Note: the amendment reclassifies the shortfall to `SESSION_OR_TOOL_HEALTH` (a real declared token) and explains why the brief's own two labels are not repository tokens — a good catch, unquoted deliberately for `identifiers.test.ts`. Sound.
+
+## D. Capability activation (17/40) — DEFENSIBLE
+Excluded 23 each named with unmet condition. No agent that should have fired was omitted; `security-*` and `architecture-reviewer` correctly excluded (reviewer independently confirmed no boundary crossed).
+
+## E. Execution mode FAST — CORRECT, both halves present
+`execution-plan.md` walks all floor/elevating signals as not-fired **and** names three "looked-like-and-is-not" signals rejected on their own boundary notes. Rule `no_signal_and_every_fast_requirement_holds`; no human override.
+
+## F. Parallelism NO — LEGITIMATE
+Two files are one cohesive change (marker dead without the token override and vice-versa). Planner returned NO independently; the rejected "run F02 to fill slots" alternative is recorded as human-declined. Not avoidance.
+
+## G. Worktree isolation — CLEAN
+`git worktree list`: feature worktree under `.koras-worktrees/…` — **outside** the repo `C:/repos/Projects/koras-saas-starter`. Main repo status **clean**, on `develop`, in sync with origin. (Third worktree `Temp/starter-before`, detached, is the sync "before" tree — outside the repo, harmless.)
+
+## H. Freeze points — code freeze HELD; quality freeze substantively held but its record still misdescribed
+Code freeze: no product code changed after `e677b54` (confirmed — `fe46617` and `dc4a946` touch only `docs/` plus, in `dc4a946`, the exempt `.test.ts`). Quality freeze: `dc4a946`'s `.test.ts` edit is free under the code-freeze test-exemption, so *permitted*; but the log's characterization of it (event 32) is still false. `fe46617` is documentation-only and thus correctly does not expand scope or invalidate an executable gate.
+
+## I. Gate reuse / invalidation — accounting correct, one record still wrong
+Per `gate-invalidation.yaml`, a `documentation_only_correction` invalidates `documentation_audit`, `ci_verified`, `final_acceptance` and reuses `automated_tests_pass` (docs re-validation → `ci_verified`, post-merge). Event 33's "these two and nothing else" is correct; `0 reused / 0 invalidated` pre-audit and `2 invalidated` after are correct as sets. The `.test.ts` edit correctly invalidates nothing beyond that set. **But** the correction that was to certify this left event 32 asserting "no executable change" and mislabeled event 33 — the accounting is right, the record certifying it is not.
+
+## J. Budgets — none exceeded on work; final-acceptance budget now EXHAUSTED
+`execution-budget.yaml`: test_fix_cycles 1/2, reviewer_cycles 1/2, documentation_audits 1/1, gate_retries 1/1, `ux-ui-designer` 2/2 (cap reached, functioned), human_escalations 0. **`max_final_acceptance_attempts` is 2, and this is attempt 2.** With a NOT READY verdict, the budget is spent → `budget_exhausted: HUMAN_REVIEW`.
+
+## K. Evidence vs execution — spot-checks
+(1) PNG magic bytes on TC03 step-01 confirmed genuine. (2) `attempt-3-green.txt` shows the exact frozen counts (400/2191/120/21/7, EXIT=0). (3) `git show dc4a946` proves event 32 and the `.test.ts` edit are one commit — so the "no executable change" characterization is demonstrably false, not arguable. No claim exceeds execution *except* the amendment's claim about what event 33 said, which is itself false.
+
+## L. Telemetry — append-only discipline mostly kept, one mis-aimed correction
+`telemetry-events.md` was not edited in place (good); the correction is an appended amendment row (good). UNKNOWNs (elapsed time, deployment states) are marked UNKNOWN not 0 (good). The single failure: the appended amendment names the wrong event, so the derived record does not actually reconcile event 32.
+
+## M. Hygiene — CLEAN
+No tracked `node_modules`/`.zip`/`.tmp`/`dist`/`build`. Absolute paths appear only inside verbatim captured transcripts (legitimate raw evidence). `fe46617` touches 0 files outside `docs/`. The only untracked path is `testing/runs/2026-09-21-10/` — this acceptance run's own output directory, expected.
+
+## N. Scope — within plan
+`e677b54` = two production files + tests + e2e + feature dir. `dc4a946` = feature dir + `gap-defect-register.md` (anticipated) + the exempt `.test.ts` MOVED-map. `fe46617` = feature dir only. No `apps/**`, `services/**`, `_shared/**`, migration, or sibling-setting code. No creep.
+
+---
+
+# FINAL ACCEPTANCE VERDICT: **NOT READY**
+
+Blocker 2 is properly fixed. Blocker 1 is **not**: the false "no executable change" statement the framework refused to pass still stands in the append-only telemetry log at **event 32**, and the amendment intended to remove it was aimed at **event 33** — which never contained the phrase — so the correction both (a) leaves the actual false event un-amended and (b) newly misdescribes event 33. This is the identical record-integrity class attempt-1 blocked on, only partially remediated. A reader "told do not be generous" cannot pass a record that still asserts, uncorrected, that a commit changing `tests/docs/file-references.test.ts` made no executable change.
+
+**What must happen first (documentation only, and now a human act):**
+1. Append a telemetry amendment that names **event 32** (the event carrying "documentation only, no executable change" about `dc4a946`) and corrects it — that `dc4a946` changed one executable file, `tests/docs/file-references.test.ts`, and that under the code-freeze test-exemption this invalidates no gate. Do not edit event 32 in place.
+2. Correct the existing 19:40Z amendment row so it no longer asserts that **event 33** said "no executable change" (event 33 said "documentation corrections invalidate exactly these two"). Either retarget it to event 32 or add a follow-up amendment naming what the prior amendment got wrong.
+
+## Budget and escalation — separately
+
+This is **final-acceptance attempt 2 of 2**. `max_final_acceptance_attempts: 2` is now reached. A third attempt would exceed the budget, which under `execution-budget.yaml` is **`budget_exhausted: HUMAN_REVIEW`** — a stop and a human decision, **not** another automated cycle. The two corrections above are minutes of work, but under the budget rules the decision to make them and re-admit the feature is now a human's, recorded with its reason (`granting further budget is a human act`). I am handing this to a person, not looping.
+
+**Stop report (per `execution-budget.yaml`):**
+- **What failed:** attempt-1 Blocker 1 (false "no executable change" in the record) is only partially fixed; telemetry event 32 remains false and un-amended; the corrective amendment misdescribes event 33.
+- **What was attempted, how many times:** 2 final-acceptance attempts; 1 correction commit (`fe46617`) between them.
+- **What evidence exists, and where:** `git show dc4a946` (event 32 + `.test.ts` co-committed); `telemetry-events.md` lines 50–51; `telemetry-amendments.md` line 12; this run at `testing/runs/2026-09-21-10/`.
+- **What remains unknown:** whether CI agrees at `fe46617` (docs count for the accepted tree is unstated locally and routed to `ci_verified`).
+- **Recommended human decision:** grant a recorded budget extension for the two doc-only amendments above, then re-admit; nothing about the code, the requirements, or any gate needs to change.
+
+## Lifecycle state — separately
+
+**LOCAL lifecycle: NOT complete.** Reached `PLANNED → IMPLEMENTING → TESTING`; stands at the threshold of `LOCAL_ACCEPTANCE_READY`. Every applicable *pre_acceptance* gate produced evidence **except** `final_acceptance`, which I hold at NOT READY.
+
+**Remaining states:**
+- **MERGE_READY / MERGED** — *applicable, human gate.* Blocked behind LOCAL acceptance and the human budget decision above.
+- **CI_VERIFIED** — *applicable, post-merge.* `develop` runs CI; local passes do not satisfy it. This is where the accepted tree's docs suite and the browser render are canonically validated. Check `gh run list` for the pushed commit; do not infer from this document.
+- **DEV_DEPLOYED / DEV_VERIFIED** — **NOT_APPLICABLE.** The factory deploys nothing of its own (no dev environment, Fly app or Vercel project); `deployment_preflight` and `environment_verified` are NOT_APPLICABLE with that reason, not PENDING.
+- **Downstream sync** to `koras-e2e-shop` / `docoris` is a separate hand-carried decision, out of scope for this feature.

@@ -79,6 +79,41 @@ person one.
 
 ---
 
+## FW-GAP-009 — the identifier gate read evidence as code, and my own fix exposed it
+
+`identifiers.test.ts` checks that a backticked identifier named in a document exists
+somewhere in the repository, and its failure message says *"no file outside `docs/`
+contains them"*. Its implementation did not mean that. It skipped `.md` and read **every
+other tracked file, wherever it lived** — including under `docs/`.
+
+Nothing showed for as long as the only non-Markdown files under `docs/` were two empty
+`.gitkeep`s. This feature made it show, and by way of FW-GAP-007's own remedy: raw agent
+transcripts are retained as `.txt` precisely so the prose gates do not walk them, and
+that put substantive prose under `docs/` in a non-Markdown file for the first time in
+this repository. The gate then read those transcripts as code.
+
+**Both directions break.** A document could name an invented identifier and pass because
+an agent's transcript happened to mention it; and an `ABSENT_ON_PURPOSE` exemption could
+read as stale for the same reason. The second is what actually failed, on `FIXED` — a
+token exempted as "gap-defect-register: a row status", which a retained final-acceptance
+transcript quotes while discussing register rows.
+
+**Fixed here, and it is a test change rather than a documentation one** — said plainly,
+because the immediately preceding defect in this run was a record that called a test
+change documentation-only. One line, `if (file.startsWith('docs/')) continue`, which
+makes the implementation match the sentence the test already prints when it fails.
+
+**Severity: Medium.** It weakened a gate rather than breaking one, and it weakened it in
+the direction that lets an invented identifier through — which is the direction that
+matters, since the gate exists because a document describing a plan that was replaced
+before it was built reads exactly like one describing the system.
+
+**Worth carrying:** a remedy can create the condition for the next defect. FW-GAP-007's
+fix was right and is kept; it simply moved prose into a corpus that another gate assumed
+was code. Neither gate was wrong on its own.
+
+---
+
 ## FW-DEF-002 — a fresh Windows checkout cannot pass the framework's own validation suite
 
 The most consequential finding of the run, and the only one that is a defect in the

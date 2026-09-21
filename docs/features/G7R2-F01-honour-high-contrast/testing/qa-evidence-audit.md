@@ -71,6 +71,15 @@ description, sitting in the document whose job is to certify that the record say
 more than happened. Corrected here and recorded as an amendment rather than quietly
 rewritten.
 
+**The first attempt at that amendment named the wrong event**, and `final-acceptance`
+refused READY a second time for it: the false phrase is in telemetry event 32, and the
+amendment was aimed at event 33, which never contained it. So the record stood
+uncorrected while a correction sat beside it looking like a fix — which is worse than no
+correction, because it reads as done. Both the real amendment and a second one naming
+what the first got wrong are in `../telemetry-amendments.md` at 20:20Z, under a budget
+extension the repository owner granted with its reason after the automated budget was
+exhausted.
+
 ## What this audit does not establish
 
 That the feature is correct — that is the code review's and the tests' business. This

@@ -1,0 +1,94 @@
+I have what I need. Here is the final acceptance walk, every claim checked against the tree rather than the prose.
+
+---
+
+# FINAL ACCEPTANCE — G7R2-F01 "Honour the high-contrast accessibility setting"
+
+**Tree accepted:** worktree at `../.koras-worktrees/.../G7R2-F01`, HEAD `dc4a946`, branch `feature/G7R2-F01-honour-high-contrast`. Feature commit `e677b54`, documentation commit `dc4a946`. `develop` at `48e762a`. Mode **FAST**, `user_interface`, no floor signal.
+
+## A. Definition of Done, item by item
+
+**Always (1–8)**
+1. **Traceability — MET.** AC1–AC8 in `requirements/user-story.md` each trace to code (`product-shell.tsx.hbs:175`, `tokens.css:81-88`) and to an executed check; the independent review answers all eight against the source.
+2. **Automated tests pass, executed — MET.** `pnpm-test-attempt-3-green.txt` at the frozen commit `e677b54`: 2191 + 400 + 120 + 21 Node, 7 Python, 5/5 turbo, EXIT=0. Verified the file, not the claim. (Caveat, see I/L: the accepted tree `dc4a946` runs 409 docs checks, not 400; that delta is validated only by the *uncommitted* run 09 and, canonically, deferred to `ci_verified`.)
+3. **Matches approved design — MET.** Two production files, both `packages/ui`, exactly as `execution-plan.md` scoped; reviewer confirms the `light-dark()` cascade and no new mechanism.
+4. **Independent review, no CRITICAL/HIGH — MET.** `code-reviewer` (did not write the code) → PASS, 0 CRITICAL, 0 HIGH, 2 LOW recorded and deliberately not fixed.
+5. **Tenant/authz/validation/secret correct — MET.** Reviewer traced the full path: the stored value is a truthiness test, the emitted attribute is the literal `'high'`, never the stored value; no authz/tenant/secret/injection surface.
+6. **Nothing disabled/weakened — MET.** The `MOVED`-map addition records a real file rename; it does not weaken a control. Seven guards added; six mutation-proven to fail (the seventh honestly disclosed as not mutation-tested — see K).
+7. **Documentation updated incl. made-wrong docs — MET, with a defect.** Register rows added (SET-23, FW-GAP-006/007/008, FW-DEF-002), telemetry amended for the mis-named evidence file. **But** two derived documents misstate the freeze-crossing commit — see I and K.
+8. **final-acceptance READY — see verdict.**
+
+**User-facing (9–14)**
+9. **Browser at desktop+mobile, console checked — MET.** `playwright-roundtrip-147-passed.txt`: 147 passed against a real API/DB, round-trip case flips the setting and asserts the computed background changed.
+10. **Manual QA against a real environment — MET.** 5 planned/5 executed/5 PASS/0 FAIL/0 BLOCKED, with build and account context.
+11. **Every case PASS/FAIL/BLOCKED — MET.** All five PASS; none blocked.
+12. **Genuine screenshots, canonical paths, mapped — MET, with disclosure.** All nine carry PNG magic bytes at canonical paths. md5 confirms TC01 `step-01`≡`step-06` (off returns to stock, disclosed) and **TC02 `step-01`≡TC01 `step-04`** (byte-identical; disclosed as F4, the border measurement read from the live page instead). Honest, not padded.
+13. **WCAG 2.2 AA by keyboard/focus — MET.** Measured from computed colours: 21.00:1 body, 14.16/14.17:1 borders, focus ring 5.17:1 / 4.06:1 against a 3.0 threshold; qa-reviewer recomputed by hand.
+14. **qa-reviewer independent audit — MET.** Both `qa_evidence_audit` and `documentation_audit` PASS; six findings, all MEDIUM/LOW, each actioned.
+
+**Risk triggers (15–19) — NOT APPLICABLE.** No floor signal fired (all ten walked individually in `impact-analysis-output.txt`; reviewer independently found no security/tenancy/data/architecture concern). So security review (15/16), privacy (17), AI eval (18) and domain review (19) are each NOT APPLICABLE with the unmet condition named. Defensible.
+
+**Wider scope (20–22) — NOT APPLICABLE.** 20: no migration/schema/policy — NA. 21: single feature, no converging work — NA. 22: the factory deploys nothing of its own (no Fly/Vercel) — NA. All reasoned, none blank.
+
+## B. Planner / Orchestrator separation — CLEAN
+`planner-output.txt` ends "I recommend only; I have started nothing, routed no agents, and created no worktree." The Planner ranked three candidates, assessed parallel safety, and explicitly deferred logging SET-23 to a writer. The Orchestrator owns `execution-plan.md`, routing and gates. No requirement was invented: scope is exactly "honour highContrast," with the two siblings named as still-dead rather than pulled in.
+
+## C. 40-agent discovery — SOUND, and the shortfall handled correctly
+`runs/2026-09-21-02/README.md`: three fresh `claude -p` processes. **Probe 1 under-reported by three** (37/40 — the alphabetically-first `accessibility-qa`, `ai-evaluation`, `ai-specialist` elided by free-form transcription of a 61-item list). Not buried: the failed probe is retained, and probes 2 (targeted, all YES, COUNT=40) and 3 (numbered 1–40) resolve it. Classified as an instrument defect, explicitly **not** FW-DEF-001 (all probes fresh processes) and **not** contradictory-evidence escalation (instruments of unequal standing). I independently confirm **40 agent `.md` files on disk** with frontmatter (44 total incl. 4 legacy). Evidence sound.
+
+## D. Capability activation (17/40) — DEFENSIBLE
+The excluded 23 are each named with the unmet condition. I looked for an agent that should have fired and did not: none. `security-*` correctly excluded (no `security_boundary` — the reviewer independently confirmed no injection/authz/secret surface); `architecture-reviewer` correctly excluded (existing hook + existing cascade, no boundary crossed). The review deliberately hunted for excluded-agent work and found none.
+
+## E. Execution mode FAST — CORRECT, with both halves of the rationale
+`execution-plan.md` walks all ten floor and eight elevating signals as not-fired, **and** names three signals it "looked like and is not" (`multi_step_user_workflow`, `security_boundary`, `architecture_impact`), each rejected on the condition's own boundary note. Selection rule `no_signal_and_every_fast_requirement_holds`; no human override. This is the "what fired and what was considered and rejected" the question asks for.
+
+## F. Parallelism NO — LEGITIMATE, not avoidance
+The two production files are one cohesive change (marker meaningless without the token override, override dead without the marker). Planner returned NO for all three candidates independently. The plan even records the rejected alternative (run F02 concurrently "purely to exercise three slots") and that the human declined it. A recorded legitimate NO, not a manufactured YES.
+
+## G. Worktree isolation — CLEAN
+`git worktree list`: feature worktree at `C:/repos/Projects/.koras-worktrees/...` — **outside** the repository `C:/repos/Projects/koras-saas-starter`. Main repo status **clean**, on `develop`. (A third worktree, `Temp/starter-before`, detached, is the sync "before" tree — also outside the repo, harmless.) The policy that once shipped a second copy of the starter is honoured.
+
+## H. Freeze points — RESPECTED for product code; one loose statement about it
+`workflow.yaml`: code_freeze makes *product* code cost budget/invalidation; "a change to tests, fixtures or documentation does neither by itself." quality_freeze: "a documentation correction … invalidates the documentation audit and final acceptance, and NOTHING else."
+- **Code freeze — HELD.** No product code changed after `e677b54`. The only cross-freeze tree change to tracked content is documentation + one test's rename-map.
+- **Quality freeze — substantively held, misdescribed.** `dc4a946` did change an executable file — `tests/docs/file-references.test.ts` (a `.test.ts`, class `automated_test_node`). Per the code_freeze note that change invalidates no gate, so it is *permitted*. But event 33 and `qa-evidence-audit.md` both call the post-audit corrections "**no executable change** / documentation only," which is literally false. The commit *message* discloses the test edit; the two derived summaries do not. See I/K.
+
+## I. Gate reuse / invalidation — accounting is contract-correct, wording is not
+`gate-invalidation.yaml` `documentation_only_correction` → invalidates `documentation_audit`, `ci_verified`, `final_acceptance`; **reuses** `automated_tests_pass` (docs-test re-validation is routed to `ci_verified`, post-merge). Event 33's "documentation_audit, final_acceptance … and nothing else" is therefore correct for the doc portion, and the `file-references.test.ts` edit is free under the code_freeze test-exemption. **0 reused / 0 invalidated pre-audit** is correct (no prior run to reuse from); **2 invalidated after** is correct *as a set*. The right thing was done mechanically — **but the record claims "no executable change" while a `.test.ts` changed**, which is the exact overclaim class (R-042 / PLAT-DEF) this framework exists to catch, sitting in the audit document whose job is to certify the record says no more than happened.
+
+## J. Budgets — NONE EXCEEDED, no escalation owed
+Against `execution-budget.yaml`: test_fix_cycles 1/2, reviewer_cycles 1/2, documentation_audits 1/1, retries 1/1, `ux-ui-designer` 2/2 (`same_agent_max_invocations` reached and did **not** stop anything — the cap functioned). `human_escalations` 0. No counter exceeded; no trigger in `escalation:` fired, so none was required. The one cap reached is honestly recorded.
+
+## K. Evidence vs execution — no claim exceeds execution, one is self-contradictory
+Spot-checks: (1) md5 confirms the two "identical" screenshot pairs the record discloses. (2) `attempt-3-green.txt` shows the exact counts claimed, EXIT=0. (3) The release notes were **corrected from 7→6** mutation-proven guards, with the seventh named as untested — the record was made *weaker* to match execution, which is the right direction. The single contradiction: "no executable change" (I/H). Non-blocking under the contract, but it must be corrected because it is false.
+
+## L. Telemetry — derived from events, honest UNKNOWNs
+`telemetry-summary.md` states "This is a reading of the record, not the record" and marks elapsed time and deployment-component states **UNKNOWN**, not 0 — correctly distinguishing "not measured" from "measured zero." Amendments are append-only and name what they correct. One residue: the docs-test count 400 in the committed summary is stale for the accepted tree (409), reconciled only in uncommitted run 09.
+
+## M. Hygiene — CLEAN
+Zero tracked `node_modules`/`.zip`/`.tmp`/`dist`/`build` in the feature dir. Absolute machine paths appear only inside a **verbatim captured test transcript** (`pnpm-test-attempt-1-docs-gates.txt` — terraform-plan Temp paths and a pnpm store path), which is legitimate raw evidence, not source pollution. **One loose end:** `testing/runs/2026-09-21-09/` is **untracked** — the re-run that validates the accepted tree exists only in the working directory, so the accepted commit `dc4a946` carries no committed evidence of its own suite passing.
+
+## N. Scope — within the approved plan
+`e677b54` touches only the two named production files, the named test files, `e2e/roundtrip`, and the feature dir. `dc4a946` touches the feature dir, `docs/platform/gap-defect-register.md` (anticipated — findings are "carried into" it) and `tests/docs/file-references.test.ts` (the rename-map). No `apps/**`, `services/**`, `_shared/**`, migration, or sibling-setting code. No scope creep.
+
+---
+
+# FINAL ACCEPTANCE VERDICT: **NOT READY**
+
+Narrowly, and on the record rather than the code. The feature itself is done: implementation, independent review (PASS), automated tests, browser, manual QA, accessibility and both audits are all satisfied with produced evidence, and no CRITICAL/HIGH is open. I am withholding READY on two record-integrity defects — precisely the class this framework exists to prevent, which a final reader told "do not be generous" cannot wave through:
+
+**Must happen first (both are minutes of work, documentation/hygiene only):**
+1. **Correct the false self-description.** `docs/.../telemetry-events.md` event 33 and `docs/.../testing/qa-evidence-audit.md` ("No executable change was made") state the post-audit commit changed no executable file. `dc4a946` changed `tests/docs/file-references.test.ts` (`automated_test_node`). Amend both to say so and to state that under the code_freeze test-exemption it invalidates no gate — do not delete the history, append an amendment (the log is append-only).
+2. **Resolve the uncommitted re-validation.** Either commit `testing/runs/2026-09-21-09/pnpm-test-after-doc-corrections.txt` and reference it (it is the only evidence the accepted tree's 409-check suite passes), or remove it and rely explicitly on `ci_verified`. Leaving it untracked means the accepted commit has no committed evidence of its own suite result and the worktree is not clean.
+
+Neither requires re-running a gate; both are corrections to what the record *says happened*. Once made, this is READY.
+
+## Lifecycle state — separately
+
+**LOCAL lifecycle: essentially complete, blocked only by the two record corrections above.** The feature reached `PLANNED → IMPLEMENTING → TESTING` and stands at the threshold of `LOCAL_ACCEPTANCE_READY`; every applicable *pre_acceptance* gate has produced evidence. `final_acceptance` is the one I hold at NOT READY pending items 1–2.
+
+**Remaining states:**
+- **MERGE_READY / MERGED** — *applicable, human gate.* No agent merges to `develop`; `merge_to_protected_branch` is the owner's decision, and merging triggers CI, Security and Generator Integration.
+- **CI_VERIFIED** — *applicable, post-merge.* `develop` runs CI; local passes do not satisfy it. This is where the 409-check docs suite and the browser render are canonically validated. Not inferrable from this document — check `gh run list` for the pushed commit.
+- **DEV_DEPLOYED / DEV_VERIFIED** — **NOT APPLICABLE.** The factory deploys nothing of its own (no dev environment, Fly app or Vercel project); `deployment_preflight` and `environment_verified` are NOT_APPLICABLE with that reason, not PENDING.
+- **Downstream sync** to `koras-e2e-shop` / `docoris` is a separate hand-carried decision, explicitly out of R2.
