@@ -59,3 +59,4 @@ each. Every event from `2026-09-21T16:53Z` onward carries its real occurrence ti
 | 41 | gate_executed | documentation gates | FAIL — a new failure, caused by this run's own FW-GAP-007 remedy: retained `.txt` transcripts were read as code by `identifiers.test.ts` | 2026-09-21T20:25Z | `tests/docs/identifiers.test.ts` |
 | 42 | loop_iteration | FW-GAP-009 | one-line test fix so the implementation matches the message it prints. **A test change, not documentation** | 2026-09-21T20:30Z | `release/framework-findings.md` |
 | 43 | gate_executed | documentation gates | PASS — 412 of 412 | 2026-09-21T20:32Z | `tests/docs` |
+| 44 | gate_executed | automated_tests_pass | PASS at `3d98843`: 2191 + 412 + 120 + 21 Node, 7 Python, 5 of 5 turbo tasks, exit 0 | 2026-09-21T20:45Z | `testing/runs/2026-09-21-11/pnpm-test-after-fw-gap-009.txt` |
