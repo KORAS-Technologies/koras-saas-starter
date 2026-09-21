@@ -1,0 +1,64 @@
+### COMMIT: 48e762ace73e0a632d89a92333914040f3d832df (+ uncommitted feature diff)
+### pnpm test ###
+create-koras-app:test: stdout | tests/terraform.test.ts > Doppler > wraps Terraform in `doppler run --` when the inputs are not in this environment
+create-koras-app:test: 
+create-koras-app:test: ==> terraform plan
+create-koras-app:test: 
+create-koras-app:test: stdout | tests/terraform.test.ts > Doppler > wraps Terraform in `doppler run --` when the inputs are not in this environment
+create-koras-app:test: 
+create-koras-app:test: --dry-run: stopping after plan. No infrastructure was created.
+create-koras-app:test: Plan saved to C:\Users\korak\AppData\Local\Temp\koras-plan-YYdiX3\tfplan (outside the project; delete when done).
+create-koras-app:test: 
+create-koras-app:test: stdout | tests/terraform.test.ts > Doppler > does not nest a second doppler run when the inputs are already present
+create-koras-app:test: 
+create-koras-app:test: Terraform inputs:
+create-koras-app:test:   profile          product
+create-koras-app:test:   project_slug     sampleapp
+create-koras-app:test:   enabled_apps     ["web","admin"]
+create-koras-app:test:   enabled_services ["api","worker"]
+create-koras-app:test: 
+create-koras-app:test: Running Terraform with credentials from the current environment.
+create-koras-app:test: 
+create-koras-app:test: ==> terraform init
+create-koras-app:test: 
+create-koras-app:test: stdout | tests/terraform.test.ts > Doppler > does not nest a second doppler run when the inputs are already present
+create-koras-app:test: 
+create-koras-app:test: ==> terraform plan
+create-koras-app:test: 
+create-koras-app:test: stdout | tests/terraform.test.ts > Doppler > does not nest a second doppler run when the inputs are already present
+create-koras-app:test: 
+create-koras-app:test: --dry-run: stopping after plan. No infrastructure was created.
+create-koras-app:test: Plan saved to C:\Users\korak\AppData\Local\Temp\koras-plan-jTiA9d\tfplan (outside the project; delete when done).
+create-koras-app:test: 
+create-koras-app:test: stdout | tests/terraform.test.ts > Doppler > falls back to plain terraform when Doppler is not configured
+create-koras-app:test: 
+create-koras-app:test: Terraform inputs:
+create-koras-app:test:   profile          product
+create-koras-app:test:   project_slug     sampleapp
+create-koras-app:test:   enabled_apps     ["web","admin"]
+create-koras-app:test:   enabled_services ["api","worker"]
+create-koras-app:test: 
+create-koras-app:test: Running Terraform with credentials from the current environment.
+create-koras-app:test: 
+create-koras-app:test: ==> terraform init
+create-koras-app:test: 
+create-koras-app:test: stdout | tests/terraform.test.ts > Doppler > falls back to plain terraform when Doppler is not configured
+create-koras-app:test: 
+create-koras-app:test: ==> terraform plan
+create-koras-app:test: 
+create-koras-app:test: stdout | tests/terraform.test.ts > Doppler > falls back to plain terraform when Doppler is not configured
+create-koras-app:test: 
+create-koras-app:test: --dry-run: stopping after plan. No infrastructure was created.
+create-koras-app:test: Plan saved to C:\Users\korak\AppData\Local\Temp\koras-plan-lCih9b\tfplan (outside the project; delete when done).
+create-koras-app:test: 
+koras-docs-tests#test:  ERROR  command (C:\repos\Projects\.koras-worktrees\koras-saas-starter\G7R2-F01\tests\docs) C:\Users\korak\AppData\Local\pnpm\store\v11\links\@\pnpm\9.15.0\dabcd8222099706e9d5613e2bbde82a6ffe5e77c8ba18b78fcd77c3eac869433\bin\pnpm.CMD run test exited (1)
+
+ Tasks:    0 successful, 3 total
+Cached:    0 cached, 3 total
+  Time:    9.065s 
+Failed:    koras-docs-tests#test
+
+ ERROR  run failed: command  exited (1)
+ ELIFECYCLE  Test failed. See above for more details.
+
+[exited with code 0]

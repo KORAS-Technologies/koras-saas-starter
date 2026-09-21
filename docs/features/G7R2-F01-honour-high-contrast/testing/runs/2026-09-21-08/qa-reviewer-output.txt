@@ -1,0 +1,43 @@
+I have completed my audit. I verified the contract, all evidence documents, the screenshots (existence, PNG validity, md5, sizes), the accessibility math by hand, git provenance, and cross-document consistency. Here are my findings.
+
+---
+
+# qa-reviewer audit — G7R2-F01 (commit `e677b54`)
+
+I produced none of this evidence. I read the whole feature directory, both contract files, and checked the raw artefacts with a shell rather than trusting the prose.
+
+## What I verified as sound
+
+**Screenshots (Part A #3, #4).** All 9 exist, all are real PNGs (magic `89 50 4e 47…`), all tracked in `e677b54`, all at the canonical shape `testing/manual/screenshots/<tc>/step-<nn>-<desc>.png`. The disclosed byte-identical claim is true: TC01 `step-01` ≡ `step-06`, md5 `461220953…`, 73,826 bytes each — a genuine, honest proof of exact return. Each capture carries a stated purpose.
+
+**Accessibility ratios (Part A #6) — spot-checked by hand.** Border `#2b2b2b` on `#fff`: L=0.0242 → (1.05)/(0.0742)=**14.16:1** ✓. Focus ring `#2563eb` on white: L=0.1532 → **5.17:1** ✓; on black → **4.06:1** ✓. Body `#000/#fff`=**21.00:1** ✓. The computed numbers are correct.
+
+**Tenant-brand precedence (Part A #6).** TC04 shows brand bg `rgb(254,249,195)` (off) → `rgb(255,255,255)` + black heading (on), `--brand-primary` still `#b91c1c`. The independent code review traced the cascade to source (`brandStyle()` on the `BrandScope` ancestor, shell-root declaration wins, no `!important`). Supported.
+
+**Real DB / nothing bypassed (Part A #6).** Build context is internally consistent and corroborated by the PLAT-GAP-010 round-trip harness: BYPASSRLS role refused at startup, RS256/JWKS/audience/issuer/expiry verified, ephemeral generated product. Honestly hedged ("no human looked").
+
+**Six mutations (Part A #6).** M1–M6 each failed exactly the predicted assertions; the measurement error (a `git checkout` that wiped uncommitted work) is honestly recorded. Internally consistent.
+
+**Primary evidence (Part A #5).** The block is in `execution-plan.md`, committed in `e677b54`; the PASS verdicts and expanded results came after (`manual-test-results.md` grew 16→145 lines post-commit) — so it was declared before the validating action. Raw evidence (`screenshots/G7R2-F01-TC01/`) exists. `claim_proved` is bounded correctly; `claim_not_proved` is non-empty and honest (ratios, persistence, siblings, hardcoded colours). Verifier (`qa-reviewer`, me) ≠ producer (`manual-qa`). **As that verifier I confirm: the retained TC01 captures support the before/after claim and no more.**
+
+**Verdicts (Part A #2).** All five are PASS; nothing outside {PASS, FAIL, BLOCKED}.
+
+**Documentation cross-checks (Part B).** Register rows SET-23 / FW-GAP-006 / 007 / 008 / FW-DEF-002 match `framework-findings.md` on severity (High/High/Medium/Low/High) and status. The "**111 rows**" Summary claim checks out: 115 ID-keyed rows − 4 docoris mappings = 111. Automated counts in `release-notes.md` (2191/400/120/21/7) match `pnpm-test-attempt-3-green.txt`. Commit `e677b54` is real. `release-notes.md` applicability is accurate (foundation, two files, operator: nothing).
+
+## Findings
+
+| ID | Severity | File | What is wrong | What to do |
+|----|----------|------|---------------|------------|
+| F1 | MEDIUM | `testing/runs/2026-09-21-04/pnpm-test-attempt-1-summary.txt`; `testing/automated-test-results.md`; `telemetry-events.md` | The file named *attempt-1* actually holds the **CRLF/orchestration** failure (koras-docs-tests *passing*, create-koras-app 2 failed) — i.e. attempt 2 per telemetry event 16 — not the "7 documentation-gate failures" that event 14 and `automated-test-results.md` attribute to attempt 1. Events 14 **and** 16 cite this one file. The raw capture of the first failed run (docs gates) is not retained, and `automated-test-results.md` collapses three attempts into "First run FAIL → Second run PASS," omitting the CRLF failure that FW-DEF-002 is entirely about — while the green file is named `attempt-3`. Breaches `historical_failed_runs_are_retained`. | Retain attempt-1's raw output and rename the CRLF capture to `attempt-2`; correct `automated-test-results.md` to record all three attempts. Its cause is preserved elsewhere (the undated hedges live in `2026-09-21-01/*.txt`), so no defect evidence was lost — this is a labelling/retention defect, not a fabrication. |
+| F2 | MEDIUM | `release/release-notes.md:80` | "New assertions \| **Seven, each shown to fail** against a deliberate counter-example" overstates what was executed. Six mutations (M1–M6) cover the six *shell* assertions; the seventh — the `product-settings` "siblings still dead" **regression guard** — was never shown to fail (no mutation honours a sibling). Code-review finding L1 flags precisely that it stays green if a sibling is honoured in `tokens.css`. This is the guard-that-only-ever-passed risk `quality-gates.yaml:341` exists to stop. | Either add a counter-example that honours a sibling in the shell, or change the claim to "six of seven mutation-tested; the seventh is a text-inspection guard with a known blind spot (L1)." |
+| F3 | MEDIUM | `testing/manual/manual-test-results.md` | The executed-results doc restates the required `test_case_fields` (objective, priority, preconditions, test_data) only for TC01; TC02–TC05 carry only steps/expected/actual/verdict/evidence. They **do** exist in `manual-test-guide.md` (objective/priority/preconditions for all cases), so the case *record as a whole* is complete — but the results are not self-contained, and `test_data` is genuinely absent for TC02–TC05 everywhere. | Carry the field set (or an explicit "test data: none beyond preconditions") per case in the results, or state that the results defer the static fields to the guide. |
+| F4 | LOW | `testing/manual/screenshots/G7R2-F01-TC01/step-04-*.png` ≡ `.../G7R2-F01-TC02/step-01-*.png` | These are the **identical file** (md5 `72812087…`, 61104 bytes) presented under two names as distinct evidence; "9 genuine screenshots" counts a reused capture. Consistent with the "don't capture the same state twice" rule, but — unlike the disclosed TC01 step-01≡06 pair — undisclosed. | Disclose that TC02 reuses the TC01 high-contrast capture, or take a distinct TC02 image. |
+| F5 | LOW | `release/release-notes.md:81`; `telemetry-events.md` event 17 | The "**147 passed**" browser run is cited to `testing/runs/2026-09-21-04/`, which holds only the turbo/orchestration `.txt`s — no Playwright capture. The manual pass and browser suite ran in an ephemeral generated product; the 9 screenshots were brought back but the 147-test log was not. Count is plausible and matches the documented method, but the raw capture a count is quoted from is not retained. | Retain the Playwright output for the 147 run, or point event 17 at where it actually lives. |
+| F6 | LOW (info) | `testing/qa-evidence-audit.md` | Still reads "**Not yet executed**, as of 2026-09-21, 17:40Z." This is an accurate *pending placeholder* for this very audit — not a stale/false claim (per Part B it does not describe something already done; it describes the audit I am running now). But it must be replaced with this audit's result before final acceptance. I have no write tools to update it. | Replace with this audit's findings/verdicts. |
+
+No CRITICAL or HIGH finding. `blocking_severities` is `[CRITICAL, HIGH]`, so nothing here blocks either gate; F1–F6 are recorded for correction.
+
+## Verdicts
+
+- **qa_evidence_audit: PASS** — every case carries all fields across guide+results (F3 is a self-containment/`test_data` gap, not a missing case record), every verdict is valid, all 9 screenshots are genuine captures at canonical paths, the primary-evidence block was declared before the fact and its retained captures support its claim and no more, and the four load-bearing claims (real DB, six mutations, brand precedence, AA ratios) all hold under independent check. The evidence overstatement (F2) and the reused-capture disclosure (F4) are recorded, not blocking.
+- **documentation_audit: PASS** — links, identifiers, register severities/statuses, the 111-row count, the automated counts, and the commit reference all resolve; release applicability is accurate. The retained-run/attempt-numbering contradiction (F1) and the assertion overclaim (F2) are MEDIUM and recorded for correction; neither blocks.

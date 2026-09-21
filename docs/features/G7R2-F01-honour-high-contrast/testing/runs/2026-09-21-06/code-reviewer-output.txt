@@ -1,0 +1,51 @@
+I have everything I need. Let me confirm my read of the settings-form checkbox structure supports the e2e selector, then write the review. I've verified enough — writing the findings now.
+
+## Independent Code Review — G7R2-F01 (commit `e677b54`)
+
+I reviewed the full diff, both production files as changed, the settings provider/`chooseValue` path they depend on, all seven new assertions, the e2e spec, the AC contract, `BrandScope`/`brandStyle` (to test the cascade claim), and the evidence documents. I did not write this code.
+
+### Answers to the review questions
+
+**1. Requirements (AC1–AC8).** All eight are met.
+- AC1/AC2 — `data-contrast={highContrast ? 'high' : undefined}` on the shell root (`product-shell.tsx.hbs:175`). React omits an `undefined` attribute, so false/null emits nothing and the DOM is byte-identical to before.
+- AC3 — the `[data-contrast="high"]` block (`tokens.css:81-88`) redeclares exactly the six readability properties, each a `light-dark()` pair, so both appearances are preserved.
+- AC4 — cascade verified below.
+- AC5/AC7 — ratios and keyboard belong to `accessibility-qa`/manual; the shell's keyboard logic is untouched (only an attribute was added to the root div).
+- AC6 — `--brand-primary/secondary/accent`, focus ring, shadows, radius, fonts all left alone; asserted by the test.
+- AC8 — only two production files change, both under `packages/ui`.
+
+**2. Architecture.** The seam is right and reuses two *existing* mechanisms rather than inventing a second: the read goes through `useSettingValue` (the hook the data table already uses), and the override is the same `light-dark()` token re-declaration that per-tenant branding already performs one level up. No new context, no new fetch, no prop threading, no package boundary crossed.
+
+**3. Code.**
+- *Hydration:* no server/client disagreement is possible. The value comes from `SettingsProvider`, which the server-rendered dashboard layout populates once from `effectiveSettings()` and passes as a serialized prop. SSR and client hydration both read the *same* context value, so `data-contrast` renders identically on both sides. This is materially different from the `collapsed` state right below it, which is deliberately read from `localStorage` in `useEffect` *after* mount precisely because it would mismatch — the contrast value is not read from the browser at all.
+- *Null-settings path:* correct. `useSettingValue → useSetting → useSettings()?.settings[key]` yields `undefined` outside a provider or when settings is `null`; `chooseValue(undefined, false)` returns `false`; no marker. This is exactly the new-customer / API-down state.
+- *Attribute expression:* produces `"high"` or an omitted attribute only. Never `data-contrast=""` and never `"undefined"`.
+- *Handlebars:* the additions introduce no `{{…}}`; JSX single braces are invisible to Handlebars, and `tokens.css` is not a `.hbs`. Existing `{{projectSlug}}` expressions are intact.
+
+**4. Security.** Nothing to exploit. The stored value is used only as a truthiness test; the emitted attribute is the hard-coded literal `'high'`, never the stored value. Even a maliciously-shaped stored value is coerced to `false` by `sameShape` (the `false` fallback admits only a boolean) and, regardless, could never reach the DOM as text. No authz, tenant, secret, or injection surface. I traced the full path from the setting to the attribute.
+
+**5. Test adequacy.** The seven assertions are real and were mutation-tested (M1–M6, each shown failing against a counter-example, with one honestly-recorded measurement error in the run). None would pass if the feature were deleted — the `useSettingValue(...)` string, the marker expression, and the CSS block all disappear on deletion.
+- On the specific "does NOT contain `accessibility.reducedMotion`/`fontScale`" assertion (`product-settings.test.ts:1136-1138`): it is **meaningful, not a tautology.** It can fail — when someone honours a sibling *in the shell* later, this trips and forces them to move the key up to the honoured list (the same discipline `surfaced=False` uses). Its limitation is scope (finding L1 below): it only inspects the shell file.
+
+**6. Evidence validity.** Consistent and appropriately hedged. `automated-test-results.md` states plainly that the assertions prove template text and not rendering, that the e2e browser case was *not* executed in the factory (correct — it is a `.hbs` needing a generated product with `E2E_DATABASE_URL`), and records the mutation-run error rather than smoothing it. The commit's "verified in a browser" is backed by manual QA, not by the factory suite. No claim exceeds its evidence.
+
+**7. Scope containment.** Clean. Production changes are the two files named in the plan; everything else is test code or documentation. No opportunistic edits.
+
+**8. Generator impact.** Safe for every product. The settings framework is *foundation*, not capability-gated (asserted by `product-settings.test.ts`), so `SettingsProvider`/`useSettingValue` always generate; the shell is core to the product profile. A product with no optional capabilities still gets the hook, and outside a provider it falls back to `false`. `tokens.css` ships to the marketing app but the rule is inert there (nothing outside the shell emits the marker). No capability gate was needed.
+
+**9. Profile isolation.** No leak. Nothing landed in `profiles/_shared/` or `profiles/control-plane/`; the existing test asserts no shell exists in either, and the `tokens.css` edit is product-only.
+
+**10. Documentation applicability.** Correct structure for a FAST `user_interface` change. It is heavier than the change warrants, but that is not a defect — and the execution plan surfaces a genuine framework finding (the `gate-invalidation.yaml` globs `packages/**`/`*.css` don't match `profiles/product/template/packages/**`, which would misclassify this as "a Node test changed") and applies the intended classes rather than routing around it.
+
+### Findings
+
+| ID | Severity | file:line | What | Why it matters | What to do |
+|----|----------|-----------|------|----------------|------------|
+| L1 | LOW | `generators/create-koras-app/tests/product-settings.test.ts:1136-1138` | The "siblings still dead" guard only inspects `product-shell.tsx.hbs`. If `reducedMotion` or `fontScale` is later honoured in `tokens.css`, a different component, or a media query, the assertion stays green while the recorded "still dead" claim becomes false. It can also false-trip if either key is merely *mentioned in a comment* in the shell. | The tripwire that is meant to force the register row to be updated has a blind spot exactly where a sibling is most naturally honoured (CSS). | Optional: widen the negative check to the `packages/ui` subtree (or at least `tokens.css`), or match on `useSettingValue('accessibility.reducedMotion'…)` rather than a bare substring. Not blocking. |
+| L2 | LOW (info) | `profiles/product/template/e2e/roundtrip/settings.spec.ts.hbs:57-70` | The only assertion that proves the palette *took effect* runs solely in `e2e/roundtrip` (needs `E2E_DATABASE_URL`) and depends on `save-accessibility`, `preferences-outcome`, and `data-setting="accessibility.highContrast"`. | If any selector drifts, presence coverage silently disappears — nothing else can prove the marker ever appears. | I verified all three selectors exist today (`settings-form.tsx:93,162`; preferences page test ids). No action required; noted for durability. |
+
+Neither finding is CRITICAL or HIGH; neither blocks the gate.
+
+### Verdict: **PASS**
+
+The change does exactly what it claims and no more: one boolean read through an existing hook, one token re-declaration through the existing cascade, the marker emitted only when true. The cascade precedence (accommodation beats brand) is correct by construction — `brandStyle()` is applied to the `BrandScope` ancestor div (`brand-scope.tsx.hbs:47`), never to the shell root, so the shell root's own declaration beats the inherited brand value with no `!important`, which I confirmed against the source rather than taking on the design's word. Hydration is safe, the null path is correct, there is no injection surface, scope and profile isolation hold, and the tests are genuine and mutation-verified. The two LOW notes are hardening suggestions, not defects.

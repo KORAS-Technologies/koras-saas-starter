@@ -1,0 +1,8 @@
+
+
+ Test Files  2 passed (2)
+      Tests  524 passed (524)
+   Start at  13:58:47
+   Duration  29.45s (transform 764ms, setup 0ms, import 12.32s, tests 32.14s, environment 0ms)
+
+EXIT=0

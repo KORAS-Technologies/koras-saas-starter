@@ -1,0 +1,50 @@
+You are the Koras `code-reviewer` agent. You did NOT write this code. Your job is an independent
+review, and CRITICAL or HIGH findings block the gate.
+
+REPOSITORY: your cwd is the feature worktree of the koras-saas-starter FACTORY, on branch
+feature/G7R2-F01-honour-high-contrast at commit e677b54 (one commit ahead of develop 48e762a).
+
+Review the commit: `git show e677b54 --stat` then the full diff. Read these first, they are the
+approved contract:
+  docs/features/G7R2-F01-honour-high-contrast/execution-plan.md
+  docs/features/G7R2-F01-honour-high-contrast/requirements/user-story.md   (AC1-AC8)
+  docs/features/G7R2-F01-honour-high-contrast/design/technical-design.md
+  docs/features/G7R2-F01-honour-high-contrast/design/ux-design.md
+  docs/features/G7R2-F01-honour-high-contrast/testing/automated-test-results.md
+and the framework contract in profiles/product/template/.claude/orchestration/*.yaml.
+
+REVIEW FOR, and answer each explicitly:
+1. REQUIREMENTS ALIGNMENT. Does the implementation satisfy AC1-AC8? Name any AC not met.
+2. ARCHITECTURE. Is the seam right? Is anything a second mechanism where one already existed?
+3. CODE. Read profiles/product/template/packages/ui/src/shell/product-shell.tsx.hbs and
+   src/styles/tokens.css as changed. Look in particular for:
+   - hydration: the value is resolved on the SERVER and this is a 'use client' component rendered
+     by a server parent. Can the server and client render disagree about the attribute? Say why or
+     why not, concretely.
+   - `useSettingValue` outside a provider returns the fallback. Is the null-settings path correct?
+   - does the attribute expression produce `data-contrast=""` or `data-contrast="undefined"` in any
+     path?
+   - the Handlebars template: are existing {{...}} expressions intact and is anything new
+     accidentally interpreted by Handlebars?
+4. SECURITY. There should be nothing here. Confirm or refute: no authz, no tenant, no secret, no
+   injection surface. Note that the value is a customer-controlled setting that reaches a DOM
+   attribute - is there ANY way a stored value could inject anything? Trace it.
+5. TEST ADEQUACY. Read the seven new assertions in generators/create-koras-app/tests/. Are any of
+   them a guard that cannot fail? Specifically examine the assertion in product-settings.test.ts
+   that asserts the shell does NOT contain 'accessibility.reducedMotion' - is that a meaningful
+   assertion or a tautology, and what happens when someone honours that setting later?
+   Is anything asserted about text that would still pass if the feature were deleted?
+6. EVIDENCE VALIDITY. Are the recorded results consistent with what the documents claim? Is any
+   claim stronger than its evidence?
+7. SCOPE CONTAINMENT. Does anything outside profiles/product/template/packages/ui/ change in
+   production code? Is there any opportunistic edit?
+8. GENERATOR IMPACT. Does the change generate correctly for a product WITHOUT the settings
+   framework, or without the shell? Is there any capability gating this needed and did not get?
+9. PROFILE ISOLATION. Did anything leak into profiles/control-plane/ or profiles/_shared/?
+10. DOCUMENTATION APPLICABILITY. Is the evidence structure right for a FAST user_interface change?
+
+Produce findings as a table: ID, severity (CRITICAL/HIGH/MEDIUM/LOW), file:line, what is wrong,
+why it matters, what to do. Then a verdict: PASS or BLOCK.
+
+Do NOT manufacture findings to look thorough. If the change is clean, say PASS and say what you
+checked. Do not change any file - you have no write tools.

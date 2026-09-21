@@ -116,6 +116,17 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
  * exist, so this map cannot rot into a list of names nobody has looked at.
  */
 const MOVED: Record<string, string> = {
+  // Named by G7 R2's telemetry events 14 and 16, which are append-only and may
+  // not be edited. One file was written for the first failed `pnpm test` of that
+  // run and then reused as the name for the second, so a single path stood for
+  // two different runs and the first run's output had not been retained at all.
+  // `qa-reviewer` found it (F1); the fix retained both runs under names that say
+  // which is which, and an amendment records the correction. The events keep the
+  // name they were written with, which is what this map is for.
+  'docs/features/G7R2-F01-honour-high-contrast/testing/runs/2026-09-21-04/pnpm-test-attempt-1-summary.txt':
+    'docs/features/G7R2-F01-honour-high-contrast/testing/runs/2026-09-21-04/pnpm-test-attempt-2-crlf.txt',
+  'testing/runs/2026-09-21-04/pnpm-test-attempt-1-summary.txt':
+    'docs/features/G7R2-F01-honour-high-contrast/testing/runs/2026-09-21-04/pnpm-test-attempt-2-crlf.txt',
   'helpers/teardown.ts': 'tooling/koras-cli/src/teardown/guards.ts',
   'tests/e2e/helpers/teardown.ts': 'tooling/koras-cli/src/teardown/guards.ts',
   // Named by FOLLOW_UPS F3a, which records that `koras-control-plane`'s

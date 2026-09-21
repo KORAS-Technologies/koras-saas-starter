@@ -1,0 +1,35 @@
+  ok 127 [mobile] › e2e\settings.spec.ts:135:5 › the organisation page tells a member they may not change it, before they try (758ms)
+  ok 128 [mobile] › e2e\settings.spec.ts:157:5 › an administrator is not told that, on the same page (799ms)
+  ok 129 [mobile] › e2e\settings.spec.ts:167:5 › the outcome of a save is announced rather than left to be noticed (1.0s)
+  ok 130 [mobile] › e2e\shell.spec.ts:25:5 › the signed-in shell renders one main landmark and lands on it (779ms)
+  ok 131 [mobile] › e2e\shell.spec.ts:36:5 › the current page is announced exactly once, wherever the navigation is (808ms)
+  ok 132 [mobile] › e2e\shell.spec.ts:60:5 › a nested page highlights one entry, not its whole ancestry (871ms)
+  ok 133 [mobile] › e2e\shell.spec.ts:82:5 › a plan-gated module is offered, not merely missing (766ms)
+  ok 134 [mobile] › e2e\shell.spec.ts:104:5 › the appearance switch repaints the page and survives a navigation (1.2s)
+  ok 135 [mobile] › e2e\shell.spec.ts:138:7 › the drawer › opens from the toggle and traps the keyboard inside it (1.1s)
+  ok 136 [mobile] › e2e\shell.spec.ts:161:7 › the drawer › Escape closes it and gives the focus back to the toggle (722ms)
+  ok 137 [mobile] › e2e\shell.spec.ts:175:7 › the drawer › closes when a navigation happens, rather than covering the new page (821ms)
+  -  138 [mobile] › e2e\shell.spec.ts:191:7 › the sidebar › collapses, and every link keeps its accessible name
+  -  139 [mobile] › e2e\shell.spec.ts:214:7 › the sidebar › the preference survives a navigation
+  ok 140 [mobile] › e2e\shell.spec.ts:227:5 › a caller with no session is sent to sign in, not shown the shell (626ms)
+  ok 141 [mobile] › e2e\sign-in.spec.ts:15:5 › without an auth request, and no provider configured, the page is the button (609ms)
+  ok 142 [mobile] › e2e\sign-in.spec.ts:28:5 › a sign-out lands on a signed-out page, not in the provider (559ms)
+  ok 143 [mobile] › e2e\sign-in.spec.ts:37:5 › with an auth request the page is the sign-in itself (778ms)
+  ok 144 [mobile] › e2e\sign-in.spec.ts:60:5 › with no platform there is no provider button, and the password form stands alone (654ms)
+  ok 145 [mobile] › e2e\sign-in.spec.ts:71:5 › a provider that sent the person back without a proof is an expired sign-in (610ms)
+  ok 146 [mobile] › e2e\sign-in.spec.ts:82:5 › a provider return the platform cannot finish is one message, with the password form (616ms)
+  ok 147 [mobile] › e2e\sign-in.spec.ts:96:5 › a provider the person came back from without finishing is said once (611ms)
+  ok 148 [mobile] › e2e\sign-in.spec.ts:104:5 › a platform that cannot be reached is one message, under the form (777ms)
+  ok 149 [mobile] › e2e\sign-in.spec.ts:121:5 › the form is usable from the keyboard alone (713ms)
+  ok 150 [mobile] › e2e\sign-in.spec.ts:134:5 › the sign-in form is translated (669ms)
+  ok 151 [mobile] › e2e\sign-in.spec.ts:144:5 › a forgotten password is asked for on this product, and answered once (771ms)
+  ok 152 [mobile] › e2e\sign-in.spec.ts:165:5 › the forgotten-password page is translated (653ms)
+  ok 153 [roundtrip] › e2e\roundtrip\settings.spec.ts:30:5 › a signed-in person reaches their own organisation (3.1s)
+  ok 154 [roundtrip] › e2e\roundtrip\settings.spec.ts:47:5 › a page size chosen here survives a reload (3.7s)
+  ok 155 [roundtrip] › e2e\roundtrip\settings.spec.ts:66:5 › what one person chose is not what another sees (3.7s)
+  ok 156 [roundtrip] › e2e\roundtrip\settings.spec.ts:112:5 › high contrast marks the shell and re-skins it, and off leaves it untouched (4.2s)
+
+  9 skipped
+  147 passed (3.2m)
+
+[exited with code 0]

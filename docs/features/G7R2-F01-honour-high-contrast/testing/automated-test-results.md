@@ -48,6 +48,15 @@ applied one at a time and reverted between.
 
 No mutation survived, and each failed exactly the assertions predicted before it was run.
 
+**Six of the seven new assertions are covered here, not all seven.** M1-M6 exercise the six
+assertions in `product-shell.test.ts`. The seventh - the guard in `product-settings.test.ts`
+recording that `accessibility.reducedMotion` and `accessibility.fontScale` are still read by
+nothing - was **not** mutation-tested: no mutation honoured a sibling. The independent review
+judged it meaningful rather than tautological, because it can fail when somebody honours one,
+and named its blind spot as finding L1: it inspects only the shell file, so a sibling honoured
+in `tokens.css` would leave it green. Stated here because `quality-gates.yaml` requires a new
+protective guard to be shown able to fail, and this one has not been.
+
 **A measurement error inside this mutation run, recorded rather than smoothed over.**
 On the first attempt `developer-1` reverted M1 with `git checkout -- <file>`. The
 implementation was uncommitted working-tree state, so that restored the file to `HEAD`
@@ -90,7 +99,18 @@ product code was implicated and the product suites were unaffected.
 Both are recorded as framework findings in `release/framework-findings.md`; neither is
 a defect in the product.
 
-**Second run: PASS.** See `testing/runs/2026-09-21-04/`.
+**Second run: FAIL, for a different and unrelated reason.** 41 of 499 in
+`orchestration.test.ts`, plus a 120-second `beforeAll` timeout in
+`product-governance.test.ts` while the browser suite held the machine. Neither was this
+feature: the 41 are FW-DEF-002, a CRLF checkout artefact that makes the 40-agent validation
+suite fail in any fresh Windows clone, and the timeout is contention. Retained at
+`testing/runs/2026-09-21-04/pnpm-test-attempt-2-crlf.txt`.
+
+**Third run: PASS**, on the frozen commit with the worktree re-checked-out at `core.eol=lf`
+so that it holds what the blobs actually contain. 2191 + 400 + 120 + 21 Node assertions,
+7 Python, 5 of 5 turbo tasks, exit 0. Retained at
+`testing/runs/2026-09-21-04/pnpm-test-attempt-3-green.txt`. Nothing about the tracked content
+differed between the second run and the third; `git status` was clean on both sides.
 
 ## What these results do not establish
 

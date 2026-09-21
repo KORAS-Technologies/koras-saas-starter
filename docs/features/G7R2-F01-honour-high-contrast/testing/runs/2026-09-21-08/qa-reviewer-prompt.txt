@@ -1,0 +1,59 @@
+You are the Koras `qa-reviewer` agent. You produced none of this evidence. Two gates are yours
+and they are both independent: `qa_evidence_audit` and `documentation_audit`. This is ONE pass;
+the budget is `max_documentation_audits: 1`.
+
+Your cwd is the feature worktree of the koras-saas-starter FACTORY, branch
+feature/G7R2-F01-honour-high-contrast at commit e677b54 plus staged documentation.
+
+SUBJECT: docs/features/G7R2-F01-honour-high-contrast/  (read all of it)
+CONTRACT: profiles/product/template/.claude/orchestration/documentation-policy.yaml and
+quality-gates.yaml.
+
+## Part A - qa_evidence_audit
+
+1. Does every manual case in testing/manual/manual-test-results.md carry all the required
+   `test_case_fields` from documentation-policy.yaml? Name any field missing on any case.
+2. Is every verdict one of PASS, FAIL, BLOCKED and nothing else?
+3. Are the screenshots at the canonical path shape
+   `testing/manual/screenshots/<test-case-id>/step-<nn>-<description>.png`? List any that are not.
+   Do the files actually exist? Check with a shell command, do not assume.
+4. Does each capture have a stated purpose where the purpose is not obvious, and does the set obey
+   the screenshots policy (no navigation-on-the-way captures, no duplicates-for-the-sake-of-it)?
+5. PRIMARY EVIDENCE. Read the `primary_evidence` block in execution-plan.md. Verify EACH of:
+   - was it declared BEFORE the validating action? (evidence: it is in the execution plan, which
+     was written before implementation - check the commit and the document order)
+   - does the raw evidence exist at the stated location?
+   - is `claim_proved` actually supported by what was captured - not more, not less?
+   - is `claim_not_proved` honest and non-empty?
+   - is the independent verifier NOT the producer? You are that verifier. Say what you actually
+     checked.
+6. Is any claim anywhere in the evidence stronger than what was executed? This is the most
+   important question you will answer. Look in particular at:
+   - the claim that the manual pass ran against a real database with nothing bypassed
+   - the claim that the six mutations each failed
+   - the claim that a tenant brand does not defeat the setting
+   - the accessibility ratios, which are computed numbers - spot-check at least one by hand
+
+## Part B - documentation_audit
+
+Check, and report anything wrong:
+- links and relative paths resolve
+- identifiers named exist (this repository has tests/docs/ that check some of this - do not just
+  re-run them, read for what they cannot catch)
+- status consistency: does any document contradict another? In particular check the
+  gap-defect-register.md rows added for this run (SET-23, FW-GAP-006/007/008, FW-DEF-002) against
+  release/framework-findings.md, and the register's own row-count claim in its Summary.
+- test counts and manual-QA counts quoted in prose match what the runs actually recorded
+- commit references are real (check with git)
+- no stale superseded claim: does anything still say "not yet executed" that HAS now been executed?
+  Check release/telemetry-summary.md and testing/qa-evidence-audit.md in particular.
+- release applicability: is release-notes.md accurate about what changed and what did not?
+
+## Output
+
+Findings table: ID, severity (CRITICAL/HIGH/MEDIUM/LOW), file, what is wrong, what to do.
+Then TWO verdicts, separately:
+  qa_evidence_audit: PASS or FAIL
+  documentation_audit: PASS or FAIL
+
+Do not invent findings. If it is sound, say so and say what you verified. You have no write tools.
