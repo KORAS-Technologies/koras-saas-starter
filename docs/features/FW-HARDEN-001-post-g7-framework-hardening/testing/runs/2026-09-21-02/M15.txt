@@ -1,0 +1,33 @@
+
+ RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
+
+ ❯ tests/orchestration.test.ts (557 tests | 1 failed) 1888ms
+     × finalises the summary after acceptance, as a closure artifact 17ms
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 556 passed (557)
+   Start at  16:37:42
+   Duration  9.45s (transform 416ms, setup 0ms, import 7.13s, tests 1.89s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/orchestration.test.ts > a count is written after the thing it counts > finalises the summary after acceptance, as a closure artifact
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/orchestration.test.ts:3324:66
+    3322|   it('finalises the summary after acceptance, as a closure artifact', …
+    3323|     expect(telemetry.derived_summary.is_closure_artifact).toBe(true)
+    3324|     expect(telemetry.derived_summary.finalised_after_acceptance).toBe(…
+       |                                                                  ^
+    3325|     expect(telemetry.derived_summary.finalised_at).toMatch(/CLOSED|ter…
+    3326|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

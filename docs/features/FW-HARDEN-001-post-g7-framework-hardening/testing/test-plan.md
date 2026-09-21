@@ -21,7 +21,7 @@ checkout.
 |---|------|----------|
 | A1 | Each of the 40 documents, LF, parses and names itself | PASS |
 | A2 | Each of the 40 documents, CRLF, parses and names itself | PASS |
-| A3 | Each of the 40, both endings, yields byte-identical frontmatter | PASS |
+| A3 | Each of the 40 yields the same frontmatter either way, once the endings are set aside | PASS |
 | A4 | Section extraction finds responsibilities and boundaries under both endings | PASS |
 | A5 | No opening delimiter | refused |
 | A6 | Opening delimiter with trailing space — `--- ` | refused |
@@ -77,9 +77,6 @@ B8.
 
 ## Group C — FW-GAP-006, the classification matrix
 
-Table-driven. Every row asserts a class; the factory row and the generated row
-of each pair must agree.
-
 Each factory row is paired with its generated-product row: "these two agree"
 is the property, and two unpaired assertions would let one drift.
 
@@ -113,10 +110,19 @@ API — both are presentation, and neither used to say so. **C20** exercises
 the other profile, because the classifier is shared. **C21** is FW-GAP-011,
 asserted as a known hole so that closing it later has to be deliberate.
 
-**Coverage assertion, not a table:** every tracked file under the product
-template's `apps`, `packages`, `services`, `python-packages`, `e2e` and
-`supabase` directories classifies as something. This cannot be satisfied by
-editing a list, which is the point.
+**Coverage assertion, not a table.** Every tracked file in all three template
+trees is classified, and the orphan set is asserted **exactly** against the
+count the contract declares — not merely asserted empty. Adding a file type
+moves the set and fails; so does closing a hole without saying so; so does
+deleting a glob.
+
+The first version of this assertion could not fail, and the independent review
+proved it: it walked the filesystem rather than git, so it counted
+`__pycache__`; and five of its six roots were catch-all directory globs, so no
+new file type under them could ever be unclassified. Removing the `.hbs` rule
+left it green. It is the one case in this plan that had to be rewritten after
+being written, and it is worth saying so — a coverage test that cannot fail is
+worse than no coverage test, because it is counted.
 
 **Mutations that must break Group C**
 
@@ -128,6 +134,8 @@ editing a list, which is the point.
 | Move `frontend_code` back below `backend_code` | C14 |
 | Broaden `documentation` to `**/*` | C1, C2 and most of the table |
 | Narrow `frontend_code` so product code reads as docs-only | C1, C2 |
+| Remove `local/**` from `deployment_config` | coverage — the orphan count moves |
+| Use a glob syntax the matcher does not implement | the glob-syntax guard |
 
 ---
 
@@ -141,6 +149,12 @@ Classification is not the point; what it licenses is.
 | D2 | The same diff under the uncorrected globs leaves all four reusable | PASS — the historical witness, asserted as a *negative* so the fix is proven to have changed something |
 | D3 | A documentation-only edit still reuses the executable gates | PASS |
 | D4 | An unclassified path does not read as "no classes, reuse everything" | PASS |
+| D5 | A diff mixing a classified and an unclassified path returns both the classes **and** the stop list | PASS |
+
+D5 exists because the first implementation of the diff helper filtered the
+unclassified paths away — the precise thing the fail-closed rule it was written
+to demonstrate forbids in as many words. A reference implementation that breaks
+its own rule teaches the defect to everyone who copies it.
 
 D2 is the load-bearing case. Without it the suite proves the new behaviour and
 not that the old behaviour was wrong.
@@ -157,6 +171,15 @@ not that the old behaviour was wrong.
 | E4 | `CLOSED` requires the summary to exist and agree with the log | PASS |
 | E5 | The ordering summary → acceptance → closure → summary is not circular: acceptance has no dependency on the summary | PASS |
 | E6 | The append-only and "zero is a measurement" rules are unchanged | PASS — FW-GAP-003 is not reopened |
+| E7 | The summary is finalised *before* the closure transition, and the transition is not an event it waits for | PASS |
+| E8 | The escalated branch names who checks the summary | PASS |
+
+E7 is the load-bearing one, and it was added after the fact. The first draft
+said the summary was finalised **at** the terminal state while closure required
+a finalised summary to be entered — FW-GAP-010 rebuilt one step further on,
+with `final_acceptance` swapped for `CLOSED`. Group E as first written was
+entirely "the YAML contains this string", and nothing in it could have caught
+that. E7 asserts the ordering instead.
 
 ---
 

@@ -21,6 +21,17 @@ Identical to the count G7 R2 recorded. The rest of the generator suite and all
 412 documentation assertions pass on the same tree, so the class is confined to
 one file.
 
+**Challenged and re-measured.** The independent review read two further
+`
+
+` regexes over source-tree files, in `product-frontend.test.ts` and
+`product-shell.test.ts`, and called this claim false. It is not: both files
+define their own `read()` that strips carriage returns before matching, each
+with a comment saying this exact defect bit them once already. Measured rather
+than argued — the whole generator suite runs green on the CRLF checkout, 61
+files and 2244 tests. The finding was specific, testable and wrong, which is
+the useful kind.
+
 ### The class, enumerated rather than guessed
 
 Every assertion in `orchestration.test.ts` that parses the *structure* of an
@@ -148,9 +159,23 @@ the product template's application files carry the `.hbs` suffix, and an
 extension-matched class cannot see through it: `README.md.hbs` classified as
 nothing before, and as `documentation` after.
 
-Measured against the whole tracked set — 462 files under the product template's
-`apps`, `packages`, `services`, `python-packages`, `e2e` and `supabase`
-directories — the corrected classifier leaves **zero** unclassified.
+Measured across every tracked file in all three template trees, the corrected
+classifier leaves **19** unclassified, in three coherent groups, and **zero**
+under any application directory.
+
+The first draft of this section said zero, full stop. That was true of six
+chosen roots and false of the tree: 42 tracked files matched nothing —
+the whole of `local/`, the build graph, repository hygiene, and the
+framework's own contract. Combined with the fail-closed rule below, every one
+of them would have become a surprise stop. Found by the independent review,
+which measured what this section asserted.
+
+Two groups had an obvious answer and were given one: `local/**` and the build
+graph are `deployment_config` by that class's own words, and
+`pnpm-workspace.yaml` is a `dependency`. The remaining 19 are a question
+rather than an oversight — what change class is the orchestration contract? —
+and they are counted in the contract and asserted exactly, so the number moves
+when anything does.
 
 ### The stylesheet rule
 
@@ -172,8 +197,13 @@ build on the day it is added rather than silently reusing every gate.
 
 ### Deliberately not fixed
 
-Two things the matrix found that this cycle is not authorised to change, named
-here and carried to the register so they are not rediscovered:
+Three things the matrix found that this cycle is not authorised to change,
+named here and carried to the register so they are not rediscovered:
+
+- **FW-GAP-013** — 19 tracked template files the vocabulary has no class for:
+  the framework's own orchestration contract (15), repository hygiene (3) and
+  `contracts/product-platform.v1.json` (1). Each would need a new class, and a
+  new class needs a gate that depends on it.
 
 - **FW-GAP-011** — the factory's own source, `generators/` and `tooling/`, is
   outside the declared domain and classifies as nothing.

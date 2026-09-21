@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { rmSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import yaml from 'js-yaml'
 import { loadProfile } from '../src/profiles/index.js'
 import type { ProfileName } from '../src/profiles/loader.js'
@@ -102,6 +103,8 @@ interface Telemetry {
     finalised_at: string
     finalised_after_acceptance: boolean
     is_closure_artifact: boolean
+    not_an_applicable_event: string[]
+    checked_by: { closed_run: string; escalated_run: string }
     is_source_of_truth: boolean
     source_of_truth: string
     regenerating_is_safe: boolean
@@ -176,6 +179,8 @@ interface GateInvalidation {
       who_decides: string
       never: string[]
     }
+    known_unclassified_groups: number
+    known_unclassified_files_in_templates: number
   }
   change_classes: Record<string, { paths: string[]; means: string }>
   gate_result: { fields: Record<string, string> }
@@ -300,6 +305,8 @@ interface QualityGates {
     stage?: string
     human_evidence_decided_by?: string
     owner_optional_in?: string[]
+    judges?: string[]
+    does_not_judge?: string[]
   }>
   owner_optional_closure: {
     permitted_when: string[]
@@ -597,8 +604,16 @@ describe('the agent registry agrees with the files on disk', () => {
  * and requires the closing one to occupy its own line. A line-ending fix that
  * weakened frontmatter validation would have traded one silent failure for
  * another.
+ *
+ * ONE MORE THING THE FIRST DRAFT GOT WRONG. A lazy `[\s\S]*?` capture walks
+ * past a near-miss closing delimiter to find a later real one, so
+ * `---\nname: a\n--- \nname: b\n---\n` yielded a frontmatter block containing
+ * `--- ` and `name: b`. The old `slice` stopped at the first `\n---` and did
+ * not. The capture is tempered instead, so it cannot cross anything that
+ * begins a delimiter line -- which makes the header comment above true in
+ * both directions rather than only one.
  */
-const AGENT_DOCUMENT = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/
+const AGENT_DOCUMENT = /^---\r?\n((?:(?!\r?\n---)[\s\S])*)\r?\n---(?:\r?\n|$)/
 const LINE = /\r?\n/
 
 /** The frontmatter block, or null when the document is not a valid one. */
@@ -757,6 +772,16 @@ describe('the frontmatter parser accepts both line endings and nothing else', ()
     ['a carriage return alone, with no newline', '---\rname: x\r---\r'],
   ])('refuses a document with %s', (_why, body) => {
     expect(frontmatterOf(body)).toBeNull()
+  })
+
+  it('stops at the first delimiter line rather than hunting for a later one', () => {
+    // LOW-8 from the review of this change. A lazy `[\s\S]*?` capture walked
+    // past `--- ` to the next real `---`, so a near-miss delimiter and every
+    // line after it landed inside the frontmatter -- and body prose could
+    // then satisfy an assertion about what the frontmatter contains. The old
+    // `slice` stopped at the first `\n---`; the tempered capture does too.
+    expect(frontmatterOf('---\nname: a\n--- \nname: b\n---\n')).toBeNull()
+    expect(frontmatterOf('---\nname: a\n----\nname: b\n---\n')).toBeNull()
   })
 
   it('refuses a document whose frontmatter names a different agent', () => {
@@ -1437,10 +1462,27 @@ describe('a passed gate is reused when nothing it depends on changed', () => {
     return null
   }
 
-  /** The classes a whole diff produces. */
-  const classesOf = (paths: string[]): string[] => [
-    ...new Set(paths.map(classify).filter((c): c is string => c !== null)),
-  ]
+  /**
+   * The classes a whole diff produces -- and the paths it could not place.
+   *
+   * Both halves are returned, deliberately. The first version of this helper
+   * filtered the nulls away, which is the exact thing
+   * `path_domain.unclassified.never` forbids: "Reading an unclassified path
+   * as 'nothing relevant changed'". A reference implementation that breaks
+   * the rule it was written to demonstrate teaches the defect to everyone who
+   * copies it, and this is the only executable implementation of the
+   * classifier in the repository.
+   */
+  const classesOf = (paths: string[]): { classes: string[]; unclassified: string[] } => {
+    const classes = new Set<string>()
+    const unclassified: string[] = []
+    for (const path of paths) {
+      const cls = classify(path)
+      if (cls === null) unclassified.push(path)
+      else classes.add(cls)
+    }
+    return { classes: [...classes], unclassified }
+  }
 
   /** A gate is invalidated when the change touches any class it depends on. */
   const invalidatedBy = (changed: string[]): Set<string> =>
@@ -1526,20 +1568,96 @@ describe('a passed gate is reused when nothing it depends on changed', () => {
     expect(never).toMatch(/reusing a gate/)
   })
 
-  it('classifies every tracked product file, with no list anybody can edit', () => {
+  it('leaves exactly the declared holes unclassified, across every template tree', () => {
     /**
-     * The coverage assertion, and the reason it enumerates the repository
-     * instead of a table: a table is satisfied by editing the table. This
-     * fails on the day somebody adds a file type the vocabulary has no answer
-     * for, which is the failure mode FW-GAP-006 actually was.
+     * The coverage assertion, rewritten after the independent review showed
+     * the first version could not fail.
+     *
+     * Three things were wrong with it. It walked the filesystem rather than
+     * git, so it counted `__pycache__` and a stray `.coverage`. It looked at
+     * six roots, five of which are covered by catch-all directory globs --
+     * so no file type added under them could ever be unclassified, which is
+     * precisely the failure it claimed to catch. And those six roots excluded
+     * every directory where the real orphans lived: 42 tracked files, against
+     * a contract block that said there were two.
+     *
+     * So it enumerates every tracked file in all three template trees and
+     * asserts the orphan set EXACTLY. Not "is empty" -- exactly, against the
+     * declared holes. Adding a file type moves the set and fails; so does
+     * closing a hole without saying so; so does deleting a glob.
      */
-    const roots = ['apps', 'packages', 'services', 'python-packages', 'e2e', 'supabase']
-    const files = roots.flatMap((root) =>
-      walk(join(PRODUCT_TEMPLATE, root)).map((f) => `profiles/product/template/${root}/${f}`),
+    const tracked = execFileSync('git', ['ls-files', 'profiles'], {
+      cwd: STARTER_ROOT,
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024,
+    })
+      .split(/\r?\n/)
+      .filter((f) => /^profiles\/[^/]+\/template\//.test(f))
+
+    expect(tracked.length, 'no template files found to classify').toBeGreaterThan(500)
+
+    const orphans = tracked.filter((f) => classify(f) === null).sort()
+
+    // Group them the way the contract does, so a failure says which hole
+    // moved rather than printing a wall of paths.
+    const group = (f: string): string => {
+      const p = f.replace(/^profiles\/[^/]+\/template\//, '')
+      if (p.startsWith('.claude/')) return 'framework contract'
+      if (p.startsWith('contracts/')) return 'platform contract'
+      return 'repository hygiene'
+    }
+    const byGroup = new Map<string, number>()
+    for (const f of orphans) byGroup.set(group(f), (byGroup.get(group(f)) ?? 0) + 1)
+
+    expect(
+      [...byGroup.keys()].sort(),
+      `an orphan appeared outside the declared groups: ${orphans.join(', ')}`,
+    ).toEqual(['framework contract', 'platform contract', 'repository hygiene'])
+
+    // The counts the contract states. A number in a comment nobody compares
+    // is how the first version came to claim two when there were forty-two.
+    expect(
+      orphans.length,
+      `declared ${invalidation.path_domain.known_unclassified_files_in_templates}, found ${orphans.length}: ${orphans.join(', ')}`,
+    ).toBe(invalidation.path_domain.known_unclassified_files_in_templates)
+    expect(byGroup.size).toBe(invalidation.path_domain.known_unclassified_groups)
+
+    // And the thing the old test was meant to prove: nothing under an
+    // application directory escapes, in any profile.
+    const applications = tracked.filter((f) =>
+      /^profiles\/[^/]+\/template\/(apps|packages|services|python-packages|e2e|supabase)\//.test(f),
     )
-    expect(files.length, 'the product template has no application files to classify').toBeGreaterThan(100)
-    const orphans = files.filter((f) => classify(f) === null)
-    expect(orphans, `unclassified product paths: ${orphans.slice(0, 10).join(', ')}`).toEqual([])
+    expect(applications.length).toBeGreaterThan(400)
+    const appOrphans = applications.filter((f) => classify(f) === null)
+    expect(appOrphans, `unclassified application paths: ${appOrphans.join(', ')}`).toEqual([])
+  })
+
+  it('reports an unclassified path as a stop rather than dropping it', () => {
+    // HIGH-3 from the review of this change: the first `classesOf` filtered
+    // the nulls away, which is what `path_domain.unclassified.never` forbids
+    // in as many words. A diff containing a path outside the domain produces
+    // classes AND a non-empty stop list.
+    const mixed = classesOf([
+      'profiles/product/template/packages/ui/src/x.tsx',
+      'generators/create-koras-app/src/generation/writer.ts',
+    ])
+    expect(mixed.classes).toEqual(['frontend_code'])
+    expect(mixed.unclassified).toEqual(['generators/create-koras-app/src/generation/writer.ts'])
+  })
+
+  it('uses only the glob syntax the matcher implements', () => {
+    // The matcher understands `*`, `**` and literals. Anything else -- a
+    // character class, a brace expansion, a negation, a single-character
+    // wildcard -- is escaped to a literal and silently matches nothing. That
+    // is a glob that looks like it works, which is the family of defect this
+    // whole block exists for.
+    const globs = [
+      ...Object.values(invalidation.change_classes).flatMap((c) => c.paths),
+      ...invalidation.path_domain.normalise.strip_path_prefix,
+    ]
+    for (const glob of globs) {
+      expect(glob, `${glob} uses syntax the matcher does not implement`).not.toMatch(/[?[\]{}!]/)
+    }
   })
 
   it('invalidates the gates a real product-code change needs, and did not before', () => {
@@ -1574,12 +1692,14 @@ describe('a passed gate is reused when nothing it depends on changed', () => {
       )
     }
 
-    // After: classification by path produces the classes the diff really has.
+    // After: classification by path produces the classes the diff really has,
+    // and places every path -- no silent drop.
     const after = classesOf(G7R2)
-    expect(after).toContain('frontend_code')
-    expect(after).toContain('e2e_test')
-    expect(after).toContain('automated_test_node')
-    const invalid = invalidatedBy(after)
+    expect(after.unclassified, 'the witness diff has a path the vocabulary cannot place').toEqual([])
+    expect(after.classes).toContain('frontend_code')
+    expect(after.classes).toContain('e2e_test')
+    expect(after.classes).toContain('automated_test_node')
+    const invalid = invalidatedBy(after.classes)
     for (const gate of NEEDED) {
       expect(invalid, `${gate} is still reusable after a product-code change`).toContain(gate)
     }
@@ -1593,8 +1713,9 @@ describe('a passed gate is reused when nothing it depends on changed', () => {
       'docs/platform/gap-defect-register.md',
       'README.md',
     ]
-    expect(classesOf(docsOnly)).toEqual(['documentation'])
-    const reused = reusedBy(classesOf(docsOnly))
+    expect(classesOf(docsOnly).classes).toEqual(['documentation'])
+    expect(classesOf(docsOnly).unclassified).toEqual([])
+    const reused = reusedBy(classesOf(docsOnly).classes)
     for (const gate of ['automated_tests_pass', 'e2e_pass', 'manual_qa_pass', 'accessibility_pass']) {
       expect(reused, `a prose edit invalidated ${gate}`).toContain(gate)
     }
@@ -3209,8 +3330,12 @@ describe('a count is written after the thing it counts', () => {
 
     const acceptance = gates.feature_gates.find((g) => g.id === 'final_acceptance')
     expect(acceptance, 'final_acceptance is not declared').toBeDefined()
-    const judges = (acceptance as unknown as { judges?: string[] }).judges ?? []
-    const notJudged = (acceptance as unknown as { does_not_judge?: string[] }).does_not_judge ?? []
+    // Typed on the interface rather than cast: a typo in either YAML key
+    // used to degrade to an empty array and pass.
+    const judges = acceptance?.judges ?? []
+    const notJudged = acceptance?.does_not_judge ?? []
+    expect(judges.length, 'final_acceptance declares nothing it judges').toBeGreaterThan(0)
+    expect(notJudged.length, 'final_acceptance declares nothing it does not judge').toBeGreaterThan(0)
     expect(judges.join(' ')).toMatch(/event log/i)
     expect(judges.join(' ')).toMatch(/evidence/i)
     expect(notJudged.join(' ')).toMatch(/summary/i)
@@ -3226,9 +3351,29 @@ describe('a count is written after the thing it counts', () => {
     // acceptance, so the loop closes without becoming a cycle.
     const closed = lifecycle.states.find((s) => s.id === 'CLOSED')
     expect(closed, 'CLOSED is not declared').toBeDefined()
-    const requires = ((closed as unknown as { requires?: string[] }).requires ?? []).join(' ')
+    const requires = (closed?.requires ?? []).join(' ')
     expect(requires).toMatch(/summary/i)
     expect(requires).toMatch(/log/i)
+  })
+
+  it('does not make closure wait for a summary that waits for closure', () => {
+    // HIGH-1 from the review of this change. The first draft said the summary
+    // was finalised AT the terminal state while CLOSED required a finalised
+    // summary to be entered -- FW-GAP-010 again, one step further on. The
+    // ordering is asserted rather than described: finalisation is before the
+    // transition, and the transition is not an event the summary waits for.
+    expect(telemetry.derived_summary.finalised_at).toMatch(/before the CLOSED transition/i)
+    const exempt = telemetry.derived_summary.not_an_applicable_event.join(' ').toLowerCase()
+    expect(exempt).toMatch(/transition/)
+    expect(exempt).toMatch(/finalisation/)
+  })
+
+  it('says who checks the summary on the branch that never reaches closure', () => {
+    // MEDIUM-6. An escalated run stops before CLOSED, so the closure check
+    // would have been nowhere -- the same hole, in the branch the fix forgot.
+    expect(telemetry.derived_summary.checked_by.closed_run).toMatch(/CLOSED/)
+    expect(telemetry.derived_summary.checked_by.escalated_run).toMatch(/human/i)
+    expect(telemetry.derived_summary.never.join(' ')).toMatch(/escalation without finalising/i)
   })
 
   it('does not reopen FW-GAP-003 by moving the summary earlier', () => {

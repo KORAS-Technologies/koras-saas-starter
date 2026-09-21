@@ -1,0 +1,33 @@
+
+ RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
+
+ ❯ tests/orchestration.test.ts (557 tests | 1 failed) 2175ms
+     × keeps acceptance judging the log rather than the summary 17ms
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 556 passed (557)
+   Start at  16:37:16
+   Duration  11.49s (transform 391ms, setup 0ms, import 8.86s, tests 2.17s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/orchestration.test.ts > a count is written after the thing it counts > keeps acceptance judging the log rather than the summary
+AssertionError: expected 'nothing in particular' to match /summary/i
+
+- Expected:
+/summary/i
+
++ Received:
+"nothing in particular"
+
+ ❯ tests/orchestration.test.ts:3341:33
+    3339|     expect(judges.join(' ')).toMatch(/event log/i)
+    3340|     expect(judges.join(' ')).toMatch(/evidence/i)
+    3341|     expect(notJudged.join(' ')).toMatch(/summary/i)
+       |                                 ^
+    3342|
+    3343|     // The acyclicity claim, stated as the thing that would break it: …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

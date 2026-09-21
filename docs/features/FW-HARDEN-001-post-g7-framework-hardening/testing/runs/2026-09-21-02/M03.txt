@@ -1,0 +1,116 @@
+
+ RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
+
+ ❯ tests/orchestration.test.ts (557 tests | 5 failed) 1952ms
+     × refuses a document with no closing delimiter 19ms
+     × refuses a document with a closing delimiter that is not at the start of its line 2ms
+     × refuses a document with a closing delimiter with trailing text on its line 1ms
+     × refuses a document with a lone delimiter 1ms
+     × stops at the first delimiter line rather than hunting for a later one 1ms
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 552 passed (557)
+   Start at  16:35:15
+   Duration  10.28s (transform 326ms, setup 0ms, import 7.84s, tests 1.95s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/orchestration.test.ts > the frontmatter parser accepts both line endings and nothing else > refuses a document with no closing delimiter
+AssertionError: expected 'name: code-reviewer\n' to be null
+
+- Expected:
+null
+
++ Received:
+"name: code-reviewer
+"
+
+ ❯ tests/orchestration.test.ts:774:33
+    772|     ['a carriage return alone, with no newline', '---\rname: x\r---\r'…
+    773|   ])('refuses a document with %s', (_why, body) => {
+    774|     expect(frontmatterOf(body)).toBeNull()
+       |                                 ^
+    775|   })
+    776|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/orchestration.test.ts > the frontmatter parser accepts both line endings and nothing else > refuses a document with a closing delimiter that is not at the start of its line
+AssertionError: expected 'name: x\n ---\n' to be null
+
+- Expected:
+null
+
++ Received:
+"name: x
+ ---
+"
+
+ ❯ tests/orchestration.test.ts:774:33
+    772|     ['a carriage return alone, with no newline', '---\rname: x\r---\r'…
+    773|   ])('refuses a document with %s', (_why, body) => {
+    774|     expect(frontmatterOf(body)).toBeNull()
+       |                                 ^
+    775|   })
+    776|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/orchestration.test.ts > the frontmatter parser accepts both line endings and nothing else > refuses a document with a closing delimiter with trailing text on its line
+AssertionError: expected 'name: x' to be null
+
+- Expected:
+null
+
++ Received:
+"name: x"
+
+ ❯ tests/orchestration.test.ts:774:33
+    772|     ['a carriage return alone, with no newline', '---\rname: x\r---\r'…
+    773|   ])('refuses a document with %s', (_why, body) => {
+    774|     expect(frontmatterOf(body)).toBeNull()
+       |                                 ^
+    775|   })
+    776|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/orchestration.test.ts > the frontmatter parser accepts both line endings and nothing else > refuses a document with a lone delimiter
+AssertionError: expected '' to be null
+
+- Expected:
+null
+
++ Received:
+""
+
+ ❯ tests/orchestration.test.ts:774:33
+    772|     ['a carriage return alone, with no newline', '---\rname: x\r---\r'…
+    773|   ])('refuses a document with %s', (_why, body) => {
+    774|     expect(frontmatterOf(body)).toBeNull()
+       |                                 ^
+    775|   })
+    776|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  tests/orchestration.test.ts > the frontmatter parser accepts both line endings and nothing else > stops at the first delimiter line rather than hunting for a later one
+AssertionError: expected 'name: a' to be null
+
+- Expected:
+null
+
++ Received:
+"name: a"
+
+ ❯ tests/orchestration.test.ts:783:65
+    781|     // then satisfy an assertion about what the frontmatter contains. …
+    782|     // `slice` stopped at the first `\n---`; the tempered capture does…
+    783|     expect(frontmatterOf('---\nname: a\n--- \nname: b\n---\n')).toBeNu…
+       |                                                                 ^
+    784|     expect(frontmatterOf('---\nname: a\n----\nname: b\n---\n')).toBeNu…
+    785|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+

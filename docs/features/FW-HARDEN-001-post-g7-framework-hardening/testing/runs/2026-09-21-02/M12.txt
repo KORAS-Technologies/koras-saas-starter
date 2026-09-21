@@ -1,0 +1,30 @@
+
+ RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
+
+ ❯ tests/orchestration.test.ts (557 tests | 1 failed) 2121ms
+     × leaves the factory own source unclassified, which is a known hole and not a surprise 16ms
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 556 passed (557)
+   Start at  16:37:03
+   Duration  10.95s (transform 338ms, setup 0ms, import 8.38s, tests 2.12s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > leaves the factory own source unclassified, which is a known hole and not a surprise
+AssertionError: expected 'ignore' to be 'stop' // Object.is equality
+
+Expected: "stop"
+Received: "ignore"
+
+ ❯ tests/orchestration.test.ts:1564:60
+    1562|     // needs closing. An unasserted hole is indistinguishable from an …
+    1563|     expect(classify('generators/create-koras-app/src/generation/writer…
+    1564|     expect(invalidation.path_domain.unclassified.treat_as).toBe('stop')
+       |                                                            ^
+    1565|     expect(invalidation.path_domain.unclassified.who_decides).toMatch(…
+    1566|     const never = invalidation.path_domain.unclassified.never.join(' '…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

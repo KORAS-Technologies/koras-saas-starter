@@ -1,0 +1,30 @@
+
+ RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
+
+ ❯ tests/orchestration.test.ts (557 tests | 1 failed) 2099ms
+     × classifies services/api/static/mail.css as frontend_code 20ms
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 556 passed (557)
+   Start at  16:36:26
+   Duration  11.38s (transform 335ms, setup 0ms, import 8.82s, tests 2.10s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > classifies services/api/static/mail.css as frontend_code
+AssertionError: expected 'backend_code' to be 'frontend_code' // Object.is equality
+
+Expected: "frontend_code"
+Received: "backend_code"
+
+ ❯ tests/orchestration.test.ts:1556:28
+    1554|     ['profiles/control-plane/template/apps/admin/src/page.tsx.hbs', 'f…
+    1555|   ])('classifies %s as %s', (path, expected) => {
+    1556|     expect(classify(path)).toBe(expected)
+       |                            ^
+    1557|   })
+    1558|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

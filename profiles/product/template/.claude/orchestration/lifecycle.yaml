@@ -101,8 +101,14 @@ states:
       - the derived telemetry summary is finalised, and agrees with the event log
     # The last one arrived 2026-09-21 with FW-GAP-010. Once acceptance stopped
     # judging the summary, nothing judged it at all -- and a closure artifact
-    # nobody checks is the same defect in a quieter place. It is checked here
-    # instead, which is after acceptance and therefore not circular.
+    # nobody checks is the same defect in a quieter place.
+    #
+    # It is a precondition of the TRANSITION, and telemetry.yaml matches it:
+    # the summary is finalised immediately BEFORE this transition, and the
+    # transition itself is declared not to be one of the events the summary
+    # waits for. Written the other way round -- the summary finalised *at*
+    # CLOSED -- this requirement is a deadlock, and the first draft of the
+    # FW-GAP-010 fix was exactly that. See the note in telemetry.yaml.
     # A feature is not closed by running out of things anybody felt like
     # doing. NOT_APPLICABLE and NOT_APPLICABLE_BY_POLICY are both fine here;
     # PENDING is not.

@@ -116,19 +116,38 @@ amendments:
 #
 #   gates ... -> final_acceptance    judges the log and the primary evidence
 #             -> human gates, escalations, amendments   append events
-#             -> terminal state reached                 CLOSED, or the escalation
-#             -> the summary is finalised               the last act of the run
+#             -> the summary is finalised               after all of those
+#             -> the terminal transition is taken       CLOSED, or the escalated stop
 #
-# This moves finalisation strictly LATER, never earlier, so it cannot reopen
-# FW-GAP-003. A draft generated at any earlier point is not the artifact this
-# block binds -- `regenerating_is_safe` is already true, and a draft is a
-# reading, not a record.
+# THE ORDER OF THE LAST TWO LINES IS LOAD-BEARING, and the first attempt at
+# this fix got it wrong. Saying the summary is finalised *at* the terminal
+# state, while `CLOSED` requires a finalised summary to be entered, rebuilds
+# the deadlock one step further on: CLOSED waits for the summary and the
+# summary waits for CLOSED. That is FW-GAP-010 again with `final_acceptance`
+# swapped for `CLOSED`, and it was caught by the independent review of the
+# fix rather than by the fix. Recorded here because the shape -- two files
+# each assuming the other's answer -- is the thing worth recognising, and it
+# has now happened twice in the same contract.
+#
+# So: the summary is finalised IMMEDIATELY BEFORE the terminal transition,
+# and the terminal transition itself is not one of the events it waits for.
+#
+# This still moves finalisation strictly LATER than FW-GAP-003's failure,
+# never earlier, so it cannot reopen it. A draft generated at any earlier
+# point is not the artifact this block binds -- `regenerating_is_safe` is
+# already true, and a draft is a reading, not a record.
 derived_summary:
   derived_from: [events, amendments]
   generated_after: the final applicable lifecycle or gate event for the run
-  finalised_at: the terminal state -- CLOSED, or the escalation for a run that stops there
+  finalised_at: immediately before the CLOSED transition, after every gate, human and escalation event
   finalised_after_acceptance: true
   is_closure_artifact: true
+  # Without this the contract eats itself: reaching CLOSED is a
+  # `lifecycle_state_reached` event, so a summary that must follow every
+  # applicable event could never be written while CLOSED also required it.
+  not_an_applicable_event:
+    - the terminal transition itself, CLOSED or the escalated stop
+    - the summary's own finalisation
   is_source_of_truth: false
   source_of_truth: the event log
   regenerating_is_safe: true
@@ -141,6 +160,14 @@ derived_summary:
     - Treating it as the record. It is a reading of the record.
     - Holding acceptance because the summary is not finished. It is not finished until after acceptance, by design.
     - Closing a run whose summary was never finalised, or whose summary disagrees with the log.
+    - Stopping at an escalation without finalising the summary. The escalated branch is the one nobody thinks to check.
+  # WHO CHECKS IT, in both branches. `CLOSED` carries the check for a run that
+  # closes; an escalated run never reaches CLOSED, so the check would have
+  # been nowhere -- which is the same hole this whole amendment closes, in the
+  # branch the amendment first forgot.
+  checked_by:
+    closed_run: the CLOSED transition, in lifecycle.yaml
+    escalated_run: the human receiving the escalation, who is handed the summary with it
 
 # UNKNOWN IS A VALUE. Zero is a measurement and means the thing was watched
 # for and did not happen; UNKNOWN means nobody watched. Reporting the second

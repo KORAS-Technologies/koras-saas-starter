@@ -1,0 +1,100 @@
+
+ RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
+
+ ❯ tests/orchestration.test.ts (557 tests | 5 failed) 1962ms
+     × declares which paths its globs are written against 17ms
+     × normalises apps/web/globals.css.hbs into the declared domain 3ms
+     × normalises profiles/product/template/README.md.hbs into the declared domain 2ms
+     × classifies profiles/product/template/package.json.hbs as dependency 3ms
+     × leaves exactly the declared holes unclassified, across every template tree 317ms
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 552 passed (557)
+   Start at  16:36:03
+   Duration  10.53s (transform 366ms, setup 0ms, import 8.00s, tests 1.96s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > declares which paths its globs are written against
+AssertionError: expected [] to include '.hbs'
+ ❯ tests/orchestration.test.ts:1508:70
+    1506|     expect(invalidation.path_domain.matched_against).toMatch(/normalis…
+    1507|     expect(invalidation.path_domain.normalise.strip_path_prefix.length…
+    1508|     expect(invalidation.path_domain.normalise.strip_filename_suffix).t…
+       |                                                                      ^
+    1509|   })
+    1510|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > normalises apps/web/globals.css.hbs into the declared domain
+AssertionError: expected 'apps/web/globals.css.hbs' to be 'apps/web/globals.css' // Object.is equality
+
+Expected: "apps/web/globals.css"
+Received: "apps/web/globals.css.hbs"
+
+ ❯ tests/orchestration.test.ts:1523:28
+    1521|     ['profiles\\product\\template\\packages\\ui\\x.tsx', 'packages/ui/…
+    1522|   ])('normalises %s into the declared domain', (raw, expected) => {
+    1523|     expect(normalise(raw)).toBe(expected)
+       |                            ^
+    1524|   })
+    1525|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > normalises profiles/product/template/README.md.hbs into the declared domain
+AssertionError: expected 'README.md.hbs' to be 'README.md' // Object.is equality
+
+Expected: "README.md"
+Received: "README.md.hbs"
+
+ ❯ tests/orchestration.test.ts:1523:28
+    1521|     ['profiles\\product\\template\\packages\\ui\\x.tsx', 'packages/ui/…
+    1522|   ])('normalises %s into the declared domain', (raw, expected) => {
+    1523|     expect(normalise(raw)).toBe(expected)
+       |                            ^
+    1524|   })
+    1525|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > classifies profiles/product/template/package.json.hbs as dependency
+AssertionError: expected null to be 'dependency' // Object.is equality
+
+- Expected:
+"dependency"
+
++ Received:
+null
+
+ ❯ tests/orchestration.test.ts:1556:28
+    1554|     ['profiles/control-plane/template/apps/admin/src/page.tsx.hbs', 'f…
+    1555|   ])('classifies %s as %s', (path, expected) => {
+    1556|     expect(classify(path)).toBe(expected)
+       |                            ^
+    1557|   })
+    1558|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > leaves exactly the declared holes unclassified, across every template tree
+AssertionError: declared 19, found 30: profiles/_shared/template/.gitattributes, profiles/_shared/template/.gitignore.hbs, profiles/_shared/template/.gitleaks.toml, profiles/_shared/template/Makefile.hbs, profiles/_shared/template/contracts/product-platform.v1.json, profiles/control-plane/template/CLAUDE.md.hbs, profiles/control-plane/template/README.md.hbs, profiles/control-plane/template/package.json.hbs, profiles/control-plane/template/playwright.config.ts.hbs, profiles/control-plane/template/pyproject.toml.hbs, profiles/product/template/.claude/domain/domain-registry.example.yaml, profiles/product/template/.claude/orchestration/activation-rules.yaml, profiles/product/template/.claude/orchestration/agent-registry.yaml, profiles/product/template/.claude/orchestration/conditions.yaml, profiles/product/template/.claude/orchestration/deployment-awareness.yaml, profiles/product/template/.claude/orchestration/documentation-policy.yaml, profiles/product/template/.claude/orchestration/execution-budget.yaml, profiles/product/template/.claude/orchestration/execution-modes.yaml, profiles/product/template/.claude/orchestration/gate-invalidation.yaml, profiles/product/template/.claude/orchestration/lifecycle.yaml, profiles/product/template/.claude/orchestration/product-profile.example.yaml, profiles/product/template/.claude/orchestration/quality-gates.yaml, profiles/product/template/.claude/orchestration/risk-model.yaml, profiles/product/template/.claude/orchestration/telemetry.yaml, profiles/product/template/.claude/orchestration/workflow.yaml, profiles/product/template/CLAUDE.md.hbs, profiles/product/template/README.md.hbs, profiles/product/template/package.json.hbs, profiles/product/template/playwright.config.ts.hbs, profiles/product/template/pyproject.toml.hbs: expected 30 to be 19 // Object.is equality
+
+- Expected
++ Received
+
+- 19
++ 30
+
+ ❯ tests/orchestration.test.ts:1622:7
+    1620|       orphans.length,
+    1621|       `declared ${invalidation.path_domain.known_unclassified_files_in…
+    1622|     ).toBe(invalidation.path_domain.known_unclassified_files_in_templa…
+       |       ^
+    1623|     expect(byGroup.size).toBe(invalidation.path_domain.known_unclassif…
+    1624|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
