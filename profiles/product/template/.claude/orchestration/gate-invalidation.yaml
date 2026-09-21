@@ -18,6 +18,94 @@ schema_version: 1
 # it would be wrong the first time somebody added a gate and updated only one
 # of the two.
 
+# WHICH PATHS THESE GLOBS ARE WRITTEN AGAINST.
+#
+# Added 2026-09-21 for FW-GAP-006. The globs below are rooted -- `packages/**`
+# means packages at the root, not packages anywhere -- and until this block
+# existed nothing said what that root was. It is the generated product's.
+#
+# That was invisible for as long as the framework only ran inside a generated
+# product. The moment the factory used it on its own product code, every path
+# came out unclassified: the factory holds the same files under
+# `profiles/product/template/`, and a rooted glob does not reach them. An
+# unclassified diff produces no change classes, and no change classes means
+# every gate reads as reusable -- so the classifier answered "nothing
+# relevant changed" about a change to production code. G7 R2 hit exactly
+# this, and made its gate decisions by hand rather than routing around it.
+#
+# The remedy is NOT to loosen the globs. `**/packages/**` would also claim
+# `services/api/packages/`, `**/e2e/**` would claim a package's own `e2e/`
+# directory, and `**/docs/**` would pull an application's documentation into
+# the `documentation` class. Loosening deletes the rooting that gives each
+# glob its meaning, and leaves the path domain exactly as undeclared as
+# before.
+#
+# Instead the domain is declared once, and a path from anywhere else is
+# mapped into it before it is matched. One vocabulary, one set of globs, one
+# normalisation step in front of them.
+path_domain:
+  domain: the generated product repository root
+  matched_against: the normalised path, never the raw one
+
+  # Both rules say the same thing -- what a factory file BECOMES in a
+  # product. A factory path is the product path it renders to, so it
+  # classifies as the product path it renders to.
+  normalise:
+    # `profiles/product/template/packages/ui/x.tsx` -> `packages/ui/x.tsx`
+    strip_path_prefix:
+      - profiles/*/template/
+    # `apps/web/globals.css.hbs` -> `apps/web/globals.css`. This rule earns
+    # its place independently of the factory question: 179 of the product
+    # template's application files carry the suffix, and an extension-matched
+    # class cannot see through it. `README.md.hbs` classified as nothing.
+    strip_filename_suffix:
+      - .hbs
+    also: a backslash separator is read as a forward slash
+
+  # FAIL CLOSED. A path that matches nothing is not a path that changed
+  # nothing, and the difference is the whole of FW-GAP-006: the empty set of
+  # classes invalidates no gate, so an unclassified diff licenses reusing
+  # every result in the feature. That was the default, and it is the most
+  # dangerous one available.
+  unclassified:
+    means: The path is outside the declared domain, or the vocabulary has a hole in it.
+    treat_as: stop
+    who_decides: a human
+    never:
+      - Reading an unclassified path as "nothing relevant changed".
+      - Reusing a gate because the diff produced no classes.
+      - Adding a glob to silence one file without first asking which domain it is in.
+  # KNOWN HOLES, counted rather than described. A fail-closed rule whose
+  # holes are unnamed turns every one of them into a surprise stop, and the
+  # first draft of this block claimed there were two when measurement found
+  # forty-two. The number is stated so that it moves when anything changes.
+  #
+  # Measured 2026-09-21 over every tracked file in all three template trees
+  # -- 807 distinct paths, of which 786 reach a product: 19 unclassified,
+  # in three groups.
+  #
+  #   1. The framework's own contract -- `.claude/orchestration/*.yaml`,
+  #      `.claude/domain/*.yaml`. 15 files, and the group this very file
+  #      belongs to. Whether a change to the orchestration contract is a
+  #      change class of its own is a real question and not an oversight.
+  #      (FW-GAP-013)
+  #   2. Repository hygiene -- `.gitattributes`, `.gitignore`, `.gitleaks.toml`.
+  #      3 files. (FW-GAP-013)
+  #   3. `contracts/product-platform.v1.json`, the contract the Control Plane
+  #      reads. Arguably its own class, since changing it is the one edit here
+  #      that another repository can observe. (FW-GAP-013)
+  #
+  # And outside the template trees entirely:
+  #   - the factory's own source, generators/ and tooling/, which is outside
+  #     the domain rather than missing from it (FW-GAP-011)
+  #   - a Node test under the factory's root tests/ tree, which `tests/**`
+  #     reaches before the Node patterns and classes as Python (FW-GAP-012)
+  #
+  # All three register rows are open. This block fixes none of them; it
+  # stops them being discovered one stop at a time.
+  known_unclassified_groups: 3
+  known_unclassified_files_in_templates: 19
+
 # What kind of thing changed. Distinct from `conditions.yaml`, which
 # describes the FEATURE; a change class describes one EDIT. A feature that
 # meets `user_interface` can perfectly well produce an edit whose only class
@@ -76,28 +164,79 @@ change_classes:
       - infrastructure/**
       - '**/fly.toml'
       - '**/vercel.json'
-      - local/config/**
+      # The whole local stack, not only `local/config/**`. Measured on
+      # 2026-09-21 over the 786 distinct paths a product receives: 32 under
+      # `local/` matched nothing -- the compose file, the proxy, the
+      # observability collectors, the queue configuration, and every one of
+      # the 19 scripts, `migrate.sh` and `register-with-control-plane.sh`
+      # among them. "How a service is built, configured, deployed or run" is
+      # exactly what those are, and the narrower glob was an accident of the
+      # order things were written.
+      - local/**
+      # The build graph -- AT THE ROOT, and the anchoring is the whole point.
+      #
+      # Written as `**/tsconfig*.json` this took 26 files away from
+      # `frontend_code`: every application's and package's own tsconfig, plus
+      # `packages/ui/turbo.json`. `deployment_config` invalidates 5 gates and
+      # `frontend_code` invalidates 16, so an edit to `packages/ui/tsconfig.json`
+      # -- which can change how every frontend file compiles -- would have
+      # reused the test, browser, accessibility and independent-review gates.
+      #
+      # That is FW-GAP-006's own failure mode, reintroduced by FW-GAP-006's
+      # fix, and it is the third time in this one cycle that a remedy produced
+      # the next defect. Caught by final acceptance measuring class movement
+      # rather than reading the regression document, which asserted the
+      # opposite. A per-package build file belongs to its package.
+      - turbo.json
+      - tsconfig*.json
+      - eslint.config.mjs
+      - playwright.config.ts
+      - Makefile
     means: How a service is built, configured, deployed or promoted.
 
   dependency:
     paths:
       - '**/package.json'
       - pnpm-lock.yaml
+      # Workspace membership is a dependency fact: adding a package here is
+      # what makes it resolvable at all.
+      - pnpm-workspace.yaml
       - '**/pyproject.toml'
       - uv.lock
     means: What the code depends on.
+
+  # Above `backend_code`, deliberately, and only because of the two
+  # stylesheet globs. Everything else here is decided by directory, and the
+  # two classes share no directory -- so the order between them changed
+  # nothing except this: a stylesheet is classified by what it is, not by
+  # which service happens to serve it.
+  #
+  # A stylesheet under `services/` used to read as `backend_code`. That
+  # invalidates the API gates and leaves `accessibility_pass` and
+  # `screenshot_evidence_complete` standing, which is precisely backwards
+  # for a file whose only job is how something looks. Absence would have
+  # been safer than that, and absence is what the gap register recorded;
+  # measuring it on 2026-09-21 found the misclassification instead.
+  #
+  # Honest about its own reach: no such file exists in either template tree
+  # today, and measuring the old vocabulary against the new over every
+  # tracked path changed the class of exactly nothing. Every stylesheet in
+  # the estate already classified correctly, by directory. This rule is
+  # written for the one somebody adds next, and it is recorded as costing
+  # nothing today rather than presented as a fix to a live defect.
+  frontend_code:
+    paths:
+      - apps/**
+      - packages/**
+      - '**/*.css'
+      - '**/*.scss'
+    means: Client-side production code, including anything that decides how a surface looks.
 
   backend_code:
     paths:
       - services/**
       - python-packages/**
     means: Server-side production code.
-
-  frontend_code:
-    paths:
-      - apps/**
-      - packages/**
-    means: Client-side production code.
 
 # What is written down when a gate passes, so that reuse is a claim about
 # facts rather than about memory.

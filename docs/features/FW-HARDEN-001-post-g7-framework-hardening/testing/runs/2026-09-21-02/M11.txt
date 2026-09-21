@@ -1,0 +1,119 @@
+
+ RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
+
+ ❯ tests/orchestration.test.ts (558 tests | 6 failed) 1824ms
+     × classifies profiles/product/template/packages/ui/src/data-table.tsx as frontend_code 18ms
+     × classifies packages/ui/src/data-table.tsx as frontend_code 3ms
+     × leaves exactly the declared holes unclassified, across every template tree 296ms
+     × keeps a package own build configuration with its package 3ms
+     × reports an unclassified path as a stop rather than dropping it 7ms
+     × invalidates the gates a real product-code change needs, and did not before 3ms
+
+ Test Files  1 failed (1)
+      Tests  6 failed | 552 passed (558)
+   Start at  17:42:39
+   Duration  10.60s (transform 539ms, setup 0ms, import 8.27s, tests 1.82s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > classifies profiles/product/template/packages/ui/src/data-table.tsx as frontend_code
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > classifies packages/ui/src/data-table.tsx as frontend_code
+AssertionError: expected null to be 'frontend_code' // Object.is equality
+
+- Expected:
+"frontend_code"
+
++ Received:
+null
+
+ ❯ tests/orchestration.test.ts:1556:28
+    1554|     ['profiles/control-plane/template/apps/admin/src/page.tsx.hbs', 'f…
+    1555|   ])('classifies %s as %s', (path, expected) => {
+    1556|     expect(classify(path)).toBe(expected)
+       |                            ^
+    1557|   })
+    1558|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > leaves exactly the declared holes unclassified, across every template tree
+AssertionError: declared 19, found 150: profiles/_shared/template/.gitattributes, profiles/_shared/template/.gitignore.hbs, profiles/_shared/template/.gitleaks.toml, profiles/_shared/template/contracts/product-platform.v1.json, profiles/_shared/template/packages/api-client/tsconfig.json, profiles/_shared/template/packages/audit/src/index.ts, profiles/_shared/template/packages/audit/tsconfig.json, profiles/_shared/template/packages/auth/src/oauth.ts.hbs, profiles/_shared/template/packages/auth/tsconfig.json, profiles/_shared/template/packages/branding/tsconfig.json, profiles/_shared/template/packages/config/src/index.ts, profiles/_shared/template/packages/config/tsconfig.json, profiles/_shared/template/packages/email/src/index.ts, profiles/_shared/template/packages/email/tsconfig.json, profiles/_shared/template/packages/logger/src/index.ts, profiles/_shared/template/packages/logger/tsconfig.json, profiles/_shared/template/packages/notifications/src/index.ts, profiles/_shared/template/packages/notifications/tsconfig.json, profiles/_shared/template/packages/observability/src/index.ts, profiles/_shared/template/packages/observability/tsconfig.json, profiles/_shared/template/packages/permissions/tsconfig.json, profiles/_shared/template/packages/security/src/index.ts, profiles/_shared/template/packages/security/tsconfig.json, profiles/_shared/template/packages/storage/src/index.ts, profiles/_shared/template/packages/storage/tsconfig.json, profiles/_shared/template/packages/tenant/tsconfig.json, profiles/_shared/template/packages/types/tsconfig.json, profiles/_shared/template/packages/ui/src/index.ts, profiles/_shared/template/packages/ui/tsconfig.json, profiles/_shared/template/packages/validation/src/index.ts, profiles/_shared/template/packages/validation/tsconfig.json, profiles/control-plane/template/packages/api-client/src/index.ts.hbs, profiles/control-plane/template/packages/auth/src/index.ts.hbs, profiles/control-plane/template/packages/branding/src/index.ts, profiles/control-plane/template/packages/permissions/src/index.ts.hbs, profiles/control-plane/template/packages/tenant/src/index.ts, profiles/control-plane/template/packages/types/src/index.ts.hbs, profiles/product/template/.claude/domain/domain-registry.example.yaml, profiles/product/template/.claude/orchestration/activation-rules.yaml, profiles/product/template/.claude/orchestration/agent-registry.yaml, profiles/product/template/.claude/orchestration/conditions.yaml, profiles/product/template/.claude/orchestration/deployment-awareness.yaml, profiles/product/template/.claude/orchestration/documentation-policy.yaml, profiles/product/template/.claude/orchestration/execution-budget.yaml, profiles/product/template/.claude/orchestration/execution-modes.yaml, profiles/product/template/.claude/orchestration/gate-invalidation.yaml, profiles/product/template/.claude/orchestration/lifecycle.yaml, profiles/product/template/.claude/orchestration/product-profile.example.yaml, profiles/product/template/.claude/orchestration/quality-gates.yaml, profiles/product/template/.claude/orchestration/risk-model.yaml, profiles/product/template/.claude/orchestration/telemetry.yaml, profiles/product/template/.claude/orchestration/workflow.yaml, profiles/product/template/packages/api-client/src/index.ts, profiles/product/template/packages/auth/src/index.ts.hbs, profiles/product/template/packages/billing/src/index.ts, profiles/product/template/packages/billing/tsconfig.json, profiles/product/template/packages/branding/src/index.ts.hbs, profiles/product/template/packages/domains/src/index.ts, profiles/product/template/packages/domains/tsconfig.json, profiles/product/template/packages/feature-flags/src/index.ts, profiles/product/template/packages/feature-flags/tsconfig.json, profiles/product/template/packages/i18n/src/index.ts, profiles/product/template/packages/i18n/src/messages/de.ts, profiles/product/template/packages/i18n/src/messages/en.ts, profiles/product/template/packages/i18n/src/messages/es.ts, profiles/product/template/packages/i18n/tsconfig.json, profiles/product/template/packages/permissions/src/index.ts, profiles/product/template/packages/tenant/src/index.ts, profiles/product/template/packages/types/src/index.ts, profiles/product/template/packages/ui/src/ai/ai-action-approval.tsx, profiles/product/template/packages/ui/src/ai/ai-citations.tsx, profiles/product/template/packages/ui/src/ai/ai-composer.tsx, profiles/product/template/packages/ui/src/ai/ai-conversation.tsx, profiles/product/template/packages/ui/src/ai/ai-drawer.tsx, profiles/product/template/packages/ui/src/ai/ai-error.tsx, profiles/product/template/packages/ui/src/ai/ai-message.tsx, profiles/product/template/packages/ui/src/ai/ai-suggested-actions.tsx, profiles/product/template/packages/ui/src/ai/ai-tool-result.tsx, profiles/product/template/packages/ui/src/ai/ai-trigger.tsx, profiles/product/template/packages/ui/src/ai/ai-usage-notice.tsx, profiles/product/template/packages/ui/src/ai/types.ts, profiles/product/template/packages/ui/src/auth/access-cards.tsx.hbs, profiles/product/template/packages/ui/src/auth/auth-card.tsx, profiles/product/template/packages/ui/src/auth/auth-layout.tsx.hbs, profiles/product/template/packages/ui/src/brand/brand-scope.tsx.hbs, profiles/product/template/packages/ui/src/brand/brand-style.ts.hbs, profiles/product/template/packages/ui/src/brand/product-logo.tsx.hbs, profiles/product/template/packages/ui/src/data-table/columns.ts, profiles/product/template/packages/ui/src/data-table/data-table.tsx, profiles/product/template/packages/ui/src/data-table/paging.ts, profiles/product/template/packages/ui/src/data-table/types.ts, profiles/product/template/packages/ui/src/i18n/language-switcher.tsx.hbs, profiles/product/template/packages/ui/src/i18n/rich.tsx, profiles/product/template/packages/ui/src/index.ts, profiles/product/template/packages/ui/src/lib/cn.ts, profiles/product/template/packages/ui/src/lib/links.ts.hbs, profiles/product/template/packages/ui/src/marketing/app-frame.tsx.hbs, profiles/product/template/packages/ui/src/marketing/cta-section.tsx.hbs, profiles/product/template/packages/ui/src/marketing/feature-grid.tsx.hbs, profiles/product/template/packages/ui/src/marketing/hero-section.tsx.hbs, profiles/product/template/packages/ui/src/marketing/how-it-works.tsx.hbs, profiles/product/template/packages/ui/src/marketing/outcome-section.tsx.hbs, profiles/product/template/packages/ui/src/marketing/pricing-plans.tsx.hbs, profiles/product/template/packages/ui/src/marketing/pricing-section.tsx.hbs, profiles/product/template/packages/ui/src/marketing/product-preview.tsx.hbs, profiles/product/template/packages/ui/src/marketing/product-visual.tsx.hbs, profiles/product/template/packages/ui/src/marketing/public-footer.tsx.hbs, profiles/product/template/packages/ui/src/marketing/public-header.tsx.hbs, profiles/product/template/packages/ui/src/marketing/trust-section.tsx.hbs, profiles/product/template/packages/ui/src/marketing/value-strip.tsx.hbs, profiles/product/template/packages/ui/src/notifications/notification-bell.tsx, profiles/product/template/packages/ui/src/notifications/notification-list.tsx, profiles/product/template/packages/ui/src/notifications/types.ts, profiles/product/template/packages/ui/src/primitives/banner.tsx, profiles/product/template/packages/ui/src/primitives/button.tsx, profiles/product/template/packages/ui/src/primitives/card.tsx, profiles/product/template/packages/ui/src/primitives/container.tsx, profiles/product/template/packages/ui/src/primitives/drawer.tsx, profiles/product/template/packages/ui/src/primitives/field.tsx, profiles/product/template/packages/ui/src/primitives/icon.tsx.hbs, profiles/product/template/packages/ui/src/primitives/section.tsx, profiles/product/template/packages/ui/src/primitives/submit-button.tsx, profiles/product/template/packages/ui/src/primitives/toast.tsx, profiles/product/template/packages/ui/src/reporting/export-menu.tsx, profiles/product/template/packages/ui/src/reporting/format.ts, profiles/product/template/packages/ui/src/reporting/metric-card.tsx, profiles/product/template/packages/ui/src/reporting/report-chart.tsx, profiles/product/template/packages/ui/src/reporting/report-filters.tsx, profiles/product/template/packages/ui/src/reporting/report-header.tsx, profiles/product/template/packages/ui/src/reporting/report-list.tsx, profiles/product/template/packages/ui/src/reporting/report-states.tsx, profiles/product/template/packages/ui/src/reporting/report-table.tsx, profiles/product/template/packages/ui/src/reporting/schedules.tsx, profiles/product/template/packages/ui/src/reporting/types.ts, profiles/product/template/packages/ui/src/settings/fields.ts, profiles/product/template/packages/ui/src/settings/parse.ts, profiles/product/template/packages/ui/src/settings/provider.tsx, profiles/product/template/packages/ui/src/settings/settings-form.tsx, profiles/product/template/packages/ui/src/settings/types.ts, profiles/product/template/packages/ui/src/settings/value.ts, profiles/product/template/packages/ui/src/shell/access-denied.tsx.hbs, profiles/product/template/packages/ui/src/shell/product-header.tsx.hbs, profiles/product/template/packages/ui/src/shell/product-navigation.tsx.hbs, profiles/product/template/packages/ui/src/shell/product-shell.tsx.hbs, profiles/product/template/packages/ui/src/shell/profile-menu.tsx.hbs, profiles/product/template/packages/ui/src/shell/subscription-notice.tsx.hbs, profiles/product/template/packages/ui/src/shell/theme-toggle.tsx.hbs, profiles/product/template/packages/ui/src/shell/workspace-badge.tsx.hbs, profiles/product/template/packages/ui/tsconfig.json, profiles/product/template/packages/ui/turbo.json: expected 150 to be 19 // Object.is equality
+
+- Expected
++ Received
+
+- 19
++ 150
+
+ ❯ tests/orchestration.test.ts:1622:7
+    1620|       orphans.length,
+    1621|       `declared ${invalidation.path_domain.known_unclassified_files_in…
+    1622|     ).toBe(invalidation.path_domain.known_unclassified_files_in_templa…
+       |       ^
+    1623|     expect(byGroup.size).toBe(invalidation.path_domain.known_unclassif…
+    1624|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > keeps a package own build configuration with its package
+AssertionError: expected null to be 'frontend_code' // Object.is equality
+
+- Expected:
+"frontend_code"
+
++ Received:
+null
+
+ ❯ tests/orchestration.test.ts:1655:77
+    1653|      */
+    1654|     expect(classify('profiles/product/template/apps/web/tsconfig.json'…
+    1655|     expect(classify('profiles/product/template/packages/ui/tsconfig.js…
+       |                                                                             ^
+    1656|     expect(classify('profiles/product/template/packages/ui/turbo.json'…
+    1657|     // The root build graph is a different thing and does belong to de…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > reports an unclassified path as a stop rather than dropping it
+AssertionError: expected [] to deeply equal [ 'frontend_code' ]
+
+- Expected
++ Received
+
+- [
+-   "frontend_code",
+- ]
++ []
+
+ ❯ tests/orchestration.test.ts:1696:27
+    1694|       'generators/create-koras-app/src/generation/writer.ts',
+    1695|     ])
+    1696|     expect(mixed.classes).toEqual(['frontend_code'])
+       |                           ^
+    1697|     expect(mixed.unclassified).toEqual(['generators/create-koras-app/s…
+    1698|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > invalidates the gates a real product-code change needs, and did not before
+AssertionError: the witness diff has a path the vocabulary cannot place: expected [ Array(1) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "profiles/product/template/packages/ui/src/shell/product-shell.tsx.hbs",
++ ]
+
+ ❯ tests/orchestration.test.ts:1750:91
+    1748|     // and places every path -- no silent drop.
+    1749|     const after = classesOf(G7R2)
+    1750|     expect(after.unclassified, 'the witness diff has a path the vocabu…
+       |                                                                                           ^
+    1751|     expect(after.classes).toContain('frontend_code')
+    1752|     expect(after.classes).toContain('e2e_test')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+

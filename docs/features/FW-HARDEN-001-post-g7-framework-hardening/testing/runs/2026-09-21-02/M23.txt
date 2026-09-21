@@ -1,0 +1,30 @@
+
+ RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
+
+ ❯ tests/orchestration.test.ts (558 tests | 1 failed) 2253ms
+     × keeps a package own build configuration with its package 27ms
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 557 passed (558)
+   Start at  17:45:24
+   Duration  11.18s (transform 489ms, setup 0ms, import 8.46s, tests 2.25s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > keeps a package own build configuration with its package
+AssertionError: expected 'deployment_config' to be 'frontend_code' // Object.is equality
+
+Expected: "frontend_code"
+Received: "deployment_config"
+
+ ❯ tests/orchestration.test.ts:1654:74
+    1652|      * whole family of defects lives in that gap.
+    1653|      */
+    1654|     expect(classify('profiles/product/template/apps/web/tsconfig.json'…
+       |                                                                          ^
+    1655|     expect(classify('profiles/product/template/packages/ui/tsconfig.js…
+    1656|     expect(classify('profiles/product/template/packages/ui/turbo.json'…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

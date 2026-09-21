@@ -1,0 +1,33 @@
+
+ RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
+
+ ❯ tests/orchestration.test.ts (558 tests | 1 failed) 2326ms
+     × says who checks the summary on the branch that never reaches closure 18ms
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 557 passed (558)
+   Start at  17:44:54
+   Duration  14.68s (transform 422ms, setup 0ms, import 11.80s, tests 2.33s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/orchestration.test.ts > a count is written after the thing it counts > says who checks the summary on the branch that never reaches closure
+AssertionError: expected 'nobody in particular' to match /human/i
+
+- Expected:
+/human/i
+
++ Received:
+"nobody in particular"
+
+ ❯ tests/orchestration.test.ts:3427:64
+    3425|     // would have been nowhere -- the same hole, in the branch the fix…
+    3426|     expect(telemetry.derived_summary.checked_by.closed_run).toMatch(/C…
+    3427|     expect(telemetry.derived_summary.checked_by.escalated_run).toMatch…
+       |                                                                ^
+    3428|     expect(telemetry.derived_summary.never.join(' ')).toMatch(/escalat…
+    3429|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

@@ -1,0 +1,35 @@
+
+ RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
+
+ ❯ tests/orchestration.test.ts (558 tests | 1 failed) 2384ms
+     × stops at the first delimiter line rather than hunting for a later one 19ms
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 557 passed (558)
+   Start at  17:45:10
+   Duration  12.25s (transform 645ms, setup 0ms, import 9.38s, tests 2.38s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/orchestration.test.ts > the frontmatter parser accepts both line endings and nothing else > stops at the first delimiter line rather than hunting for a later one
+AssertionError: expected 'name: a\n--- \nname: b' to be null
+
+- Expected:
+null
+
++ Received:
+"name: a
+--- 
+name: b"
+
+ ❯ tests/orchestration.test.ts:783:65
+    781|     // then satisfy an assertion about what the frontmatter contains. …
+    782|     // `slice` stopped at the first `\n---`; the tempered capture does…
+    783|     expect(frontmatterOf('---\nname: a\n--- \nname: b\n---\n')).toBeNu…
+       |                                                                 ^
+    784|     expect(frontmatterOf('---\nname: a\n----\nname: b\n---\n')).toBeNu…
+    785|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

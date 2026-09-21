@@ -19,7 +19,10 @@ applies and was not met means the feature is not done, however small the gap.
 6. No control, test or type check was disabled, skipped or weakened to make the
    change pass.
 7. Documentation affected by the change is updated — including documentation the
-   change made wrong, not only documentation it adds.
+   change made wrong, not only documentation it adds. The derived telemetry
+   summary is the one exclusion: `telemetry.yaml` makes it a closure artifact,
+   finalised after acceptance, so it is not expected to be finished when this
+   item is judged. Closure checks it instead (FW-GAP-010, 2026-09-21).
 8. `final-acceptance` reports READY.
 
 ## When the feature is user-facing

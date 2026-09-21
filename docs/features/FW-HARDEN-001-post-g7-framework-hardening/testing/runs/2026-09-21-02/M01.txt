@@ -1,0 +1,574 @@
+
+ RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
+
+ ❯ tests/orchestration.test.ts (558 tests | 42 failed) 2116ms
+     × engineering-orchestrator has frontmatter naming itself, in either line ending 18ms
+     × product-planner has frontmatter naming itself, in either line ending 1ms
+     × business-analyst has frontmatter naming itself, in either line ending 1ms
+     × solution-architect has frontmatter naming itself, in either line ending 1ms
+     × data-architect has frontmatter naming itself, in either line ending 1ms
+     × security-architect has frontmatter naming itself, in either line ending 1ms
+     × ux-ui-designer has frontmatter naming itself, in either line ending 1ms
+     × impact-analysis has frontmatter naming itself, in either line ending 1ms
+     × developer-1 has frontmatter naming itself, in either line ending 1ms
+     × developer-2 has frontmatter naming itself, in either line ending 1ms
+     × developer-3 has frontmatter naming itself, in either line ending 1ms
+     × frontend-specialist has frontmatter naming itself, in either line ending 1ms
+     × backend-specialist has frontmatter naming itself, in either line ending 1ms
+     × database-specialist has frontmatter naming itself, in either line ending 1ms
+     × integration-specialist has frontmatter naming itself, in either line ending 1ms
+     × ai-specialist has frontmatter naming itself, in either line ending 1ms
+     × workflow-specialist has frontmatter naming itself, in either line ending 1ms
+     × test-data has frontmatter naming itself, in either line ending 1ms
+     × unit-test has frontmatter naming itself, in either line ending 1ms
+     × api-integration-test has frontmatter naming itself, in either line ending 1ms
+     × e2e-test has frontmatter naming itself, in either line ending 1ms
+     × manual-qa has frontmatter naming itself, in either line ending 2ms
+     × accessibility-qa has frontmatter naming itself, in either line ending 1ms
+     × performance-qa has frontmatter naming itself, in either line ending 1ms
+     × security-test has frontmatter naming itself, in either line ending 1ms
+     × ai-evaluation has frontmatter naming itself, in either line ending 1ms
+     × bug-triage has frontmatter naming itself, in either line ending 1ms
+     × code-reviewer has frontmatter naming itself, in either line ending 1ms
+     × architecture-reviewer has frontmatter naming itself, in either line ending 1ms
+     × security-reviewer has frontmatter naming itself, in either line ending 1ms
+     × qa-reviewer has frontmatter naming itself, in either line ending 1ms
+     × privacy-compliance-reviewer has frontmatter naming itself, in either line ending 1ms
+     × test-documentation has frontmatter naming itself, in either line ending 1ms
+     × technical-writer has frontmatter naming itself, in either line ending 1ms
+     × migration-upgrade has frontmatter naming itself, in either line ending 1ms
+     × devops-cicd has frontmatter naming itself, in either line ending 1ms
+     × observability-sre has frontmatter naming itself, in either line ending 1ms
+     × release-manager has frontmatter naming itself, in either line ending 1ms
+     × integration-regression has frontmatter naming itself, in either line ending 1ms
+     × final-acceptance has frontmatter naming itself, in either line ending 1ms
+     × accepts the identical document with CRLF endings 2ms
+     × reads the same frontmatter from both, once the endings are set aside 3ms
+
+ Test Files  1 failed (1)
+      Tests  42 failed | 516 passed (558)
+   Start at  17:40:32
+   Duration  9.90s (transform 327ms, setup 0ms, import 7.40s, tests 2.12s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 42 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > engineering-orchestrator has frontmatter naming itself, in either line ending
+AssertionError: engineering-orchestrator (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > product-planner has frontmatter naming itself, in either line ending
+AssertionError: product-planner (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > business-analyst has frontmatter naming itself, in either line ending
+AssertionError: business-analyst (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > solution-architect has frontmatter naming itself, in either line ending
+AssertionError: solution-architect (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > data-architect has frontmatter naming itself, in either line ending
+AssertionError: data-architect (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > security-architect has frontmatter naming itself, in either line ending
+AssertionError: security-architect (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > ux-ui-designer has frontmatter naming itself, in either line ending
+AssertionError: ux-ui-designer (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > impact-analysis has frontmatter naming itself, in either line ending
+AssertionError: impact-analysis (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > developer-1 has frontmatter naming itself, in either line ending
+AssertionError: developer-1 (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > developer-2 has frontmatter naming itself, in either line ending
+AssertionError: developer-2 (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > developer-3 has frontmatter naming itself, in either line ending
+AssertionError: developer-3 (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > frontend-specialist has frontmatter naming itself, in either line ending
+AssertionError: frontend-specialist (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > backend-specialist has frontmatter naming itself, in either line ending
+AssertionError: backend-specialist (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > database-specialist has frontmatter naming itself, in either line ending
+AssertionError: database-specialist (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > integration-specialist has frontmatter naming itself, in either line ending
+AssertionError: integration-specialist (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > ai-specialist has frontmatter naming itself, in either line ending
+AssertionError: ai-specialist (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > workflow-specialist has frontmatter naming itself, in either line ending
+AssertionError: workflow-specialist (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > test-data has frontmatter naming itself, in either line ending
+AssertionError: test-data (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > unit-test has frontmatter naming itself, in either line ending
+AssertionError: unit-test (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > api-integration-test has frontmatter naming itself, in either line ending
+AssertionError: api-integration-test (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > e2e-test has frontmatter naming itself, in either line ending
+AssertionError: e2e-test (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > manual-qa has frontmatter naming itself, in either line ending
+AssertionError: manual-qa (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > accessibility-qa has frontmatter naming itself, in either line ending
+AssertionError: accessibility-qa (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > performance-qa has frontmatter naming itself, in either line ending
+AssertionError: performance-qa (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > security-test has frontmatter naming itself, in either line ending
+AssertionError: security-test (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > ai-evaluation has frontmatter naming itself, in either line ending
+AssertionError: ai-evaluation (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > bug-triage has frontmatter naming itself, in either line ending
+AssertionError: bug-triage (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > code-reviewer has frontmatter naming itself, in either line ending
+AssertionError: code-reviewer (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[28/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > architecture-reviewer has frontmatter naming itself, in either line ending
+AssertionError: architecture-reviewer (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[29/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > security-reviewer has frontmatter naming itself, in either line ending
+AssertionError: security-reviewer (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[30/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > qa-reviewer has frontmatter naming itself, in either line ending
+AssertionError: qa-reviewer (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[31/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > privacy-compliance-reviewer has frontmatter naming itself, in either line ending
+AssertionError: privacy-compliance-reviewer (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[32/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > test-documentation has frontmatter naming itself, in either line ending
+AssertionError: test-documentation (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[33/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > technical-writer has frontmatter naming itself, in either line ending
+AssertionError: technical-writer (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[34/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > migration-upgrade has frontmatter naming itself, in either line ending
+AssertionError: migration-upgrade (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[35/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > devops-cicd has frontmatter naming itself, in either line ending
+AssertionError: devops-cicd (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[36/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > observability-sre has frontmatter naming itself, in either line ending
+AssertionError: observability-sre (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[37/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > release-manager has frontmatter naming itself, in either line ending
+AssertionError: release-manager (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[38/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > integration-regression has frontmatter naming itself, in either line ending
+AssertionError: integration-regression (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39/42]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > final-acceptance has frontmatter naming itself, in either line ending
+AssertionError: final-acceptance (CRLF) has no parseable frontmatter: expected null not to be null
+ ❯ tests/orchestration.test.ts:659:81
+    657|     for (const [ending, render] of ENDINGS) {
+    658|       const frontmatter = frontmatterOf(render(body))
+    659|       expect(frontmatter, `${id} (${ending}) has no parseable frontmat…
+       |                                                                                 ^
+    660|       expect(frontmatter, `${id} (${ending}) does not name itself`).to…
+    661|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[40/42]⎯
+
+ FAIL  tests/orchestration.test.ts > the frontmatter parser accepts both line endings and nothing else > accepts the identical document with CRLF endings
+AssertionError: expected null to be 'name: code-reviewer\r\ndescription: r…' // Object.is equality
+
+- Expected:
+"name: code-reviewer
+description: reviews"
+
++ Received:
+null
+
+ ❯ tests/orchestration.test.ts:755:42
+    753|
+    754|   it('accepts the identical document with CRLF endings', () => {
+    755|     expect(frontmatterOf(valid('\r\n'))).toBe('name: code-reviewer\r\n…
+       |                                          ^
+    756|   })
+    757|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[41/42]⎯
+
+ FAIL  tests/orchestration.test.ts > the frontmatter parser accepts both line endings and nothing else > reads the same frontmatter from both, once the endings are set aside
+AssertionError: expected '' to be 'name: code-reviewer\ndescription: rev…' // Object.is equality
+
+- Expected
++ Received
+
+- name: code-reviewer
+- description: reviews
+
+ ❯ tests/orchestration.test.ts:759:54
+    757|
+    758|   it('reads the same frontmatter from both, once the endings are set a…
+    759|     expect(asLf(frontmatterOf(valid('\r\n')) ?? '')).toBe(frontmatterO…
+       |                                                      ^
+    760|   })
+    761|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[42/42]⎯
+

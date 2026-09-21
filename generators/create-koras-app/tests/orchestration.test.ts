@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { rmSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import yaml from 'js-yaml'
 import { loadProfile } from '../src/profiles/index.js'
 import type { ProfileName } from '../src/profiles/loader.js'
@@ -99,9 +100,15 @@ interface Telemetry {
   derived_summary: {
     derived_from: string[]
     generated_after: string
+    finalised_at: string
+    finalised_after_acceptance: boolean
+    is_closure_artifact: boolean
+    not_an_applicable_event: string[]
+    checked_by: { closed_run: string; escalated_run: string }
     is_source_of_truth: boolean
     source_of_truth: string
     regenerating_is_safe: boolean
+    not_an_input_to: string
     never: string[]
   }
   unknown: { when: string; render_as: string; zero_requires: string; never: string[] }
@@ -158,6 +165,23 @@ interface DeploymentAwareness {
 
 interface GateInvalidation {
   schema_version: number
+  path_domain: {
+    domain: string
+    matched_against: string
+    normalise: {
+      strip_path_prefix: string[]
+      strip_filename_suffix: string[]
+      also: string
+    }
+    unclassified: {
+      means: string
+      treat_as: string
+      who_decides: string
+      never: string[]
+    }
+    known_unclassified_groups: number
+    known_unclassified_files_in_templates: number
+  }
   change_classes: Record<string, { paths: string[]; means: string }>
   gate_result: { fields: Record<string, string> }
   reuse: { rule: string; requires: string[]; never_reused: string[]; not_a_reason: string[] }
@@ -281,6 +305,8 @@ interface QualityGates {
     stage?: string
     human_evidence_decided_by?: string
     owner_optional_in?: string[]
+    judges?: string[]
+    does_not_judge?: string[]
   }>
   owner_optional_closure: {
     permitted_when: string[]
@@ -545,16 +571,100 @@ describe('the agent registry agrees with the files on disk', () => {
   })
 })
 
+/**
+ * Reading an agent document, once, for every assertion that needs to.
+ *
+ * FW-DEF-002. `.gitattributes` declares `* text=auto`, so a Windows checkout
+ * converts every Markdown file to CRLF, and the assertions that parsed these
+ * documents were written for LF. On a fresh clone with the default Windows
+ * configuration, 41 of 499 assertions in this file failed -- the whole
+ * `has frontmatter naming itself` family plus the near-identical-files check.
+ * It had never been seen because CI runs on Linux, and it did not show in a
+ * long-lived checkout because those files happen to sit there as LF already.
+ *
+ * Three sites parsed document structure, and only two of them failed loudly:
+ *
+ *   `startsWith('---\n')`                        40 failures
+ *   `slice(4, indexOf('\n---', 4))`              silently one byte late
+ *   `/## Responsibilities\n\n(...)\n\n## .../`   1 failure
+ *
+ * The middle one is why this is a parser rather than three repairs. It passed
+ * on both trees while measuring the wrong bytes, and the next assertion
+ * written in the same style would have done the same.
+ *
+ * TWO THINGS THIS DELIBERATELY DOES NOT DO.
+ *
+ * It does not strip carriage returns on read. That is the obvious fix and it
+ * is the wrong one: normalising hides malformation as well as line endings, so
+ * `--- ` and `----` would start passing along with `---\r\n`. The regex matches
+ * both endings and nothing else.
+ *
+ * It is also STRICTER than what it replaces, not looser. `startsWith('---\n')`
+ * accepted a document with no closing delimiter at all; this requires both,
+ * and requires the closing one to occupy its own line. A line-ending fix that
+ * weakened frontmatter validation would have traded one silent failure for
+ * another.
+ *
+ * ONE MORE THING THE FIRST DRAFT GOT WRONG. A lazy `[\s\S]*?` capture walks
+ * past a near-miss closing delimiter to find a later real one, so
+ * `---\nname: a\n--- \nname: b\n---\n` yielded a frontmatter block containing
+ * `--- ` and `name: b`. The old `slice` stopped at the first `\n---` and did
+ * not. The capture is tempered instead, so it cannot cross anything that
+ * begins a delimiter line -- which makes the header comment above true in
+ * both directions rather than only one.
+ */
+const AGENT_DOCUMENT = /^---\r?\n((?:(?!\r?\n---)[\s\S])*)\r?\n---(?:\r?\n|$)/
+const LINE = /\r?\n/
+
+/** The frontmatter block, or null when the document is not a valid one. */
+function frontmatterOf(body: string): string | null {
+  return AGENT_DOCUMENT.exec(body)?.[1] ?? null
+}
+
+/** The body of one `## ` section, up to the next named heading. */
+function sectionOf(body: string, heading: string, until: string): string | null {
+  return (
+    new RegExp(`## ${heading}\\r?\\n\\r?\\n([\\s\\S]*?)\\r?\\n\\r?\\n## ${until}`).exec(body)?.[1] ??
+    null
+  )
+}
+
+const asLf = (s: string): string => s.replace(/\r\n/g, '\n')
+const asCrlf = (s: string): string => asLf(s).replace(/\n/g, '\r\n')
+
+/**
+ * Both renderings of every real document.
+ *
+ * This is what stops FW-DEF-002 needing a Windows machine to stay fixed. The
+ * committed blobs are LF and a Linux pipeline only ever sees LF, so a
+ * regression in the CRLF path would be invisible there -- which is exactly how
+ * the defect survived. Converting in memory puts the CRLF path on every run of
+ * every pipeline, and leaves the Windows checkout as acceptance evidence
+ * rather than as the only thing that could catch it.
+ */
+const ENDINGS = [
+  ['LF', asLf],
+  ['CRLF', asCrlf],
+] as const
+
 describe('every agent definition is a usable Claude Code agent', () => {
   const agents = registry.agents.map((a) => [
     a.id,
     readFileSync(join(PRODUCT_TEMPLATE, a.definition), 'utf8'),
   ]) as Array<[string, string]>
 
-  it.each(agents)('%s has frontmatter naming itself', (id, body) => {
-    expect(body.startsWith('---\n')).toBe(true)
-    const frontmatter = body.slice(4, body.indexOf('\n---', 4))
-    expect(frontmatter).toContain(`name: ${id}`)
+  it.each(agents)('%s has frontmatter naming itself, in either line ending', (id, body) => {
+    for (const [ending, render] of ENDINGS) {
+      const frontmatter = frontmatterOf(render(body))
+      expect(frontmatter, `${id} (${ending}) has no parseable frontmatter`).not.toBeNull()
+      expect(frontmatter, `${id} (${ending}) does not name itself`).toContain(`name: ${id}`)
+    }
+    // Not merely "both parse". The same document must yield the same
+    // frontmatter either way, which is the assertion the old `slice(4, ...)`
+    // would have failed while reporting success.
+    expect(frontmatterOf(asCrlf(body)), `${id} parses differently as CRLF`).toBe(
+      asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    )
   })
 
   it.each(agents)('%s has a description long enough to route on', (_id, body) => {
@@ -595,10 +705,21 @@ describe('every agent definition is a usable Claude Code agent', () => {
     expect(new Set(bodies).size).toBe(agents.length)
 
     for (const [id, body] of agents) {
-      const responsibilities = /## Responsibilities\n\n([\s\S]*?)\n\n## Boundaries/.exec(body)?.[1] ?? ''
-      const boundaries = /## Boundaries\n\n([\s\S]*?)\n\n## Inputs/.exec(body)?.[1] ?? ''
-      expect(responsibilities.split('\n').length, `${id} responsibilities`).toBeGreaterThanOrEqual(5)
-      expect(boundaries.split('\n').length, `${id} boundaries`).toBeGreaterThanOrEqual(3)
+      for (const [ending, render] of ENDINGS) {
+        const text = render(body)
+        const responsibilities = sectionOf(text, 'Responsibilities', 'Boundaries')
+        const boundaries = sectionOf(text, 'Boundaries', 'Inputs')
+        expect(responsibilities, `${id} (${ending}) has no responsibilities section`).not.toBeNull()
+        expect(boundaries, `${id} (${ending}) has no boundaries section`).not.toBeNull()
+        expect(
+          (responsibilities ?? '').split(LINE).length,
+          `${id} responsibilities (${ending})`,
+        ).toBeGreaterThanOrEqual(5)
+        expect(
+          (boundaries ?? '').split(LINE).length,
+          `${id} boundaries (${ending})`,
+        ).toBeGreaterThanOrEqual(3)
+      }
     }
   })
 
@@ -610,6 +731,71 @@ describe('every agent definition is a usable Claude Code agent', () => {
         expect(body, `${id} names ${product}`).not.toContain(product)
       }
     }
+  })
+})
+
+describe('the frontmatter parser accepts both line endings and nothing else', () => {
+  /**
+   * FW-DEF-002's regression, and the half that matters more than the fix.
+   *
+   * A test proving the 40 real documents parse would pass just as well if the
+   * parser were `() => 'name: whatever'`. What has to be proven is that the
+   * line-ending tolerance did not buy itself a malformation tolerance, so
+   * every case below is a document that must be REFUSED, and the accepted
+   * pair differ only in their line endings.
+   */
+  const valid = (eol: string): string =>
+    `---${eol}name: code-reviewer${eol}description: reviews${eol}---${eol}${eol}## Mission${eol}`
+
+  it('accepts a valid document with LF endings', () => {
+    expect(frontmatterOf(valid('\n'))).toBe('name: code-reviewer\ndescription: reviews')
+  })
+
+  it('accepts the identical document with CRLF endings', () => {
+    expect(frontmatterOf(valid('\r\n'))).toBe('name: code-reviewer\r\ndescription: reviews')
+  })
+
+  it('reads the same frontmatter from both, once the endings are set aside', () => {
+    expect(asLf(frontmatterOf(valid('\r\n')) ?? '')).toBe(frontmatterOf(valid('\n')))
+  })
+
+  it.each([
+    ['no opening delimiter', 'name: code-reviewer\n---\n'],
+    ['an opening delimiter with a trailing space', '--- \nname: code-reviewer\n---\n'],
+    ['four dashes opening', '----\nname: code-reviewer\n---\n'],
+    ['two dashes opening', '--\nname: code-reviewer\n---\n'],
+    ['no closing delimiter', '---\nname: code-reviewer\n'],
+    ['a closing delimiter that is not at the start of its line', '---\nname: x\n ---\n'],
+    ['a closing delimiter with trailing text on its line', '---\nname: x\n--- and more\n'],
+    ['nothing at all', ''],
+    ['a lone delimiter', '---\n'],
+    ['a carriage return alone, with no newline', '---\rname: x\r---\r'],
+  ])('refuses a document with %s', (_why, body) => {
+    expect(frontmatterOf(body)).toBeNull()
+  })
+
+  it('stops at the first delimiter line rather than hunting for a later one', () => {
+    // LOW-8 from the review of this change. A lazy `[\s\S]*?` capture walked
+    // past `--- ` to the next real `---`, so a near-miss delimiter and every
+    // line after it landed inside the frontmatter -- and body prose could
+    // then satisfy an assertion about what the frontmatter contains. The old
+    // `slice` stopped at the first `\n---`; the tempered capture does too.
+    expect(frontmatterOf('---\nname: a\n--- \nname: b\n---\n')).toBeNull()
+    expect(frontmatterOf('---\nname: a\n----\nname: b\n---\n')).toBeNull()
+  })
+
+  it('refuses a document whose frontmatter names a different agent', () => {
+    // The parser's job ends at structure; this is the assertion that consumes
+    // it, restated here so that a parser returning a constant cannot pass.
+    expect(frontmatterOf(valid('\n'))).not.toContain('name: security-reviewer')
+  })
+
+  it('extracts a section under both endings, and refuses one that is absent', () => {
+    const doc = (eol: string): string =>
+      `## Responsibilities${eol}${eol}- one${eol}- two${eol}${eol}## Boundaries${eol}`
+    expect(sectionOf(doc('\n'), 'Responsibilities', 'Boundaries')).toBe('- one\n- two')
+    expect(sectionOf(doc('\r\n'), 'Responsibilities', 'Boundaries')).toBe('- one\r\n- two')
+    expect(sectionOf(doc('\n'), 'Inputs', 'Outputs')).toBeNull()
   })
 })
 
@@ -1198,6 +1384,106 @@ describe('a passed gate is reused when nothing it depends on changed', () => {
   const CLASSES = Object.keys(invalidation.change_classes)
   const gateInputs = new Map(gates.feature_gates.map((g) => [g.id, new Set(g.inputs)]))
 
+  /**
+   * Matching a path against the declared globs, which nothing did before.
+   *
+   * FW-GAP-006. Every assertion in this block used to start from change
+   * classes already named -- the scenarios say `change_classes: [frontend_code]`
+   * and ask what that invalidates. Nothing ever asked which class a PATH gets,
+   * so the half of the contract that decides it was untested, and it was
+   * wrong: the globs are rooted at a generated product, the factory holds the
+   * same code under `profiles/product/template/`, and every factory path
+   * therefore classified as nothing. Nothing classifies to no classes, and no
+   * classes invalidates no gates, so a change to product code reported every
+   * gate reusable. G7 R2 worked around it by hand.
+   *
+   * The semantics implemented here are the ones the file declares and no
+   * others: `**` spans any number of segments, `*` stays inside one, classes
+   * are tried in declaration order, and the first match wins. Written out
+   * rather than taken from a glob library on purpose -- an agent reading this
+   * YAML applies exactly this much, and a library would test a richer
+   * language than the contract actually promises.
+   */
+  const SPECIAL = new Set(['.', '+', '?', '^', '$', '{', '}', '(', ')', '|', '[', ']', '\\'])
+  const segment = (s: string): RegExp =>
+    new RegExp(
+      `^${s
+        .split('*')
+        .map((part) => [...part].map((c) => (SPECIAL.has(c) ? `\\${c}` : c)).join(''))
+        .join('[^/]*')}$`,
+    )
+
+  function globMatches(pattern: string, path: string): boolean {
+    const P = pattern.split('/')
+    const A = path.split('/')
+    const go = (i: number, j: number): boolean => {
+      if (i === P.length) return j === A.length
+      if (P[i] === '**') {
+        for (let k = j; k <= A.length; k++) if (go(i + 1, k)) return true
+        return false
+      }
+      if (j >= A.length) return false
+      return segment(P[i]).test(A[j]) && go(i + 1, j + 1)
+    }
+    return go(0, 0)
+  }
+
+  /**
+   * The normalisation step, driven by the contract rather than restated here.
+   *
+   * The prefixes and suffixes come out of `path_domain.normalise` in the
+   * YAML, so deleting a rule there fails these tests instead of silently
+   * shrinking what the classifier can see. That is the whole reason the rules
+   * are data in the contract and not three lines of TypeScript.
+   */
+  const normalise = (path: string): string => {
+    let p = path.replace(/\\/g, '/')
+    for (const prefix of invalidation.path_domain.normalise.strip_path_prefix) {
+      const anchored = prefix.endsWith('/') ? prefix.slice(0, -1) : prefix
+      const depth = anchored.split('/').length
+      const head = p.split('/').slice(0, depth).join('/')
+      if (p.split('/').length > depth && globMatches(anchored, head)) {
+        p = p.split('/').slice(depth).join('/')
+        break
+      }
+    }
+    for (const suffix of invalidation.path_domain.normalise.strip_filename_suffix) {
+      if (p.endsWith(suffix) && p.length > suffix.length) p = p.slice(0, -suffix.length)
+    }
+    return p
+  }
+
+  /** The class one edited path belongs to, or null when the vocabulary has no answer. */
+  const classify = (path: string): string | null => {
+    const p = normalise(path)
+    for (const [id, cls] of Object.entries(invalidation.change_classes)) {
+      if (cls.paths.some((g) => globMatches(g, p))) return id
+    }
+    return null
+  }
+
+  /**
+   * The classes a whole diff produces -- and the paths it could not place.
+   *
+   * Both halves are returned, deliberately. The first version of this helper
+   * filtered the nulls away, which is the exact thing
+   * `path_domain.unclassified.never` forbids: "Reading an unclassified path
+   * as 'nothing relevant changed'". A reference implementation that breaks
+   * the rule it was written to demonstrate teaches the defect to everyone who
+   * copies it, and this is the only executable implementation of the
+   * classifier in the repository.
+   */
+  const classesOf = (paths: string[]): { classes: string[]; unclassified: string[] } => {
+    const classes = new Set<string>()
+    const unclassified: string[] = []
+    for (const path of paths) {
+      const cls = classify(path)
+      if (cls === null) unclassified.push(path)
+      else classes.add(cls)
+    }
+    return { classes: [...classes], unclassified }
+  }
+
   /** A gate is invalidated when the change touches any class it depends on. */
   const invalidatedBy = (changed: string[]): Set<string> =>
     new Set(
@@ -1210,6 +1496,282 @@ describe('a passed gate is reused when nothing it depends on changed', () => {
     const invalid = invalidatedBy(changed)
     return new Set([...gateInputs.keys()].filter((id) => !invalid.has(id)))
   }
+
+  it('declares which paths its globs are written against', () => {
+    // The sentence FW-GAP-006 existed for the absence of. A rooted glob with
+    // no stated root is not a rule, it is a rule plus an assumption, and the
+    // assumption was wrong the first time anybody worked outside a generated
+    // product.
+    expect(invalidation.path_domain.domain).toMatch(/generated product/i)
+    expect(invalidation.path_domain.matched_against).toMatch(/normalised/i)
+    expect(invalidation.path_domain.normalise.strip_path_prefix.length).toBeGreaterThan(0)
+    expect(invalidation.path_domain.normalise.strip_filename_suffix).toContain('.hbs')
+  })
+
+  it.each([
+    ['profiles/product/template/packages/ui/src/x.tsx', 'packages/ui/src/x.tsx'],
+    ['profiles/control-plane/template/apps/admin/x.tsx', 'apps/admin/x.tsx'],
+    ['profiles/_shared/template/local/config/x.yaml', 'local/config/x.yaml'],
+    ['packages/ui/src/x.tsx', 'packages/ui/src/x.tsx'],
+    ['apps/web/globals.css.hbs', 'apps/web/globals.css'],
+    ['profiles/product/template/README.md.hbs', 'README.md'],
+    ['docs/ARCHITECTURE.md', 'docs/ARCHITECTURE.md'],
+    // No `template/` segment, so it is a factory path and stays one.
+    ['profiles/product/manifest.yaml', 'profiles/product/manifest.yaml'],
+    ['profiles\\product\\template\\packages\\ui\\x.tsx', 'packages/ui/x.tsx'],
+  ])('normalises %s into the declared domain', (raw, expected) => {
+    expect(normalise(raw)).toBe(expected)
+  })
+
+  /**
+   * The matrix FW-GAP-006 asks for. Every factory row is paired with its
+   * generated row, because "these two classify the same" is the property, and
+   * two separate assertions would let one drift.
+   */
+  it.each([
+    ['profiles/product/template/packages/ui/src/data-table.tsx', 'frontend_code'],
+    ['packages/ui/src/data-table.tsx', 'frontend_code'],
+    ['profiles/product/template/packages/ui/src/styles/tokens.css', 'frontend_code'],
+    ['packages/ui/src/styles/tokens.css', 'frontend_code'],
+    ['profiles/product/template/apps/web/src/app/globals.css.hbs', 'frontend_code'],
+    ['apps/web/src/app/page.tsx', 'frontend_code'],
+    ['profiles/product/template/apps/admin/src/app/page.tsx.hbs', 'frontend_code'],
+    ['apps/admin/src/app/page.tsx', 'frontend_code'],
+    ['profiles/product/template/services/api/routers/files.py', 'backend_code'],
+    ['services/api/routers/files.py', 'backend_code'],
+    ['profiles/product/template/e2e/roundtrip/settings.spec.ts.hbs', 'e2e_test'],
+    ['e2e/roundtrip/settings.spec.ts', 'e2e_test'],
+    // A stylesheet nowhere near an application directory, and one served by
+    // the API. Both are presentation; neither used to say so.
+    ['styles/brand.css', 'frontend_code'],
+    ['services/api/static/mail.css', 'frontend_code'],
+    ['docs/ARCHITECTURE.md', 'documentation'],
+    ['docs/features/x/requirements/user-story.md', 'feature_scope'],
+    ['docs/features/x/testing/manual/results.md', 'manual_evidence'],
+    ['profiles/product/template/supabase/migrations/1.sql', 'database_migration_or_policy'],
+    ['profiles/product/template/package.json.hbs', 'dependency'],
+    // The classifier is shared, so the other profile is exercised too.
+    ['profiles/control-plane/template/apps/admin/src/page.tsx.hbs', 'frontend_code'],
+  ])('classifies %s as %s', (path, expected) => {
+    expect(classify(path)).toBe(expected)
+  })
+
+  it('leaves the factory own source unclassified, which is a known hole and not a surprise', () => {
+    // FW-GAP-011. Asserted rather than left silent: if somebody later brings
+    // the generator into the domain, this test tells them the register row
+    // needs closing. An unasserted hole is indistinguishable from an oversight.
+    expect(classify('generators/create-koras-app/src/generation/writer.ts')).toBeNull()
+    expect(invalidation.path_domain.unclassified.treat_as).toBe('stop')
+    expect(invalidation.path_domain.unclassified.who_decides).toMatch(/human/i)
+    const never = invalidation.path_domain.unclassified.never.join(' ').toLowerCase()
+    expect(never).toMatch(/nothing relevant changed/)
+    expect(never).toMatch(/reusing a gate/)
+  })
+
+  it('leaves exactly the declared holes unclassified, across every template tree', () => {
+    /**
+     * The coverage assertion, rewritten after the independent review showed
+     * the first version could not fail.
+     *
+     * Three things were wrong with it. It walked the filesystem rather than
+     * git, so it counted `__pycache__` and a stray `.coverage`. It looked at
+     * six roots, five of which are covered by catch-all directory globs --
+     * so no file type added under them could ever be unclassified, which is
+     * precisely the failure it claimed to catch. And those six roots excluded
+     * every directory where the real orphans lived: 42 tracked files, against
+     * a contract block that said there were two.
+     *
+     * So it enumerates every tracked file in all three template trees and
+     * asserts the orphan set EXACTLY. Not "is empty" -- exactly, against the
+     * declared holes. Adding a file type moves the set and fails; so does
+     * closing a hole without saying so; so does deleting a glob.
+     */
+    const tracked = execFileSync('git', ['ls-files', 'profiles'], {
+      cwd: STARTER_ROOT,
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024,
+    })
+      .split(/\r?\n/)
+      .filter((f) => /^profiles\/[^/]+\/template\//.test(f))
+
+    expect(tracked.length, 'no template files found to classify').toBeGreaterThan(500)
+
+    const orphans = tracked.filter((f) => classify(f) === null).sort()
+
+    // Group them the way the contract does, so a failure says which hole
+    // moved rather than printing a wall of paths.
+    const group = (f: string): string => {
+      const p = f.replace(/^profiles\/[^/]+\/template\//, '')
+      if (p.startsWith('.claude/')) return 'framework contract'
+      if (p.startsWith('contracts/')) return 'platform contract'
+      return 'repository hygiene'
+    }
+    const byGroup = new Map<string, number>()
+    for (const f of orphans) byGroup.set(group(f), (byGroup.get(group(f)) ?? 0) + 1)
+
+    expect(
+      [...byGroup.keys()].sort(),
+      `an orphan appeared outside the declared groups: ${orphans.join(', ')}`,
+    ).toEqual(['framework contract', 'platform contract', 'repository hygiene'])
+
+    // The counts the contract states. A number in a comment nobody compares
+    // is how the first version came to claim two when there were forty-two.
+    expect(
+      orphans.length,
+      `declared ${invalidation.path_domain.known_unclassified_files_in_templates}, found ${orphans.length}: ${orphans.join(', ')}`,
+    ).toBe(invalidation.path_domain.known_unclassified_files_in_templates)
+    expect(byGroup.size).toBe(invalidation.path_domain.known_unclassified_groups)
+
+    // And the thing the old test was meant to prove: nothing under an
+    // application directory escapes, in any profile.
+    const applications = tracked.filter((f) =>
+      /^profiles\/[^/]+\/template\/(apps|packages|services|python-packages|e2e|supabase)\//.test(f),
+    )
+    expect(applications.length).toBeGreaterThan(400)
+    const appOrphans = applications.filter((f) => classify(f) === null)
+    expect(appOrphans, `unclassified application paths: ${appOrphans.join(', ')}`).toEqual([])
+  })
+
+  it('keeps a package own build configuration with its package', () => {
+    /**
+     * The assertion final acceptance had to measure to find, and the reason
+     * it is phrased as an invariant rather than as rows.
+     *
+     * Widening `deployment_config` to reach the build graph was written with
+     * a leading globstar on the tsconfig glob, which took 26 files away from
+     * `frontend_code`: every application's and package's own tsconfig, plus a
+     * package's `turbo.json`. `frontend_code` invalidates 16 gates and
+     * `deployment_config` invalidates 5, so an edit to
+     * `packages/ui/tsconfig.json` -- which can change how every frontend file
+     * compiles -- would have reused the test, browser, accessibility and
+     * independent-review gates.
+     *
+     * That is FW-GAP-006's own failure mode produced by FW-GAP-006's fix, and
+     * the coverage assertion could not see it: it counts paths that classify
+     * as NOTHING, and this was a path moving between two real classes. A
+     * whole family of defects lives in that gap.
+     */
+    expect(classify('profiles/product/template/apps/web/tsconfig.json')).toBe('frontend_code')
+    expect(classify('profiles/product/template/packages/ui/tsconfig.json')).toBe('frontend_code')
+    expect(classify('profiles/product/template/packages/ui/turbo.json')).toBe('frontend_code')
+    // The root build graph is a different thing and does belong to deployment.
+    expect(classify('profiles/_shared/template/turbo.json')).toBe('deployment_config')
+    expect(classify('profiles/_shared/template/tsconfig.base.json')).toBe('deployment_config')
+    expect(classify('profiles/_shared/template/eslint.config.mjs')).toBe('deployment_config')
+    expect(classify('profiles/_shared/template/pnpm-workspace.yaml')).toBe('dependency')
+
+    // And the invariant behind those rows, over the real tree: nothing inside
+    // an application is `deployment_config` unless it is literally a
+    // deployment descriptor. Rows can be satisfied one at a time; this
+    // cannot.
+    const tracked = execFileSync('git', ['ls-files', 'profiles'], {
+      cwd: STARTER_ROOT,
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024,
+    }).split(/\r?\n/)
+    const inApplications = tracked.filter((f) =>
+      /^profiles\/[^/]+\/template\/(apps|packages|services|python-packages|e2e)\//.test(f),
+    )
+    expect(inApplications.length).toBeGreaterThan(400)
+    const strays = inApplications
+      .filter((f) => classify(f) === 'deployment_config')
+      // Against the normalised path: the tracked file is `fly.toml.hbs`, and
+      // what it becomes in a product is what the classifier judged.
+      .filter((f) => !/\/(fly\.toml|vercel\.json)$/.test(normalise(f)))
+    expect(
+      strays,
+      `application files classified as deployment_config: ${strays.join(', ')}`,
+    ).toEqual([])
+  })
+
+  it('reports an unclassified path as a stop rather than dropping it', () => {
+    // HIGH-3 from the review of this change: the first `classesOf` filtered
+    // the nulls away, which is what `path_domain.unclassified.never` forbids
+    // in as many words. A diff containing a path outside the domain produces
+    // classes AND a non-empty stop list.
+    const mixed = classesOf([
+      'profiles/product/template/packages/ui/src/x.tsx',
+      'generators/create-koras-app/src/generation/writer.ts',
+    ])
+    expect(mixed.classes).toEqual(['frontend_code'])
+    expect(mixed.unclassified).toEqual(['generators/create-koras-app/src/generation/writer.ts'])
+  })
+
+  it('uses only the glob syntax the matcher implements', () => {
+    // The matcher understands `*`, `**` and literals. Anything else -- a
+    // character class, a brace expansion, a negation, a single-character
+    // wildcard -- is escaped to a literal and silently matches nothing. That
+    // is a glob that looks like it works, which is the family of defect this
+    // whole block exists for.
+    const globs = [
+      ...Object.values(invalidation.change_classes).flatMap((c) => c.paths),
+      ...invalidation.path_domain.normalise.strip_path_prefix,
+    ]
+    for (const glob of globs) {
+      expect(glob, `${glob} uses syntax the matcher does not implement`).not.toMatch(/[?[\]{}!]/)
+    }
+  })
+
+  it('invalidates the gates a real product-code change needs, and did not before', () => {
+    /**
+     * The historical witness (FW-HARDEN-001 phase 19). These are the
+     * executable paths of `e677b54`, the G7 R2 implementation commit.
+     *
+     * Both directions are asserted. Without the `before` half this test would
+     * prove the new behaviour and not that the old behaviour was wrong, and
+     * the old behaviour being wrong is the entire finding.
+     */
+    const G7R2 = [
+      'profiles/product/template/packages/ui/src/styles/tokens.css',
+      'profiles/product/template/packages/ui/src/shell/product-shell.tsx.hbs',
+      'profiles/product/template/e2e/roundtrip/settings.spec.ts.hbs',
+      'generators/create-koras-app/tests/product-shell.test.ts',
+      'generators/create-koras-app/tests/product-settings.test.ts',
+    ]
+    const NEEDED = [
+      'accessibility_pass',
+      'e2e_pass',
+      'screenshot_evidence_complete',
+      'independent_code_review',
+    ]
+
+    // Before: only the two generator tests classified, so `frontend_code`
+    // never fired and every gate the feature most needed read as reusable.
+    const before = reusedBy(['automated_test_node'])
+    for (const gate of NEEDED) {
+      expect(before, `${gate} was already invalidated, so this witness proves nothing`).toContain(
+        gate,
+      )
+    }
+
+    // After: classification by path produces the classes the diff really has,
+    // and places every path -- no silent drop.
+    const after = classesOf(G7R2)
+    expect(after.unclassified, 'the witness diff has a path the vocabulary cannot place').toEqual([])
+    expect(after.classes).toContain('frontend_code')
+    expect(after.classes).toContain('e2e_test')
+    expect(after.classes).toContain('automated_test_node')
+    const invalid = invalidatedBy(after.classes)
+    for (const gate of NEEDED) {
+      expect(invalid, `${gate} is still reusable after a product-code change`).toContain(gate)
+    }
+  })
+
+  it('still reuses the executable gates for a documentation-only edit', () => {
+    // The other direction, and the one a careless widening breaks. If
+    // `frontend_code` grew a glob that swallowed prose, this fails.
+    const docsOnly = [
+      'docs/ARCHITECTURE.md',
+      'docs/platform/gap-defect-register.md',
+      'README.md',
+    ]
+    expect(classesOf(docsOnly).classes).toEqual(['documentation'])
+    expect(classesOf(docsOnly).unclassified).toEqual([])
+    const reused = reusedBy(classesOf(docsOnly).classes)
+    for (const gate of ['automated_tests_pass', 'e2e_pass', 'manual_qa_pass', 'accessibility_pass']) {
+      expect(reused, `a prose edit invalidated ${gate}`).toContain(gate)
+    }
+  })
 
   it('declares every change class a gate depends on', () => {
     for (const gate of gates.feature_gates) {
@@ -2796,6 +3358,87 @@ describe('a count is written after the thing it counts', () => {
   it('keeps the summary from becoming the record it summarises', () => {
     expect(telemetry.derived_summary.is_source_of_truth).toBe(false)
     expect(telemetry.derived_summary.source_of_truth).toBe('the event log')
+  })
+
+  /**
+   * FW-GAP-010. The summary and `final_acceptance` could not both be
+   * satisfied: acceptance is a gate, so running it produces events, and the
+   * contract required the summary to come after the last event while
+   * Definition of Done item 7 required it to be finished before acceptance
+   * judged the documentation.
+   *
+   * The resolution is an ordering, so these assert the ordering rather than
+   * the words. The three that matter are: the summary is finalised at the
+   * terminal state, acceptance does not read it, and closure does.
+   */
+  it('finalises the summary after acceptance, as a closure artifact', () => {
+    expect(telemetry.derived_summary.is_closure_artifact).toBe(true)
+    expect(telemetry.derived_summary.finalised_after_acceptance).toBe(true)
+    expect(telemetry.derived_summary.finalised_at).toMatch(/CLOSED|terminal/i)
+  })
+
+  it('keeps acceptance judging the log rather than the summary', () => {
+    expect(telemetry.derived_summary.not_an_input_to).toBe('final_acceptance')
+
+    const acceptance = gates.feature_gates.find((g) => g.id === 'final_acceptance')
+    expect(acceptance, 'final_acceptance is not declared').toBeDefined()
+    // Typed on the interface rather than cast: a typo in either YAML key
+    // used to degrade to an empty array and pass.
+    const judges = acceptance?.judges ?? []
+    const notJudged = acceptance?.does_not_judge ?? []
+    expect(judges.length, 'final_acceptance declares nothing it judges').toBeGreaterThan(0)
+    expect(notJudged.length, 'final_acceptance declares nothing it does not judge').toBeGreaterThan(0)
+    expect(judges.join(' ')).toMatch(/event log/i)
+    expect(judges.join(' ')).toMatch(/evidence/i)
+    expect(notJudged.join(' ')).toMatch(/summary/i)
+
+    // The acyclicity claim, stated as the thing that would break it: nothing
+    // acceptance consumes may be the summary.
+    expect(judges.join(' ').toLowerCase()).not.toMatch(/derived telemetry summary/)
+  })
+
+  it('makes closure check the summary, so nothing checks it nowhere', () => {
+    // Once acceptance stopped reading the summary, the obvious next defect is
+    // that nobody reads it at all. Closure does, and closure is after
+    // acceptance, so the loop closes without becoming a cycle.
+    const closed = lifecycle.states.find((s) => s.id === 'CLOSED')
+    expect(closed, 'CLOSED is not declared').toBeDefined()
+    const requires = (closed?.requires ?? []).join(' ')
+    expect(requires).toMatch(/summary/i)
+    expect(requires).toMatch(/log/i)
+  })
+
+  it('does not make closure wait for a summary that waits for closure', () => {
+    // HIGH-1 from the review of this change. The first draft said the summary
+    // was finalised AT the terminal state while CLOSED required a finalised
+    // summary to be entered -- FW-GAP-010 again, one step further on. The
+    // ordering is asserted rather than described: finalisation is before the
+    // transition, and the transition is not an event the summary waits for.
+    expect(telemetry.derived_summary.finalised_at).toMatch(/before the CLOSED transition/i)
+    const exempt = telemetry.derived_summary.not_an_applicable_event.join(' ').toLowerCase()
+    expect(exempt).toMatch(/transition/)
+    expect(exempt).toMatch(/finalisation/)
+  })
+
+  it('says who checks the summary on the branch that never reaches closure', () => {
+    // MEDIUM-6. An escalated run stops before CLOSED, so the closure check
+    // would have been nowhere -- the same hole, in the branch the fix forgot.
+    expect(telemetry.derived_summary.checked_by.closed_run).toMatch(/CLOSED/)
+    expect(telemetry.derived_summary.checked_by.escalated_run).toMatch(/human/i)
+    expect(telemetry.derived_summary.never.join(' ')).toMatch(/escalation without finalising/i)
+  })
+
+  it('does not reopen FW-GAP-003 by moving the summary earlier', () => {
+    // FW-GAP-003 was a final count written BEFORE the event it counted. This
+    // correction moves finalisation strictly later, and the rules that
+    // forbade the original defect are untouched.
+    expect(telemetry.events.never.join(' ')).toMatch(/before it happens/)
+    expect(telemetry.unknown.zero_requires).toMatch(/event record/)
+    const never = telemetry.derived_summary.never.join(' ')
+    expect(never).toMatch(/still outstanding/)
+    expect(never).toMatch(/no event supports/)
+    // And the deadlock's own half: acceptance may not be held for it.
+    expect(never).toMatch(/Holding acceptance/)
   })
 
   it('says UNKNOWN when nobody was watching, and reserves zero for a measurement', () => {

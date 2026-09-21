@@ -1,0 +1,33 @@
+
+ RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
+
+ ❯ tests/orchestration.test.ts (558 tests | 1 failed) 2385ms
+     × leaves exactly the declared holes unclassified, across every template tree 342ms
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 557 passed (558)
+   Start at  17:44:02
+   Duration  14.61s (transform 516ms, setup 0ms, import 11.61s, tests 2.39s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > leaves exactly the declared holes unclassified, across every template tree
+AssertionError: declared 19, found 63: profiles/_shared/template/.gitattributes, profiles/_shared/template/.gitignore.hbs, profiles/_shared/template/.gitleaks.toml, profiles/_shared/template/contracts/product-platform.v1.json, profiles/_shared/template/local/certs/.gitignore, profiles/_shared/template/local/observability/loki.yml, profiles/_shared/template/local/observability/otel-collector.yml, profiles/_shared/template/local/observability/tempo.yml, profiles/_shared/template/local/queue/redis.conf, profiles/_shared/template/local/scripts/check-rls-connection.sh, profiles/_shared/template/local/scripts/config-typecheck.sh.hbs, profiles/_shared/template/local/scripts/create-app-role.sh, profiles/_shared/template/local/scripts/dev-app.mjs, profiles/_shared/template/local/scripts/dev-service.mjs.hbs, profiles/_shared/template/local/scripts/doppler-bootstrap.sh.hbs, profiles/_shared/template/local/scripts/doppler-check.sh.hbs, profiles/_shared/template/local/scripts/doppler_bootstrap_support.py, profiles/_shared/template/local/scripts/migrate.sh, profiles/_shared/template/local/scripts/process-tree.mjs, profiles/_shared/template/local/scripts/register-with-control-plane.sh, profiles/_shared/template/local/scripts/reset.sh, profiles/_shared/template/local/scripts/seed.sh.hbs, profiles/_shared/template/local/scripts/test-rls.sh, profiles/_shared/template/local/zitadel/.gitignore, profiles/_shared/template/local/zitadel/config.yaml, profiles/_shared/template/local/zitadel/init.sh.hbs, profiles/_shared/template/local/zitadel/machinekey/.gitignore, profiles/control-plane/template/local/certs/generate.sh.hbs, profiles/control-plane/template/local/config/.env.local.example.hbs, profiles/control-plane/template/local/config/secrets.manifest.hbs, profiles/control-plane/template/local/docker-compose.yml.hbs, profiles/control-plane/template/local/proxy/Caddyfile.hbs, profiles/control-plane/template/local/scripts/bootstrap.sh.hbs, profiles/control-plane/template/local/scripts/health.sh.hbs, profiles/control-plane/template/local/scripts/ports.sh.hbs, profiles/control-plane/template/local/scripts/smoke-portal.mjs.hbs, profiles/control-plane/template/local/scripts/smoke-signin.mjs.hbs, profiles/control-plane/template/local/zitadel/provision.py.hbs, profiles/product/template/.claude/domain/domain-registry.example.yaml, profiles/product/template/.claude/orchestration/activation-rules.yaml, profiles/product/template/.claude/orchestration/agent-registry.yaml, profiles/product/template/.claude/orchestration/conditions.yaml, profiles/product/template/.claude/orchestration/deployment-awareness.yaml, profiles/product/template/.claude/orchestration/documentation-policy.yaml, profiles/product/template/.claude/orchestration/execution-budget.yaml, profiles/product/template/.claude/orchestration/execution-modes.yaml, profiles/product/template/.claude/orchestration/gate-invalidation.yaml, profiles/product/template/.claude/orchestration/lifecycle.yaml, profiles/product/template/.claude/orchestration/product-profile.example.yaml, profiles/product/template/.claude/orchestration/quality-gates.yaml, profiles/product/template/.claude/orchestration/risk-model.yaml, profiles/product/template/.claude/orchestration/telemetry.yaml, profiles/product/template/.claude/orchestration/workflow.yaml, profiles/product/template/local/certs/generate.sh.hbs, profiles/product/template/local/config/.env.local.example.hbs, profiles/product/template/local/config/secrets.manifest.hbs, profiles/product/template/local/docker-compose.yml.hbs, profiles/product/template/local/proxy/Caddyfile.hbs, profiles/product/template/local/scripts/bootstrap.sh.hbs, profiles/product/template/local/scripts/health.sh.hbs, profiles/product/template/local/scripts/ports.sh.hbs, profiles/product/template/local/scripts/smoke-signin.mjs.hbs, profiles/product/template/local/zitadel/provision.py.hbs: expected 63 to be 19 // Object.is equality
+
+- Expected
++ Received
+
+- 19
++ 63
+
+ ❯ tests/orchestration.test.ts:1622:7
+    1620|       orphans.length,
+    1621|       `declared ${invalidation.path_domain.known_unclassified_files_in…
+    1622|     ).toBe(invalidation.path_domain.known_unclassified_files_in_templa…
+       |       ^
+    1623|     expect(byGroup.size).toBe(invalidation.path_domain.known_unclassif…
+    1624|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

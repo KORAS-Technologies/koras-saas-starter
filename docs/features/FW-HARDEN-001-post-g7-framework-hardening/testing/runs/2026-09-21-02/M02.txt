@@ -1,0 +1,47 @@
+
+ RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
+
+ ❯ tests/orchestration.test.ts (558 tests | 2 failed) 2408ms
+     × does not ship forty near-identical files 32ms
+     × extracts a section under both endings, and refuses one that is absent 2ms
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 556 passed (558)
+   Start at  17:40:43
+   Duration  12.44s (transform 505ms, setup 0ms, import 9.29s, tests 2.41s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > does not ship forty near-identical files
+AssertionError: engineering-orchestrator (CRLF) has no responsibilities section: expected null not to be null
+ ❯ tests/orchestration.test.ts:712:91
+    710|         const responsibilities = sectionOf(text, 'Responsibilities', '…
+    711|         const boundaries = sectionOf(text, 'Boundaries', 'Inputs')
+    712|         expect(responsibilities, `${id} (${ending}) has no responsibil…
+       |                                                                                           ^
+    713|         expect(boundaries, `${id} (${ending}) has no boundaries sectio…
+    714|         expect(
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/orchestration.test.ts > the frontmatter parser accepts both line endings and nothing else > extracts a section under both endings, and refuses one that is absent
+AssertionError: expected null to be '- one\r\n- two' // Object.is equality
+
+- Expected:
+"- one
+- two"
+
++ Received:
+null
+
+ ❯ tests/orchestration.test.ts:797:70
+    795|       `## Responsibilities${eol}${eol}- one${eol}- two${eol}${eol}## B…
+    796|     expect(sectionOf(doc('\n'), 'Responsibilities', 'Boundaries')).toB…
+    797|     expect(sectionOf(doc('\r\n'), 'Responsibilities', 'Boundaries')).t…
+       |                                                                      ^
+    798|     expect(sectionOf(doc('\n'), 'Inputs', 'Outputs')).toBeNull()
+    799|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+

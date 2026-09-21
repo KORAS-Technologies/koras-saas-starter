@@ -1,0 +1,874 @@
+
+ RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
+
+ ❯ tests/orchestration.test.ts (558 tests | 41 failed) 2037ms
+     × engineering-orchestrator has frontmatter naming itself, in either line ending 15ms
+     × product-planner has frontmatter naming itself, in either line ending 1ms
+     × business-analyst has frontmatter naming itself, in either line ending 2ms
+     × solution-architect has frontmatter naming itself, in either line ending 2ms
+     × data-architect has frontmatter naming itself, in either line ending 1ms
+     × security-architect has frontmatter naming itself, in either line ending 1ms
+     × ux-ui-designer has frontmatter naming itself, in either line ending 1ms
+     × impact-analysis has frontmatter naming itself, in either line ending 1ms
+     × developer-1 has frontmatter naming itself, in either line ending 2ms
+     × developer-2 has frontmatter naming itself, in either line ending 1ms
+     × developer-3 has frontmatter naming itself, in either line ending 2ms
+     × frontend-specialist has frontmatter naming itself, in either line ending 1ms
+     × backend-specialist has frontmatter naming itself, in either line ending 1ms
+     × database-specialist has frontmatter naming itself, in either line ending 1ms
+     × integration-specialist has frontmatter naming itself, in either line ending 1ms
+     × ai-specialist has frontmatter naming itself, in either line ending 1ms
+     × workflow-specialist has frontmatter naming itself, in either line ending 1ms
+     × test-data has frontmatter naming itself, in either line ending 0ms
+     × unit-test has frontmatter naming itself, in either line ending 0ms
+     × api-integration-test has frontmatter naming itself, in either line ending 0ms
+     × e2e-test has frontmatter naming itself, in either line ending 1ms
+     × manual-qa has frontmatter naming itself, in either line ending 1ms
+     × accessibility-qa has frontmatter naming itself, in either line ending 3ms
+     × performance-qa has frontmatter naming itself, in either line ending 1ms
+     × security-test has frontmatter naming itself, in either line ending 1ms
+     × ai-evaluation has frontmatter naming itself, in either line ending 1ms
+     × bug-triage has frontmatter naming itself, in either line ending 1ms
+     × code-reviewer has frontmatter naming itself, in either line ending 1ms
+     × architecture-reviewer has frontmatter naming itself, in either line ending 1ms
+     × security-reviewer has frontmatter naming itself, in either line ending 1ms
+     × qa-reviewer has frontmatter naming itself, in either line ending 1ms
+     × privacy-compliance-reviewer has frontmatter naming itself, in either line ending 1ms
+     × test-documentation has frontmatter naming itself, in either line ending 1ms
+     × technical-writer has frontmatter naming itself, in either line ending 1ms
+     × migration-upgrade has frontmatter naming itself, in either line ending 1ms
+     × devops-cicd has frontmatter naming itself, in either line ending 2ms
+     × observability-sre has frontmatter naming itself, in either line ending 1ms
+     × release-manager has frontmatter naming itself, in either line ending 1ms
+     × integration-regression has frontmatter naming itself, in either line ending 1ms
+     × final-acceptance has frontmatter naming itself, in either line ending 0ms
+     × accepts the identical document with CRLF endings 1ms
+
+ Test Files  1 failed (1)
+      Tests  41 failed | 517 passed (558)
+   Start at  17:41:09
+   Duration  10.27s (transform 471ms, setup 0ms, import 7.72s, tests 2.04s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 41 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > engineering-orchestrator has frontmatter naming itself, in either line ending
+AssertionError: engineering-orchestrator parses differently as CRLF: expected 'name: engineering-orchestrator\ndescr…' to be 'name: engineering-orchestrator\r\ndes…' // Object.is equality
+
+- Expected
++ Received
+
+- name: engineering-orchestrator
++ name: engineering-orchestrator
+  description: Owns execution of an approved feature: impact analysis, dependency graph, agent selection, DEV-1/2/3 worktree assignment, quality gates and failure routing. Activate after human approval of planned work, or whenever more than one agent must be coordinated.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > product-planner has frontmatter naming itself, in either line ending
+AssertionError: product-planner parses differently as CRLF: expected 'name: product-planner\ndescription: I…' to be 'name: product-planner\r\ndescription:…' // Object.is equality
+
+- Expected
++ Received
+
+- name: product-planner
++ name: product-planner
+  description: Inspects roadmap, backlog, code, architecture, docs, bugs, debt, security findings, test failures and dependencies, then recommends the next three best features with a ready-to-run implementation prompt. Never starts work. Activate for /plan-next or any question about what to build next.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > business-analyst has frontmatter naming itself, in either line ending
+AssertionError: business-analyst parses differently as CRLF: expected 'name: business-analyst\ndescription: …' to be 'name: business-analyst\r\ndescription…' // Object.is equality
+
+- Expected
++ Received
+
+- name: business-analyst
++ name: business-analyst
+  description: Turns an approved feature into testable requirements, acceptance criteria and user stories, and resolves ambiguity before design starts. Activate for every feature that changes observable behaviour.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > solution-architect has frontmatter naming itself, in either line ending
+AssertionError: solution-architect parses differently as CRLF: expected 'name: solution-architect\ndescription…' to be 'name: solution-architect\r\ndescripti…' // Object.is equality
+
+- Expected
++ Received
+
+- name: solution-architect
++ name: solution-architect
+  description: Decides placement, boundaries, contracts and migration impact for a feature, preferring existing Koras patterns over new frameworks. Activate for any change that crosses a package, service or contract boundary.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > data-architect has frontmatter naming itself, in either line ending
+AssertionError: data-architect parses differently as CRLF: expected 'name: data-architect\ndescription: De…' to be 'name: data-architect\r\ndescription: …' // Object.is equality
+
+- Expected
++ Received
+
+- name: data-architect
++ name: data-architect
+  description: Designs schema, ownership, tenancy columns, RLS posture, indexing and migration strategy before any migration is written. Activate whenever a feature adds or changes database objects.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > security-architect has frontmatter naming itself, in either line ending
+AssertionError: security-architect parses differently as CRLF: expected 'name: security-architect\ndescription…' to be 'name: security-architect\r\ndescripti…' // Object.is equality
+
+- Expected
++ Received
+
+- name: security-architect
++ name: security-architect
+  description: Defines the threat model, trust boundaries, authorization model and secret handling for a feature before it is built. Activate for authentication, authorization, tenancy, secrets, uploads, webhooks, external calls or regulated data.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > ux-ui-designer has frontmatter naming itself, in either line ending
+AssertionError: ux-ui-designer parses differently as CRLF: expected 'name: ux-ui-designer\ndescription: De…' to be 'name: ux-ui-designer\r\ndescription: …' // Object.is equality
+
+- Expected
++ Received
+
+- name: ux-ui-designer
++ name: ux-ui-designer
+  description: Designs the user-facing flow, its states, navigation placement and accessible interaction model using existing Koras tokens and shell primitives. Activate for any change a customer or operator can see.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > impact-analysis has frontmatter naming itself, in either line ending
+AssertionError: impact-analysis parses differently as CRLF: expected 'name: impact-analysis\ndescription: M…' to be 'name: impact-analysis\r\ndescription:…' // Object.is equality
+
+- Expected
++ Received
+
+- name: impact-analysis
++ name: impact-analysis
+  description: Maps the blast radius of a change - files, packages, services, contracts, migrations, consumers and tests - and reports pairwise parallel safety. Activate before implementation and before any decision to run features concurrently.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > developer-1 has frontmatter naming itself, in either line ending
+AssertionError: developer-1 parses differently as CRLF: expected 'name: developer-1\ndescription: Paral…' to be 'name: developer-1\r\ndescription: Par…' // Object.is equality
+
+- Expected
++ Received
+
+- name: developer-1
++ name: developer-1
+  description: Parallel implementation worker slot 1 of 3. Implements one approved feature inside its own isolated Git worktree and branch, adds tests, and returns to the Orchestrator. Activate only when the Orchestrator assigns a dependency-safe feature to DEV-1.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > developer-2 has frontmatter naming itself, in either line ending
+AssertionError: developer-2 parses differently as CRLF: expected 'name: developer-2\ndescription: Paral…' to be 'name: developer-2\r\ndescription: Par…' // Object.is equality
+
+- Expected
++ Received
+
+- name: developer-2
++ name: developer-2
+  description: Parallel implementation worker slot 2 of 3. Implements one approved feature inside its own isolated Git worktree and branch, adds tests, and returns to the Orchestrator. Activate only when the Orchestrator assigns a dependency-safe feature to DEV-2.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > developer-3 has frontmatter naming itself, in either line ending
+AssertionError: developer-3 parses differently as CRLF: expected 'name: developer-3\ndescription: Paral…' to be 'name: developer-3\r\ndescription: Par…' // Object.is equality
+
+- Expected
++ Received
+
+- name: developer-3
++ name: developer-3
+  description: Parallel implementation worker slot 3 of 3. Implements one approved feature inside its own isolated Git worktree and branch, adds tests, and returns to the Orchestrator. Activate only when the Orchestrator assigns a dependency-safe feature to DEV-3.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > frontend-specialist has frontmatter naming itself, in either line ending
+AssertionError: frontend-specialist parses differently as CRLF: expected 'name: frontend-specialist\ndescriptio…' to be 'name: frontend-specialist\r\ndescript…' // Object.is equality
+
+- Expected
++ Received
+
+- name: frontend-specialist
++ name: frontend-specialist
+  description: Implements React and Next.js surfaces against the Koras design system: server/client boundaries, state coverage, forms, accessibility and bundle discipline. Activate for user-interface implementation or frontend defects.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > backend-specialist has frontmatter naming itself, in either line ending
+AssertionError: backend-specialist parses differently as CRLF: expected 'name: backend-specialist\ndescription…' to be 'name: backend-specialist\r\ndescripti…' // Object.is equality
+
+- Expected
++ Received
+
+- name: backend-specialist
++ name: backend-specialist
+  description: Implements API endpoints, service logic, authorization enforcement and tenant scoping in the FastAPI services. Activate for server-side feature work, API contract changes or backend defects.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > database-specialist has frontmatter naming itself, in either line ending
+AssertionError: database-specialist parses differently as CRLF: expected 'name: database-specialist\ndescriptio…' to be 'name: database-specialist\r\ndescript…' // Object.is equality
+
+- Expected
++ Received
+
+- name: database-specialist
++ name: database-specialist
+  description: Writes migrations, RLS policies, indexes and data access code from the approved data design. Activate whenever database objects or policies change.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > integration-specialist has frontmatter naming itself, in either line ending
+AssertionError: integration-specialist parses differently as CRLF: expected 'name: integration-specialist\ndescrip…' to be 'name: integration-specialist\r\ndescr…' // Object.is equality
+
+- Expected
++ Received
+
+- name: integration-specialist
++ name: integration-specialist
+  description: Implements integrations with external services and the Control Plane: clients, contracts, webhooks, retries, idempotency and failure handling. Activate when a feature crosses a system boundary.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > ai-specialist has frontmatter naming itself, in either line ending
+AssertionError: ai-specialist parses differently as CRLF: expected 'name: ai-specialist\ndescription: Imp…' to be 'name: ai-specialist\r\ndescription: I…' // Object.is equality
+
+- Expected
++ Received
+
+- name: ai-specialist
++ name: ai-specialist
+  description: Implements assistant, agent, tool, prompt and retrieval work on the Koras AI foundation, through the gateway and behind deterministic permission checks. Activate only for features using the ai capability.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > workflow-specialist has frontmatter naming itself, in either line ending
+AssertionError: workflow-specialist parses differently as CRLF: expected 'name: workflow-specialist\ndescriptio…' to be 'name: workflow-specialist\r\ndescript…' // Object.is equality
+
+- Expected
++ Received
+
+- name: workflow-specialist
++ name: workflow-specialist
+  description: Implements background jobs, scheduled tasks, queues and long-running workflows with correct tenancy, idempotency and observability. Activate for worker, scheduler or queue work.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > test-data has frontmatter naming itself, in either line ending
+AssertionError: test-data parses differently as CRLF: expected 'name: test-data\ndescription: Designs…' to be 'name: test-data\r\ndescription: Desig…' // Object.is equality
+
+- Expected
++ Received
+
+- name: test-data
++ name: test-data
+  description: Designs and provisions the fixtures, tenants, users, roles and seed data a feature needs to be tested, including the second tenant that makes isolation testable. Activate before any test that needs realistic state.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > unit-test has frontmatter naming itself, in either line ending
+AssertionError: unit-test parses differently as CRLF: expected 'name: unit-test\ndescription: Writes …' to be 'name: unit-test\r\ndescription: Write…' // Object.is equality
+
+- Expected
++ Received
+
+- name: unit-test
++ name: unit-test
+  description: Writes deterministic unit and component tests for logic and rendering behaviour, testing observable behaviour rather than implementation detail. Activate for every feature that adds logic or components.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > api-integration-test has frontmatter naming itself, in either line ending
+AssertionError: api-integration-test parses differently as CRLF: expected 'name: api-integration-test\ndescripti…' to be 'name: api-integration-test\r\ndescrip…' // Object.is equality
+
+- Expected
++ Received
+
+- name: api-integration-test
++ name: api-integration-test
+  description: Tests real service, API, database and integration boundaries, including authorization, tenant scoping and failure modes. Activate for backend, database, workflow or integration changes.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > e2e-test has frontmatter naming itself, in either line ending
+AssertionError: e2e-test parses differently as CRLF: expected 'name: e2e-test\ndescription: Automate…' to be 'name: e2e-test\r\ndescription: Automa…' // Object.is equality
+
+- Expected
++ Received
+
+- name: e2e-test
++ name: e2e-test
+  description: Automates critical user journeys in a real browser with Playwright, at desktop and mobile width, checking console errors. Activate for every user-facing feature.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > manual-qa has frontmatter naming itself, in either line ending
+AssertionError: manual-qa parses differently as CRLF: expected 'name: manual-qa\ndescription: Execute…' to be 'name: manual-qa\r\ndescription: Execu…' // Object.is equality
+
+- Expected
++ Received
+
+- name: manual-qa
++ name: manual-qa
+  description: Executes approved manual test cases against a real running environment, records expected versus actual, and captures genuine step screenshots. Marks BLOCKED rather than inventing evidence. Activate for every user-facing feature.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > accessibility-qa has frontmatter naming itself, in either line ending
+AssertionError: accessibility-qa parses differently as CRLF: expected 'name: accessibility-qa\ndescription: …' to be 'name: accessibility-qa\r\ndescription…' // Object.is equality
+
+- Expected
++ Received
+
+- name: accessibility-qa
++ name: accessibility-qa
+  description: Verifies WCAG 2.2 AA behaviour for changed UI: semantics, keyboard operation, focus, contrast, error association and reduced motion. Activate for every user-facing change.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > performance-qa has frontmatter naming itself, in either line ending
+AssertionError: performance-qa parses differently as CRLF: expected 'name: performance-qa\ndescription: Me…' to be 'name: performance-qa\r\ndescription: …' // Object.is equality
+
+- Expected
++ Received
+
+- name: performance-qa
++ name: performance-qa
+  description: Measures latency, throughput, query behaviour and bundle cost against stated budgets, and reports regressions with evidence. Activate for performance-sensitive or high-volume features.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > security-test has frontmatter naming itself, in either line ending
+AssertionError: security-test parses differently as CRLF: expected 'name: security-test\ndescription: Exe…' to be 'name: security-test\r\ndescription: E…' // Object.is equality
+
+- Expected
++ Received
+
+- name: security-test
++ name: security-test
+  description: Executes the abuse cases from the threat model against the running system: authorization bypass, cross-tenant access, injection, upload and webhook abuse. Activate when security risk triggers apply.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > ai-evaluation has frontmatter naming itself, in either line ending
+AssertionError: ai-evaluation parses differently as CRLF: expected 'name: ai-evaluation\ndescription: Ind…' to be 'name: ai-evaluation\r\ndescription: I…' // Object.is equality
+
+- Expected
++ Received
+
+- name: ai-evaluation
++ name: ai-evaluation
+  description: Independently evaluates AI feature quality and safety: correctness, grounding, citations, refusals, injection resistance, tenancy and cost. Activate for every feature using the ai capability.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > bug-triage has frontmatter naming itself, in either line ending
+AssertionError: bug-triage parses differently as CRLF: expected 'name: bug-triage\ndescription: Diagno…' to be 'name: bug-triage\r\ndescription: Diag…' // Object.is equality
+
+- Expected
++ Received
+
+- name: bug-triage
++ name: bug-triage
+  description: Diagnoses a failure, decides whether it is a product defect, a test defect or an environment problem, assigns severity, and routes it to the right owner. Activate whenever any gate fails.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > code-reviewer has frontmatter naming itself, in either line ending
+AssertionError: code-reviewer parses differently as CRLF: expected 'name: code-reviewer\ndescription: Ind…' to be 'name: code-reviewer\r\ndescription: I…' // Object.is equality
+
+- Expected
++ Received
+
+- name: code-reviewer
++ name: code-reviewer
+  description: Independently reviews the diff for correctness, security, tenancy, duplication, scope creep and quality, classifying findings CRITICAL to LOW. Activate for every feature, always as an agent that did not write the code.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[28/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > architecture-reviewer has frontmatter naming itself, in either line ending
+AssertionError: architecture-reviewer parses differently as CRLF: expected 'name: architecture-reviewer\ndescript…' to be 'name: architecture-reviewer\r\ndescri…' // Object.is equality
+
+- Expected
++ Received
+
+- name: architecture-reviewer
++ name: architecture-reviewer
+  description: Reviews whether the implementation respected boundaries, dependency direction, contracts and the approved design, independently of the architect who designed it. Activate for structural or cross-boundary changes.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[29/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > security-reviewer has frontmatter naming itself, in either line ending
+AssertionError: security-reviewer parses differently as CRLF: expected 'name: security-reviewer\ndescription:…' to be 'name: security-reviewer\r\ndescriptio…' // Object.is equality
+
+- Expected
++ Received
+
+- name: security-reviewer
++ name: security-reviewer
+  description: Independently verifies that the specified security controls were actually implemented and that the change introduces no new exposure. Activate whenever a security, tenancy, privacy or AI risk trigger applies.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[30/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > qa-reviewer has frontmatter naming itself, in either line ending
+AssertionError: qa-reviewer parses differently as CRLF: expected 'name: qa-reviewer\ndescription: Indep…' to be 'name: qa-reviewer\r\ndescription: Ind…' // Object.is equality
+
+- Expected
++ Received
+
+- name: qa-reviewer
++ name: qa-reviewer
+  description: Independently audits test coverage and QA evidence: whether the cases match the acceptance criteria, whether they were really executed, and whether screenshots are genuine. Activate for every user-facing feature.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[31/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > privacy-compliance-reviewer has frontmatter naming itself, in either line ending
+AssertionError: privacy-compliance-reviewer parses differently as CRLF: expected 'name: privacy-compliance-reviewer\nde…' to be 'name: privacy-compliance-reviewer\r\n…' // Object.is equality
+
+- Expected
++ Received
+
+- name: privacy-compliance-reviewer
++ name: privacy-compliance-reviewer
+  description: Reviews personal and regulated data handling: lawful collection, minimization, retention, residency, subject rights, audit and third-party disclosure. Activate when a feature touches sensitive or regulated data.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[32/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > test-documentation has frontmatter naming itself, in either line ending
+AssertionError: test-documentation parses differently as CRLF: expected 'name: test-documentation\ndescription…' to be 'name: test-documentation\r\ndescripti…' // Object.is equality
+
+- Expected
++ Received
+
+- name: test-documentation
++ name: test-documentation
+  description: Writes the step-by-step manual test guide and the executed-results document strictly from Manual QA evidence. Activate after Manual QA has executed, for every user-facing feature.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[33/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > technical-writer has frontmatter naming itself, in either line ending
+AssertionError: technical-writer parses differently as CRLF: expected 'name: technical-writer\ndescription: …' to be 'name: technical-writer\r\ndescription…' // Object.is equality
+
+- Expected
++ Received
+
+- name: technical-writer
++ name: technical-writer
+  description: Writes and updates user guides, admin guides, release notes and reference documentation for a completed feature. Activate when a feature changes what a user or operator must know.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[34/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > migration-upgrade has frontmatter naming itself, in either line ending
+AssertionError: migration-upgrade parses differently as CRLF: expected 'name: migration-upgrade\ndescription:…' to be 'name: migration-upgrade\r\ndescriptio…' // Object.is equality
+
+- Expected
++ Received
+
+- name: migration-upgrade
++ name: migration-upgrade
+  description: Plans and sequences schema, data and dependency migrations so a rolling deploy stays correct, with a tested reversal. Activate for any database migration, data backfill or dependency upgrade.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[35/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > devops-cicd has frontmatter naming itself, in either line ending
+AssertionError: devops-cicd parses differently as CRLF: expected 'name: devops-cicd\ndescription: Owns …' to be 'name: devops-cicd\r\ndescription: Own…' // Object.is equality
+
+- Expected
++ Received
+
+- name: devops-cicd
++ name: devops-cicd
+  description: Owns pipelines, build and deploy configuration, environment wiring and secret plumbing, keeping every environment boundary intact. Activate for pipeline, infrastructure or deployment configuration work.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[36/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > observability-sre has frontmatter naming itself, in either line ending
+AssertionError: observability-sre parses differently as CRLF: expected 'name: observability-sre\ndescription:…' to be 'name: observability-sre\r\ndescriptio…' // Object.is equality
+
+- Expected
++ Received
+
+- name: observability-sre
++ name: observability-sre
+  description: Ensures a change is diagnosable in production: structured logs, traces, metrics, alerts and runbook steps, carrying tenant context and no secrets. Activate for production-affecting or performance-sensitive work.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[37/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > release-manager has frontmatter naming itself, in either line ending
+AssertionError: release-manager parses differently as CRLF: expected 'name: release-manager\ndescription: A…' to be 'name: release-manager\r\ndescription:…' // Object.is equality
+
+- Expected
++ Received
+
+- name: release-manager
++ name: release-manager
+  description: Assembles the release: scope, sequencing, migration order, environment promotion, rollback plan and the human gates. Activate when work is promoted between environments or released.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[38/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > integration-regression has frontmatter naming itself, in either line ending
+AssertionError: integration-regression parses differently as CRLF: expected 'name: integration-regression\ndescrip…' to be 'name: integration-regression\r\ndescr…' // Object.is equality
+
+- Expected
++ Received
+
+- name: integration-regression
++ name: integration-regression
+  description: Verifies that completed features still work together after parallel work merges, and that nothing outside the feature broke. Activate before Final Acceptance for cross-feature, shared-contract, migration or release work.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39/41]⎯
+
+ FAIL  tests/orchestration.test.ts > every agent definition is a usable Claude Code agent > final-acceptance has frontmatter naming itself, in either line ending
+AssertionError: final-acceptance parses differently as CRLF: expected 'name: final-acceptance\ndescription: …' to be 'name: final-acceptance\r\ndescription…' // Object.is equality
+
+- Expected
++ Received
+
+- name: final-acceptance
++ name: final-acceptance
+  description: Checks every Definition of Done condition and every quality gate, and reports READY or NOT READY with the specific reasons. Activate last, for every feature. Never implements, never fixes.
+
+ ❯ tests/orchestration.test.ts:665:77
+    663|     // frontmatter either way, which is the assertion the old `slice(4…
+    664|     // would have failed while reporting success.
+    665|     expect(frontmatterOf(asCrlf(body)), `${id} parses differently as C…
+       |                                                                             ^
+    666|       asCrlf(frontmatterOf(asLf(body)) ?? ''),
+    667|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[40/41]⎯
+
+ FAIL  tests/orchestration.test.ts > the frontmatter parser accepts both line endings and nothing else > accepts the identical document with CRLF endings
+AssertionError: expected 'name: code-reviewer\ndescription: rev…' to be 'name: code-reviewer\r\ndescription: r…' // Object.is equality
+
+- Expected
++ Received
+
+- name: code-reviewer
++ name: code-reviewer
+  description: reviews
+
+ ❯ tests/orchestration.test.ts:755:42
+    753|
+    754|   it('accepts the identical document with CRLF endings', () => {
+    755|     expect(frontmatterOf(valid('\r\n'))).toBe('name: code-reviewer\r\n…
+       |                                          ^
+    756|   })
+    757|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[41/41]⎯
+

@@ -1,0 +1,33 @@
+
+ RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
+
+ ❯ tests/orchestration.test.ts (558 tests | 1 failed) 2106ms
+     × leaves exactly the declared holes unclassified, across every template tree 284ms
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 557 passed (558)
+   Start at  17:44:17
+   Duration  12.20s (transform 450ms, setup 0ms, import 9.49s, tests 2.11s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > leaves exactly the declared holes unclassified, across every template tree
+AssertionError: declared 2, found 19: profiles/_shared/template/.gitattributes, profiles/_shared/template/.gitignore.hbs, profiles/_shared/template/.gitleaks.toml, profiles/_shared/template/contracts/product-platform.v1.json, profiles/product/template/.claude/domain/domain-registry.example.yaml, profiles/product/template/.claude/orchestration/activation-rules.yaml, profiles/product/template/.claude/orchestration/agent-registry.yaml, profiles/product/template/.claude/orchestration/conditions.yaml, profiles/product/template/.claude/orchestration/deployment-awareness.yaml, profiles/product/template/.claude/orchestration/documentation-policy.yaml, profiles/product/template/.claude/orchestration/execution-budget.yaml, profiles/product/template/.claude/orchestration/execution-modes.yaml, profiles/product/template/.claude/orchestration/gate-invalidation.yaml, profiles/product/template/.claude/orchestration/lifecycle.yaml, profiles/product/template/.claude/orchestration/product-profile.example.yaml, profiles/product/template/.claude/orchestration/quality-gates.yaml, profiles/product/template/.claude/orchestration/risk-model.yaml, profiles/product/template/.claude/orchestration/telemetry.yaml, profiles/product/template/.claude/orchestration/workflow.yaml: expected 19 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 19
+
+ ❯ tests/orchestration.test.ts:1622:7
+    1620|       orphans.length,
+    1621|       `declared ${invalidation.path_domain.known_unclassified_files_in…
+    1622|     ).toBe(invalidation.path_domain.known_unclassified_files_in_templa…
+       |       ^
+    1623|     expect(byGroup.size).toBe(invalidation.path_domain.known_unclassif…
+    1624|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
