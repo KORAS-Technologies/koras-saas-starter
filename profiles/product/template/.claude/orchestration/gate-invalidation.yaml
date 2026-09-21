@@ -163,22 +163,34 @@ change_classes:
       - infrastructure/**
       - '**/fly.toml'
       - '**/vercel.json'
-      # The whole local stack, not only `local/config/**`. Measuring the
-      # classifier on 2026-09-21 found 25 tracked files under `local/` that
-      # matched nothing -- the compose file, the proxy, the observability
-      # collectors, the queue configuration and all 18 scripts, `migrate.sh`
-      # and `register-with-control-plane.sh` among them. "How a service is
-      # built, configured, deployed or run" is exactly what those are, and
-      # the narrower glob was an accident of the order things were written.
+      # The whole local stack, not only `local/config/**`. Measured on
+      # 2026-09-21 over the 807 distinct paths a product receives: 32 under
+      # `local/` matched nothing -- the compose file, the proxy, the
+      # observability collectors, the queue configuration, and every one of
+      # the 19 scripts, `migrate.sh` and `register-with-control-plane.sh`
+      # among them. "How a service is built, configured, deployed or run" is
+      # exactly what those are, and the narrower glob was an accident of the
+      # order things were written.
       - local/**
-      # The build graph. Same measurement, same reasoning: these decide how
-      # the product is built, and an edit to one can change every artefact.
-      - '**/turbo.json'
-      - '**/tsconfig*.json'
-      - '**/eslint.config.mjs'
-      - '**/playwright.config.ts'
+      # The build graph -- AT THE ROOT, and the anchoring is the whole point.
+      #
+      # Written as `**/tsconfig*.json` this took 26 files away from
+      # `frontend_code`: every application's and package's own tsconfig, plus
+      # `packages/ui/turbo.json`. `deployment_config` invalidates 5 gates and
+      # `frontend_code` invalidates 16, so an edit to `packages/ui/tsconfig.json`
+      # -- which can change how every frontend file compiles -- would have
+      # reused the test, browser, accessibility and independent-review gates.
+      #
+      # That is FW-GAP-006's own failure mode, reintroduced by FW-GAP-006's
+      # fix, and it is the third time in this one cycle that a remedy produced
+      # the next defect. Caught by final acceptance measuring class movement
+      # rather than reading the regression document, which asserted the
+      # opposite. A per-package build file belongs to its package.
+      - turbo.json
+      - tsconfig*.json
+      - eslint.config.mjs
+      - playwright.config.ts
       - Makefile
-      - '**/Makefile'
     means: How a service is built, configured, deployed or promoted.
 
   dependency:

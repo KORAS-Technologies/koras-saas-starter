@@ -1,13 +1,13 @@
 
  RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
 
- ❯ tests/orchestration.test.ts (557 tests | 1 failed) 2254ms
-     × makes closure check the summary, so nothing checks it nowhere 21ms
+ ❯ tests/orchestration.test.ts (558 tests | 1 failed) 2712ms
+     × makes closure check the summary, so nothing checks it nowhere 20ms
 
  Test Files  1 failed (1)
-      Tests  1 failed | 556 passed (557)
-   Start at  16:37:29
-   Duration  11.74s (transform 362ms, setup 0ms, import 8.85s, tests 2.25s, environment 0ms)
+      Tests  1 failed | 557 passed (558)
+   Start at  17:43:19
+   Duration  12.37s (transform 355ms, setup 0ms, import 9.25s, tests 2.71s, environment 0ms)
 
 
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
@@ -21,13 +21,13 @@ AssertionError: expected 'every applicable state reached no gat…' to match /su
 + Received:
 "every applicable state reached no gate left FAIL, PENDING_HUMAN or PENDING_EXTERNAL every BLOCKED carries a documented reason a person accepted"
 
- ❯ tests/orchestration.test.ts:3355:22
-    3353|     expect(closed, 'CLOSED is not declared').toBeDefined()
-    3354|     const requires = (closed?.requires ?? []).join(' ')
-    3355|     expect(requires).toMatch(/summary/i)
+ ❯ tests/orchestration.test.ts:3407:22
+    3405|     expect(closed, 'CLOSED is not declared').toBeDefined()
+    3406|     const requires = (closed?.requires ?? []).join(' ')
+    3407|     expect(requires).toMatch(/summary/i)
        |                      ^
-    3356|     expect(requires).toMatch(/log/i)
-    3357|   })
+    3408|     expect(requires).toMatch(/log/i)
+    3409|   })
 
 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
 

@@ -1,13 +1,13 @@
 
  RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
 
- ❯ tests/orchestration.test.ts (557 tests | 1 failed) 2107ms
-     × stops at the first delimiter line rather than hunting for a later one 16ms
+ ❯ tests/orchestration.test.ts (558 tests | 1 failed) 2384ms
+     × stops at the first delimiter line rather than hunting for a later one 19ms
 
  Test Files  1 failed (1)
-      Tests  1 failed | 556 passed (557)
-   Start at  16:38:56
-   Duration  10.89s (transform 374ms, setup 0ms, import 8.35s, tests 2.11s, environment 0ms)
+      Tests  1 failed | 557 passed (558)
+   Start at  17:45:10
+   Duration  12.25s (transform 645ms, setup 0ms, import 9.38s, tests 2.38s, environment 0ms)
 
 
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯

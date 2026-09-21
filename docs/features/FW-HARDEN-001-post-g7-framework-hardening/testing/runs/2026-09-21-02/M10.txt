@@ -1,9 +1,9 @@
 
  RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
 
- ❯ tests/orchestration.test.ts (557 tests | 21 failed) 1881ms
-     × classifies profiles/product/template/packages/ui/src/data-table.tsx as frontend_code 20ms
-     × classifies packages/ui/src/data-table.tsx as frontend_code 2ms
+ ❯ tests/orchestration.test.ts (558 tests | 22 failed) 1778ms
+     × classifies profiles/product/template/packages/ui/src/data-table.tsx as frontend_code 19ms
+     × classifies packages/ui/src/data-table.tsx as frontend_code 1ms
      × classifies profiles/product/template/packages/ui/src/styles/tokens.css as frontend_code 1ms
      × classifies packages/ui/src/styles/tokens.css as frontend_code 1ms
      × classifies profiles/product/template/apps/web/src/app/globals.css.hbs as frontend_code 1ms
@@ -19,18 +19,19 @@
      × classifies profiles/product/template/supabase/migrations/1.sql as database_migration_or_policy 1ms
      × classifies profiles/product/template/package.json.hbs as dependency 1ms
      × classifies profiles/control-plane/template/apps/admin/src/page.tsx.hbs as frontend_code 1ms
-     × leaves the factory own source unclassified, which is a known hole and not a surprise 2ms
-     × leaves exactly the declared holes unclassified, across every template tree 128ms
-     × reports an unclassified path as a stop rather than dropping it 2ms
-     × invalidates the gates a real product-code change needs, and did not before 3ms
+     × leaves the factory own source unclassified, which is a known hole and not a surprise 1ms
+     × leaves exactly the declared holes unclassified, across every template tree 118ms
+     × keeps a package own build configuration with its package 1ms
+     × reports an unclassified path as a stop rather than dropping it 1ms
+     × invalidates the gates a real product-code change needs, and did not before 2ms
 
  Test Files  1 failed (1)
-      Tests  21 failed | 536 passed (557)
-   Start at  16:36:39
-   Duration  10.41s (transform 323ms, setup 0ms, import 8.18s, tests 1.88s, environment 0ms)
+      Tests  22 failed | 536 passed (558)
+   Start at  17:42:26
+   Duration  11.46s (transform 582ms, setup 0ms, import 9.14s, tests 1.78s, environment 0ms)
 
 
-⎯⎯⎯⎯⎯⎯ Failed Tests 21 ⎯⎯⎯⎯⎯⎯⎯
+⎯⎯⎯⎯⎯⎯ Failed Tests 22 ⎯⎯⎯⎯⎯⎯⎯
 
  FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > classifies profiles/product/template/packages/ui/src/data-table.tsx as frontend_code
  FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > classifies packages/ui/src/data-table.tsx as frontend_code
@@ -56,7 +57,7 @@ Received: "documentation"
     1557|   })
     1558|
 
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/21]⎯
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/22]⎯
 
  FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > classifies profiles/product/template/services/api/routers/files.py as backend_code
  FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > classifies services/api/routers/files.py as backend_code
@@ -73,7 +74,7 @@ Received: "documentation"
     1557|   })
     1558|
 
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/21]⎯
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/22]⎯
 
  FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > classifies profiles/product/template/e2e/roundtrip/settings.spec.ts.hbs as e2e_test
  FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > classifies e2e/roundtrip/settings.spec.ts as e2e_test
@@ -90,7 +91,7 @@ Received: "documentation"
     1557|   })
     1558|
 
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/21]⎯
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/22]⎯
 
  FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > classifies profiles/product/template/supabase/migrations/1.sql as database_migration_or_policy
 AssertionError: expected 'documentation' to be 'database_migration_or_policy' // Object.is equality
@@ -106,7 +107,7 @@ Received: "documentation"
     1557|   })
     1558|
 
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/21]⎯
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/22]⎯
 
  FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > classifies profiles/product/template/package.json.hbs as dependency
 AssertionError: expected 'documentation' to be 'dependency' // Object.is equality
@@ -122,7 +123,7 @@ Received: "documentation"
     1557|   })
     1558|
 
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/21]⎯
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/22]⎯
 
  FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > leaves the factory own source unclassified, which is a known hole and not a surprise
 AssertionError: expected 'documentation' to be null
@@ -141,7 +142,7 @@ null
     1564|     expect(invalidation.path_domain.unclassified.treat_as).toBe('stop')
     1565|     expect(invalidation.path_domain.unclassified.who_decides).toMatch(…
 
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/21]⎯
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/22]⎯
 
  FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > leaves exactly the declared holes unclassified, across every template tree
 AssertionError: an orphan appeared outside the declared groups: : expected [] to deeply equal [ 'framework contract', …(2) ]
@@ -164,7 +165,23 @@ AssertionError: an orphan appeared outside the declared groups: : expected [] to
     1616|
     1617|     // The counts the contract states. A number in a comment nobody co…
 
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/21]⎯
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/22]⎯
+
+ FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > keeps a package own build configuration with its package
+AssertionError: expected 'documentation' to be 'frontend_code' // Object.is equality
+
+Expected: "frontend_code"
+Received: "documentation"
+
+ ❯ tests/orchestration.test.ts:1654:74
+    1652|      * whole family of defects lives in that gap.
+    1653|      */
+    1654|     expect(classify('profiles/product/template/apps/web/tsconfig.json'…
+       |                                                                          ^
+    1655|     expect(classify('profiles/product/template/packages/ui/tsconfig.js…
+    1656|     expect(classify('profiles/product/template/packages/ui/turbo.json'…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/22]⎯
 
  FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > reports an unclassified path as a stop rather than dropping it
 AssertionError: expected [ 'documentation' ] to deeply equal [ 'frontend_code' ]
@@ -177,25 +194,25 @@ AssertionError: expected [ 'documentation' ] to deeply equal [ 'frontend_code' ]
 +   "documentation",
   ]
 
- ❯ tests/orchestration.test.ts:1644:27
-    1642|       'generators/create-koras-app/src/generation/writer.ts',
-    1643|     ])
-    1644|     expect(mixed.classes).toEqual(['frontend_code'])
+ ❯ tests/orchestration.test.ts:1696:27
+    1694|       'generators/create-koras-app/src/generation/writer.ts',
+    1695|     ])
+    1696|     expect(mixed.classes).toEqual(['frontend_code'])
        |                           ^
-    1645|     expect(mixed.unclassified).toEqual(['generators/create-koras-app/s…
-    1646|   })
+    1697|     expect(mixed.unclassified).toEqual(['generators/create-koras-app/s…
+    1698|   })
 
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/21]⎯
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/22]⎯
 
  FAIL  tests/orchestration.test.ts > a passed gate is reused when nothing it depends on changed > invalidates the gates a real product-code change needs, and did not before
 AssertionError: expected [ 'documentation' ] to include 'frontend_code'
- ❯ tests/orchestration.test.ts:1699:27
-    1697|     const after = classesOf(G7R2)
-    1698|     expect(after.unclassified, 'the witness diff has a path the vocabu…
-    1699|     expect(after.classes).toContain('frontend_code')
+ ❯ tests/orchestration.test.ts:1751:27
+    1749|     const after = classesOf(G7R2)
+    1750|     expect(after.unclassified, 'the witness diff has a path the vocabu…
+    1751|     expect(after.classes).toContain('frontend_code')
        |                           ^
-    1700|     expect(after.classes).toContain('e2e_test')
-    1701|     expect(after.classes).toContain('automated_test_node')
+    1752|     expect(after.classes).toContain('e2e_test')
+    1753|     expect(after.classes).toContain('automated_test_node')
 
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/21]⎯
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/22]⎯
 

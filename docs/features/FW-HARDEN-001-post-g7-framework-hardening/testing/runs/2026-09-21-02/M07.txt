@@ -1,17 +1,17 @@
 
  RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
 
- ❯ tests/orchestration.test.ts (557 tests | 5 failed) 1962ms
-     × declares which paths its globs are written against 17ms
-     × normalises apps/web/globals.css.hbs into the declared domain 3ms
-     × normalises profiles/product/template/README.md.hbs into the declared domain 2ms
-     × classifies profiles/product/template/package.json.hbs as dependency 3ms
-     × leaves exactly the declared holes unclassified, across every template tree 317ms
+ ❯ tests/orchestration.test.ts (558 tests | 5 failed) 2441ms
+     × declares which paths its globs are written against 15ms
+     × normalises apps/web/globals.css.hbs into the declared domain 4ms
+     × normalises profiles/product/template/README.md.hbs into the declared domain 1ms
+     × classifies profiles/product/template/package.json.hbs as dependency 2ms
+     × leaves exactly the declared holes unclassified, across every template tree 288ms
 
  Test Files  1 failed (1)
-      Tests  5 failed | 552 passed (557)
-   Start at  16:36:03
-   Duration  10.53s (transform 366ms, setup 0ms, import 8.00s, tests 1.96s, environment 0ms)
+      Tests  5 failed | 553 passed (558)
+   Start at  17:41:46
+   Duration  11.54s (transform 319ms, setup 0ms, import 8.71s, tests 2.44s, environment 0ms)
 
 
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯

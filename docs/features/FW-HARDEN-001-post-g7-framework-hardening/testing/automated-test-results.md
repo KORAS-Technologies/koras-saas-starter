@@ -75,13 +75,18 @@ before running anything.
 
 | What | Result |
 |------|--------|
-| Canonical agent/orchestration suite | **552 of 552 passed**, where 7199f85 failed 41 |
-| Whole generator suite | **61 files, 2244 tests, 0 failed** |
+| Canonical suite at `575acaf` | **552 of 552 passed**, where 7199f85 failed 41 |
+| Whole generator suite at `575acaf` | **61 files, 2244 tests, 0 failed** |
+| Canonical suite at `939fdd5`, after review remediation | **557 of 557 passed** |
 | 40 agents registered | yes |
 | 40 agents valid | yes |
 | Line-ending failures | none |
 
-The second row also settles the independent review's HIGH-2, which predicted
+The second run was needed because `939fdd5` changed the parser regex itself,
+so the first no longer covered the tree being accepted. Final acceptance made
+the same observation independently and re-ran it, getting the same result.
+
+The generator-suite row also settles the independent review's HIGH-2, which predicted
 two further files would fail on CRLF. They do not: each defines a reader that
 strips carriage returns, with a comment recording that this defect bit it once
 already.
@@ -94,8 +99,10 @@ Each mutation is applied to the real tree, the suite is run, and the tree is
 restored. A mutation that produces a compile error rather than a failing
 assertion is not counted as a kill, and none did.
 
-**Round 1: 16 of 16 killed.** **Round 2, after remediation: 22 of 22**, the six
-added being one per upheld review finding.
+**Round 1: 16 of 16 killed.** **Round 2, after the independent review: 22 of
+22.** **Round 3, after final acceptance: 23 of 23.** Each round added one
+mutation per upheld finding, so every finding is now defended by something
+that fails when it regresses.
 
 | # | Mutation | Killed by |
 |---|----------|-----------|
@@ -121,6 +128,7 @@ added being one per upheld review finding.
 | M20 | Finalise the summary *at* closure instead of before it | `does not make closure wait for a summary that waits for closure` |
 | M21 | Drop the escalated-branch checker | `says who checks the summary on the branch that never reaches closure` |
 | M22 | Restore the untempered lazy capture | `stops at the first delimiter line` |
+| M23 | Let the build-graph globs reach into packages again | `keeps a package own build configuration with its package` |
 
 M17 and M18 are the ones worth noting: the coverage assertion they kill is the
 one the independent review proved could not fail in its first form. Removing

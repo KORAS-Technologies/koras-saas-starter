@@ -1,13 +1,13 @@
 
  RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
 
- ❯ tests/orchestration.test.ts (557 tests | 1 failed) 1659ms
-     × leaves exactly the declared holes unclassified, across every template tree 260ms
+ ❯ tests/orchestration.test.ts (558 tests | 1 failed) 2106ms
+     × leaves exactly the declared holes unclassified, across every template tree 284ms
 
  Test Files  1 failed (1)
-      Tests  1 failed | 556 passed (557)
-   Start at  16:38:13
-   Duration  8.93s (transform 313ms, setup 0ms, import 6.82s, tests 1.66s, environment 0ms)
+      Tests  1 failed | 557 passed (558)
+   Start at  17:44:17
+   Duration  12.20s (transform 450ms, setup 0ms, import 9.49s, tests 2.11s, environment 0ms)
 
 
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯

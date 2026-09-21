@@ -1,13 +1,13 @@
 
  RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
 
- ❯ tests/orchestration.test.ts (557 tests | 1 failed) 2175ms
-     × keeps acceptance judging the log rather than the summary 17ms
+ ❯ tests/orchestration.test.ts (558 tests | 1 failed) 2457ms
+     × keeps acceptance judging the log rather than the summary 19ms
 
  Test Files  1 failed (1)
-      Tests  1 failed | 556 passed (557)
-   Start at  16:37:16
-   Duration  11.49s (transform 391ms, setup 0ms, import 8.86s, tests 2.17s, environment 0ms)
+      Tests  1 failed | 557 passed (558)
+   Start at  17:43:05
+   Duration  12.95s (transform 478ms, setup 0ms, import 9.98s, tests 2.46s, environment 0ms)
 
 
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
@@ -21,13 +21,13 @@ AssertionError: expected 'nothing in particular' to match /summary/i
 + Received:
 "nothing in particular"
 
- ❯ tests/orchestration.test.ts:3341:33
-    3339|     expect(judges.join(' ')).toMatch(/event log/i)
-    3340|     expect(judges.join(' ')).toMatch(/evidence/i)
-    3341|     expect(notJudged.join(' ')).toMatch(/summary/i)
+ ❯ tests/orchestration.test.ts:3393:33
+    3391|     expect(judges.join(' ')).toMatch(/event log/i)
+    3392|     expect(judges.join(' ')).toMatch(/evidence/i)
+    3393|     expect(notJudged.join(' ')).toMatch(/summary/i)
        |                                 ^
-    3342|
-    3343|     // The acyclicity claim, stated as the thing that would break it: …
+    3394|
+    3395|     // The acyclicity claim, stated as the thing that would break it: …
 
 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
 

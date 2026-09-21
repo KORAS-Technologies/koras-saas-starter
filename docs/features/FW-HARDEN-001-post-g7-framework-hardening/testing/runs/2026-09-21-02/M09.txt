@@ -1,13 +1,13 @@
 
  RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
 
- ❯ tests/orchestration.test.ts (557 tests | 1 failed) 2099ms
-     × classifies services/api/static/mail.css as frontend_code 20ms
+ ❯ tests/orchestration.test.ts (558 tests | 1 failed) 2478ms
+     × classifies services/api/static/mail.css as frontend_code 19ms
 
  Test Files  1 failed (1)
-      Tests  1 failed | 556 passed (557)
-   Start at  16:36:26
-   Duration  11.38s (transform 335ms, setup 0ms, import 8.82s, tests 2.10s, environment 0ms)
+      Tests  1 failed | 557 passed (558)
+   Start at  17:42:13
+   Duration  11.92s (transform 448ms, setup 0ms, import 8.96s, tests 2.48s, environment 0ms)
 
 
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯

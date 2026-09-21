@@ -26,22 +26,46 @@ Executed 2026-09-21, after the remediation of the independent review's findings.
 Three, and each was checked directly rather than covered by "the suite is
 green".
 
-**Reordering `frontend_code` above `backend_code`.** A class order change can
-silently move files between classes. Measured: the old vocabulary against the
-new, over every tracked path in all three template trees — **the class of
-exactly zero real files changed**. Every stylesheet in the estate already
-classified as `frontend_code` by directory. The reorder and the stylesheet
-globs are written for the file somebody adds next, and cost nothing today.
+The measurement is **class movement**: every distinct path a product receives,
+classified under the baseline vocabulary and under this one, and compared. 807
+paths.
 
-**Widening `deployment_config` to `local/**` and the build graph.** This one
-*does* move files: 25 that previously classified as nothing now classify as
-`deployment_config`. That is the intended effect, and the direction is
-conservative — they move from "no gate invalidated" to "the deployment gates
-invalidated", never the reverse. Nothing moved out of another class, because
-nothing else matched them.
+| Movement | Paths |
+|----------|-------|
+| nothing → `frontend_code` | 276 |
+| nothing → `backend_code` | 179 |
+| nothing → `deployment_config` | 38 |
+| nothing → `dependency` | 44 |
+| nothing → `e2e_test` | 22 |
+| nothing → other | 13 |
+| **between two real classes** | **0** |
+| **files that lost a gate** | **0** |
 
-**Adding `pnpm-workspace.yaml` to `dependency`.** One file, previously
-unclassified.
+Every movement is from unclassified to classified, which is strictly more
+invalidation. That is the property that matters, and it is the one the first
+version of this document asserted without measuring.
+
+**It was not true when first written, and final acceptance caught it.** The
+build-graph globs were written with a leading globstar, so
+`**/tsconfig*.json` reached every application's and package's own tsconfig —
+26 files that had classified as `frontend_code` (16 gates) and now classified
+as `deployment_config` (5). An edit to `packages/ui/tsconfig.json`, which can
+change how every frontend file compiles, would have reused the test, browser,
+accessibility and independent-review gates. This document said in as many
+words that nothing moved out of another class. It had.
+
+That is FW-GAP-006's own failure mode produced by FW-GAP-006's fix, and the
+third time in this one cycle that a remedy created the next defect. The globs
+are anchored at the root now, and the gap that hid it is closed: the coverage
+assertion counts paths that classify as *nothing*, so a path moving between
+two real classes was invisible to it. The new invariant — nothing inside an
+application is `deployment_config` unless it is literally a deployment
+descriptor — is what covers that family.
+
+**The stylesheet rule and the class reorder still change nothing today.** Every
+stylesheet in the estate already classified as `frontend_code` by directory.
+They are written for the file somebody adds next, and that is recorded as
+costing nothing rather than presented as a fix.
 
 ## What was not re-run, and why
 

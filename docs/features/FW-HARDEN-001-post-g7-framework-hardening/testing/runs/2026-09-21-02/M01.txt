@@ -1,36 +1,36 @@
 
  RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
 
- ❯ tests/orchestration.test.ts (557 tests | 42 failed) 2037ms
-     × engineering-orchestrator has frontmatter naming itself, in either line ending 20ms
+ ❯ tests/orchestration.test.ts (558 tests | 42 failed) 2116ms
+     × engineering-orchestrator has frontmatter naming itself, in either line ending 18ms
      × product-planner has frontmatter naming itself, in either line ending 1ms
-     × business-analyst has frontmatter naming itself, in either line ending 2ms
-     × solution-architect has frontmatter naming itself, in either line ending 6ms
+     × business-analyst has frontmatter naming itself, in either line ending 1ms
+     × solution-architect has frontmatter naming itself, in either line ending 1ms
      × data-architect has frontmatter naming itself, in either line ending 1ms
      × security-architect has frontmatter naming itself, in either line ending 1ms
      × ux-ui-designer has frontmatter naming itself, in either line ending 1ms
-     × impact-analysis has frontmatter naming itself, in either line ending 2ms
-     × developer-1 has frontmatter naming itself, in either line ending 2ms
+     × impact-analysis has frontmatter naming itself, in either line ending 1ms
+     × developer-1 has frontmatter naming itself, in either line ending 1ms
      × developer-2 has frontmatter naming itself, in either line ending 1ms
      × developer-3 has frontmatter naming itself, in either line ending 1ms
      × frontend-specialist has frontmatter naming itself, in either line ending 1ms
      × backend-specialist has frontmatter naming itself, in either line ending 1ms
-     × database-specialist has frontmatter naming itself, in either line ending 2ms
-     × integration-specialist has frontmatter naming itself, in either line ending 2ms
+     × database-specialist has frontmatter naming itself, in either line ending 1ms
+     × integration-specialist has frontmatter naming itself, in either line ending 1ms
      × ai-specialist has frontmatter naming itself, in either line ending 1ms
      × workflow-specialist has frontmatter naming itself, in either line ending 1ms
      × test-data has frontmatter naming itself, in either line ending 1ms
      × unit-test has frontmatter naming itself, in either line ending 1ms
      × api-integration-test has frontmatter naming itself, in either line ending 1ms
      × e2e-test has frontmatter naming itself, in either line ending 1ms
-     × manual-qa has frontmatter naming itself, in either line ending 1ms
+     × manual-qa has frontmatter naming itself, in either line ending 2ms
      × accessibility-qa has frontmatter naming itself, in either line ending 1ms
      × performance-qa has frontmatter naming itself, in either line ending 1ms
      × security-test has frontmatter naming itself, in either line ending 1ms
      × ai-evaluation has frontmatter naming itself, in either line ending 1ms
      × bug-triage has frontmatter naming itself, in either line ending 1ms
      × code-reviewer has frontmatter naming itself, in either line ending 1ms
-     × architecture-reviewer has frontmatter naming itself, in either line ending 2ms
+     × architecture-reviewer has frontmatter naming itself, in either line ending 1ms
      × security-reviewer has frontmatter naming itself, in either line ending 1ms
      × qa-reviewer has frontmatter naming itself, in either line ending 1ms
      × privacy-compliance-reviewer has frontmatter naming itself, in either line ending 1ms
@@ -42,13 +42,13 @@
      × release-manager has frontmatter naming itself, in either line ending 1ms
      × integration-regression has frontmatter naming itself, in either line ending 1ms
      × final-acceptance has frontmatter naming itself, in either line ending 1ms
-     × accepts the identical document with CRLF endings 3ms
-     × reads the same frontmatter from both, once the endings are set aside 4ms
+     × accepts the identical document with CRLF endings 2ms
+     × reads the same frontmatter from both, once the endings are set aside 3ms
 
  Test Files  1 failed (1)
-      Tests  42 failed | 515 passed (557)
-   Start at  16:34:49
-   Duration  12.06s (transform 345ms, setup 0ms, import 9.55s, tests 2.04s, environment 0ms)
+      Tests  42 failed | 516 passed (558)
+   Start at  17:40:32
+   Duration  9.90s (transform 327ms, setup 0ms, import 7.40s, tests 2.12s, environment 0ms)
 
 
 ⎯⎯⎯⎯⎯⎯ Failed Tests 42 ⎯⎯⎯⎯⎯⎯⎯

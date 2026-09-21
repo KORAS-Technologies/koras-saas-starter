@@ -61,12 +61,13 @@ would; and an escalated run's summary is checked by the human receiving it.
 | | |
 |---|---|
 | Suite before | 499 assertions in the canonical file |
-| Suite after | 557 |
+| Suite after | 558 |
 | Full starter suite | 2351 generator, 424 documentation, 120 CLI, 21 e2e, 7 pytest |
-| Mutations killed | 22 of 22, each by a named assertion |
+| Mutations killed | 23 of 23, each by a named assertion |
 | Windows proof | 61 files, 2244 tests, fresh CRLF checkout |
 | Agents activated | 11 of 40 |
-| Unclassified template files | 42 before this cycle's own review, 19 after, 0 under any application directory |
+| Unclassified paths a product receives | 58 at the baseline, 19 now, 0 under any application directory |
+| Files that lost a gate | 0, measured against the baseline vocabulary |
 
 ## Downstream
 
@@ -88,7 +89,7 @@ initiating one is a separate decision with its own approval.
 | FW-GAP-008 | Low | Not authorised by this cycle |
 | FW-GAP-011 | Medium | The factory's own source is outside the declared domain — a question, not an edit |
 | FW-GAP-012 | Low | `tests/**` classes a Node test as Python |
-| FW-GAP-013 | Medium | 19 template files with no class; each needs a new class, and a new class needs a gate |
+| FW-GAP-013 | Medium | 19 paths with no class; each needs a new class, and a new class needs a gate |
 
 ## The thing worth carrying
 
@@ -97,9 +98,15 @@ Two of the three HIGH findings in the independent review were defects in the
 deadlock it was written to resolve, with `CLOSED` in place of
 `final_acceptance`.
 
-That is the third time in three lifecycles that a remedy has created the
-condition for the next defect, and the pattern now has a shape: each was a rule
-about ordering written in one file while the constraint it interacted with
-lived in another. The fix's own tests could not catch it, because they asserted
-that the contract contained certain words — which it did. A contract test that
-reads the contract's words cannot find a contradiction between two contracts.
+And then final acceptance found a third: the fix for the classifier had taken
+eleven gates away from 26 product files, including independent review, by
+writing the build-graph globs with a leading globstar. That is FW-GAP-006's own
+failure mode produced by FW-GAP-006's fix.
+
+Three remedies, three next defects, in one cycle. Each hid in the same place —
+behind an assertion that asked what the contract *says* rather than what it
+*does*. The telemetry group asserted the contract contained certain words,
+which it did. The coverage assertion counted paths that classify as nothing,
+so a path moving between two real classes was invisible to it. Both gaps are
+now closed by assertions that measure an effect: an ordering, and a class
+that may not appear inside an application.

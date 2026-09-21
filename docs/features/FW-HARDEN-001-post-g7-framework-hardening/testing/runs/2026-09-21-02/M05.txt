@@ -1,18 +1,18 @@
 
  RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
 
- ❯ tests/orchestration.test.ts (557 tests | 6 failed) 2111ms
-     × refuses a document with an opening delimiter with a trailing space 19ms
+ ❯ tests/orchestration.test.ts (558 tests | 6 failed) 2066ms
+     × refuses a document with an opening delimiter with a trailing space 17ms
      × refuses a document with four dashes opening 2ms
      × refuses a document with two dashes opening 1ms
      × refuses a document with a closing delimiter that is not at the start of its line 1ms
-     × refuses a document with a closing delimiter with trailing text on its line 2ms
+     × refuses a document with a closing delimiter with trailing text on its line 1ms
      × stops at the first delimiter line rather than hunting for a later one 1ms
 
  Test Files  1 failed (1)
-      Tests  6 failed | 551 passed (557)
-   Start at  16:35:38
-   Duration  11.42s (transform 380ms, setup 0ms, import 8.95s, tests 2.11s, environment 0ms)
+      Tests  6 failed | 552 passed (558)
+   Start at  17:41:21
+   Duration  11.74s (transform 416ms, setup 0ms, import 9.17s, tests 2.07s, environment 0ms)
 
 
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯

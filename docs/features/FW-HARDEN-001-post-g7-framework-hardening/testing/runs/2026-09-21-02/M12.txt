@@ -1,13 +1,13 @@
 
  RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
 
- ❯ tests/orchestration.test.ts (557 tests | 1 failed) 2121ms
-     × leaves the factory own source unclassified, which is a known hole and not a surprise 16ms
+ ❯ tests/orchestration.test.ts (558 tests | 1 failed) 2357ms
+     × leaves the factory own source unclassified, which is a known hole and not a surprise 21ms
 
  Test Files  1 failed (1)
-      Tests  1 failed | 556 passed (557)
-   Start at  16:37:03
-   Duration  10.95s (transform 338ms, setup 0ms, import 8.38s, tests 2.12s, environment 0ms)
+      Tests  1 failed | 557 passed (558)
+   Start at  17:42:52
+   Duration  12.07s (transform 372ms, setup 0ms, import 9.26s, tests 2.36s, environment 0ms)
 
 
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯

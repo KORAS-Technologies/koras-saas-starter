@@ -1,13 +1,13 @@
 
  RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
 
- ❯ tests/orchestration.test.ts (557 tests | 1 failed) 1891ms
-     × reports an unclassified path as a stop rather than dropping it 22ms
+ ❯ tests/orchestration.test.ts (558 tests | 1 failed) 2266ms
+     × reports an unclassified path as a stop rather than dropping it 17ms
 
  Test Files  1 failed (1)
-      Tests  1 failed | 556 passed (557)
-   Start at  16:38:23
-   Duration  9.51s (transform 386ms, setup 0ms, import 7.18s, tests 1.89s, environment 0ms)
+      Tests  1 failed | 557 passed (558)
+   Start at  17:44:31
+   Duration  10.18s (transform 392ms, setup 0ms, import 7.37s, tests 2.27s, environment 0ms)
 
 
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
@@ -23,13 +23,13 @@ AssertionError: expected [] to deeply equal [ Array(1) ]
 - ]
 + []
 
- ❯ tests/orchestration.test.ts:1645:32
-    1643|     ])
-    1644|     expect(mixed.classes).toEqual(['frontend_code'])
-    1645|     expect(mixed.unclassified).toEqual(['generators/create-koras-app/s…
+ ❯ tests/orchestration.test.ts:1697:32
+    1695|     ])
+    1696|     expect(mixed.classes).toEqual(['frontend_code'])
+    1697|     expect(mixed.unclassified).toEqual(['generators/create-koras-app/s…
        |                                ^
-    1646|   })
-    1647|
+    1698|   })
+    1699|
 
 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
 

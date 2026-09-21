@@ -1632,6 +1632,58 @@ describe('a passed gate is reused when nothing it depends on changed', () => {
     expect(appOrphans, `unclassified application paths: ${appOrphans.join(', ')}`).toEqual([])
   })
 
+  it('keeps a package own build configuration with its package', () => {
+    /**
+     * The assertion final acceptance had to measure to find, and the reason
+     * it is phrased as an invariant rather than as rows.
+     *
+     * Widening `deployment_config` to reach the build graph was written with
+     * a leading globstar on the tsconfig glob, which took 26 files away from
+     * `frontend_code`: every application's and package's own tsconfig, plus a
+     * package's `turbo.json`. `frontend_code` invalidates 16 gates and
+     * `deployment_config` invalidates 5, so an edit to
+     * `packages/ui/tsconfig.json` -- which can change how every frontend file
+     * compiles -- would have reused the test, browser, accessibility and
+     * independent-review gates.
+     *
+     * That is FW-GAP-006's own failure mode produced by FW-GAP-006's fix, and
+     * the coverage assertion could not see it: it counts paths that classify
+     * as NOTHING, and this was a path moving between two real classes. A
+     * whole family of defects lives in that gap.
+     */
+    expect(classify('profiles/product/template/apps/web/tsconfig.json')).toBe('frontend_code')
+    expect(classify('profiles/product/template/packages/ui/tsconfig.json')).toBe('frontend_code')
+    expect(classify('profiles/product/template/packages/ui/turbo.json')).toBe('frontend_code')
+    // The root build graph is a different thing and does belong to deployment.
+    expect(classify('profiles/_shared/template/turbo.json')).toBe('deployment_config')
+    expect(classify('profiles/_shared/template/tsconfig.base.json')).toBe('deployment_config')
+    expect(classify('profiles/_shared/template/eslint.config.mjs')).toBe('deployment_config')
+    expect(classify('profiles/_shared/template/pnpm-workspace.yaml')).toBe('dependency')
+
+    // And the invariant behind those rows, over the real tree: nothing inside
+    // an application is `deployment_config` unless it is literally a
+    // deployment descriptor. Rows can be satisfied one at a time; this
+    // cannot.
+    const tracked = execFileSync('git', ['ls-files', 'profiles'], {
+      cwd: STARTER_ROOT,
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024,
+    }).split(/\r?\n/)
+    const inApplications = tracked.filter((f) =>
+      /^profiles\/[^/]+\/template\/(apps|packages|services|python-packages|e2e)\//.test(f),
+    )
+    expect(inApplications.length).toBeGreaterThan(400)
+    const strays = inApplications
+      .filter((f) => classify(f) === 'deployment_config')
+      // Against the normalised path: the tracked file is `fly.toml.hbs`, and
+      // what it becomes in a product is what the classifier judged.
+      .filter((f) => !/\/(fly\.toml|vercel\.json)$/.test(normalise(f)))
+    expect(
+      strays,
+      `application files classified as deployment_config: ${strays.join(', ')}`,
+    ).toEqual([])
+  })
+
   it('reports an unclassified path as a stop rather than dropping it', () => {
     // HIGH-3 from the review of this change: the first `classesOf` filtered
     // the nulls away, which is what `path_domain.unclassified.never` forbids

@@ -1,13 +1,13 @@
 
  RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
 
- ❯ tests/orchestration.test.ts (557 tests | 1 failed) 1906ms
-     × does not make closure wait for a summary that waits for closure 18ms
+ ❯ tests/orchestration.test.ts (558 tests | 1 failed) 2204ms
+     × does not make closure wait for a summary that waits for closure 23ms
 
  Test Files  1 failed (1)
-      Tests  1 failed | 556 passed (557)
-   Start at  16:38:34
-   Duration  9.32s (transform 351ms, setup 0ms, import 6.99s, tests 1.91s, environment 0ms)
+      Tests  1 failed | 557 passed (558)
+   Start at  17:44:42
+   Duration  10.47s (transform 430ms, setup 0ms, import 7.80s, tests 2.20s, environment 0ms)
 
 
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
@@ -21,13 +21,13 @@ AssertionError: expected 'the terminal state -- CLOSED, or the …' to match /be
 + Received:
 "the terminal state -- CLOSED, or the escalation for a run that stops there"
 
- ❯ tests/orchestration.test.ts:3365:52
-    3363|     // ordering is asserted rather than described: finalisation is bef…
-    3364|     // transition, and the transition is not an event the summary wait…
-    3365|     expect(telemetry.derived_summary.finalised_at).toMatch(/before the…
+ ❯ tests/orchestration.test.ts:3417:52
+    3415|     // ordering is asserted rather than described: finalisation is bef…
+    3416|     // transition, and the transition is not an event the summary wait…
+    3417|     expect(telemetry.derived_summary.finalised_at).toMatch(/before the…
        |                                                    ^
-    3366|     const exempt = telemetry.derived_summary.not_an_applicable_event.j…
-    3367|     expect(exempt).toMatch(/transition/)
+    3418|     const exempt = telemetry.derived_summary.not_an_applicable_event.j…
+    3419|     expect(exempt).toMatch(/transition/)
 
 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
 

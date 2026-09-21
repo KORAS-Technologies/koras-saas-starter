@@ -1,14 +1,14 @@
 
  RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
 
- ❯ tests/orchestration.test.ts (557 tests | 2 failed) 1839ms
-     × does not ship forty near-identical files 29ms
+ ❯ tests/orchestration.test.ts (558 tests | 2 failed) 2408ms
+     × does not ship forty near-identical files 32ms
      × extracts a section under both endings, and refuses one that is absent 2ms
 
  Test Files  1 failed (1)
-      Tests  2 failed | 555 passed (557)
-   Start at  16:35:03
-   Duration  10.80s (transform 322ms, setup 0ms, import 8.37s, tests 1.84s, environment 0ms)
+      Tests  2 failed | 556 passed (558)
+   Start at  17:40:43
+   Duration  12.44s (transform 505ms, setup 0ms, import 9.29s, tests 2.41s, environment 0ms)
 
 
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯

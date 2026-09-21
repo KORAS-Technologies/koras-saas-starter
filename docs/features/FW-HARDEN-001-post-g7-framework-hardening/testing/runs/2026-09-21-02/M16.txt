@@ -1,13 +1,13 @@
 
  RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
 
- ❯ tests/orchestration.test.ts (557 tests | 1 failed) 1856ms
-     × does not reopen FW-GAP-003 by moving the summary earlier 12ms
+ ❯ tests/orchestration.test.ts (558 tests | 1 failed) 2267ms
+     × does not reopen FW-GAP-003 by moving the summary earlier 16ms
 
  Test Files  1 failed (1)
-      Tests  1 failed | 556 passed (557)
-   Start at  16:37:52
-   Duration  9.09s (transform 371ms, setup 0ms, import 6.80s, tests 1.86s, environment 0ms)
+      Tests  1 failed | 557 passed (558)
+   Start at  17:43:49
+   Duration  11.09s (transform 314ms, setup 0ms, import 8.30s, tests 2.27s, environment 0ms)
 
 
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
@@ -21,13 +21,13 @@ AssertionError: expected 'Generating the FINAL summary while an…' to match /Ho
 + Received:
 "Generating the FINAL summary while an applicable event is still outstanding. Recording a value in it that no event supports. Treating it as the record. It is a reading of the record. Closing a run whose summary was never finalised, or whose summary disagrees with the log. Stopping at an escalation without finalising the summary. The escalated branch is the one nobody thinks to check."
 
- ❯ tests/orchestration.test.ts:3389:19
-    3387|     expect(never).toMatch(/no event supports/)
-    3388|     // And the deadlock's own half: acceptance may not be held for it.
-    3389|     expect(never).toMatch(/Holding acceptance/)
+ ❯ tests/orchestration.test.ts:3441:19
+    3439|     expect(never).toMatch(/no event supports/)
+    3440|     // And the deadlock's own half: acceptance may not be held for it.
+    3441|     expect(never).toMatch(/Holding acceptance/)
        |                   ^
-    3390|   })
-    3391|
+    3442|   })
+    3443|
 
 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
 

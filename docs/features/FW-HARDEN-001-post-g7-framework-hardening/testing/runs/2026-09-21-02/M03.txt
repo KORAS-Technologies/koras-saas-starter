@@ -1,17 +1,17 @@
 
  RUN  v4.1.11 C:/repos/Projects/koras-saas-starter/generators/create-koras-app
 
- ❯ tests/orchestration.test.ts (557 tests | 5 failed) 1952ms
+ ❯ tests/orchestration.test.ts (558 tests | 5 failed) 2268ms
      × refuses a document with no closing delimiter 19ms
-     × refuses a document with a closing delimiter that is not at the start of its line 2ms
+     × refuses a document with a closing delimiter that is not at the start of its line 1ms
      × refuses a document with a closing delimiter with trailing text on its line 1ms
      × refuses a document with a lone delimiter 1ms
      × stops at the first delimiter line rather than hunting for a later one 1ms
 
  Test Files  1 failed (1)
-      Tests  5 failed | 552 passed (557)
-   Start at  16:35:15
-   Duration  10.28s (transform 326ms, setup 0ms, import 7.84s, tests 1.95s, environment 0ms)
+      Tests  5 failed | 553 passed (558)
+   Start at  17:40:57
+   Duration  10.66s (transform 326ms, setup 0ms, import 7.89s, tests 2.27s, environment 0ms)
 
 
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
