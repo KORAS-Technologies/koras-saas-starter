@@ -145,6 +145,14 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   // name symbols in `koras-control-plane`. Each must stay absent here: this
   // repository holding one would mean a boundary had moved, which is the
   // reason CLAUDE.md gives for not naming another repository's schema.
+  // ── A framework's own internal name ─────────────────────────────────────
+  //
+  // Next.js emits this warning when `NODE_ENV` is neither `development` nor
+  // `production` at build. PLAT-DEF-014 quotes it as the only signal a
+  // production build carries when it inherits the wrong mode, which is the
+  // point of that row: one warning in a log nobody reads. It is Next's
+  // constant and must stay absent from this repository.
+  NON_STANDARD_NODE_ENV: "next.js: the warning it prints for a non-standard NODE_ENV at build",
   ENTITLEMENT_CATALOGUE: 'koras-control-plane: its entitlement catalogue',
   PLAN_CATALOGUE: 'koras-control-plane: its commercial catalogue',
   MODEL_ALIASES: 'koras-control-plane: its AI routing table',
