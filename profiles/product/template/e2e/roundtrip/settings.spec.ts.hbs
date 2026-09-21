@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { signInAs } from '../support/session'
 
 /**
@@ -86,4 +86,72 @@ test('what one person chose is not what another sees', async ({ page, context, b
   } finally {
     await other.close()
   }
+})
+
+const HIGH_CONTRAST = '[data-setting="accessibility.highContrast"] input[type="checkbox"]'
+
+/**
+ * The signed-in shell's own root, and its computed background.
+ *
+ * The root carries `data-contrast` and `bg-surface-muted`; it has no test id and
+ * this feature may not add one, so it is reached structurally -- the one element
+ * above `#main-content` with `min-h-screen`. The background is read as a resolved
+ * colour rather than as the raw custom property, because the claim is that the
+ * token cascade *took effect*, not merely that a value was declared.
+ */
+async function shellBackground(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    let element: HTMLElement | null = document.getElementById('main-content')
+    while (element && !element.className.includes('min-h-screen')) {
+      element = element.parentElement
+    }
+    return element ? getComputedStyle(element).backgroundColor : null
+  })
+}
+
+test('high contrast marks the shell and re-skins it, and off leaves it untouched', async ({
+  page,
+  context,
+}) => {
+  // G7R2-F01. The one case that needs a real resolved value: the marker appears
+  // only when `accessibility.highContrast` resolves true, which needs the API
+  // and the database this project has and the degraded suites do not. There the
+  // setting is always null and the marker always absent, so presence can only be
+  // proven here.
+  await signInAs(context)
+
+  // Off to begin with -- a real resolved false, not the degraded null the other
+  // suites see -- so no marker and the product looks exactly as it does today.
+  // AC2, with an API answering.
+  await page.goto('/dashboard')
+  await expect(page.locator('[data-contrast="high"]')).toHaveCount(0)
+  const off = await shellBackground(page)
+  expect(off).toBeTruthy()
+
+  // Turned on from the control a person actually uses.
+  await page.goto('/dashboard/preferences')
+  await page.locator(HIGH_CONTRAST).check()
+  await page.getByTestId('save-accessibility').click()
+  await expect(page.getByTestId('preferences-outcome')).toContainText(/./)
+
+  // A fresh server render resolves the new value: the marker appears (AC1) and
+  // the shell root's computed background actually changes (AC3) -- the token
+  // cascade taking effect, not just an attribute toggled. Asserted as a change
+  // rather than a named colour, because the palette is a product's to pick and a
+  // test naming one hex fails for every product that picks its own.
+  await page.goto('/dashboard')
+  await expect(page.locator('[data-contrast="high"]')).toHaveCount(1)
+  const on = await shellBackground(page)
+  expect(on).not.toBe(off)
+
+  // Off again returns the DOM to exactly what it was: no marker, the original
+  // background. AC2's other half, in the same browser, build and account.
+  await page.goto('/dashboard/preferences')
+  await page.locator(HIGH_CONTRAST).uncheck()
+  await page.getByTestId('save-accessibility').click()
+  await expect(page.getByTestId('preferences-outcome')).toContainText(/./)
+
+  await page.goto('/dashboard')
+  await expect(page.locator('[data-contrast="high"]')).toHaveCount(0)
+  expect(await shellBackground(page)).toBe(off)
 })

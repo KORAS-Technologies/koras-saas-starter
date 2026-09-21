@@ -1096,3 +1096,45 @@ describe('the two settings surfaces', () => {
     expect(form).toContain('labels.reset')
   })
 })
+
+/**
+ * A surfaced accessibility setting is honoured by client code (G7R2-F01).
+ *
+ * `hides exactly the settings nothing honours` above proves the four *hidden*
+ * settings are read by nothing. Nothing proved the converse -- that a *surfaced*
+ * one is actually read by something -- and the absence of that assertion is how
+ * `accessibility.highContrast` was offered, stored, resolved and ignored (the
+ * PLAT-DEF-001 class) until this feature.
+ *
+ * This states the truth about its two siblings rather than a falsehood: they are
+ * surfaced too and are still read by nothing, so they are the open two-thirds of
+ * the same defect, named here so the register row is recorded rather than
+ * rediscovered.
+ */
+describe('a surfaced accessibility setting is honoured', () => {
+  const shell = read('packages', 'ui', 'src', 'shell', 'product-shell.tsx.hbs')
+  const standard = read('services', 'api', 'koras_api', 'settings_catalogue', 'standard.py')
+
+  it('honours accessibility.highContrast, and records its two siblings still dead', () => {
+    // All three are offered to customers.
+    for (const key of [
+      'accessibility.highContrast',
+      'accessibility.reducedMotion',
+      'accessibility.fontScale',
+    ]) {
+      expect(standard, `${key} is not declared in the catalogue`).toContain(`"${key}"`)
+    }
+
+    // One of the three is now read by client code, which is what closes its
+    // third of the defect.
+    expect(shell).toContain("useSettingValue('accessibility.highContrast', false)")
+
+    // The other two are not, and this asserts that rather than pretending
+    // otherwise. When one is honoured, it moves up here and its assertion below
+    // is deleted in the same commit -- the same discipline the hidden-settings
+    // test keeps for `surfaced=False`.
+    for (const dead of ['accessibility.reducedMotion', 'accessibility.fontScale']) {
+      expect(shell, `${dead} is honoured by the shell but was recorded as dead`).not.toContain(dead)
+    }
+  })
+})

@@ -1,0 +1,7 @@
+koras-docs-tests:test: [2m Test Files [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+koras-e2e:test: [2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+koras-cli:test: [2m Test Files [22m [1m[32m7 passed[39m[22m[90m (7)[39m
+create-koras-app:test: [2m Test Files [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m59 passed[39m[22m[90m (61)[39m
+ Tasks:    4 successful, 5 total
+Failed:    create-koras-app#test
+EXIT=1

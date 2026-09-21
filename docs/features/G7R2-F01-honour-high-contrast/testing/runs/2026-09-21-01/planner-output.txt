@@ -1,0 +1,113 @@
+I have sufficient grounded evidence. One key confirmation before I report: the three surfaced `accessibility.*` settings (`reducedMotion`, `highContrast`, `fontScale`) are declared in the catalogue, translated in en/de/es, registered as known keys, and drawn on the settings page — yet the **only** contrast/motion code in the template is a `prefers-reduced-motion` CSS media query and a toast comment (both OS-level, not the stored setting). No consumer reads any of the three stored values. That is a real, unlogged "control that does nothing" defect — the exact class the framework's `surfaced=False` discipline exists to prevent.
+
+Here is the plan.
+
+---
+
+# Product Planner — G7 R2 Recommendation Package
+
+**Agent:** `product-planner` · **Run:** G7 R2 · **Date:** 2026-09-21
+**Subject:** `C:\repos\Projects\koras-saas-starter` (the KORAS factory) · branch `develop`
+**Mode of this run:** Recommend only. No code changed, nothing modified. Read-only inspection.
+
+## Current state (from what was inspected)
+
+- **Register:** `docs/platform/gap-defect-register.md` holds 106 rows (4 Critical, 16 High, 18 Medium, 7 Low). The Critical settings defect **PLAT-DEF-001** ("settings registered, translated, drawn on pages, no code reads them") is the repository's signature failure mode; `surfaced=False` was introduced specifically so a control that does nothing never ships.
+- **Settings framework (F27):** all 11 phases built; independent review returned **BLOCK** with **SET-05…SET-22** carried open. Most are backend (seeding, RLS, audit atomicity); a small minority are frontend-only.
+- **Catalogue** (`services/api/koras_api/settings_catalogue/standard.py`): 24 surfaced settings, 3 unsurfaced (`grid.rememberFilters`, `grid.rememberSort`, `notifications.digestFrequency`, plus `files.maxFilesPerUpload`) — each unsurfaced **because** its consumer does not yet exist, which is correct discipline.
+- **Newly surfaced gap this run found (not yet in the register):** `accessibility.highContrast`, `accessibility.reducedMotion`, `accessibility.fontScale` are **surfaced = True** but honoured by **nothing**. This is a live PLAT-DEF-001-class defect that has evaded logging. *Recommendation: record it in `gap-defect-register.md` as a new row (e.g. `SET-23` / `A11Y-DEF-001`) — I do not write it in this read-only run.*
+- **Excluded per brief:** GR-248, GR-250, PLAT-DEF-013, E18-F01/F02 — none of the below overlaps them.
+
+All three candidates below live under `profiles/product/template/`, carry no floor signal (no auth, tenant, secret, payment, storage, AI, Control Plane) and no migration, and are scoped to a **single package** (`packages/ui`), which is what keeps them **FAST** under `risk-model.yaml`.
+
+---
+
+## Recommendation #1 — `G7R2-F01`  *(RANKED 1)*
+
+**Title:** Honour the surfaced `accessibility.highContrast` setting
+
+| Field | Value |
+|---|---|
+| **Business value** | Ships a WCAG-relevant accessibility control that today is a dead switch. A high-contrast toggle a user flips and sees nothing happen is both an accessibility failure and a trust failure. |
+| **Technical value** | Closes a live PLAT-DEF-001-class defect (surfaced control, no consumer) and establishes the client seam through which the two sibling settings (`reducedMotion`, `fontScale`) are later honoured. |
+| **Dependencies** | None. The setting, its translations, and its resolution pipeline already exist. Does not depend on any open SET-nn item. |
+| **Readiness** | **Ready.** One caveat for impact-analysis to confirm: the DOM attribute must be set from the existing client settings consumer **inside `packages/ui`** (e.g. within `AuthenticatedProductShell`/`SettingsProvider`), not from `apps/web`'s root layout. Kept in one package ⇒ FAST; if it must touch `apps/web`, it tips to STANDARD. |
+| **Risk** | Low, reversible. Blast radius: token override block in `packages/ui/src/styles/tokens.css` + one client effect. No data, no contract. |
+| **Parallel safety across DEV-1/2/3** | **NO.** Single cohesive FAST change — one worktree. It also shares files with `G7R2-F03`, so those two must not run concurrently. |
+| **Required capabilities** | `analyse_impact`, `design_solution` (a11y/tokens), `implement`, `verify_automated`, `verify_browser`, `verify_human` (accessibility-qa / WCAG contrast), `review_independent`, `record_evidence`, `document`, `accept` |
+| **Browser-verifiable?** | **Yes — strongly.** Toggle the setting → contrast visibly changes across the shell; revert restores it. |
+| **Rationale** | Of the three, this gives the crispest end-to-end proof: a visually unmistakable browser demo, a clean unit assertion, a genuine accessibility-QA gate, and a real (currently unlogged) defect — all inside one package, comfortably FAST. |
+
+### Acceptance intent (#1)
+1. With `accessibility.highContrast = true` in the effective settings, the product shell root carries a stable high-contrast marker (e.g. `data-contrast="high"`) and high-contrast token overrides take effect across dashboard surfaces.
+2. With it `false` (default), no marker is present and appearance is unchanged from today.
+3. The value resolves through the existing member → org → global → default chain (no new resolution logic).
+4. Change is keyboard- and screen-reader-neutral; overrides meet WCAG 2.2 AA contrast where they alter foreground/background pairs.
+5. Unit test asserts the marker/override toggles with the value; e2e test flips the setting and asserts the DOM marker at desktop and mobile width with no console errors; accessibility-QA confirms contrast ratios.
+
+### Ready-to-run implementation prompt (#1)
+
+> **Feature:** `G7R2-F01` — Honour `accessibility.highContrast`.
+> **Profile:** product. Read `.koras/project.yaml`, `.claude/CLAUDE.md`, and `koras-profile-product` first. Load `koras-ui-design-system`, `koras-accessibility`, `koras-testing`.
+> **Scope (hard):** Work only under `profiles/product/template/packages/ui/`. Do **not** touch `apps/`, `services/`, any migration, any auth/tenant/secret/billing/storage/AI/Control-Plane code. This must remain a single-package FAST change.
+> **Do:**
+> 1. Locate the existing client settings consumer in `packages/ui/src/settings/` (`SettingsProvider`/`useSetting`) and the shell (`AuthenticatedProductShell`). Confirm where effective settings already reach the client.
+> 2. When `accessibility.highContrast` resolves true, set a stable root marker (`data-contrast="high"`) on the shell root element via that existing consumer — no new fetch, no new context, reuse the resolved value.
+> 3. Add a scoped high-contrast token override block in `packages/ui/src/styles/tokens.css` keyed off `[data-contrast="high"]`, adjusting only semantic foreground/background/border tokens already defined. No arbitrary hardcoded colors; meet WCAG 2.2 AA.
+> 4. Default (false) path must leave current rendering byte-for-byte unchanged.
+> **Tests:** unit test that the marker + override apply/withdraw with the value; e2e (Playwright) that flips the setting and asserts the DOM marker at desktop + mobile width with a clean console; verify reduced-motion/other a11y behaviour is unaffected.
+> **Verification:** `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`; browser check; accessibility-QA contrast pass.
+> **Out of scope (state explicitly in your PR):** `reducedMotion` and `fontScale` wiring (that is `G7R2-F03`), and logging the parent defect in the register.
+> **Do not** self-approve. Return to the orchestrator for the FAST gate chain (impact_analyzed → implementation_complete → automated_tests_pass → e2e_pass → accessibility_pass → independent_code_review → final_acceptance).
+
+---
+
+## Recommendation #2 — `G7R2-F02`  *(RANKED 2)*
+
+**Title:** Guard `files.allowedExtensions` against silent clear-to-empty in the settings form (**SET-16**)
+
+| Field | Value |
+|---|---|
+| **Business value** | Prevents an admin from switching off all uploads by emptying a text box with no warning — a real footgun flagged by independent review. |
+| **Technical value** | Adds an emptiness/duplicate guard to the shared `SettingsForm` STRING_LIST field, benefiting every list-typed setting, not just this one. |
+| **Dependencies** | None. `SettingsForm` and the field already exist in `packages/ui`. |
+| **Readiness** | **Ready.** Frontend-only UX guard; no backend rule change required for the proof (the confirmation/validation lives in the form). |
+| **Risk** | Low, reversible. Single component in `packages/ui/src/settings/`. |
+| **Parallel safety across DEV-1/2/3** | **NO** — one small cohesive FAST change, one worktree. (Independent of F01/F03 by file, so it *could* run in a separate worktree concurrently, but it is not itself shardable across three devs.) |
+| **Required capabilities** | `analyse_impact`, `specify_requirements`, `design_solution` (ux), `implement`, `verify_automated`, `verify_browser`, `verify_human`, `review_independent`, `record_evidence`, `accept` |
+| **Browser-verifiable?** | **Yes.** Clear the "Allowed file types" field, attempt save → inline validation/confirmation blocks the silent empty write; a non-empty list saves normally. |
+| **Rationale** | A logged, review-sourced finding (SET-16, Low) with a clean browser demo and a tidy unit test. Slightly lower rank than F01 only because the payoff is a guard rather than a newly-working feature, and the visual demo is less striking. |
+
+---
+
+## Recommendation #3 — `G7R2-F03`  *(RANKED 3)*
+
+**Title:** Honour the surfaced `accessibility.fontScale` setting
+
+| Field | Value |
+|---|---|
+| **Business value** | Turns a second dead accessibility control into a working one — users who set a larger text size actually get it. |
+| **Technical value** | Reuses the F01 client seam to apply a `--font-scale` custom property multiplier at the shell root. Sibling proof that the seam generalises. |
+| **Dependencies** | **Soft dependency on F01** — shares the same client consumer and token layer. Should follow F01, not run beside it. |
+| **Readiness** | **Ready after F01**, or standalone if F01 is not taken. |
+| **Risk** | Low, reversible. Same single-package footprint as F01. |
+| **Parallel safety across DEV-1/2/3** | **NO** — and specifically **must not** run concurrently with F01 (same files: shell consumer + `tokens.css`). |
+| **Required capabilities** | `analyse_impact`, `design_solution` (a11y/typography), `implement`, `verify_automated`, `verify_browser`, `verify_human`, `review_independent`, `record_evidence`, `document`, `accept` |
+| **Browser-verifiable?** | **Yes.** Change text size setting → text visibly scales within the 0.8–2.0 bounds; layout stays intact. |
+| **Rationale** | Clean, independently-shippable accessibility win with an obvious browser demo. Ranked third because it overlaps F01's files (so it cannot be the parallel-proof partner) and its acceptance bounds (reflow, no clipping) make it marginally fussier than F01. |
+
+*Honourable mention (not recommended for R2):* **SET-18** (skipped-value diagnostics show bare keys) — real and frontend-ish, but its browser verification needs a deliberately-bad stored value to trigger, so its manual-QA path is weaker than the three above. Note as a future FAST candidate.
+
+---
+
+## Recommended #1: `G7R2-F01` — Honour `accessibility.highContrast`
+
+It is the strongest end-to-end proof of the V2.1 framework on a small Product-profile change: a real (currently unlogged) PLAT-DEF-001-class defect, single-package/FAST, with a vivid browser demo, a deterministic unit assertion, and a genuine accessibility-QA human gate — exercising `implement → verify_automated → verify_browser → verify_human → review_independent → final_acceptance` without tripping any floor signal.
+
+---
+
+## WAITING FOR HUMAN APPROVAL
+
+I recommend only; I have started nothing, routed no agents, and created no worktree. Nothing in the subject repository was modified. No recommendation here is an authorization, and the implementation prompt for `G7R2-F01` is **not** permission to run it.
+
+**This package is WAITING FOR HUMAN APPROVAL.** On approval of a specific candidate (and, separately, the human gate `start_planner_recommended_feature`), the approved item passes to `engineering-orchestrator` for FAST execution. Please also confirm whether the newly-surfaced accessibility defect should be logged in `docs/platform/gap-defect-register.md` before F01/F03 proceed.

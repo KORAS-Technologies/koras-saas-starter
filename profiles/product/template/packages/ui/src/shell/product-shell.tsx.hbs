@@ -7,6 +7,7 @@ import type { ResolvedGroup, TenantBranding } from '@{{projectSlug}}/branding'
 import { createTranslator } from '@{{projectSlug}}/i18n'
 import type { Locale } from '@{{projectSlug}}/i18n'
 import { cn } from '../lib/cn'
+import { useSettingValue } from '../settings/provider'
 import { ProductHeader } from './product-header'
 import { ProductNavigation } from './product-navigation'
 
@@ -85,6 +86,11 @@ export function AuthenticatedProductShell({
   const toggleRef = useRef<HTMLButtonElement>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
   const t = createTranslator(locale)
+  // The one setting this shell reads. Resolved on the server once per
+  // request and handed down through SettingsProvider; false outside a
+  // provider and when the API could not be reached, which is the state a
+  // new customer's product is in and the state that emits no marker.
+  const highContrast = useSettingValue('accessibility.highContrast', false)
 
   // Read after mount rather than during render. The server has no local
   // storage, so consulting it while rendering would produce different markup on
@@ -164,7 +170,10 @@ export function AuthenticatedProductShell({
   }, [drawerOpen, closeDrawer])
 
   return (
-    <div className="flex min-h-screen flex-col bg-surface-muted">
+    <div
+      className="flex min-h-screen flex-col bg-surface-muted"
+      data-contrast={highContrast ? 'high' : undefined}
+    >
       <ProductHeader
         tenant={tenant}
         identity={identity}

@@ -1,0 +1,162 @@
+I now have everything needed. Here is the impact report.
+
+---
+
+# Impact Report — G7R2-F01: Honour `accessibility.highContrast`
+
+**Subject:** `koras-saas-starter` factory @ `develop` / `48e762a`. Everything below is the factory source under `profiles/`; the cwd is only the rendered view. All recommended edits land in the factory.
+
+**One-line framing:** This is a *wiring* feature, not a *declaration* feature. The setting is already declared (`standard.py:514`), already surfaced (no `surfaced=False`), already typed (`types.ts:97`), already translated (`en.ts:1025-1026`, de/es), and already drawn on the preferences page. Nothing reads it. The work is to make the resolved value reach the DOM and give it a CSS effect — nowhere else.
+
+---
+
+## 1. CONTAINMENT — decides the mode
+
+**Where the effective value reaches the client today.**
+The value travels as plain data into `SettingsProvider` (`packages/ui/src/settings/provider.tsx:28-50`), which is instantiated once in the dashboard layout — `apps/web/src/app/dashboard/layout.tsx.hbs:216` (`<SettingsProvider settings={settings}>`), fed by `effectiveSettings()` at `layout.tsx.hbs:82-86`. Components consume it through `useSettingValue(key, fallback)` (`provider.tsx:88-102`). The only current consumer is the data table (`packages/ui/src/data-table/data-table.tsx:179-197`). **No component reads `accessibility.highContrast`** (grep confirms: the key appears only in `types.ts:97`).
+
+**Can a root marker be set on an element that already exists inside `packages/ui/`, without touching `apps/` or `_shared/`?**
+
+## YES.
+
+- **Element:** the shell's root `<div className="flex min-h-screen flex-col bg-surface-muted">` at **`packages/ui/src/shell/product-shell.tsx.hbs:166-167`**.
+- **Why it works:** `AuthenticatedProductShell` is a `'use client'` component (`product-shell.tsx.hbs:1`) rendered *inside* `<SettingsProvider>` (layout order: `BrandScope` → `SettingsProvider` → `AuthenticatedProductShell`, `layout.tsx.hbs:208/216/217`). It can therefore call `useSettingValue('accessibility.highContrast', false)` directly — the exact pattern `data-table.tsx:179` already uses — and set `data-contrast={high ? 'high' : undefined}` on that div. No prop threading, so no `apps/` edit.
+- **The CSS effect also stays inside `packages/ui`:** the override rules go in `packages/ui/src/styles/tokens.css`, which reaches every app through the package export `@import "@<slug>/ui/styles.css"` (`apps/web/src/app/globals.css.hbs:10`). Adding rules there requires no `apps/` edit.
+
+**Rejected candidate (state explicitly):** `BrandScope`'s `<div style={brandStyle(brand)}>` (`packages/ui/src/brand/brand-scope.tsx.hbs:47`) looks like the natural root, but it is **outside** the provider (the provider is its child — `layout.tsx.hbs:208`→`216`) and is a server component that never reads settings. Using it would force a prop down from the layout, i.e. an `apps/` edit. The shell root div is inside the provider and is the correct containment point.
+
+**Minimum edit set:** two files, both under `packages/ui/`:
+1. `packages/ui/src/shell/product-shell.tsx.hbs` — read the setting, emit `data-contrast` on line 167's div.
+2. `packages/ui/src/styles/tokens.css` — add the `[data-contrast="high"]` override block.
+
+**Mode consequence:** because the change is fully containable within `packages/ui` and touches no boundary, no floor signal fires (see §5) — so the execution mode is **not FULL**.
+
+---
+
+## 2. REACH
+
+**Production code — expected edits (2 files):**
+| File | Edit |
+|---|---|
+| `packages/ui/src/shell/product-shell.tsx.hbs:167` | Add `useSettingValue('accessibility.highContrast', false)` + `data-contrast` attribute on the root div |
+| `packages/ui/src/styles/tokens.css` (after `:root`, ~line 71) | Add `[data-contrast="high"]` overrides, re-declaring the same `--brand-*` custom-property pairs (see §7) |
+
+**Production code — consumers of what is edited (no edit, but in the blast path):**
+- `apps/web/src/app/globals.css.hbs:10` and `apps/marketing/.../globals.css.hbs` — import `tokens.css`; new rules flow to both apps (marketing has no shell, so no visible effect there — worth noting, not editing).
+- `apps/web/src/app/dashboard/layout.tsx.hbs:216-244` — renders the shell; unchanged, already supplies `settings`.
+- Everything under the shell's `<main>` inherits the re-declared tokens via the Tailwind `@theme inline` indirection (`tokens.css:73-92`) — the same cascade brand/theme already use. No per-component edits.
+
+**Not needed (already done):** `settings_catalogue/standard.py`, `packages/ui/src/settings/types.ts`, `packages/i18n/**`, and the preferences page. Confirm they are *not* touched — touching them would be scope creep.
+
+**Tests — expected edits (1–2 files):**
+| File | Edit |
+|---|---|
+| `generators/create-koras-app/tests/product-shell.test.ts` | New assertion: shell root reads `accessibility.highContrast` and emits `data-contrast`; tokens.css carries the override (this file already owns the color-scheme/theme mechanism narrative) |
+| `generators/create-koras-app/tests/product-settings.test.ts` (optional) | Assert the setting is now *honoured* (closes the gap in the "hides exactly the settings nothing honours" logic — see §6) |
+
+These are `packages/ui` template-text assertions, consistent with how both suites already test that package (which has no runner of its own — `provider.tsx` reasoning at `value.ts:5-12`).
+
+---
+
+## 3. CONDITIONS (`conditions.yaml`)
+
+| Condition | Verdict | Reason |
+|---|---|---|
+| `user_interface` | **met** | Adds a visible presentation mode for signed-in pages (`conditions.yaml:43`). |
+| `documentation_impact` | **met (minor)** | A "what an operator/user must know" note may be warranted; the setting's own strings already exist. |
+| `automated_verification_executed` | **met** | New Node test will run. |
+| `security_boundary` | **NOT met** | Explicitly: nothing touches authn, authz, tenant isolation, secrets, uploads, webhooks, redirects or server-side fetch (`conditions.yaml:55-64`). A contrast marker decides *appearance*, not who-may-do-what. The value is read-only via the already-existing effective-settings load; no new permission, query or scoping. The note at `:60-63` is exactly this case — presentation of a setting, not the boundary. |
+| `database_or_data` | **NOT met** | Explicitly: no table, column, policy, index or stored data added or altered (`conditions.yaml:52`). The setting row, its RLS and its snapshot already exist (`product-settings.test.ts:71-248`); this feature only *reads* the resolved value client-side. Zero SQL. |
+| `performance_sensitive` | **NOT met** | Explicitly: one boolean read from an already-loaded context (no new fetch — `layout.tsx.hbs:82-86` already loads settings) plus static CSS. No hot path, no high volume, no unbounded query/payload/bundle (`conditions.yaml:81`). |
+| `architecture_impact` | **NOT met** | Explicitly: it introduces **no** new pattern and crosses **no** boundary — it reuses the existing `useSettingValue` context pattern (`data-table.tsx:179`) and the existing token-cascade mechanism (`tokens.css:73`, `brand-scope.tsx.hbs`). Everything stays inside `packages/ui` (`conditions.yaml:84`). |
+| `sensitive_or_regulated_data` | NOT met | No personal/regulated data collected, stored or transmitted. |
+| `api_or_integration`, `ai`, `scheduled_or_background`, `business_workflow`, `release_or_migration`, `cross_feature_or_release`, `needs_test_state`, `operational_configuration`, `domain_feature` | NOT met | None of these surfaces is touched. |
+
+---
+
+## 4. CHANGE CLASSES (`gate-invalidation.yaml`) — and the glob-anchoring finding
+
+Mapping the expected edits to the classes at `gate-invalidation.yaml:29-101`:
+
+| Edit | Intended class | Class glob (as written) | Matches the FACTORY path? |
+|---|---|---|---|
+| `profiles/product/template/packages/ui/src/shell/product-shell.tsx.hbs` | `frontend_code` (`:97-99`, `packages/**`) | `packages/**` | **NO** |
+| `profiles/product/template/packages/ui/src/styles/tokens.css` | `frontend_code` | `packages/**` (also no `*.css` glob exists anywhere) | **NO** |
+| `generators/create-koras-app/tests/product-shell.test.ts` | `automated_test_node` (`:59-64`, `**/*.test.ts`) | `**/*.test.ts` | **YES** |
+
+**Finding (do not paper over):** the change-class path globs are written **relative to a generated product root** (`packages/**`, `apps/**`, `docs/**` — unanchored). In the factory the same production code lives at `profiles/product/template/packages/**`, which `packages/**` does **not** match (it is not `**/packages/**`). Consequences:
+
+- The **production-code edits** (`.tsx.hbs`, `.css`) classify as **no change class** against the factory tree as written. `frontend_code` — the class that would invalidate `accessibility_pass`, `e2e_pass`, `screenshot_evidence_complete`, `independent_code_review` (`gate-invalidation.yaml:255-269`) — does **not** fire.
+- The **test edit** *does* classify (`automated_test_node`, because it is anchored with `**/`). 
+- `tokens.css` is a `.css` file: **no change class in the file matches any `.css` path** at all, factory or product. Even in a generated product it would only be caught by `frontend_code`'s `packages/**`; there is no CSS-specific class.
+
+Net: as written, an impact classifier run against the factory would see this feature as **"a Node test changed"** and nothing else — inverting the real picture (production UI changed, tests followed). This is an asymmetry the gate-invalidation globs cannot express for factory-resident code, and it is a defect in the config's applicability to this repository, not something to route around. Recommend the factory either anchor these globs (`**/packages/**`, add a `**/*.css` → `frontend_code` entry) or document that gate-invalidation is evaluated post-generation only.
+
+---
+
+## 5. RISK SIGNALS (`risk-model.yaml`)
+
+**Floor signals (`:34-84`) — any one ⇒ FULL:**
+| Signal | Fired? | Boundary it names / what this change does |
+|---|---|---|
+| `authentication_or_session` | not fired | No session issue/verify/revoke. Copy-behind-sign-in `not_this` (`:38`) is exactly this. |
+| `authorization_or_permission` | not fired | No permission defined/granted/evaluated. Effective-settings read needs none (`product-settings.test.ts:290-300`). |
+| `tenant_isolation` | not fired | Reads one already-resolved boolean from context; touches no query, RLS, cache key or join (`:47`). |
+| `secret_or_credential_handling` | not fired | No secret read/passed; a boolean is `not_this` (`:53`). |
+| `destructive_or_irreversible_data_change` | not fired | No migration, no data write (`:57`). |
+| `storage_data_boundary` | not fired | No object keys/retention/scanning; this is presentation (`:64`). |
+| `payment_or_subscription` | not fired | Untouched. |
+| `ai_authority_or_data_reach` | not fired | Untouched. |
+| `sensitive_or_regulated_data_path` | not fired | No new data path. |
+| `platform_contract` | not fired | No Control-Plane/public-API/webhook shape touched (`:82`). |
+
+**Elevating signals (`:87-126`) — any one ⇒ STANDARD:**
+| Signal | Fired? | Reason |
+|---|---|---|
+| `schema_change` | not fired | No table/column/index/policy change (`:89`). |
+| `background_work` | not fired | No async job. |
+| `external_integration` | not fired | No outside call. |
+| `multi_step_user_workflow` | **not fired** | Boundary is "a sequence a person completes" (`:104`); `not_this` is "one screen's styling, copy or layout" (`:107`) — a contrast marker + CSS is precisely `not_this`. |
+| `business_rule_change` | not fired | No outcome/entitlement rule (`:110`). |
+| `deployment_or_infrastructure` | not fired | No pipeline/infra. |
+| `performance_exposure` | not fired | Runs once per render off an already-loaded context; `not_this` (`:121`). |
+| `cross_feature_convergence` | not fired | Single feature, no shared contract, no converging branch. |
+
+**Combinations (`:131-137`):** none — requires `schema_change` + `cross_feature_convergence`, neither present.
+
+**Deciding selection rule (`:140-150`):** with no floor signal, no declared combination, and no elevating signal, evaluation falls to `no_signal_and_every_fast_requirement_holds → FAST` (`:147`), else the `otherwise → STANDARD` fallback (`:149`). The rule that rules out the expensive path is **`any_floor_signal` not matching** — the containment result in §1 (nothing leaves `packages/ui`, no boundary) is what guarantees FULL is not selected. Final mode is **FAST** if the FAST prerequisites in `execution-modes.yaml` hold, otherwise **STANDARD**; it is **not FULL**.
+
+**Rationale note per `:154-164`:** the only signal this "looked like" and is not is `multi_step_user_workflow` (it is `user_interface`) — rejected because it changes styling, not a sequence.
+
+---
+
+## 6. EXISTING TEST SURFACE (`generators/create-koras-app/tests/`)
+
+Tests asserting things about `packages/ui` settings, the shell, or `tokens.css`:
+
+- **`product-settings.test.ts`** — the settings framework end-to-end: provider load order in the layout (`:484-500`), `types.ts` key parity vs `standard.py` (`:521-539`), i18n label/description parity (28 shown / 4 hidden — `:861-897`, `:936-1004`), and `useSettingValue`/`chooseValue` behaviour executed directly (`:434-482`). **Note the gap:** its "hides exactly the settings nothing honours" test (`:936`) asserts the four *hidden* keys are unread — it does **not** assert that *surfaced* keys are honoured, so `accessibility.highContrast` being surfaced-yet-dead passes today unnoticed.
+- **`product-shell.test.ts`** — the shell's structure and, directly relevant, **the theme/`color-scheme` mechanism** (`:402-481`): it already reasons about `document.documentElement.style.colorScheme` and `THEME_SCRIPT`. It also walks every `packages/ui/src/shell` component (`:231-306`).
+- **`product-frontend.test.ts`** — general `packages/ui` invariants (no hardcoded English, importable exports) — a guardrail the new marker must not trip.
+- **`product-data-table.test.ts`** / the data-table blocks in `product-settings.test.ts:615-707` — the existing precedent for "a `packages/ui` component consuming a setting from context."
+
+**Which a new assertion naturally joins:** **`product-shell.test.ts`** for the DOM marker on the shell root + the `tokens.css` override (it already owns the appearance-mechanism story and walks the shell). Optionally add a "this setting is honoured" assertion to **`product-settings.test.ts`** to close the surfaced-but-dead gap noted above.
+
+---
+
+## 7. STYLING MECHANISM (`packages/ui/src/styles/tokens.css`)
+
+Light/dark is handled by **one mechanism, not a class swap**:
+
+1. `:root { color-scheme: light dark; }` (`tokens.css:34`) declares the document supports both appearances.
+2. Every surface token is a **`light-dark(…, …)` pair** (`tokens.css:49-54`), so the browser resolves the appropriate half from `color-scheme`.
+3. The Tailwind theme is declared **`@theme inline`** (`tokens.css:73-92`), so utilities compile to `var(--brand-*)` references rather than baked values — which is what lets a runtime override re-skin everything.
+4. The switch is **`color-scheme` on `<html>`, and nothing else**: `ThemeToggle`/`THEME_SCRIPT` set `document.documentElement.style.colorScheme` (`theme-toggle.tsx.hbs:48,54`). No class, no palette swap.
+5. Per-tenant brand overrides the same custom properties on a nested element (`brandStyle()` → `BrandScope` div, `brand-style.ts.hbs:20-53`, `brand-scope.tsx.hbs:47`); because each override is itself a `light-dark()` pair, the subtree keeps both appearances.
+
+**Therefore high-contrast must follow the same token-override discipline, not invent a second one:** under a `[data-contrast="high"]` scope, **re-declare the same `--brand-*` custom properties** (foreground, background, surface, border, muted-foreground — and optionally a stronger `--brand-primary`/focus outline) as `light-dark()` pairs. Because Tailwind resolves through `var(--brand-*)` (`tokens.css:73-92`), this re-skins the whole subtree — including within `BrandScope` and across both appearances — with zero component changes, exactly as brand and theme already do. Do **not** add a parallel class-based palette or hardcoded colours (a component writing `bg-blue-600` "cannot be re-branded" — `tokens.css:16-18`); that would be the "second mechanism" the file's design forbids.
+
+---
+
+## 8. BLAST RADIUS / REVERSIBILITY
+
+The blast radius is confined to the signed-in area and is small. The `data-contrast` marker sits on the shell's own root `<div>` (`product-shell.tsx.hbs:167`), so the CSS override in `tokens.css` is scoped to authenticated pages under the shell; public/marketing pages, which never render the shell, are visually unaffected even though they import the same stylesheet. There is no server, database, contract, migration, permission or tenancy surface in the change — one boolean read from an already-loaded context plus static CSS re-declaring existing tokens — so nothing outside `packages/ui` can regress and no data can be corrupted. Reversibility is trivial and total: the setting defaults to `False` (`standard.py:517`), so the feature is dark until a user opts in; disabling it is either clearing the setting (no marker emitted) or reverting the two `packages/ui` files, with no data to unwind and no migration to reverse. The only realistic failure mode is a *visual* one — a token pair with poor contrast, or a component that hardcoded a colour and so ignores the override — which is caught by the accessibility/screenshot gates rather than by anything structural, and is itself reversible by editing the single override block.

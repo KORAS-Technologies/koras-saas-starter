@@ -1,0 +1,6 @@
+accessibility-qa: YES
+ai-specialist: YES
+ai-evaluation: YES
+unit-test: YES
+code-reviewer: YES
+COUNT_KORAS=40

@@ -546,3 +546,95 @@ describe('the CSP guard reads production servers, and all of them', () => {
     )
   })
 })
+
+// ── G7R2-F01: the shell honours accessibility.highContrast ──────────────────
+
+describe('the shell honours the high-contrast setting', () => {
+  /**
+   * `accessibility.highContrast` was surfaced, translated and drawn on
+   * `/dashboard/preferences` and read by nothing -- the PLAT-DEF-001 class the
+   * `surfaced=False` rule exists to prevent. The shell now reads it and marks
+   * its root, and `tokens.css` re-skins the authenticated subtree from that
+   * marker. These are protective guards: each is shown failing against a
+   * deliberate mutation (M1-M6 in the test plan) before its passing run counts.
+   */
+  const shell = read(SHELL, 'product-shell.tsx.hbs')
+  const tokens = read(UI, 'styles', 'tokens.css')
+
+  // The override block, and the :root it must not exceed. There are no nested
+  // braces in either, so the first `}` closes each.
+  const hcBlock = /\[data-contrast="high"\]\s*\{([\s\S]*?)\}/.exec(tokens)?.[1] ?? ''
+  const rootBlock = /:root\s*\{([^}]*)\}/.exec(tokens)?.[1] ?? ''
+  const properties = (block: string): string[] =>
+    [...block.matchAll(/(--[\w-]+)\s*:/g)].map((match) => match[1] as string)
+
+  it('reads accessibility.highContrast through useSettingValue and drives the marker with it', () => {
+    // The read, with a `false` fallback -- the value the hook returns outside a
+    // provider and when the settings API could not be reached, which is exactly
+    // when no marker must appear (AC2).
+    expect(shell).toContain("useSettingValue('accessibility.highContrast', false)")
+    // And the value reaches the attribute rather than being read and dropped.
+    // Deleting the marker (M1) leaves this failing as well as the next test,
+    // which is why the plan binds M1 to both.
+    expect(shell).toContain('data-contrast={highContrast ?')
+  })
+
+  it('emits data-contrast conditionally, undefined -- not "normal", not "" -- when off', () => {
+    expect(shell).toContain("data-contrast={highContrast ? 'high' : undefined}")
+    // The false case is the whole point of choosing an attribute over a value:
+    // React omits an `undefined` attribute, so the DOM is unchanged from today
+    // when the setting is off. A `'normal'` or `''` would leave a hook for a
+    // second, undocumented palette state.
+    expect(shell).not.toContain("data-contrast={highContrast ? 'high' : 'normal'}")
+    expect(shell).not.toContain("data-contrast={highContrast ? 'high' : ''}")
+    expect(shell).not.toContain('data-contrast=""')
+
+    // On exactly one element, and that element is a div -- read from the syntax
+    // tree, because "which element carries the attribute" is the question a text
+    // search cannot answer. The template parses as TSX; its Handlebars is
+    // confined to string bodies.
+    const carriers = jsxElements(readFileSync(join(SHELL, 'product-shell.tsx.hbs'), 'utf8')).filter(
+      (element) => element.attributes.includes('data-contrast'),
+    )
+    expect(carriers.map((element) => element.tag)).toEqual(['div'])
+  })
+
+  it('adds a [data-contrast="high"] rule to tokens.css', () => {
+    expect(tokens).toContain('[data-contrast="high"]')
+    expect(properties(hcBlock).length, 'the override block declares nothing').toBeGreaterThan(0)
+  })
+
+  it('redeclares only custom properties that already exist in :root', () => {
+    const inRoot = new Set(properties(rootBlock))
+    expect(inRoot.size).toBeGreaterThan(5)
+    const overridden = properties(hcBlock)
+    expect(overridden.length, 'the override block declares nothing').toBeGreaterThan(0)
+    for (const property of overridden) {
+      // A property invented inside the override (M4) is a value nothing else in
+      // the file reads -- a dead token, and the mistake this catches.
+      expect(inRoot.has(property), `${property} is not declared in :root`).toBe(true)
+    }
+  })
+
+  it('writes every override as a light-dark() pair, so the theme toggle still works', () => {
+    const values = [...hcBlock.matchAll(/--[\w-]+\s*:\s*([^;]+);/g)].map((match) =>
+      (match[1] as string).trim(),
+    )
+    expect(values.length).toBeGreaterThan(0)
+    for (const value of values) {
+      // A flat colour (M5) would pin the appearance and break the theme toggle
+      // for exactly the users who most need it.
+      expect(value.startsWith('light-dark('), `${value} is not a light-dark() pair`).toBe(true)
+    }
+  })
+
+  it('uses no !important and leaves the brand identity tokens alone', () => {
+    // High contrast wins over a tenant brand by the cascade, not by importance
+    // (M6): the marker is on a descendant of the brand's inline style, and an
+    // own declaration beats an inherited value whatever its importance.
+    expect(hcBlock).not.toContain('!important')
+    for (const identity of ['--brand-primary', '--brand-secondary', '--brand-accent']) {
+      expect(hcBlock, `high contrast must not touch ${identity}`).not.toContain(identity)
+    }
+  })
+})
