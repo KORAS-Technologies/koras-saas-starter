@@ -94,16 +94,53 @@ amendments:
 # a feature that reaches it, or the escalation for one that stops. It is not
 # the historical source of truth and nothing reads it as one: a disagreement
 # between the summary and the log is resolved in favour of the log, every time.
+#
+# THE SUMMARY IS A CLOSURE ARTIFACT, and this was not said until 2026-09-21.
+#
+# FW-GAP-010: the rule above and the `final_acceptance` gate could not both be
+# satisfied. Acceptance is a gate, so running it produces events. Generate the
+# summary before acceptance and it is stale the moment acceptance runs, and it
+# was generated with an applicable event outstanding, which this file forbids.
+# Generate it after, and the acceptance agent meets an unfinished document and
+# Definition of Done item 7 is unmet. No ordering satisfied both. G7 R2 held a
+# verdict on exactly this: the summary reported zero human escalations while
+# the log recorded one, and it was wrong because acceptance had happened since
+# it was written.
+#
+# It is R1's own remedy producing R2's deadlock. FW-GAP-003 was raised because
+# a final count was written BEFORE the event it counted; the fix was to derive
+# the summary after the last event, and nobody noticed acceptance is an event.
+#
+# Ruled by the repository owner and written down here rather than left in a
+# findings document. The ordering is:
+#
+#   gates ... -> final_acceptance    judges the log and the primary evidence
+#             -> human gates, escalations, amendments   append events
+#             -> terminal state reached                 CLOSED, or the escalation
+#             -> the summary is finalised               the last act of the run
+#
+# This moves finalisation strictly LATER, never earlier, so it cannot reopen
+# FW-GAP-003. A draft generated at any earlier point is not the artifact this
+# block binds -- `regenerating_is_safe` is already true, and a draft is a
+# reading, not a record.
 derived_summary:
   derived_from: [events, amendments]
   generated_after: the final applicable lifecycle or gate event for the run
+  finalised_at: the terminal state -- CLOSED, or the escalation for a run that stops there
+  finalised_after_acceptance: true
+  is_closure_artifact: true
   is_source_of_truth: false
   source_of_truth: the event log
   regenerating_is_safe: true
+  # What acceptance judges, said here as well as in quality-gates.yaml,
+  # because the deadlock was two files each assuming the other's answer.
+  not_an_input_to: final_acceptance
   never:
-    - Generating it while an applicable event is still outstanding.
+    - Generating the FINAL summary while an applicable event is still outstanding.
     - Recording a value in it that no event supports.
     - Treating it as the record. It is a reading of the record.
+    - Holding acceptance because the summary is not finished. It is not finished until after acceptance, by design.
+    - Closing a run whose summary was never finalised, or whose summary disagrees with the log.
 
 # UNKNOWN IS A VALUE. Zero is a measurement and means the thing was watched
 # for and did not happen; UNKNOWN means nobody watched. Reporting the second
@@ -160,6 +197,8 @@ rules:
   - A count that was not tracked is reported as unknown, not as zero. Zero is a measurement.
   - Every count in the report is derived from the event log. A number with no event behind it is UNKNOWN.
   - An event is appended when it happens. The final summary is generated after the last applicable event, never before.
+  - Acceptance judges the event log and the primary evidence. It never judges the summary, which does not exist in final form until after acceptance has run.
+  - The summary is finalised once the run reaches its terminal state, and closure requires it to exist and to agree with the log.
   - A correction is an amendment that names what it corrects and why. Nothing recorded is ever rewritten in place.
 
 # The comparison worth making, once there are several runs to compare. Not

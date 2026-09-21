@@ -98,6 +98,11 @@ states:
       - every applicable state reached
       - no gate left FAIL, PENDING_HUMAN or PENDING_EXTERNAL
       - every BLOCKED carries a documented reason a person accepted
+      - the derived telemetry summary is finalised, and agrees with the event log
+    # The last one arrived 2026-09-21 with FW-GAP-010. Once acceptance stopped
+    # judging the summary, nothing judged it at all -- and a closure artifact
+    # nobody checks is the same defect in a quieter place. It is checked here
+    # instead, which is after acceptance and therefore not circular.
     # A feature is not closed by running out of things anybody felt like
     # doing. NOT_APPLICABLE and NOT_APPLICABLE_BY_POLICY are both fine here;
     # PENDING is not.

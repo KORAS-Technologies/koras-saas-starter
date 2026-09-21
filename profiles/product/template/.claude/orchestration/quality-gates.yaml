@@ -205,6 +205,20 @@ feature_gates:
     applies: always
     independent: true
     stage: pre_acceptance
+    # WHAT IT JUDGES, added 2026-09-21 for FW-GAP-010. Acceptance reads the
+    # append-only event log and the primary evidence each gate points at. It
+    # does NOT read the derived telemetry summary, which telemetry.yaml
+    # declares a closure artifact finalised after this gate has run.
+    #
+    # Saying so is the whole fix. Without it, acceptance treated the summary
+    # as documentation the change had made wrong, and the summary could not
+    # be right until acceptance was over -- a deadlock that held a verdict in
+    # G7 R2 while every other Definition-of-Done item was met.
+    judges:
+      - the append-only event log
+      - the primary evidence named by each applicable gate
+    does_not_judge:
+      - the derived telemetry summary, which is generated after this gate
     # Everything. Acceptance is the one gate that cannot be reused across any
     # change, because its question is "is all of this true right now".
     inputs:

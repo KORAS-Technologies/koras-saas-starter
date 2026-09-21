@@ -18,6 +18,71 @@ schema_version: 1
 # it would be wrong the first time somebody added a gate and updated only one
 # of the two.
 
+# WHICH PATHS THESE GLOBS ARE WRITTEN AGAINST.
+#
+# Added 2026-09-21 for FW-GAP-006. The globs below are rooted -- `packages/**`
+# means packages at the root, not packages anywhere -- and until this block
+# existed nothing said what that root was. It is the generated product's.
+#
+# That was invisible for as long as the framework only ran inside a generated
+# product. The moment the factory used it on its own product code, every path
+# came out unclassified: the factory holds the same files under
+# `profiles/product/template/`, and a rooted glob does not reach them. An
+# unclassified diff produces no change classes, and no change classes means
+# every gate reads as reusable -- so the classifier answered "nothing
+# relevant changed" about a change to production code. G7 R2 hit exactly
+# this, and made its gate decisions by hand rather than routing around it.
+#
+# The remedy is NOT to loosen the globs. `**/packages/**` would also claim
+# `services/api/packages/`, `**/e2e/**` would claim a package's own `e2e/`
+# directory, and `**/docs/**` would pull an application's documentation into
+# the `documentation` class. Loosening deletes the rooting that gives each
+# glob its meaning, and leaves the path domain exactly as undeclared as
+# before.
+#
+# Instead the domain is declared once, and a path from anywhere else is
+# mapped into it before it is matched. One vocabulary, one set of globs, one
+# normalisation step in front of them.
+path_domain:
+  domain: the generated product repository root
+  matched_against: the normalised path, never the raw one
+
+  # Both rules say the same thing -- what a factory file BECOMES in a
+  # product. A factory path is the product path it renders to, so it
+  # classifies as the product path it renders to.
+  normalise:
+    # `profiles/product/template/packages/ui/x.tsx` -> `packages/ui/x.tsx`
+    strip_path_prefix:
+      - profiles/*/template/
+    # `apps/web/globals.css.hbs` -> `apps/web/globals.css`. This rule earns
+    # its place independently of the factory question: 179 of the product
+    # template's application files carry the suffix, and an extension-matched
+    # class cannot see through it. `README.md.hbs` classified as nothing.
+    strip_filename_suffix:
+      - .hbs
+    also: a backslash separator is read as a forward slash
+
+  # FAIL CLOSED. A path that matches nothing is not a path that changed
+  # nothing, and the difference is the whole of FW-GAP-006: the empty set of
+  # classes invalidates no gate, so an unclassified diff licenses reusing
+  # every result in the feature. That was the default, and it is the most
+  # dangerous one available.
+  unclassified:
+    means: The path is outside the declared domain, or the vocabulary has a hole in it.
+    treat_as: stop
+    who_decides: a human
+    never:
+      - Reading an unclassified path as "nothing relevant changed".
+      - Reusing a gate because the diff produced no classes.
+      - Adding a glob to silence one file without first asking which domain it is in.
+  # Known and deliberate holes, so that "unclassified" reads as "look at
+  # this" rather than "the usual ones again":
+  #   - the factory's own source, generators/ and tooling/, which is outside
+  #     the domain entirely (FW-GAP-011)
+  #   - a Node test under the factory's root tests/ tree, which `tests/**`
+  #     reaches before the Node patterns and classes as Python (FW-GAP-012)
+  # Both are in the gap register, and this block fixes neither.
+
 # What kind of thing changed. Distinct from `conditions.yaml`, which
 # describes the FEATURE; a change class describes one EDIT. A feature that
 # meets `user_interface` can perfectly well produce an edit whose only class
@@ -87,17 +152,31 @@ change_classes:
       - uv.lock
     means: What the code depends on.
 
+  # Above `backend_code`, deliberately, and only because of the two
+  # stylesheet globs. Everything else here is decided by directory, and the
+  # two classes share no directory -- so the order between them changed
+  # nothing except this: a stylesheet is classified by what it is, not by
+  # which service happens to serve it.
+  #
+  # `services/api/static/mail.css` used to read as `backend_code`. That
+  # invalidated the API gates and left `accessibility_pass` and
+  # `screenshot_evidence_complete` standing, which is precisely backwards
+  # for a file whose only job is how something looks. Absence would have
+  # been safer than that, and absence is what the gap register recorded;
+  # measuring it on 2026-09-21 found the misclassification instead.
+  frontend_code:
+    paths:
+      - apps/**
+      - packages/**
+      - '**/*.css'
+      - '**/*.scss'
+    means: Client-side production code, including anything that decides how a surface looks.
+
   backend_code:
     paths:
       - services/**
       - python-packages/**
     means: Server-side production code.
-
-  frontend_code:
-    paths:
-      - apps/**
-      - packages/**
-    means: Client-side production code.
 
 # What is written down when a gate passes, so that reuse is a claim about
 # facts rather than about memory.
