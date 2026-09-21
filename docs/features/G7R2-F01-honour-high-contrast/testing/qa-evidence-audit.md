@@ -56,9 +56,20 @@ instead, per `workflow.yaml` `rework.require_independent_reverification`, is tha
 agent which found the defects confirms the fixes — a bounded confirmation against six
 named findings, not a fresh pass over the whole directory.
 
-**No executable change was made.** Every correction here is documentation. Under
-`quality_freeze` that invalidates the documentation gates and final acceptance and
-nothing else, which is the whole point of that freeze existing.
+**One executable file changed, and saying otherwise was a defect.** This section first
+read "no executable change was made". It was false: `dc4a946` added two `MOVED` entries
+to `tests/docs/file-references.test.ts`, so that the renamed evidence file could be
+corrected without rewriting the append-only telemetry events that name it. Everything
+else in that commit is documentation.
+
+The gate accounting was nonetheless right, which is why the error survived until
+`final-acceptance` withheld READY for it. `workflow.yaml` says at the code freeze that
+*a change to tests, fixtures or documentation* consumes no budget and invalidates
+nothing by itself, so the test edit is free and the invalidated set really is
+`documentation_audit` and `final_acceptance` and nothing else. What was wrong was the
+description, sitting in the document whose job is to certify that the record says no
+more than happened. Corrected here and recorded as an amendment rather than quietly
+rewritten.
 
 ## What this audit does not establish
 

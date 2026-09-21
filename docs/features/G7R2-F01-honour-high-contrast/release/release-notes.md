@@ -76,7 +76,7 @@ Two further limitations, stated plainly:
 
 | | |
 |---|---|
-| Automated | 2,191 Node assertions in the generator suites, 400 documentation checks, 120 CLI, 21 e2e-config, 7 Python. Exit 0 on the frozen commit. |
+| Automated | 2,191 Node assertions in the generator suites, 400 documentation checks, 120 CLI, 21 e2e-config, 7 Python. Exit 0 on the frozen commit `e677b54`. Re-established after the post-audit corrections at `dc4a946`, where the documentation suite is 409 checks because this feature's own evidence is in it. |
 | New assertions | Seven. **Six** were shown to **fail** against a deliberate counter-example before their passing runs were believed. The seventh — the guard recording that the two sibling settings are still dead — was **not** mutation-tested, and the independent review named its blind spot: it inspects only the shell file, so a sibling honoured in `tokens.css` would leave it green. Recorded rather than claimed. |
 | Browser | 147 passed against a real Postgres, a real identity provider and this product's own API — including a round-trip case that turns the setting on through the control a person uses and asserts the computed background actually changed. |
 | Manual | 5 cases, 5 executed, 5 PASS, 0 FAIL, 0 BLOCKED, 9 genuine screenshots. |

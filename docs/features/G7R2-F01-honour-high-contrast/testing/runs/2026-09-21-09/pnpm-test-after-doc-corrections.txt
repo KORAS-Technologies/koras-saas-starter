@@ -1,0 +1,12 @@
+koras-e2e:test:  Test Files  2 passed (2)
+koras-e2e:test:       Tests  21 passed | 2 skipped (23)
+koras-cli:test:  Test Files  7 passed (7)
+koras-cli:test:       Tests  120 passed (120)
+create-koras-app:test:  Test Files  61 passed (61)
+create-koras-app:test:       Tests  2191 passed (2191)
+koras-docs-tests:test:  Test Files  5 passed (5)
+koras-docs-tests:test:       Tests  409 passed (409)
+ Tasks:    5 successful, 5 total
+collected 7 items
+============================== 7 passed in 0.32s ==============================
+EXIT=0
