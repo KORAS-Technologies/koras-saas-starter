@@ -1,6 +1,6 @@
 # G7R2-F01 — telemetry summary
 
-Derived from `../telemetry-events.md` (50 events) and `../telemetry-amendments.md`
+Derived from `../telemetry-events.md` (57 events) and `../telemetry-amendments.md`
 (5 amendments) on 2026-09-21, at closure.
 
 **This is a reading of the record, not the record.** Where this file and the event log
@@ -48,13 +48,14 @@ excluded agents would have found and found none.
 
 | | |
 |---|---|
-| gates_executed | **17** |
+| gates_executed | **18** |
 | gates_closed_owner_optional | **2** — `requirements_ready`, `architecture_ready`, seven fields each |
 | gates_reused | **0** — no prior run existed to reuse from |
 | gates_invalidated | **2** — `documentation_audit` and `final_acceptance`, by the post-audit documentation corrections |
 | gates_not_applicable | **7**, each with the unmet condition named |
 | gates_not_applicable_by_policy | **0** |
-| gates_pending | **3** post-merge: `ci_verified`, and `deployment_preflight`/`environment_verified` which are NOT_APPLICABLE — the factory deploys nothing of its own |
+| gates_executed_post_merge | **1** — `ci_verified`, PASS on `63897ee` |
+| gates_not_applicable_post_merge | **2** — `deployment_preflight` and `environment_verified`; the factory deploys nothing of its own |
 | gates_closed_by_human_ruling | **1** — `final_acceptance`. Recorded distinctly, because a gate closed by a person is not the same evidence as one an agent returned READY on |
 
 ## Loops
@@ -79,10 +80,11 @@ changed. Neither escalation was about the code.
 
 | | |
 |---|---|
-| state_reached | `PLANNED` → `IMPLEMENTING` → `TESTING` → **`LOCAL_ACCEPTANCE_READY`** |
+| state_reached | `PLANNED` → `IMPLEMENTING` → `TESTING` → `LOCAL_ACCEPTANCE_READY` → `MERGE_READY` → `MERGED` → `PUSHED` → `CI_VERIFIED` → **`CLOSED`** |
 | freeze points | `code_freeze` at `e677b54`; `quality_freeze` at `e677b54` |
 | states_not_applicable | `DEV_DEPLOYED`, `DEV_VERIFIED` — the factory has no environment of its own |
-| states_outstanding | `MERGE_READY`, `MERGED`, `CI_VERIFIED` |
+| states_outstanding | none |
+| ci_runs | CI `35641796757`, Security `35641796731`, Generator Integration `35641796689` — all success on `63897ee` |
 | deployment_components_by_state | **UNKNOWN** — no deployment applies and no event records a component state |
 
 ## Effort
@@ -115,3 +117,12 @@ was written about them.
 Whether the mode was right. That comparison needs several runs, and `telemetry.yaml` says
 so: automating it before anybody has read two reports by hand is how the wrong thing gets
 measured precisely. This is the second report; the first is G7 R1's, in `docoris`.
+
+## A note on this file's own last event
+
+This document is finalised at closure, per the ruling recorded as FW-GAP-010. The
+commit that carries it will itself trigger CI, and that run is **not** part of this
+feature's evidence: the feature's evidence is the run for `63897ee`, which is the commit
+every gate above was measured against. Saying so is the only way to stop the regress the
+deadlock creates — a closure record can always be one event behind the act of recording
+it, and at some point a person has to name the line. The owner named it.
