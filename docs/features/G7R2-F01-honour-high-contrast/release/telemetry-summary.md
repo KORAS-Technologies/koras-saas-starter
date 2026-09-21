@@ -1,106 +1,117 @@
 # G7R2-F01 — telemetry summary
 
-Derived from `../telemetry-events.md` and `../telemetry-amendments.md` on
-2026-09-21, after the last applicable pre-merge event. **This is a reading of the
-record, not the record.** Where this file and the event log disagree, the log wins.
+Derived from `../telemetry-events.md` (50 events) and `../telemetry-amendments.md`
+(5 amendments) on 2026-09-21, at closure.
 
-Counts come from events. A metric no event supports is `UNKNOWN`, not `0` — zero is a
-measurement and means the thing was watched for and did not happen.
+**This is a reading of the record, not the record.** Where this file and the event log
+disagree, the log wins. Counts come from events; a metric no event supports is `UNKNOWN`,
+not `0`, because zero is a measurement and means the thing was watched for and did not
+happen.
+
+**When this file is written, and why that needed a ruling.** It is finalised **after**
+final acceptance, as the last step of the lifecycle. An earlier version was written before
+acceptance and was stale the moment acceptance ran — it reported zero escalations in a run
+whose defining act was an escalation, which acceptance attempt 3 correctly refused to pass.
+The contract cannot have it both ways: it requires the summary to come after the last
+applicable gate event, and acceptance is a gate. That deadlock is FW-GAP-010, and the
+repository owner ruled this document a closure artifact on 2026-09-21. The ruling is
+recorded here because a reader who finds this file dated after the acceptance it
+summarises should know it was meant to be.
 
 ## Routing
 
 | | |
 |---|---|
 | execution_mode | **FAST** |
-| risk_signals_fired | **0** — all ten floor signals and all eight elevating signals were walked individually and each recorded as not fired |
-| risk_signals_rejected | **3** named explicitly: `multi_step_user_workflow`, `security_boundary`, `architecture_impact` — each with the boundary it names and what in the change does not touch it |
+| risk_signals_fired | **0** — ten floor and eight elevating signals each walked and recorded as not fired |
+| risk_signals_rejected | **3** named: `multi_step_user_workflow`, `security_boundary`, `architecture_impact` |
 | mode_overridden_by_human | no |
 | selection_rule | `no_signal_and_every_fast_requirement_holds` |
+
+The mode was never revisited, and nothing found later contradicted it: the independent
+review looked for security, tenancy, data and architecture concerns and found none.
 
 ## Agents
 
 | | |
 |---|---|
-| agents_available | **40**, all discoverable in a fresh runtime (run `2026-09-21-02`) |
-| agents_invoked | **6** as separate processes: `product-planner`, `impact-analysis`, `ux-ui-designer`, `developer-1`, `code-reviewer`, and `engineering-orchestrator` as this session |
-| agents_activated | **17** of 40, per the execution plan, counting the roles the Orchestrator carried where no separate process was warranted |
+| agents_available | **40**, all discoverable in a fresh runtime |
+| agents_invoked | **8** as separate processes: `product-planner`, `impact-analysis`, `ux-ui-designer` ×2, `developer-1`, `code-reviewer`, `qa-reviewer`, `final-acceptance` ×3 |
+| agents_activated | **17** of 40 |
 | agents_available_but_not_activated | **23** |
-| invocations_per_agent | `ux-ui-designer` 2 (at `same_agent_max_invocations`); every other agent 1 |
+| invocations_per_agent | `final-acceptance` 3, `ux-ui-designer` 2, all others 1 |
 
-**The one number the framework is judged on.** 23 of 40 agents were available and not
-activated. The independent review looked specifically for work the excluded agents would
-have found — security, tenancy, data, architecture — and found none, so the routing was
-minimal rather than merely smaller.
+23 of 40 available and not activated, and the review hunted specifically for work the
+excluded agents would have found and found none.
 
 ## Gates
 
 | | |
 |---|---|
-| gates_executed | **12** |
-| gates_closed_owner_optional | **2** — `requirements_ready`, `architecture_ready`, each with all seven required fields recorded in the plan before the gate came due |
-| gates_reused | **0** |
-| gates_invalidated | **0** |
-| gates_not_applicable | **7** — `api_integration_tests_pass`, `architecture_review`, `security_review`, `privacy_review`, `ai_evaluation`, `regression_pass`, `domain_review`, each with the unmet condition named |
+| gates_executed | **17** |
+| gates_closed_owner_optional | **2** — `requirements_ready`, `architecture_ready`, seven fields each |
+| gates_reused | **0** — no prior run existed to reuse from |
+| gates_invalidated | **2** — `documentation_audit` and `final_acceptance`, by the post-audit documentation corrections |
+| gates_not_applicable | **7**, each with the unmet condition named |
 | gates_not_applicable_by_policy | **0** |
-| gates_pending | **3** post-merge: `ci_verified`, `deployment_preflight`, `environment_verified` |
-
-**Zero reuse, and that is the honest number rather than a disappointing one.** Reuse
-requires a prior recorded PASS for this feature whose input classes the change did not
-touch. This feature had no prior run — every gate ran for the first time. Reuse is a
-claim about a second pass, and there was no second pass to make it in.
-
-**The invalidation that did not happen is the more interesting record.** Between the
-frozen commit and the green suite the whole worktree was deleted and re-checked-out with
-a different line-ending setting. `git status` was clean on both sides and no tracked
-content changed, so no gate input changed and nothing was invalidated — which is exactly
-what the rule says should happen, and the only way to tell is that the rule was applied
-rather than assumed.
+| gates_pending | **3** post-merge: `ci_verified`, and `deployment_preflight`/`environment_verified` which are NOT_APPLICABLE — the factory deploys nothing of its own |
+| gates_closed_by_human_ruling | **1** — `final_acceptance`. Recorded distinctly, because a gate closed by a person is not the same evidence as one an agent returned READY on |
 
 ## Loops
 
 | | |
 |---|---|
-| test_fix_cycles | **1** of 2 — the documentation-gate remediation |
-| reviewer_cycles | **1** of 2 — one review, PASS, no fix cycle, no re-review |
-| documentation_audits | recorded below once run |
-| final_acceptance_attempts | recorded below once run |
-| retries | **1** — `automated_tests_pass` re-run after the line-ending re-checkout, with nothing changed in the tree. A retry, not a cycle, and the failing first attempt is retained. |
-| remediation_cycles | **1** — targeted, root cause established, scope stated by change class |
-| budget_caps_reached | **1** — `ux-ui-designer` reached `same_agent_max_invocations` at 2 |
-| human_escalations | **0** |
+| test_fix_cycles | **2 of 2** — the documentation-gate remediation, then FW-GAP-009 |
+| reviewer_cycles | **1 of 2** — one review, PASS, no fix cycle, no re-review |
+| documentation_audits | **1 of 1** |
+| final_acceptance_attempts | **3** — two against a budget of 2, then one under a granted extension |
+| retries | **1 of 1** — the suite re-run after the line-ending re-checkout, nothing changed |
+| remediation_cycles | **2** |
+| budget_caps_reached | **2** — `ux-ui-designer` at `same_agent_max_invocations`, and `max_final_acceptance_attempts` |
+| human_escalations | **2** — both `budget_exhausted → HUMAN_REVIEW`, both answered by the owner with a recorded reason |
 
-**One cap was reached and it did not stop anything**, which is the useful case to record:
-`ux-ui-designer` was invoked twice because the first invocation's write was refused by the
-permission set and it returned a summary instead of the document. The second invocation,
-with write tools denied and the document asked for on standard output, produced it. Had a
-third been needed the budget would have forced a stop.
+**The budget bound, twice, and both times the stop was a stop.** That is the number this
+report exists to carry. A budget that never binds is a formality; this one halted the run
+at the point where it had stopped converging on the record, and a person decided what
+changed. Neither escalation was about the code.
 
 ## Lifecycle
 
 | | |
 |---|---|
-| state_reached | `PLANNED` → `IMPLEMENTING` → `TESTING` → `LOCAL_ACCEPTANCE_READY` |
+| state_reached | `PLANNED` → `IMPLEMENTING` → `TESTING` → **`LOCAL_ACCEPTANCE_READY`** |
 | freeze points | `code_freeze` at `e677b54`; `quality_freeze` at `e677b54` |
-| states_not_applicable | `DEV_DEPLOYED` and `DEV_VERIFIED` — the factory deploys nothing of its own |
-| deployment_components_by_state | **UNKNOWN** — no deployment applies, and no event records a component state |
+| states_not_applicable | `DEV_DEPLOYED`, `DEV_VERIFIED` — the factory has no environment of its own |
+| states_outstanding | `MERGE_READY`, `MERGED`, `CI_VERIFIED` |
+| deployment_components_by_state | **UNKNOWN** — no deployment applies and no event records a component state |
 
 ## Effort
 
 | | |
 |---|---|
-| elapsed_time_if_available | **UNKNOWN.** No event records a duration. The log carries timestamps to the minute, from which an elapsed wall-clock figure could be inferred — but an inferred figure is not a measurement, and this framework has already had one number written from a plan rather than from an event. |
+| elapsed_time_if_available | **UNKNOWN.** No event records a duration. Timestamps could be subtracted, but an inferred figure is not a measurement, and this framework has already had one number written from a plan rather than from an event. |
 
 ## Amendments
 
-**1.** The probe-1 discovery shortfall was first classified with two tokens this
-repository does not declare, taken from the G7 R2 brief rather than from
-`agent-registry.yaml`. Corrected to `SESSION_OR_TOOL_HEALTH`, with the previous value
-left visible. Caught by `tests/docs/identifiers.test.ts`, which is what it is for.
+Five, all appended, none an edit in place:
+
+1. Two tokens from the G7 R2 brief were used to classify a probe result; neither is
+   declared in this repository. Corrected to `SESSION_OR_TOOL_HEALTH`.
+2. Event 17's pointer named a run directory holding no Playwright output. Corrected to
+   the retained capture.
+3. Events 14 and 16 named one file for two different runs, and the first run's output had
+   not been retained at all. Both retained, both renamed.
+4. Event 32 said the post-audit commit made no executable change. It changed a `.test.ts`.
+5. The amendment at 19:40Z named event 33, which never carried the phrase it corrected.
+   Corrected to event 32 — an amendment correcting an amendment.
+
+**Four of the five are corrections to this run's own record rather than to the feature.**
+That ratio is the most useful thing in this report: the framework's gates found almost
+nothing wrong with two files of CSS and TypeScript, and found six things wrong with what
+was written about them.
 
 ## What this summary cannot tell you
 
-Whether the mode was right. That comparison — the mode selected against the gates that
-turned out to matter — needs several runs, and `telemetry.yaml` says so explicitly:
-automating a comparison before anybody has read two reports by hand is how the wrong
-thing gets measured precisely. This is the second report. The first is G7 R1's, in
-`docoris`.
+Whether the mode was right. That comparison needs several runs, and `telemetry.yaml` says
+so: automating it before anybody has read two reports by hand is how the wrong thing gets
+measured precisely. This is the second report; the first is G7 R1's, in `docoris`.

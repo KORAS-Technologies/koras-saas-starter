@@ -1,0 +1,120 @@
+I have everything I need, verified against the tree. Two notes on method: the docs-gate suite I could not re-execute (the sandbox denied every test-runner invocation), so for that one gate I rely on the retained run output at `runs/2026-09-21-11/` plus my own read of the one-line diff; everything else I checked directly with git and the filesystem.
+
+---
+
+# FINAL ACCEPTANCE — G7R2-F01 "Honour the high-contrast accessibility setting" — ATTEMPT 3 of 2+1
+
+**Tree accepted:** worktree `…/.koras-worktrees/koras-saas-starter/G7R2-F01`, HEAD **`52ebae4`**, branch `feature/G7R2-F01-honour-high-contrast`. Feature `e677b54`; doc corrections `dc4a946`, `fe46617`; record + gate fix `3d98843`; retained suite `52ebae4`. `develop` at `48e762a`. Mode **FAST**, `user_interface`, no floor signal. This attempt is the one telemetry event 39 (human budget grant) paid for.
+
+## First: did the two commits since attempt 2 do what they claim?
+
+**Event 32 is now corrected, by an appended amendment, not an in‑place edit — VERIFIED.**
+- `telemetry-events.md` line 50 still reads, verbatim, *"six findings addressed; documentation only, no executable change"* — the append‑only log was correctly **not** rewritten.
+- `telemetry-amendments.md` gained two rows at 20:20Z (in `3d98843`). Row 1 amends **event 32**, its `outcome` field, naming the one executable file `dc4a946` changed (`tests/docs/file-references.test.ts`, class `automated_test_node`) and stating that under the code‑freeze test‑exemption it consumes no budget and invalidates no gate. **This is the correct target** — the exact fix attempt 2 said was missing.
+- Row 2 amends the **19:40Z amendment** itself, correcting its `amends` field from "event 33" to "event 32", and recording that its `qa-evidence-audit.md` correction was sound while its aim at the log was wrong.
+
+**Does any amendment now misdescribe anything? — NO.** I checked each of the five amendment rows against the event it names:
+- 17:35Z → event 2 (discovery tokens): consistent.
+- 19:15Z → event 17 source (e2e → run‑07 file): the retained `playwright-roundtrip-147-passed.txt` exists; consistent.
+- 19:15Z → events 14/16 (split summary file): `pnpm-test-attempt-1-docs-gates.txt` and `-2-crlf.txt` both exist and differ; consistent.
+- 19:40Z → its target was wrong (event 33 never held the phrase); **row 2 of the new pair says exactly that.** Self‑consistent.
+- 20:20Z → event 32: correct, and event 33 (log line 51) genuinely contains only the invalidation set, not the false phrase. Consistent.
+
+The record chain is now internally coherent. **Attempt 2's sole remaining blocker is resolved.**
+
+**FW-GAP-009 is honestly recorded as a TEST change — VERIFIED.** `git show 3d98843` shows it changed `tests/docs/identifiers.test.ts` (17 lines), `docs/platform/gap-defect-register.md`, `release/framework-findings.md`, `qa-evidence-audit.md`, telemetry log/amendments, and retained the two prior final‑acceptance transcripts. Event 42 labels it *"A test change, not documentation"*; the register row, the framework‑findings entry, and the commit body all say the same, explicitly *because* the preceding defect was a test change mislabelled documentation‑only. That is the right lesson applied.
+
+**Register count holds — VERIFIED consistent.** The header moved `111 → 112` and one row (FW‑GAP‑009) was added, in the same commit. No test enforces the count (my grep confirms `identifiers.test.ts` reads the register only for status vocabulary, not row totals), so "112" is a prose claim; my independent count of ID‑keyed data rows lands in the same range and the **increment is applied consistently in both places**. Sound.
+
+**Did the FW-GAP-009 fix weaken the gate, or make it match its contract? — It matches its contract (and slightly tightens correctness).** The diff adds `if (file.startsWith('docs/')) continue` to `codeText()`, whose failure message already reads *"no file outside `docs/` contains them."* The corpus is meant to be **code**; everything under `docs/` is documentation and retained evidence, never code. Excluding it stops an identifier that an agent merely *mentioned* in a retained transcript from counting as one the repository *has* — closing a hole in the direction that lets an invented identifier pass. This is the implementation catching up to its own printed contract, not a relaxation. **DoD item 6 is not breached.**
+
+**Docs gates green after the fix — retained evidence only.** `runs/2026-09-21-11/pnpm-test-after-fw-gap-009.txt`: docs 412 passed, 2191 + 120 + 21 Node, 7 Python, 5/5 turbo tasks, `EXIT=0` at `3d98843`, committed in `52ebae4`. I could not re‑run it (sandbox denied every vitest/npx invocation); I flag that as an execution limit, mitigated by a one‑line, transparently‑correct diff.
+
+## A. Definition of Done
+
+**Always (1–8):**
+1. Traceability — **MET.** AC1–AC8 map to `product-shell.tsx.hbs` + `tokens.css` and to executed checks; the code review answers all eight.
+2. Automated tests pass, executed — **MET** on the frozen tree per retained `pnpm-test-attempt-3-green.txt` and the `3d98843` run; re‑execution blocked by sandbox, noted.
+3. Matches approved design — **MET.** Two `packages/ui` files, exactly as scoped; the `light-dark()` cascade is the design.
+4. Independent review, no CRITICAL/HIGH — **MET.** `code-reviewer` (did not write it) → 0 CRITICAL, 0 HIGH, 2 LOW (event 24/25).
+5. Tenant/authz/validation/secret — **MET.** The DOM attribute is the literal `'high'`, never the stored value; no server path touched.
+6. Nothing disabled/weakened — **MET.** Six guards mutation‑proven; the seventh honestly disclosed as not mutation‑tested. FW‑GAP‑009 tightened a gate rather than relaxing it.
+7. Documentation the change made wrong is updated — **NOT MET.** See the blocker below: `release/telemetry-summary.md` was made stale by the attempt‑3 events and still asserts figures the log now contradicts.
+8. `final-acceptance` READY — **see verdict.**
+
+**User-facing (9–14) — all MET.** Browser desktop+mobile+console (`playwright-roundtrip-147-passed.txt`, real API/DB); manual QA 5/5 PASS; every case carries a verdict; screenshots genuine (PNG magic `89 50 4e 47` confirmed on TC01/04/05; the two byte‑identical pairs remain honestly disclosed); WCAG 2.2 AA by measured contrast and keyboard/focus (weakest 4.06:1 > 3.0); `qa-reviewer` independent audit PASS.
+
+**Risk triggers (15–19) — NOT APPLICABLE**, each with its unmet condition named (no floor signal; reviewer independently found no security/tenancy/data/AI/domain surface). Defensible.
+
+**Wider scope (20–22) — NOT APPLICABLE.** No migration/schema/policy (20); single feature, no converging work (21); the factory deploys nothing of its own, so no new production path/alert (22). None left blank.
+
+## B. Planner / Orchestrator separation — CLEAN
+`planner-output.txt` ends "I recommend only; I have started nothing, routed no agents, and created no worktree." The Orchestrator owns `execution-plan.md`, routing and gates, and invented no requirement — scope is exactly "honour highContrast," with the two dead siblings named as still‑dead rather than silently pulled in.
+
+## C. 40-agent discovery — SOUND, shortfall handled
+`runs/2026-09-21-02`: three fresh processes. Probe 1 under‑reported by three (37/40, dropping the alphabetically‑first three); the failed probe is retained, probes 2 and 3 resolve to 40, and the shortfall is classified as an instrument defect — explicitly not `FW-DEF-001`, not contradictory‑evidence. The amendment reclassifies it to `SESSION_OR_TOOL_HEALTH` (a token the registry actually declares) and explains, unquoted‑on‑purpose, why the brief's two labels are not repository tokens. Evidence sound.
+
+## D. Capability activation (17/40) — DEFENSIBLE
+The 23 excluded agents are each named with the unmet condition. `security-*` and `architecture-reviewer` are correctly excluded — the independent reviewer confirmed no boundary crossed. I found no agent that should have fired and did not.
+
+## E. Execution mode FAST — CORRECT, both halves present
+`execution-plan.md §Risk` walks all ten floor and eight elevating signals as not fired **and** names three signals it "looked like and is not" (`multi_step_user_workflow`, `security_boundary`, `architecture_impact`), each rejected on the boundary the condition itself defines. Rule `no_signal_and_every_fast_requirement_holds`; no human override.
+
+## F. Parallelism NO — LEGITIMATE
+The two files are one cohesive change (the marker is dead without the token override and vice‑versa). The Planner returned NO independently for all three candidates; the "run F02 to fill slots" alternative is recorded as human‑declined. A real NO, not avoidance.
+
+## G. Worktree isolation — CLEAN
+`git worktree list`: the feature worktree is under `…/.koras-worktrees/…`, **outside** the repo at `C:/repos/Projects/koras-saas-starter`. Main repo `git status` is **empty/clean**, on `develop`. The third worktree (`Temp/starter-before`, detached `3a13977`) is the sync "before" tree — outside the repo, harmless.
+
+## H. Freeze points — code freeze HELD; quality freeze HELD
+No **product** code changed after `e677b54` (`git show --stat` on `dc4a946`, `fe46617`, `3d98843`, `52ebae4` shows only `docs/**` plus two `tests/docs/*.test.ts` edits). Per `workflow.yaml` (*"a change to tests, fixtures or documentation does neither by itself"*), both `.test.ts` edits are permitted post‑freeze, consume no code budget, and invalidate no product‑code gate. Confirmed from git.
+
+## I. Gate reuse / invalidation — CORRECT
+Pre‑audit `0 reused / 0 invalidated` is right (no prior pass to reuse). Post‑audit, the documentation corrections invalidate `documentation_audit` + `final_acceptance` (event 33), which matches `gate-invalidation.yaml`'s `documentation_only_correction`. The two `automated_test_node` edits (`file-references.test.ts` in `dc4a946`, `identifiers.test.ts` in `3d98843`) invalidate no gate beyond forcing a re‑run of `automated_tests_pass` — which was re‑established at `dc4a946` (event 34) and `3d98843` (event 44). The right thing was done, and the one mischaracterisation ("no executable change") is now correctly amended.
+
+## J. Budgets — none exceeded, but two counters are now AT CAP and the summary hasn't caught up
+Against `execution-budget.yaml`, read from the log: `max_gate_retries` 1/1; `max_test_fix_cycles` **2/2** (event 15 + FW‑GAP‑009 at events 41→43) — now at cap; `max_reviewer_cycles` 1/2; `max_documentation_audits` 1/1; `same_agent_max_invocations` — `ux-ui-designer` 2/2; `max_final_acceptance_attempts` **2/2 then +1 by human grant** (events 37/38/39). Escalation for `budget_exhausted → HUMAN_REVIEW` was correctly raised (event 38) and correctly answered by a recorded human grant (event 39). No counter is over cap. **But the derived summary still reports these at their pre‑attempt‑3 values — see the blocker.**
+
+## K. Evidence vs execution — spot-checks
+1. `git show 3d98843` proves event 32 and the `identifiers.test.ts` fix are one commit, and that the amendment now targets event 32 — the attempt‑2 blocker is genuinely closed.
+2. PNG magic bytes `89 50 4e 47 0d 0a 1a 0a` on three screenshots across three test cases — genuine captures.
+3. `koras-claude-skills.zip` is tracked, but `git log` shows it entered at `84067e2` and it is present on `develop` — **pre‑existing, not this feature's**, so out of scope here (worth a separate hygiene ticket).
+No feature claim exceeds its execution.
+
+## L. Telemetry — append-only discipline kept, but the SUMMARY is now stale and carries a false zero
+The append‑only **log** and **amendments** are correct and were not edited in place. **The derived `release/telemetry-summary.md` is not.** It was last written at `dc4a946` and has **not** been regenerated since events 35–44 were appended (in `3d98843`/`52ebae4`). As it literally stands it states:
+- `human_escalations` **0** — false: event 38 raised `budget_exhausted → HUMAN_REVIEW` and event 39 is a human grant. By the summary's own rule ("zero means the thing was watched for and did not happen"), this is a false measurement.
+- `budget_caps_reached` **1** — now 2 (event 37, `max_final_acceptance_attempts`, plus the `ux-ui-designer` cap).
+- `test_fix_cycles` **1 of 2** — now 2 of 2 (FW‑GAP‑009).
+- `final_acceptance_attempts` "recorded below once run" — three attempts occurred; still blank.
+- `state_reached … LOCAL_ACCEPTANCE_READY` — written ahead of a verdict that is not yet READY.
+
+Its header claims it was "derived … after the last applicable pre‑merge event"; it predates events 35–44, so that claim is itself untrue. This is the same decayed‑derived‑record class the whole run polices (R‑042 / PLAT‑DEF‑002), relocated from the amendments into the summary.
+
+## M. Hygiene — CLEAN for this feature
+No tracked `node_modules`, `dist/`, `build/`, or `.tmp`. Absolute paths appear only inside verbatim retained transcripts (legitimate raw evidence). The one tracked `.zip` is pre‑existing on `develop`, not introduced here.
+
+## N. Scope — within plan
+`e677b54` = two production files + Node tests + one e2e assertion + feature dir. `dc4a946`/`fe46617`/`3d98843`/`52ebae4` = feature dir, the anticipated `gap-defect-register.md` row, and two exempt `tests/docs/*.test.ts` edits. No `apps/**`, `services/**`, `_shared/**`, migration, or sibling‑setting code. No creep. (One observation for the human, not a scope breach: FW‑GAP‑009 changed a *gate* while the grant's words were "documentation‑only … nothing about … any other gate changes." It was forced by the granted work — retaining the transcripts the amendments cite tripped the gate — and is transparently recorded as a test change, which mitigates it. Whether it fell inside the grant is the owner's to judge.)
+
+---
+
+# FINAL ACCEPTANCE VERDICT: **NOT READY**
+
+The reason attempts 1 and 2 failed is genuinely, verifiably fixed: telemetry event 32 is corrected by an appended amendment, the mis‑aimed 19:40Z amendment is itself corrected, and FW‑GAP‑009 is honestly booked as a test change that tightens a gate rather than weakening it. The **feature itself is sound** and every substantive DoD item (1–6, 9–14) is MET.
+
+It is held on **one** remaining item, and it is the same class the run exists to catch: **DoD item 7 is not met because `release/telemetry-summary.md` is documentation the attempt‑3 events made wrong and it has not been regenerated.** It affirmatively states `human_escalations 0` when the log records an escalation (event 38) and a human grant (event 39), reports `budget_caps_reached 1` and `test_fix_cycles 1/2` when both are now at cap, and claims to be derived after the last event while predating events 35–44. A reader "told not to be generous" cannot certify READY over a feature record that still measures zero escalations in a run whose defining act was an escalation.
+
+## What must happen first (documentation-only)
+Regenerate `release/telemetry-summary.md` from the current log so it reflects events 35–44: `human_escalations` = 1 (event 38) with the human grant (event 39) noted; `budget_caps_reached` = 2; `test_fix_cycles` = 2/2; `final_acceptance_attempts` filled; the five amendments listed; and `state_reached` not asserting `LOCAL_ACCEPTANCE_READY` ahead of this verdict. Do not touch code, requirements, the append‑only log, or any other gate.
+
+This invalidates only `documentation_audit`, `ci_verified` and `final_acceptance` and consumes no code budget. **But note plainly: the automated budget is exhausted and was already extended once. Spending more on it — even for a documentation‑only regeneration — is again a human decision, recorded with its reason (`execution-budget.yaml`: "granting further budget is a human act").** A defensible alternative the owner may choose instead: rule that the telemetry‑summary is by design a *closure* artifact (its "recorded below once run" placeholders and "the log wins" subordination point that way), finalise it as the closing step, and accept the feature on that basis. That reinterpretation is the owner's to make; I cannot make it and still honestly return READY today.
+
+## Lifecycle — separately
+**LOCAL lifecycle: NOT complete.** Reached `PLANNED → IMPLEMENTING → TESTING`, standing at the threshold of `LOCAL_ACCEPTANCE_READY`. Every applicable pre‑acceptance gate produced evidence except `final_acceptance`, held here at NOT READY.
+
+Remaining states:
+- **MERGE_READY / MERGED** — *applicable, human gate.* Blocked behind local acceptance and the budget decision above.
+- **CI_VERIFIED** — *applicable, post‑merge.* `develop` runs CI / Security / Generator Integration; local passes do not satisfy it, and Generator Integration is the only thing in this estate that renders the generated shell in a browser. Check `gh run list` for the pushed commit; do not infer it from these documents.
+- **DEV_DEPLOYED / DEV_VERIFIED** — **NOT APPLICABLE.** The factory deploys nothing of its own; `deployment_preflight` and `environment_verified` are NOT_APPLICABLE with that reason, not PENDING.
+- **Downstream sync** to `koras-e2e-shop` / `docoris` is a separate hand‑carried decision, out of scope for R2.

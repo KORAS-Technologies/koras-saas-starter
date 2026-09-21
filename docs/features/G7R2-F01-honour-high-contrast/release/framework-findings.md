@@ -114,6 +114,50 @@ was code. Neither gate was wrong on its own.
 
 ---
 
+## FW-GAP-010 — the derived summary and final acceptance cannot both be satisfied
+
+`telemetry.yaml` says the derived summary is `generated_after: the final applicable
+lifecycle or gate event for the run`, and lists under `never`: *Generating it while an
+applicable event is still outstanding.*
+
+`final_acceptance` is a gate. Running it produces events — the gate's own execution, and
+any escalation or budget cap it raises. So:
+
+- Generate the summary **before** acceptance and it is stale the moment acceptance runs,
+  and it was generated while an applicable event was outstanding, which the contract
+  forbids.
+- Generate it **after** acceptance and the acceptance agent meets an unfinished document,
+  and Definition of Done item 7 — *documentation affected by the change is updated,
+  including documentation the change made wrong* — is not met.
+
+No ordering satisfies both. This run hit it exactly: acceptance attempt 3 verified that
+every other Definition-of-Done item was met and held the verdict solely because the
+summary reported `human_escalations: 0` while the log recorded an escalation and a human
+budget grant. The number was genuinely false — by the summary's own rule, *zero is a
+measurement* — and it was false because acceptance itself had happened since it was
+written.
+
+**It is R1's remedy producing R2's deadlock.** FW-GAP-003 was raised in G7 R1 because a
+final count was written *before* the event it counted. The fix was to derive the summary
+after the last event. Nobody noticed that acceptance is an event. That is the second time
+in this run that a remedy created the condition for the next defect — FW-GAP-009 is the
+other — and it is the more useful of the two observations, because both remedies were
+correct in themselves.
+
+**Resolved by a ruling, 2026-09-21**, recorded rather than worked around: the repository
+owner ruled that the derived summary is by design a **closure artifact**, finalised as
+the last step of the lifecycle rather than before acceptance. The document's own shape
+already implied it — its `is_source_of_truth: false`, its subordination to the log in any
+disagreement, and `regenerating_is_safe: true`.
+
+**Severity: Medium**, and the fix belongs in `telemetry.yaml`: say when the summary is
+finalised relative to acceptance, and say that acceptance judges the log rather than the
+summary. Not done here — amending the framework's own contract is not a change a feature
+about contrast may make, and the ruling is recorded so the next run does not rediscover
+the deadlock from scratch.
+
+---
+
 ## FW-DEF-002 — a fresh Windows checkout cannot pass the framework's own validation suite
 
 The most consequential finding of the run, and the only one that is a defect in the
