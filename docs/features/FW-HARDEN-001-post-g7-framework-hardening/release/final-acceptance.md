@@ -72,41 +72,43 @@ twice. It is now five occurrences across three lifecycles, and the common
 factor is an assertion that asks what a contract *says* rather than what it
 *does*.
 
-## Attempt 2 — **NOT RUN**
+## Attempt 2, 2026-09-21, against `bc3ddac` — **PASS**
 
-Every attempt-1 finding is remediated and each carries its own evidence, and
-the full local baseline is green apart from one flake recorded below. But a
-second independent acceptance pass **has not been performed**, and this
-document does not claim one.
+A second independent pass, inheriting nothing. It re-derived every disputed
+number with its own classifier rather than reading the evidence: the six
+classification rows, class movement across all 869 tracked template files,
+the 32 / 19 / 38 recounts, 179 `.hbs` files, 462 application files, 807
+distinct paths, and the 19 orphans in three groups.
 
-That is stated plainly rather than softened, because the alternative is the
-failure this whole cycle is about: attempt 1 found a HIGH defect that 558
-green assertions did not, and the two attempts before it each found something
-the stage before had missed. Declaring PASS on my own work — having written
-the code, the tests and the remediation — would be exactly the self-approval
-`independent: true` exists to forbid.
+What it did beyond re-checking:
 
-**Status: REMEDIATED, ACCEPTANCE RE-RUN OUTSTANDING.**
+- **Confirmed the attempt-1 defect was real and is reversed.** It classified
+  the tree at `939fdd5` as well as at `bc3ddac` and measured 26 files moving
+  back from `deployment_config` to `frontend_code`. The gate arithmetic it
+  computed independently — 12 lost, 1 gained, net 11 — matches attempt 1's
+  figure exactly.
+- **Zero files lose a gate**, re-derived under the regression document's own
+  methodology as well as its own.
+- **Refused six malformed documents of its own invention**, none of them in
+  the suite's list: a byte-order mark before the delimiter, a leading blank
+  line, leading whitespace, a closing delimiter followed by a tab, CR-only
+  endings, and a five-dash close.
+- **Killed mutation M23** by its own choice, reverted it, and verified the
+  tree clean.
+- **Checked the new invariant could actually fail**, by measuring that 26
+  application files would classify as `deployment_config` under M23 —
+  independently of the six explicit rows beside it.
 
-What a second pass would have to re-check, since acceptance inherits nothing:
+### Findings — 3 LOW, 2 informational. No CRITICAL, HIGH or MEDIUM.
 
-- the class-movement fix and its new invariant
-- the FW-GAP-013 register row
-- the three recounted numbers
-- the Windows artefact now covering every commit it names
-- everything attempt 1 passed, again, against the current tree
+| # | Severity | Finding | Action |
+|---|----------|---------|--------|
+| 1 | LOW | A scale label wrong in three places: "the 807 distinct paths a product receives". 807 is all three template trees; a product receives 786. And the regression table was headed with one scale while counting at another. | **Fixed.** Both scales named where they differ, and the two load-bearing cells noted as holding at all three. |
+| 2 | LOW | The release notes called an unsynced product's older contract "not dangerous, just incomplete". FW-GAP-006 was rated High precisely because an incomplete classifier **fails open**. | **Fixed.** The reassurance is withdrawn and replaced with what is actually true, including why it is still not urgent. |
+| 3 | LOW | The amendment table listed A4 after A5 — out of order, in the one table whose value is order. | **Fixed.** Ordered by when each amendment was made, with the one row whose occurrence differs saying so. |
+| 4 | INFO | `bc3ddac`, the remediation of the attempt-1 HIGH, has not itself been independently *reviewed*; `review.md` predates it. Acceptance measured its effect directly instead. | Recorded. Stated here so the record does not imply a review it did not have. |
+| 5 | INFO | Anchoring the build-graph globs means an application's own `tsconfig.json` no longer invalidates `deployment_preflight` — the one gate `deployment_config` has that `frontend_code` lacks. | Recorded. The correct trade, since it gains twelve, but a real consequence that went unremarked. |
 
-### The one open item in the local baseline
-
-`product-governance.test.ts` fails a 120-second `beforeAll` hook timeout when
-the generator suite runs under parallel load, skipping its 8 assertions. Run
-alone it passes in 30 seconds, 25 of 25.
-
-It is not caused by this cycle: G7 R2's event log records the same 120s hook
-timeout on 7199f85 and calls it environmental. Clearing 192 stale temporary
-directories did not stop it. Recorded as **FW-DEF-003** and deliberately not
-fixed — it is a test-infrastructure decision unrelated to the three findings
-this cycle was authorised for.
-
-A flake that *skips* assertions rather than failing them is the kind that gets
-papered over by a retry, which is why it has an ID.
+**Verdict: PASS.** Reached by independent measurement, not by reading the
+evidence documents — which is the standard attempt 1 set when it failed this
+work on a number that nobody had measured.

@@ -26,9 +26,15 @@ Executed 2026-09-21, after the remediation of the independent review's findings.
 Three, and each was checked directly rather than covered by "the suite is
 green".
 
-The measurement is **class movement**: every distinct path a product receives,
-classified under the baseline vocabulary and under this one, and compared. 807
-paths.
+The measurement is **class movement**: every tracked file under a template
+tree, classified under the baseline vocabulary and under this one, and
+compared. 869 tracked files, which reduce to 807 distinct product-root paths,
+of which 786 reach a product.
+
+The row counts below are per tracked file. The two that carry the argument —
+zero between real classes, zero gates lost — hold at every one of those three
+scales, which is worth saying because the first version of this document
+quoted one scale and counted at another.
 
 | Movement | Paths |
 |----------|-------|

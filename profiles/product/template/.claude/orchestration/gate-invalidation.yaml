@@ -80,8 +80,9 @@ path_domain:
   # first draft of this block claimed there were two when measurement found
   # forty-two. The number is stated so that it moves when anything changes.
   #
-  # Measured 2026-09-21 over every tracked file in all three template trees:
-  # 19 unclassified, in three groups.
+  # Measured 2026-09-21 over every tracked file in all three template trees
+  # -- 807 distinct paths, of which 786 reach a product: 19 unclassified,
+  # in three groups.
   #
   #   1. The framework's own contract -- `.claude/orchestration/*.yaml`,
   #      `.claude/domain/*.yaml`. 15 files, and the group this very file
@@ -164,7 +165,7 @@ change_classes:
       - '**/fly.toml'
       - '**/vercel.json'
       # The whole local stack, not only `local/config/**`. Measured on
-      # 2026-09-21 over the 807 distinct paths a product receives: 32 under
+      # 2026-09-21 over the 786 distinct paths a product receives: 32 under
       # `local/` matched nothing -- the compose file, the proxy, the
       # observability collectors, the queue configuration, and every one of
       # the 19 scripts, `migrate.sh` and `register-with-control-plane.sh`

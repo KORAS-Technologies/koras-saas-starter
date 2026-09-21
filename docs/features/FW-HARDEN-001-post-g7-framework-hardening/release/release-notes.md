@@ -66,7 +66,7 @@ would; and an escalated run's summary is checked by the human receiving it.
 | Mutations killed | 23 of 23, each by a named assertion |
 | Windows proof | 61 files, 2244 tests, fresh CRLF checkout |
 | Agents activated | 11 of 40 |
-| Unclassified paths a product receives | 58 at the baseline, 19 now, 0 under any application directory |
+| Unclassified, of 786 paths a product receives | 58 at the baseline, 19 now, 0 under any application directory |
 | Files that lost a gate | 0, measured against the baseline vocabulary |
 
 ## Downstream
@@ -77,9 +77,18 @@ configuration, and a test file in the factory, which does not ship at all. No
 application source, no migration, no dependency.
 
 A generated product will receive the corrected contract the next time one is
-generated or synced. Nothing in an existing product is wrong without it — the
-old contract is not dangerous, it is incomplete — so no sync was initiated, and
-initiating one is a separate decision with its own approval.
+generated or synced. No sync was initiated, and initiating one is a separate decision with its own
+approval.
+
+**But "it can wait" is a weaker claim than it looks**, and the first draft of
+this section said the old contract was "not dangerous, just incomplete". That
+is wrong in the way FW-GAP-006 was rated High for: an incomplete classifier
+**fails open**. Until a product is synced, a change to its own product code
+can still classify as nothing there, and nothing still licenses reusing every
+gate. The remedy is not urgent because the framework is applied by agents
+reading the contract rather than by a runtime, and an agent that meets an
+unclassifiable path now has a rule telling it to stop — but only once it has
+the new contract.
 
 ## Open after this cycle
 

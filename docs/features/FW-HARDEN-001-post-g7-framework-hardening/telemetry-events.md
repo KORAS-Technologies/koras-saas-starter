@@ -59,10 +59,23 @@ All times 2026-09-21.
 Per `telemetry.yaml`, a correction is a new record naming what it corrects. The
 wrong value stays visible above.
 
+Ordered by when the amendment was **made**, which is monotonic, not by when
+the event it corrects occurred. A4 is the one where those differ, and it says
+so. Final acceptance caught this table out of order in its first arrangement,
+which is a fair thing to catch in the one table whose whole value is order.
+
 | # | at | amends | previous value | corrected value | reason | evidence |
 |---|----|--------|----------------|-----------------|--------|----------|
 | A1 | 16:33Z | event 11, and the design document it produced | "the class is confined to one file" | the class is confined to one file, and two apparent counter-examples are not | The review read two further `\n\n` regexes over source-tree files and called the claim false. Both files define their own reader that strips carriage returns, each with a comment recording that this defect bit them once already. | event 20 — the whole generator suite green on CRLF |
 | A2 | 16:33Z | event 11 | the FW-GAP-010 fix is not circular | the first fix WAS circular, and was corrected | Finalising the summary *at* CLOSED while CLOSED required a finalised summary rebuilt the deadlock one step on. Caught by the review of the fix, not by the fix. | review HIGH-1; mutation M20 |
 | A3 | 16:33Z | event 11 | "zero unclassified" | 19 unclassified in three declared groups, zero under any application directory | The original measurement covered six chosen roots, not the tree. 42 tracked files matched nothing, against a contract block claiming two. | review MEDIUM-4; mutations M17, M18 |
+| A4 | 16:33Z | event 9, which occurred at 15:58Z | the framework mandates an isolated worktree, and one was created | one was created and then abandoned | The repository's `validate-write-safety` hook refuses file-tool writes outside the project root, so no edit could be made in it. Implementation ran on a feature branch in the main checkout instead; a separate worktree carried the CRLF proof, which is the part the standard's value actually rests on here. Recorded as a deviation rather than presented as compliance. | events 17 and 20 |
 | A5 | 17:45Z | event 11, and the regression document it produced | "the class of exactly zero real files changed" and "nothing moved out of another class" | 26 files moved from `frontend_code` to `deployment_config`, losing 11 gates each | The build-graph globs were written with a leading globstar and reached into every package. Found by final acceptance measuring class movement; the document had asserted it without measuring. | the final-acceptance record beside this file; mutation M23 |
-| A4 | 15:58Z | event 9 | the framework mandates an isolated worktree, and one was created | one was created and then abandoned | The repository's `validate-write-safety` hook refuses file-tool writes outside the project root, so no edit could be made in it. Implementation ran on a feature branch in the main checkout instead; a separate worktree carried the CRLF proof, which is the part the standard's value actually rests on here. Recorded as a deviation rather than presented as compliance. | events 17 and 20 |
+
+## Events, continued
+
+| # | event | subject | outcome | at | source |
+|---|-------|---------|---------|----|--------|
+| 35 | agent_invoked | final-acceptance | attempt 2, independent, against `bc3ddac` | 18:40Z | the final-acceptance record beside this file |
+| 36 | gate_executed | final_acceptance | **PASS** — 0 CRITICAL, 0 HIGH, 0 MEDIUM; 3 LOW, all documentation wording | 18:46Z | the final-acceptance record beside this file |
+| 37 | loop_iteration | remediation cycle 3 | the three LOWs corrected: a scale label wrong in three places, a reassurance stronger than the evidence, and an amendment table out of order | 18:50Z | this log |
