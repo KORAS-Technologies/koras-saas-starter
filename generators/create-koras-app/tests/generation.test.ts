@@ -1426,11 +1426,14 @@ describe.each(['product', 'control-plane'] as const)('%s secret scaffold', (prof
         ?.split(/\s+/)[1]
 
     expect(classOf('NODE_ENV')).toBe('local')
-    // Mail is the one thing a product sends itself since 2026-09-14 -- the
-    // assistant's approval notice -- so its SMTP settings are optional and
-    // deployable there, the move the Control Plane made for its own mail.
-    // The Control Plane profile's template still keeps them local.
-    expect(classOf('SMTP_HOST')).toBe(profile === 'product' ? 'optional' : 'local')
+    // Both profiles, since 2026-09-21. Mail is deployable in each: a product
+    // sends the assistant's approval notice, and the Control Plane sends
+    // provisioning mail through `smtplib` from settings it reads out of
+    // Doppler. This assertion used to say `profile === 'product' ? 'optional'
+    // : 'local'`, which recorded the divergence rather than a decision -- and
+    // once `local` became enforced (PLAT-DEF-014) that divergence would have
+    // failed every Control Plane deployment on settings it needs.
+    expect(classOf('SMTP_HOST')).toBe('optional')
     if (profile === 'product') {
       for (const key of ['MINIO_ROOT_PASSWORD', 'GRAFANA_PASSWORD', 'ZITADEL_MASTERKEY']) {
         expect(classOf(key)).toBe('local')

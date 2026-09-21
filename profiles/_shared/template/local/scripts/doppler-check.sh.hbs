@@ -83,6 +83,22 @@ mapfile -t REQUIRED < <(
   grep -vE '^\s*#|^\s*$' "$MANIFEST" | awk '$2 != "local" && $2 != "optional" { print $1 }' | sort -u
 )
 
+mapfile -t FORBIDDEN < <(
+  # `local` means never in Doppler, and this is what enforces it. The class was
+  # documented that way from the start and checked by nothing, which is
+  # PLAT-DEF-014: `NODE_ENV` is `local` because `next build` *defaults* it
+  # rather than forcing it, so a value reaching a build environment survives
+  # into the bundle -- and `deploy.yml` pushes every Doppler key into the
+  # provider's production environment. One `doppler secrets set
+  # NODE_ENV=development` was the whole distance between the comment and a
+  # production build in development mode.
+  #
+  # Checking presence rather than absence is the asymmetry that hid it: the
+  # loop below asked only whether required names were *there*, so a name that
+  # should not exist was never a question anyone asked.
+  grep -vE '^\s*#|^\s*$' "$MANIFEST" | awk '$2 == "local" { print $1 }' | sort -u
+)
+
 # The contract and the manifest must describe the same set. A setting added to
 # one and not the other is a setting nobody classified, and the failure mode is
 # silent: it simply never gets checked.
@@ -107,6 +123,8 @@ echo "    contract: ${MANIFEST#"$ROOT/"}"
 echo ""
 
 failed=0
+any_missing=0
+any_forbidden=0
 for environment in "${ENVIRONMENTS[@]}"; do
   # --only-names is the whole reason this is safe to run anywhere, including in
   # CI: Doppler returns the key set and never the values.
@@ -124,19 +142,60 @@ for environment in "${ENVIRONMENTS[@]}"; do
     fi
   done
 
-  if [ ${#missing[@]} -eq 0 ]; then
+  present_forbidden=()
+  for name in "${FORBIDDEN[@]}"; do
+    if grep -q "\"${name}\"" <<<"$present"; then
+      present_forbidden+=("$name")
+    fi
+  done
+
+  if [ ${#missing[@]} -eq 0 ] && [ ${#present_forbidden[@]} -eq 0 ]; then
     echo "  ${environment}: complete"
-  else
+  fi
+
+  if [ ${#missing[@]} -ne 0 ]; then
     echo "  ${environment}: missing ${#missing[@]} —"
     for name in "${missing[@]}"; do
       echo "      ${name}"
     done
     failed=1
+    any_missing=1
+  fi
+
+  if [ ${#present_forbidden[@]} -ne 0 ]; then
+    # Names only, like everything else here. `$present` holds no values to
+    # leak -- `--only-names` is why -- and nothing below reads one.
+    echo "  ${environment}: holds ${#present_forbidden[@]} setting(s) classed local, which must never be in Doppler —"
+    for name in "${present_forbidden[@]}"; do
+      echo "      ${name}"
+    done
+    failed=1
+    any_forbidden=1
   fi
 done
 
 echo ""
-if [ "$failed" -ne 0 ]; then
+# A forbidden name is removed, not set, so the guidance below would send an
+# operator in precisely the wrong direction -- and then spend fourteen lines on
+# rotating credentials that have nothing to do with it. Said here and returned
+# to separately.
+if [ "$any_forbidden" -ne 0 ]; then
+  cat >&2 <<'FORBIDDEN_GUIDANCE'
+A setting classed `local` in local/config/secrets.manifest is in Doppler, and
+it must not be. `local` means the local Docker stack, or a value the runtime
+sets for itself; a deployed environment holding one either does nothing with it
+or is changed by it in a way nobody chose. NODE_ENV is the second kind: a build
+inherits it, so `development` in Doppler is a production bundle built in
+development mode.
+
+Remove each name listed above:
+
+  doppler secrets delete NAME --project {{projectSlug}} --config <env>
+
+FORBIDDEN_GUIDANCE
+fi
+
+if [ "$any_missing" -ne 0 ]; then
   cat >&2 <<'GUIDANCE'
 Doppler is the secret authority and at least one environment is incomplete.
 
@@ -159,6 +218,12 @@ Two of them cannot simply be copied from anywhere, and that is the point:
 If either has ever appeared in a Terraform plan or state file that was
 committed, rotating is what makes the published copy worthless.
 GUIDANCE
+fi
+
+# One exit for both kinds of failure. It was inside the missing-values block
+# for a moment during PLAT-DEF-014 and a forbidden-only run exited 0 -- the
+# check reporting a violation and then telling the deployment to proceed.
+if [ "$failed" -ne 0 ]; then
   exit 1
 fi
 
