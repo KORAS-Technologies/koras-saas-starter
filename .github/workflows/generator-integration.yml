@@ -277,6 +277,12 @@ jobs:
           PGDATABASE: koras_e2e
         run: |
           set -euo pipefail
+          # Kept, because the product's own is put back below. It has to be:
+          # `tests/integration/test_import_commit_rls.py` asserts that
+          # `TARGETS` is empty -- the guard that the starter never grows a
+          # domain of its own -- and that assertion is worth more than the
+          # convenience of leaving the fixture in place.
+          cp services/api/koras_api/imports/targets.py             "$RUNNER_TEMP/targets.py.product"
           cp "$GITHUB_WORKSPACE/.github/fixtures/import-target.py"             services/api/koras_api/imports/targets.py
           psql -v ON_ERROR_STOP=1 -q -f "$GITHUB_WORKSPACE/.github/fixtures/import-run.sql"
 
@@ -310,6 +316,23 @@ jobs:
           name: playwright-${{ matrix.slug }}
           path: ${{ runner.temp }}/generated/${{ matrix.slug }}/playwright-report/
           retention-days: 7
+
+      # The fixture is for the browser and for nothing else.
+      #
+      # `always()`, because a browser failure must not also make every later
+      # step run against a product carrying a target it does not declare -- the
+      # Python suite asserts that `TARGETS` is empty, and the drift check
+      # compares the project against what the generator would produce for it.
+      # Both would fail for the fixture's reasons rather than their own, which
+      # is the failure mode that costs an afternoon.
+      - name: Put the product-s own targets back
+        if: always() && matrix.roundtrip && contains(matrix.components, 'data_import')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: |
+          set -euo pipefail
+          if [ -f "$RUNNER_TEMP/targets.py.product" ]; then
+            cp "$RUNNER_TEMP/targets.py.product"               services/api/koras_api/imports/targets.py
+          fi
 
 
       # The row-level security suite, executed rather than shipped.
