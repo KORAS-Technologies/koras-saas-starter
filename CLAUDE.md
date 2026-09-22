@@ -477,9 +477,24 @@ JavaScript and survives a reload, and without JavaScript only the focus move is
 lost. Verified in a browser against a real API and database, and the assertion
 mutation-checked: remove the `focus()` call and it goes red.
 
-The rest: TEST-SET-10 needs the Control Plane console, TEST-SET-04 one
-plain-`member` account, and TEST-SET-01 a product with a page using the shared
-data table — which the estate no longer has.
+The rest are BLOCKED, and not in the same way.
+
+**TEST-SET-01 is permanently blocked, decided 2026-09-22.** It needs a product
+page rendering the shared data table over enough rows to page, and the estate
+no longer has one — `koras-e2e-shop` was the only product with such a page and
+is being torn down. Recorded with the trigger that would let it run again
+rather than left looking deferred: any product growing such a page. Giving the
+generated product one was considered and declined, because inventing a page so
+that a test has somewhere to live is the wrong way round. Most of the case is
+proven regardless — the value is chosen, stored, resolved, persisted across a
+reload and kept private to its owner, all in a browser on a deployed product,
+and `data-table.tsx` does resolve `grid.pageSize`. The seam between the two is
+what nothing reaches.
+
+**TEST-SET-04 and TEST-SET-10 are blocked on availability rather than
+possibility**: one plain-`member` account, and the Control Plane console.
+TEST-SET-04's security half is already proven at the API — only the on-page
+notice is unseen.
 
 **TEST-SET-01's blocker changed, and the new one is worse.** It was "no
 product page uses the shared data table". `koras-e2e-shop` has one, and on

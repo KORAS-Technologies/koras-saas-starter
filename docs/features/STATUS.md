@@ -165,10 +165,22 @@ live-region semantics — a screen reader reads what it lands on. Verified in a
 browser against a real API and database, and the assertion mutation-checked:
 remove the `focus()` call and it turns red.
 
-The other three: TEST-SET-10 needs the Control Plane console, TEST-SET-04 one
-plain-`member` account, and TEST-SET-01 a product with a page using the shared
-data table — which the estate no longer has, `koras-e2e-shop` being torn
-down.
+The other three are BLOCKED, and they are not the same kind of blocked.
+
+**TEST-SET-01 is permanently blocked, decided 2026-09-22.** It needs a product
+page rendering the shared data table over enough rows to page; the estate no
+longer contains one. Accepted with the reason recorded and with the trigger
+that would let it run again — any product growing such a page. Giving the
+generated product one was considered and declined: inventing a page so a test
+has somewhere to live is the wrong way round. Most of the case is proven
+anyway, on a deployed product and in the browser — the value is chosen,
+stored, resolved, persisted and private to its owner, and the shared table
+does read `grid.pageSize`. What is unproven is the seam between them.
+
+**TEST-SET-04 and TEST-SET-10 are blocked on availability, not possibility** —
+one plain-`member` account and the Control Plane console. TEST-SET-04's
+security half is already proven at the API; only the on-page notice is
+unseen.
 
 **The live sitting closed TEST-SET-11 and TEST-SET-12.** TEST-SET-11 is the
 one that demonstrates the SET-05 correction: one field changed in a

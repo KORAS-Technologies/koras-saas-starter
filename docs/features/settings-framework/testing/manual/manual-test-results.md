@@ -38,8 +38,17 @@ Where a case needs something the substitute does not have, the verdict is
 
 **TEST-SET-14 was the first FAIL in this plan and is now a PASS.** It failed on
 2026-09-22 — found by measuring focus rather than assuming it — and the defect
-it exposed, **SET-24**, was fixed the same day and verified in a browser. Three
-cases remain, none of them code.
+it exposed, **SET-24**, was fixed the same day and verified in a browser.
+
+**Three cases remain BLOCKED and none of them is code.** One of the three,
+TEST-SET-01, is **permanently** blocked as of 2026-09-22: it needs a product
+page rendering the shared data table over enough rows to page, and the estate
+no longer contains one. The other two need an account and a console
+respectively, and are blocked on availability rather than on possibility.
+
+The difference matters for closure. A case blocked on something obtainable is
+waiting; a case blocked on something that does not exist is a decision, and
+that decision is recorded above rather than left to be rediscovered.
 
 **A live sitting on 2026-09-22 against the deployed dev product** took this
 from 9 to 11. TEST-SET-11 and TEST-SET-12 both passed, and TEST-SET-01's
@@ -74,19 +83,38 @@ matters most did not).
 | One person's page size is not what another sees | **PASS** — round-trip project, two subjects |
 | The seeded orders table repaginates at the chosen size | **NOT EXECUTED — blocked by a live defect** |
 
-**The blocker changed on 2026-09-22, and the new one is worse.** It was "no
-product page uses the shared data table". `koras-e2e-shop` has one —
-`/dashboard/orders` — and on deployed dev **that page returns HTTP 500**.
-Every other dashboard page answers 200, including both settings pages, so the
-settings surface is healthy and the orders page specifically is not.
+### BLOCKED permanently, decided 2026-09-22
 
-That is a live defect in this repository's own orders feature, outside F27's
-boundary, and it is recorded rather than fixed here. Until it is fixed, the one
-page in the estate that makes `grid.pageSize` observable cannot be observed.
+The blocker moved twice in one day and then ran out of road.
 
-**What is proven:** the value is chosen, stored, resolved, persisted across a
-reload, and kept private to its owner — on a deployed product. **What is not:**
-a table drawing that many rows.
+It began as "no product page uses the shared data table". `koras-e2e-shop` had
+one — `/dashboard/orders` — and on deployed dev **that page returned HTTP 500**
+while every other dashboard page answered 200, so the settings surface was
+healthy and the orders page specifically was not. Then that repository was
+scheduled for teardown, and with it went the only product in the estate with
+such a page.
+
+**Accepted as permanently BLOCKED rather than left looking deferred.** A
+BLOCKED verdict with a documented reason is an allowed outcome; what is never
+allowed is counting it as a pass, and it is not counted as one here.
+
+**The trigger that would let it run again**, so this is a state rather than a
+dead end: any product growing a page that renders `KorasDataTable` over enough
+rows to page. Giving the generated product such a page would do it, and is a
+Settings story rather than a correction — considered and declined on
+2026-09-22, because inventing a page so that a test has somewhere to live is
+the wrong way round.
+
+**What is proven, which is most of the case.** The value is chosen, stored,
+resolved, persisted across a reload, and kept private to its owner — all on a
+deployed product, all in the browser. And the shared table genuinely reads the
+setting: `data-table.tsx` resolves it through
+`useSettingValue('grid.pageSize', DEFAULT_PAGE_SIZE)`, with a `pageSize` prop
+that deliberately overrides it per instance.
+
+**What is unproven** is those two halves joined in a running product: a table
+drawing that many rows and repaginating when the number changes. Both ends are
+verified; the seam between them is not.
 
 ---
 
