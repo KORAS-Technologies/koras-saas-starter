@@ -2050,6 +2050,18 @@ describe('application hostnames', () => {
       const pin = modulePins.slice(modulePins.indexOf('vercel/vercel'))
       expect(pin.slice(0, pin.indexOf('}'))).toContain('version = "~> 5.0"')
     }
+    // The fourth pin, and the one this test did not check until 2026-09-21.
+    // `koras bootstrap:doctor` assembles a root configuration from these
+    // templates over a copy of the modules tree, so a stale pin here and a
+    // current one there is a pair of constraints no version satisfies: init
+    // fails and the doctor reports NOT READY. Nothing else in the estate
+    // reads this file, so the suite was green while bootstrap was blocked.
+    const rootTemplate = readFileSync(
+      join(__dirname, '..', '..', '..', 'infrastructure', 'terraform', 'templates', 'providers.tf.tpl'),
+      'utf8',
+    )
+    const rootPin = rootTemplate.slice(rootTemplate.indexOf('vercel/vercel'))
+    expect(rootPin.slice(0, rootPin.indexOf('}'))).toContain('version = "~> 5.0"')
   })
 
   it('ships no Terraform working files with the shared modules', () => {
