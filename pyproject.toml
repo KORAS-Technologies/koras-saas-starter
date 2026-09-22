@@ -29,6 +29,20 @@ extend-exclude = [
   # into a conflict. The ESLint config excludes the same tree for the same
   # reason.
   ".claude/skills",
+  # Archived evidence from a feature's recorded runs. These are a record of
+  # what was executed, not source: they are probe scripts that deliberately
+  # assert defective behaviour, so `S101` fires on every line that does the
+  # one thing they exist to do. Reformatting them to satisfy a linter would
+  # falsify the record, which is the same argument the vendored skills above
+  # rest on and the same one `file-references.test.ts` makes about paths in
+  # dated passages.
+  #
+  # Scoped to the runs directories rather than to `docs/`, so a Python file
+  # added anywhere else under documentation is still linted. Added 2026-09-21
+  # after CI failed on 60 errors in exactly these files -- found by the
+  # pipeline because the local check had been `ruff check <paths>` rather
+  # than `pnpm lint:py`, which is `ruff check .`.
+  "docs/features/*/testing/runs",
 ]
 
 [tool.ruff.lint]
@@ -62,6 +76,12 @@ exclude = [
   # Vendored third-party skills, excluded from ruff and ESLint for the same
   # reason: upstream's code, and linting it makes every upgrade a conflict.
   '^\.claude/skills/',
+  # Archived evidence from a feature's recorded runs, excluded from ruff for
+  # the reason given there: a record of what was executed, not source. They
+  # import a generated product's modules, which do not resolve from here at
+  # all, so checking them in place tests nothing and fails for that reason
+  # rather than for a real one.
+  '^docs/features/[^/]+/testing/runs/',
 ]
 
 [tool.pytest.ini_options]
