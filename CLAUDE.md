@@ -444,17 +444,23 @@ reconciled against a running product rather than re-read: eleven reproduced by
 probe, three by reading, one — **SET-21** — did **not** reproduce, because the
 worker's sweeps do declare the provisioning context the review said they never
 declare. Four Highs were fixed (SET-05, SET-06, SET-07, SET-22) plus SET-23,
-with no schema change and no migration. **Eight of fifteen manual cases were
-executed and passed**, against a real PostgreSQL with the product's own
+with no schema change and no migration. **Nine of fifteen manual cases have
+been executed and passed**, against a real PostgreSQL with the product's own
 migrations and its own API — including TEST-SET-02, the brief's central
 requirement, where an organisation seeded before a platform change kept its
 own value.
 
-**Seven cases are left and none of them is code.** They need the Control Plane
+**Six cases are left and none of them is code.** They need the Control Plane
 console, a product page using the shared data table — only `koras-e2e-shop`
 has one — a plain-`member` browser session, and a person with a screen reader.
-TEST-SET-13 needs a database that carried data across the locale migration and
-can never be run here again.
+
+**TEST-SET-13 was recorded as permanently unrunnable and then ran**, on
+2026-09-22. It needs a database on the pre-settings-framework schema, and
+`koras-e2e-shop`'s local PostgreSQL still sat at `00017`, eighteen behind —
+the last one in the estate that could serve it. It passed: every recorded
+locale carried to `general.language` at the right scope and subject, and both
+the column and the table are gone. A case blocked on *history* expires
+quietly, which is a different kind of deadline from the rest of that list.
 
 **Two things that cycle found are worth carrying.** SET-22's severity came
 *down*: the `WITH CHECK` clauses were genuinely unexercised, but PostgreSQL

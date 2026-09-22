@@ -1,0 +1,39 @@
+TEST-SET-13 — the locale migration moved what was there
+Executed 2026-09-22 against koras-e2e-shop's local PostgreSQL, which sat at
+00017_locale_preferences: the only database in the estate still on the
+pre-settings-framework schema, and therefore the only place this case could
+ever run. It is once-per-environment by its own statement.
+
+Both source tables were empty, so the pre-migration state was CREATED rather
+than found -- five rows across two tenants and three subjects, recorded, then
+migrated. That exercises the property the case asserts (values carried, source
+removed, nobody's language changed); what it does not exercise is incidental
+production data, and this is a development database either way.
+
+== step 1: recorded before applying 00031 ==
+tenant_settings.locale     A(a0000000-...0001)=de   B(bbbbbbbb-...bbbb)=es
+member_preferences.locale  A/user-alpha=en   A/user-beta=de   B/user-gamma=es
+
+== step 2: applied 00018..00033, sixteen migrations, all clean ==
+
+== step 3: read back ==
+                tenant                | general_language 
+--------------------------------------+------------------
+ a0000000-0000-4000-8000-000000000001 | "de"
+ bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb | "es"
+(2 rows)
+
+                tenant                |  user_id   | general_language 
+--------------------------------------+------------+------------------
+ a0000000-0000-4000-8000-000000000001 | user-alpha | "en"
+ a0000000-0000-4000-8000-000000000001 | user-beta  | "de"
+ bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb | user-gamma | "es"
+(3 rows)
+
+ locale_column_remaining | member_preferences_table_remaining 
+-------------------------+------------------------------------
+                       0 |                                  0
+(1 row)
+
+VERDICT: PASS. Every recorded value present at the right scope and subject;
+the column and the table are gone; no value changed.

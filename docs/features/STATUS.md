@@ -144,20 +144,27 @@ as though it addressed it.
 SET-22 and the two accessibility settings that were offered and honoured by
 nothing. No schema change, no migration, no API contract widened.
 
-**And it executed eight of the fifteen manual cases**, against a real
-PostgreSQL with the product's own migrations and its own API, including both
-Critical cases that could run — TEST-SET-02, an existing organisation did not
-follow a later platform change, and TEST-SET-03, the provenance of the copy is
-recorded. `testing/manual/manual-test-results.md` is the record.
+**And it executed nine of the fifteen manual cases**, against a real
+PostgreSQL with the product's own migrations and its own API, including all
+three Critical cases that could run — TEST-SET-02, an existing organisation did
+not follow a later platform change; TEST-SET-03, the provenance of the copy is
+recorded; and TEST-SET-13, the locale migration carried every value it was
+given. `testing/manual/manual-test-results.md` is the record.
 
-**Seven cases remain, and that is why this is still not Done.** Five are
+**Six cases remain, and that is why this is still not Done.** Four are
 BLOCKED and two are half-executed and recorded as BLOCKED rather than as a
 pass on the half that ran. They are blocked on four things and the same four
 each time: the Control Plane console, a product page using the shared data
 table (only `koras-e2e-shop` has one), a plain-`member` browser session, and a
-person with a screen reader. TEST-SET-13 is blocked on history instead — it can
-only run against a database that carried data across the locale migration, and
-every database in that cycle was built from empty.
+person with a screen reader.
+
+**TEST-SET-13 was one of them until 2026-09-22**, recorded as permanently
+unrunnable because it needs a database on the pre-settings-framework schema
+and every one built for that cycle started empty. That was true of every
+database *built for the cycle* and false of the estate: `koras-e2e-shop`'s
+local PostgreSQL still sat eighteen migrations back, at `00017`. It passed.
+The lesson is narrower than "check harder" — a case blocked on *history*
+expires silently, and this one had days left.
 
 **The most valuable unexecuted case is TEST-SET-11**, which is the one that
 would have demonstrated the SET-05 correction by reading the audit trail after

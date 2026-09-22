@@ -31,14 +31,20 @@ Where a case needs something the substitute does not have, the verdict is
 
 | Verdict | Count | Cases |
 |---|---|---|
-| PASS | 8 | 02, 03, 05, 06, 07, 08, 09, 15 |
+| PASS | 9 | 02, 03, 05, 06, 07, 08, 09, 13, 15 |
 | PARTIAL — recorded as BLOCKED | 2 | 01, 04 |
-| BLOCKED | 5 | 10, 11, 12, 13, 14 |
+| BLOCKED | 4 | 10, 11, 12, 14 |
 | FAIL | 0 | — |
 
-**Eight of fifteen executed and passing, including both Critical cases that
-could run.** Seven could not run here, and F27 therefore does not close: the
+**Nine of fifteen executed and passing, including all three Critical cases that
+could run.** Six could not run here, and F27 therefore does not close: the
 closure rule forbids it while any required case is BLOCKED.
+
+**TEST-SET-13 moved from BLOCKED to PASS on 2026-09-22**, and it is the one
+case that could never have been recovered later. It needs a database on the
+pre-settings-framework schema, and `koras-e2e-shop`'s local PostgreSQL was the
+last one in the estate still sitting at `00017` — found while preparing the
+live sitting, and executed before anything migrated it.
 
 The two PARTIAL cases are recorded as BLOCKED rather than as a pass on the half
 that ran. Half a case is not a case, and a table of passes with a footnote is
@@ -253,16 +259,44 @@ have no API.
 
 ## TEST-SET-13 — The locale migration moved what was there
 
-**Verdict** BLOCKED, and it cannot be run here at all.
+**Priority** Critical. **Verdict** PASS, executed 2026-09-22.
 
-The case requires recording `tenant_settings.locale` and
-`member_preferences.locale` **before** `00031_settings_locale_migration.sql` is
-applied. Every database in this cycle was created by applying all 28 migrations
-in order to an empty schema, so the pre-migration state never existed. The case
-is once-per-environment by its own statement and this environment is past it.
+*The entry below is the verdict this case carried on 2026-09-21, kept because
+it was true then and because the reason it changed is worth seeing:*
 
-It remains genuinely unproven for any environment that carried data across that
-migration.
+> **BLOCKED, and it cannot be run here at all.** The case requires recording
+> the two locale columns **before** `00031` is applied, and every database in
+> this cycle was created by applying all 28 migrations to an empty schema, so
+> the pre-migration state never existed.
+
+That was true of every database **I had built**. It was not true of every
+database in the estate: `koras-e2e-shop`'s local PostgreSQL still sat at
+`00017_locale_preferences`, eighteen migrations behind, which is exactly the
+state this case needs. Found while preparing the live sitting, and run before
+anything migrated it — the opportunity would not have survived the next
+`make bootstrap`.
+
+**Both source tables were empty**, so the pre-migration state was *created*
+rather than found: five rows across two tenants and three subjects. That
+exercises what the case asserts — values carried, source removed, nobody's
+language changed — and does not exercise incidental production data. Stated
+rather than glossed, because "executed against seeded data" and "executed
+against a real estate" are different claims.
+
+| | Before, recorded | After, read back |
+|---|---|---|
+| Tenant A `tenant_settings.locale` | `de` | `general.language` = `"de"` |
+| Tenant B `tenant_settings.locale` | `es` | `general.language` = `"es"` |
+| A / `user-alpha` | `en` | `"en"` |
+| A / `user-beta` | `de` | `"de"` |
+| B / `user-gamma` | `es` | `"es"` |
+| `tenant_settings.locale` column | present | **gone** |
+| `member_preferences` table | present | **gone** |
+
+Every recorded value is present, at the right scope and against the right
+subject. Sixteen migrations applied clean in sequence.
+
+Evidence: `docs/features/settings-framework/testing/runs/2026-09-21-01/test-set-13-locale-migration.txt`
 
 ---
 
