@@ -351,6 +351,20 @@ again, silently. That is the third BLOCK in three independent reviews in
 this repository, and the pattern is worth naming: work written and reviewed
 inside one session is not reviewed.
 
+**A second review ran on 2026-09-22, over both phases, and returned BLOCK from
+all four reviewers** — one per seam, none seeing another's report. It found
+that **Phase 2 had never worked**: `begin_commit` was defined, exported and
+called by nothing, so every commit asked the state machine for an edge it does
+not have, rolled the writer's rows back, and was refused again trying to record
+the failure. Every commit of every product wrote nothing, stranded its run and
+told nobody.
+
+Two critical and nine high are fixed, each with a test that fails without it.
+Seventeen medium and fifteen low are carried with a decision each.
+`docs/features/data-import/phase-2-review.md` is the record, and it opens with
+why every gate in the estate was green over it: the generator test asserts the
+*shape* of the commit, and all of it is true of code that fails on every run.
+
 ### What is deliberately unbuilt, and why
 
 Three Phase 1 plan items were not built. Each is a row in
@@ -362,31 +376,57 @@ None of them touches the safety properties.
 
 ### What has no automated proof
 
-Everything a person does with a real file. The e2e harness starts the web
-application alone, so its four browser checks cover routing, refusal and
-degraded rendering and nothing that needs an API, a queue or a bucket. No file
-has been imported through a deployed product, and `koras-e2e-shop` — the one
-repository in the estate with a domain that could declare real targets — has
-not been synced.
-`docs/features/data-import/manual-test-plan.md` has twenty-two cases and
-twenty-two blank verdicts.
+**Less than it was, and the change is worth reading.** Until 2026-09-22 the
+answer here was "everything a person does with a real file", because the e2e
+harness started the web application alone. Two things closed most of that.
+
+`tests/integration/test_import_commit_rls.py` runs the commit against a real
+PostgreSQL with row-level security on — four cases, each mutation-checked — and
+`Generator Integration` runs it on the round-trip row.
+
+And the import page is **rendered in CI at last**. It never had been: a
+generated product declares no targets, so `ImportPanel` returned its no-targets
+banner and the browser suite asserted that. A fixture target installed by the
+workflow from `.github/fixtures/` — inside no template, so it reaches no
+product — now makes `e2e/roundtrip/imports.spec.ts` draw the page, the picker,
+the history and the report.
+
+What still has no automated proof is the part that needs a writer: an upload
+through a bucket, a dry run against a real queue, and a commit that lands rows
+in a product's own table. Of `manual-test-plan.md`'s forty cases, ten are
+covered — eight executed by hand on 2026-09-22 and two by that browser suite —
+and thirty are blank.
 
 ## Recommended order
 
-**SAG-F2 has no unbuilt stories left.** Everything below is either review,
-a decision, or work that belongs to SAG-F1.
+Rewritten 2026-09-22. **Four of the five items this section used to list were
+already done when it was read** — the independent security review, ADR 0006's
+three questions, the two capability declarations, and STORAGE-015, which the
+story table twelve lines above already called Built. A recommendation that
+outlives its work sends somebody to do it twice, which is R-042 in the one
+document whose whole job is to say where things stand.
 
-1. **Independent security review** of what has shipped. Eight commits of
-   governance code — migrations, policies, two destructive sweeps, an
-   authorization asymmetry, an export path that moves records out of the
-   product — have had no independent eyes, and the gap widens with each
-   feature rather than closing.
-2. **A manual pass.** Twenty-five cases, every verdict still blank, and the
-   export and hold flows have never been exercised by a person.
-3. **Answer ADR 0006 question 1.** It blocks five storage stories and is half
-   a day of somebody's decision rather than of engineering.
-4. **Declare the two capabilities.** Everything has landed in the foundation,
-   so every product carries holds, audit search, export and two sweeps whether
-   it wants them or not.
-5. **STORAGE-015**, the platform contract, so the console can show governance
-   state across the estate.
+What is left is verification and sync, not construction.
+
+1. **Sync `docoris`.** It is the furthest adrift of the live products: its
+   starter-range migrations stop at `00028`, so it has no settings framework,
+   no notification dispatch point, no outbox and no round-trip harness. The gap
+   widens every week and the method is proven — generate twice from one starter
+   commit, with and without, and apply only what the delta shows.
+2. **One notification through a deployed product.** Not a matrix: one notice,
+   caused by a real producer, through the outbox, to an inbox. That is the
+   single claim nothing in this estate makes, and the class it would catch —
+   a producer that composes nothing, a language resolved from the wrong
+   person — has already shipped twice here.
+3. **The governance manual pass.** Twenty-five cases, every verdict blank since
+   2026-09-16, and the export and hold flows have never been exercised by a
+   person. Two of those flows delete.
+4. **Data import's remaining thirty cases**, which need the API started with a
+   bucket and a queue and a target that declares a writer.
+5. **The carried findings**: seventeen medium and fifteen low from the data
+   import review, of which IMP2-13, IMP2-14, IMP2-16 and IMP2-21 are the ones a
+   customer could meet.
+
+Not listed because they are nobody's engineering: Stripe live mode, the live
+teardown sitting, and the two ZITADEL writes per environment. They are in
+`docs/FOLLOW_UPS.md` and they do not contend with anything above.

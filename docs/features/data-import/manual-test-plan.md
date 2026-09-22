@@ -1,8 +1,11 @@
 # Data import — manual test plan
 
 Written 2026-09-19, against Phase 1 as built; the commit cases added
-2026-09-20. **Six of the forty have been executed — 23, 24, 25, 26, 36 and 39,
-all PASS, on 2026-09-22.** The verdicts and the estate are in
+2026-09-20. **Ten of the forty are covered as of 2026-09-22: eight executed by
+hand — 23, 24, 25, 26, 36, 36b, 37 and 39, all PASS — and 17 and 28 by
+`e2e/roundtrip/imports.spec.ts`, which `Generator Integration` runs against a
+fixture target.** The two are counted separately: a case a person walked through
+and a case a suite asserts are different kinds of evidence. The verdicts and the estate are in
 `testing/manual/manual-test-results.md`; the columns below are left blank
 rather than filled in two places.
 
@@ -50,7 +53,7 @@ a generated product given the smallest possible one: a `probe.contacts` target
 with a real writer and a tenant-scoped table, both of which live in
 `testing/runs/2026-09-22-01/` and neither of which is part of the starter.
 
-**Cases 23, 24, 25, 26, 36 and 39 PASS.** Case 26 is the phase's own
+**Cases 23, 24, 25, 26, 36, 37 and 39 PASS.** Case 26 is the phase's own
 acceptance criterion and it was made to fail the hard way: the writer writes two
 of three rows and *then* raises. Case 36 covers the route's paging contract and
 not the browser's download, which is NOT EXECUTED. The other twelve are NOT

@@ -16,6 +16,19 @@ promotion and added deploy-time registration.
 
 ## What to do first
 
+**The estate changed on 2026-09-22.** `koras-e2e-shop` is being torn down, so
+every entry below that names it as a place to sync to, or as the only product
+with a domain, is describing an estate that no longer exists. Those passages are
+left as written — they were true then — and this is the correction.
+
+What is live: `docoris` and `lexveria` as products, `koras-control-plane` as the
+platform. `lexveria` is one migration behind the template. **`docoris` is nine
+behind and missing three whole features** — the settings framework, the
+notification dispatch point and the outbox — which makes syncing it the largest
+piece of unbuilt-adjacent work in the estate and the thing that gets more
+expensive every week.
+
+
 The index below is ordered by when an entry was opened, which is the one order
 that says nothing about what to do next. This says it, and it is a
 recommendation rather than a record — revise it, do not preserve it.

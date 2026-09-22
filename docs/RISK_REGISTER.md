@@ -246,6 +246,7 @@ branding" there.
 | R-041 | Teardown made the operator write secrets to disk | 20   | Resolved                 |
 | R-042 | Prose is the only untested part of the repository | 12  | Partly closed — fourth class automated 2026-09-15 |
 | R-043 | Vercel built every push itself, beside CI's deploy | 12  | Resolved                 |
+| R-044 | The API's declared FastAPI floor does not import   | 8   | Open                     |
 | R-016 | Generated Doppler project left empty         | 12       | Resolved                 |
 | R-017 | Control-plane env contract was the product one | 10     | Resolved                 |
 | R-018 | Queue polling billed per command             | 8        | Resolved                 |
@@ -2348,3 +2349,35 @@ requires the file with that value, and requires the module not to claim
 estates and the team's deployment list read back: CI's `cli` deployment for
 that commit, and no `git` one on any project. The commit before it, without
 the file, had produced fourteen.
+
+## R-044 — The API's declared FastAPI floor does not import
+
+**Found:** 2026-09-16, while reading dependency declarations. Recorded in
+`CLAUDE.md` the same day with the sentence "it belongs in
+`RISK_REGISTER.md`", and filed here on 2026-09-22 — six days in which the one
+document that tracks defects did not know about it. That gap is the smaller
+half of the finding and is why this paragraph exists.
+
+**Severity:** 8 (likelihood 2 × impact 4) · **Status:** Open
+
+`services/api/pyproject.toml` declares `fastapi>=0.115.0`. At exactly that
+version, a route that returns `None` with a 204 status fails **at import**, and
+the API has two: one in `routers/files.py` and one in
+`routers/reporting_schedules.py`.
+
+**What makes it a risk rather than a bug is which way the luck runs.** Nothing
+pins the upper bound, so resolution picks a later version and the suite is
+green — not because the declared floor works, but because nobody installs it.
+A lockfile refresh, a constrained environment, or an operator following the
+declaration rather than the lockfile all land on a version the API cannot start
+on, and the failure is at import: no request is served, and the message names a
+response model rather than a version.
+
+**Mitigation:** raise the floor to the first version that imports, and assert it
+somewhere a resolver cannot paper over. A declared floor nothing installs is a
+claim nothing checks, which is the same shape as R-042 in a different file.
+
+**Not yet done as of 2026-09-22.** The two routes could also return an explicit
+`Response`, which would make the floor honest at either version; that is the
+narrower fix and the one worth taking if raising the floor turns out to drag
+other packages with it.

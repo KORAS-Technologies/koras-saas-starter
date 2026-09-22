@@ -1,8 +1,19 @@
 # Data import — manual test results
 
-Against `manual-test-plan.md`. **Eight of forty cases have been executed.** Every
-other verdict is still blank, and this document says which and why rather than
-leaving thirty-two blanks to be counted again.
+Against `manual-test-plan.md`. **Ten of forty cases are covered: eight executed
+by hand, and two more by the round-trip browser suite.** The other thirty are
+blank, and this document says which and why rather than leaving them to be
+counted again.
+
+**The two numbers are kept apart on purpose.** A case a person walked through
+and a case a suite asserts are different kinds of evidence, and collapsing them
+into one figure is how a matrix starts reporting coverage it does not have.
+This page said "eight of forty" with a separate sentence claiming four of those
+eight had become automated — which was wrong twice over: the automated tests
+cover cases 17 and 28, neither of which had ever been executed, so coverage was
+understated while the arithmetic implied a smaller denominator. Recorded rather
+than quietly corrected, because a count in prose that nothing compares against
+its own table is R-042 exactly.
 
 Opened 2026-09-22, after the second independent review
 (`../../phase-2-review.md`) found that the commit path had never worked.
@@ -19,6 +30,17 @@ Opened 2026-09-22, after the second independent review
 | 39 | A member without the target's permission is refused 403 | **PASS** | 2026-09-22 |
 | 36b | The **downloaded file** holds every problem, once | **PASS** | 2026-09-22 |
 | 37 | A comma, a quote and a newline survive as one cell | **PASS** | 2026-09-22 |
+
+And two more that no person has walked through, covered by
+`e2e/roundtrip/imports.spec.ts` in `Generator Integration`:
+
+| # | Case | Verdict | Date |
+|---|------|---------|------|
+| 17 | A member without `imports.manage` sees no module, and the URL is refused | **PASS (automated)** | 2026-09-22 |
+| 28 | A target whose writer was removed renders no confirm control | **PASS (automated)** | 2026-09-22 |
+
+The same suite also asserts the browser halves of 36 and 37, which is why those
+two carry a manual verdict and an automated one.
 
 The first four were chosen rather than the first four of the plan, because they
 are the ones that decide whether the review's critical finding is actually
@@ -198,11 +220,11 @@ case 37 — ran once IMP2-29 was fixed. Everything remaining has an estate that
 could run it — the local stack has PostgreSQL, Redis, MinIO and an identity
 provider, and the round-trip harness starts an API against them.
 
-**Four of them are automated now.** `Generator Integration` installs a fixture
-target and runs `e2e/roundtrip/imports.spec.ts`, which covers the page
-rendering, the module being hidden from a member, a non-committable target
-offering no way to write, and a past run's report holding every problem once
-with nothing executable in it. Those stop being manual cases.
+**Four cases have automated cover now**, from
+`e2e/roundtrip/imports.spec.ts`, which `Generator Integration` runs against a
+fixture target: 17, 28, and the browser halves of 36 and 37. They are not struck
+from the plan — an automated assertion and a person opening the page answer
+different questions, and the plan is the record of the second.
 
 **What the rest still need**, so the next session does not rediscover it: the
 confirm control, the polling and the outcome are offered only for the run the

@@ -243,8 +243,10 @@ external skills, and bring an existing project back into alignment.
 | 13 — End-to-End Acceptance Tests | Live variant run, one gap found | A product estate of 82 resources was provisioned and torn down on 2026-08-27. Seven providers deleted cleanly; **Cloudflare was not in the inventory at all**, so eight DNS records survived a run reporting nothing retained. Now the eighth provider — R-036 reopened for a second live run |
 
 **Open risks:** R-036 (a second live teardown, now that Cloudflare is in the
-inventory) and R-042 (documentation and comments are the one part of the
-repository that can be wrong without anything going red). R-042 shrank on
+inventory), R-042 (documentation and comments are the one part of the
+repository that can be wrong without anything going red) and R-044 (the API's
+declared FastAPI floor does not import; the suite is green because resolution
+picks a later version). R-042 shrank on
 2026-09-15: hedged claims — "not yet", "currently", "for now" — are now checked
 by `tests/docs/hedged-claims.test.ts`, which requires a date in the hedge's own
 paragraph, heading or table row. That is the fourth mechanical class, after
@@ -274,6 +276,25 @@ carried `chore: sync … from the starter` commit per change, and `--check-drift
 sees only files it never received, not content drift in files it has. Template
 breakage is still caught independently by Generator Integration building a
 product from the templates.
+
+**`koras-e2e-shop` is being torn down, decided 2026-09-22**, and the passages
+above and below that treat it as the estate are left as they were: they were
+true when written, and rewriting a dated account is how a record stops being
+one. Read them as history from here.
+
+**What the estate actually is**, checked rather than remembered on 2026-09-22:
+`docoris` and `lexveria` are the live products and `koras-control-plane` is the
+platform. `lexveria` is freshly generated and sits one migration behind the
+template — `00036_imports.sql`, the gated one. **`docoris` is the one to
+worry about**: its starter-range migrations stop at `00028`, so it has no
+settings framework, no notification dispatch point, no outbox and no round-trip
+harness.
+
+So "the one repository in the estate with a domain that could declare real
+targets" — a phrase F28 and `STATUS.md` both used of the shop — was never quite
+right, and is now wrong twice: `docoris` has a domain too. That sentence was
+inherited rather than checked, which is the same failure as the counts R-042
+exists for, applied to an estate instead of a file.
 R-031 stands accepted with mitigation.
 
 **The AI foundation shipped on 2026-09-13** as a product capability, `ai`, off
@@ -842,8 +863,10 @@ No manual test pass has run against any of it.
 exactly 0.115.0 every route returning `None` with a 204 status fails at import
 -- `routers/files.py` and `routers/reporting_schedules.py` both have one. CI
 resolves higher, so the suite is green by the luck of resolution rather than
-because the declared floor works. Found 2026-09-16; it belongs in
-`RISK_REGISTER.md`.
+because the declared floor works. Found 2026-09-16 and **filed as R-044 on
+2026-09-22** — six days in which this paragraph said it belonged in the risk
+register and the risk register did not have it, which is the smaller half of
+the finding.
 
 **Next step:** `FOLLOW_UPS.md` opens with the order rather than leaving it to be
 re-derived. Eight entries are ordered there as of 2026-09-19, the first being
