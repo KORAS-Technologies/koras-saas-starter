@@ -1,4 +1,4 @@
-import { Container, SettingsForm } from '@{{projectSlug}}/ui'
+import { Container, SaveOutcome, SettingsForm } from '@{{projectSlug}}/ui'
 import { fetchMySettings, fetchSettingDefinitions } from '@{{projectSlug}}/api-client'
 import { AccessDenied } from '@{{projectSlug}}/ui'
 import { signedInContext } from '../../../lib/access'
@@ -97,19 +97,20 @@ export default async function PreferencesPage({
         <p className="mt-3 max-w-2xl leading-7 text-ink-muted">{t('preferences.intro')}</p>
 
         {/*
-          Announced, because a redirect lands on a page that looks the same as
-          the one just left. Without it a save is indistinguishable from a
-          reload for anybody not watching one particular field.
+          Announced *and given focus*, because a redirect lands on a page that
+          looks the same as the one just left. Without it a save is
+          indistinguishable from a reload for anybody not watching one
+          particular field — and, before SET-24, focus went to `BODY` and the
+          message was content already present at load rather than a change a
+          live region could announce. `SaveOutcome` carries both halves.
         */}
         {params.saved ? (
-          <p
+          <SaveOutcome
             className="mt-6 text-sm text-ink-muted"
-            role="status"
-            data-testid="preferences-outcome"
-            data-outcome={params.saved}
-          >
-            {params.saved === 'ok' ? t('preferences.saved') : t('preferences.error')}
-          </p>
+            testId="preferences-outcome"
+            outcome={params.saved}
+            message={params.saved === 'ok' ? t('preferences.saved') : t('preferences.error')}
+          />
         ) : null}
 
         <div className="mt-8 max-w-3xl">

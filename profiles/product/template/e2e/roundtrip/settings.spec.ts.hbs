@@ -63,6 +63,50 @@ test('a page size chosen here survives a reload', async ({ page, context }) => {
   await expect(page.locator(PAGE_SIZE)).toHaveValue(after)
 })
 
+test('saving moves focus to the confirmation', async ({ page, context }) => {
+  // **SET-24.** The save is a server-side redirect, which is deliberate: it
+  // works without JavaScript and survives a reload. But a redirect reloads the
+  // document, and before this test existed that cost two things, both measured
+  // against a deployed product on 2026-09-22.
+  //
+  // Focus went to `BODY`, so anybody working by keyboard tabbed back to their
+  // place after every save. And the confirmation sat in a `role="status"`
+  // region that was *already present* when the document loaded — a live region
+  // announces changes made after it exists, so the one signal that the save
+  // worked could be silent for exactly the people that region was added for.
+  //
+  // Moving focus to the message fixes both, and fixes the announcement without
+  // depending on live-region semantics at all: a screen reader reads what it
+  // lands on.
+  //
+  // Asserted on `document.activeElement`, not on the markup. A `tabIndex` and
+  // a `useEffect` can both be present and the focus still land elsewhere —
+  // which is the difference between asking what the code says and asking what
+  // it does.
+  await signInAs(context)
+  await page.goto('/dashboard/preferences')
+
+  const control = page.locator(PAGE_SIZE)
+  await control.focus()
+  const before = await control.inputValue()
+  await control.fill(before === '25' ? '50' : '25')
+  await page.getByTestId('save-grid').click()
+  await expect(page.getByTestId('preferences-outcome')).toContainText(/./)
+
+  const focused = await page.evaluate(() => {
+    const el = document.activeElement
+    return {
+      testId: el?.getAttribute('data-testid') ?? null,
+      isBody: el === document.body,
+      text: (el?.textContent ?? '').trim().slice(0, 60),
+    }
+  })
+  expect(focused.isBody, 'focus was left on BODY after a save').toBe(false)
+  expect(focused.testId).toBe('preferences-outcome')
+  // And it is the message that has focus, not an empty shell of it.
+  expect(focused.text.length).toBeGreaterThan(0)
+})
+
 test('what one person chose is not what another sees', async ({ page, context, browser }) => {
   // The property row-level security exists for, checked from a browser rather
   // than from a SQL suite. A settings store that ignored the subject entirely

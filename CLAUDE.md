@@ -458,18 +458,28 @@ as a before/after difference, because the first attempt was misled by an
 audit entry an earlier, unfixed save had written — presence of a key proves
 nothing about which save wrote it.
 
-**Four cases are left, and one of them FAILS.** TEST-SET-14 ran on 2026-09-22
-and three of its four sub-claims pass — 21 of 21 controls reachable by
-keyboard at 1440 and 375, a focus ring on every one, and every per-field Reset
-naming its own field rather than saying a bare "Reset". The fourth fails:
-**saving loses focus to `BODY`** because the save is a server-side redirect,
-and the "Saved." confirmation sits in a `role="status"` region that is present
-at document load rather than inserted as a change — so it may never be
-announced to the people that region exists for. Recorded as **SET-24**, and
-F27 cannot close while a required case FAILs.
+**Twelve of fifteen pass. Three are left and none of them is code.**
 
-The rest: TEST-SET-10 needs the Control Plane console, TEST-SET-04 needs one
-plain-`member` account, and TEST-SET-01 is blocked behind the orders 500.
+TEST-SET-14 ran on 2026-09-22 and FAILED on one of four sub-claims — the other
+three passed outright: 21 of 21 controls reachable by keyboard at 1440 and 375,
+a focus ring on every one, and every per-field Reset naming its own field
+rather than saying a bare "Reset". The failure was **SET-24**: saving lost
+focus to `BODY`, because the save is a server-side redirect, and the "Saved."
+confirmation sat in a `role="status"` region present at document load rather
+than inserted as a change — a live region announces changes made *after* it
+exists, so the one signal the save worked could be silent for exactly the
+people that region was added for.
+
+**Fixed the same day.** `SaveOutcome` focuses the confirmation on mount, which
+closes the announcement without depending on live-region semantics at all: a
+screen reader reads what it lands on. The redirect stays — it works without
+JavaScript and survives a reload, and without JavaScript only the focus move is
+lost. Verified in a browser against a real API and database, and the assertion
+mutation-checked: remove the `focus()` call and it goes red.
+
+The rest: TEST-SET-10 needs the Control Plane console, TEST-SET-04 one
+plain-`member` account, and TEST-SET-01 a product with a page using the shared
+data table — which the estate no longer has.
 
 **TEST-SET-01's blocker changed, and the new one is worse.** It was "no
 product page uses the shared data table". `koras-e2e-shop` has one, and on

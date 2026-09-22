@@ -31,16 +31,15 @@ Where a case needs something the substitute does not have, the verdict is
 
 | Verdict | Count | Cases |
 |---|---|---|
-| PASS | 11 | 02, 03, 05, 06, 07, 08, 09, 11, 12, 13, 15 |
-| **FAIL** | **1** | **14** |
+| PASS | 12 | 02, 03, 05, 06, 07, 08, 09, 11, 12, 13, 14, 15 |
 | PARTIAL — recorded as BLOCKED | 2 | 01, 04 |
 | BLOCKED | 1 | 10 |
+| FAIL | 0 | — |
 
-**TEST-SET-14 is the first FAIL in this plan**, found on 2026-09-22 by
-measuring focus rather than assuming it. Three of its four sub-claims pass
-outright; the fourth does not, and it is a real accessibility defect recorded
-as **SET-24**. F27 cannot close with a FAIL outstanding, which is the correct
-outcome rather than an inconvenient one.
+**TEST-SET-14 was the first FAIL in this plan and is now a PASS.** It failed on
+2026-09-22 — found by measuring focus rather than assuming it — and the defect
+it exposed, **SET-24**, was fixed the same day and verified in a browser. Three
+cases remain, none of them code.
 
 **A live sitting on 2026-09-22 against the deployed dev product** took this
 from 9 to 11. TEST-SET-11 and TEST-SET-12 both passed, and TEST-SET-01's
@@ -361,9 +360,11 @@ Evidence: `docs/features/settings-framework/testing/runs/2026-09-21-01/test-set-
 
 ## TEST-SET-14 — Keyboard and screen reader
 
-**Verdict FAIL**, executed 2026-09-22 on deployed dev at both widths.
+**Verdict** PASS, executed 2026-09-22 on deployed dev at both widths. It
+FAILED on one of four sub-claims; the failure was fixed the same day and the
+fix verified in a browser against a real API and database.
 
-Three sub-claims pass and one fails. The failure is **SET-24**.
+Three sub-claims passed outright. The fourth failed, and was **SET-24**.
 
 | Sub-claim | 1440×900 | 375×812 |
 |---|---|---|
@@ -378,7 +379,9 @@ read `Reset: Language`, `Reset: Theme`, `Reset: Interface density`,
 `Reset: Rows per page`. Zero buttons carry a bare "Reset". Read from the
 accessibility tree, which is what a screen reader announces.
 
-### SET-24 — saving loses focus, and the confirmation may never be announced
+### SET-24 — saving lost focus, and the confirmation might never be announced · **FIXED**
+
+*What follows is what the case found. The fix is at the end.*
 
 Focus was on the `ui.density` control. After saving:
 
@@ -405,13 +408,38 @@ document loads. Arriving by redirect, the message is present at load. So the
 one signal that the save worked may be silent for exactly the users the live
 region was added for.
 
-**What this pass cannot settle**, stated rather than implied: whether a given
-screen reader announces it. That needs NVDA, JAWS or VoiceOver and a person.
-What is settled is the mechanism — focus moves, and the message is initial
-content rather than an update. The remedy is likely to move focus deliberately
-to the status region after a save, or to announce it as a change; both are
-design decisions rather than corrections, which is why this is recorded as a
-finding and not fixed here.
+**What this pass could not settle**, stated rather than implied: whether a
+given screen reader announces it. That needs NVDA, JAWS or VoiceOver and a
+person. What was settled is the mechanism — focus moved, and the message was
+initial content rather than an update.
+
+### The fix
+
+A shared `SaveOutcome` client component renders the confirmation on both
+settings pages with `tabIndex={-1}` and focuses itself on mount.
+
+That closes both halves at once, and closes the announcement in a way that
+**does not depend on live-region semantics at all**: a screen reader reads what
+it lands on, so it no longer matters that the message arrived as initial
+content. The reader also keeps their place *at the confirmation*, which is
+where somebody who just saved wants to be.
+
+Three deliberate details. Every prop is a string, because a function cannot
+cross into a client component — PLAT-DEF-008, and the test asserts the prop
+types carry no function signature. No focus ring is drawn, because browsers do
+not match `:focus-visible` on a programmatic focus of a `tabIndex={-1}`
+element: a ring belongs where somebody navigated, and nobody navigated here.
+And without JavaScript the paragraph still renders with its message and its
+`role="status"` — only the focus move is lost, which is the right thing to
+degrade.
+
+**Verified in a browser, and the verification was itself checked.** The
+round-trip suite gained `saving moves focus to the confirmation`, which asserts
+`document.activeElement` rather than the markup — a `tabIndex` and a
+`useEffect` can both be present while focus lands elsewhere. Five of five pass
+against a real API and database. Removing the `focus()` call turns it red with
+the message *"focus was left on BODY after a save"*, so the assertion measures
+the effect rather than the mechanism.
 
 Evidence: `docs/features/settings-framework/testing/manual/screenshots/TEST-SET-14/`
 

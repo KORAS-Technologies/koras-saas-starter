@@ -152,17 +152,23 @@ not follow a later platform change; TEST-SET-03, the provenance of the copy is
 recorded; and TEST-SET-13, the locale migration carried every value it was
 given. `testing/manual/manual-test-results.md` is the record.
 
-**Four cases remain, and one of them now FAILS.** TEST-SET-14 was executed on
-2026-09-22 and three of its four sub-claims pass — every control reachable by
-keyboard at both widths, a focus ring on every one, and every per-field Reset
-naming its own field. The fourth fails: **saving loses focus to `BODY`**,
-because the save is a server-side redirect, and the "Saved." confirmation sits
-in a `role="status"` region that is present at document load rather than
-inserted as a change — so it may never be announced. That is **SET-24**, and
-F27 cannot close while a required case FAILs.
+**Twelve of fifteen now pass, and three remain — none of them code.**
+TEST-SET-14 ran on 2026-09-22 and FAILED on one of its four sub-claims:
+**saving lost focus to `BODY`**, because the save is a server-side redirect,
+and the "Saved." confirmation sat in a `role="status"` region present at
+document load rather than inserted as a change, so it might never have been
+announced. That was **SET-24**.
 
-The other three: TEST-SET-10 needs the Control Plane console, and
-TEST-SET-01 and TEST-SET-04 are half-executed.
+It was fixed the same day. A shared `SaveOutcome` client component focuses the
+confirmation on mount, which closes the announcement without depending on
+live-region semantics — a screen reader reads what it lands on. Verified in a
+browser against a real API and database, and the assertion mutation-checked:
+remove the `focus()` call and it turns red.
+
+The other three: TEST-SET-10 needs the Control Plane console, TEST-SET-04 one
+plain-`member` account, and TEST-SET-01 a product with a page using the shared
+data table — which the estate no longer has, `koras-e2e-shop` being torn
+down.
 
 **The live sitting closed TEST-SET-11 and TEST-SET-12.** TEST-SET-11 is the
 one that demonstrates the SET-05 correction: one field changed in a

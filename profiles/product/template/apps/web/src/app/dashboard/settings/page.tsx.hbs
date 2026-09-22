@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   Container,
+  SaveOutcome,
   SelectField,
   SettingsForm,
   ThemeToggle,
@@ -166,22 +167,24 @@ export default async function SettingsPage({
           </p>
 
           {/*
-            Announced, because a redirect lands on a page that looks the same as
-            the one just left.
+            Announced *and given focus* — a redirect lands on a page that looks
+            the same as the one just left, and before SET-24 focus went to
+            `BODY` while the message was content already present at load rather
+            than a change a live region could announce.
           */}
           {query.saved ? (
-            <p
+            <SaveOutcome
               className="mt-4 text-sm text-ink-muted"
-              role="status"
-              data-testid="settings-outcome"
-              data-outcome={query.saved}
-            >
-              {query.saved === 'ok'
-                ? t('settings.values.saved')
-                : query.saved === 'forbidden'
-                  ? t('settings.values.forbidden')
-                  : t('settings.values.error')}
-            </p>
+              testId="settings-outcome"
+              outcome={query.saved}
+              message={
+                query.saved === 'ok'
+                  ? t('settings.values.saved')
+                  : query.saved === 'forbidden'
+                    ? t('settings.values.forbidden')
+                    : t('settings.values.error')
+              }
+            />
           ) : null}
 
           {!manage ? (

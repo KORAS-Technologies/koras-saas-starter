@@ -1160,12 +1160,57 @@ describe('the two settings surfaces', () => {
     expect(preferences).not.toContain('heldMeans')
   })
 
+  it('gives the save outcome focus, and crosses the boundary as strings', () => {
+    // **SET-24.** Both pages answer a save by redirecting, which reloads the
+    // document: focus resets to BODY, and the confirmation is content already
+    // present at load rather than a change a live region can announce. Both
+    // were measured on a deployed product on 2026-09-22 before this existed.
+    //
+    // Moving focus to the message fixes both, and fixes the announcement
+    // without depending on live-region semantics: a screen reader reads what
+    // it lands on.
+    const outcome = read('packages', 'ui', 'src', 'settings', 'save-outcome.tsx')
+    expect(outcome).toContain("'use client'")
+    expect(outcome).toContain('ref.current?.focus()')
+    // Reachable programmatically, and deliberately not in the tab order: it is
+    // a message, not a control.
+    expect(outcome).toContain('tabIndex={-1}')
+    expect(outcome).toContain('role="status"')
+
+    // Every prop is a string. A function cannot cross into a client component
+    // — PLAT-DEF-008, which broke every signed-in page the last time it was
+    // forgotten. Asserted on the prop types rather than on a call site.
+    const props = outcome.slice(outcome.indexOf('}: {'), outcome.indexOf('}) {'))
+    expect(props).toContain('message: string')
+    expect(props).toContain('outcome: string')
+    expect(props).toContain('testId: string')
+    expect(props, 'a prop is typed as a function and cannot cross the boundary').not.toMatch(
+      /:\s*\([^)]*\)\s*=>/,
+    )
+
+    // And both pages use it rather than hand-rolling a second paragraph.
+    for (const page of [
+      read('apps', 'web', 'src', 'app', 'dashboard', 'preferences', 'page.tsx.hbs'),
+      read('apps', 'web', 'src', 'app', 'dashboard', 'settings', 'page.tsx.hbs'),
+    ]) {
+      expect(page).toContain('<SaveOutcome')
+      expect(page).toContain('SaveOutcome,')
+      // The old shape: a bare paragraph carrying the testid itself.
+      expect(page, 'a page still renders its own outcome paragraph').not.toMatch(
+        /<p[^>]*data-testid="(preferences|settings)-outcome"/,
+      )
+    }
+  })
+
   it('announces the outcome of a save', () => {
-    // A redirect lands on a page that looks the same as the one just left.
-    expect(organisation).toContain('role="status"')
+    // A redirect lands on a page that looks the same as the one just left, so
+    // each page still decides *whether* there is an outcome to show from its
+    // own flag. The `role="status"` moved into `SaveOutcome` with SET-24 —
+    // one region, two pages, and the focus move with it.
     expect(organisation).toContain('query.saved')
-    expect(preferences).toContain('role="status"')
     expect(preferences).toContain('params.saved')
+    const outcome = read('packages', 'ui', 'src', 'settings', 'save-outcome.tsx')
+    expect(outcome).toContain('role="status"')
   })
 
   it('holds no English in the shared form, like every component here', () => {
