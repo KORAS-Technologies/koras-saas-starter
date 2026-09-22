@@ -1,8 +1,8 @@
 # Data import — manual test results
 
-Against `manual-test-plan.md`. **Four of forty cases have been executed.** Every
+Against `manual-test-plan.md`. **Six of forty cases have been executed.** Every
 other verdict is still blank, and this document says which and why rather than
-leaving forty blanks to be counted again.
+leaving thirty-four blanks to be counted again.
 
 Opened 2026-09-22, after the second independent review
 (`../../phase-2-review.md`) found that the commit path had never worked.
@@ -15,10 +15,39 @@ Opened 2026-09-22, after the second independent review
 | 24 | Count rows in the target table afterwards | **PASS** | 2026-09-22 |
 | 25 | Confirm twice; one copy of the records exists | **PASS** | 2026-09-22 |
 | 26 | A writer that raises leaves **zero** rows | **PASS** | 2026-09-22 |
+| 36 | *Download every problem* contains every bad row, once | **PASS** | 2026-09-22 |
+| 39 | A member without the target's permission is refused 403 | **PASS** | 2026-09-22 |
 
-These four were chosen rather than the first four of the plan, because they are
-the ones that decide whether the review's critical finding is actually fixed.
-Case 26 is the phase's own acceptance criterion.
+The first four were chosen rather than the first four of the plan, because they
+are the ones that decide whether the review's critical finding is actually
+fixed. Case 26 is the phase's own acceptance criterion.
+
+**Cases 36 and 39 were added afterwards**, for the two fixes most likely to be
+subtly wrong and least visible to a reader. Both run against the same database.
+Their evidence is `../runs/2026-09-22-01/cursor-and-permission-output.txt`.
+
+Case 36 is the one worth reading, because it was measured as a difference
+rather than asserted:
+
+```
+CASE 36  problems recorded              : 620
+CASE 36  paging on `cursor` (the fix)   : 620 rows, 620 distinct
+CASE 36  paging on `row`    (as shipped): 500 rows, 500 distinct
+```
+
+**120 problems missing, silently**, out of the file a customer is told contains
+every one of them — reproduced by running the shipped paging and the fixed
+paging over the same 620 rows. The run's row numbers start at 10,000, which is
+what an ordinary file whose bad rows are late in it looks like, and what puts
+them on a different scale from the table's own identity column.
+
+Case 39 covers only the API half. The on-page notice a refused member sees is
+part of case 17 and has not been run.
+
+**Two things these six do not cover**, and the distinction matters: case 36
+here proves the *route's* paging contract and the loop over it. The browser's
+download — the Blob, the file a spreadsheet opens, and the formula guard on the
+way out — is the other half of case 36 and is NOT RUN. Case 37 is untouched.
 
 ### The estate
 
