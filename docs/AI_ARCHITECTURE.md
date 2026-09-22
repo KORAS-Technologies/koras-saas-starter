@@ -12,7 +12,11 @@
 **Status.** Built and tested in the templates on 2026-09-13. Generator
 Integration builds a product with `--with marketing,ai_gateway,scheduler,ai`
 and runs its Python, Node, RLS and browser suites. No model has been called
-through a deployed gateway by this repository; see the final section.
+through a deployed gateway **by this repository**, which is a narrower claim
+than it reads: `koras-e2e-shop` made one on 2026-09-14 and `docoris` on
+2026-09-22 — ten models listed by `docoris-ai-gateway-dev` and a completion
+returned on `claude-haiku-4-5`. The factory generates gateways and deploys
+none. See the final section.
 
 ## The shape
 

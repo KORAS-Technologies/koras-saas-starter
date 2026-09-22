@@ -303,8 +303,17 @@ aliases in product code, the gateway as the only provider, tools with
 deterministic permission checks and human approval for anything that is not a
 read, usage metered per call, and an assistant page and drawer in the shell.
 `docs/AI_ARCHITECTURE.md` is the description; F24 in `FOLLOW_UPS.md` is what it
-leaves out, the first of which is that no model has yet been called through a
-deployed gateway.
+leaves out.
+
+This said "the first of which is that no model has yet been called through a
+deployed gateway" until 2026-09-22, and F24's own first box was ticked on
+2026-09-14 — a call from `koras-e2e-shop` through its deployed gateway to
+OpenAI, which found two defects a scripted provider could not. One file said
+done and the other said never, eight days apart, and neither could check the
+other. R-042 again. The claim was **also** true of a different subject the
+whole time: no model had been called through a *`docoris`* gateway, and that
+happened on 2026-09-22 — ten models listed, a completion returned on
+`claude-haiku-4-5`.
 
 **The reporting framework shipped on 2026-09-14** as a product capability,
 `reporting`, on by default: the `koras-reporting` package in the shared layer

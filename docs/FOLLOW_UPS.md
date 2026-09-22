@@ -137,7 +137,7 @@ otherwise stops at F6, and why there is no F0.
 | F18 | no test in this repository opens a browser | closed 2026-09-01 | Decisions |
 | F19 | a customer's platform branding was stored and never rendered | logos closed 2026-09-15 — one box left, the DNS half of the fetch | Decisions |
 | F20 | a product speaks one language | closed 2026-09-15 — phase 2 took the last four boxes | Decisions |
-| F21 | somebody can now be billed, and nothing yet asks them to be | every phase built by 2026-09-07; test mode verified 2026-09-15 — live mode open | Onboarding |
+| F21 | somebody can now be billed, and nothing yet asks them to be | every phase built by 2026-09-07; test mode verified 2026-09-15 — live mode waits on `docoris` and `lexveria` reaching production (2026-09-22) | Onboarding |
 | F22 | Files: what the first storage module leaves out | shipped 2026-09-08 — six boxes left, none urgent | Verification |
 | F23 | the sign-in page, on a host of ours | built 2026-09-11, live on dev — test, stg and prod left | Verification |
 | F24 | the AI foundation: what the first shared AI layer leaves out | closed 2026-09-15 | Verification |
@@ -1694,6 +1694,13 @@ something to land on.
 - [x] **The provider switched from Paddle to Stripe Managed Payments on 2026-09-09**, before any customer existed to migrate. The adapter, the webhook, the checkout and the pricing page were rewritten in both repositories; the Paddle adapter was deleted rather than kept behind a flag. See the note below
 - [~] Phase 5's rest — the Stripe account with Managed Payments enabled, the test-mode catalogue with eligible tax codes, keys and webhook endpoint in Doppler: **all existed in test mode by 2026-09-13**, recorded 2026-09-15 in `koras-control-plane/docs/BILLING.md`. Still ahead: live-mode activation, the live key, the customer portal check, the first real cycle — `koras-control-plane/docs/runbooks/stripe-go-live.md` steps 1, 3, 5 and 7
 - [x] The two paths the stand-in provider cannot exercise: the hosted checkout completed in a browser against test mode (six times, above), and a period-end change observed as a subscription schedule on a real subscription — run 2026-09-15 through the adapter against a test-mode subscription made for it: two phases, three seats to the period's end and two from that second, `end_behavior` `release`; released and cancelled afterwards
+
+**The live-mode trigger is recorded rather than left as "when somebody gets
+round to it", decided 2026-09-22: live mode is done when `docoris` and
+`lexveria` are in production.** That is a condition anybody can check, and it
+puts the remaining work behind the thing it exists for — a live key that can
+take a payment is a liability in an estate with nothing to sell. Until then
+the test-mode evidence above is the whole of what is claimed.
 
 The design is `BILLING_DESIGN.md`, decided 2026-09-05: card at signup, charge
 at trial end, a Merchant of Record behind an adapter, and the Control Plane
