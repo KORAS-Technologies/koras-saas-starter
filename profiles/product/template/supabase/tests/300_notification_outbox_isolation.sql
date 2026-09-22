@@ -13,7 +13,15 @@
 \set ON_ERROR_STOP on
 begin;
 
-set local role :app_role;
+-- The literal role, as every other suite here uses. It was `:app_role` until
+-- 2026-09-22, which made this the only suite that needed a psql variable the
+-- caller had to supply -- and `local/scripts/test-rls.sh` supplies it only when
+-- `RLS_APP_ROLE` is set, which it is not by default. So a product running its
+-- own suite got `syntax error at or near ":"` on this file and nothing else.
+--
+-- `generator-integration.yml` passes `-v app_role=...` to every file, so the
+-- starter's own gate was green over a suite no generated product could run.
+set local role koras_rls_test;
 
 -- Two organisations, and a message owed to each.
 set local app.provisioning = 'on';
