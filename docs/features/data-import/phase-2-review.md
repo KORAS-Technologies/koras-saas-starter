@@ -294,7 +294,8 @@ keeping the previous report.
 
 ## The carried findings, with a decision each
 
-Eighteen medium and fifteen low. **None is dismissed**; each is carried with a
+Eighteen findings carried and one of the nineteen fixed — seventeen of the
+eighteen medium, plus IMP2-29 — and fifteen low. **None is dismissed**; each is carried with a
 reason, and a finding disproved by later evidence is marked disproved rather
 than deleted. Status is one of *carried* (real, not fixed), *fixed*, or *disproved*.
 
@@ -368,8 +369,8 @@ wants the same pass that addresses IMP2-23 and IMP2-24.
 **Implementation complete. Not closed.**
 
 The two critical and the eight high findings are fixed, and each fix has a test
-that fails without it. The eighteen medium and fifteen low findings are carried
-rather than dismissed, and are listed above with their seam.
+that fails without it. Seventeen of the eighteen medium are carried (IMP2-28 is
+fixed), along with IMP2-29 and fifteen low, all listed above with their seam.
 
 What closure waits on is the manual matrix: thirty-six of forty cases have not
 been run. Four have — 23 to 26, the commit — and they are recorded in

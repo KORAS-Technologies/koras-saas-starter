@@ -625,7 +625,7 @@ is now the third time it has produced a green suite over broken work. What
 catches it is in `koras-import/tests/test_import.py`: a test that walks the
 state machine along the path the worker actually takes.
 
-Two critical and eight high are fixed; eighteen medium, fifteen low and one
+Two critical and eight high are fixed; seventeen medium, fifteen low and one
 further High are carried in `docs/features/data-import/phase-2-review.md`. That
 High is **IMP2-29**, and it was found by trying to run a manual case in a
 browser rather than by reading: the problem report is unreachable after a page
