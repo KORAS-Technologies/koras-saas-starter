@@ -130,6 +130,28 @@ export function ImportPanel({
   const runTarget =
     run === null ? null : (targets.find((candidate) => candidate.key === run.target) ?? null)
 
+  /**
+   * Open a run from the history.
+   *
+   * **Without this the report is unreachable.** `run` starts `null` on every
+   * load and `refresh` keeps a null null, so a person who reloaded the page --
+   * or came back to it later -- had no current run, and *Download every
+   * problem* lives inside the result card, which renders only when there is
+   * one. The run stayed listed below, the route went on answering, and nothing
+   * on the page could reach it. IMP2-29 in
+   * `docs/features/data-import/phase-2-review.md`.
+   *
+   * The analysis and the problems are cleared rather than kept: both belong to
+   * whichever run was open before, and a report from one run shown under
+   * another is worse than no report at all.
+   */
+  const open = useCallback((chosen: ImportRunView) => {
+    setError(null)
+    setAnalysis(null)
+    setProblems(null)
+    setRun(chosen)
+  }, [])
+
   const refresh = useCallback(async () => {
     const answer = await listRuns()
     if (answer.status === 'ok') {
@@ -570,15 +592,33 @@ export function ImportPanel({
                   <th className="py-2 pr-4">{labels.state}</th>
                   <th className="py-2 pr-4">{labels.rows}</th>
                   <th className="py-2">{labels.started}</th>
+                  {/* No heading: a column of controls has nothing to name that
+                      the controls do not say themselves, and an empty string
+                      here is read out as a blank cell rather than skipped. */}
+                  <th className="py-2">
+                    <span className="sr-only">{labels.open}</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {runs.map((row) => (
-                  <tr key={row.id} className="border-t border-border">
+                  <tr key={row.id} className="border-t border-border" data-run-id={row.id}>
                     <td className="py-2 pr-4">{row.target}</td>
                     <td className="py-2 pr-4">{labels.states[row.status] ?? row.status}</td>
                     <td className="py-2 pr-4 tabular-nums">{row.rows_total}</td>
                     <td className="py-2 text-ink-muted">{row.created_at}</td>
+                    <td className="py-2 text-right">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        aria-label={fill(labels.openRun, { target: row.target })}
+                        aria-current={run?.id === row.id ? 'true' : undefined}
+                        data-testid="imports-open"
+                        onClick={() => open(row)}
+                      >
+                        {labels.open}
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

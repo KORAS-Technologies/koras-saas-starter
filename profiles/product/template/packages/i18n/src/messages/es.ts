@@ -792,6 +792,10 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'Problema',
   'imports.value':
     'Valor',
+  'imports.open':
+    'Abrir',
+  'imports.openRun':
+    'Abrir la importación {target} y su informe',
   'imports.historyTitle':
     'Importaciones recientes',
   'imports.noRuns':

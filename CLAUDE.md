@@ -625,14 +625,21 @@ is now the third time it has produced a green suite over broken work. What
 catches it is in `koras-import/tests/test_import.py`: a test that walks the
 state machine along the path the worker actually takes.
 
-Two critical and eight high are fixed; seventeen medium, fifteen low and one
-further High are carried in `docs/features/data-import/phase-2-review.md`. That
-High is **IMP2-29**, and it was found by trying to run a manual case in a
-browser rather than by reading: the problem report is unreachable after a page
-reload, because the panel's current run starts `null` and the history table is
-four cells with no click-through. The route answers; the page offers no way in.
-It is a stronger finding than the case it blocked — the report download was
-made correct and most customers cannot reach it. Three of the eight
+Two critical and nine high are fixed; seventeen medium and fifteen low are
+carried in `docs/features/data-import/phase-2-review.md`. The
+ninth high is **IMP2-29**, found by trying to run a manual case in a browser
+rather than by reading: the problem report was unreachable after a page reload,
+because the panel's current run starts `null` and the history table was four
+cells with no click-through. The route answered; the page had no way in. Fixed
+the same day, which is what let manual cases 36 and 37 run.
+
+**The panel is the one surface in the product whose main path no CI in this
+estate can render**, and that is why IMP2-29 survived: a generated product
+declares no import targets, so `ImportPanel` returns its no-targets banner
+before it draws anything. The browser suite asserts that banner. Everything
+past it — the mapping, the report, the confirm control, the outcome — has never
+been rendered by any automated run here, and its only protection is assertions
+that read template text. Three of the eight
 high are worth carrying here. The report download could never be correct — the
 route paged on a key it did not return, so the browser sent the file's line
 number and the "every problem" file silently truncated or repeated. The page

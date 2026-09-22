@@ -803,6 +803,10 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Problem',
   'imports.value':
     'Wert',
+  'imports.open':
+    'Öffnen',
+  'imports.openRun':
+    'Import {target} und seinen Bericht öffnen',
   'imports.historyTitle':
     'Letzte Importe',
   'imports.noRuns':

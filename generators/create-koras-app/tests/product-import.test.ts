@@ -524,6 +524,38 @@ describe('data import', () => {
     )
   })
 
+  it('lets a person open a past run, so the report survives a reload', () => {
+    /*
+     * IMP2-29. `run` starts `null` on every load and `refresh` keeps a null
+     * null, so the result card -- which is where *Download every problem*
+     * lives -- rendered only for a run the page was already working on. The
+     * history listed every run and was four cells with no control. A customer
+     * who reloaded could not reach their own report; the route answered and
+     * the page had no way in.
+     *
+     * **This assertion is the only automated protection the control has.** The
+     * panel cannot be exercised in a browser by this repository's own CI: a
+     * generated product declares no import targets, so `ImportPanel` returns
+     * the no-targets banner before it renders anything. Verified instead in a
+     * browser against a product given a target by hand, recorded in
+     * `docs/features/data-import/testing/manual/manual-test-results.md`.
+     */
+    const panel = read('apps/web/src/app/dashboard/imports/ImportPanel.tsx.hbs')
+    const history = panel.slice(panel.indexOf('{runs.map((row) => ('))
+    expect(history).toContain('data-testid="imports-open"')
+    expect(history, 'the history row has no control that selects its run').toMatch(
+      /onClick=\{\(\) => open\(row\)\}/,
+    )
+    // Opening clears what belonged to whichever run was open before. A report
+    // from one run shown under another is worse than no report at all.
+    const opener = panel.slice(panel.indexOf('const open = useCallback'))
+    expect(opener.slice(0, 400)).toContain('setAnalysis(null)')
+    expect(opener.slice(0, 400)).toContain('setProblems(null)')
+    // Each button says which run it opens. Twenty rows of "Open" is twenty
+    // identical accessible names.
+    expect(history).toContain('aria-label={fill(labels.openRun,')
+  })
+
   it('names the permission in both catalogues', () => {
     expect(read('packages/permissions/src/index.ts')).toContain("'imports.manage'")
     expect(read('python-packages/koras-auth/src/koras_auth/permissions.py')).toContain(

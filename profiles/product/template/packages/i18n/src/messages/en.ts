@@ -794,6 +794,10 @@ export const en = {
     'Problem',
   'imports.value':
     'Value',
+  'imports.open':
+    'Open',
+  'imports.openRun':
+    'Open the {target} import and its report',
   'imports.historyTitle':
     'Recent imports',
   'imports.noRuns':

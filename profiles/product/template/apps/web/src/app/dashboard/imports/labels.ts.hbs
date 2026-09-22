@@ -50,6 +50,13 @@ export interface ImportLabels {
   problem: string
   value: string
   historyTitle: string
+  /** The control on each history row. */
+  open: string
+  /** Its accessible name. A template: every row would otherwise be a
+   *  button called "Open", which is a list of identical names to anybody
+   *  reading them out of context. Filled on the client, because a
+   *  function cannot cross the server boundary. */
+  openRun: string
   noRuns: string
   noTargets: string
   state: string
@@ -136,6 +143,8 @@ export function importLabels(t: Translator): ImportLabels {
     problem: t('imports.problem'),
     value: t('imports.value'),
     historyTitle: t('imports.historyTitle'),
+    open: t('imports.open'),
+    openRun: t('imports.openRun'),
     noRuns: t('imports.noRuns'),
     noTargets: t('imports.noTargets'),
     state: t('imports.state'),

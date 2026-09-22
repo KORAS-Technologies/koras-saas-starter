@@ -1,8 +1,8 @@
 # Data import — manual test results
 
-Against `manual-test-plan.md`. **Six of forty cases have been executed.** Every
+Against `manual-test-plan.md`. **Eight of forty cases have been executed.** Every
 other verdict is still blank, and this document says which and why rather than
-leaving thirty-four blanks to be counted again.
+leaving thirty-two blanks to be counted again.
 
 Opened 2026-09-22, after the second independent review
 (`../../phase-2-review.md`) found that the commit path had never worked.
@@ -17,6 +17,8 @@ Opened 2026-09-22, after the second independent review
 | 26 | A writer that raises leaves **zero** rows | **PASS** | 2026-09-22 |
 | 36 | *Download every problem* contains every bad row, once | **PASS** | 2026-09-22 |
 | 39 | A member without the target's permission is refused 403 | **PASS** | 2026-09-22 |
+| 36b | The **downloaded file** holds every problem, once | **PASS** | 2026-09-22 |
+| 37 | A comma, a quote and a newline survive as one cell | **PASS** | 2026-09-22 |
 
 The first four were chosen rather than the first four of the plan, because they
 are the ones that decide whether the review's critical finding is actually
@@ -49,22 +51,28 @@ here proves the *route's* paging contract and the loop over it. The browser's
 download — the Blob, the file a spreadsheet opens, and the formula guard on the
 way out — is the other half of case 36.
 
-**That half is BLOCKED, and finding out why was worth the attempt.** A run with
+**That half was blocked, and finding out why was worth the attempt.** A run with
 620 problems was seeded into a real database, four of its values shaped like
-spreadsheet formulas, and a browser was pointed at `/dashboard/imports` to
-download the report. There is no way to reach it: the panel holds the current
-run in state that starts `null` and is never restored from the history, and the
-history table is four cells with no click handler. A customer who reloads the
-page cannot download the report for their own run.
+spreadsheet formulas, and a browser was pointed at `/dashboard/imports`. There
+was no way to reach the report: the panel holds the current run in state that
+starts `null` and is never restored from the history, and the history table was
+four cells with no click handler. A customer who reloaded could not download the
+report for their own run.
 
-That is **IMP2-29**, recorded in `../../phase-2-review.md` as a High, and it is
-a stronger finding than the case it blocked: IMP2-05 made the report correct,
-and this says most customers cannot get to it at all. Case 37 is blocked behind
-the same thing.
+That is **IMP2-29**, and it was a stronger finding than the case it blocked:
+IMP2-05 made the report correct, and this said most customers could not get to
+it at all.
 
-The formula guard was therefore verified one layer down instead — every
-attacking form neutralised, every ordinary value untouched — which is evidence
-about the function and not about the file a spreadsheet opens.
+**It was fixed the same day, and then both cases ran.** Each history row now
+opens its run. In a browser, against this product's own API and a real
+database: 620 rows, 620 distinct, first 10000, last 10619, in file order; the
+cell holding a comma and doubled quotes intact as one cell; and no value
+beginning `=`, `+`, `-`, `@`, tab or carriage return, with the four seeded
+payloads present and neutralised.
+
+Mutation-checked twice. Remove `guardCell` and the run names the four cells a
+spreadsheet would execute; remove the click handler and the download control
+never becomes reachable. `../runs/2026-09-22-02/` is the record.
 
 ### The estate
 
@@ -185,8 +193,8 @@ Several of these were *changed* by this review's fixes — the report download's
 paging, the formula guard, the polling, the focus — so they are the cases most
 worth running next.
 
-**Two are blocked on a defect rather than on an estate**: the browser half of
-case 36, and case 37, both behind IMP2-29. Everything else has an estate that
+**Nothing is blocked.** The two that were — the browser half of case 36, and
+case 37 — ran once IMP2-29 was fixed. Everything remaining has an estate that
 could run it — the local stack has PostgreSQL, Redis, MinIO and an identity
 provider, and the round-trip harness starts an API against them.
 

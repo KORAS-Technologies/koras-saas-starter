@@ -294,8 +294,8 @@ keeping the previous report.
 
 ## The carried findings, with a decision each
 
-Eighteen findings carried and one of the nineteen fixed — seventeen of the
-eighteen medium, plus IMP2-29 — and fifteen low. **None is dismissed**; each is carried with a
+Seventeen findings carried and two of the nineteen fixed — IMP2-28 and
+IMP2-29 — leaving seventeen medium and fifteen low. **None is dismissed**; each is carried with a
 reason, and a finding disproved by later evidence is marked disproved rather
 than deleted. Status is one of *carried* (real, not fixed), *fixed*, or *disproved*.
 
@@ -319,7 +319,7 @@ than deleted. Status is one of *carried* (real, not fixed), *fixed*, or *disprov
 | IMP2-26 | Med | Untranslated technical strings reach the customer | A German customer sees "the bucket answered 403" | Two catalogue keys | carried |
 | IMP2-27 | Med | The e2e suite runs with no API, so three of four tests cannot fail | The only browser evidence the feature has proves almost nothing | Move them to the `roundtrip` project, which now has a database | carried |
 | IMP2-28 | Med | No test exercises the commit's state machine | — | **Fixed**: `tests/integration/test_import_commit_rls.py`, four cases, each mutation-checked | fixed |
-| IMP2-29 | **High** | The problem report is unreachable after a page reload | A customer who reloads, or returns later, cannot download the report for their own run — the API has the route and the page offers no way in | Make the history row select its run | carried |
+| IMP2-29 | **High** | The problem report is unreachable after a page reload | A customer who reloads, or returns later, cannot download the report for their own run — the API has the route and the page offers no way in | **Fixed**: each history row opens its run; verified in a browser and mutation-checked | fixed |
 
 The fifteen low findings are listed in "The rest" above. Two have since been
 closed by this cycle's work and are marked here rather than quietly dropped:
@@ -360,9 +360,24 @@ This is what makes cases 36 and 37 unreachable in a browser, and it is a
 stronger finding than either of them: **the fix for IMP2-05 made the report
 correct, and this says most customers cannot get to it at all.**
 
-Carried rather than fixed: it needs the history row to select its run, which is
-a change to what the page *is* rather than a repair to what it does, and it
-wants the same pass that addresses IMP2-23 and IMP2-24.
+**Fixed on 2026-09-22.** Each history row carries a control that opens its run,
+and opening one clears the analysis and the problems belonging to whichever run
+was open before — a report from one run shown under another is worse than no
+report at all. The button's accessible name names the target, because twenty
+rows of "Open" is twenty identical names to anybody reading them out of context.
+
+Verified in a browser against a real API and database, and mutation-checked:
+remove the click handler and *Download every problem* never becomes reachable,
+which is the defect exactly. The evidence is in
+`testing/runs/2026-09-22-02/`.
+
+**It has one automated protection and it is a text assertion**, in
+`product-import.test.ts`. The panel cannot be exercised by this repository's
+own browser suite at all: a generated product declares no import targets, so
+`ImportPanel` returns its no-targets banner before it renders anything. That is
+the structural reason this defect survived, and it is worth stating plainly —
+the only surface in the product whose main path no CI in this estate can
+render.
 
 ## Status
 
@@ -370,7 +385,8 @@ wants the same pass that addresses IMP2-23 and IMP2-24.
 
 The two critical and the eight high findings are fixed, and each fix has a test
 that fails without it. Seventeen of the eighteen medium are carried (IMP2-28 is
-fixed), along with IMP2-29 and fifteen low, all listed above with their seam.
+fixed), along with fifteen low, all listed above with their seam. IMP2-29 was
+raised and fixed after the review closed.
 
 What closure waits on is the manual matrix: thirty-six of forty cases have not
 been run. Four have — 23 to 26, the commit — and they are recorded in
