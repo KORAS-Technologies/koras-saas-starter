@@ -1018,12 +1018,8 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'settings.def.reporting.defaultDateRange.description': 'El periodo con el que se abre un informe.',
   'settings.def.reporting.defaultExportFormat.label': 'Formato de exportación predeterminado',
   'settings.def.reporting.defaultExportFormat.description': 'El formato que ofrece primero una exportación.',
-  'settings.def.accessibility.reducedMotion.label': 'Reducir el movimiento',
-  'settings.def.accessibility.reducedMotion.description': 'Limitar las animaciones al mínimo.',
   'settings.def.accessibility.highContrast.label': 'Mayor contraste',
   'settings.def.accessibility.highContrast.description': 'Más contraste entre el texto y el fondo.',
-  'settings.def.accessibility.fontScale.label': 'Tamaño del texto',
-  'settings.def.accessibility.fontScale.description': 'Un multiplicador aplicado al tamaño del texto.',
   // The seven groups the two pages lay their settings out in.
   'settings.category.general': 'General',
   'settings.category.appearance': 'Apariencia',

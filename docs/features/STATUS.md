@@ -113,7 +113,7 @@ Feature directory `docs/features/settings-framework/`. As built:
 | 11 | As-built documentation, sync matrix, manual test plan | Built |
 
 **Status: Part built, not Done.** Every phase shipped and every automated check
-passes. It is not `Done`, and the two reasons are worth naming rather than
+passes. It is not `Done`, and the two reasons were worth naming rather than
 leaving in a table:
 
 1. **No manual pass has been run.** `manual-test-plan.md` has fifteen cases and
@@ -122,6 +122,48 @@ leaving in a table:
    including three new tables with row-level security, a check constraint that
    refuses secrets, and a platform write route that needed an ADR to justify
    its direction — none of it has had eyes other than the ones that wrote it.
+
+**Both were addressed on 2026-09-19 and 2026-09-21, and it is still not Done.**
+Reason 2 closed first: the review ran on 2026-09-19 and returned BLOCK from
+both reviewers — twenty-one *numbered* findings, four fixed the same day,
+seventeen carried by number, **plus an eighteenth** the review named in prose
+rather than in its table and the closure cycle numbered SET-22. The carried set
+is therefore eighteen, SET-05 to SET-22, which is what the register
+enumerates. `review.md` is that record.
+
+The F27 closure cycle then ran on 2026-09-21 and did three things.
+
+**It reconciled all eighteen carried findings against a running product**, in
+`finding-matrix.md`: eleven reproduced by probe, three by reading, one
+(**SET-21**) did **not** reproduce as written — the worker's sweeps do declare
+the provisioning context, so the comment the review called wrong is accurate —
+and one had no behaviour to run. Nothing was marked fixed because code looked
+as though it addressed it.
+
+**It fixed the four High findings plus SET-23**: SET-05, SET-06, SET-07,
+SET-22 and the two accessibility settings that were offered and honoured by
+nothing. No schema change, no migration, no API contract widened.
+
+**And it executed eight of the fifteen manual cases**, against a real
+PostgreSQL with the product's own migrations and its own API, including both
+Critical cases that could run — TEST-SET-02, an existing organisation did not
+follow a later platform change, and TEST-SET-03, the provenance of the copy is
+recorded. `testing/manual/manual-test-results.md` is the record.
+
+**Seven cases remain, and that is why this is still not Done.** Five are
+BLOCKED and two are half-executed and recorded as BLOCKED rather than as a
+pass on the half that ran. They are blocked on four things and the same four
+each time: the Control Plane console, a product page using the shared data
+table (only `koras-e2e-shop` has one), a plain-`member` browser session, and a
+person with a screen reader. TEST-SET-13 is blocked on history instead — it can
+only run against a database that carried data across the locale migration, and
+every database in that cycle was built from empty.
+
+**The most valuable unexecuted case is TEST-SET-11**, which is the one that
+would have demonstrated the SET-05 correction by reading the audit trail after
+a save. What stands in for it is a structural assertion that the mechanism is
+present — which asserts what the code says rather than what it does, and is the
+weaker kind of evidence this repository has been caught by twice.
 
 ### Five settings that resolve and do nothing
 
@@ -147,6 +189,15 @@ blocked on it, built once rather than by either alone.
 `grid.rememberFilters` and `grid.rememberSort` remain hidden, with a sharper
 reason than before: the table has no filter and no sort, so they describe
 persistence of state it does not own.
+
+**The list is six rather than four since 2026-09-21**, and the two that joined
+it are the same defect found a third time. `accessibility.reducedMotion` and
+`accessibility.fontScale` were offered, translated into three languages, drawn
+on the preferences page and read by nothing — SET-23, found by G7 R2 and closed
+by F27. The heading above says five and is kept: it was true when it was
+written, and the count that moves is the one in `product-settings.test.ts`,
+which asserts the hidden list by name and would go red if either were offered
+again without being wired.
 
 ### What has no automated proof
 

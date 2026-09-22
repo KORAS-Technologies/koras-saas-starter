@@ -1,0 +1,18 @@
+Settings row-level security suites — accepted tree, 2026-09-21
+PostgreSQL 15.6, database f27rt, role koras_rls_test (nobypassrls)
+
+--- 260_global_settings_isolation.sql
+psql:<stdin>:83: NOTICE:  global settings, read by all and written by none: ok
+psql:<stdin>:109: NOTICE:  global settings, undeclared reads nothing: ok
+psql:<stdin>:140: NOTICE:  global settings, written by the platform alone: ok
+psql:<stdin>:169: NOTICE:  global settings, secrets refused by the database: ok
+--- 270_tenant_setting_values_isolation.sql
+psql:<stdin>:131: NOTICE:  tenant setting values, own tenant only and never deleted: ok
+psql:<stdin>:155: NOTICE:  tenant setting values, no tenant fails closed: ok
+psql:<stdin>:172: NOTICE:  tenant setting values, secrets refused by the database: ok
+psql:<stdin>:207: NOTICE:  tenant setting values, with check refuses a move on its own: ok
+--- 280_member_setting_values_isolation.sql
+psql:<stdin>:150: NOTICE:  member setting values, one person one row per key: ok
+psql:<stdin>:180: NOTICE:  member setting values, no subject fails closed: ok
+psql:<stdin>:259: NOTICE:  member setting values, secrets refused by the database: ok
+psql:<stdin>:307: NOTICE:  member setting values, with check refuses both moves on its own: ok

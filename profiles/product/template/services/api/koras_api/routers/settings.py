@@ -3,12 +3,23 @@
 Eight routes across three audiences, and the division between them is the whole
 authorization model.
 
-**`/settings/effective` needs no permission at all.** Every signed-in request
-reads it — the shell resolves a customer's settings before it paints — and a
-permission on it would mean a member without `settings.read` sees an
-unstyled page rather than a refusal. What protects it is that it answers only
-for the caller's own tenant and the caller's own subject, and there is no
-parameter in which to ask for anybody else's.
+**`/settings/effective` needs no permission to reach, and answers less
+without one.** Every signed-in request reads it — the shell resolves a
+customer's settings before it paints — and a permission on the route would
+mean a member without `settings.read` sees an unstyled page rather than a
+refusal. What protects it is that it answers only for the caller's own tenant
+and the caller's own subject, and there is no parameter in which to ask for
+anybody else's.
+
+What it *discloses* is a second question, and the answer changed on
+2026-09-21 (SET-07). The route used to hand every signed-in caller the
+organisation's stored value **and the platform's**, while
+`GET /tenant/settings/values` refused that same caller for want of
+`settings.read` — so the permission guarded one door and not the other one
+beside it. `global_value` is now `None` without that permission.
+`organization_value` is not withheld: it is what a member's own Reset
+restores, and a control that cannot say what it would do is worse than one
+that discloses an organisation's setting to its own member.
 
 **`settings.manage` guards the organisation's values**, because those decide for
 other people. **A person's own values are guarded by nothing but the policy
@@ -116,7 +127,20 @@ class ResolvedView(BaseModel):
     value: Any
     source: str
     can_override: bool
+    #: What the organisation would fall back to.
+    #:
+    #: Answered to a caller without `settings.read` **only where they could
+    #: override it** — there it is the target of their own Reset control, and a
+    #: member who cannot see it cannot be told what pressing it would do. For a
+    #: setting the organisation decides for everybody there is no personal
+    #: Reset, nothing on either page reads this, and it is the organisation's
+    #: configuration rather than the caller's: `None`.
     organization_value: Any
+    #: What the platform holds. **`None` for a caller without `settings.read`**
+    #: — see SET-07 on this route. The platform's configuration is not the
+    #: organisation's, and until 2026-09-21 this route published it to anybody
+    #: signed in while `GET /tenant/settings/values` refused the same caller,
+    #: which made that permission decorative.
     global_value: Any
 
 
@@ -170,14 +194,34 @@ def _definition_view(definition: SettingDefinition) -> DefinitionView:
     )
 
 
-def _resolved_view(answer: Resolved) -> ResolvedView:
+def _resolved_view(answer: Resolved, *, disclose: bool) -> ResolvedView:
+    """One resolved setting, as this caller may see it.
+
+    `disclose` is `settings.read`, and it is the only thing on this route that
+    varies by permission. The resolved `value` never varies: the shell renders
+    from it on every signed-in request, and a member without the permission
+    must still get a page that looks right.
+
+    **What varies is provenance, and SET-07 is the reason.** The first fix
+    withheld only `global_value`, and an independent review pointed out that
+    this route's permissioned sibling, `GET /tenant/settings/values`, refuses
+    the *organisation's* rows rather than the platform's — so withholding the
+    platform column alone moved the disclosure without closing it. A member
+    could still read what their organisation had configured for every key.
+
+    So `organization_value` is withheld too, except where `can_override` is
+    true. There it is what the caller's own Reset restores and a control that
+    cannot say what it would do is worse than the disclosure; everywhere else
+    it is organisation configuration with no control depending on it.
+    """
+    keep_organization = disclose or answer.can_override
     return ResolvedView(
         key=answer.key,
         value=_plain(answer.value),
         source=str(answer.source),
         can_override=answer.can_override,
-        organization_value=_plain(answer.organization_value),
-        global_value=_plain(answer.global_value),
+        organization_value=_plain(answer.organization_value) if keep_organization else None,
+        global_value=_plain(answer.global_value) if disclose else None,
     )
 
 
@@ -333,7 +377,7 @@ async def definitions(_tenant: TenantDep) -> list[DefinitionView]:
 
 
 @router.get("/settings/effective", response_model=EffectiveSettings)
-async def effective(tenant: TenantDep, session: DbSession) -> EffectiveSettings:
+async def effective(claims: AuthDep, tenant: TenantDep, session: DbSession) -> EffectiveSettings:
     """Every setting, resolved for this caller.
 
     **No permission.** The shell reads this on every signed-in request to decide
@@ -344,7 +388,14 @@ async def effective(tenant: TenantDep, session: DbSession) -> EffectiveSettings:
     Three queries, not one per setting: the caller's own rows, the tenant's, and
     the platform's. The catalogue supplies the keys and the defaults, so a key
     with no row anywhere still appears with `source` of `default`.
+
+    **Provenance is withheld without `settings.read`** (SET-07). The route
+    stays open — the shell needs it — but it no longer hands out what its
+    permissioned sibling refuses: `global_value` always, and
+    `organization_value` for every setting the caller could not override
+    anyway. The resolved value itself is never withheld.
     """
+    disclose = READ_PERMISSION in permissions_for(claims.roles)
     resolution = resolve_all(
         catalogue,
         global_values=await global_values(session),
@@ -352,7 +403,10 @@ async def effective(tenant: TenantDep, session: DbSession) -> EffectiveSettings:
         member_values=await member_values(session, tenant.id, require_subject(tenant)),
     )
     return EffectiveSettings(
-        settings={key: _resolved_view(answer) for key, answer in resolution.settings.items()},
+        settings={
+            key: _resolved_view(answer, disclose=disclose)
+            for key, answer in resolution.settings.items()
+        },
         skipped=[skipped.key for skipped in resolution.skipped],
     )
 

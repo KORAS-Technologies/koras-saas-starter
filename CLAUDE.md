@@ -427,13 +427,43 @@ suite was red on `develop`, because the settings framework added a
 was green throughout. Only a generation run closes that gap, which is what
 Generator Integration is for.
 
-**What it has not had: a manual pass or an independent review.**
-`docs/features/settings-framework/manual-test-plan.md` has fifteen cases and
-fifteen blank verdicts as of 2026-09-19, and the first of them — change a page
-size, watch a table repaginate — is the thing the feature exists for and the one
-no automated test in this estate reaches. The e2e harness starts the web
-application alone, so its sixteen browser checks cover routing, refusal and
-degraded rendering and nothing that needs an API.
+**It has now had both, and it is still not done.** That sentence said it had
+had neither, which was true on 2026-09-19 and stopped being true in two steps.
+
+The review ran on **2026-09-19** and returned BLOCK from both reviewers — the
+third and fourth BLOCK from four independent reviews. Twenty-one *numbered*
+findings, four fixed the same day, seventeen carried by number — **and an
+eighteenth**, which the review named in prose rather than in its table and the
+closure cycle numbered SET-22. So the carried set is eighteen, SET-05 to
+SET-22, which is what the register enumerates. This paragraph said seventeen
+until 2026-09-21 while the sentence two below it said eighteen, in the file
+every session reads first.
+
+The closure cycle ran on **2026-09-21**. All eighteen carried findings were
+reconciled against a running product rather than re-read: eleven reproduced by
+probe, three by reading, one — **SET-21** — did **not** reproduce, because the
+worker's sweeps do declare the provisioning context the review said they never
+declare. Four Highs were fixed (SET-05, SET-06, SET-07, SET-22) plus SET-23,
+with no schema change and no migration. **Eight of fifteen manual cases were
+executed and passed**, against a real PostgreSQL with the product's own
+migrations and its own API — including TEST-SET-02, the brief's central
+requirement, where an organisation seeded before a platform change kept its
+own value.
+
+**Seven cases are left and none of them is code.** They need the Control Plane
+console, a product page using the shared data table — only `koras-e2e-shop`
+has one — a plain-`member` browser session, and a person with a screen reader.
+TEST-SET-13 needs a database that carried data across the locale migration and
+can never be run here again.
+
+**Two things that cycle found are worth carrying.** SET-22's severity came
+*down*: the `WITH CHECK` clauses were genuinely unexercised, but PostgreSQL
+also applies the select policy to the new row on an update, so a cross-tenant
+row move was refused twice over and the gap was in the tests rather than the
+schema. And the first attempt at the SET-05 fix put a hidden input inside each
+field's `data-setting` container, which made `[data-setting="x"] input` match
+two elements and failed three of the product's four round-trip browser tests —
+caught by that harness within the hour, and by nothing else in the estate.
 
 **Data import Phase 1 shipped on 2026-09-19**, as a product capability,
 `data_import`, **off by default** — unlike reporting and the governance pair,

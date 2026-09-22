@@ -144,7 +144,16 @@ export { SettingsForm } from './settings/settings-form'
 // `withValue` is public for the same reason `withCount` is: a label that
 // needs a value in it must cross the server/client boundary as a string, so
 // the component holding the value is the one that fills it.
-export { describeValue, optionLabel, withValue } from './settings/fields'
+export { baselineText, describeValue, optionLabel, withValue } from './settings/fields'
+export {
+  BASELINE_PREFIX,
+  isHeldHere,
+  parseSubmitted,
+  same,
+  valuesForCategory,
+  type FormDefinition,
+  type HeldMeans,
+} from './settings/form-values'
 export type {
   SettingField,
   SettingFieldOption,

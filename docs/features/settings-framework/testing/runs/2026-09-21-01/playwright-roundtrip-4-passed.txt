@@ -1,0 +1,15 @@
+
+ Tasks:    22 successful, 22 total
+Cached:    19 cached, 22 total
+  Time:    5m35.888s 
+
+
+Running 4 tests using 1 worker
+
+[1/4] [roundtrip] › e2e\roundtrip\settings.spec.ts:30:5 › a signed-in person reaches their own organisation
+[2/4] [roundtrip] › e2e\roundtrip\settings.spec.ts:47:5 › a page size chosen here survives a reload
+[3/4] [roundtrip] › e2e\roundtrip\settings.spec.ts:66:5 › what one person chose is not what another sees
+[4/4] [roundtrip] › e2e\roundtrip\settings.spec.ts:112:5 › high contrast marks the shell and re-skins it, and off leaves it untouched
+  4 passed (1.9m)
+
+[exited with code 0]

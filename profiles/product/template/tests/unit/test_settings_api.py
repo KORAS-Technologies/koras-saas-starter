@@ -176,6 +176,78 @@ def test_reading_the_organisations_values_still_needs_the_read_permission() -> N
     assert answer.json()["detail"]["code"] == "permission_missing"
 
 
+def test_the_effective_route_withholds_the_platform_value_without_the_permission() -> None:
+    """**SET-07.** The permission has to guard both doors or neither.
+
+    `GET /tenant/settings/values` refuses a plain member, and
+    `/settings/effective` used to hand that same member the organisation's
+    stored value *and the platform's* for every key -- so `settings.read`
+    guarded one route while the one beside it published the same facts to
+    anybody signed in. Reproduced against this suite's own fixtures before it
+    was fixed.
+
+    `organization_value` is deliberately still answered. It is what a member's
+    own Reset restores, and a control that cannot say what it would do is a
+    worse outcome than a member reading their own organisation's setting.
+    """
+    session = _Session(platform={"grid.pageSize": 120}, tenant={"grid.pageSize": 77})
+
+    member = _install(session, MEMBER).get("/api/v1/settings/effective")
+    assert member.status_code == 200
+    seen = member.json()["settings"]["grid.pageSize"]
+    assert seen["global_value"] is None
+    # Still answered, and still the organisation's own -- not the platform's.
+    assert seen["organization_value"] == 77
+    # The resolved value itself is untouched: this withholds provenance, not
+    # the answer the shell renders from.
+    assert seen["value"] == 77
+
+    holder = _install(session, OWNER).get("/api/v1/settings/effective")
+    assert holder.status_code == 200
+    assert holder.json()["settings"]["grid.pageSize"]["global_value"] == 120
+
+
+def test_the_effective_route_withholds_an_organisation_value_nobody_can_override() -> None:
+    """**SET-07, the half the first fix missed.**
+
+    The permissioned sibling refuses the *organisation's* rows, not the
+    platform's, so withholding `global_value` alone moved the disclosure
+    rather than closing it: a member could still read what their organisation
+    had configured for every key. An independent review made that point on
+    2026-09-21 and it was right.
+
+    `organization_value` survives only where `can_override` is true, because
+    there it is what the caller's own Reset restores. `general.currency` is
+    `GLOBAL_ORG`: there is no personal Reset for it and no control on either
+    page reads it.
+    """
+    from koras_api.settings_catalogue import catalogue
+
+    hidden = next(d for d in catalogue if not d.scope.admits_user and not d.system)
+    shown = next(d for d in catalogue if d.scope.admits_user and d.options and not d.system)
+
+    # A value the definition will actually take, and not its default -- an
+    # invalid one is passed over by the resolver, which would make the last
+    # assertion below pass for the wrong reason.
+    def other_than_default(definition: object) -> object:
+        options = [option for option in definition.options if option != definition.default]
+        return options[0] if options else f"{definition.default}-x"
+
+    org_value, mine = other_than_default(hidden), other_than_default(shown)
+    session = _Session(tenant={hidden.key: org_value, shown.key: mine})
+
+    member = _install(session, MEMBER).get("/api/v1/settings/effective").json()["settings"]
+    assert member[hidden.key]["organization_value"] is None, (
+        "an organisation-only value was disclosed to a caller the sibling route refuses")
+    assert member[shown.key]["organization_value"] == mine, (
+        "a member's own Reset target must still be answerable")
+    # The resolved value is never withheld: the shell renders from it.
+    assert member[hidden.key]["value"] == org_value
+
+    holder = _install(session, OWNER).get("/api/v1/settings/effective").json()["settings"]
+    assert holder[hidden.key]["organization_value"] == org_value
+
+
 def test_a_list_default_is_published_as_a_list() -> None:
     """JSON has no tuples, and a `STRING_LIST` default is one."""
     client = _install(_Session(), OWNER)

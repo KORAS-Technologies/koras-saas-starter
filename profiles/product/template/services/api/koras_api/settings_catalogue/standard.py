@@ -501,6 +501,16 @@ SETTINGS: list[SettingDefinition] = [
     # Every one of these is a person's, always. An organisation may set a
     # default -- a call centre on small screens, say -- and nobody may be
     # prevented from turning motion off for themselves.
+    # **Unsurfaced, and the reason is SET-23.** Registered, translated into
+    # three languages and drawn on the preferences page from the day the
+    # framework shipped, and read by no client code -- so a customer could ask
+    # for less motion and get exactly as much. `tokens.css` honours the
+    # *operating system's* `prefers-reduced-motion`, which is a different
+    # signal from the stored setting and is what made the gap easy to miss.
+    #
+    # Hidden rather than honoured, which is the remedy the grid pair already
+    # got: a control that changes nothing is worse than one not offered.
+    # Honouring it is a Settings story rather than a correction.
     _setting(
         "accessibility.reducedMotion",
         Category.ACCESSIBILITY,
@@ -509,6 +519,7 @@ SETTINGS: list[SettingDefinition] = [
         Scope.GLOBAL_ORG_USER,
         ui=UiControl.TOGGLE,
         order=10,
+        surfaced=False,
     ),
     _setting(
         "accessibility.highContrast",
@@ -519,6 +530,9 @@ SETTINGS: list[SettingDefinition] = [
         ui=UiControl.TOGGLE,
         order=20,
     ),
+    # Unsurfaced for the reason `reducedMotion` above is: nothing reads it.
+    # `highContrast` is the one of the three G7R2-F01 wired to the shell, and
+    # is why that one alone stays offered.
     _setting(
         "accessibility.fontScale",
         Category.ACCESSIBILITY,
@@ -529,5 +543,6 @@ SETTINGS: list[SettingDefinition] = [
         maximum=2.0,
         ui=UiControl.NUMBER,
         order=30,
+        surfaced=False,
     ),
 ]

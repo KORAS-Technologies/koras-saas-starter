@@ -104,6 +104,34 @@ begin
     raise exception 'member_setting_values: the upsert did not store the value';
   end if;
 
+  -- ── moves: a row may not be carried to another person or tenant ─────────
+  --
+  -- **SET-22.** Both `with check` clauses on this table's update policy were
+  -- correct and entirely unexercised: every assertion above asks whether a row
+  -- can be read or written where it is, none whether it can be made to belong
+  -- to somebody else. Removing them left this suite green, which was
+  -- demonstrated before this was written.
+  --
+  -- Two moves, because the policy names two keys and a test naming one would
+  -- pass with the other clause deleted.
+  begin
+    update public.member_setting_values
+       set user_id = 'user-alpha-colleague'
+     where key = 'grid.pageSize' and user_id = 'user-alpha';
+    raise exception 'member_setting_values: a row was moved onto a colleague';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    update public.member_setting_values
+       set tenant_id = '00000000-0000-0000-0000-000000000002'
+     where key = 'grid.pageSize' and user_id = 'user-alpha';
+    raise exception 'member_setting_values: a row was moved into another tenant';
+  exception
+    when insufficient_privilege then null;
+  end;
+
   -- ── deletes: my own, which is what a reset is ────────────────────────────
   delete from public.member_setting_values where key = 'ui.density';
   select count(*) into visible from public.member_setting_values where key = 'ui.density';
@@ -229,5 +257,62 @@ begin
   raise notice 'member setting values, secrets refused by the database: ok';
 end
 $$;
+
+-- ── the two `with check` keys, on their own ─────────────────────────────────
+--
+-- **SET-22**, as `270` does it and for the same reason: a move is refused
+-- both by the update policy's `with check` and by the select policy applied
+-- to the new row, so attempting the move alone stays green when `with check`
+-- is deleted. The select policy is widened for the length of two statements
+-- so that only `with check` can refuse them.
+--
+-- `ui.density` rather than `grid.pageSize`: the colleague and the Beta member
+-- both hold a `grid.pageSize` row, and a move onto one collides on the
+-- primary key -- which would turn this red for a reason that is not the
+-- policy. Neither holds `ui.density`.
+--
+-- The mechanism was checked rather than assumed, and **deleting** a `with
+-- check` clause is not the same as weakening one: `CREATE POLICY` falls back
+-- to the `using` expression when none is given, and here the two are
+-- identical, so a deletion is a no-op. `270`'s comment has the detail and
+-- `set22-mutation-bisection.txt` has the runs.
+insert into public.member_setting_values (tenant_id, user_id, key, value)
+values ('00000000-0000-0000-0000-000000000001', 'user-alpha', 'ui.density', '"compact"'::jsonb)
+on conflict (tenant_id, user_id, key) do update set value = excluded.value;
+
+create policy "tmp_set22_select_all" on public.member_setting_values for select using (true);
+
+set local role koras_rls_test;
+set local app.tenant_id = '00000000-0000-0000-0000-000000000001';
+set local app.user_id = 'user-alpha';
+
+do $$
+begin
+  begin
+    update public.member_setting_values
+       set user_id = 'user-alpha-colleague'
+     where key = 'ui.density' and user_id = 'user-alpha';
+    raise exception
+      'member_setting_values: with check did not refuse a move onto a colleague';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    update public.member_setting_values
+       set tenant_id = '00000000-0000-0000-0000-000000000002'
+     where key = 'ui.density' and user_id = 'user-alpha';
+    raise exception
+      'member_setting_values: with check did not refuse a move into another tenant';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  raise notice 'member setting values, with check refuses both moves on its own: ok';
+end
+$$;
+
+reset role;
+drop policy "tmp_set22_select_all" on public.member_setting_values;
 
 rollback;
