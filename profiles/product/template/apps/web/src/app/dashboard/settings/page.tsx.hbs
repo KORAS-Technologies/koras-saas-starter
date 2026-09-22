@@ -113,6 +113,12 @@ export default async function SettingsPage({
     inherited: platform,
     t,
     visible: (definition) => definition.org_admin_visible,
+    // **SET-06.** Provisioning copies every organisation-scoped key into this
+    // tenant, so "a row exists" is true of every field on this page from the
+    // day the organisation is created -- every one would read as modified and
+    // none as inherited. What an administrator needs to know here is which
+    // values their organisation has moved away from the platform's.
+    heldMeans: 'differs-from-inherited',
   })
 
   const settingsLabels = {

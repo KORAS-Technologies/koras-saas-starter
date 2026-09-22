@@ -1020,12 +1020,8 @@ export const en = {
   'settings.def.reporting.defaultDateRange.description': 'The period a report opens on.',
   'settings.def.reporting.defaultExportFormat.label': 'Default export format',
   'settings.def.reporting.defaultExportFormat.description': 'The format an export offers first.',
-  'settings.def.accessibility.reducedMotion.label': 'Reduce motion',
-  'settings.def.accessibility.reducedMotion.description': 'Keep animation to a minimum.',
   'settings.def.accessibility.highContrast.label': 'Higher contrast',
   'settings.def.accessibility.highContrast.description': 'Stronger contrast between text and background.',
-  'settings.def.accessibility.fontScale.label': 'Text size',
-  'settings.def.accessibility.fontScale.description': 'A multiplier applied to the text size.',
   // The seven groups the two pages lay their settings out in.
   'settings.category.general': 'General',
   'settings.category.appearance': 'Appearance',

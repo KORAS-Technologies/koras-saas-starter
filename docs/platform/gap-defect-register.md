@@ -201,27 +201,39 @@ the framework was built to demonstrate could not be changed), SET-03 (the
 secret guard looked one level deep and said it looked everywhere) and SET-04
 (its word list missed the commonest credential nouns).
 
+**The F27 closure cycle ran on 2026-09-21** and the statuses below are its
+output rather than the review's. Every carried finding was reproduced or
+disproved against a running product and a real database —
+`docs/features/settings-framework/finding-matrix.md` has one row each with the
+evidence, and **SET-21 did not reproduce as written**. The corrections were
+then independently reviewed in turn, which returned **BLOCK** with four Medium
+and four Low, all resolved in one round;
+`docs/features/settings-framework/closure-review.md` is that record. Two of
+those findings changed the code rather than a comment: SET-07's first fix
+moved the disclosure instead of closing it, and SET-05 and SET-06 had no test
+that could fail.
+
 | ID | Type | Title | Severity | Status |
 |----|------|-------|----------|--------|
-| SET-05 | DEFECT | Saving one category creates a personal override for every field in it, detaching a member from their organisation's defaults for settings they never touched | High | OPEN |
-| SET-06 | DEFECT | The somebody-chose-this marker and the provisioning snapshot are incompatible as designed: every field on a new tenant reads as modified | High | OPEN |
-| SET-07 | DEFECT | The effective-settings route discloses what the tenant-values route gates behind a permission, making that permission decorative | High | OPEN |
-| SET-08 | GAP | `system` and deprecated status are enforced on display and on no write path | Medium | OPEN |
-| SET-09 | GAP | No size bound on a string, list or object value, on a route needing no permission | Medium | OPEN |
-| SET-10 | DEFECT | The audit helper commits, so a multi-key write is not atomic with its own trail | Medium | OPEN |
-| SET-11 | DEFECT | A reset announces one value and writes another when the platform row no longer validates | Medium | OPEN |
+| SET-05 | DEFECT | Saving one category creates a personal override for every field in it, detaching a member from their organisation's defaults for settings they never touched | High | **FIXED 2026-09-21** — the form carries a per-field baseline and the parser drops anything equal to it. Narrowing recorded: an override equal to the inherited value can no longer be *created* |
+| SET-06 | DEFECT | The somebody-chose-this marker and the provisioning snapshot are incompatible as designed: every field on a new tenant reads as modified | High | **FIXED 2026-09-21** — what "held here" means is now the page's, not the table's: `differs-from-inherited` for the organisation, `a-row-exists` for a person. No schema change |
+| SET-07 | DEFECT | The effective-settings route discloses what the tenant-values route gates behind a permission, making that permission decorative | High | **FIXED 2026-09-21** — `global_value` is withheld without `settings.read`. `organization_value` is deliberately still answered: it is the caller's own Reset target |
+| SET-08 | GAP | `system` and deprecated status are enforced on display and on no write path | Medium | OPEN — reproduced 2026-09-21 with substituted definitions; still latent, the catalogue declares none |
+| SET-09 | GAP | No size bound on a string, list or object value, on a route needing no permission | Medium | OPEN — reproduced 2026-09-21: a one-megabyte value stored through `PATCH /me/settings` |
+| SET-10 | DEFECT | The audit helper commits, so a multi-key write is not atomic with its own trail | Medium | OPEN — reproduced 2026-09-21: more than one commit for one logical write |
+| SET-11 | DEFECT | A reset announces one value and writes another when the platform row no longer validates | Medium | OPEN — reproduced 2026-09-21: reset wrote and announced 5, the resolver answered 50 and skipped it |
 | SET-12 | DEFECT | The global version is not monotonic and is computed read-then-write | Medium | OPEN |
 | SET-13 | DEFECT | Re-seeding pushes today's defaults into an existing tenant and leaves the provenance saying otherwise | Medium | OPEN |
-| SET-14 | GAP | The platform write route is unaudited and has no caller | Medium | OPEN |
+| SET-14 | GAP | The platform write route is unaudited and has no caller | Medium | OPEN — reproduced 2026-09-21: the diff is computed into `_written` and discarded |
 | SET-15 | GAP | A scope narrowed in a deploy leaves rows that can be neither used nor deleted, and nothing reports them | Medium | OPEN |
-| SET-16 | GAP | A string list has no emptiness or duplicate rule; clearing the allowed-extensions field permits nothing | Low | OPEN |
-| SET-17 | DEFECT | A refusal a docstring says is recorded is not | Low | OPEN |
-| SET-18 | GAP | Skipped values are reported as bare keys, losing which rung holds the bad one | Low | OPEN |
-| SET-19 | DEFECT | Caller-supplied strings reach the audit table on the permission-refusal path, unbounded | Low | OPEN |
+| SET-16 | GAP | A string list has no emptiness or duplicate rule; clearing the allowed-extensions field permits nothing | Low | OPEN — reproduced 2026-09-21: `[]` accepted and stored |
+| SET-17 | DEFECT | A refusal a docstring says is recorded is not | Low | OPEN — reproduced 2026-09-21: 403 with no audit row |
+| SET-18 | GAP | Skipped values are reported as bare keys, losing which rung holds the bad one | Low | OPEN — reproduced 2026-09-21 |
+| SET-19 | DEFECT | Caller-supplied strings reach the audit table on the permission-refusal path, unbounded | Low | OPEN — reproduced 2026-09-21: a 5000-character key reached `target_id` |
 | SET-20 | GAP | The sensitive flag is honoured in one place and published nowhere, so no surface can mask a field | Low | OPEN |
-| SET-21 | DEFECT | Two load-bearing comments describe behaviour the code does not have | Low | OPEN |
-| SET-22 | TEST-GAP | No isolation suite ever tries to move a row, so all three `WITH CHECK` clauses are correct and entirely unexercised — deleting any would leave the suites green | High | OPEN |
-| SET-23 | DEFECT | **Three accessibility settings were offered to customers and read by nothing.** `accessibility.highContrast`, `accessibility.reducedMotion` and `accessibility.fontScale` ship with `surfaced` at its default `True`, translated into three languages, drawn on `/dashboard/preferences`, stored, resolved through member to organisation to global to default, and returned by `GET /settings/effective`. No client code read any of the three. | High | G7 R2, 2026-09-21, found by `product-planner` inspecting the catalogue and verified independently before it was believed. This is the PLAT-DEF-001 class, and the precise failure `surfaced=False` was introduced on 2026-09-19 to prevent — four days before this, in the same file. `tokens.css` honours the *operating system's* `prefers-reduced-motion`, which is a different thing from the stored setting and is what made the gap easy to miss. | **One third closed 2026-09-21** by G7R2-F01: the shell reads `accessibility.highContrast` and re-skins the signed-in subtree, verified in a browser against a real database and measured at 21.00:1. `reducedMotion` and `fontScale` remain surfaced and honoured by nothing. A new assertion in `product-settings.test.ts` records those two as still dead, so honouring either later trips the test and forces this row to be updated in the same commit — the tripwire the hidden-settings test already keeps for `surfaced=False`. The reviewer noted (finding L1) that the tripwire inspects only the shell file, so a sibling honoured in `tokens.css` would not trip it. | G7 R2 | IN_PROGRESS |
+| SET-21 | DEFECT | Two load-bearing comments describe behaviour the code does not have | Low | OPEN — **NOT REPRODUCED as written, 2026-09-21.** The worker's sweeps *do* declare `app.provisioning`, so the comment the review called wrong is accurate; the second comment is not identified in the review and could not be located. Kept open because the finding cannot be disposed of by anybody but its author |
+| SET-22 | TEST-GAP | No isolation suite ever tries to move a row, so all three `WITH CHECK` clauses are correct and entirely unexercised — deleting any would leave the suites green | High → **Medium** | **FIXED 2026-09-21.** Reproduced exactly as written, then **downgraded**: PostgreSQL applies the select policy to the new row on an update, so a move is refused twice over and the clause is defence in depth rather than the only guard — shown by bisection. Both suites now attempt the move *and* neutralise the select policy for one statement so only `WITH CHECK` can refuse it; mutation-tested green and red |
+| SET-23 | DEFECT | **Three accessibility settings were offered to customers and read by nothing.** `accessibility.highContrast`, `accessibility.reducedMotion` and `accessibility.fontScale` ship with `surfaced` at its default `True`, translated into three languages, drawn on `/dashboard/preferences`, stored, resolved through member to organisation to global to default, and returned by `GET /settings/effective`. No client code read any of the three. | High | G7 R2, 2026-09-21, found by `product-planner` inspecting the catalogue and verified independently before it was believed. This is the PLAT-DEF-001 class, and the precise failure `surfaced=False` was introduced on 2026-09-19 to prevent — four days before this, in the same file. `tokens.css` honours the *operating system's* `prefers-reduced-motion`, which is a different thing from the stored setting and is what made the gap easy to miss. | **One third closed 2026-09-21** by G7R2-F01: the shell reads `accessibility.highContrast` and re-skins the signed-in subtree, verified in a browser against a real database and measured at 21.00:1. `reducedMotion` and `fontScale` remain surfaced and honoured by nothing. A new assertion in `product-settings.test.ts` records those two as still dead, so honouring either later trips the test and forces this row to be updated in the same commit — the tripwire the hidden-settings test already keeps for `surfaced=False`. The reviewer noted (finding L1) that the tripwire inspects only the shell file, so a sibling honoured in `tokens.css` would not trip it. **Closed 2026-09-21 by F27**, which took the remaining two in scope because an applicable unresolved HIGH forbids closure: both are `surfaced=False` and their six translations are gone, so nothing is offered that nothing honours. Hidden rather than honoured, which is the remedy the grid pair and the notification digest already carry — honouring them is a Settings story, and both stay in the unsurfaced list that `product-settings.test.ts` pins, so offering either again without wiring it trips that test. | G7 R2 | **FIXED** |
 
 **The finding about the findings.** This is the third and fourth independent
 review this repository has commissioned and the third and fourth BLOCK. Two

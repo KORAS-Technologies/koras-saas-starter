@@ -4,6 +4,7 @@ import { useId } from 'react'
 import { cn } from '../lib/cn'
 import { SubmitButton } from '../primitives/submit-button'
 import {
+  baselineText,
   describeValue,
   optionLabel,
   withValue,
@@ -11,6 +12,7 @@ import {
   type SettingGroup,
   type SettingsFormLabels,
 } from './fields'
+import { BASELINE_PREFIX } from './form-values'
 
 /**
  * One scope's settings, grouped by category, with what each one was given.
@@ -62,6 +64,28 @@ export function SettingsForm({
           <form action={save} className="mt-4 space-y-5">
             {/* Which category is being saved, so the action writes only these. */}
             <input type="hidden" name="category" value={group.category} />
+            {/*
+              What each control was drawn with, so the action can tell a change
+              from a redraw and write only what somebody touched -- SET-05.
+              Without it every save writes the whole category and detaches a
+              person from their organisation's defaults for settings they never
+              touched.
+
+              **At form level rather than beside each control**, and that is not
+              cosmetic: inside the field's `data-setting` container, a second
+              input makes `[data-setting="x"] input` match two elements, and
+              every selector written that way -- including this product's own
+              round-trip suite -- fails on a strict-mode violation. Found by
+              that suite on 2026-09-21, having been written the other way first.
+            */}
+            {group.fields.map((field) => (
+              <input
+                key={`baseline-${field.key}`}
+                type="hidden"
+                name={`${BASELINE_PREFIX}${field.key}`}
+                value={baselineText(field)}
+              />
+            ))}
             {group.fields.map((field) => (
               <Field key={field.key} field={field} labels={labels} reset={reset} />
             ))}

@@ -87,6 +87,34 @@ begin
     raise exception 'tenant_setting_values: the upsert did not replace the value';
   end if;
 
+  -- ── moves: a row may not be carried into another tenant ──────────────────
+  --
+  -- **SET-22.** Every assertion above this one asks whether a row can be read
+  -- or written *where it is*. None asked whether it can be made to belong
+  -- somewhere else, so the `with check` clause on the update policy was
+  -- correct and entirely unexercised -- deleting it left this suite green,
+  -- which was demonstrated rather than assumed before this was written.
+  --
+  -- Two clauses refuse it, and the test names the boundary rather than either
+  -- one: the update policy's `with check`, and the select policy applied to
+  -- the new row. That is why this asserts the refusal and not which clause
+  -- produced it -- an assertion naming one would pass while the other did all
+  -- the work, which is the failure it exists to catch.
+  --
+  -- `ui.theme` rather than `grid.pageSize`, because Beta holds a
+  -- `grid.pageSize` row of its own: moving onto it collides on the primary
+  -- key, and a test that goes red on a duplicate key is not testing the
+  -- policy. Beta holds no `ui.theme`, so the only thing that can refuse this
+  -- is row-level security.
+  begin
+    update public.tenant_setting_values
+       set tenant_id = '00000000-0000-0000-0000-000000000002'
+     where key = 'ui.theme';
+    raise exception 'tenant_setting_values: a row was moved into another tenant';
+  exception
+    when insufficient_privilege then null;
+  end;
+
   -- ── deletes: none, not even my own ───────────────────────────────────────
   --
   -- There is no delete policy, so the statement matches nothing rather than
@@ -142,5 +170,63 @@ begin
   raise notice 'tenant setting values, secrets refused by the database: ok';
 end
 $$;
+
+-- ── the `with check` clause, on its own ──────────────────────────────────────
+--
+-- **SET-22, and the half the move assertion above cannot reach.** Two
+-- independent clauses refuse a row move: the update policy's `with check`,
+-- and the select policy applied to the new row. Because either alone is
+-- enough, a test that only attempts the move stays green when `with check`
+-- is deleted -- which is precisely the finding, and deleting it was shown to
+-- leave this suite green before this block was written.
+--
+-- So the other guard is neutralised for the length of one statement and the
+-- move is attempted again. What refuses it now can only be `with check`.
+-- Everything here is inside the transaction this file rolls back, and the
+-- temporary policy is dropped either way.
+--
+-- **Two things about this were checked rather than assumed**, because an
+-- independent review disputed both on 2026-09-21 and one of its points was
+-- right.
+--
+-- The mechanism holds: with `with check` set EXPLICITLY to `true`, a move is
+-- still refused while the select policy is narrow, and succeeds the moment a
+-- second permissive select policy widens it. Three configurations, recorded
+-- in
+-- `docs/features/settings-framework/testing/runs/2026-09-21-01/set22-mutation-bisection.txt`.
+-- So the select policy does gate the new row, and widening it is what leaves
+-- `with check` alone to refuse the move.
+--
+-- What the review got right is subtler and worth knowing before anybody
+-- "simplifies" this: **deleting** the `with check` clause is not the same as
+-- setting it to `true`. `CREATE POLICY` falls back to the `using` expression
+-- when no `with check` is given, and here the two are identical -- so a
+-- deletion is a no-op and nothing can or should catch it. This block catches
+-- the edit that matters, which is a `with check` weakened to something that
+-- admits another tenant.
+create policy "tmp_set22_select_all" on public.tenant_setting_values for select using (true);
+
+set local role koras_rls_test;
+set local app.tenant_id = '00000000-0000-0000-0000-000000000001';
+set local app.user_id = 'user-alpha';
+
+do $$
+begin
+  begin
+    update public.tenant_setting_values
+       set tenant_id = '00000000-0000-0000-0000-000000000002'
+     where key = 'ui.theme';
+    raise exception
+      'tenant_setting_values: with check did not refuse a move the select policy allowed';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  raise notice 'tenant setting values, with check refuses a move on its own: ok';
+end
+$$;
+
+reset role;
+drop policy "tmp_set22_select_all" on public.tenant_setting_values;
 
 rollback;

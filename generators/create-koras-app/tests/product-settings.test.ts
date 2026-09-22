@@ -860,7 +860,10 @@ describe('the settings catalogue speaks every language', () => {
 
   it('gives every shown setting a label and a description, in all three', () => {
     const shown = declared().filter((setting) => setting.surfaced)
-    expect(shown.length).toBe(28)
+    // 28 until 2026-09-21, when SET-23 hid the two accessibility settings
+    // nothing read. A count rather than a list, so hiding or adding one is a
+    // deliberate edit here rather than a silent drift.
+    expect(shown.length).toBe(26)
 
     for (const { locale, text } of catalogues) {
       for (const { key } of shown) {
@@ -879,7 +882,7 @@ describe('the settings catalogue speaks every language', () => {
     const hidden = declared()
       .filter((setting) => !setting.surfaced)
       .map((setting) => setting.key)
-    expect(hidden.length).toBe(4)
+    expect(hidden.length).toBe(6)
 
     const keys = new Set(
       catalogues
@@ -934,7 +937,7 @@ describe('the settings catalogue speaks every language', () => {
   })
 
   it('hides exactly the settings nothing honours', () => {
-    // Four. Two the shared table cannot read because it has no filter and no
+    // Six since 2026-09-21. Two the shared table cannot read because it has no filter and no
     // sort -- they describe persistence of state it does not own -- one the
     // notification work still cannot honour, since a digest needs an outbox
     // and that is Phase 3, and one the upload route cannot count -- it issues a
@@ -948,6 +951,8 @@ describe('the settings catalogue speaks every language', () => {
       .map((setting) => setting.key)
       .sort()
     expect(hidden).toEqual([
+      'accessibility.fontScale',
+      'accessibility.reducedMotion',
       'files.maxFilesPerUpload',
       'grid.rememberFilters',
       'grid.rememberSort',
@@ -987,6 +992,16 @@ describe('the settings catalogue speaks every language', () => {
     expect([...resolved]).toContain('files.allowedExtensions')
     expect(hidden).not.toContain('files.maxUploadSizeMb')
     expect(hidden).not.toContain('files.allowedExtensions')
+
+    // The shell, which is the only client code that reads an accessibility
+    // setting. `highContrast` is read there and stays offered; the two hidden
+    // on 2026-09-21 for SET-23 are not, which is what makes hiding them honest
+    // rather than a way to avoid writing three translations.
+    const accessibilityShell = read('packages', 'ui', 'src', 'shell', 'product-shell.tsx.hbs')
+    for (const key of hidden.filter((k) => k.startsWith('accessibility.'))) {
+      expect(accessibilityShell, `${key} is honoured by the shell but hidden`).not.toContain(key)
+    }
+    expect(hidden).not.toContain('accessibility.highContrast')
 
     // The mail path, which is what would honour `emailEnabled`, and the worker,
     // which is what would honour a digest. Neither does yet.
@@ -1074,10 +1089,75 @@ describe('the two settings surfaces', () => {
 
   it('reads a form back from the definitions rather than from what was sent', () => {
     // An unchecked checkbox sends nothing, so a form read by its own contents
-    // silently drops every switch somebody turned off.
+    // silently drops every switch somebody turned off. The walk lives in the
+    // package now; what it *does* is `product-settings-logic.test.ts`, which
+    // runs it. This asserts only that the application still delegates rather
+    // than growing a second copy.
+    const core = read('packages', 'ui', 'src', 'settings', 'form-values.ts')
     const builder = read('apps', 'web', 'src', 'lib', 'setting-fields.ts.hbs')
-    expect(builder).toContain('for (const definition of definitions)')
-    expect(builder).toContain("values[definition.key] = form.get(definition.key) !== null")
+    expect(core).toContain('for (const definition of definitions)')
+    expect(builder).toContain('return valuesForCategory(definitions, category, form, visible)')
+  })
+
+  it('writes only the fields somebody changed', () => {
+    // **SET-05.** Every non-boolean control renders with a `defaultValue`, so
+    // every one submits on every save; a walk over the definitions that wrote
+    // what it was given therefore wrote the whole category. A member who
+    // changed their theme got a personal row for density, landing page and
+    // sidebar too -- detached from their organisation's defaults for three
+    // settings they never touched.
+    //
+    // The form carries what each control was drawn with and the parser drops
+    // anything equal to it. Asserted as the pair, because either half alone
+    // does nothing: a baseline nobody reads, or a comparison against a value
+    // that never arrives.
+    const core = read('packages', 'ui', 'src', 'settings', 'form-values.ts')
+    const form = read('packages', 'ui', 'src', 'settings', 'settings-form.tsx')
+
+    expect(form).toContain('name={`${BASELINE_PREFIX}${field.key}`}')
+    expect(form).toContain('value={baselineText(field)}')
+    expect(core).toContain('form.get(`${BASELINE_PREFIX}${definition.key}`)')
+    expect(core).toContain('if (same(submitted, parseSubmitted(definition, rawBaseline))) continue')
+
+    // And the baseline lives at form level, never inside a field's own
+    // `data-setting` container. Written the other way first, on 2026-09-21,
+    // and the round-trip suite caught it within the hour: a second input in
+    // that container makes `[data-setting="x"] input` match two elements, so
+    // every selector written that way dies on a strict-mode violation. Three
+    // of this product's own four round-trip tests failed on it.
+    //
+    // Asserted by splitting at `function Field(`, because the property is
+    // *where* the input is rather than that it exists.
+    const fieldComponent = form.slice(form.indexOf('function Field('))
+    expect(fieldComponent, 'the baseline input is inside the field container').not.toContain(
+      'BASELINE_PREFIX',
+    )
+  })
+
+  it('decides "modified" by row presence for a person and by difference for an organisation', () => {
+    // **SET-06.** Provisioning copies every organisation-scoped key into a new
+    // tenant, so at that scope "a row exists" is true of every field from the
+    // first day -- every one reads as modified, none as inherited, and the
+    // marker carries nothing. At member scope a row exists only when somebody
+    // chose one, so presence *is* the choice and comparing would be wrong for
+    // anybody who deliberately picks their organisation's value.
+    //
+    // The two pages must therefore disagree, and this asserts that they do.
+    // **The wiring, which the logic test cannot see.** `isHeldHere` is proved
+    // to behave differently under the two rules by
+    // `product-settings-logic.test.ts`; what no unit test can check is that
+    // each page asks for the rule it needs. Swapping them would leave that
+    // suite green and both pages wrong.
+    const core = read('packages', 'ui', 'src', 'settings', 'form-values.ts')
+    const organization = read('apps', 'web', 'src', 'app', 'dashboard', 'settings', 'page.tsx.hbs')
+    const preferences = read(
+      'apps', 'web', 'src', 'app', 'dashboard', 'preferences', 'page.tsx.hbs',
+    )
+
+    expect(core).toContain("heldMeans === 'a-row-exists' ? hasRow")
+    expect(organization).toContain("heldMeans: 'differs-from-inherited'")
+    // The preferences page takes the default, and must not ask for the other.
+    expect(preferences).not.toContain('heldMeans')
   })
 
   it('announces the outcome of a save', () => {
@@ -1115,8 +1195,9 @@ describe('a surfaced accessibility setting is honoured', () => {
   const shell = read('packages', 'ui', 'src', 'shell', 'product-shell.tsx.hbs')
   const standard = read('services', 'api', 'koras_api', 'settings_catalogue', 'standard.py')
 
-  it('honours accessibility.highContrast, and records its two siblings still dead', () => {
-    // All three are offered to customers.
+  it('honours accessibility.highContrast, and no longer offers the two nothing reads', () => {
+    // All three are still declared. Withdrawing a definition would orphan the
+    // rows customers already hold; hiding it does not.
     for (const key of [
       'accessibility.highContrast',
       'accessibility.reducedMotion',
@@ -1125,14 +1206,20 @@ describe('a surfaced accessibility setting is honoured', () => {
       expect(standard, `${key} is not declared in the catalogue`).toContain(`"${key}"`)
     }
 
-    // One of the three is now read by client code, which is what closes its
-    // third of the defect.
+    // One of the three is read by client code, which is what closes its third
+    // of the defect and is why it stays offered.
     expect(shell).toContain("useSettingValue('accessibility.highContrast', false)")
 
-    // The other two are not, and this asserts that rather than pretending
-    // otherwise. When one is honoured, it moves up here and its assertion below
-    // is deleted in the same commit -- the same discipline the hidden-settings
-    // test keeps for `surfaced=False`.
+    // The other two are still read by nothing -- and since 2026-09-21 they are
+    // no longer *offered* either, which is the SET-23 correction. Until then
+    // they were drawn on the preferences page and honoured nowhere: a customer
+    // could ask for less motion and get exactly as much.
+    //
+    // Hiding rather than honouring, for the reason the grid pair was hidden:
+    // a control that changes nothing is worse than one not offered, and
+    // honouring these is a Settings story rather than a correction. When one
+    // is honoured its `surfaced=False` goes and it moves up to the line above,
+    // in the same commit.
     for (const dead of ['accessibility.reducedMotion', 'accessibility.fontScale']) {
       expect(shell, `${dead} is honoured by the shell but was recorded as dead`).not.toContain(dead)
     }

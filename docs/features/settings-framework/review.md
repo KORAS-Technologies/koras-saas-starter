@@ -155,3 +155,19 @@ Worth stating plainly rather than leaving implied: **this review is half of
 F27, and the half a machine can do.** It is also the half that found SET-02 —
 a defect a person doing case one would have found in thirty seconds, because
 case one is opening the control that does not work.
+
+---
+
+## What happened to these findings
+
+**This document is not amended, and that is deliberate.** It records what two
+reviewers found on 2026-09-19, and editing it to match a later tree would
+destroy the only account of what was true then.
+
+What each finding *does now* is
+`docs/features/settings-framework/finding-matrix.md`, written 2026-09-21: every
+carried finding reproduced or disproved against a running product and a real
+database, with the probes kept. Four were fixed in that cycle — SET-05, SET-06,
+SET-07 and SET-22 — and one, **SET-21, did not reproduce as written**: the
+worker's sweeps do declare the provisioning context, so the comment this review
+called wrong is accurate. Read the matrix before acting on any row above.

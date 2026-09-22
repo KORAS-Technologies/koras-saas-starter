@@ -1,0 +1,6 @@
+Generator suite after the closure review fixes, 2026-09-21.
+Excludes generated-builds, product-governance and generation, which spawn
+real installs and were run separately; product-governance is FW-DEF-003.
+
+ Test Files  59 passed (59)
+      Tests  2160 passed (2160)

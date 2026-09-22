@@ -1,0 +1,17 @@
+SET-22 — what actually refuses a cross-tenant row move
+PostgreSQL 15.6, public.tenant_setting_values, role koras_rls_test (nobypassrls)
+Run 2026-09-21. Each configuration sets with check EXPLICITLY, so the
+CREATE POLICY using-fallback cannot account for any result below.
+
+--- 1. shipped schema: using = tenant, with check = tenant
+NOTICE:  REFUSED
+
+--- 2. with check := true, SELECT policy left narrow
+NOTICE:  REFUSED -- so the SELECT policy, not with check, refused it here
+
+--- 3. with check := true AND a second permissive SELECT policy using(true)
+NOTICE:  MOVED 1 row(s) -- with check was the only guard left, and it was true
+
+Conclusion: 1 and 2 refuse, 3 moves. Two independent clauses refuse the
+move, and widening SELECT is what leaves with check alone to refuse it.
+That is what the tmp_set22_select_all block in 270/280 relies on.

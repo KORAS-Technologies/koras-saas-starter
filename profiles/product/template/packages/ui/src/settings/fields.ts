@@ -122,3 +122,27 @@ export function optionLabel(field: SettingField, value: SettingValue): string {
 export function withValue(template: string, value: string): string {
   return template.replace(/\{value\}/g, value)
 }
+
+/**
+ * A field's rendered value, as the hidden baseline input carries it.
+ *
+ * **Not the string the control itself submits, and that is deliberate.** A
+ * checked checkbox submits `"on"` and an unchecked one submits nothing at all;
+ * this writes `"true"` or `"false"`. The pair works because `parseSubmitted`
+ * normalises both sides to a boolean before they are compared — so what has to
+ * match is the *parsed* value, not the wire spelling. Anybody tempted to
+ * "correct" this to `"on"` should change `parseSubmitted` in the same edit or
+ * leave both alone.
+ *
+ * For every other control it is the value as text, which is what the control
+ * renders. A spelling that did not match would make every save of that field
+ * look like a change — the old behaviour rather than a new defect, which is
+ * the safe direction for this to be wrong in.
+ */
+export function baselineText(field: SettingField): string {
+  if (field.ui === 'toggle') return String(field.value === true)
+  if (field.ui === 'chips') {
+    return Array.isArray(field.value) ? field.value.join(', ') : String(field.value)
+  }
+  return String(field.value)
+}

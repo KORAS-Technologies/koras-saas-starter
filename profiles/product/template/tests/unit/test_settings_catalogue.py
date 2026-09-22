@@ -95,6 +95,14 @@ def test_a_person_is_offered_exactly_what_a_person_may_write() -> None:
         # file settings at the presign route and found this one has no
         # moment to apply: one ticket, one file.
         "files.maxFilesPerUpload",
+        # Added 2026-09-21 for SET-23, and the second time this exact defect
+        # has been found in this file. All three `accessibility.*` settings
+        # were offered, stored, resolved and read by nothing from the day the
+        # framework shipped; G7R2-F01 wired `highContrast` to the shell and
+        # left these two, which stayed offered for two more days. They leave
+        # this set when the shell reads them, or they leave the catalogue.
+        "accessibility.reducedMotion",
+        "accessibility.fontScale",
     }
     for setting in catalogue:
         if setting.key in unhonoured:

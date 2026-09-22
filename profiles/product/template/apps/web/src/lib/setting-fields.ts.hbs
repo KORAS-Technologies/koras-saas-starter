@@ -1,6 +1,12 @@
 import type { SettingDefinitionResponse } from '@{{projectSlug}}/api-client'
 import type { Translator } from '@{{projectSlug}}/i18n'
-import type { SettingField, SettingGroup } from '@{{projectSlug}}/ui'
+import {
+  isHeldHere,
+  valuesForCategory,
+  type HeldMeans,
+  type SettingField,
+  type SettingGroup,
+} from '@{{projectSlug}}/ui'
 
 /**
  * Turning the published catalogue into something a settings page can render.
@@ -45,6 +51,7 @@ export function settingGroups({
   inherited,
   t,
   visible,
+  heldMeans = 'a-row-exists',
 }: {
   definitions: SettingDefinitionResponse[]
   values: Values
@@ -52,13 +59,41 @@ export function settingGroups({
   t: Translator
   /** Which half of the catalogue this page shows. */
   visible: (definition: SettingDefinitionResponse) => boolean
+  /**
+   * What "this scope has chosen a value" means on this page. **SET-06.**
+   *
+   * At member scope it is `a-row-exists`, and that is exactly right: a
+   * member row is written only when a person chooses one, so its presence
+   * *is* the choice. Deriving it by comparison there would be wrong the
+   * moment somebody deliberately picks the value their organisation already
+   * has -- the caveat `SettingField.isSet` has carried since it was written.
+   *
+   * At organisation scope a row exists for **every** organisation-scoped key
+   * from the moment the tenant is provisioned, because the snapshot copies
+   * the whole catalogue in. So `a-row-exists` is true of everything, every
+   * field reads as modified, none ever reads as inherited, and the marker
+   * carries no information at all. `differs-from-inherited` is the only
+   * signal left on that page.
+   *
+   * Its own caveat is real and strictly smaller, and it has two halves. The
+   * Reset button disappears, which costs nothing: an organisation reset is a
+   * *copy* of the platform's current value, and the two are equal by
+   * construction, so the button would have written what was already there.
+   * The marker also flips, which costs a little more — a value the
+   * organisation deliberately chose reads as inherited, and an organisation's
+   * value is a pinned snapshot that never tracks the platform, so the label
+   * becomes wrong the moment the platform moves. Against a marker that was
+   * previously wrong for *every* field on the page, that is the better trade;
+   * it is not a free one.
+   */
+  heldMeans?: HeldMeans
 }): SettingGroup[] {
   const groups: SettingGroup[] = []
 
   for (const category of CATEGORY_ORDER) {
     const fields = definitions
       .filter((definition) => definition.category === category && visible(definition))
-      .map((definition) => toField(definition, values, inherited, t))
+      .map((definition) => toField(definition, values, inherited, t, heldMeans))
 
     // A category with nothing in it is left out rather than rendered empty.
     // My preferences shows fewer settings than the organisation's page, and an
@@ -80,10 +115,12 @@ function toField(
   values: Values,
   inherited: Values,
   t: Translator,
+  heldMeans: HeldMeans,
 ): SettingField {
-  const isSet = Object.hasOwn(values, definition.key)
+  const hasRow = Object.hasOwn(values, definition.key)
   const fallback = inherited[definition.key] ?? definition.default
-  const value = isSet ? values[definition.key] : fallback
+  const value = hasRow ? values[definition.key] : fallback
+  const isSet = isHeldHere(hasRow, values[definition.key], fallback, heldMeans)
 
   return {
     key: definition.key,
@@ -116,17 +153,13 @@ function optionText(option: string, t: Translator): string {
 }
 
 /**
- * One category's submitted values, typed the way the definitions say.
+ * One category's submitted values, typed the way the definitions say, and
+ * only the ones somebody changed.
  *
- * Driven by the definitions rather than by what the browser sent, which is the
- * whole point: an unchecked checkbox sends *nothing*, so a form read by its own
- * contents would silently drop every switch somebody turned off. Walking the
- * definitions means an absent checkbox is `false` and an absent anything else
- * is simply not written.
- *
- * Numbers and lists are parsed here and checked again by the API, which holds
- * them to the definition's own bounds. This is the convenience; that is the
- * guard.
+ * The deciding is `valuesForCategory` in `@{{projectSlug}}/ui`, which is plain
+ * TypeScript with no generated import and is therefore the half this
+ * repository can actually execute — see `product-settings-logic.test.ts`. This
+ * wrapper exists to hold the generated definition type and nothing else.
  */
 export function valuesFromForm(
   definitions: SettingDefinitionResponse[],
@@ -134,39 +167,5 @@ export function valuesFromForm(
   form: FormData,
   visible: (definition: SettingDefinitionResponse) => boolean,
 ): Values {
-  const values: Values = {}
-
-  for (const definition of definitions) {
-    if (definition.category !== category || !visible(definition)) continue
-
-    if (definition.data_type === 'boolean') {
-      values[definition.key] = form.get(definition.key) !== null
-      continue
-    }
-
-    const raw = form.get(definition.key)
-    if (raw === null) continue
-    const text = String(raw)
-
-    if (definition.data_type === 'integer') {
-      const parsed = Number.parseInt(text, 10)
-      if (Number.isFinite(parsed)) values[definition.key] = parsed
-      continue
-    }
-    if (definition.data_type === 'decimal') {
-      const parsed = Number.parseFloat(text)
-      if (Number.isFinite(parsed)) values[definition.key] = parsed
-      continue
-    }
-    if (definition.data_type === 'string_list') {
-      values[definition.key] = text
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter((entry) => entry !== '')
-      continue
-    }
-    values[definition.key] = text
-  }
-
-  return values
+  return valuesForCategory(definitions, category, form, visible)
 }
