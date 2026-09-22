@@ -31,10 +31,16 @@ Where a case needs something the substitute does not have, the verdict is
 
 | Verdict | Count | Cases |
 |---|---|---|
-| PASS | 9 | 02, 03, 05, 06, 07, 08, 09, 13, 15 |
+| PASS | 11 | 02, 03, 05, 06, 07, 08, 09, 11, 12, 13, 15 |
 | PARTIAL — recorded as BLOCKED | 2 | 01, 04 |
-| BLOCKED | 4 | 10, 11, 12, 14 |
+| BLOCKED | 2 | 10, 14 |
 | FAIL | 0 | — |
+
+**A live sitting on 2026-09-22 against the deployed dev product** took this
+from 9 to 11. TEST-SET-11 and TEST-SET-12 both passed, and TEST-SET-01's
+blocker changed from "no page uses the shared table" to a live 500 on the one
+page that does. Details per case below; the environment was
+`app-dev.koras-e2e-shop.korastechnologies.com`, signed in as a real customer.
 
 **Nine of fifteen executed and passing, including all three Critical cases that
 could run.** Six could not run here, and F27 therefore does not close: the
@@ -59,16 +65,23 @@ matters most did not).
 
 | Step | Result |
 |---|---|
-| A page size chosen in preferences survives a reload | **Executed, PASS** — the round-trip browser project, against a real API and database |
-| One person's page size is not what another sees | **Executed, PASS** — same project, two subjects |
-| The seeded orders table repaginates at the chosen size | **Not executed** |
+| A page size chosen in preferences survives a reload | **PASS** — round-trip project, and again on **deployed dev**: set to 25, read back 25 on a fresh load, marked "modified" |
+| One person's page size is not what another sees | **PASS** — round-trip project, two subjects |
+| The seeded orders table repaginates at the chosen size | **NOT EXECUTED — blocked by a live defect** |
 
-**Why it is BLOCKED.** The repagination half needs a page that renders the
-shared data table with enough rows to page, and **the generated product has
-none** — that page lives only in `koras-e2e-shop`, which is out of this cycle's
-scope. The setting is proven to resolve, persist and stay private to its owner;
-what remains unproven is a table honouring it, which is exactly the sentence
-the plan opens with.
+**The blocker changed on 2026-09-22, and the new one is worse.** It was "no
+product page uses the shared data table". `koras-e2e-shop` has one —
+`/dashboard/orders` — and on deployed dev **that page returns HTTP 500**.
+Every other dashboard page answers 200, including both settings pages, so the
+settings surface is healthy and the orders page specifically is not.
+
+That is a live defect in this repository's own orders feature, outside F27's
+boundary, and it is recorded rather than fixed here. Until it is fixed, the one
+page in the estate that makes `grid.pageSize` observable cannot be observed.
+
+**What is proven:** the value is chosen, stored, resolved, persisted across a
+reload, and kept private to its owner — on a deployed product. **What is not:**
+a table drawing that many rows.
 
 ---
 
@@ -221,11 +234,36 @@ product-side register of a platform change does not exist.
 
 ## TEST-SET-11 — One save writes one category
 
-**Verdict** BLOCKED.
+**Priority** high — this is the case that demonstrates the SET-05 correction.
+**Verdict** PASS, executed 2026-09-22 on deployed dev.
 
-The case reads the tenant's audit history after a save, which needs a browser
-session posting a real form and an audit trail to read back. The round-trip
-project has the first and this cycle did not build the second into it.
+**Measured, not inspected.** The audit list was captured before and after a
+save, and the difference taken — because presence of a key in the page proves
+nothing about which save wrote it, and the first attempt at this case was
+misled exactly that way: `ui.density` appeared in the audit text before the
+probe ran, from an earlier save made while this product still carried the
+SET-05 defect.
+
+The Appearance category holds four fields — `ui.theme`, `ui.density`,
+`ui.sidebarCollapsed`, `ui.defaultLandingPage`. Exactly one was changed.
+
+| | |
+|---|---|
+| Changed | `ui.density`, `comfortable` → `compact` |
+| New audit rows | **2** |
+| Of those, `settings.member_changed` | **1**, for `setting · ui.density` |
+| The other | `audit.searched` — reading the audit page is itself an audited act |
+
+Two earlier saves in the same session show the same shape: `grid.pageSize`
+alone from the Tables category, `ui.theme` alone from Appearance. One field
+changed, one entry written.
+
+**Before the SET-05 fix this save would have written the whole category.** An
+administrator who changed one field got an audit entry for everything they
+looked at, and a member got a personal override for every field they did not
+touch. This is that correction, observed in a deployed product.
+
+Evidence: `docs/features/settings-framework/testing/manual/screenshots/TEST-SET-11/`
 
 **This is the case that would have demonstrated the SET-05 correction through
 the audit trail**, and it remains the most valuable unexecuted case in the
@@ -249,11 +287,26 @@ and a trail to read back.
 
 ## TEST-SET-12 — `auto` still negotiates
 
-**Verdict** BLOCKED.
+**Verdict** PASS, executed 2026-09-22 on deployed dev, all three steps.
 
-Needs a browser whose language is German and a round trip through content
-negotiation. The round-trip project runs one locale and the degraded projects
-have no API.
+`general.language` offers `auto`, `en`, `de`, `es`, and held `auto`.
+
+| Browser locale | Stored value | `html[lang]` | Heading |
+|---|---|---|---|
+| `en-GB` | `auto` | `en` | "My preferences" |
+| `de-DE` | `auto` | `de` | "Meine Einstellungen" |
+| `de-DE` | **`en`** (pinned) | `en` | "My preferences" |
+| `de-DE` | back to `auto` | `de` | "Meine Einstellungen" |
+
+Pinning overrides the browser; releasing resumes negotiation rather than
+leaving English stuck.
+
+**This is the case ADR 0007's `auto` value exists for.** The rule it produced —
+a setting whose absence means "infer it from context" must express that
+inference as one of its values, or the snapshot silently ends the inference —
+is exactly what these four rows check, and it holds.
+
+Evidence: `docs/features/settings-framework/testing/manual/screenshots/TEST-SET-12/`
 
 ---
 

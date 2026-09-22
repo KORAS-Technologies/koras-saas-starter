@@ -444,15 +444,30 @@ reconciled against a running product rather than re-read: eleven reproduced by
 probe, three by reading, one — **SET-21** — did **not** reproduce, because the
 worker's sweeps do declare the provisioning context the review said they never
 declare. Four Highs were fixed (SET-05, SET-06, SET-07, SET-22) plus SET-23,
-with no schema change and no migration. **Nine of fifteen manual cases have
-been executed and passed**, against a real PostgreSQL with the product's own
-migrations and its own API — including TEST-SET-02, the brief's central
-requirement, where an organisation seeded before a platform change kept its
-own value.
+with no schema change and no migration. **Eleven of fifteen manual cases have
+been executed and passed** — nine against a real PostgreSQL with the product's
+own migrations and its own API, and two more in a live sitting against the
+deployed dev product on 2026-09-22. They include TEST-SET-02, the brief's
+central requirement, where an organisation seeded before a platform change
+kept its own value.
 
-**Six cases are left and none of them is code.** They need the Control Plane
-console, a product page using the shared data table — only `koras-e2e-shop`
-has one — a plain-`member` browser session, and a person with a screen reader.
+**TEST-SET-11 is the one worth knowing about**: one field changed in a
+four-field category produced exactly one audit entry, on a deployed product.
+That is the SET-05 correction observed rather than asserted. It was measured
+as a before/after difference, because the first attempt was misled by an
+audit entry an earlier, unfixed save had written — presence of a key proves
+nothing about which save wrote it.
+
+**Four cases are left and none of them is code.** TEST-SET-10 needs the
+Control Plane console; TEST-SET-14 needs a person with a screen reader; and
+TEST-SET-04 and TEST-SET-01 are half-executed.
+
+**TEST-SET-01's blocker changed, and the new one is worse.** It was "no
+product page uses the shared data table". `koras-e2e-shop` has one, and on
+deployed dev `/dashboard/orders` returns **HTTP 500** while every other
+dashboard page answers 200 — so the settings surface is healthy and the one
+page that makes `grid.pageSize` observable is not. That is the shop's own
+orders feature and is recorded rather than fixed under F27.
 
 **TEST-SET-13 was recorded as permanently unrunnable and then ran**, on
 2026-09-22. It needs a database on the pre-settings-framework schema, and

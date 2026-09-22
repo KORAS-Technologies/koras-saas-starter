@@ -144,19 +144,33 @@ as though it addressed it.
 SET-22 and the two accessibility settings that were offered and honoured by
 nothing. No schema change, no migration, no API contract widened.
 
-**And it executed nine of the fifteen manual cases**, against a real
-PostgreSQL with the product's own migrations and its own API, including all
-three Critical cases that could run — TEST-SET-02, an existing organisation did
+**And it executed eleven of the fifteen manual cases** — nine by 2026-09-21
+against a real PostgreSQL with the product's own migrations and its own API,
+and two more on 2026-09-22 in a live sitting against the deployed dev product,
+including all three Critical cases that could run — TEST-SET-02, an existing organisation did
 not follow a later platform change; TEST-SET-03, the provenance of the copy is
 recorded; and TEST-SET-13, the locale migration carried every value it was
 given. `testing/manual/manual-test-results.md` is the record.
 
-**Six cases remain, and that is why this is still not Done.** Four are
-BLOCKED and two are half-executed and recorded as BLOCKED rather than as a
-pass on the half that ran. They are blocked on four things and the same four
-each time: the Control Plane console, a product page using the shared data
-table (only `koras-e2e-shop` has one), a plain-`member` browser session, and a
-person with a screen reader.
+**Four cases remain, and that is why this is still not Done.** Two are
+BLOCKED — TEST-SET-10 needs the Control Plane console, TEST-SET-14 needs a
+person with a screen reader — and two are half-executed and recorded as
+BLOCKED rather than as a pass on the half that ran.
+
+**The live sitting closed TEST-SET-11 and TEST-SET-12.** TEST-SET-11 is the
+one that demonstrates the SET-05 correction: one field changed in a
+four-field category produced exactly one audit entry, measured as a
+before/after difference rather than by looking for a key in the page — the
+first attempt was misled that way by an entry an earlier, unfixed save had
+written.
+
+**And it found a live defect outside F27.** TEST-SET-01's blocker used to be
+"no product page uses the shared data table". `koras-e2e-shop` has one, and
+on deployed dev on 2026-09-22 `/dashboard/orders` **returned HTTP 500** while
+every other dashboard page answered 200 — so on that date the page that makes
+`grid.pageSize` observable could not be observed. That is the shop's own
+orders feature, not the settings framework, and it is recorded rather than
+fixed under F27.
 
 **TEST-SET-13 was one of them until 2026-09-22**, recorded as permanently
 unrunnable because it needs a database on the pre-settings-framework schema
