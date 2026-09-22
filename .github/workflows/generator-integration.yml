@@ -417,8 +417,21 @@ jobs:
           git init -q -b develop
           git add -A
 
+      # `E2E_DATABASE_URL` for the rows that prepared one above, and empty for
+      # the rows that did not. It is the same switch the browser step uses and
+      # deliberately the same variable: `tests/integration/` skips without it,
+      # so a developer with no Postgres runs exactly what they ran before.
+      #
+      # It exists because the data-import commit shipped with a defect no other
+      # kind of test could see -- the worker's tenant context is
+      # transaction-local, so committing the claim silently dropped it and every
+      # row-level policy then matched nothing. That reproduces against a real
+      # database and a role without BYPASSRLS, and against nothing else.
+      # IMP2-01 in `docs/features/data-import/phase-2-review.md`.
       - name: Test (Python)
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        env:
+          E2E_DATABASE_URL: ${{ matrix.roundtrip && 'postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e' || '' }}
         run: uv run pytest
 
       # A project generated a moment ago must match what the generator would

@@ -1,7 +1,10 @@
 # Data import — manual test plan
 
-Written 2026-09-19, against Phase 1 as built. **Every verdict below is blank.
-No manual pass has been run.**
+Written 2026-09-19, against Phase 1 as built; the commit cases added
+2026-09-20. **Four of the forty have been executed — 23, 24, 25 and 26, all
+PASS, on 2026-09-22.** The verdicts and the estate are in
+`testing/manual/manual-test-results.md`; the columns below are left blank
+rather than filled in two places.
 
 These are the cases no automated test in this estate reaches. The e2e harness
 starts the web application alone, so its four browser checks cover routing,
@@ -41,9 +44,15 @@ configured, and an account holding `imports.manage`.
 
 ## Phase 2 — the commit
 
-Added 2026-09-20. These need a product that declares a **committable** target;
-a generated product declares none, so they run in `koras-e2e-shop` or in
-Docoris and nowhere else. Every verdict is blank: NOT EXECUTED.
+Added 2026-09-20. These need a product that declares a **committable** target,
+which a generated product does not — so 23 to 26 were run on 2026-09-22 against
+a generated product given the smallest possible one: a `probe.contacts` target
+with a real writer and a tenant-scoped table, both of which live in
+`testing/runs/2026-09-22-01/` and neither of which is part of the starter.
+
+**Cases 23, 24, 25 and 26 PASS.** Case 26 is the phase's own acceptance
+criterion and it was made to fail the hard way: the writer writes two of three
+rows and *then* raises. The other fourteen are NOT EXECUTED.
 
 | # | Case | Expected | Verdict |
 |---|------|----------|---------|

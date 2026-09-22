@@ -1729,6 +1729,13 @@ export interface ImportAnalysisView {
 }
 
 export interface ImportRowErrorView {
+  /**
+   * The report's own key, and the only correct value to send back as `after`.
+   * The route pages on it; `row` is the file's line number, a different scale
+   * entirely, and paging on that stops early or repeats. IMP2-05 in
+   * `docs/features/data-import/phase-2-review.md`.
+   */
+  cursor: number
   row: number
   column: string
   field: string

@@ -19,6 +19,7 @@ import pytest
 from koras_import import (
     ENCODINGS,
     FALLBACK_ENCODING,
+    MAX_CELL,
     FieldKind,
     FieldSpec,
     Format,
@@ -36,6 +37,7 @@ from koras_import import (
     decode,
     is_terminal,
     may_move,
+    next_states,
     read_header,
     read_rows,
     require_move,
@@ -207,6 +209,43 @@ def test_a_short_row_is_filled_and_flagged_and_a_long_one_is_trimmed_and_flagged
 def test_a_cell_large_enough_to_be_a_file_is_refused() -> None:
     with pytest.raises(ReadRefused, match="file in a cell"):
         read_header(lines("email," + "x" * 40_000 + "\n"), delimiter=",")
+
+
+def test_a_field_spanning_many_short_lines_is_refused_rather_than_raising() -> None:
+    """The bound is on the *field*, not only on the line.
+
+    Every line here is about a thousand characters, well under the line limit,
+    and together they are one quoted field far over `csv`'s own. That raised
+    `csv.Error` -- which the routes do not catch, because everything this module
+    raises is a `ReadRefused` -- so a customer with one stray quote in their
+    export got a 500. IMP2-07 in `docs/features/data-import/phase-2-review.md`.
+
+    Asserted on all three entry points, because each builds its own reader.
+    """
+    big = chr(10).join(["x" * 1_000] * 200)
+    text = 'a,b' + chr(10) + '"' + big + '",2' + chr(10)
+    assert max(len(line) for line in text.splitlines()) < MAX_CELL
+
+    header = read_header(lines("a,b" + chr(10)), delimiter=",")
+    with pytest.raises(ReadRefused, match="could not be read as a table"):
+        list(read_rows(lines(text), header=header, delimiter=",", limit=10))
+    with pytest.raises(ReadRefused, match="could not be read as a table"):
+        count_rows(lines(text), delimiter=",", ceiling=100)
+    # The header's own reader too, when the runaway field is the first row --
+    # `read_header` stops after one row, so it must be given one to fail on.
+    with pytest.raises(ReadRefused, match="could not be read as a table"):
+        read_header(lines('"' + big + '",b' + chr(10)), delimiter=",")
+
+
+def test_one_unterminated_quote_is_refused_and_says_so() -> None:
+    """`csv` absorbs the rest of the file into a single field rather than
+    raising, so the symptom arrives far from the cause. The refusal names the
+    likely cause, because "field larger than field limit" is not something a
+    person can act on."""
+    header = read_header(lines("a,b" + chr(10)), delimiter=",")
+    runaway = 'a,b' + chr(10) + '"' + chr(10).join(["y" * 1_000] * 200)
+    with pytest.raises(ReadRefused, match="unclosed quotation mark"):
+        list(read_rows(lines(runaway), header=header, delimiter=",", limit=10))
 
 
 def test_counting_stops_once_the_ceiling_is_passed() -> None:
@@ -466,8 +505,54 @@ def test_every_state_but_the_two_that_write_has_written_nothing() -> None:
 
 
 def test_terminal_states_go_nowhere() -> None:
+    # Asserted as "there is no way out" rather than as `is_terminal`, which is
+    # membership of the same literal triple the function is defined from -- so
+    # the old form restated a constant and stayed green if an edge were added
+    # out of `committed`. ENG-08 in `docs/features/data-import/phase-2-review.md`.
     for state in (RunState.COMMITTED, RunState.FAILED, RunState.CANCELLED):
         assert is_terminal(state)
+        assert next_states(state) == frozenset()
+
+
+def test_the_commit_path_the_worker_actually_walks_is_legal() -> None:
+    """Every move the commit makes, in the order it makes them.
+
+    **This is the test Phase 2 shipped without.** The worker claimed nothing
+    before writing, so it asked for `commit_requested -> committed`, which the
+    machine refuses: every commit rolled its rows back, and the failure it then
+    tried to record was refused by the same gap. Both were invisible to a suite
+    that asserted the *shape* of the worker's transactions and to one that
+    asserted `commit_requested -> committing` in isolation -- a move no code
+    performed. IMP2-01 and IMP2-02 in
+    `docs/features/data-import/phase-2-review.md`.
+
+    Asserted as a walk rather than as edges, because the defect was that two
+    legal edges were never joined by anything.
+    """
+    state = RunState.VALIDATED
+    for move in (RunState.COMMIT_REQUESTED, RunState.COMMITTING, RunState.COMMITTED):
+        assert may_move(state, move), f"{state.value} -> {move.value}"
+        require_move(state, move)
+        state = move
+    assert state is RunState.COMMITTED
+
+
+@pytest.mark.parametrize(
+    "state",
+    [RunState.COMMIT_REQUESTED, RunState.COMMITTING],
+    ids=["before the write starts", "while it is in flight"],
+)
+def test_a_commit_can_always_record_its_own_failure(state: RunState) -> None:
+    """A commit fails in two places, and both must be recordable.
+
+    `commit_requested -> failed` is the queue being unconfigured, the target
+    having lost its writer, or the product no longer declaring it -- all of
+    which are decided before a row is written. Without that edge the recording
+    raises, the exception escapes past the notification, and the run is
+    stranded *and* silent.
+    """
+    assert may_move(state, RunState.FAILED)
+    require_move(state, RunState.FAILED)
 
 
 def test_a_refused_move_names_both_states_and_what_was_allowed() -> None:

@@ -23,7 +23,7 @@ recommendation rather than a record — revise it, do not preserve it.
 | Order | Entry | What is left, and why it is here | Rough cost |
 |-------|-------|----------------------------------|------------|
 | 1 | **F27 — the settings framework, reviewed and exercised** — *review 2026-09-19 (BLOCK, four fixed); closure cycle 2026-09-21 (eighteen findings reconciled, four Highs plus SET-23 fixed); live sitting 2026-09-22, which found SET-24 and fixed it. **Twelve of fifteen manual cases pass, no FAIL, three BLOCKED.*** | **Two of the three are waiting on things that exist; the third is not.** TEST-SET-04 needs one plain-`member` account — its security half is already proven at the API, only the on-page notice is unseen — and TEST-SET-10 needs the Control Plane console. **TEST-SET-01 is permanently BLOCKED, decided 2026-09-22**: it needs a product page rendering the shared data table over enough rows to page, and no product in the estate has one now that `koras-e2e-shop` is being torn down. Recorded with its trigger — any product growing such a page — rather than left looking deferred; giving the generated product one was considered and declined. Detail in `docs/features/settings-framework/testing/manual/manual-test-results.md`. | ~1h for the two, once an account and a console exist |
-| 2 | **F28 — data import Phase 1, reviewed and exercised** | The same shape as row 1, one day later and on newer code. Phase 1 shipped on 2026-09-19: two new tables with row-level security, eight routes over a customer's own records, a mapping allowlist that decides which columns an import may ever reach, a parser fed files from outside the product, and the first enqueued job this repository has ever had. None of it has been seen by anybody but the session that wrote it, and `docs/features/data-import/manual-test-plan.md` has twenty-two cases and twenty-two blank verdicts. The parser is the part worth an independent look first: it is the only code in the estate that reads a file a stranger chose. | ~1 day for the review, ~half a day for the pass |
+| 2 | **F28 — data import, reviewed and exercised** — *reviewed 2026-09-22 by four independent reviewers, one per seam. **All four returned BLOCK**, and the headline is not a defect in a feature: **Phase 2 had never worked**. Nothing moved a run into the state `record_commit` requires, so every commit rolled its rows back, and the failure path was refused by the same gap — stranding the run and telling nobody. Two critical, eight high, eighteen medium, fifteen low. **The two critical and eight high are fixed, each with a test that fails without it.** Fixing the first critical produced a second defect that only a real PostgreSQL could show: the claim's commit drops the worker's transaction-local tenant context, so the re-read returned nothing under row-level security and said nothing. `docs/features/data-import/phase-2-review.md` is the record.* | **Status: implementation complete, manual validation pending.** Four of forty manual cases pass — 23 to 26, the commit, including the phase's own acceptance criterion. Thirty-six are NOT RUN and none is blocked. The ones to run first are the seams these fixes changed: the report download's paging, the formula guard, the polling and the focus. Eighteen medium and fifteen low findings are carried in the review. | ~half a day for the pass |
 | 3 | **F21 — live mode** | The only entry with money on the other end. Every phase is built and every test-mode box closed on 2026-09-15, including a signup watched from the form through Stripe's checkout to the owner's password. What remains is the walk from test mode to live: activate the account, make the live catalogue, mint a restricted live key, register a prod webhook endpoint, configure the customer portal, and sign up once yourself with a real card and cancel inside the trial. `koras-control-plane/docs/runbooks/stripe-go-live.md` steps 1, 3, 5 and 7, in that order. Nothing here is code. | ~½ day at the Stripe dashboard |
 | 4 | **The live sitting** | Three things needing the same estate and the same credentials, which is why they are one item and not three: **R-036**'s second provision-and-teardown now that Cloudflare is in the inventory; the **F17 token audience**; and one `--register-only` for `koras-e2e-shop`, which would be the estate's first *confirmed* registration now that the Control Plane echoes what it stored. Run separately they pay the setup cost three times. | ~half a day |
 | 5 | **F23 — the other three environments** | dev has the product's own sign-in and a customer has signed in on it. test, stg and prod need two ZITADEL writes per instance that only a person can make — grant the worker `IAM_LOGIN_CLIENT`, set the Console application to Login V2 — and then the instance feature flipped, **and only after the environment is promoted**, because with the feature off ZITADEL sends sign-ins to the application's base URI and `/login` is a 404 there. | ~1h per environment |
@@ -2390,16 +2390,19 @@ of proof nobody has.
       bounded head of 200 rows in a plain table. Both are fixed by the same
       piece of work — a table that takes a column set and a page callback — and
       neither feature should build it alone.
-- [ ] **No manual pass.** Twenty-two cases, twenty-two blank verdicts. The e2e
-      harness starts the web application alone, so the four browser checks
-      cover routing, refusal and degraded rendering, and nothing that needs an
-      API, a queue or a bucket. No file has been imported through a deployed
-      product, and the dry run has never executed against a real Redis.
-- [ ] **No independent review.** Of the parser especially. `koras_import.reading`
-      is the only code in this estate that parses a file chosen by somebody
-      outside the product, and the scan gate in front of it refuses `pending`,
-      which means it is unreachable until a scanner exists — so as of
-      2026-09-19 the gate is protecting code nobody has read.
+- [ ] **No manual pass.** Forty cases, forty blank verdicts — twenty-two for
+      Phase 1 and eighteen for the commit. The e2e harness starts the web
+      application alone, so the four browser checks cover routing, refusal and
+      degraded rendering, and nothing that needs an API, a queue or a bucket.
+      No file has been imported through a deployed product, and the dry run has
+      never executed against a real Redis.
+- [x] **No independent review.** Closed 2026-09-22, and it was the right worry.
+      Four reviewers, one per seam, all four returning BLOCK. The parser was
+      indeed carrying a defect nobody had read — a quoted field spanning many
+      short lines defeats its own bound and raises an exception the routes do
+      not catch — but the worse finding was elsewhere: **the commit path had
+      never worked**, for any product, since the day Phase 2 shipped.
+      `docs/features/data-import/phase-2-review.md` is the record.
 - [ ] **`koras-e2e-shop` is not level with this.** It is the one repository in
       the estate with a domain that could declare real import targets, and
       declaring one is what would make the registry, the mapping and the

@@ -180,6 +180,7 @@ template_map:
       - supabase/tests/320_imports_isolation.sql
       - tests/unit/test_imports.py
       - tests/unit/test_import_commit.py
+      - tests/integration/test_import_commit_rls.py
       - apps/web/src/app/dashboard/imports
       - e2e/imports.spec.ts
     # In-app notifications: the table, the emitter, the routes, the page and

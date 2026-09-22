@@ -4,17 +4,32 @@ Let a customer load their existing records into a KORAS product without a
 developer: upload a file, map its columns, see what would happen, fix what is
 wrong, and commit.
 
-**Phase 1 is built as of 2026-09-19. Phase 2 is not, and the difference is the
-whole point of this document.** What ships today stops at the dry run: a run
-reaches `validated`, which is a terminal state that wrote nothing, and a person
-reads the report. There is no commit route, no commit task, and no control on
-the page that could write a row — absent rather than disabled, because a
-disabled button promises a thing the product cannot do.
+**Phase 1 shipped 2026-09-19 and Phase 2 on 2026-09-20.** Phase 1 stops at the
+dry run: a run reaches `validated`, which wrote nothing, and a person reads the
+report. Phase 2 is the commit, and it writes through a `Writer` the product
+declares on its target — the only thing in the path that may write a record,
+and what keeps the rule the plan states first: no product table name reaches
+the engine.
 
-**An independent review ran on 2026-09-19 and returned BLOCK.** One
-critical finding, two high and three medium; all six are fixed, three low
-ones are carried. `review.md` here is the record. No manual pass has been
-run against any of it.
+A target with no writer is not committable, and that is absent rather than
+disabled all the way down: the API answers `committable: false`, the page draws
+no control, and the route refuses. A disabled button promises a thing the
+product cannot do.
+
+**This paragraph said Phase 2 was not built until 2026-09-22**, two days after
+it shipped, in the document that introduces the feature.
+
+**Two independent reviews have run, and both returned BLOCK.**
+
+The first, on 2026-09-19, covered Phase 1: one critical finding, two high and
+three medium, all six fixed, three low carried. `review.md` is the record.
+
+The second, on 2026-09-22, covered Phase 1 and Phase 2 together with four
+reviewers, one per seam. **It found that Phase 2 had never worked**: the commit
+path could not succeed on any run of any product, because the run was never
+moved into the state `record_commit` requires. Two critical, eight high,
+eighteen medium. `phase-2-review.md` is the record, and it opens with why every
+gate in the estate was green over it.
 
 ## The documents
 
@@ -24,7 +39,8 @@ run against any of it.
 | `docs/adr/0009-import-runs-are-not-a-third-export.md` | Why an import run has its own table rather than reusing the export pattern | Before Phase 1 code |
 | `architecture.md` (here) | What was actually built, and where it departs from the plan | After |
 | `manual-test-plan.md` (here) | The cases no automated test in this estate reaches | After |
-| `review.md` (here) | The independent review, its six findings and what each one broke | After |
+| `review.md` (here) | The first independent review, its six findings and what each one broke | After Phase 1 |
+| `phase-2-review.md` (here) | The second, over both phases: four reviewers, and the commit path that had never run | After Phase 2 |
 
 The plan is left as it was written. Where it and `architecture.md` disagree,
 the as-built one is right — a design document edited after the fact stops being
@@ -60,7 +76,6 @@ either table. That is the test `audit_events` failed until 2026-09-16.
 
 - **Delete, merge and replace** are absent from the operation set. The brief
   says delete must not be enabled by default; it is not in this plan at all.
-- **A commit.** Phase 2.
 - **XLSX and JSON.** Declared in `Format` so the vocabulary is settled, refused
   by the reader. Phase 3.
 - **Anything about Docoris, Dianova or the shop.** The engine takes a

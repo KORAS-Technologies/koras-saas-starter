@@ -602,9 +602,40 @@ about.
 rediscovered: `files.maxFilesPerUpload`, the upload primitive that was to be
 extracted into `packages/ui`, and the preview drawn through the shared data
 table. None of them touches the safety properties above. No manual pass has run
-against any of it, no independent review has run against Phase 2, and
-`koras-e2e-shop` — the one repository in the estate with
+against any of it, and `koras-e2e-shop` — the one repository in the estate with
 a domain that could declare real targets — has not been synced.
+
+**Phase 2 was reviewed on 2026-09-22, and it had never worked.** Four
+independent reviewers, one per seam, all four returning BLOCK — eight for eight
+across this repository's independent reviews. `begin_commit` was defined,
+exported and called by nothing, so every commit asked the state machine for
+`commit_requested → committed`, an edge that does not exist: the product's
+writer ran, its rows were rolled back, and the attempt to record the failure
+was refused by the same gap and escaped uncaught past the notification. Every
+commit of every product wrote nothing, stranded its run in a state with no way
+out, and told nobody. Phase 2's acceptance criterion — a commit that raises
+partway leaves zero rows — was met by accident.
+
+**Every gate in the estate was green over it**, because the generator test
+asserts the *shape* of the commit: two `session.commit()` calls, a rollback
+before every recorded failure, `record_commit` before `fail`. All three are
+true of code that fails on every run. That is the FW-HARDEN-001 class again —
+an assertion that asks what a contract says rather than what it does — and it
+is now the third time it has produced a green suite over broken work. What
+catches it is in `koras-import/tests/test_import.py`: a test that walks the
+state machine along the path the worker actually takes.
+
+Two critical and eight high are fixed; eighteen medium and fifteen low are
+carried in `docs/features/data-import/phase-2-review.md`. Three of the eight
+high are worth carrying here. The report download could never be correct — the
+route paged on a key it did not return, so the browser sent the file's line
+number and the "every problem" file silently truncated or repeated. The page
+stopped polling the moment somebody confirmed, because `commit_requested` was
+missing from the set it polls on. And **SET-24 happened again**, four days
+later in a different feature: the confirm button unmounts on success, focus
+falls to `BODY`, and the outcome was a bare paragraph that no live region would
+announce. It uses `SaveOutcome` now, which is the component the settings fix
+produced — the third caller the extraction was waiting for.
 
 **It was reviewed the same day and the review returned BLOCK** — the third in
 three, after both governance reviews and the settings one. One critical

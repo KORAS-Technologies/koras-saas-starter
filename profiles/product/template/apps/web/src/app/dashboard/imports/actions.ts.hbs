@@ -216,14 +216,32 @@ export async function listErrors(runId: string): Promise<ActionResult<ImportRowE
  * So this pages until the report is exhausted, bounded by the number the run
  * itself recorded rather than by trust in the loop terminating.
  *
+ * **The cursor is `cursor`, not `row`.** This paged on the file's line number
+ * against a route that pages on the report's own key. On a young database the
+ * line numbers ran ahead of the keys and the loop stopped early, so the file
+ * headed "every problem" was missing rows; with older runs in the table it
+ * lagged and pages repeated. Neither said anything. The route did not return
+ * the key at all, so there was no correct value to send. IMP2-05 in
+ * `docs/features/data-import/phase-2-review.md`.
+ *
+ * And the bound the paragraph above claims is now applied: `errors_total` is
+ * passed in and the loop stops at it. A docstring is not a bound.
+ *
  * Read here rather than assembled in the browser because the paging is the
  * server's business and because the browser would otherwise hold the token.
  */
-export async function allErrors(runId: string): Promise<ActionResult<ImportRowErrorView[]>> {
+export async function allErrors(
+  runId: string,
+  expected: number,
+): Promise<ActionResult<ImportRowErrorView[]>> {
   const auth = await session()
   if (auth === null) return denied()
   const PAGE = 500
   const collected: ImportRowErrorView[] = []
+  // The run's own count, plus one page of slack for a report still being
+  // written, and never unbounded: a cursor that stopped advancing would
+  // otherwise spin here forever.
+  const ceiling = Math.max(0, expected) + PAGE
   try {
     let after = 0
     for (;;) {
@@ -231,8 +249,9 @@ export async function allErrors(runId: string): Promise<ActionResult<ImportRowEr
       collected.push(...page)
       if (page.length < PAGE) break
       const last = page[page.length - 1]
-      if (last === undefined || last.row <= after) break
-      after = last.row
+      if (last === undefined || last.cursor <= after) break
+      if (collected.length >= ceiling) break
+      after = last.cursor
     }
     return { status: 'ok', value: collected }
   } catch (error) {

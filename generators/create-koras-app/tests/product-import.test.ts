@@ -143,12 +143,20 @@ describe('data import', () => {
   it('does the writing in one transaction, and records the run inside it', () => {
     const task = read('services/worker/koras_worker/tasks/imports.py')
     const body = task.slice(task.indexOf('async def commit_run'), task.indexOf('async def _write'))
-    // Exactly one commit on the writing path. A second would mean the rows and
-    // the run's own state could land separately, which is both halves of the
-    // defect: a run claiming an import that did not happen, and rows under a
-    // run that can be committed again.
-    expect(body.match(/await session\.commit\(\)/g)?.length).toBe(2)
+    // Three commits, and which is which matters more than the number: the
+    // claim, the write, and the failure. The claim was missing until
+    // 2026-09-22 and this assertion said 2 -- green over a commit path that
+    // could not succeed once, for any product, because `record_commit` asks
+    // for `committing -> committed` and nothing had moved the run into
+    // `committing`. IMP2-01 in `docs/features/data-import/phase-2-review.md`.
+    expect(body.match(/await session\.commit\(\)/g)?.length).toBe(3)
     expect(body).toContain('await store.record_commit(')
+    // **The claim happens before anything is written, and the write and the
+    // run's own committed row are still one transaction.** Ordering, because
+    // the count above cannot tell a claim from a second write commit.
+    expect(body.indexOf('await store.begin_commit(')).toBeGreaterThan(-1)
+    expect(body.indexOf('await store.begin_commit(')).toBeLessThan(body.indexOf('_write('))
+    expect(body.indexOf('_write(')).toBeLessThan(body.indexOf('await store.record_commit('))
     // The second is the failure path, and it must be a *separate* session --
     // a failure written inside the transaction that failed rolls back with it,
     // and the run sits in `committing` forever.
@@ -389,6 +397,133 @@ describe('data import', () => {
     expect(router).toContain('target.permission not in permissions_for(claims.roles)')
   })
 
+  it('polls exactly the states only a worker can move a run out of', () => {
+    /*
+     * IMP2-06. `commit_requested` was missing, and the commit route answers
+     * with the run in precisely that state -- so confirming an import ended
+     * the polling it was meant to start. The card froze on the request
+     * sentence while the worker wrote the rows.
+     *
+     * Derived from the state machine rather than restated: the set the page
+     * polls must be the set of states a *person* cannot move, which is the
+     * only reason to ask again. A count would not have caught this; the old
+     * set had two entries and two was not obviously wrong.
+     */
+    const panel = read('apps/web/src/app/dashboard/imports/ImportPanel.tsx.hbs')
+    const declared = panel.match(/const IN_FLIGHT = new Set\(\[([^\]]*)\]\)/)
+    expect(declared, 'IN_FLIGHT is not declared as a literal set').not.toBeNull()
+    const polled = [...(declared?.[1] ?? '').matchAll(/'([a-z_]+)'/g)].map((m) => m[1])
+
+    expect(new Set(polled)).toEqual(
+      new Set(['validating', 'commit_requested', 'committing']),
+    )
+
+    const states = read('python-packages/koras-import/src/koras_import/states.py')
+    // Every polled state exists, so a rename on one side fails here rather
+    // than becoming a page that polls a state nothing ever reports.
+    for (const state of polled) {
+      expect(states, `${state} is not a state`).toContain(`= "${state}"`)
+    }
+    // And no terminal state is polled: that is a request every three seconds,
+    // for a run that will never change again, until the tab is closed.
+    for (const terminal of ['committed', 'failed', 'cancelled']) {
+      expect(polled, `${terminal} is terminal and must not be polled`).not.toContain(
+        terminal,
+      )
+    }
+  })
+
+  it('neutralises a cell a spreadsheet would execute, on the way out', () => {
+    /*
+     * IMP2-08. The error report is the one file this product hands back whose
+     * every value was chosen by whoever made the upload -- and a cell that
+     * failed its check is the one most likely to be hostile. It was quoted and
+     * nothing else: quoting defends the *delimiter*, and Excel strips the
+     * quotes before deciding whether the cell is a formula.
+     *
+     * The rule: a cell whose first character is `=`, `+`, `-`, `@`, a tab or a
+     * carriage return is prefixed with an apostrophe, which is the documented
+     * way to tell a spreadsheet "this is text". Tab and carriage return are in
+     * the set because some importers carry them into the next cell along with
+     * whatever follows.
+     *
+     * The one thing it changes that is not an attack is a negative number,
+     * which gains an apostrophe. Excel does not display that apostrophe, and a
+     * report is read rather than re-imported, so the cost is accepted.
+     */
+    const panel = read('apps/web/src/app/dashboard/imports/ImportPanel.tsx.hbs')
+    expect(panel).toContain('function guardCell(')
+    // Every trigger character, named. A guard that covered `=` alone would
+    // read as present and let `+`, `-` and `@` through.
+    const rule = panel.match(/function guardCell[\s\S]{0,200}?\/\^\[([^\]]+)\]/)
+    expect(rule, 'guardCell does not test a leading-character class').not.toBeNull()
+    const cls = rule?.[1] ?? ''
+    for (const ch of ['=', '+', '-', '@', 't', 'r']) {
+      expect(cls, `guardCell does not cover ${ch}`).toContain(ch)
+    }
+    // And it is actually applied where the file is built, not merely defined.
+    expect(panel).toContain('guardCell(cell)')
+  })
+
+  it('pages the report on the key the route pages on, and bounds the loop', () => {
+    // IMP2-05. The route pages on `import_row_errors.id`; the browser sent the
+    // file's row number, a different scale entirely, so the "every problem"
+    // file truncated on a young database and repeated pages on an old one.
+    // The route did not return the key at all, so there was no correct value
+    // to send.
+    const actions = read('apps/web/src/app/dashboard/imports/actions.ts.hbs')
+    expect(actions).toContain('after = last.cursor')
+    expect(actions, 'the loop pages on the file row number again').not.toMatch(
+      /after = last\.row/,
+    )
+    // The bound the docstring claimed and the code did not apply.
+    expect(actions).toContain('collected.length >= ceiling')
+
+    // And the key is actually answered, in the store, the view and the client.
+    expect(read('services/api/koras_api/core/imports.py')).toContain('cursor=row.id')
+    expect(read('services/api/koras_api/routers/imports.py')).toContain('cursor: int')
+    expect(read('packages/api-client/src/index.ts')).toContain('cursor: number')
+  })
+
+  it('reads the duplicate answer from the queue rather than only the simulated one', () => {
+    /*
+     * IMP2-09. `Enqueued` has carried `duplicate` since it was written and no
+     * caller in either template read it. The queue refuses a deterministic job
+     * id while the previous result still lives -- an hour by default -- so
+     * re-checking a re-mapped file, which is the ordinary flow after a failed
+     * dry run, enqueued nothing while the route answered 202 and moved the run
+     * to `validating`. It waited there for a job that was never created.
+     */
+    const router = read('services/api/koras_api/routers/imports.py')
+    expect((router.match(/queued\.duplicate/g) ?? []).length).toBe(2)
+    // `validate` carries no key at all now: re-checking is legitimate, and the
+    // state machine is what refuses a second check of a run already running.
+    const validate = router.slice(
+      router.indexOf('async def validate('),
+      router.indexOf('async def commit('),
+    )
+    expect(validate, 'validate must not re-key on the run').not.toContain(
+      'idempotency_key=f"validate:',
+    )
+    // `commit` keeps its key: `committed` and `failed` are both terminal, so a
+    // duplicate there is a race rather than a second attempt.
+    expect(router).toContain('idempotency_key=f"commit:')
+  })
+
+  it('announces the commit through the shared outcome rather than a bare paragraph', () => {
+    // IMP2-10, which is SET-24 in a second feature. The confirm button unmounts
+    // on success, so focus falls to BODY, and the sentence that replaces it
+    // mounts inside a new subtree -- which a live region does not announce.
+    const panel = read('apps/web/src/app/dashboard/imports/ImportPanel.tsx.hbs')
+    expect(panel).toContain('SaveOutcome')
+    expect(panel).toContain('testId="imports-committed"')
+    // Not reimplemented beside it: the component is the fix, and a second copy
+    // is how the first one stops being maintained.
+    expect(panel, 'the outcome is still a bare paragraph').not.toMatch(
+      /<p[^>]*data-testid="imports-committed"/,
+    )
+  })
+
   it('names the permission in both catalogues', () => {
     expect(read('packages/permissions/src/index.ts')).toContain("'imports.manage'")
     expect(read('python-packages/koras-auth/src/koras_auth/permissions.py')).toContain(
@@ -556,16 +691,58 @@ describe('data import', () => {
     expect(reading).toContain('FALLBACK_ENCODING = "latin-1"')
   })
 
-  it('checks a target-s own permission on every route that resolves one', () => {
-    // IMP-06. It was on `start` alone, and `analysis` answers a preview of the
-    // customer's rows.
+  it('checks a target-s own permission on every route that could leak one', () => {
+    /*
+     * IMP-06 put this on the three routes that resolved a target. IMP2-03 found
+     * the hole that left: three more routes did not *resolve* a target at all,
+     * so they skipped the check by never arriving at it -- and one of them,
+     * `GET /imports/{id}/errors`, answers `problem.value`, which is the cell
+     * itself out of a file the target was meant to gate.
+     *
+     * **The assertion this replaces could not fail.** It pinned the count at
+     * four and then compared `_target(` matches against `_require_target(`
+     * matches -- a regex that matches the substring inside every occurrence of
+     * the thing it was being compared to, so the second expectation was
+     * `n >= n`. Asserted per route now, by name, because a count says nothing
+     * about *which* routes are covered.
+     */
     const router = read('services/api/koras_api/routers/imports.py')
-    const resolves = [...router.matchAll(/_target\(/g)].length
-    const checks = [...router.matchAll(/_require_target\(claims, target\)/g)].length
-    // Four since the commit route, which resolves a target to ask whether it
-    // is committable at all -- and must therefore check the same permission.
-    expect(checks, 'a route resolves a target without checking its permission').toBe(4)
-    expect(resolves).toBeGreaterThanOrEqual(checks)
+
+    // Every route that names a single run, plus the one that starts one. Each
+    // either returns something derived from that run's file or acts on it.
+    const perRun = [
+      { path: "/imports/{run_id}", fn: 'async def one(' },
+      { path: "/imports/{run_id}/analysis", fn: 'async def analysis(' },
+      { path: "/imports/{run_id}/mapping", fn: 'async def set_mapping(' },
+      { path: "/imports/{run_id}/validate", fn: 'async def validate(' },
+      { path: "/imports/{run_id}/commit", fn: 'async def commit(' },
+      { path: "/imports/{run_id}/errors", fn: 'async def errors(' },
+      { path: "/imports/{run_id}/cancel", fn: 'async def cancel(' },
+      { path: '/imports', fn: 'async def start(' },
+    ]
+    for (const route of perRun) {
+      const at = router.indexOf(route.fn)
+      expect(at, `${route.fn} is missing`).toBeGreaterThan(-1)
+      // The body, up to whatever is defined next.
+      const nextDef = router.indexOf('\nasync def ', at + 1)
+      const body = router.slice(at, nextDef === -1 ? undefined : nextDef)
+      expect(
+        body,
+        `${route.path} does not check the target's own permission`,
+      ).toContain('_require_target(claims,')
+    }
+
+    // The two list routes cannot 403 -- a caller entitled to import something
+    // is entitled to the page -- so they filter instead. Asserted separately
+    // because "no _require_target" is the correct shape for exactly these two.
+    for (const fn of ['async def targets(', 'async def history(']) {
+      const at = router.indexOf(fn)
+      const nextDef = router.indexOf('\nasync def ', at + 1)
+      const body = router.slice(at, nextDef === -1 ? undefined : nextDef)
+      expect(body, `${fn} must filter by the caller's permissions`).toContain('held')
+    }
+
+    expect(router).toContain('target.permission not in permissions_for(claims.roles)')
   })
 
   it('answers a state conflict on validate with 409, before enqueueing', () => {

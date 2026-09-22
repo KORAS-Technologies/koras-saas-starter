@@ -79,6 +79,19 @@ def _require_target(claims: JWTClaims, target: ImportTarget) -> None:
         )
 
 
+def _target_permission(key: str) -> str | None:
+    """What this target needs, or `None` when the product no longer declares it.
+
+    Separate from `_target` because a history row naming a retired target must
+    still be listed: the run is the only record that the import happened, and
+    raising a 404 for one row would hide every row.
+    """
+    try:
+        return registry.require(key).permission
+    except KeyError:
+        return None
+
+
 def _target(key: str) -> ImportTarget:
     try:
         return registry.require(key)
@@ -157,6 +170,11 @@ class AnalysisView(BaseModel):
 
 
 class RowErrorView(BaseModel):
+    #: The table's own key, and the only correct value to send back as `after`.
+    #: A caller paging on `row` walks a different scale and either stops early
+    #: or repeats pages. IMP2-05 in
+    #: `docs/features/data-import/phase-2-review.md`.
+    cursor: int
     row: int
     column: str
     field: str
@@ -201,8 +219,17 @@ def _view(run: store.Run) -> RunView:
 
 @router.get("/imports/targets", response_model=list[TargetView])
 async def targets(claims: AuthDep, _tenant: TenantDep) -> list[TargetView]:
-    """What this product accepts. Empty in a product that declares none."""
+    """What this product accepts, of what this caller may use.
+
+    **Filtered rather than refused.** A caller holding `imports.manage` and not
+    a particular target's own permission is entitled to import *something*, so
+    403 would be wrong; what they must not see is a target they cannot use, and
+    its field names with it. A picker offering a choice that is refused on the
+    next request is worse than one that does not offer it. IMP2-03 in
+    `docs/features/data-import/phase-2-review.md`.
+    """
     _require(claims, "listing what may be imported")
+    held = permissions_for(claims.roles)
     return [
         TargetView(
             key=target.key,
@@ -224,6 +251,7 @@ async def targets(claims: AuthDep, _tenant: TenantDep) -> list[TargetView]:
             committable=target.committable,
         )
         for target in registry
+        if target.permission in held
     ]
 
 
@@ -234,9 +262,24 @@ async def history(
     session: DbSession,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[RunView]:
-    """This organisation's runs, newest first."""
+    """This organisation's runs against the targets this caller may use.
+
+    Filtered for the same reason as `targets` above, and it matters more here:
+    a run view carries the file's own column headings and the mapping chosen
+    for them, which is a description of somebody else's payroll file even
+    without a single cell of it.
+
+    A run against a target the product no longer declares is kept -- the
+    history is the only record that it happened, and `_view` does not need the
+    declaration to render it.
+    """
     _require(claims, "reading the import history")
-    return [_view(run) for run in await store.recent(session, limit=limit)]
+    held = permissions_for(claims.roles)
+    return [
+        _view(run)
+        for run in await store.recent(session, limit=limit)
+        if _target_permission(run.target) in (None, *held)
+    ]
 
 
 @router.post("/imports", response_model=RunView, status_code=status.HTTP_201_CREATED)
@@ -300,7 +343,14 @@ async def one(
     run_id: str, claims: AuthDep, _tenant: TenantDep, session: DbSession
 ) -> RunView:
     _require(claims, "reading an import run")
-    return _view(_run_or_404(await store.get(session, run_id)))
+    run = _run_or_404(await store.get(session, run_id))
+    # The target's own permission on every route that hands back anything the
+    # target was meant to gate -- which is a run's columns and mapping as much
+    # as its rows. IMP-06 fixed the three routes that resolved a target; the
+    # ones that did not resolve one skipped the check by not arriving at it.
+    # IMP2-03 in `docs/features/data-import/phase-2-review.md`.
+    _require_target(claims, _target(run.target))
+    return _view(run)
 
 
 @router.get("/imports/{run_id}/analysis", response_model=AnalysisView)
@@ -423,6 +473,7 @@ async def validate(
     """
     _require(claims, "validating an import")
     run = _run_or_404(await store.get(session, run_id))
+    _require_target(claims, _target(run.target))
 
     # **Before the enqueue, not after.** This advanced the run after enqueueing
     # and did not catch the refusal, so a double-click on a run already
@@ -440,18 +491,36 @@ async def validate(
     # rather than degrading quietly, and a route that answered 202 regardless
     # would be promising work nothing will do -- which is the whole reason
     # `Enqueued` carries this.
+    #
+    # **No idempotency key, and that is the fix rather than an omission.** It
+    # was `validate:{run_id}`, which the queue holds for as long as the job's
+    # result lives -- an hour by default. Re-mapping a file after a failed dry
+    # run and checking it again is the *ordinary* flow, and within that hour the
+    # enqueue was silently refused while this route answered 202 and moved the
+    # run to `validating`: a run waiting forever on a job that was never
+    # created. The lock that matters here is the state machine above, which
+    # refuses a second check of a run already `validating`. A key whose lifetime
+    # outlives the state it guards turns a legitimate second attempt into a
+    # silent no-op. IMP2-09 in `docs/features/data-import/phase-2-review.md`.
     queued = await jobs.enqueue(
         VALIDATE_RUN,
         tenant_id=tenant.id,
         payload={"run_id": run.id},
         actor_id=require_subject(tenant),
-        idempotency_key=f"validate:{run.id}",
     )
     if queued.simulated:
         raise api_error(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             ApiErrorCode.IMPORT_QUEUE_UNAVAILABLE,
             "background work is not configured, so this import cannot be checked",
+        )
+    if queued.duplicate:
+        # Nothing was enqueued, so nothing will run. Answering 202 here is what
+        # stranded runs in `validating`.
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            ApiErrorCode.IMPORT_NOT_TRANSITIONABLE,
+            "this import is already being checked",
         )
 
     await store.begin_validation(session, run)
@@ -560,6 +629,17 @@ async def commit(
             ApiErrorCode.IMPORT_QUEUE_UNAVAILABLE,
             "background work is not configured, so this import cannot be written",
         )
+    if queued.duplicate:
+        # **The key stays on this route**, unlike `validate` above, because
+        # re-committing a run is never legitimate: `committed` and `failed` are
+        # both terminal, so a duplicate here is a second request racing the
+        # first rather than an ordinary second attempt. Nothing was enqueued, so
+        # the run is already in hand and 409 is the truthful answer.
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            ApiErrorCode.IMPORT_NOT_TRANSITIONABLE,
+            "this import is already being written",
+        )
 
     return _view(_run_or_404(await store.get(session, run_id)))
 
@@ -600,16 +680,22 @@ async def errors(
     one error per row makes fixing a file as many attempts as it has columns.
     """
     _require(claims, "reading an import report")
-    _run_or_404(await store.get(session, run_id))
+    run = _run_or_404(await store.get(session, run_id))
+    # **The most important of the four.** This answers `problem.value`, which is
+    # the cell itself, out of a file whose target may be gated behind a
+    # permission this caller does not hold. Analysis refused them and this did
+    # not, from the same file.
+    _require_target(claims, _target(run.target))
     return [
         RowErrorView(
-            row=problem.row,
-            column=problem.column,
-            field=problem.field,
-            code=problem.code,
-            value=problem.value,
+            cursor=reported.cursor,
+            row=reported.problem.row,
+            column=reported.problem.column,
+            field=reported.problem.field,
+            code=reported.problem.code,
+            value=reported.problem.value,
         )
-        for problem in await store.errors(session, run_id, limit=limit, after=after)
+        for reported in await store.errors(session, run_id, limit=limit, after=after)
     ]
 
 
@@ -625,6 +711,7 @@ async def cancel(
     """
     _require(claims, "cancelling an import")
     run = _run_or_404(await store.get(session, run_id))
+    _require_target(claims, _target(run.target))
     try:
         await store.cancel(session, run)
     except Exception as refused:  # noqa: BLE001 - TransitionRefused is a ValueError

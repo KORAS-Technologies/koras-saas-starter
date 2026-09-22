@@ -15,9 +15,16 @@ different caller rather than a different reader.
 
 **A cell is never evaluated.** A value beginning `=`, `+`, `-` or `@` is text
 here and stays text. The danger is on the way back out: a spreadsheet opening
-an error file *would* evaluate it, which is why the writer escapes. This module
-records the risk and does not carry the fix, because the fix belongs where the
-file is written.
+an error file *would* evaluate it. This module records the risk and does not
+carry the fix, because the fix belongs where the file is written -- which, for
+the only CSV this product hands back, is the browser: `guardCell` in
+`apps/web/src/app/dashboard/imports/ImportPanel.tsx`.
+
+This paragraph said "which is why the writer escapes" until 2026-09-22, and
+`writing.py` neither escaped nor wrote a CSV. A docstring naming a control that
+exists nowhere is worse than one that says nothing, because the next person
+reads it and stops looking. IMP2-08 in
+`docs/features/data-import/phase-2-review.md`.
 """
 
 from __future__ import annotations
@@ -155,7 +162,7 @@ def read_header(lines: Iterable[str], *, delimiter: str) -> Header:
     is repaired rather than refused: a person cannot edit the export they were
     given.
     """
-    reader = csv.reader(_bounded(lines), delimiter=delimiter)
+    reader = _reader(lines, delimiter=delimiter)
     try:
         raw = next(reader)
     except StopIteration:
@@ -211,7 +218,7 @@ def read_rows(
     newline is not a record, and treating it as one puts a spurious error at
     the bottom of every report.
     """
-    reader = csv.reader(_bounded(lines), delimiter=delimiter)
+    reader = _reader(lines, delimiter=delimiter)
     try:
         next(reader)
     except StopIteration:
@@ -238,10 +245,18 @@ def read_rows(
 
 
 def _bounded(lines: Iterable[str]) -> Iterator[str]:
-    """Refuse a cell large enough to be a file.
+    """Refuse a *line* large enough to be a file.
 
     The standard library's own field limit is process-wide and raising it is a
     global change; this bounds the input instead, which is local and testable.
+
+    **A line is not a field**, and this used to be written as though it were. A
+    quoted field may span any number of lines, so a field can be under this
+    limit on every one of its lines and far over `csv`'s own field limit in
+    total -- which `csv` reports by raising `csv.Error`, not `ReadRefused`. One
+    unterminated double quote is enough, because `csv` then absorbs the rest of
+    the file into a single field. `_reader` below is the other half of the
+    bound. IMP2-07 in `docs/features/data-import/phase-2-review.md`.
     """
     for line in lines:
         if len(line) > MAX_CELL:
@@ -252,6 +267,29 @@ def _bounded(lines: Iterable[str]) -> Iterator[str]:
         yield line
 
 
+def _reader(lines: Iterable[str], *, delimiter: str) -> Iterator[list[str]]:
+    """Rows from `csv`, with its own failures turned into refusals.
+
+    Everything this module raises is a `ReadRefused` a route can answer 422 to
+    and a person can act on. `csv.Error` is neither: it escaped to the caller,
+    which caught `ReadRefused` alone, and a customer with one stray quote in
+    their export got a 500 with nothing to do about it.
+    """
+    reader = csv.reader(_bounded(lines), delimiter=delimiter)
+    while True:
+        try:
+            row = next(reader)
+        except StopIteration:
+            return
+        except csv.Error as broken:
+            raise ReadRefused(
+                "the file could not be read as a table: "
+                f"{broken}. A cell running past the end of its row is usually "
+                "an unclosed quotation mark"
+            ) from broken
+        yield row
+
+
 def count_rows(lines: Iterable[str], *, delimiter: str, ceiling: int) -> int:
     """How many data rows, stopping once the ceiling is exceeded.
 
@@ -259,7 +297,7 @@ def count_rows(lines: Iterable[str], *, delimiter: str, ceiling: int) -> int:
     than the ceiling", and counting nine million rows to say so is nine million
     rows of work to refuse the file anyway. Returns `ceiling + 1` in that case.
     """
-    reader = csv.reader(_bounded(lines), delimiter=delimiter)
+    reader = _reader(lines, delimiter=delimiter)
     try:
         next(reader)
     except StopIteration:
