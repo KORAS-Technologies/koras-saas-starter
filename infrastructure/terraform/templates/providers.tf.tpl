@@ -20,7 +20,13 @@ terraform {
     }
     vercel = {
       source  = "vercel/vercel"
-      version = "~> 2.0"
+      # Moved from ~> 2.0 on 2026-09-21. This is the FOURTH Vercel pin, not
+      # the third: the doctor assembles a root from these templates over a
+      # copy of the modules tree, so a pin here that disagrees with
+      # modules/vercel and modules/project-bootstrap makes `terraform init`
+      # unsatisfiable. R-043 moved the other three on 2026-09-14 and missed
+      # this one, which is why bootstrap:doctor failed and nothing else did.
+      version = "~> 5.0"
     }
     fly = {
       source  = "fly-apps/fly"
