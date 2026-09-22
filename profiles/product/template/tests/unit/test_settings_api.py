@@ -222,6 +222,7 @@ def test_the_effective_route_withholds_an_organisation_value_nobody_can_override
     page reads it.
     """
     from koras_api.settings_catalogue import catalogue
+    from koras_settings import SettingDefinition
 
     hidden = next(d for d in catalogue if not d.scope.admits_user and not d.system)
     shown = next(d for d in catalogue if d.scope.admits_user and d.options and not d.system)
@@ -229,7 +230,11 @@ def test_the_effective_route_withholds_an_organisation_value_nobody_can_override
     # A value the definition will actually take, and not its default -- an
     # invalid one is passed over by the resolver, which would make the last
     # assertion below pass for the wrong reason.
-    def other_than_default(definition: object) -> object:
+    #
+    # Annotated, not `object`: the starter's own mypy excludes `profiles/`, so
+    # a loose annotation here type-checks nowhere in this repository and fails
+    # in every generated product. Found by syncing it into one, 2026-09-21.
+    def other_than_default(definition: SettingDefinition) -> str:
         options = [option for option in definition.options if option != definition.default]
         return options[0] if options else f"{definition.default}-x"
 
