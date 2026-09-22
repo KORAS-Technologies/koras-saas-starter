@@ -45,6 +45,13 @@ const ROOT = join(__dirname, '..', '..')
  * to catch, so it would be poor to introduce a blind spot in the escape hatch.
  */
 const ABSENT_ON_PURPOSE: Record<string, string> = {
+  // Written at runtime by the round-trip harness's local identity provider,
+  // and ignored by every generated product since 2026-09-22. It must never
+  // exist here: a repository holding it is a repository holding an RSA private
+  // key, which is the thing the ignore rule and
+  // `tests/security/test_no_state_artifacts.py` exist to prevent.
+  '.e2e/identity.json':
+    'a signing key written at runtime, ignored on purpose and never committed',
   '.koras/project.yaml': 'written by create-koras-app; the factory is not a generated project',
   'local/.env': 'written by local/scripts/ports.sh, per machine',
   'docs/AGENT_CONTEXT.md':

@@ -89,6 +89,18 @@ def test_the_ignore_rules_would_stop_it_coming_back() -> None:
     candidates = (
         "infrastructure/terraform/tfplan",
         "infrastructure/terraform/terraform.tfstate",
+        # The round-trip harness's local identity provider writes its RSA
+        # signing key here the first time it starts. Ephemeral, local and
+        # issued for `127.0.0.1` -- and a private key in history is a private
+        # key in history. Added 2026-09-22, after a repository that received
+        # the harness staged it on the next `git add -A`; nothing else would
+        # have caught it, because gitleaks reads a JWK as structure rather
+        # than as one of the patterns it knows.
+        ".e2e/identity.json",
+        # Written during ZITADEL test setup, and a real service-account key.
+        # The ignore rule has been there since the harness was written; this
+        # asserts it, which is a different thing.
+        "e2e/support/key.json",
     )
     for candidate in candidates:
         result = subprocess.run(  # noqa: S603 -- fixed argv, absolute binary

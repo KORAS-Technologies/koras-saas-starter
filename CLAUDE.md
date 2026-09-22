@@ -742,6 +742,18 @@ left PLANNED.
 **A plan with no recorded intent is unchecked, not clean**, and a test asserts
 that distinction. An expectation nobody stated is not a fact about the price.
 
+**The harness writes a private key, and nothing ignored it until 2026-09-22.**
+`e2e/support/identity.mjs` generates an RSA signing key on first start and
+writes it to `.e2e/identity.json`. No `.gitignore` in the estate listed that
+path, so the first `git add -A` in any repository that received the harness
+staged a private key — found when `koras-e2e-shop` did exactly that. Ephemeral,
+local and issued for `127.0.0.1`, none of which makes it something to commit,
+and gitleaks does not catch it because it reads a JWK as structure rather than
+as one of the patterns it knows. The rule is in the shared template now and
+`tests/security/test_no_state_artifacts.py` asserts it beside the ZITADEL
+service-account key that has been ignored since the suite was written — the
+ignore rule for that one was never asserted either.
+
 **The browser suite can reach a database since 2026-09-20.** Set
 `E2E_DATABASE_URL` and three more servers start: a local identity provider,
 the product's own API against that database, and the web application pointed at

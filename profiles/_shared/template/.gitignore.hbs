@@ -83,4 +83,15 @@ junit.xml
 # setup -- a real credential, in a repository that may be public.
 /test-results/
 /playwright-report/
+
+# The round-trip harness's local identity provider writes its signing key here
+# when it starts. It is a real RSA private key -- ephemeral, local, and issued
+# for `127.0.0.1` -- and none of that makes it something to commit.
+#
+# Found on 2026-09-22, when `koras-e2e-shop` received the harness and its first
+# `git add -A` staged the key. Nothing would have caught it: gitleaks reads a
+# JWK as structure rather than as one of the patterns it knows. A key in
+# history cannot be un-published, which is why an estate of 41 resources was
+# destroyed on 2026-08-30 rather than rotated.
+/.e2e/
 /e2e/support/key.json
