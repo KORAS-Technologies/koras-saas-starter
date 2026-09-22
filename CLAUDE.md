@@ -625,8 +625,14 @@ is now the third time it has produced a green suite over broken work. What
 catches it is in `koras-import/tests/test_import.py`: a test that walks the
 state machine along the path the worker actually takes.
 
-Two critical and eight high are fixed; eighteen medium and fifteen low are
-carried in `docs/features/data-import/phase-2-review.md`. Three of the eight
+Two critical and eight high are fixed; eighteen medium, fifteen low and one
+further High are carried in `docs/features/data-import/phase-2-review.md`. That
+High is **IMP2-29**, and it was found by trying to run a manual case in a
+browser rather than by reading: the problem report is unreachable after a page
+reload, because the panel's current run starts `null` and the history table is
+four cells with no click-through. The route answers; the page offers no way in.
+It is a stronger finding than the case it blocked — the report download was
+made correct and most customers cannot reach it. Three of the eight
 high are worth carrying here. The report download could never be correct — the
 route paged on a key it did not return, so the browser sent the file's line
 number and the "every problem" file silently truncated or repeated. The page

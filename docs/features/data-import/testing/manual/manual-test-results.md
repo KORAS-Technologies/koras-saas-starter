@@ -47,7 +47,24 @@ part of case 17 and has not been run.
 **Two things these six do not cover**, and the distinction matters: case 36
 here proves the *route's* paging contract and the loop over it. The browser's
 download — the Blob, the file a spreadsheet opens, and the formula guard on the
-way out — is the other half of case 36 and is NOT RUN. Case 37 is untouched.
+way out — is the other half of case 36.
+
+**That half is BLOCKED, and finding out why was worth the attempt.** A run with
+620 problems was seeded into a real database, four of its values shaped like
+spreadsheet formulas, and a browser was pointed at `/dashboard/imports` to
+download the report. There is no way to reach it: the panel holds the current
+run in state that starts `null` and is never restored from the history, and the
+history table is four cells with no click handler. A customer who reloads the
+page cannot download the report for their own run.
+
+That is **IMP2-29**, recorded in `../../phase-2-review.md` as a High, and it is
+a stronger finding than the case it blocked: IMP2-05 made the report correct,
+and this says most customers cannot get to it at all. Case 37 is blocked behind
+the same thing.
+
+The formula guard was therefore verified one layer down instead — every
+attacking form neutralised, every ordinary value untouched — which is evidence
+about the function and not about the file a spreadsheet opens.
 
 ### The estate
 
@@ -163,10 +180,20 @@ queue, all of which are available locally, plus a browser. They were not run
 because the review's critical finding was in Phase 2 and the hours went there.
 
 **Cases 27–40 other than those above.** The audit assertion, the notification
-and its language, the error-report download and its escaping, and the German
-pass. Several of these were *changed* by this review's fixes — the report
-download's paging, the formula guard, the polling, the focus — so they are the
-cases most worth running next, and none of them has been.
+and its language, the German pass, and the browser halves of the download.
+Several of these were *changed* by this review's fixes — the report download's
+paging, the formula guard, the polling, the focus — so they are the cases most
+worth running next.
 
-**Nothing is permanently blocked.** Unlike F27's TEST-SET-01, every remaining
-case here has an estate that could run it.
+**Two are blocked on a defect rather than on an estate**: the browser half of
+case 36, and case 37, both behind IMP2-29. Everything else has an estate that
+could run it — the local stack has PostgreSQL, Redis, MinIO and an identity
+provider, and the round-trip harness starts an API against them.
+
+**What the remaining browser cases need**, so the next session does not
+rediscover it: the panel offers the confirm control, the polling and the
+outcome only for the run it holds in state, so reaching any of them
+means going through upload → map → check in the browser. That needs the API
+started with a bucket and a queue rather than the round-trip harness's
+deliberately bare configuration, and a product declaring a committable target.
+It is a stack bring-up, not a spec.

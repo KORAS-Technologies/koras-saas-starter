@@ -318,6 +318,7 @@ than deleted. Status is one of *carried* (real, not fixed), *fixed*, or *disprov
 | IMP2-26 | Med | Untranslated technical strings reach the customer | A German customer sees "the bucket answered 403" | Two catalogue keys | carried |
 | IMP2-27 | Med | The e2e suite runs with no API, so three of four tests cannot fail | The only browser evidence the feature has proves almost nothing | Move them to the `roundtrip` project, which now has a database | carried |
 | IMP2-28 | Med | No test exercises the commit's state machine | — | **Fixed**: `tests/integration/test_import_commit_rls.py`, four cases, each mutation-checked | fixed |
+| IMP2-29 | **High** | The problem report is unreachable after a page reload | A customer who reloads, or returns later, cannot download the report for their own run — the API has the route and the page offers no way in | Make the history row select its run | carried |
 
 The fifteen low findings are listed in "The rest" above. Two have since been
 closed by this cycle's work and are marked here rather than quietly dropped:
@@ -326,6 +327,41 @@ closed by this cycle's work and are marked here rather than quietly dropped:
 |----|---------|--------|
 | ENG-08 | `test_terminal_states_go_nowhere` restated a constant | fixed — asserts `next_states(state) == frozenset()` |
 | ENG-01 | The generator's target-permission assertion could not fail | fixed — asserts per route by name, and mutation-checked |
+
+### IMP2-29 — The problem report is unreachable after a reload. **High.**
+
+Found on 2026-09-22 while trying to execute manual case 36 in a browser, which
+is the reason that attempt was worth making: the case could not be reached, and
+the reason it could not be reached is a defect rather than a missing fixture.
+
+`ImportPanel` holds the run it is working on in `useState<ImportRunView | null>(null)`,
+and `refresh()` is explicit that a null stays null:
+
+```ts
+setRun((current) =>
+  current === null ? null : (answer.value.find((row) => row.id === current.id) ?? current),
+)
+```
+
+The only things that ever set it are choosing a file, starting a run, checking
+one and confirming one. So on every fresh load of `/dashboard/imports` there is
+no current run — and *Download every problem* renders only inside the result
+card, which renders only when there is one.
+
+The history table below lists every run with its state and its counts, and is
+four `<td>`s with no button, no link and no click handler.
+
+So: a customer uploads a file, the dry run finds 500 problems, they reload the
+page — or close the tab and come back — and the report is gone. The run is
+still listed. The route still answers. Nothing on the page can reach it.
+
+This is what makes cases 36 and 37 unreachable in a browser, and it is a
+stronger finding than either of them: **the fix for IMP2-05 made the report
+correct, and this says most customers cannot get to it at all.**
+
+Carried rather than fixed: it needs the history row to select its run, which is
+a change to what the page *is* rather than a repair to what it does, and it
+wants the same pass that addresses IMP2-23 and IMP2-24.
 
 ## Status
 
