@@ -347,7 +347,13 @@ contain all three.
 - **No live run.** Nothing has imported a file through a deployed product.
   Neither the dry run nor the commit has executed against a real Redis, a real
   bucket and a real scanner.
-- **No independent review of Phase 2.** Every other piece of this size has had
-  one and all four returned BLOCK.
-- **`koras-e2e-shop` is not level with this.** It has a shop domain that could
-  declare real targets; nothing has been synced to it.
+- **No independent review of Phase 2.** Closed 2026-09-22: four reviewers, one
+  per seam, all four returning BLOCK. `phase-2-review.md` is the record, and
+  the headline was that the commit path had never worked.
+- **No product declares a target, so nothing renders the page.** A generated
+  product declares none and should not — a target names a table the product
+  owns. `koras-e2e-shop` had a domain that could declare real ones and was
+  brought level on 2026-09-22, which made the panel render in a browser for the
+  first time; that repository is being torn down, so the gap returns. What
+  closes it for good is a fixture target installed by `Generator Integration`
+  rather than a domain invented in the template.

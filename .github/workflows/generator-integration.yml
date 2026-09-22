@@ -250,6 +250,36 @@ jobs:
           done
           psql -v ON_ERROR_STOP=1 -q -f e2e/support/seed.sql
 
+      # A declared import target, for the length of one run.
+      #
+      # **Without this, nothing in this estate renders the import page.**
+      # `ImportPanel` returns its no-targets banner and stops when a product
+      # declares none, and a generated product declares none -- correctly,
+      # because a target names a table the product owns and the starter owns no
+      # domain. So the picker, the mapping, the result card, the report and the
+      # confirm control were protected by assertions that read template text and
+      # by nothing else, which is how Phase 2 shipped a commit path that could
+      # not succeed once and a report a customer could not reach after a reload.
+      #
+      # The fixture lives in `.github/fixtures/`, which is inside no template:
+      # `create-koras-app` cannot copy it and no generated product contains it.
+      # It declares no writer and no table, so it adds no domain to anything --
+      # what it buys is everything up to the commit, and the commit is covered
+      # by `tests/integration/test_import_commit_rls.py` against a real
+      # PostgreSQL instead.
+      - name: Declare an import target, so the page has something to draw
+        if: matrix.roundtrip && contains(matrix.components, 'data_import')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        env:
+          PGPASSWORD: rlstest
+          PGHOST: localhost
+          PGUSER: postgres
+          PGDATABASE: koras_e2e
+        run: |
+          set -euo pipefail
+          cp "$GITHUB_WORKSPACE/.github/fixtures/import-target.py"             services/api/koras_api/imports/targets.py
+          psql -v ON_ERROR_STOP=1 -q -f "$GITHUB_WORKSPACE/.github/fixtures/import-run.sql"
+
       - name: End-to-end (browser)
         if: matrix.slug != 'integration-product-minimal'
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
@@ -263,6 +293,11 @@ jobs:
           # conditionally omit an environment key. The config reads `?? ''` and
           # treats empty as absent, which is the same path a laptop takes.
           E2E_DATABASE_URL: ${{ matrix.roundtrip && 'postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e' || '' }}
+          # How `e2e/roundtrip/imports.spec.ts` knows a target was declared. It
+          # skips without this rather than asserting against a page that renders
+          # a banner, which would be a suite reporting success for a surface it
+          # never drew.
+          E2E_IMPORT_FIXTURE: ${{ (matrix.roundtrip && contains(matrix.components, 'data_import')) && '1' || '' }}
         run: pnpm e2e
 
       # The trace that explains a failure, which is the half `koras-control-plane`'s

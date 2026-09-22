@@ -198,10 +198,15 @@ case 37 — ran once IMP2-29 was fixed. Everything remaining has an estate that
 could run it — the local stack has PostgreSQL, Redis, MinIO and an identity
 provider, and the round-trip harness starts an API against them.
 
-**What the remaining browser cases need**, so the next session does not
-rediscover it: the panel offers the confirm control, the polling and the
-outcome only for the run it holds in state, so reaching any of them
-means going through upload → map → check in the browser. That needs the API
-started with a bucket and a queue rather than the round-trip harness's
-deliberately bare configuration, and a product declaring a committable target.
-It is a stack bring-up, not a spec.
+**Four of them are automated now.** `Generator Integration` installs a fixture
+target and runs `e2e/roundtrip/imports.spec.ts`, which covers the page
+rendering, the module being hidden from a member, a non-committable target
+offering no way to write, and a past run's report holding every problem once
+with nothing executable in it. Those stop being manual cases.
+
+**What the rest still need**, so the next session does not rediscover it: the
+confirm control, the polling and the outcome are offered only for the run the
+panel holds in state, so reaching any of them means going through
+upload → map → check in a browser. That needs the API started with a bucket and
+a queue rather than the round-trip harness's deliberately bare configuration,
+and a target with a writer. It is a stack bring-up, not a spec.

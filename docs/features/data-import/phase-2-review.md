@@ -371,13 +371,23 @@ remove the click handler and *Download every problem* never becomes reachable,
 which is the defect exactly. The evidence is in
 `testing/runs/2026-09-22-02/`.
 
-**It has one automated protection and it is a text assertion**, in
-`product-import.test.ts`. The panel cannot be exercised by this repository's
-own browser suite at all: a generated product declares no import targets, so
-`ImportPanel` returns its no-targets banner before it renders anything. That is
-the structural reason this defect survived, and it is worth stating plainly —
-the only surface in the product whose main path no CI in this estate can
-render.
+**The structural reason it survived is now closed.** The panel could not be
+exercised by any browser suite in this estate: a generated product declares no
+import targets, so `ImportPanel` returns its no-targets banner before it
+renders anything, and `e2e/imports.spec.ts` asserts that banner. The picker,
+the mapping, the result card, the report and the confirm control were protected
+by assertions that read template text and by nothing else.
+
+Since 2026-09-22 `Generator Integration` installs a fixture target — one
+declaration, no writer and no table, from `.github/fixtures/`, which is inside
+no template and so reaches no product — and runs
+`e2e/roundtrip/imports.spec.ts` against it. Four cases: the page renders what
+the registry holds, a member who may not import sees no module, a target with
+no writer offers no way to write, and a past run opens and its report holds
+every problem once and nothing a spreadsheet would execute.
+
+Mutation-checked on a generated product: remove the open control and the fourth
+goes red; remove `guardCell` and it names the four executable cells.
 
 ## Status
 

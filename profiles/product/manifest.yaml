@@ -183,6 +183,11 @@ template_map:
       - tests/integration/test_import_commit_rls.py
       - apps/web/src/app/dashboard/imports
       - e2e/imports.spec.ts
+      # The round-trip half, which needs a declared target and so skips
+      # unless `Generator Integration` installed the fixture. It is in
+      # the template rather than the workflow because a product that
+      # declares targets of its own should inherit it.
+      - e2e/roundtrip/imports.spec.ts
     # In-app notifications: the table, the emitter, the routes, the page and
     # the browser test.
     #

@@ -633,13 +633,25 @@ because the panel's current run starts `null` and the history table was four
 cells with no click-through. The route answered; the page had no way in. Fixed
 the same day, which is what let manual cases 36 and 37 run.
 
-**The panel is the one surface in the product whose main path no CI in this
-estate can render**, and that is why IMP2-29 survived: a generated product
+**The panel was the one surface in the product whose main path no CI in this
+estate could render**, and that is why IMP2-29 survived: a generated product
 declares no import targets, so `ImportPanel` returns its no-targets banner
-before it draws anything. The browser suite asserts that banner. Everything
-past it — the mapping, the report, the confirm control, the outcome — has never
-been rendered by any automated run here, and its only protection is assertions
-that read template text. Three of the eight
+before it draws anything, and the browser suite asserts that banner. Everything
+past it was protected by assertions that read template text.
+
+**Closed on 2026-09-22.** `Generator Integration` installs a fixture target from
+`.github/fixtures/` — one declaration, no writer, no table, and inside no
+template, so it reaches no generated product — and runs
+`e2e/roundtrip/imports.spec.ts` against it on the round-trip row. Four cases,
+both of the ones worth having mutation-checked on a generated product. What it
+deliberately does not cover is the commit, which needs a writer and therefore a
+table; that is covered against a real PostgreSQL by
+`tests/integration/test_import_commit_rls.py` instead.
+
+The pattern is worth reusing rather than the instance: **a capability whose
+surface only appears once a product declares something will never be rendered
+by this estate's own CI unless the workflow declares it.** Data import is the
+first; it will not be the last. Three of the eight
 high are worth carrying here. The report download could never be correct — the
 route paged on a key it did not return, so the browser sent the file's line
 number and the "every problem" file silently truncated or repeated. The page
