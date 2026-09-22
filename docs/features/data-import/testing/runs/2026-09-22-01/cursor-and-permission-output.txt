@@ -1,0 +1,7 @@
+CASE 36  problems recorded              : 620
+CASE 36  paging on `cursor` (the fix)   : 620 rows, 620 distinct  [ok]
+CASE 36  paging on `row`    (as shipped): 500 rows, 500 distinct  [ok]
+CASE 39  a member without payroll.manage: refused
+CASE 39  an organization_owner holding it: allowed
+
+BOTH CASES PASS

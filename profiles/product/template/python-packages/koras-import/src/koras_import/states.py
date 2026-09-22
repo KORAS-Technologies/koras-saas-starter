@@ -95,7 +95,15 @@ _EDGES: dict[RunState, frozenset[RunState]] = {
         {RunState.COMMIT_REQUESTED, RunState.MAPPED, RunState.CANCELLED}
     ),
     RunState.VALIDATION_FAILED: frozenset({RunState.MAPPED, RunState.CANCELLED}),
-    RunState.COMMIT_REQUESTED: frozenset({RunState.COMMITTING, RunState.CANCELLED}),
+    # **`failed` is here, and it is not symmetry.** A commit can fail before
+    # it starts: the queue is unconfigured, the target lost its writer, the
+    # product no longer declares it. Without this edge the only way to record
+    # any of those raises, uncaught, and the run is stranded in
+    # `commit_requested` with nothing able to move it ever again. IMP2-02 in
+    # `docs/features/data-import/phase-2-review.md`.
+    RunState.COMMIT_REQUESTED: frozenset(
+        {RunState.COMMITTING, RunState.FAILED, RunState.CANCELLED}
+    ),
     # **No edge to `cancelled`.** A commit is one transaction; a cancellation
     # that arrived half way through would either do nothing or leave the run
     # claiming something untrue about what it wrote.

@@ -208,24 +208,42 @@ target that lost its writer between the request and the job.
 
 ### Where the atomicity actually lives
 
-Three transactions, in this order, and the order is the design:
+Four transactions, in this order, and the order is the design:
 
-1. **The writing one.** The product's writer and `record_commit` share it, and
+1. **The claim.** `begin_commit` moves the run from `commit_requested` to
+   `committing`, and commits. It does two jobs: it gives `record_commit` below
+   a state it may legally leave, and it puts the run into a state the page
+   polls on, so somebody can watch the write happen.
+2. **The writing one.** The product's writer and `record_commit` share it, and
    it commits once. Both halves matter: a run marked committed whose rows
    rolled back claims an import that did not happen, and rows that landed under
    a run still `committing` can be committed again and go in twice.
-2. **The failure one**, opened after the first has rolled back. This is the
+3. **The failure one**, opened after the second has rolled back. This is the
    only arrangement where a failure is both recorded and leaves nothing behind
    — a failure written inside the transaction that failed rolls back with it,
    and the run sits in `committing` forever, indistinguishable from a worker
    that died.
-3. **The notice.** Last, and it swallows everything (below).
+4. **The notice.** Last, and it swallows everything (below).
+
+**Step 1 was missing from the day Phase 2 shipped until 2026-09-22**, and this
+section described three transactions because of it. The consequence was not
+subtle: `record_commit` asks for `committing → committed`, the machine has no
+such edge from `commit_requested`, so every commit of every product raised,
+rolled the writer's rows back and then failed again trying to record the
+failure. Phase 2 had never worked. IMP2-01 in `phase-2-review.md`.
 
 None of that is visible to a test that reads template text, so what
-`product-import.test.ts` asserts is the shape that makes it true: exactly two
+`product-import.test.ts` asserts is the shape that makes it true: three
 `session.commit()` calls on the commit path, two sessions, a rollback before
-every recorded failure, and `record_commit` before `fail`. Each is a thing
-somebody could undo in one plausible edit.
+every recorded failure, `begin_commit` before the write, the write before
+`record_commit`, and `record_commit` before `fail`. Each is a thing somebody
+could undo in one plausible edit.
+
+**And the shape is not the property.** Every one of those assertions was green
+over a commit path that could not succeed once, because each asks what the code
+*says* rather than what it *does*. What catches this class is in
+`koras-import/tests/test_import.py`: a test that walks the state machine along
+the exact path the worker takes, and goes red if any step of it is refused.
 
 ### The commit checks the file again
 

@@ -1,0 +1,37 @@
+import commit: run 6c1b70b8-dccf-401e-a935-3e795566b75d could not be claimed
+Traceback (most recent call last):
+  File "<scratchpad>/gen/f28probe\services/worker\koras_worker\tasks\imports.py", line 315, in commit_run
+    await store.begin_commit(session, run)
+  File "<scratchpad>/gen/f28probe\services/api\koras_api\core\imports.py", line 341, in begin_commit
+    await _advance(session, run, RunState.COMMITTING, started_at=datetime.now().astimezone())
+  File "<scratchpad>/gen/f28probe\services/api\koras_api\core\imports.py", line 225, in _advance
+    require_move(run.state, target)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "<scratchpad>/gen/f28probe\python-packages/koras-import/src\koras_import\states.py", line 153, in require_move
+    raise TransitionRefused(
+    ...<2 lines>...
+    )
+koras_import.states.TransitionRefused: an import run in committed cannot become committing; it may become: nothing
+import commit: run 44e064ac-2754-46ae-b1f9-e10c3ad067e4 could not be written
+Traceback (most recent call last):
+  File "<scratchpad>/gen/f28probe\services/worker\koras_worker\tasks\imports.py", line 346, in commit_run
+    written = await _write(session, store, target, run, envelope.tenant_id)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<scratchpad>/gen/f28probe\services/worker\koras_worker\tasks\imports.py", line 458, in _write
+    written = await target.writer(session, request)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<scratchpad>\probe_commit.py", line 199, in explode
+    raise RuntimeError("the writer fell over on row 3")
+RuntimeError: the writer fell over on row 3
+import commit: run 44e064ac-2754-46ae-b1f9-e10c3ad067e4 failed -- the records could not be written
+CASE 23  worker returned {'status': 'ok', 'run': '6c1b70b8-dccf-401e-a935-3e795566b75d', 'created': 3, 'updated': 0, 'skipped': 0}
+CASE 23  run status = 'committed'  error = None
+CASE 24  probe_contacts 0 -> 3
+CASE 24  rows carrying the run id = 3
+CASE 25  second commit returned {'status': 'skipped', 'reason': 'not claimable'}
+CASE 25  probe_contacts after replay = 3
+CASE 26  worker returned {'status': 'failed', 'run': '44e064ac-2754-46ae-b1f9-e10c3ad067e4', 'reason': 'the records could not be written'}
+CASE 26  run status = 'failed'  error = 'the records could not be written'
+CASE 26  probe_contacts 3 -> 3  (must be unchanged)
+
+ALL FOUR CASES PASS

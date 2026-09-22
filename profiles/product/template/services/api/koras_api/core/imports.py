@@ -362,13 +362,33 @@ async def record_commit(
     )
 
 
+@dataclass(frozen=True)
+class Reported:
+    """One problem, and the cursor that reaches the next one.
+
+    **The cursor is the table's own key, and it used to be unreachable.** This
+    paged on `id > :after` and returned every column *except* `id`, so the only
+    number a caller had to send back was the file's row number -- a different
+    scale entirely, global identity against a per-file count. The report
+    download therefore stopped early on a young database and repeated pages on
+    an old one, silently, while telling the customer it contained every
+    problem. IMP2-05 in `docs/features/data-import/phase-2-review.md`.
+
+    Named rather than folded into `RowError` because `RowError` is the engine's,
+    produced by validation before any row exists to have a key.
+    """
+
+    cursor: int
+    problem: RowError
+
+
 async def errors(
     session: AsyncSession, run_id: str, *, limit: int = 100, after: int = 0
-) -> list[RowError]:
-    """A page of the report, in file order."""
+) -> list[Reported]:
+    """A page of the report, in the order the rows were recorded."""
     result = await session.execute(
         text(
-            "select row_number, column_name, field, code, value "
+            "select id, row_number, column_name, field, code, value "
             "from public.import_row_errors "
             "where run_id = cast(:id as uuid) and id > :after "
             "order by id limit :limit"
@@ -376,12 +396,15 @@ async def errors(
         {"id": run_id, "after": after, "limit": max(1, min(limit, 500))},
     )
     return [
-        RowError(
-            row=row.row_number,
-            column=row.column_name,
-            field=row.field,
-            code=row.code,
-            value=row.value,
+        Reported(
+            cursor=row.id,
+            problem=RowError(
+                row=row.row_number,
+                column=row.column_name,
+                field=row.field,
+                code=row.code,
+                value=row.value,
+            ),
         )
         for row in result
     ]
@@ -580,6 +603,7 @@ __all__ = [
     "PREVIEW",
     "Analysis",
     "ReadRefused",
+    "Reported",
     "Run",
     "SourceRefused",
     "UNPARSEABLE_SCANS",

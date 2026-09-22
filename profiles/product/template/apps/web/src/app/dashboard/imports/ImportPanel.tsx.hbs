@@ -1,6 +1,6 @@
 'use client'
 
-import { Banner, Button, Card, SelectField } from '@{{projectSlug}}/ui'
+import { Banner, Button, Card, SaveOutcome, SelectField } from '@{{projectSlug}}/ui'
 import type {
   ImportAnalysisView,
   ImportRowErrorView,
@@ -69,8 +69,34 @@ async function put(url: string, headers: Record<string, string>, file: File): Pr
   if (!response.ok) throw new Error(`the bucket answered ${response.status}`)
 }
 
-/** Which runs are still moving, and so worth asking about again. */
-const IN_FLIGHT = new Set(['validating', 'committing'])
+/**
+ * Neutralise a cell a spreadsheet would otherwise execute.
+ *
+ * Excel and LibreOffice evaluate a cell whose first character is `=`, `+`, `-`
+ * or `@` -- inside quotation marks as much as outside them, because the quotes
+ * are the CSV's, and the spreadsheet has already removed them by the time it
+ * decides. A leading apostrophe is the documented way to say "this is text",
+ * and it is what a person pasting a formula into a cell would type themselves.
+ *
+ * Tab and carriage return are here too: both can carry the trigger character
+ * into the next cell on some importers.
+ */
+function guardCell(cell: string): string {
+  return /^[=+\-@\t\r]/.test(cell) ? `'${cell}` : cell
+}
+
+/**
+ * Which runs are still moving, and so worth asking about again.
+ *
+ * **`commit_requested` is in this set, and leaving it out stopped the page
+ * dead.** The commit route answers with the run in `commit_requested`; only the
+ * worker moves it on to `committing`. So confirming an import used to end the
+ * polling it was supposed to start: the card froze on the request sentence
+ * while the rows were written, and a person who assumed it had failed pressed
+ * Confirm again and got a 409 drawn as an error over a successful import.
+ * IMP2-06 in `docs/features/data-import/phase-2-review.md`.
+ */
+const IN_FLIGHT = new Set(['validating', 'commit_requested', 'committing'])
 
 function fill(template: string, values: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? '')
@@ -219,7 +245,7 @@ export function ImportPanel({
     if (run === null) return
     setBusy(true)
     try {
-      const answer = await allErrors(run.id)
+      const answer = await allErrors(run.id, run.errors_total)
       if (answer.status === 'error') {
         setError(answer.message)
         return
@@ -236,8 +262,16 @@ export function ImportPanel({
       // comma, a newline or a quote is exactly the kind of cell an import
       // rejects, so the error report is the one file in this product most
       // likely to contain all three.
+      //
+      // And guarded, which is a different job that quoting does not do:
+      // quoting defends the *delimiter*, and a spreadsheet strips the quotes
+      // before deciding whether the cell is a formula. Every value here --
+      // the offending cell, and the file's own column heading -- was chosen by
+      // whoever made the file, and a cell that failed its check is the one most
+      // likely to be hostile. IMP2-08 in
+      // `docs/features/data-import/phase-2-review.md`.
       const csv = lines
-        .map((cells) => cells.map((cell) => '"' + cell.split('"').join('""') + '"').join(','))
+        .map((cells) => cells.map((cell) => '"' + guardCell(cell).split('"').join('""') + '"').join(','))
         .join(String.fromCharCode(13, 10))
       const url = URL.createObjectURL(
         new Blob([String.fromCharCode(0xfeff) + csv], { type: 'text/csv;charset=utf-8' }),
@@ -444,13 +478,36 @@ export function ImportPanel({
           {run.status === 'validated' && runTarget?.committable !== true ? (
             <Banner tone="info">{labels.notCommittable}</Banner>
           ) : null}
+          {/*
+            * **The outcome takes focus, and it is the same fix as SET-24.**
+            * Confirming unmounts the button that was activated -- the block
+            * above is gated on `validated` -- so focus falls to `BODY`, and
+            * this sentence arrives inside a subtree that mounts with it, which
+            * a live region does not announce. A person working by screen
+            * reader confirmed an irreversible write of thousands of records and
+            * was told nothing, twice over. `SaveOutcome` moves focus on mount,
+            * so a reader reads what it lands on without depending on
+            * live-region semantics at all. IMP2-10 in
+            * `docs/features/data-import/phase-2-review.md`.
+            */}
           {run.status === 'committed' ? (
-            <p className="mt-3 text-sm text-ink" data-testid="imports-committed">
-              {fill(labels.wrote, {
+            <SaveOutcome
+              className="mt-3 text-sm text-ink"
+              testId="imports-committed"
+              outcome="ok"
+              message={fill(labels.wrote, {
                 created: String(run.rows_valid),
                 total: String(run.rows_total),
               })}
-            </p>
+            />
+          ) : null}
+          {run.status === 'failed' ? (
+            <SaveOutcome
+              className="mt-3 text-sm text-ink"
+              testId="imports-failed"
+              outcome="error"
+              message={labels.states[run.status] ?? run.status}
+            />
           ) : null}
           {run.errors_total > 0 ? (
             <div className="mt-4 flex flex-wrap gap-2">

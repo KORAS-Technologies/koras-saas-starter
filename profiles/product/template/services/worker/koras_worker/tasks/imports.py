@@ -296,6 +296,52 @@ async def commit_run(ctx: dict[str, Any], envelope: JobEnvelope) -> dict[str, An
                     failure = "this import can be checked but not written"
 
             if failure is None:
+                # **The run is claimed before anything is written, in its own
+                # committed transaction.** `record_commit` moves
+                # `committing -> committed`, and the machine has no edge from
+                # `commit_requested` to `committed`: without this step the
+                # writer's rows are rolled back on every run of every product,
+                # which is what Phase 2 did from the day it shipped until
+                # 2026-09-22. IMP2-01 in
+                # `docs/features/data-import/phase-2-review.md`.
+                #
+                # Separate and committed rather than folded into the write
+                # below, for two reasons that are not style. The page polls on
+                # `committing`, so a run that reached it is a run somebody can
+                # watch; and a failure needs a state it may legally leave, which
+                # `commit_requested` is not for everything that can go wrong
+                # here.
+                try:
+                    await store.begin_commit(session, run)
+                    await session.commit()
+                except Exception:
+                    # A concurrent cancellation is the ordinary way here: the
+                    # run left `commit_requested` between the enqueue and this
+                    # statement. Nothing has been written and nothing is owed.
+                    await session.rollback()
+                    logger.exception("import commit: run %s could not be claimed", run_id)
+                    return {"status": "skipped", "reason": "not claimable"}
+
+                # **The tenant is declared again, and leaving it out hid the
+                # run.** `_AS_TENANT` uses `set_config(..., true)`, which is
+                # transaction-local: the commit above ended the transaction the
+                # settings belonged to, so the next statement runs with no
+                # tenant and row-level security matches nothing. The symptom is
+                # not an error -- it is `store.get` answering `None` for a run
+                # that is plainly there, which reads as "the run vanished".
+                # Found by running this against a real PostgreSQL rather than
+                # against the state machine alone.
+                await session.execute(_AS_TENANT, {"tenant_id": envelope.tenant_id})
+
+                # Re-read, because `Run` is a frozen snapshot and `_advance`
+                # does not refresh it: `record_commit` below checks the state it
+                # is given, not the state in the table.
+                claimed = await store.get(session, run_id)
+                if claimed is None:
+                    logger.error("import commit: run %s vanished after it was claimed", run_id)
+                    return {"status": "skipped", "reason": "no run"}
+                run = claimed
+
                 try:
                     written = await _write(session, store, target, run, envelope.tenant_id)
                     await store.record_commit(
@@ -328,8 +374,22 @@ async def commit_run(ctx: dict[str, Any], envelope: JobEnvelope) -> dict[str, An
                 await session.execute(_AS_TENANT, {"tenant_id": envelope.tenant_id})
                 run = await store.get(session, run_id)
                 if run is not None:
-                    await store.fail(session, run, failure)
-                    await session.commit()
+                    # **Guarded, and the guard is not belt-and-braces.** This
+                    # raised for every failed commit until 2026-09-22, and
+                    # because nothing caught it the exception escaped past the
+                    # notification below: the run was stranded *and* silent. A
+                    # recorded failure nobody is told about is the worse half.
+                    try:
+                        await store.fail(session, run, failure)
+                        await session.commit()
+                    except Exception:
+                        await session.rollback()
+                        logger.exception(
+                            "import commit: run %s failed and the failure could not be "
+                            "recorded; it stays in %s",
+                            run_id,
+                            run.status,
+                        )
 
         # **A third transaction, and the last thing that happens.** A
         # notification must never be able to undo an import: by this point the

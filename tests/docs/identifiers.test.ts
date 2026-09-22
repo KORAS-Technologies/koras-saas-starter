@@ -49,6 +49,14 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   // and a name like this appearing in the code would mean somebody had started
   // storing a staff token.
   STAFF_TOKEN: "a shell variable in a worked example; the platform has no such setting",
+  // The harness table F28's commit cases were run against, named in
+  // `docs/features/data-import/testing/manual/manual-test-results.md`. It must
+  // stay absent: the generated product declares no import target and owns no
+  // domain, so a table for one to write into exists only in a scratchpad
+  // product. If this name ever appears in the code, the starter has grown a
+  // domain of its own, which is the thing `imports/targets.py` is empty to
+  // prevent.
+  probe_contacts: 'a table in a scratchpad product, built so the commit cases had somewhere to run',
   // A name from koras-control-plane, cited by FOLLOW_UPS F7 and F11 as the
   // record of what the first deployment of a generated product found. It must
   // stay absent here: `send_signup_verification` is a Control Plane worker
