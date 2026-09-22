@@ -13,6 +13,23 @@ product. Two reviewers found it separately, from opposite ends — one from the
 state table, one from the call sites — and it was confirmed here by executing
 the state machine rather than by reading it.
 
+## And no generated product had ever carried the feature
+
+Found on 2026-09-22, while confirming that the new integration test actually
+runs in CI rather than skipping: **no `Generator Integration` row enabled
+`data_import`.** The capability is off by default and no matrix entry named it,
+so the gate that exists to prove a generated product still works had never
+built one containing this feature — not the two tables, not the eight routes,
+not the parser fed files from outside the product, and not the commit.
+
+Everything the estate knew about data import came from assertions that read the
+*templates*. That is the other half of why a commit path that could not succeed
+once was green everywhere: the tests that read text found the text they
+expected, and nothing ever ran it.
+
+The `integration-product-full` row names it now, which is also what runs
+`tests/integration/test_import_commit_rls.py` against a real database.
+
 ## Why Phase 1's review did not find it
 
 `review.md` records the first review, run 2026-09-19 against `15639ab`. Phase 2
