@@ -152,10 +152,17 @@ not follow a later platform change; TEST-SET-03, the provenance of the copy is
 recorded; and TEST-SET-13, the locale migration carried every value it was
 given. `testing/manual/manual-test-results.md` is the record.
 
-**Four cases remain, and that is why this is still not Done.** Two are
-BLOCKED — TEST-SET-10 needs the Control Plane console, TEST-SET-14 needs a
-person with a screen reader — and two are half-executed and recorded as
-BLOCKED rather than as a pass on the half that ran.
+**Four cases remain, and one of them now FAILS.** TEST-SET-14 was executed on
+2026-09-22 and three of its four sub-claims pass — every control reachable by
+keyboard at both widths, a focus ring on every one, and every per-field Reset
+naming its own field. The fourth fails: **saving loses focus to `BODY`**,
+because the save is a server-side redirect, and the "Saved." confirmation sits
+in a `role="status"` region that is present at document load rather than
+inserted as a change — so it may never be announced. That is **SET-24**, and
+F27 cannot close while a required case FAILs.
+
+The other three: TEST-SET-10 needs the Control Plane console, and
+TEST-SET-01 and TEST-SET-04 are half-executed.
 
 **The live sitting closed TEST-SET-11 and TEST-SET-12.** TEST-SET-11 is the
 one that demonstrates the SET-05 correction: one field changed in a

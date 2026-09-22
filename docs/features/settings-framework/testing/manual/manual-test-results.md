@@ -32,9 +32,15 @@ Where a case needs something the substitute does not have, the verdict is
 | Verdict | Count | Cases |
 |---|---|---|
 | PASS | 11 | 02, 03, 05, 06, 07, 08, 09, 11, 12, 13, 15 |
+| **FAIL** | **1** | **14** |
 | PARTIAL — recorded as BLOCKED | 2 | 01, 04 |
-| BLOCKED | 2 | 10, 14 |
-| FAIL | 0 | — |
+| BLOCKED | 1 | 10 |
+
+**TEST-SET-14 is the first FAIL in this plan**, found on 2026-09-22 by
+measuring focus rather than assuming it. Three of its four sub-claims pass
+outright; the fourth does not, and it is a real accessibility defect recorded
+as **SET-24**. F27 cannot close with a FAIL outstanding, which is the correct
+outcome rather than an inconvenient one.
 
 **A live sitting on 2026-09-22 against the deployed dev product** took this
 from 9 to 11. TEST-SET-11 and TEST-SET-12 both passed, and TEST-SET-01's
@@ -355,16 +361,59 @@ Evidence: `docs/features/settings-framework/testing/runs/2026-09-21-01/test-set-
 
 ## TEST-SET-14 — Keyboard and screen reader
 
-**Verdict** BLOCKED.
+**Verdict FAIL**, executed 2026-09-22 on deployed dev at both widths.
 
-The screen-reader half needs a person with a screen reader; nothing here
-substitutes for it. The keyboard half was not executed either, so this is
-recorded whole rather than split.
+Three sub-claims pass and one fails. The failure is **SET-24**.
 
-One property the case turns on is covered structurally elsewhere: the per-field
-Reset carries `aria-label={`${labels.reset}: ${field.label}`}`, so its
-accessible name names the field. That is an assertion about the markup, not an
-observation of a screen reader, and it is not counted here.
+| Sub-claim | 1440×900 | 375×812 |
+|---|---|---|
+| Every control reachable by keyboard alone | **PASS** — 21 of 21 settings, no `tabindex="-1"` | **PASS** — 21 of 21 |
+| Focus ring visible on each, including per-field Reset | **PASS** — 54/54 focused controls | **PASS** — 71/71 |
+| Each Reset announces *which* field it resets | **PASS** — see below | **PASS** |
+| Save outcome announced **without moving focus** | **FAIL** | **FAIL** |
+
+**The Reset names are right, and this is the property the case exists for.**
+"Reset" alone beside twenty-seven fields says nothing; the accessible names
+read `Reset: Language`, `Reset: Theme`, `Reset: Interface density`,
+`Reset: Rows per page`. Zero buttons carry a bare "Reset". Read from the
+accessibility tree, which is what a screen reader announces.
+
+### SET-24 — saving loses focus, and the confirmation may never be announced
+
+Focus was on the `ui.density` control. After saving:
+
+| | |
+|---|---|
+| Focus before | `SELECT`, inside `[data-setting="ui.density"]` |
+| Focus after | **`BODY`** |
+| URL after | `/dashboard/preferences?saved=ok` |
+| Outcome text | "Saved." |
+| Its container | `role="status"` |
+
+Two consequences, and the second is the worse one.
+
+**A keyboard user loses their place.** The save is a server-side redirect — a
+deliberate choice, documented in `actions.ts.hbs`: a redirect "works without
+JavaScript, survives a reload, and says the same thing to everybody". But a
+full navigation resets focus to the document, so anybody working by keyboard
+must tab back to where they were after every save.
+
+**The confirmation may not be announced at all.** "Saved." sits in a
+`role="status"` region, which is a polite live region — and a live region
+announces *changes made after it exists*, not content already present when the
+document loads. Arriving by redirect, the message is present at load. So the
+one signal that the save worked may be silent for exactly the users the live
+region was added for.
+
+**What this pass cannot settle**, stated rather than implied: whether a given
+screen reader announces it. That needs NVDA, JAWS or VoiceOver and a person.
+What is settled is the mechanism — focus moves, and the message is initial
+content rather than an update. The remedy is likely to move focus deliberately
+to the status region after a save, or to announce it as a change; both are
+design decisions rather than corrections, which is why this is recorded as a
+finding and not fixed here.
+
+Evidence: `docs/features/settings-framework/testing/manual/screenshots/TEST-SET-14/`
 
 ---
 

@@ -458,9 +458,18 @@ as a before/after difference, because the first attempt was misled by an
 audit entry an earlier, unfixed save had written — presence of a key proves
 nothing about which save wrote it.
 
-**Four cases are left and none of them is code.** TEST-SET-10 needs the
-Control Plane console; TEST-SET-14 needs a person with a screen reader; and
-TEST-SET-04 and TEST-SET-01 are half-executed.
+**Four cases are left, and one of them FAILS.** TEST-SET-14 ran on 2026-09-22
+and three of its four sub-claims pass — 21 of 21 controls reachable by
+keyboard at 1440 and 375, a focus ring on every one, and every per-field Reset
+naming its own field rather than saying a bare "Reset". The fourth fails:
+**saving loses focus to `BODY`** because the save is a server-side redirect,
+and the "Saved." confirmation sits in a `role="status"` region that is present
+at document load rather than inserted as a change — so it may never be
+announced to the people that region exists for. Recorded as **SET-24**, and
+F27 cannot close while a required case FAILs.
+
+The rest: TEST-SET-10 needs the Control Plane console, TEST-SET-04 needs one
+plain-`member` account, and TEST-SET-01 is blocked behind the orders 500.
 
 **TEST-SET-01's blocker changed, and the new one is worse.** It was "no
 product page uses the shared data table". `koras-e2e-shop` has one, and on
