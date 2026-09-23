@@ -1,6 +1,193 @@
 {
   "item": [
     {
+      "name": "00 - Setup Verification",
+      "description": "Two separate identities use this API: platform staff (apps/admin) and an organization's own customer (apps/portal). Run the variant for the token you have -- Platform Staff or Portal Customer, below -- not both with the same token; a portal customer's token carries no platform role and a staff token belongs to no organization. See docs/api/postman-local-setup.md / postman-dev-setup.md in koras-saas-starter.",
+      "item": [
+        {
+          "name": "RUN FIRST -- Liveness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{control_plane_base_url}}/api/v1/health",
+              "host": [
+                "{{control_plane_base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "health"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "No token. Confirms control_plane_base_url is correct and the API is up. Source: routers/health.py health()."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status field is ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "RUN SECOND (Platform Staff) -- Authentication",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{control_plane_base_url}}/api/platform/v1/products",
+              "host": [
+                "{{control_plane_base_url}}"
+              ],
+              "path": [
+                "api",
+                "platform",
+                "v1",
+                "products"
+              ]
+            },
+            "description": "Required: access_token for a signed-in platform staff member holding ANY platform role (PlatformReadDep admits all five -- super_admin, admin, support, billing, readonly). A 200 proves the token verified AND MFA was used. Note: a token that skipped MFA is refused 401, not 403 -- verification is what failed, not authority (require_mfa_for_platform)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "  pm.test.skip('set access_token to a platform staff token first');",
+                  "} else {",
+                  "  pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "RUN THIRD (Platform Staff) -- Representative Data Read",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{control_plane_base_url}}/api/platform/v1/organizations",
+              "host": [
+                "{{control_plane_base_url}}"
+              ],
+              "path": [
+                "api",
+                "platform",
+                "v1",
+                "organizations"
+              ]
+            },
+            "description": "Required: same staff token as step 2. Confirms a second real route answers, not just /products. There is no *safe* (GET) route in this API restricted to platform_super_admin/platform_admin specifically -- that stricter tier (PlatformAdminDep) gates mutations only (creating an organization, starting provisioning), which this verification sequence does not run. When this passes: DEV/LOCAL POSTMAN SETUP VERIFIED (staff)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "  pm.test.skip('set access_token to a platform staff token first');",
+                  "} else {",
+                  "  pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "  console.log('SETUP VERIFIED (platform staff): liveness, auth, and a second real read all passed.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "RUN SECOND (Portal Customer) -- Authentication & Organization Context",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{control_plane_base_url}}/api/portal/v1/organization",
+              "host": [
+                "{{control_plane_base_url}}"
+              ],
+              "path": [
+                "api",
+                "portal",
+                "v1",
+                "organization"
+              ]
+            },
+            "description": "Required: access_token for a signed-in customer of an organization provisioned in this Control Plane (any organization role -- owner, admin, billing_admin, security_admin, or member; current_organization in core/organization_auth.py resolves the organization from the token alone, so this proves auth and org context in one response, the same collapse the product API has). Source: routers/portal.py."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "  pm.test.skip('set access_token to a portal customer token first');",
+                  "} else {",
+                  "  pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "RUN THIRD (Portal Customer) -- Representative Data Read",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{control_plane_base_url}}/api/portal/v1/products",
+              "host": [
+                "{{control_plane_base_url}}"
+              ],
+              "path": [
+                "api",
+                "portal",
+                "v1",
+                "products"
+              ]
+            },
+            "description": "Required: same portal token as the step above. Confirms a second real route answers for this organization. When this passes: DEV/LOCAL POSTMAN SETUP VERIFIED (portal customer)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "  pm.test.skip('set access_token to a portal customer token first');",
+                  "} else {",
+                  "  pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "  console.log('SETUP VERIFIED (portal customer): liveness, auth+org context, and a second real read all passed.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "CI Smoke",
       "description": "Deterministic, non-destructive requests safe to run unattended against DEV/TEST/STG. /health touches nothing (see services/api/koras_api/routers/health.py); /platform-health reads only.",
       "item": [
