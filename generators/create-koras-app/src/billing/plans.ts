@@ -270,6 +270,120 @@ export class PlansClient {
   }
 
   /**
+   * The terms this plan is currently recorded as having, or null for none.
+   *
+   * Read before writing, for the same reason the plan row is: a run that
+   * changes nothing must write nothing. The catalogue write is idempotent in
+   * effect -- the same version upserts in place and the effective window does
+   * not move -- but "writes nothing" is a property worth keeping literally,
+   * because the moment it becomes "writes something harmless" nobody can tell
+   * a quiet run from a busy one.
+   */
+  async currentCatalogue(
+    productCode: string,
+    planCode: string,
+  ): Promise<Record<string, unknown> | null> {
+    const path =
+      `/api/platform/v1/products/${encodeURIComponent(productCode)}` +
+      `/plans/${encodeURIComponent(planCode)}/catalogue`
+
+    let response: { status: number; body: string }
+    try {
+      response = await this.call('GET', path)
+    } catch {
+      // Unreadable is treated as unrecorded, which leads to a write that is
+      // itself idempotent. The opposite guess -- assuming it matches -- would
+      // skip recording terms that were never recorded.
+      return null
+    }
+
+    // 404 is the documented answer for a plan whose terms were never
+    // recorded, and is not a failure: unrecorded is not the same as free.
+    if (response.status !== 200) return null
+
+    try {
+      const parsed: unknown = JSON.parse(response.body)
+      if (parsed === null || typeof parsed !== 'object') return null
+      return parsed as Record<string, unknown>
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Records what this plan costs and includes, as at now.
+   *
+   * Sent **after** the prices exist, so the references it carries are ones the
+   * provider holds rather than ones this command intends to create. That
+   * ordering is the whole reason it is a separate call rather than part of the
+   * plan write: a catalogue version naming a price that failed to be created
+   * would be a record of terms nobody can be charged on.
+   *
+   * Superseding is by version. A new `plan_version` closes the current row and
+   * opens one; the same number amends in place, which is what keeps a re-run
+   * of unchanged terms from moving the date a customer's terms began.
+   */
+  async recordCatalogue(input: {
+    productCode: string
+    planCode: string
+    planVersion: number
+    catalogueVersion: number
+    amountMonth: number | null
+    amountYear: number | null
+    currency: string
+    includedUsers: number | null
+    priceIdMonth: string | null
+    priceIdYear: string | null
+    extraUserAmountMonth: number | null
+    extraUserAmountYear: number | null
+    extraUserPriceIdMonth: string | null
+    extraUserPriceIdYear: string | null
+    limits: Record<string, number>
+  }): Promise<void> {
+    const response = await this.call('PUT', '/api/platform/v1/plan-catalogue', {
+      product_code: input.productCode,
+      plan_code: input.planCode,
+      plan_version: input.planVersion,
+      catalogue_version: input.catalogueVersion,
+      amount_month: input.amountMonth,
+      amount_year: input.amountYear,
+      currency: input.currency,
+      included_users: input.includedUsers,
+      price_id_month: input.priceIdMonth,
+      price_id_year: input.priceIdYear,
+      extra_user_amount_month: input.extraUserAmountMonth,
+      extra_user_amount_year: input.extraUserAmountYear,
+      extra_user_price_id_month: input.extraUserPriceIdMonth,
+      extra_user_price_id_year: input.extraUserPriceIdYear,
+      limits: input.limits,
+    })
+
+    if (response.status === 404) {
+      // The plan-not-found case is already refused before any provider call,
+      // so reaching it here means the plan went away mid-run. Reported as
+      // retryable-not: a second run reads the catalogue again and refuses at
+      // the point that explains it.
+      throw new ControlPlaneError(
+        `The Control Plane no longer holds plan ${input.planCode}. Nothing further was ` +
+          'recorded for it; its prices exist and are unreferenced.',
+        { status: 404, retryable: false },
+      )
+    }
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new ControlPlaneError(
+        `Recording the catalogue for ${input.planCode} failed with HTTP ${response.status}: ` +
+          summarise(response.body, this.env) +
+          // Worth saying, because the failure is partial in a way that reads
+          // as total: the money side succeeded and only its record did not.
+          '\n  The prices exist and the plan carries them; only the record of ' +
+          'what they were sold as is missing. A second run records it.',
+        { status: response.status, retryable: response.status >= 500 },
+      )
+    }
+  }
+
+  /**
    * Writes one plan back, whole.
    *
    * `plan` must be the record read from `listPlans` with only this step's own

@@ -82,6 +82,8 @@ export type BillingReport =
       plans: PlanOutcome[]
       /** The extra internal user, when the catalogue states one. Billed by nothing. */
       extraUser?: AddonOutcome
+      /** How many plans had their terms recorded as a catalogue version. */
+      catalogueRecorded: number
       /** Plans in the catalogue file declaring no amount at all. */
       unpriced: string[]
       /** Tiers declared negotiated: on the catalogue, deliberately unpriced. */
@@ -336,6 +338,56 @@ export function mergePlan(
   }
 }
 
+/**
+ * Whether the recorded terms already say exactly this.
+ *
+ * Compared field by field against what would be sent rather than by a digest,
+ * so that a field added to the record and forgotten here shows up as a run
+ * that always writes -- which is noisy and visible -- instead of one that
+ * never does, which is silent.
+ */
+export function sameTerms(
+  recorded: Record<string, unknown> | null,
+  terms: {
+    planVersion: number
+    catalogueVersion: number
+    amountMonth: number | null
+    amountYear: number | null
+    currency: string
+    includedUsers: number | null
+    priceIdMonth: string | null
+    priceIdYear: string | null
+    extraUserAmountMonth: number | null
+    extraUserAmountYear: number | null
+    extraUserPriceIdMonth: string | null
+    extraUserPriceIdYear: string | null
+    limits: Record<string, number>
+  },
+): boolean {
+  if (recorded === null) return false
+
+  const asNumber = (value: unknown): number | null =>
+    value === null || value === undefined ? null : Number(value)
+  const asString = (value: unknown): string | null =>
+    value === null || value === undefined ? null : String(value)
+
+  return (
+    asNumber(recorded.plan_version) === terms.planVersion &&
+    asNumber(recorded.catalogue_version) === terms.catalogueVersion &&
+    asNumber(recorded.amount_month) === terms.amountMonth &&
+    asNumber(recorded.amount_year) === terms.amountYear &&
+    asString(recorded.currency) === terms.currency &&
+    asNumber(recorded.included_users) === terms.includedUsers &&
+    asString(recorded.price_id_month) === terms.priceIdMonth &&
+    asString(recorded.price_id_year) === terms.priceIdYear &&
+    asNumber(recorded.extra_user_amount_month) === terms.extraUserAmountMonth &&
+    asNumber(recorded.extra_user_amount_year) === terms.extraUserAmountYear &&
+    asString(recorded.extra_user_price_id_month) === terms.extraUserPriceIdMonth &&
+    asString(recorded.extra_user_price_id_year) === terms.extraUserPriceIdYear &&
+    JSON.stringify(recorded.limits ?? {}) === JSON.stringify(terms.limits)
+  )
+}
+
 /** Whether writing this row back would change anything at all. */
 export function sameRow(a: PlanRecord, b: PlanRecord): boolean {
   return (
@@ -532,6 +584,13 @@ export async function runBillingProvision(options: RunBillingOptions): Promise<B
     const registrationId = await plansClient.productId(options.productCode)
 
     const outcomes: PlanOutcome[] = []
+    // Held so the catalogue can be recorded after the extra seat's prices
+    // exist: a version naming an extra-user price that was never created
+    // would be a record of terms nobody can be charged on.
+    const priced = new Map<
+      string,
+      { plan: CataloguePlan; results: { month?: IntervalOutcome; year?: IntervalOutcome } }
+    >()
     let wroteAnything = false
 
     for (const plan of catalogue.catalogue.plans) {
@@ -588,6 +647,7 @@ export async function runBillingProvision(options: RunBillingOptions): Promise<B
       }
 
       outcomes.push({ code: plan.code, ...results, unchanged })
+      priced.set(plan.code, { plan, results })
     }
 
     // ── the extra internal user ───────────────────────────────────────────
@@ -645,10 +705,48 @@ export async function runBillingProvision(options: RunBillingOptions): Promise<B
       }
     }
 
+    // ── the record of what was sold ──────────────────────────────────────
+    //
+    // Last, and that ordering is the point. Every price this version names --
+    // the plan's and the extra seat's -- exists by now, so a recorded version
+    // never names one that failed to be created.
+    let catalogueRecorded = 0
+    for (const [code, entry] of priced) {
+      const terms = {
+        productCode: options.productCode,
+        planCode: code,
+        planVersion: entry.plan.planVersion,
+        catalogueVersion: catalogue.catalogue.catalogueVersion,
+        amountMonth: entry.plan.monthly,
+        amountYear: entry.plan.yearly,
+        currency: catalogue.catalogue.currency,
+        includedUsers: entry.plan.includedUsers,
+        priceIdMonth: entry.results.month?.priceId ?? null,
+        priceIdYear: entry.results.year?.priceId ?? null,
+        extraUserAmountMonth: catalogue.catalogue.additionalUser?.monthly ?? null,
+        extraUserAmountYear: catalogue.catalogue.additionalUser?.yearly ?? null,
+        extraUserPriceIdMonth: extraUser?.month?.priceId ?? null,
+        extraUserPriceIdYear: extraUser?.year?.priceId ?? null,
+        limits: entry.plan.limits,
+      }
+
+      // Read, compare, skip -- the same shape as the plan row above. A run
+      // that changes nothing must write nothing, literally rather than
+      // harmlessly: the moment "writes nothing" becomes "writes something
+      // idempotent", nobody can tell a quiet run from a busy one.
+      const current = await plansClient.currentCatalogue(options.productCode, code)
+      if (sameTerms(current, terms)) continue
+
+      await plansClient.recordCatalogue(terms)
+      catalogueRecorded += 1
+      wroteAnything = true
+    }
+
     return {
       kind: 'provisioned',
       environment: config.environment,
       correlationId,
+      catalogueRecorded,
       plans: outcomes,
       extraUser,
       unpriced: catalogue.catalogue.unpriced,

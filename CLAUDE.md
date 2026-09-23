@@ -839,6 +839,31 @@ repository has shipped wrongly twice in four days. What makes it different is
 that the command prints exactly which declared fields it did not act on, on
 every run rather than only a dry run. Stated inertness is not a promise.
 
+**Phase 4 shipped on 2026-09-22**, in `koras-control-plane`: a plan's
+commercial terms over time, in a table beside `plans` rather than on it, because
+`plans` is unique on product and code and cannot hold two versions at once.
+Grandfathering is a question with an answer now — a subscription points at a
+plan, and the catalogue row whose window contains its start is what was sold.
+Before, an old provider price kept charging and nothing recorded the terms.
+
+Three of its rules are the database's rather than Python's: one current version
+per plan, enforced by a partial unique index; no delete policy at all, because a
+version is what somebody agreed to; and only a platform billing role may write
+one. The factory records a version **last**, after every price it names exists.
+
+**Two things that work found in itself.** The window constraint was `>` and had
+to become `>=` — `now()` is the transaction's start time, so closing and opening
+in one transaction lands both at the same instant, which is exactly what
+correcting terms written moments ago looks like; the constraint would have
+blocked the fix and not the mistake. And the first version wrote a catalogue row
+on every run: idempotent in effect, and still a breach of *"a second run writes
+nothing"*, because once that becomes "writes something harmless" nobody can tell
+a quiet run from a busy one.
+
+**And one test passed for the wrong reason.** A staff context declared with
+actor type `user` resolves no platform role at all, so a denial test written
+that way passes whatever the policy says.
+
 **Phase 3 shipped on 2026-09-22.** The lookup key is the Control Plane's
 contract rather than the one specified in the brief or the one first built
 here: the platform had already written it, before anything minted a key, and it

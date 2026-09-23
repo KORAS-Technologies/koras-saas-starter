@@ -75,6 +75,8 @@ class Estate {
   products = new Map<string, { id: string; name: string; tax_code: string }>()
   prices: StripePrice[] = []
   plans: PlanRecord[] = []
+  /** Recorded catalogue versions, keyed by plan and version. */
+  catalogue = new Map<string, Record<string, unknown>>()
   private priceCounter = 0
 
   /** Overridable so a test can make one endpoint fail without faking the rest. */
@@ -181,6 +183,22 @@ class Estate {
 
     if (url.includes('/api/platform/v1/plans') && method === 'GET') {
       return respond(200, this.plans)
+    }
+
+    const catalogueGet = /\/products\/([^/]+)\/plans\/([^/]+)\/catalogue$/.exec(url)
+    if (catalogueGet && method === 'GET') {
+      const planCode = decodeURIComponent(catalogueGet[2])
+      const found = [...this.catalogue.entries()].find(([key]) => key.startsWith(`${planCode}@`))
+      // 404 is the documented answer for terms never recorded, and is not a
+      // failure: unrecorded is not the same as free.
+      return found ? respond(200, found[1]) : respond(404, { detail: 'not recorded' })
+    }
+
+    if (url.endsWith('/api/platform/v1/plan-catalogue') && method === 'PUT') {
+      const body = JSON.parse(init?.body ?? '{}') as Record<string, unknown>
+      const key = `${String(body.plan_code)}@${String(body.plan_version)}`
+      this.catalogue.set(key, body)
+      return respond(200, { id: 'cat-1', plan_version: String(body.plan_version) })
     }
 
     if (url.endsWith('/api/platform/v1/plans') && method === 'PUT') {
@@ -1387,5 +1405,114 @@ plans:
     expect(estate.mutatingWrites).toEqual([])
     expect(estate.prices).toHaveLength(after)
     expect(second.extraUser?.month?.kind).toBe('reused')
+  })
+})
+
+describe('what Phase 4 records', () => {
+  const CATALOGUE = `
+version: 1
+catalogue_version: 7
+currency: usd
+additional_user:
+  monthly_price_cents: 2500
+  annual_price_cents: 25000
+plans:
+  starter:
+    name: Starter
+    plan_version: 3
+    monthly_price_cents: 9900
+    annual_price_cents: 99000
+    included_users: 3
+    limits:
+      storage.files: 10
+      workflows.runs: 500
+`
+
+  it('records the terms, with the references of prices that now exist', async () => {
+    const estate = new Estate()
+    estate.plans = [plan('starter')]
+    writeCatalogue(CATALOGUE)
+
+    const report = await run(estate)
+    expect(report.kind).toBe('provisioned')
+    if (report.kind !== 'provisioned') return
+    expect(report.catalogueRecorded).toBe(1)
+
+    const recorded = estate.catalogue.get('starter@3')!
+    expect(recorded.plan_version).toBe(3)
+    expect(recorded.catalogue_version).toBe(7)
+    expect(recorded.amount_month).toBe(9900)
+    expect(recorded.amount_year).toBe(99000)
+    expect(recorded.included_users).toBe(3)
+    expect(recorded.currency).toBe('usd')
+    expect(recorded.limits).toEqual({ 'storage.files': 10, 'workflows.runs': 500 })
+
+    // The references are the prices that were just created, not placeholders.
+    expect(recorded.price_id_month).toMatch(/^price_/)
+    expect(recorded.extra_user_price_id_month).toMatch(/^price_/)
+    expect(recorded.extra_user_amount_month).toBe(2500)
+  })
+
+  it('records it only after every price it names exists', async () => {
+    const estate = new Estate()
+    estate.plans = [plan('starter')]
+    writeCatalogue(CATALOGUE)
+
+    await run(estate)
+
+    // The ordering is the property, not a detail. A version naming a price
+    // that failed to be created is a record of terms nobody can be charged
+    // on, so the catalogue write must come after the last price write.
+    const lastPrice = estate.calls.findLastIndex(
+      (call) => call.method === 'POST' && call.url.endsWith('/v1/prices'),
+    )
+    const firstCatalogue = estate.calls.findIndex((call) =>
+      call.url.endsWith('/api/platform/v1/plan-catalogue'),
+    )
+    expect(lastPrice).toBeGreaterThan(-1)
+    expect(firstCatalogue).toBeGreaterThan(lastPrice)
+  })
+
+  it('records nothing for a negotiated tier', async () => {
+    const estate = new Estate()
+    estate.plans = [plan('starter'), plan('enterprise', { self_serve: false })]
+    writeCatalogue(`
+version: 1
+currency: usd
+plans:
+  starter:
+    monthly_price_cents: 9900
+  enterprise:
+    custom: true
+`)
+
+    await run(estate)
+
+    // Its terms are whatever was negotiated, which this command does not know
+    // and must not invent. A recorded version of zeroes would be the platform
+    // stating terms nobody agreed.
+    expect([...estate.catalogue.keys()]).toEqual(['starter@1'])
+  })
+
+  it('reports the prices as done when only the record fails', async () => {
+    const estate = new Estate()
+    estate.plans = [plan('starter')]
+    writeCatalogue(CATALOGUE)
+    estate.stripeStatusOverride = {
+      path: '/api/platform/v1/plan-catalogue',
+      status: 500,
+      body: '{"detail":"boom"}',
+    }
+
+    const report = await run(estate)
+
+    expect(report.kind).toBe('failed')
+    if (report.kind !== 'failed') return
+    // The failure is partial in a way that reads as total. Saying which half
+    // succeeded is the difference between a safe retry and somebody going to
+    // look for prices that are already there.
+    expect(report.detail).toContain('prices exist')
+    expect(report.retryable).toBe(true)
+    expect(estate.prices.length).toBeGreaterThan(0)
   })
 })

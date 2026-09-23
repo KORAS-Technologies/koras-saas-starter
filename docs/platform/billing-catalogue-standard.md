@@ -552,10 +552,57 @@ whole path driven through the real CLI against a generated product. **The real
 test-mode account is not done** — it needs the billing service account, which
 no environment has. That is F29.
 
-**Phase 4 — Control Plane catalogue.** The catalogue table, versions, effective
-dates, included users, the limits map, entitlement sync, and the reconciliation
-check extended to cover them. Exit: a catalogue read back matches what was sent,
-and reconciliation reports a hand-edited price.
+**Phase 4 — Control Plane catalogue. Built 2026-09-22.** A plan's terms over
+time, in a table beside `plans` rather than on it: `plans` is unique on product
+and code and so cannot hold two versions at once, which is the whole
+requirement. A version carries the amounts, the currency, the included count,
+the provider references it was sold with, the extra seat's terms and an open
+limits map, effective between two dates.
+
+**Grandfathering is now a question with an answer.** A subscription points at a
+plan; the catalogue row whose window contains the subscription's start is what
+was sold. Before this it worked — an old provider price kept existing and kept
+charging — but nothing recorded the terms, so the question could only be
+answered by reading a provider dashboard and guessing at dates.
+
+**Three rules are the database's rather than Python's**, and each is exercised
+against real policies: exactly one version per plan may be current, enforced by
+a partial unique index, because a plan with two would be a plan whose terms
+cannot be read and the failure would surface as whichever row a query ordered
+first; no delete policy exists, because a version is what somebody agreed to
+and a billing dispute is exactly when it is read; and only a platform billing
+role may write one, the same authority as the plan itself.
+
+**The factory records it last**, after every price the version names exists —
+the plan's and the extra seat's. A version naming a price that failed to be
+created is a record of terms nobody can be charged on.
+
+**Two things the work found in itself.** The window constraint was `>` and had
+to become `>=`: `now()` is the transaction's start time, so closing and opening
+in one transaction puts both timestamps at the same instant, which is exactly
+what recording a correction to terms written moments ago looks like — the
+constraint would have blocked the fix and not the mistake. And the first
+version wrote a catalogue row on every run, which is idempotent in effect and
+still broke *"a second run writes nothing"*; it reads and compares first now,
+because the moment that property becomes "writes something harmless" nobody can
+tell a quiet run from a busy one.
+
+**One thing was found by a test failing for the wrong reason.** A staff context
+declared with actor type `user` resolves no platform role at all, so a denial
+test written that way passes whatever the policy says. The contexts declare
+`platform` now.
+
+Exit, partly met: 65 factory tests and 14 database tests against real policies,
+three Phase 4 claims mutation-proven, and no regression in the Control Plane —
+the failing set is identical with and without the change.
+
+**Two parts of Phase 4 were not built, as of 2026-09-22.** Entitlement sync —
+the factory walking a plan's declared entitlement codes and writing them
+through the two endpoints that already exist — and the reconciliation check
+extended to compare the recorded terms against the provider. Both are named
+here rather than left to be rediscovered, and neither blocks what was built:
+the terms are recorded, and `billing.catalogue` already compares the provider
+against the plan's intent.
 
 **Phase 5 — extra seats.** The additional-user price put on an actual
 subscription as a second line: checkout, the seat-change path, proration, the
