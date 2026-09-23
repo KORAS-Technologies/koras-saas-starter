@@ -637,6 +637,21 @@ async function runProvisionBilling(
         }
       }
 
+      if (report.extraUser !== undefined) {
+        // Said on every run, in the same breath as the prices. A price that
+        // exists and charges nobody is harmless; one that exists and is
+        // assumed to charge somebody is not.
+        console.log('\n  Additional internal user — created, and billed by nothing yet')
+        for (const interval of ['month', 'year'] as const) {
+          const outcome = report.extraUser[interval]
+          if (outcome === undefined) continue
+          console.log(
+            `    ${interval}: ${outcome.amount}  ${outcome.priceId}` +
+              `  (${outcome.kind === 'reused' ? 'already there' : outcome.kind})`,
+          )
+        }
+      }
+
       if (report.custom.length > 0) {
         console.log(
           `\n  Negotiated tiers, on the catalogue with no price: ${report.custom.join(', ')}`,

@@ -839,6 +839,28 @@ repository has shipped wrongly twice in four days. What makes it different is
 that the command prints exactly which declared fields it did not act on, on
 every run rather than only a dry run. Stated inertness is not a promise.
 
+**Phase 3 shipped on 2026-09-22.** The lookup key is the Control Plane's
+contract rather than the one specified in the brief or the one first built
+here: the platform had already written it, before anything minted a key, and it
+carries a currency segment the brief omitted. One convention in the estate beat
+a shorter one. Two consequences come with taking a contract whole — the
+interval reads `yearly` rather than `annual`, and the extra seat is one
+hyphenated word, because the contract separates segments with underscores and
+allows hyphens inside them.
+
+**It is a second implementation of one rule**, in TypeScript where the
+platform's is Python, with no seam between them. The tests pin the exact
+expected strings rather than reproducing the rule, because a test that
+recomputed it would drift in the same direction as the code and agree with
+itself forever.
+
+**Phase 3 found two stale sentences in its own output.** The command prints
+which declared catalogue fields nothing acts on, and two of the three had been
+written in Phase 1 and were untrue once Phases 2 and 3 shipped — printed on
+every run. A stale entry in that list is the same defect as a missing one
+arriving from the other side: it tells somebody a control does nothing when it
+does.
+
 **It is superseded in shape, the same day it was built.** A platform standard
 for product pricing was specified on 2026-09-22 — four tiers with included
 internal users, a standard additional-seat price, per-product storage and AI

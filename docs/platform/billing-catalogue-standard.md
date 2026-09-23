@@ -507,11 +507,50 @@ without the change, against a local database behind on migrations and carrying
 37,000 plans. Pre-existing and environmental, and recorded rather than allowed
 to read as a pass.
 
-**Phase 3 — provider provisioning.** Products, prices, the standard lookup
-keys, metadata, idempotency, the environment guard, and the report. Includes
-adopting the standard lookup key format in place of the one already built, and
-the additional-user prices, which nothing will bill until Phase 5. Exit: a real
-test-mode account, run twice, second run creates nothing.
+**Phase 3 — provider provisioning. Built 2026-09-22.** Products, prices, the
+standard lookup keys, metadata, idempotency, the environment guard, and the
+report.
+
+**The lookup key was decided by the platform, not here.** The Control Plane had
+already written the contract — before anything minted a key, so that the key
+would be shaped by the catalogue rather than by the first thing to use it — and
+it carries a currency segment the request's standard omitted. The platform's
+version won on 2026-09-22: one convention in the estate beats a shorter one,
+and a factory minting a shape the platform's own helper would never produce
+means any later comparison between them fails.
+
+Two consequences follow from taking somebody else's contract whole. The
+interval reads *yearly* rather than *annual*, because that is the word the
+contract uses. And the extra seat is one hyphenated word rather than two
+underscored ones, because the contract separates segments with underscores and
+allows hyphens inside them — so two underscored words would be two segments
+where one is meant, and a key with five parts where four are expected is one
+nothing can parse.
+
+**It is a second implementation of one rule**, in a different language with no
+seam between them, which is the arrangement this estate keeps being bitten by.
+The defence is that the tests pin the exact expected strings rather than
+reproducing the rule: a test that recomputed it would drift in the same
+direction as the code and agree with itself forever.
+
+The extra-seat prices are created, under their own provider product rather than
+hung off a plan's — an invoice line naming a tier for an extra user is wrong in
+the one place a customer reads. Nothing writes them to the platform: there is
+no column to hold an add-on price, and inventing one would be the factory
+deciding another repository's schema.
+
+**One thing this phase found in its own output.** Two of the three
+declared-but-inert messages had gone stale — written in Phase 1, and untrue
+once Phases 2 and 3 shipped. They said the included count was enforced nowhere
+and that no extra-seat price was created, both by then false, in a message
+printed on every run. A stale entry in that list is the same defect as a
+missing one arriving from the other side: it tells somebody a control does
+nothing when it does.
+
+Exit, partly met: 61 tests, four of the phase's claims mutation-proven, and the
+whole path driven through the real CLI against a generated product. **The real
+test-mode account is not done** — it needs the billing service account, which
+no environment has. That is F29.
 
 **Phase 4 — Control Plane catalogue.** The catalogue table, versions, effective
 dates, included users, the limits map, entitlement sync, and the reconciliation

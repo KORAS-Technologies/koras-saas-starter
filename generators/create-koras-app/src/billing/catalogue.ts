@@ -433,12 +433,11 @@ export function parseBillingCatalogue(document: unknown, source: string): Catalo
 export function declaredButInert(catalogue: ParsedCatalogue): string[] {
   const inert: string[] = []
 
-  if (catalogue.plans.some((plan) => plan.includedUsers !== null)) {
-    inert.push(
-      'included_users — declared, and not yet enforced anywhere. Until the flat-fee ' +
-        'correction ships, the seat count multiplies the plan price and limits nothing',
-    )
-  }
+  // `included_users` is NOT here, and was until the flat-fee correction and
+  // the catalogue sync shipped. It is now written onto the plan and enforced
+  // by the platform when a member is added. A stale entry in this list is the
+  // same defect as a missing one, arriving from the other side: it tells
+  // somebody a control does nothing when it does.
 
   if (catalogue.plans.some((plan) => Object.keys(plan.limits).length > 0)) {
     inert.push(
@@ -451,18 +450,22 @@ export function declaredButInert(catalogue: ParsedCatalogue): string[] {
     inert.push('entitlements — declared, and not yet synced to the platform catalogue')
   }
 
-  if (catalogue.plans.some((plan) => plan.planVersion !== 1) || catalogue.catalogueVersion !== 1) {
+  // Only when somebody has actually used versioning. Every catalogue carries
+  // version 1 by default, and a warning that appears on every run is one
+  // nobody reads -- which is the property the list is worth having at all.
+  if (catalogue.catalogueVersion !== 1 || catalogue.plans.some((plan) => plan.planVersion !== 1)) {
     inert.push(
-      'plan_version and catalogue_version — recorded, and not yet stored. Nothing can ' +
-        'answer which revision a customer agreed to until the catalogue table exists',
+      'plan_version and catalogue_version — labelled onto every provider object, and not ' +
+        'yet stored by the platform. Nothing can answer which revision a customer agreed ' +
+        'to until the catalogue table exists',
     )
   }
 
   if (catalogue.additionalUser !== null) {
     inert.push(
-      'additional_user — declared, and no price is created for it yet. When one is, ' +
-        'nothing will bill it either: the extra seat is a second subscription line and ' +
-        'is a later phase. The included count is a hard cap until then',
+      'additional_user — its prices are created, and nothing bills them. The extra seat ' +
+        'is a second subscription line and is a later phase; until then the included ' +
+        'count is a hard cap',
     )
   }
 

@@ -19,21 +19,80 @@ import { createHash } from 'node:crypto'
  */
 
 /**
- * `<product>.<plan>.<interval>.<currency>` — a price's permanent name.
+ * **The lookup key implements a contract the Control Plane owns.**
+ *
+ * The platform wrote the key's shape before anything minted one, so that it
+ * would be decided by the catalogue rather than shaped by the first thing to
+ * use it. The factory mints keys; the platform reads them; both have to agree,
+ * and the platform is the authority.
+ *
+ * It is reimplemented here rather than imported because that one is Python and
+ * this is TypeScript, and there is no seam between them. **That makes it two
+ * answers to one question**, which is the arrangement this estate has been
+ * bitten by before — so the tests pin the exact expected strings rather than
+ * reproducing the rule, since a test that recomputed it would drift in the
+ * same direction as the code and agree with itself forever.
+ *
+ * The shape, for a reader who does not have the other repository open:
+ *
+ *   product, plan, interval, currency — joined by underscores
+ *
+ * Underscores separate segments and hyphens are allowed **inside** one, so a
+ * product named with hyphens keeps its own name and the four parts stay
+ * unambiguous to anything that splits on an underscore. That is why the extra
+ * seat below is one hyphenated word rather than two underscored ones.
+ *
+ * The interval reads as a word a person recognises in a dashboard — the
+ * catalogue and the provider both say month, a key says monthly — and the
+ * currency is present from the first key, so that a second currency is an
+ * addition rather than a re-key of every price that exists.
+ */
+
+/** How an interval reads in a key. The provider says `month`; a key says `monthly`. */
+const INTERVAL_WORDS: Record<string, string> = { month: 'monthly', year: 'yearly' }
+
+/**
+ * One segment's shape: lower-case alphanumeric, hyphens allowed inside.
+ *
+ * No underscores, because the underscore is the separator. A segment carrying
+ * one would make the key ambiguous to anything that splits on it — which is
+ * everything that reads a key, including a person.
+ */
+const SEGMENT = /^[a-z0-9][a-z0-9-]*$/
+
+/**
+ * The add-on's segment, for a price that is not a plan.
+ *
+ * Hyphenated rather than underscored for the reason above: two underscored
+ * words would be two segments where one is meant, and a key with five parts
+ * where four are expected is one nothing can parse.
+ */
+export const EXTRA_USER_SEGMENT = 'extra-user'
+
+export class LookupKeyError extends Error {
+  constructor(segment: string, value: string) {
+    super(
+      `a lookup key's ${segment} segment must be lower-case alphanumeric, ` +
+        `hyphens allowed inside: got "${value}"`,
+    )
+    this.name = 'LookupKeyError'
+  }
+}
+
+function segment(name: string, value: string): string {
+  const cleaned = value.trim().toLowerCase()
+  if (!SEGMENT.test(cleaned)) throw new LookupKeyError(name, value)
+  return cleaned
+}
+
+/**
+ * A price's permanent name: product, plan, interval, currency.
  *
  * Deterministic and readable on purpose. It is read by a person in a provider
  * dashboard trying to work out which plan a price belongs to, and it is the
- * only thing tying an opaque `price_…` back to the catalogue that asked for it.
- *
- * **The currency segment is present from the first key**, before this estate
- * sells in more than one currency. That is the whole reason it is here: adding
- * it later would mean every existing price carries a key of a different shape,
- * and a second currency would be a re-key of the catalogue rather than an
- * addition to it. One segment now costs nothing.
- *
- * Lowercased because the provider treats lookup keys as case-sensitive and the
- * catalogue is lowercase by validation; normalising at the one place the key is
- * built means a stray capital cannot produce a second price for the same plan.
+ * only thing tying an opaque provider id back to the catalogue that asked for
+ * it. Computable from what the catalogue already knows, so it is the same key
+ * next year and in the next environment.
  */
 export function priceLookupKey(input: {
   productCode: string
@@ -41,9 +100,33 @@ export function priceLookupKey(input: {
   interval: 'month' | 'year'
   currency: string
 }): string {
-  return [input.productCode, input.planCode, input.interval, input.currency]
-    .map((segment) => segment.trim().toLowerCase())
-    .join('.')
+  return [
+    segment('product', input.productCode),
+    segment('plan', input.planCode),
+    segment('interval', INTERVAL_WORDS[input.interval] ?? input.interval),
+    segment('currency', input.currency),
+  ].join('_')
+}
+
+/**
+ * An add-on's permanent name, in the same shape with the plan segment replaced.
+ *
+ * The same four parts rather than a different scheme, because a price is a
+ * price: anything reading a key should not have to know whether what it names
+ * is a tier or a seat. The extra internal user is the only add-on today.
+ */
+export function addonLookupKey(input: {
+  productCode: string
+  addonCode: string
+  interval: 'month' | 'year'
+  currency: string
+}): string {
+  return [
+    segment('product', input.productCode),
+    segment('add-on', input.addonCode),
+    segment('interval', INTERVAL_WORDS[input.interval] ?? input.interval),
+    segment('currency', input.currency),
+  ].join('_')
 }
 
 /**
@@ -51,24 +134,22 @@ export function priceLookupKey(input: {
  *
  * One provider product per *plan*, not per KORAS product. A provider product
  * is what a customer sees named on an invoice and what a tax code attaches to,
- * and "Acme" on an invoice says less than "Acme Pro". It also keeps the
- * monthly and yearly prices of one plan together, which is what a checkout
+ * and "Acme" on an invoice says less than "Acme Professional". It also keeps
+ * the monthly and yearly prices of one plan together, which is what a checkout
  * switches between.
  */
 export function productLookupKey(input: { productCode: string; planCode: string }): string {
-  return [input.productCode, input.planCode]
-    .map((segment) => segment.trim().toLowerCase())
-    .join('.')
+  return [segment('product', input.productCode), segment('plan', input.planCode)].join('_')
 }
 
 /**
  * A stable name for one operation on one subject, for the idempotency header.
  *
- * BILL-GAP-002. Inbound idempotency was already sound — the event id is stored
- * before the event is acted on — so this closes the one-directional gap.
- * Without it a retried create can produce a second object for one plan, which
- * is a money defect rather than a data defect: two prices for one plan is two
- * amounts a checkout could pick between.
+ * Inbound idempotency was already sound — the event id is stored before the
+ * event is acted on — so this closes the one-directional gap. Without it a
+ * retried create can produce a second object for one plan, which is a money
+ * defect rather than a data defect: two prices for one plan is two amounts a
+ * checkout could pick between.
  *
  * The amount is part of the subject for a price, and that is deliberate rather
  * than incidental. The same plan at a corrected amount is a *different*

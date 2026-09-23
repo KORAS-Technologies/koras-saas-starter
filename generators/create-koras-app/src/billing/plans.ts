@@ -48,6 +48,14 @@ export interface PlanRecord {
   expected_currency: string | null
   min_seats: number
   max_seats: number | null
+  /**
+   * What the flat fee includes. Added by the flat-fee correction, so a Control
+   * Plane older than that answers nothing here — read as null, written only
+   * when the catalogue states one, and never inferred.
+   */
+  included_users: number | null
+  /** The product's own name, as the platform holds it. What reads on an invoice. */
+  product_name: string | null
 }
 
 export class ControlPlaneError extends Error {
@@ -174,6 +182,43 @@ export class PlansClient {
     return this.correlationId
   }
 
+  /**
+   * The platform's own id for this product, for provider metadata.
+   *
+   * Read rather than remembered: the registration response carries it, but
+   * catalogue provisioning is a separate command run later and often by
+   * somebody else, so the only honest source is the platform itself.
+   *
+   * **Absent is not a failure.** The id is metadata — a thread back from a
+   * provider object to the registry entry that asked for it — and metadata is
+   * never an authorization source. A run that cannot read it provisions
+   * correct prices carrying one label fewer, which is better than refusing to
+   * price a product because a listing was slow.
+   */
+  async productId(productCode: string): Promise<string | null> {
+    let response: { status: number; body: string }
+    try {
+      response = await this.call('GET', '/api/platform/v1/products')
+    } catch {
+      return null
+    }
+    if (response.status !== 200) return null
+
+    try {
+      const parsed: unknown = JSON.parse(response.body)
+      if (!Array.isArray(parsed)) return null
+      for (const entry of parsed) {
+        const row = entry as Record<string, unknown>
+        if (String(row.code ?? '') === productCode && row.id !== undefined && row.id !== null) {
+          return String(row.id)
+        }
+      }
+    } catch {
+      return null
+    }
+    return null
+  }
+
   async listPlans(productCode: string): Promise<PlanRecord[]> {
     const path = `/api/platform/v1/plans?product_code=${encodeURIComponent(productCode)}`
     const response = await this.call('GET', path)
@@ -218,6 +263,8 @@ export class PlansClient {
         expected_currency: optionalString(row, 'expected_currency'),
         min_seats: row.min_seats === null || row.min_seats === undefined ? 1 : Number(row.min_seats),
         max_seats: optionalNumber(row, 'max_seats'),
+        included_users: optionalNumber(row, 'included_users'),
+        product_name: optionalString(row, 'product_name'),
       }
     })
   }
@@ -244,6 +291,7 @@ export class PlansClient {
       expected_currency: plan.expected_currency,
       min_seats: plan.min_seats,
       max_seats: plan.max_seats,
+      included_users: plan.included_users,
     })
 
     if (response.status < 200 || response.status >= 300) {

@@ -5,7 +5,13 @@ import { join } from 'node:path'
 import { generateKeyPairSync } from 'node:crypto'
 
 import { runBillingProvision, mergePlan, sameRow } from '../src/billing/index.js'
-import { priceLookupKey, idempotencyKey } from '../src/billing/keys.js'
+import {
+  addonLookupKey,
+  idempotencyKey,
+  priceLookupKey,
+  EXTRA_USER_SEGMENT,
+  LookupKeyError,
+} from '../src/billing/keys.js'
 import {
   parseBillingCatalogue,
   declaredButInert,
@@ -73,6 +79,9 @@ class Estate {
 
   /** Overridable so a test can make one endpoint fail without faking the rest. */
   stripeStatusOverride: { path: string; status: number; body: string } | null = null
+
+  /** What the platform's product listing answers. 200 unless a test says otherwise. */
+  productsStatus = 200
 
   get writes(): Call[] {
     return this.calls.filter((call) => call.method === 'POST' || call.method === 'PUT')
@@ -165,6 +174,11 @@ class Estate {
 
     // ── Control Plane ───────────────────────────────────────────────────────
 
+    if (url.endsWith('/api/platform/v1/products') && method === 'GET') {
+      if (this.productsStatus !== 200) return respond(this.productsStatus, { detail: 'Forbidden' })
+      return respond(200, [{ id: 'prod-uuid-1', code: 'acme', name: 'Acme' }])
+    }
+
     if (url.includes('/api/platform/v1/plans') && method === 'GET') {
       return respond(200, this.plans)
     }
@@ -204,6 +218,8 @@ function plan(code: string, overrides: Partial<PlanRecord> = {}): PlanRecord {
     expected_currency: null,
     min_seats: 1,
     max_seats: null,
+    included_users: null,
+    product_name: 'Acme',
     ...overrides,
   }
 }
@@ -262,9 +278,9 @@ describe('the commercial catalogue, provisioned', () => {
     // the plan is not sold yearly rather than an omission.
     expect(estate.prices).toHaveLength(3)
     expect(estate.prices.map((price) => price.lookup_key).sort()).toEqual([
-      'acme.pro.month.usd',
-      'acme.starter.month.usd',
-      'acme.starter.year.usd',
+      'acme_pro_monthly_usd',
+      'acme_starter_monthly_usd',
+      'acme_starter_yearly_usd',
     ])
 
     const starter = estate.plans.find((p) => p.code === 'starter')!
@@ -514,12 +530,52 @@ describe('the environment guard', () => {
 })
 
 describe('lookup and idempotency keys', () => {
-  it('carries the currency from the first key', () => {
-    // Present before this estate sells in a second currency, so that adding one
-    // is an addition rather than a re-key of every existing price.
+  it('mints the exact shape the Control Plane contract specifies', () => {
+    // Pinned as literal strings rather than recomputed. The platform owns this
+    // contract and implements it in Python; this is a second implementation of
+    // one rule, so a test that reproduced the rule would drift in the same
+    // direction as the code and agree with itself forever.
     expect(
       priceLookupKey({ productCode: 'acme', planCode: 'pro', interval: 'month', currency: 'usd' }),
-    ).toBe('acme.pro.month.usd')
+    ).toBe('acme_pro_monthly_usd')
+    expect(
+      priceLookupKey({ productCode: 'acme', planCode: 'starter', interval: 'year', currency: 'usd' }),
+    ).toBe('acme_starter_yearly_usd')
+    // A hyphenated product keeps its own name, and the four parts stay
+    // unambiguous to anything that splits on an underscore.
+    expect(
+      priceLookupKey({
+        productCode: 'koras-e2e-shop',
+        planCode: 'business',
+        interval: 'month',
+        currency: 'usd',
+      }),
+    ).toBe('koras-e2e-shop_business_monthly_usd')
+  })
+
+  it('gives the add-on the same four parts with the plan segment replaced', () => {
+    expect(
+      addonLookupKey({
+        productCode: 'acme',
+        addonCode: EXTRA_USER_SEGMENT,
+        interval: 'month',
+        currency: 'usd',
+      }),
+    ).toBe('acme_extra-user_monthly_usd')
+  })
+
+  it('refuses a segment carrying the separator', () => {
+    // An underscore inside a segment makes the key ambiguous to everything
+    // that reads it by splitting, including a person. This is why the add-on
+    // is one hyphenated word rather than two underscored ones.
+    expect(() =>
+      priceLookupKey({
+        productCode: 'acme',
+        planCode: 'extra_user',
+        interval: 'month',
+        currency: 'usd',
+      }),
+    ).toThrow(LookupKeyError)
   })
 
   it("gives one plan's two intervals different keys", () => {
@@ -988,9 +1044,15 @@ describe('the catalogue file the generator writes', () => {
     // shipped a declaration that looked live and was inert; what makes this
     // acceptable rather than a third time is that every run says so.
     const inert = declaredButInert(outcome.catalogue).join(' / ')
-    expect(inert).toContain('included_users')
     expect(inert).toContain('limits')
     expect(inert).toContain('additional_user')
+
+    // `included_users` must NOT be listed. It was, until the flat-fee
+    // correction and the catalogue sync shipped; it is written onto the plan
+    // and enforced now. A stale entry here is the same defect as a missing
+    // one arriving from the other side -- it tells somebody a control does
+    // nothing when it does.
+    expect(inert).not.toContain('included_users')
   })
 })
 
@@ -1171,5 +1233,159 @@ describe('the schema Phase 1 introduced', () => {
     if (!outcome.ok) return
     expect(outcome.catalogue.catalogueVersion).toBe(1)
     expect(outcome.catalogue.plans[0].planVersion).toBe(1)
+  })
+})
+
+describe('what Phase 3 provisions', () => {
+  const WITH_EXTRA_SEAT = `
+version: 1
+catalogue_version: 4
+currency: usd
+additional_user:
+  monthly_price_cents: 2500
+  annual_price_cents: 25000
+plans:
+  starter:
+    name: Starter
+    plan_version: 2
+    monthly_price_cents: 9900
+    annual_price_cents: 99000
+    included_users: 3
+`
+
+  it('creates the extra-seat prices, under their own provider product', async () => {
+    const estate = new Estate()
+    estate.plans = [plan('starter')]
+    writeCatalogue(WITH_EXTRA_SEAT)
+
+    const report = await run(estate)
+
+    expect(report.kind).toBe('provisioned')
+    if (report.kind !== 'provisioned') return
+
+    expect(estate.prices.map((p) => p.lookup_key).sort()).toEqual([
+      'acme_extra-user_monthly_usd',
+      'acme_extra-user_yearly_usd',
+      'acme_starter_monthly_usd',
+      'acme_starter_yearly_usd',
+    ])
+
+    // Its own provider product, not hung off a plan's. A seat is not a tier,
+    // and an invoice line naming "Acme Starter" for an extra user would be
+    // wrong in the one place a customer reads.
+    expect([...estate.products.keys()].sort()).toEqual(['koras_acme_extra_user', 'koras_acme_starter'])
+    expect(estate.products.get('koras_acme_extra_user')!.name).toBe(
+      'Acme Additional Internal User',
+    )
+
+    expect(report.extraUser?.month).toMatchObject({ kind: 'created', amount: 2500 })
+    expect(report.extraUser?.year).toMatchObject({ kind: 'created', amount: 25000 })
+  })
+
+  it('writes nothing to the Control Plane for the extra seat', async () => {
+    const estate = new Estate()
+    estate.plans = [plan('starter')]
+    writeCatalogue(WITH_EXTRA_SEAT)
+
+    await run(estate)
+
+    // There is no column to hold an add-on price, and inventing one here
+    // would be the factory deciding another repository's schema. The plan row
+    // must carry only the plan's own prices.
+    const written = estate.plans.find((p) => p.code === 'starter')!
+    expect(Object.keys(written).filter((k) => k.includes('extra'))).toEqual([])
+    expect(written.price_id_month).toMatch(/^price_/)
+  })
+
+  it('syncs what the plan includes to the Control Plane', async () => {
+    const estate = new Estate()
+    estate.plans = [plan('starter', { included_users: null })]
+    writeCatalogue(WITH_EXTRA_SEAT)
+
+    await run(estate)
+
+    expect(estate.plans.find((p) => p.code === 'starter')!.included_users).toBe(3)
+  })
+
+  it('leaves the platform default alone when the catalogue states nothing', async () => {
+    const estate = new Estate()
+    // The platform seeded three. A catalogue that says nothing about the
+    // included count is not a catalogue saying zero, and overruling a seeded
+    // default with silence is how a product loses seats it was sold.
+    estate.plans = [plan('starter', { included_users: 3 })]
+    writeCatalogue(`
+version: 1
+currency: usd
+plans:
+  starter:
+    monthly_price_cents: 9900
+`)
+
+    await run(estate)
+
+    expect(estate.plans.find((p) => p.code === 'starter')!.included_users).toBe(3)
+  })
+
+  it('labels every provider object with the standard metadata', async () => {
+    const estate = new Estate()
+    estate.plans = [plan('starter')]
+    writeCatalogue(WITH_EXTRA_SEAT)
+
+    await run(estate)
+
+    const priceWrite = estate.calls.find(
+      (call) => call.method === 'POST' && call.url.endsWith('/v1/prices'),
+    )!
+    const form = new URLSearchParams(priceWrite.body ?? '')
+
+    expect(form.get('metadata[platform]')).toBe('koras')
+    expect(form.get('metadata[application]')).toBe('acme')
+    expect(form.get('metadata[environment]')).toBe('dev')
+    expect(form.get('metadata[plan_code]')).toBe('starter')
+    expect(form.get('metadata[plan_version]')).toBe('2')
+    expect(form.get('metadata[catalog_version]')).toBe('4')
+    expect(form.get('metadata[billing_interval]')).toBe('month')
+    // Read from the platform rather than remembered from a registration this
+    // command did not perform.
+    expect(form.get('metadata[product_registration_id]')).toBe('prod-uuid-1')
+  })
+
+  it('provisions correct prices when the product id cannot be read', async () => {
+    const estate = new Estate()
+    estate.plans = [plan('starter')]
+    writeCatalogue(WITH_EXTRA_SEAT)
+    // The listing is restricted to staff and could fail for reasons that have
+    // nothing to do with pricing. Metadata is a label, never an authorization
+    // source, so one label fewer beats refusing to price the product.
+    estate.productsStatus = 403
+
+    const report = await run(estate)
+
+    expect(report.kind).toBe('provisioned')
+    const priceWrite = estate.calls.find(
+      (call) => call.method === 'POST' && call.url.endsWith('/v1/prices'),
+    )!
+    const form = new URLSearchParams(priceWrite.body ?? '')
+    expect(form.get('metadata[product_registration_id]')).toBeNull()
+    expect(form.get('metadata[platform]')).toBe('koras')
+  })
+
+  it('a second run creates no extra-seat price either', async () => {
+    const estate = new Estate()
+    estate.plans = [plan('starter')]
+    writeCatalogue(WITH_EXTRA_SEAT)
+
+    await run(estate)
+    const after = estate.prices.length
+    estate.calls.length = 0
+
+    const second = await run(estate)
+
+    expect(second.kind).toBe('provisioned')
+    if (second.kind !== 'provisioned') return
+    expect(second.noop).toBe(true)
+    expect(estate.mutatingWrites).toEqual([])
+    expect(estate.prices).toHaveLength(after)
+    expect(second.extraUser?.month?.kind).toBe('reused')
   })
 })
