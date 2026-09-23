@@ -826,6 +826,19 @@ not own; a caller sending only price fields would silently reset somebody's
 administration. That is asserted by a test that mutation-checks, not by a
 comment.
 
+**Phase 1 of that standard shipped on 2026-09-22.** The catalogue file now
+ships with the platform's standard pricing already in it — four tiers, flat
+fees including three, ten and twenty-five internal users, Enterprise negotiated
+and unpriced — so a product that wants the standard does nothing and one that
+differs edits a number. The schema is the full shape rather than what the next
+phase needs, because a field added later is a field every existing product has
+to re-edit.
+
+**Most of that schema is acted on by nothing**, which is the arrangement this
+repository has shipped wrongly twice in four days. What makes it different is
+that the command prints exactly which declared fields it did not act on, on
+every run rather than only a dry run. Stated inertness is not a promise.
+
 **It is superseded in shape, the same day it was built.** A platform standard
 for product pricing was specified on 2026-09-22 — four tiers with included
 internal users, a standard additional-seat price, per-product storage and AI

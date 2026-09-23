@@ -586,7 +586,10 @@ async function runProvisionBilling(
 
     case 'planned':
       console.log(`\n  Dry run — nothing was sent.\n`)
-      for (const line of report.lines) console.log(`  ${line}`)
+      // A blank separator line must stay blank. Indenting it would give it two
+      // spaces of trailing whitespace, which is invisible in a terminal and
+      // shows up as a diff the first time anybody captures this into a file.
+      for (const line of report.lines) console.log(line === '' ? '' : `  ${line}`)
       return
 
     case 'failed':
@@ -634,10 +637,26 @@ async function runProvisionBilling(
         }
       }
 
+      if (report.custom.length > 0) {
+        console.log(
+          `\n  Negotiated tiers, on the catalogue with no price: ${report.custom.join(', ')}`,
+        )
+      }
+
       if (report.unpriced.length > 0) {
         console.log(
           `\n  Declared with no amount, so left entirely alone: ${report.unpriced.join(', ')}`,
         )
+      }
+
+      // Printed on every successful run, not only on a dry run. This is what
+      // keeps a declared-but-inert field from becoming the failure this
+      // repository has shipped twice -- a setting rendered on a page and
+      // honoured by nothing. Inertness that is stated is not a promise;
+      // inertness a reader has to infer from the absence of an effect is.
+      if (report.inert.length > 0) {
+        console.log('\n  Declared in the catalogue and acted on by nothing yet:')
+        for (const entry of report.inert) console.log(`    - ${entry}`)
       }
 
       console.log(

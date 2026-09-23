@@ -5,6 +5,7 @@ import yaml from 'js-yaml'
 import { resolveBearer } from '../registration/token.js'
 import {
   BILLING_CATALOGUE_PATH,
+  declaredButInert,
   parseBillingCatalogue,
   type CataloguePlan,
   type ParsedCatalogue,
@@ -70,6 +71,10 @@ export type BillingReport =
       plans: PlanOutcome[]
       /** Plans in the catalogue file declaring no amount at all. */
       unpriced: string[]
+      /** Tiers declared negotiated: on the catalogue, deliberately unpriced. */
+      custom: string[]
+      /** Declared fields nothing acts on yet, printed so inertness is stated. */
+      inert: string[]
       /** True when nothing at all was created or written. */
       noop: boolean
     }
@@ -276,10 +281,14 @@ function planLines(
   environment: Environment,
 ): string[] {
   const lines: string[] = [
-    `Target: ${environment}, currency ${catalogue.currency}, tax code ${catalogue.taxCode}`,
+    `Target: ${environment}, currency ${catalogue.currency}, tax code ${catalogue.taxCode}, ` +
+      `catalogue version ${catalogue.catalogueVersion}`,
   ]
 
   for (const plan of catalogue.plans) {
+    const included =
+      plan.includedUsers === null ? '' : `, includes ${plan.includedUsers} internal users`
+    lines.push(`  ${plan.name ?? plan.code}${included}`)
     for (const { interval, amount } of intervalsOf(plan)) {
       const key = priceLookupKey({
         productCode,
@@ -287,15 +296,30 @@ function planLines(
         interval,
         currency: catalogue.currency,
       })
-      lines.push(`  ${key} -> ${amount} ${catalogue.currency} per ${interval}`)
+      // The amount is printed in major units beside the minor ones. Reading
+      // 99000 and 990.00 together is what catches a factor-of-a-hundred error
+      // before it becomes a price somebody is charged; reading either alone is
+      // what lets one through.
+      lines.push(`    ${key} -> ${amount} (${(amount / 100).toFixed(2)} ${catalogue.currency})`)
     }
+  }
+
+  for (const plan of catalogue.custom) {
+    lines.push(`  ${plan.name ?? plan.code}: negotiated; no price is created`)
   }
 
   for (const code of catalogue.unpriced) {
     lines.push(`  ${code}: no amount declared; no price, no intent, plan left alone`)
   }
 
+  const inert = declaredButInert(catalogue)
+  if (inert.length > 0) {
+    lines.push('', 'Declared in the catalogue and acted on by nothing yet:')
+    for (const entry of inert) lines.push(`  - ${entry}`)
+  }
+
   lines.push(
+    '',
     'Nothing was sent. A dry run reads nothing from the provider either, so it cannot say ' +
       'which of these already exist.',
   )
@@ -425,7 +449,11 @@ export async function runBillingProvision(options: RunBillingOptions): Promise<B
         const outcome = await ensureInterval(provider, {
           productCode: options.productCode,
           planCode: plan.code,
-          planName: existing.name,
+          // The catalogue's name when it states one, the Control Plane's
+          // otherwise. The provider product is what a customer sees on an
+          // invoice, and "Acme Professional" says more than "Acme Pro" --
+          // which is the one place the plan-code decision surfaces.
+          planName: plan.name ?? existing.name,
           interval,
           amount,
           currency: catalogue.catalogue.currency,
@@ -452,6 +480,8 @@ export async function runBillingProvision(options: RunBillingOptions): Promise<B
       correlationId,
       plans: outcomes,
       unpriced: catalogue.catalogue.unpriced,
+      custom: catalogue.catalogue.custom.map((plan) => plan.code),
+      inert: declaredButInert(catalogue.catalogue),
       noop: !wroteAnything,
     }
   } catch (err) {

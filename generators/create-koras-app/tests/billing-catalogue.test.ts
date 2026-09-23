@@ -6,7 +6,11 @@ import { generateKeyPairSync } from 'node:crypto'
 
 import { runBillingProvision, mergePlan, sameRow } from '../src/billing/index.js'
 import { priceLookupKey, idempotencyKey } from '../src/billing/keys.js'
-import { parseBillingCatalogue, BILLING_CATALOGUE_PATH } from '../src/billing/catalogue.js'
+import {
+  parseBillingCatalogue,
+  declaredButInert,
+  BILLING_CATALOGUE_PATH,
+} from '../src/billing/catalogue.js'
 import { checkKeyEnvironment, resolveBillingConfig } from '../src/billing/config.js'
 import { encodeForm } from '../src/billing/stripe.js'
 import { redact } from '../src/redact.js'
@@ -217,11 +221,15 @@ currency: usd
 tax_code: txcd_10103001
 plans:
   starter:
-    monthly: 900
-    yearly: 9000
+    name: Starter
+    monthly_price_cents: 900
+    annual_price_cents: 9000
+    included_users: 3
   pro:
-    monthly: 2900
-    yearly: null
+    name: Professional
+    monthly_price_cents: 2900
+    annual_price_cents: null
+    included_users: 10
 `
 
 beforeEach(() => {
@@ -325,7 +333,7 @@ version: 1
 currency: usd
 plans:
   starter:
-    monthly: 900
+    monthly_price_cents: 900
 `)
 
     await run(estate)
@@ -346,7 +354,7 @@ version: 1
 currency: usd
 plans:
   starter:
-    monthly: 900
+    monthly_price_cents: 900
 `)
     await run(estate)
 
@@ -358,7 +366,7 @@ version: 1
 currency: usd
 plans:
   starter:
-    monthly: 1900
+    monthly_price_cents: 1900
 `)
     const report = await run(estate)
 
@@ -394,9 +402,9 @@ version: 1
 currency: usd
 plans:
   startr:
-    monthly: 900
+    monthly_price_cents: 900
   professional:
-    monthly: 2900
+    monthly_price_cents: 2900
 `)
 
     const report = await run(estate)
@@ -553,7 +561,7 @@ version: 1
 currency: usd
 plans:
   starter:
-    monthly: 900
+    monthly_price_cents: 900
 `)
     await run(estate)
 
@@ -592,7 +600,7 @@ currency: usd
 tax_code: txcd_10103001
 plans:
   starter:
-    monthly: 900
+    monthly_price_cents: 900
 `)
     await run(estate)
 
@@ -611,7 +619,7 @@ version: 1
 currency: usd
 plans:
   starter:
-    monthly: 900
+    monthly_price_cents: 900
 `)
     await run(estate)
 
@@ -632,7 +640,7 @@ describe('the catalogue file', () => {
 
   it('tells an unfilled catalogue apart from one that says nothing is sold', () => {
     const outcome = parseBillingCatalogue(
-      { version: 1, currency: 'usd', plans: { free: { monthly: null, yearly: null } } },
+      { version: 1, currency: 'usd', plans: { free: { monthly_price_cents: null } } },
       'x.yaml',
     )
     expect(outcome.ok).toBe(false)
@@ -643,7 +651,7 @@ describe('the catalogue file', () => {
 
   it('refuses a fractional amount', () => {
     const outcome = parseBillingCatalogue(
-      { version: 1, currency: 'usd', plans: { pro: { monthly: 9.99 } } },
+      { version: 1, currency: 'usd', plans: { pro: { monthly_price_cents: 9.99 } } },
       'x.yaml',
     )
     expect(outcome.ok).toBe(false)
@@ -653,7 +661,7 @@ describe('the catalogue file', () => {
 
   it('refuses zero, which is what an unset variable interpolates to', () => {
     const outcome = parseBillingCatalogue(
-      { version: 1, currency: 'usd', plans: { pro: { monthly: 0 } } },
+      { version: 1, currency: 'usd', plans: { pro: { monthly_price_cents: 0 } } },
       'x.yaml',
     )
     expect(outcome.ok).toBe(false)
@@ -663,7 +671,7 @@ describe('the catalogue file', () => {
     // A `month:` where `monthly:` was meant would otherwise be dropped
     // silently, and the plan would be provisioned with no price at all.
     const outcome = parseBillingCatalogue(
-      { version: 1, currency: 'usd', plans: { pro: { month: 900 } } },
+      { version: 1, currency: 'usd', plans: { pro: { monthly_price: 900 } } },
       'x.yaml',
     )
     expect(outcome.ok).toBe(false)
@@ -672,7 +680,7 @@ describe('the catalogue file', () => {
   it('refuses a currency that is not ISO 4217', () => {
     expect(
       parseBillingCatalogue(
-        { version: 1, currency: 'dollars', plans: { pro: { monthly: 900 } } },
+        { version: 1, currency: 'dollars', plans: { pro: { monthly_price_cents: 900 } } },
         'x.yaml',
       ).ok,
     ).toBe(false)
@@ -683,7 +691,11 @@ describe('the catalogue file', () => {
       {
         version: 1,
         currency: 'usd',
-        plans: { pro: { monthly: 2900 }, business: { monthly: 9900 }, starter: { monthly: 900 } },
+        plans: {
+          pro: { monthly_price_cents: 2900 },
+          business: { monthly_price_cents: 9900 },
+          starter: { monthly_price_cents: 900 },
+        },
       },
       'x.yaml',
     )
@@ -880,7 +892,7 @@ describe('the catalogue file the generator writes', () => {
     expect(render('control-plane')).not.toContain(BILLING_CATALOGUE_PATH)
   })
 
-  it('is written with no amounts, so provisioning it refuses rather than guessing', async () => {
+  it('ships the platform standard, and it is usable exactly as generated', async () => {
     const yamlModule = await import('js-yaml')
     const { renderBillingCatalogue } = await import('../src/generation/billing-catalogue.js')
     const { buildContext } = await import('../src/generation/context.js')
@@ -902,17 +914,262 @@ describe('the catalogue file the generator writes', () => {
     )
 
     // It has to parse -- a generated file that is not valid YAML would fail at
-    // the least helpful moment -- and it has to be refused, because a product
-    // does not know what it costs and a plausible default would be provisioned
-    // by whoever ran the step without reading it.
+    // the least helpful moment -- and it has to be *accepted*, which is the
+    // reversal: the first version shipped empty and was refused on purpose.
     const document = yamlModule.default.load(rendered)
     const outcome = parseBillingCatalogue(document, 'generated')
-    expect(outcome.ok).toBe(false)
-    if (outcome.ok) return
-    expect(outcome.problem.detail).toContain('declares no plans')
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+
+    // The standard, in minor units. Asserted as numbers rather than by reading
+    // the text, because the failure worth catching is a factor of a hundred and
+    // a substring match would pass on either.
+    const byCode = new Map(outcome.catalogue.plans.map((plan) => [plan.code, plan]))
+    expect(byCode.get('starter')).toMatchObject({
+      monthly: 9_900,
+      yearly: 99_000,
+      includedUsers: 3,
+    })
+    expect(byCode.get('pro')).toMatchObject({
+      name: 'Professional',
+      monthly: 19_900,
+      yearly: 199_000,
+      includedUsers: 10,
+    })
+    expect(byCode.get('business')).toMatchObject({
+      monthly: 49_900,
+      yearly: 499_000,
+      includedUsers: 25,
+    })
+
+    // The Professional tier's *code* is `pro`. This is the one place that
+    // decision is visible, and a later reader who has seen the standard and not
+    // the decision is exactly who would "correct" it.
+    expect(byCode.has('professional')).toBe(false)
+
+    // Enterprise is on the catalogue with no price: an amount invented here
+    // would be a number a salesperson has to contradict.
+    expect(outcome.catalogue.custom.map((plan) => plan.code)).toEqual(['enterprise'])
+
+    expect(outcome.catalogue.additionalUser).toEqual({ monthly: 2_500, yearly: 25_000 })
 
     // And it carries no credential, by the same rule that keeps one out of
     // every other file the generator writes.
     expect(rendered).not.toMatch(/sk_(live|test)_/)
+  })
+
+  it('states, in the generated file, which declared fields nothing acts on', async () => {
+    const yamlModule = await import('js-yaml')
+    const { renderBillingCatalogue } = await import('../src/generation/billing-catalogue.js')
+    const { declaredButInert } = await import('../src/billing/catalogue.js')
+    const { buildContext } = await import('../src/generation/context.js')
+    const { loadProfile, resolveSelections } = await import('../src/profiles/index.js')
+
+    const { manifest, defaults } = loadProfile('product')
+    const rendered = renderBillingCatalogue(
+      buildContext({
+        projectName: 'Acme',
+        projectSlug: 'acme',
+        profile: 'product',
+        manifest,
+        defaults,
+        selections: resolveSelections(manifest, defaults),
+        outputDir: '.',
+        dryRun: true,
+        provision: false,
+      }),
+    )
+    const outcome = parseBillingCatalogue(yamlModule.default.load(rendered), 'generated')
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+
+    // The generated standard declares included users, limits and an extra-seat
+    // price, none of which anything acts on yet. This repository has twice
+    // shipped a declaration that looked live and was inert; what makes this
+    // acceptable rather than a third time is that every run says so.
+    const inert = declaredButInert(outcome.catalogue).join(' / ')
+    expect(inert).toContain('included_users')
+    expect(inert).toContain('limits')
+    expect(inert).toContain('additional_user')
+  })
+})
+
+describe('the schema Phase 1 introduced', () => {
+  const base = { version: 1 as const, currency: 'usd' }
+
+  it('refuses an amount key that is not in minor units by name', () => {
+    // `monthly_price: 99` is the factor-of-a-hundred error arriving as a
+    // misspelling. Accepting it would price the plan at 99 cents; ignoring it
+    // would price the plan at nothing. Refusing is the only safe answer.
+    //
+    // **The valid plan beside it is the whole test.** Alone, a misspelt plan
+    // is refused whether or not the schema is strict -- it ends up with no
+    // price, and a catalogue with no priced plan is refused for that reason
+    // instead. So the version without `starter` here passed with strictness
+    // removed, which is an assertion asking what the schema says rather than
+    // what it does. With a priced plan present, only strictness can refuse.
+    const outcome = parseBillingCatalogue(
+      {
+        ...base,
+        plans: {
+          starter: { monthly_price_cents: 9900 },
+          pro: { monthly_price: 99 },
+        },
+      },
+      'x.yaml',
+    )
+    expect(outcome.ok).toBe(false)
+    if (outcome.ok) return
+    expect(outcome.problem.detail).toContain('pro')
+    // The refusal must name the key, not the catalogue being empty.
+    expect(outcome.problem.detail).not.toContain('names no priced plan')
+  })
+
+  it('refuses an unknown key on a plan that is otherwise valid', () => {
+    // The same protection, for a key that is not an amount at all. A plan
+    // carrying `included_seats` where `included_users` was meant would
+    // otherwise be provisioned correctly and include nothing.
+    const outcome = parseBillingCatalogue(
+      {
+        ...base,
+        plans: {
+          starter: { monthly_price_cents: 9900 },
+          pro: { monthly_price_cents: 19900, included_seats: 10 },
+        },
+      },
+      'x.yaml',
+    )
+    expect(outcome.ok).toBe(false)
+  })
+
+  it('accepts a negotiated tier and creates no price for it', () => {
+    const outcome = parseBillingCatalogue(
+      {
+        ...base,
+        plans: {
+          starter: { monthly_price_cents: 9900, included_users: 3 },
+          enterprise: { custom: true },
+        },
+      },
+      'x.yaml',
+    )
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.catalogue.plans.map((p) => p.code)).toEqual(['starter'])
+    expect(outcome.catalogue.custom.map((p) => p.code)).toEqual(['enterprise'])
+  })
+
+  it('refuses a negotiated tier that also names a price', () => {
+    // Both at once is a contradiction: it is either sold at a number or it is
+    // negotiated. Silently preferring one would make the file mean something
+    // other than it says -- and which one it preferred would depend on the
+    // order of a union, which is not where a commercial decision should live.
+    //
+    // A priced plan sits beside it for the same reason as the test above:
+    // alone, this is refused as a catalogue with no priced plan whether the
+    // schema is strict or not.
+    const outcome = parseBillingCatalogue(
+      {
+        ...base,
+        plans: {
+          starter: { monthly_price_cents: 9900 },
+          enterprise: { custom: true, monthly_price_cents: 99900 },
+        },
+      },
+      'x.yaml',
+    )
+    expect(outcome.ok).toBe(false)
+    if (outcome.ok) return
+    expect(outcome.problem.detail).not.toContain('names no priced plan')
+  })
+
+  it('says so when every tier is negotiated, rather than reporting an empty file', () => {
+    const outcome = parseBillingCatalogue(
+      { ...base, plans: { enterprise: { custom: true } } },
+      'x.yaml',
+    )
+    expect(outcome.ok).toBe(false)
+    if (outcome.ok) return
+    expect(outcome.problem.detail).toContain('negotiated')
+    expect(outcome.problem.detail).not.toContain('declares no plans')
+  })
+
+  it('refuses an included user count of zero', () => {
+    // A plan including nobody cannot be used, and zero is what an unset
+    // variable interpolates to.
+    expect(
+      parseBillingCatalogue(
+        { ...base, plans: { pro: { monthly_price_cents: 9900, included_users: 0 } } },
+        'x.yaml',
+      ).ok,
+    ).toBe(false)
+  })
+
+  it('takes limits as an open map, so a product-specific ceiling needs no schema change', () => {
+    const outcome = parseBillingCatalogue(
+      {
+        ...base,
+        plans: {
+          pro: {
+            monthly_price_cents: 19900,
+            limits: { 'storage.files': 50, 'workflows.runs': 10_000, 'api.calls': 250_000 },
+          },
+        },
+      },
+      'x.yaml',
+    )
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.catalogue.plans[0].limits).toEqual({
+      'storage.files': 50,
+      'workflows.runs': 10_000,
+      'api.calls': 250_000,
+    })
+  })
+
+  it('reads the standard extra seat, and treats an absent one as absent', () => {
+    const withSeat = parseBillingCatalogue(
+      {
+        ...base,
+        additional_user: { monthly_price_cents: 2500, annual_price_cents: 25000 },
+        plans: { starter: { monthly_price_cents: 9900 } },
+      },
+      'x.yaml',
+    )
+    expect(withSeat.ok).toBe(true)
+    if (!withSeat.ok) return
+    expect(withSeat.catalogue.additionalUser).toEqual({ monthly: 2500, yearly: 25000 })
+
+    const without = parseBillingCatalogue(
+      { ...base, plans: { starter: { monthly_price_cents: 9900 } } },
+      'x.yaml',
+    )
+    expect(without.ok).toBe(true)
+    if (!without.ok) return
+    expect(without.catalogue.additionalUser).toBeNull()
+  })
+
+  it('reports nothing inert for a catalogue that declares only prices', () => {
+    // The counterpart to the generated-file test: the inert list must be
+    // driven by what is declared, not printed unconditionally. A warning that
+    // always appears is one nobody reads.
+    const outcome = parseBillingCatalogue(
+      { ...base, plans: { starter: { monthly_price_cents: 9900 } } },
+      'x.yaml',
+    )
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(declaredButInert(outcome.catalogue)).toEqual([])
+  })
+
+  it('defaults the versions rather than requiring them', () => {
+    const outcome = parseBillingCatalogue(
+      { ...base, plans: { starter: { monthly_price_cents: 9900 } } },
+      'x.yaml',
+    )
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.catalogue.catalogueVersion).toBe(1)
+    expect(outcome.catalogue.plans[0].planVersion).toBe(1)
   })
 })

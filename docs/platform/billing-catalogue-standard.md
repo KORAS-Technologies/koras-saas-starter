@@ -418,11 +418,37 @@ place the naming decision above is visible. That is recorded here because it is
 exactly the kind of small deviation that gets "corrected" later by somebody who
 has read the standard and not the decision.
 
-**Phase 1 — the configuration schema.** The file, its validation, the standard
-defaults including the per-plan user count, and generation into every product
-that registers as one. Nothing talks to a provider. Exit: a generated product
-carries a catalogue that parses, and a hand-edited one is refused for every way
-of getting it wrong.
+**Phase 1 — the configuration schema. Built 2026-09-22.** The file, its
+validation, the standard defaults including the per-plan user count, and
+generation into every product that registers as one. Nothing talks to a
+provider.
+
+The schema is the full shape rather than what the next phase needs, because the
+brief's central requirement is that a product with different values must not
+mean different provisioning code — and a field added later is a field every
+existing product has to re-edit. So included users, an open limits map,
+per-plan entitlements, plan and catalogue versions and the standard extra seat
+are all accepted now, and most of them are acted on by nothing.
+
+**That is the arrangement this repository has shipped wrongly twice**, four
+days apart, in settings and then in notifications: a declaration rendered and
+honoured by nothing. What makes it acceptable here is that the command prints
+exactly which declared fields it did not act on, on **every** run and not only
+a dry run. Inertness that is stated is not a promise; inertness a reader infers
+from the absence of an effect is.
+
+**One test change is worth carrying.** Two assertions that a misspelt key is
+refused passed with the schema's strictness removed — because a plan with a
+misspelt amount ends up with no price, and a catalogue with no priced plan is
+refused for *that* reason instead. They asked what the schema said rather than
+what it did, which is the FW-HARDEN-001 shape. Both now put a valid priced plan
+beside the misspelt one, so only strictness can produce the refusal, and both
+go red when it is removed. Found by mutation-testing rather than by review.
+
+Exit, met: a generated product carries the standard, it parses, the amounts are
+the standard's, and a hand-edited one is refused for every way of getting it
+wrong — a misspelt amount key, a fractional amount, a zero, a negotiated tier
+that also names a price, a bad currency, and a plan including nobody.
 
 **Phase 2 — the flat-fee correction. Reordered on 2026-09-22 to sit here, and
 it is the change the ordering exists for.** The subscription quantity becomes
