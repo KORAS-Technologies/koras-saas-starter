@@ -604,13 +604,64 @@ here rather than left to be rediscovered, and neither blocks what was built:
 the terms are recorded, and `billing.catalogue` already compares the provider
 against the plan's intent.
 
-**Phase 5 — extra seats.** The additional-user price put on an actual
-subscription as a second line: checkout, the seat-change path, proration, the
-webhook. Exit: a customer on Starter with five users is billed $99 plus two at
-$25, observed on a real subscription.
+**Phase 5 — extra seats. Built 2026-09-23**, in `koras-control-plane`. The
+additional-user price is a **second line** on the subscription: the plan's own
+line stays at quantity one and the add-on line carries only the users *beyond*
+the included count. A customer on Starter with five users is billed $99 plus
+two at $25 rather than five times $99.
 
-**Between Phase 2 and Phase 5 the included-user count is a hard cap**, and that
-is a consequence rather than a choice. The destination decided on 2026-09-22 is
+**Signup is untouched.** A new customer buys the plan at its included count;
+seats are bought afterwards, through the portal's seat-change path, which is
+where somebody discovers they need a fourth. That keeps checkout — the one
+path a stranger with a card reaches — exactly as it was.
+
+**The two lines are told apart by lookup key**, which is the platform's own
+contract and is minted by the catalogue. Not by price id, which is per
+environment and would have to be threaded in from somewhere, and not by
+metadata, which is the same string with an extra way to be absent. **A price
+with no lookup key is not the add-on** — the safe direction, so a subscription
+somebody built by hand in a dashboard bills as it always did rather than
+having its only line mistaken for a seat line and deleted.
+
+**The seat price comes from the catalogue version in effect**, not from the
+plan. A seat is priced by the terms a customer was sold, which is what Phase 4
+exists to record — the first thing to consume it.
+
+**Unstated means unchanged, and that is load-bearing.** A plan change that says
+nothing about seats leaves the seat line alone. The alternative reading —
+absent means none — would make every upgrade silently cancel the overage a
+customer had bought.
+
+**Three refusals and a removal.** A seat asked for with no recorded price is
+refused rather than given away: a seat sold at no price is revenue nobody
+decided to forgo, and the catalogue is where that decision belongs. Going back
+to the included count **deletes** the line rather than setting it to zero,
+which Stripe would refuse anyway and which is also the honest record.
+
+**The deferred path restates both lines.** A schedule phase carries every line,
+not only the one changing, so leaving the seat line out of the *current* phase
+would end it at the period boundary because something else changed — a customer
+downgrading their interval would quietly stop paying for, and lose, seats they
+had.
+
+**The seat count got its own writer.** Phase 2 removed seats from the
+provider-state write so that nothing reading the provider could write one; with
+a hard cap nothing needed to write it at all. Now that seats can change there is
+a dedicated statement for it — described rather than named here, because it is
+another repository's internal — called at the one place the decision is made. The provider
+knows the plan line at one and the add-on at the overage, and neither is the
+number a member check compares against.
+
+Exit, partly met: 14 tests driving the real adapter against recorded provider
+payloads, four of them mutation-proven — the plan line stays at one, unstated
+seats are left alone, zero deletes rather than zeroes, and the deferred phase
+keeps the seat line. **Not observed on a real subscription**, which needs the
+catalogue provisioned first; that is F29.
+
+**Between Phase 2 and Phase 5 the included-user count was a hard cap**, and
+that was a consequence rather than a choice. Phase 5 shipped on 2026-09-23, so
+the cap is soft now: a fourth user on Starter is a charge rather than a
+refusal, wherever the catalogue records what one costs. The destination decided on 2026-09-22 is
 a soft cap — a fourth user on Starter costs $25 — but nothing can bill that
 fourth user until Phase 5 exists. The only alternatives in the meantime are to
 admit the user and not charge, which gives seats away silently, or to admit and

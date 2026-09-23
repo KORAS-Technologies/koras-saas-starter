@@ -954,10 +954,28 @@ $99 onto Starter is what lets the signup page sell it and multiply it. So the
 correction — quantity permanently one, the seat count kept by this platform
 rather than read back from the provider, the included count enforced — is
 Phase 2 there, **before** provisioning, and the two are one piece of work
-rather than a defect and its later fix. Extra seats at $25 are a separate line
-and are Phase 5; the included count is a hard cap from Phase 2 until Phase 5
-ships, which is a consequence of the ordering rather than a choice — decided
-2026-09-22, when the destination was settled as a soft cap.
+rather than a defect and its later fix. Extra seats at $25 are a separate line,
+and **Phase 5 shipped them on 2026-09-23**: the plan's own line stays at
+quantity one and a second line carries only the users beyond the included
+count, so Starter with five users bills $99 plus two at $25. The cap was hard
+between Phase 2 and Phase 5, which was a consequence of the ordering rather
+than a choice.
+
+**Three things about it are worth carrying.** The two lines are told apart by
+**lookup key** — the platform's own contract, minted by the catalogue — and a
+price carrying no lookup key is treated as the plan, so a subscription built by
+hand in a dashboard is never mistaken for a seat line and deleted. **Unstated
+means unchanged**: a plan change that says nothing about seats leaves the seat
+line alone, because the other reading would make every upgrade silently cancel
+the overage a customer bought. And a **schedule phase restates both lines**,
+since a phase carries every line rather than the one changing — leaving the
+seat line out of the current phase would end it at the period boundary because
+something unrelated changed.
+
+**The seat price comes from the catalogue version in effect**, not the plan: a
+seat is priced by the terms a customer was sold, which is Phase 4's table
+finding its first consumer. A seat asked for with no recorded price is refused
+rather than given away.
 
 **No live run has happened.** Forty-one tests drive the whole path against a
 fake estate — an identity provider, a payment provider and a Control Plane that
