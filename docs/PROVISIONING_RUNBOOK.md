@@ -89,6 +89,10 @@ pnpm create-koras-app <name> --profile product --provision-billing --output-dir 
 
 Notes that matter:
 
+- **Step 9 for a product that already exists needs one step in front of it.**
+  The file it reads is generator-written, and a product registered before the
+  catalogue existed has none. See **Provisioning the catalogue for a product
+  that already exists** below.
 - **Step 9 needs two credentials, set up in different ways.** The payment
   provider's key goes in Doppler once; your own staff token is exported per
   run and is never stored. **There is no service account for this and one
@@ -752,6 +756,119 @@ references onto the plans and records what each plan was sold as. Neither
 credential is logged, and neither appears in any failure message: the redactor
 knows the provider's key prefixes and the client adds the token in hand to what
 it must never print.
+
+
+## Provisioning the catalogue for a product that already exists
+
+Step 9 above is the sequence for a product being provisioned from nothing. A
+product registered before the catalogue existed needs one step in front of it,
+because the file step 9 reads is generator-written and that product was
+generated before there was one to write.
+
+Everything else is identical, credentials included — see **Secrets for step 9**.
+
+### 1. Give it the catalogue file
+
+```bash
+cd /c/repos/Projects/koras-saas-starter
+
+# Preview. Writes nothing.
+pnpm create-koras-app <name> --profile product \
+  --refresh .koras/billing-catalogue.yaml --dry-run --output-dir ../
+
+# Write it.
+pnpm create-koras-app <name> --profile product \
+  --refresh .koras/billing-catalogue.yaml --output-dir ../
+```
+
+`--output-dir ../` because a real product sits beside the starter rather than
+under `output/`. It reports `Refreshed 1 file(s)` and touches nothing else:
+`--refresh` writes only the paths it is given.
+
+**Safe to re-run.** A file already matching what the generator would write is
+reported unchanged rather than rewritten, so this does not clobber amounts
+somebody has edited.
+
+### 2. Read it, and change what differs
+
+It arrives holding the platform standard, so a product selling at the standard
+needs no edit at all. Check the amounts and the included counts against what
+this product actually sells, and change the numbers that differ.
+
+**The storage figures are the platform's, not this product's.** They are
+restated in the file so a product can override them in the one place a product
+overrides anything — and a product whose storage differs from 5, 50 and 250
+gigabytes has to say so here.
+
+**`limits` is recorded and acted on by nothing yet.** The platform holds one
+set of limits shared by every product; a per-product value has nowhere to go
+until that changes. Editing it records the intent and changes no customer's
+storage today. The command lists this on every run, which is the point — an
+inert field that says so is not a promise.
+
+### 3. Dry run
+
+```bash
+pnpm create-koras-app <name> --profile product \
+  --provision-billing --dry-run --output-dir ../
+```
+
+**Read it before going further.** It prints every amount in minor units *and*
+in major units side by side — `9900 (99.00 usd)` — which is the arrangement
+that catches a factor-of-a-hundred error before it becomes a price somebody is
+charged. It also prints every lookup key and every declared field nothing acts
+on yet.
+
+It sends nothing, and it reads nothing from the provider either, so it cannot
+say which of those already exist. That is what the run itself reports.
+
+### 4. Provision
+
+```bash
+pnpm create-koras-app <name> --profile product \
+  --provision-billing --output-dir ../
+```
+
+For a catalogue on the standard shape that is: a provider product and two
+prices per priced tier, one more product and two prices for the additional
+internal user, the price references and recorded amounts written onto each
+plan, and one catalogue version recorded per plan.
+
+Nothing is deleted, archived or re-priced. The negotiated tier gets no price.
+
+### 5. Run it a second time
+
+```bash
+pnpm create-koras-app <name> --profile product \
+  --provision-billing --output-dir ../
+```
+
+**Expect `already current; nothing was created or written`.**
+
+This is the step worth doing rather than assuming. Idempotence is asserted
+against a fake provider in the factory's own tests, and a fake answers what it
+was told to answer; the second run against a real account is the only thing
+that shows a price is found by its lookup key rather than created again. A
+second run that creates anything is a defect, not a quirk.
+
+### If it refuses
+
+Nothing is left half-done. Prices are addressed by lookup key, so a re-run
+finds what the last one made and carries on from there.
+
+| What you see | What it is |
+|---|---|
+| `Skipped: … is not in this project` | Step 1 has not been done |
+| `declares no plans` | The file was emptied rather than edited |
+| HTTP 401 | The staff token expired, or the sign-in used no second factor |
+| HTTP 403 | The account is staff but does not hold the billing role |
+| A plan code refused | The catalogue names a tier the Control Plane does not hold for this product. It lists both sides; a mistyped code is refused rather than created, because the endpoint would otherwise make a real priced tier that grants nothing |
+| A live key refused | The provider key is a live one and the target is not production |
+
+**A failure after the prices exist says so.** If the provider work succeeded and
+only the record of what was sold did not, the message says that rather than
+reporting a total failure — the difference between a safe retry and somebody
+going to look for prices that are already there.
 
 
 ## 2. Estate prerequisites

@@ -334,6 +334,12 @@ an audited event.
 Docoris and Lexveria are registered and have the four plans. They need the
 catalogue file, filled in, and one run of the command.
 
+**The steps are written down** rather than left to be reconstructed:
+`docs/PROVISIONING_RUNBOOK.md`, under "Provisioning the catalogue for a product
+that already exists". The one thing that differs from a new product is the
+first step — the catalogue file is generator-written, so a product generated
+before it existed has to be given one with `--refresh`.
+
 **Docoris needs something else first, and it is unrelated to billing.** Its
 starter-range migrations stop well short of the current template, so it lacks
 several foundation features. That does not block catalogue provisioning, which
