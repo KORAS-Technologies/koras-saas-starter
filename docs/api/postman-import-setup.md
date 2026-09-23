@@ -43,7 +43,7 @@ Top-right corner of Postman -> the environment dropdown -> pick
 / `{{product_base_url}}` / `{{access_token}}` in a request stays literally
 unresolved and every call fails.
 
-## 4. Set the base URL (only if not running on the default port)
+## 4. Set the base URL (only if not running on the default port, or against a deployed environment)
 
 The environment ships with a default local address:
 
@@ -56,6 +56,39 @@ If your local stack runs on a different port (`local/scripts/ports.sh`
 resolves one per machine -- check `local/.env` for what it actually picked),
 open the environment (the eye icon, or Environments in the sidebar -> edit)
 and update the value.
+
+**Both variables exist in every environment file regardless of which repository
+generated it, and only one of them is ever actually used.** The Control
+Plane's own collection references `{{control_plane_base_url}}` and nothing
+else -- `{{product_base_url}}` sits there unused, at whatever value it was
+last set to, carried along from the fixed set of identity variables every
+KORAS environment ships with (`generate-environment.mjs`'s `ALWAYS_PRESENT`),
+so switching between a Control Plane environment and a product environment in
+the same workspace doesn't produce a missing-variable error. The same is true
+in reverse in a product's own environment file: `control_plane_base_url` sits
+there unused. Leaving the unused one at its default is fine and changes
+nothing about what the collection you're actually running sends.
+
+**Pointing either one at a deployed environment instead of localhost:** the
+API has no DNS record of its own (`docs/ENVIRONMENT_STRATEGY.md`) -- it
+answers on its Fly hostname, `https://<project>-api-<env>.fly.dev`, which is
+a different host from the `admin-dev.<apex>` / `app-dev.<project>.<apex>`
+addresses you sign into in step 5. For example:
+
+| Variable | Points at | Value |
+|---|---|---|
+| `control_plane_base_url` | the Control Plane's dev API | `https://koras-control-plane-api-dev.fly.dev` |
+| `product_base_url` | a specific product's dev API (`docoris`, `lexveria`, ...) | `https://<that product's project slug>-api-dev.fly.dev` |
+
+Set only the one the collection you're running actually calls. The generator
+only ever produces a **DEV** collection and environment (`tooling/postman/README.md`)
+-- there is no generated `-test` / `-stg` / `-prod` variant to import. Pointing
+the same environment at another Fly app (`<project>-api-test.fly.dev`, per the
+naming in `docs/ENVIRONMENT_STRATEGY.md`) works, since it is only a URL, but it
+is a manual edit you are making yourself, not a supported second file -- and
+`access_token` has to come from *that* environment's own sign-in app (a
+`test`/`stg` counterpart of step 5's table), never from a token issued against
+a different environment's ZITADEL instance.
 
 ## 5. Get a real access token
 
