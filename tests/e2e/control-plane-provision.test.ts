@@ -122,6 +122,12 @@ describe('the Control Plane is generated and validated', () => {
       // Handlebars examples inside a vendored skill's documentation are its
       // subject matter rather than leakage.
       if (relative.startsWith('.claude/')) continue
+      // Same reason, same mechanism: `tooling/postman/` is a shared_asset
+      // too, and `{{access_token}}` / `{{control_plane_base_url}}` /
+      // `{{product_base_url}}` etc. are Postman's own variable syntax --
+      // meant to reach a committed collection/environment file literally,
+      // not something Handlebars ever saw.
+      if (relative.startsWith('tooling/postman/')) continue
 
       const full = join(OUT, SLUG, relative)
       if (!existsSync(full)) continue

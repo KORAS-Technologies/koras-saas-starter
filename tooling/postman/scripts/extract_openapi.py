@@ -28,6 +28,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 # Values used only to satisfy pydantic-settings at import time when the real
 # ones are not already in the environment. They are never sent anywhere --
@@ -47,14 +48,14 @@ def _fill_placeholder_env() -> None:
         os.environ.setdefault(key, value)
 
 
-def extract(service_dir: Path) -> dict:
+def extract(service_dir: Path) -> dict[str, Any]:
     _fill_placeholder_env()
     sys.path.insert(0, str(service_dir))
     module = importlib.import_module("koras_api.main")
     app = getattr(module, "app", None)
     if app is None:
         raise SystemExit(f"koras_api.main in {service_dir} has no `app` object")
-    schema = app.openapi()
+    schema: dict[str, Any] = app.openapi()
     return schema
 
 
