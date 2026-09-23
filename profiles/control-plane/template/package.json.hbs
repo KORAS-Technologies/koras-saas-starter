@@ -26,7 +26,8 @@
     "stack:seed": "bash local/scripts/seed.sh",
     "stack:health": "bash local/scripts/health.sh",
     "clean": "turbo run clean && rimraf node_modules",
-    "format": "prettier --write \"**/*.{ts,tsx,md,yaml,json}\" --ignore-path .gitignore"
+    "format": "prettier --write \"**/*.{ts,tsx,md,yaml,json}\" --ignore-path .gitignore",
+    "postman:generate": "node tooling/postman/scripts/generate.mjs --profile control-plane --name \"Koras Control Plane\" --repo-root ."
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

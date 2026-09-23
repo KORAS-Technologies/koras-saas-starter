@@ -1,0 +1,310 @@
+{
+  "item": [
+    {
+      "name": "CI Smoke",
+      "description": "Deterministic, non-destructive requests safe to run unattended against DEV/TEST/STG. /health touches nothing (routers/health.py). The rest require a real signed-in token and are skipped automatically when access_token is empty.",
+      "item": [
+        {
+          "name": "Liveness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{product_base_url}}/health",
+              "host": [
+                "{{product_base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "No auth required. Source: services/api/koras_api/routers/health.py health().",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Effective settings (requires a signed-in token)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{product_base_url}}/settings/effective",
+              "host": [
+                "{{product_base_url}}"
+              ],
+              "path": [
+                "settings",
+                "effective"
+              ]
+            },
+            "description": "Read-only. Resolves platform default / tenant / member settings in one request. Source: routers/settings.py effective_settings()."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('access_token')) {",
+                  "  pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "} else { pm.test.skip('no access_token set in the environment'); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Notifications list (requires a signed-in token)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{product_base_url}}/notifications",
+              "host": [
+                "{{product_base_url}}"
+              ],
+              "path": [
+                "notifications"
+              ]
+            },
+            "description": "Read-only. Source: routers/notifications.py list_notifications()."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('access_token')) {",
+                  "  pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "} else { pm.test.skip('no access_token set in the environment'); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Security & Negative Tests",
+      "description": "Grounded in services/api/koras_api/core/auth.py and core/tenant.py. Authentication and tenant resolution are two separate dependencies there: an unverifiable token is 401 (require_auth); a verified caller with no active tenant for their organization is 403, never 404 (require_tenant, by design -- see the docstring: 403, not 404 ... a 404 would send people to check their address instead of their access). The product resolves its tenant from the verified token's organization claim only -- it accepts no X-Tenant-Id or X-Organization-Id header, so none is sent here.",
+      "item": [
+        {
+          "name": "Missing Authorization header is refused (403, FastAPI HTTPBearer default)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{product_base_url}}/settings/effective",
+              "host": [
+                "{{product_base_url}}"
+              ],
+              "path": [
+                "settings",
+                "effective"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "HTTPBearer(auto_error=True) raises 403 'Not authenticated' when no Authorization header is present -- FastAPI's own default, not app logic. Distinct from an invalid token (401, below)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('missing auth is refused with 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Malformed/invalid token is refused (401, error code token_invalid)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{product_base_url}}/settings/effective",
+              "host": [
+                "{{product_base_url}}"
+              ],
+              "path": [
+                "settings",
+                "effective"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "not-a-real-jwt",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Source: core/auth.py require_auth() -- a TokenVerificationError is answered as 401 with the product's uniform error shape {code, message}; code is core/errors.py ApiErrorCode.TOKEN_INVALID = 'token_invalid'."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('invalid token is refused with 401', () => pm.response.to.have.status(401));",
+                  "pm.test('error code is token_invalid', () => pm.expect(pm.response.json().detail.code).to.eql('token_invalid'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "A verified caller with no active tenant is refused with 403, not 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{product_base_url}}/settings/effective",
+              "host": [
+                "{{product_base_url}}"
+              ],
+              "path": [
+                "settings",
+                "effective"
+              ]
+            },
+            "description": "Requires a real, verifiable token whose organization is not provisioned as a tenant of this product (e.g. a ZITADEL user with no membership here). Source: core/tenant.py require_tenant() -- deliberately 403 rather than 404, so the caller learns it is an access problem and not a wrong URL. This request cannot supply such a token generically; set no_tenant_access_token in the environment to exercise it, or skip."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const token = pm.environment.get('no_tenant_access_token');",
+                  "if (token) {",
+                  "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + token});",
+                  "  pm.test('no active tenant is refused with 403', () => pm.response.to.have.status(403));",
+                  "  pm.test('error code is tenant_inactive', () => pm.expect(pm.response.json().detail.code).to.eql('tenant_inactive'));",
+                  "} else { pm.test.skip('no_tenant_access_token not set in the environment -- this case needs a real, verifiable token for an organization with no tenant here'); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Conditional write without If-Match is refused with 428 (precondition_required)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{product_base_url}}/accounts/{{account_id}}",
+              "host": [
+                "{{product_base_url}}"
+              ],
+              "path": [
+                "accounts",
+                "{{account_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated without If-Match\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Docoris write-concurrency convention (decided 2026-09-21): an update with no If-Match header is refused with 428, code precondition_required. Only present on products carrying accounts.py (Docoris); a product without it answers 404 for the route instead, which this test tolerates. Needs account_id set in the environment."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token') || !pm.environment.get('account_id')) {",
+                  "  pm.test.skip('needs access_token and account_id in the environment');",
+                  "} else if (pm.response.code === 404) {",
+                  "  pm.test.skip('this product has no /accounts route (not Docoris) -- 404 is expected, not a failure');",
+                  "} else {",
+                  "  pm.test('missing If-Match is refused with 428', () => pm.response.to.have.status(428));",
+                  "  pm.test('error code is precondition_required', () => pm.expect(pm.response.json().detail.code).to.eql('precondition_required'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Malformed query is never answered with 500",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{product_base_url}}/settings/effective?scope=not-a-real-scope",
+              "host": [
+                "{{product_base_url}}"
+              ],
+              "path": [
+                "settings",
+                "effective"
+              ],
+              "query": [
+                {
+                  "key": "scope",
+                  "value": "not-a-real-scope"
+                }
+              ]
+            },
+            "description": "An out-of-enum query value. If this parameter is a closed enum, FastAPI/Pydantic validation refuses it (422) before the route body runs; this test only asserts 'not a 500' rather than a specific code, since inventing the exact validation contract of a query parameter not read from code would be a guess."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('access_token')) {",
+                  "  pm.test('never answers 500 on a bad query value', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "} else { pm.test.skip('no access_token set in the environment'); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}

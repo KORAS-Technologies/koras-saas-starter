@@ -1079,6 +1079,22 @@ describe('shared assets', () => {
     )
     expect(generated).toBe(source)
   })
+
+  it('bundles the Postman tooling into both profiles, with a package.json script pointed at the right profile', async () => {
+    for (const [profile, slug, expectedProfileFlag] of [
+      ['product', 'postman-product', '--profile product'],
+      ['control-plane', 'postman-cp', '--profile control-plane'],
+    ] as Array<[ProfileName, string, string]>) {
+      const gen = await generate(profile, slug)
+      expect(gen.has('tooling/postman/scripts/generate.mjs')).toBe(true)
+      expect(gen.has('tooling/postman/scripts/extract_openapi.py')).toBe(true)
+      expect(gen.has(`tooling/postman/templates/${profile}-custom.postman_collection.json`)).toBe(true)
+
+      const pkg = JSON.parse(gen.read('package.json')) as { scripts: Record<string, string> }
+      expect(pkg.scripts['postman:generate']).toContain('tooling/postman/scripts/generate.mjs')
+      expect(pkg.scripts['postman:generate']).toContain(expectedProfileFlag)
+    }
+  })
 })
 
 // ── infrastructure naming ────────────────────────────────────────────────────

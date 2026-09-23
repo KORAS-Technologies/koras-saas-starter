@@ -97,3 +97,12 @@ shared_assets:
   # receives control-plane instructions and vice versa.
   - source: .claude
     target: .claude
+  # The Postman tooling: a generic extractor (imports the real FastAPI app
+  # and calls its own .openapi(), touching neither database nor network), a
+  # schema-to-collection converter, and the CI-Smoke/Security-negative-test
+  # templates for this profile. Copied verbatim rather than rendered, like the
+  # Terraform modules -- the scripts take no profile-specific values, they
+  # discover them (routes, tags, schemas) from the service they are pointed
+  # at. See docs/api/postman-standard.md.
+  - source: tooling/postman
+    target: tooling/postman

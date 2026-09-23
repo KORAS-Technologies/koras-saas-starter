@@ -1,0 +1,249 @@
+{
+  "item": [
+    {
+      "name": "CI Smoke",
+      "description": "Deterministic, non-destructive requests safe to run unattended against DEV/TEST/STG. /health touches nothing (see services/api/koras_api/routers/health.py); /platform-health reads only.",
+      "item": [
+        {
+          "name": "Liveness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{control_plane_base_url}}/api/v1/health",
+              "host": [
+                "{{control_plane_base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "health"
+              ]
+            },
+            "description": "No auth required. Source: services/api/koras_api/routers/health.py health().",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Platform health (requires a platform token)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{control_plane_base_url}}/api/platform/v1/platform-health",
+              "host": [
+                "{{control_plane_base_url}}"
+              ],
+              "path": [
+                "api",
+                "platform",
+                "v1",
+                "platform-health"
+              ]
+            },
+            "description": "Read-only. Requires PlatformReadDep -- a platform staff token. Source: routers/health.py platform_health()."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('access_token')) {",
+                  "  pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "  pm.test('status field is ok or degraded', () => pm.expect(['ok','degraded']).to.include(pm.response.json().status));",
+                  "} else {",
+                  "  pm.test.skip('no access_token set in the environment');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Security & Negative Tests",
+      "description": "Grounded in services/api/koras_api/core/auth.py and organization_auth.py. Verification and authorisation are kept apart there on purpose: an unverifiable token is 401, a verified caller lacking authority is 403 -- these requests assert that split rather than guessing at it.",
+      "item": [
+        {
+          "name": "Missing Authorization header is refused (403, FastAPI HTTPBearer default)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{control_plane_base_url}}/api/platform/v1/platform-health",
+              "host": [
+                "{{control_plane_base_url}}"
+              ],
+              "path": [
+                "api",
+                "platform",
+                "v1",
+                "platform-health"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "HTTPBearer(auto_error=True) raises 403 'Not authenticated' when no Authorization header is present -- FastAPI's own default (fastapi/security/http.py), not a KORAS-specific code. Deliberately different from an invalid token (401, below): a request that never tried to authenticate is not the same failure as one that tried and failed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('missing auth is refused with 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Malformed/invalid token is refused (401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{control_plane_base_url}}/api/platform/v1/platform-health",
+              "host": [
+                "{{control_plane_base_url}}"
+              ],
+              "path": [
+                "api",
+                "platform",
+                "v1",
+                "platform-health"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "not-a-real-jwt",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Source: core/auth.py _verified() -- a TokenVerificationError is answered as 401 with WWW-Authenticate: Bearer, logged (not returned) so a forged token and an expired one look identical to the caller."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('invalid token is refused with 401', () => pm.response.to.have.status(401));",
+                  "pm.test('carries WWW-Authenticate: Bearer', () => pm.expect(pm.response.headers.get('WWW-Authenticate')).to.include('Bearer'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Unknown organization id is never answered with 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{control_plane_base_url}}/api/platform/v1/organizations/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{control_plane_base_url}}"
+              ],
+              "path": [
+                "api",
+                "platform",
+                "v1",
+                "organizations",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "description": "A syntactically valid but non-existent id. Requires a platform token. Asserts the API does not answer 200 with someone else's data for a guessed id -- it does not assert one specific refusal code, because that is the router's to define and this test must not invent one."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('access_token')) {",
+                  "  pm.test('unknown organization id is never answered with 200', () => pm.expect(pm.response.code).to.not.equal(200));",
+                  "} else { pm.test.skip('no access_token set in the environment'); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Malformed payload on create is refused with 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_base_url}}/api/platform/v1/organizations",
+              "host": [
+                "{{control_plane_base_url}}"
+              ],
+              "path": [
+                "api",
+                "platform",
+                "v1",
+                "organizations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": 12345\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "name must be a string and slug is required (see routers/organizations.py request schema). FastAPI's Pydantic validation refuses a wrong-typed/missing field before the route body ever runs -- a framework guarantee, not app logic."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('access_token')) {",
+                  "  pm.test('malformed payload is refused with 422', () => pm.response.to.have.status(422));",
+                  "} else { pm.test.skip('no access_token set in the environment'); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}
