@@ -90,6 +90,59 @@ is a manual edit you are making yourself, not a supported second file -- and
 `test`/`stg` counterpart of step 5's table), never from a token issued against
 a different environment's ZITADEL instance.
 
+## 4a. Every variable in the environment, in detail
+
+`generate-environment.mjs` writes the same fixed set of identity variables
+into *every* environment file it produces (`ALWAYS_PRESENT` in that script),
+then adds whatever else the specific collection actually references. That is
+why a Control Plane environment and a product environment both carry
+`product_id`, `tenant_id`, `user_id`, and so on, even though each collection
+only ever calls a handful of them -- Postman does not error on an unused
+variable, and a workspace with both environments open switches between them
+without re-adding `access_token` by hand each time.
+
+**What the Control Plane's own collection (`Koras-Control-Plane - DEV`)
+actually calls**, checked against the real generated file rather than
+assumed:
+
+| Variable | What it identifies | Used by (folder / request) |
+|---|---|---|
+| `organization_id` | the organization/customer being managed | Organizations, Users, Products, Identity, Provision, Tenants, Domains, Branding, Storage Policy, AI Policies, AI Usage, AI Overage -- most of the Platform surface takes this |
+| `tenant_id` | one organization's provisioned tenant in a specific product | `PATCH /tenants/:tenant_id` |
+| `domain_id` | a custom domain attached to an organization | `POST /domains/:domain_id/verify` |
+| `subscription_id` | a billing subscription | `PUT /subscriptions/:subscription_id/entitlements` |
+| `job_id` | a provisioning run | `GET /provisioning/jobs/:job_id` -- "one run, with the steps it is made of" |
+| `intent_id` | a social/identity-provider sign-in in progress | `POST /api/sign-in/v1/providers/intents/:intent_id` -- finishes a sign-in the provider redirected back from |
+| `attempt_id` | a sign-in awaiting its second factor | `POST /api/sign-in/v1/attempts/:attempt_id/factor` |
+| `access_token`, `api_version` | your credential and the API version segment | every request (step 3) |
+| `control_plane_base_url`, `product_base_url` | which server a request goes to | step 4 |
+
+**`product_id`, `product_key`, `tenant_slug` and `user_id` appear in this
+environment and are not called by any request in it, checked the same way
+against the collection generated as of 2026-09-23** (zero occurrences of
+`{{product_id}}` etc. in the collection file). They are not dead weight to
+delete -- generation always writes them, and a route added later may start
+using one -- they are simply unwired as of that check. Leave them blank.
+
+**A product's own environment (`Docoris - DEV`, `Lexveria - DEV`, ...) is the
+same mechanism with different variables actually in use.** `docoris`'s
+collection, for one example, calls `{{tenant_id}}` (its own `Platform` folder
+-- the routes the Control Plane calls *into* the product, also runnable by
+hand from here) and `{{account_id}}` (step 7's If-Match/ETag case), while
+leaving `organization_id`, `domain_id`, `job_id` and the rest of the
+Control-Plane-only set unused for the same reason `product_base_url` is
+unused there. There is no single list that covers every product -- each one
+can add its own domain and its own path parameters -- so the reliable way to
+know what a *specific* environment's variables actually do is the same check
+used above: open that repository's `postman/<Name>-DEV.postman_collection.json`
+and search it for `{{the_variable}}`.
+
+None of these ever holds a real value in the committed file -- `access_token`
+and `product_key` ship as Postman `secret` type and blank; every ID ships
+blank because a request that needs one is naming *something that must
+already exist* (an organization, a tenant, a job), and the only place that
+value is real is whatever `List`/`Get` request you ran to find it.
+
 ## 5. Get a real access token
 
 There is no OAuth2 flow wired into the collection -- inventing one that

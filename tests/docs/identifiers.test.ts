@@ -198,6 +198,8 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
     'a test the data-import review proposed by name; the suite it describes asserts both halves without it',
   storage_policies_config_holds_no_secrets: 'koras-control-plane: a test in its suite',
   user_facing_workflow: 'a condition name the framework considered and did not add',
+  domain_id: "koras-control-plane: a path parameter on its domains router (routers/domains.py)",
+  intent_id: "koras-control-plane: a path parameter on its sign-in router (routers/sign_in.py)",
 
   // ── Named by a design document to record that it was declined ────────────
   //
