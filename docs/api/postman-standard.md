@@ -1,9 +1,20 @@
 # Postman standard
 
 How every KORAS repository's Postman collection is produced, kept current,
-and told apart from the tests a person adds by hand. Importing a collection
-and actually running requests against a local server is a separate,
-step-by-step document: `docs/api/postman-import-setup.md`.
+and told apart from the tests a person adds by hand. This document explains
+the generation architecture and the contribution rules only — it is not a
+setup guide.
+
+## Running the Collection
+
+Import, environment, identity, token, and the first-run verification
+sequence are step-by-step runbooks, kept separate because a LOCAL setup and
+a DEV setup need different URLs, different identities, and different token
+sources — combining them into one document is how a reader ends up pasting a
+local token into a DEV environment.
+
+- **LOCAL** (your own machine): `docs/api/postman-local-setup.md`
+- **Deployed DEV**: `docs/api/postman-dev-setup.md`
 
 ## The one rule everything else follows
 

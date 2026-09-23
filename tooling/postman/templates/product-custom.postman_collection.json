@@ -1,8 +1,122 @@
 {
   "item": [
     {
+      "name": "00 - Setup Verification",
+      "description": "RUN THESE THREE, IN ORDER, BEFORE ANYTHING ELSE. Confirms the base URL, the token, and the tenant it resolves to. Three steps rather than five: this API's require_tenant (core/tenant.py) checks the token before it checks the tenant, so 'authenticated' and 'tenant resolved' are proven by the same response, not two different ones -- and there is no safe (read-only) route restricted to organization_owner/organization_admin specifically to serve as a distinct authorization check; that boundary is enforced on writes and on the product's own apps/admin application, not on any GET this collection calls. See docs/api/postman-local-setup.md (or postman-dev-setup.md for DEV) in koras-saas-starter.",
+      "item": [
+        {
+          "name": "RUN FIRST -- Liveness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{product_base_url}}/api/v1/health",
+              "host": [
+                "{{product_base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "health"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "No user, no role, no token. Confirms product_base_url is correct and the API process is up. Source: routers/health.py health()."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status field is ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "RUN SECOND -- Authentication & Tenant Context",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{product_base_url}}/api/v1/settings/effective",
+              "host": [
+                "{{product_base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "settings",
+                "effective"
+              ]
+            },
+            "description": "Required: access_token for any signed-in member of this product (the local bootstrap identity, or a real DEV account). A 200 here proves both things at once: the token verified (require_auth) and an active tenant was resolved for its organization (require_tenant) -- in that order, per core/tenant.py. A 401 means the token; a 403 means the tenant (see Security & Negative Tests for both, isolated)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "  pm.test.skip('set access_token first -- see docs/api/postman-local-setup.md');",
+                  "} else {",
+                  "  pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "  pm.test('body is an object', () => pm.expect(typeof pm.response.json()).to.eql('object'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "RUN THIRD -- Representative Data Read",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{product_base_url}}/api/v1/notifications",
+              "host": [
+                "{{product_base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications"
+              ]
+            },
+            "description": "Required: access_token, same identity as step 2. Confirms a real product feature answers for this tenant, not just the settings route. Source: routers/notifications.py list_notifications(). When this passes: LOCAL (or DEV) POSTMAN SETUP VERIFIED."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "  pm.test.skip('set access_token first -- see docs/api/postman-local-setup.md');",
+                  "} else {",
+                  "  pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "  console.log('SETUP VERIFIED: liveness, auth+tenant, and a real data read all passed.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "CI Smoke",
-      "description": "Deterministic, non-destructive requests safe to run unattended against DEV/TEST/STG. /health touches nothing (routers/health.py). The rest require a real signed-in token and are skipped automatically when access_token is empty.",
+      "description": "Deterministic, non-destructive requests safe to run unattended against DEV/TEST/STG. /api/v1/health touches nothing (routers/health.py). The rest require a real signed-in token and are skipped automatically when access_token is empty.",
       "item": [
         {
           "name": "Liveness",
@@ -10,11 +124,13 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{product_base_url}}/health",
+              "raw": "{{product_base_url}}/api/v1/health",
               "host": [
                 "{{product_base_url}}"
               ],
               "path": [
+                "api",
+                "v1",
                 "health"
               ]
             },
@@ -43,11 +159,13 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{product_base_url}}/settings/effective",
+              "raw": "{{product_base_url}}/api/v1/settings/effective",
               "host": [
                 "{{product_base_url}}"
               ],
               "path": [
+                "api",
+                "v1",
                 "settings",
                 "effective"
               ]
@@ -75,11 +193,13 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{product_base_url}}/notifications",
+              "raw": "{{product_base_url}}/api/v1/notifications",
               "host": [
                 "{{product_base_url}}"
               ],
               "path": [
+                "api",
+                "v1",
                 "notifications"
               ]
             },
@@ -112,11 +232,13 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{product_base_url}}/settings/effective",
+              "raw": "{{product_base_url}}/api/v1/settings/effective",
               "host": [
                 "{{product_base_url}}"
               ],
               "path": [
+                "api",
+                "v1",
                 "settings",
                 "effective"
               ]
@@ -145,11 +267,13 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{product_base_url}}/settings/effective",
+              "raw": "{{product_base_url}}/api/v1/settings/effective",
               "host": [
                 "{{product_base_url}}"
               ],
               "path": [
+                "api",
+                "v1",
                 "settings",
                 "effective"
               ]
@@ -186,11 +310,13 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{product_base_url}}/settings/effective",
+              "raw": "{{product_base_url}}/api/v1/settings/effective",
               "host": [
                 "{{product_base_url}}"
               ],
               "path": [
+                "api",
+                "v1",
                 "settings",
                 "effective"
               ]
@@ -226,11 +352,13 @@
               }
             ],
             "url": {
-              "raw": "{{product_base_url}}/accounts/{{account_id}}",
+              "raw": "{{product_base_url}}/api/v1/accounts/{{account_id}}",
               "host": [
                 "{{product_base_url}}"
               ],
               "path": [
+                "api",
+                "v1",
                 "accounts",
                 "{{account_id}}"
               ]
@@ -272,11 +400,13 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{product_base_url}}/settings/effective?scope=not-a-real-scope",
+              "raw": "{{product_base_url}}/api/v1/settings/effective?scope=not-a-real-scope",
               "host": [
                 "{{product_base_url}}"
               ],
               "path": [
+                "api",
+                "v1",
                 "settings",
                 "effective"
               ],

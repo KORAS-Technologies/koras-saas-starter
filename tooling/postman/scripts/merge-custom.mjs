@@ -48,15 +48,19 @@ function main() {
   const customFolders =
     args.custom && existsSync(args.custom) ? JSON.parse(readFileSync(args.custom, 'utf-8')).item ?? [] : []
 
+  const verification = customFolders.filter((f) => f.name === '00 - Setup Verification').map(markCustom)
   const smoke = customFolders.filter((f) => f.name === 'CI Smoke').map(markCustom)
   const security = customFolders.filter((f) => f.name === 'Security & Negative Tests').map(markCustom)
-  const rest = customFolders
-    .filter((f) => f.name !== 'CI Smoke' && f.name !== 'Security & Negative Tests')
-    .map(markCustom)
+  const named = new Set(['00 - Setup Verification', 'CI Smoke', 'Security & Negative Tests'])
+  const rest = customFolders.filter((f) => !named.has(f.name)).map(markCustom)
 
+  // Setup Verification first -- it is what a person new to this collection
+  // runs, by hand, before anything else. CI Smoke follows for the same
+  // reason a pipeline needs it right after: both are "is this thing on",
+  // just for two different readers.
   const merged = {
     ...generated,
-    item: [...smoke, ...generated.item, ...rest, ...security],
+    item: [...verification, ...smoke, ...generated.item, ...rest, ...security],
   }
 
   mkdirSync(dirname(args.out), { recursive: true })
