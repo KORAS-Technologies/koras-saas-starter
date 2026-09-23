@@ -84,14 +84,42 @@ pnpm create-koras-app <name> --profile product --provision-billing   --output-di
 
 Notes that matter:
 
-- **Step 9 needs a service account the estate does not have yet.** Writing a
-  price onto a plan needs the platform **billing** role, and `registrar`
-  deliberately carries no platform role at all -- one reclassifies its token as
-  staff, and the registration endpoint admits machines only, so granting
-  `registrar` what step 9 needs breaks step 3. It is a second ZITADEL service
-  user, access token type JWT, with the billing role, and its key stored as
-  `KORAS_CONTROL_PLANE_BILLING_KEY_JSON`. Without it step 9 fails with a 403,
-  and says so in those words.
+- **Step 9 is authorised by a person, not a service account, and that is a
+  platform rule rather than a gap.** Writing a price onto a plan needs the
+  platform **billing** role; a platform role requires a second factor; and a
+  service account has no interactive authentication to reference, so its token
+  is refused at verification. The Control Plane's own verifier says so --
+  machine identities are how products and internal jobs call the platform API,
+  and they are never granted platform roles. A service-account key here is
+  therefore **refused with the reason** rather than sent, because the 401 it
+  would earn reads exactly like an expired token or a wrong audience.
+
+  **What to do, per run:**
+
+  1. Sign in to the Control Plane console for that environment, as an account
+     holding `platform_billing` (or admin, or super admin), **with a second
+     factor**. Without one the token is refused and the message says so.
+  2. DevTools -> **Application** -> Cookies -> the console's own origin.
+  3. Copy the **Value** of the cookie named `id_token`. It has to be the
+     Application tab: the cookie is `httpOnly`, so `document.cookie` returns
+     nothing, which looks exactly like the cookie being absent.
+  4. `export KORAS_CONTROL_PLANE_BILLING_TOKEN='<paste>'` and run step 9 in
+     that shell.
+
+  **No Doppler setting is added for it**, deliberately. The token lasts hours,
+  so a stored copy is a credential that is wrong more often than it is right --
+  and the failure would arrive as a 401 during provisioning rather than at the
+  moment somebody could fix it. Everything else step 9 needs is already in
+  `koras-platform-bootstrap` / `prod`: the Control Plane URL, the project id
+  and the `ZITADEL_*_DOMAIN` family. The environment is derived from the URL.
+
+  **The one Doppler setting step 9 does add** is the payment provider's key,
+  `KORAS_BILLING_PROVIDER_KEY`, in that same config. It is the factory's, never
+  a product's, and a live key is refused anywhere but production.
+
+  A 401 from step 9 is an expired token or a sign-in without a second factor; a
+  403 is the role. The command names both rather than reporting that the
+  Control Plane said no.
 - **Step 9 refuses a live provider key anywhere but production**, and a test
   key against production, both before it makes a single call. The first would
   create real, chargeable prices while somebody believed they were rehearsing

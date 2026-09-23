@@ -1,5 +1,5 @@
-import { parseServiceAccountKey, isKeyProblem, type ServiceAccountKey } from '../registration/token.js'
-import { deriveInstance, INSTANCE_OVERRIDE_VAR } from '../registration/config.js'
+import type { ServiceAccountKey } from '../registration/token.js'
+import { INSTANCE_OVERRIDE_VAR } from '../registration/config.js'
 import { stripTrailingSlashes } from '../url.js'
 
 /**
@@ -26,7 +26,36 @@ import { stripTrailingSlashes } from '../url.js'
 /** Doppler secret carrying the payment provider's secret key. */
 export const PROVIDER_KEY_VAR = 'KORAS_BILLING_PROVIDER_KEY'
 
-/** Doppler secret carrying the billing service account's key, minted from per call. */
+/**
+ * A finished bearer token for a member of staff holding the billing role.
+ *
+ * **The only credential that works today**, and the reason is a platform rule
+ * rather than a gap: a platform role requires a second factor, and a service
+ * account has no interactive authentication to reference — so a machine
+ * granted the billing role is refused at verification, every time. The
+ * Control Plane's own verifier says as much: machine identities are how
+ * products and internal jobs call the platform API, and they are never granted
+ * platform roles.
+ *
+ * So this is a person's token, obtained the way the walkthrough's staff token
+ * is: the `id_token` cookie of a signed-in console session. **It expires**, in
+ * hours rather than days, which is why the estate's other credentials are keys
+ * that mint per call. That is a real cost and it is accepted deliberately for
+ * now — the alternative is weakening the second-factor rule for every member
+ * of staff to solve one command's problem.
+ */
+export const BILLING_TOKEN_VAR = 'KORAS_CONTROL_PLANE_BILLING_TOKEN'
+
+/**
+ * A service-account key for the same job, which **cannot work yet**.
+ *
+ * Kept because it is where this is going: the fix is a machine door on the
+ * catalogue endpoints with an allowlist naming which machine may price a
+ * catalogue, so that the second-factor rule stays intact for people and
+ * machines stay out of platform roles. Until that exists a key here produces a
+ * 401 that looks like a misconfiguration, so it is refused with the reason
+ * instead.
+ */
 export const BILLING_KEY_VAR = 'KORAS_CONTROL_PLANE_BILLING_KEY_JSON'
 
 /**
@@ -277,51 +306,52 @@ export function resolveBillingConfig(options: {
     return { ok: false, problem: { kind: 'environment-mismatch', detail: allowed.detail } }
   }
 
-  const rawKey = value(env, BILLING_KEY_VAR)
-  if (!rawKey) {
+  // The staff token wins, because it is the one that works. Registration
+  // prefers a key over a token for the opposite reason -- a key mints per call
+  // and never goes stale -- and the difference is not inconsistency: there, a
+  // machine identity is what the endpoint wants; here, a machine identity is
+  // what the endpoint refuses.
+  const token = value(env, BILLING_TOKEN_VAR)
+  if (token) {
     return {
-      ok: false,
-      problem: {
-        kind: 'no-billing-key',
-        detail:
-          `${BILLING_KEY_VAR} is not set. Writing a price onto a plan needs a platform billing ` +
-          'role, and the registrar account deliberately has no platform role at all — a role ' +
-          'granted to it reclassifies its token as staff and breaks registration. This is a ' +
-          'separate service account with the billing role, and it has to be.',
+      ok: true,
+      config: {
+        baseUrl,
+        environment: environment.environment,
+        providerKey,
+        credential: { kind: 'token', token },
       },
     }
   }
 
-  const key = parseServiceAccountKey(rawKey)
-  if (isKeyProblem(key)) {
-    return { ok: false, problem: { kind: 'bad-config', detail: `${BILLING_KEY_VAR} ${key.detail}` } }
-  }
-
-  const projectId = value(env, 'KORAS_CONTROL_PLANE_PROJECT_ID')
-  if (!projectId) {
+  const rawKey = value(env, BILLING_KEY_VAR)
+  if (rawKey) {
+    // Refused with the reason rather than sent. A service account holding the
+    // billing role is answered with a 401 that reads exactly like an expired
+    // token or a wrong audience, and somebody would spend an afternoon on it.
     return {
       ok: false,
       problem: {
         kind: 'bad-config',
         detail:
-          `${BILLING_KEY_VAR} is set but KORAS_CONTROL_PLANE_PROJECT_ID is not. A minted token ` +
-          "has to name the Control Plane's ZITADEL project in its audience, or it answers 401.",
+          `${BILLING_KEY_VAR} is set, and a service account cannot hold a platform role. ` +
+          'A platform role requires a second factor and a machine identity has no ' +
+          'interactive authentication to reference, so the Control Plane refuses the token ' +
+          `at verification. Use ${BILLING_TOKEN_VAR} with a staff token until the ` +
+          'catalogue endpoints admit a named machine.',
       },
     }
   }
 
-  const instance = deriveInstance(baseUrl, env)
-  if (!instance.ok) {
-    return { ok: false, problem: { kind: 'bad-config', detail: instance.detail } }
-  }
-
   return {
-    ok: true,
-    config: {
-      baseUrl,
-      environment: environment.environment,
-      providerKey,
-      credential: { kind: 'key', key, instance: instance.instance, projectId },
+    ok: false,
+    problem: {
+      kind: 'no-billing-key',
+      detail:
+        `${BILLING_TOKEN_VAR} is not set. Writing a price onto a plan needs the platform ` +
+        'billing role, which only a person can hold: take the `id_token` cookie from a ' +
+        'signed-in Control Plane console session, as the walkthrough does for a staff ' +
+        'token. It expires in hours, so it is set for the run rather than stored.',
     },
   }
 }

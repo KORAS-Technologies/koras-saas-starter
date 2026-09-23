@@ -97,6 +97,31 @@ function safeHost(url: string): string {
   }
 }
 
+/**
+ * The likely cause of a refusal, in words an operator can act on.
+ *
+ * A 401 and a 403 read identically from outside — "the Control Plane said no" —
+ * and send somebody to entirely different places. The credential here is a
+ * person's token that expires in hours, so an expiry is the common case and
+ * deserves to be named first.
+ */
+function _whyRefused(status: number): string {
+  if (status === 401) {
+    return (
+      '\n  A 401 is usually the staff token having expired — it lasts hours, not days. ' +
+      'Take the `id_token` cookie from a signed-in console session again. It is also what ' +
+      'a sign-in without a second factor looks like, because a platform role requires one.'
+    )
+  }
+  if (status === 403) {
+    return (
+      '\n  A 403 is the role: writing prices onto plans needs the platform billing role, ' +
+      'and the signed-in account does not hold it.'
+    )
+  }
+  return ''
+}
+
 /** Reads one field that may legitimately be absent on an older Control Plane. */
 function optionalNumber(row: Record<string, unknown>, field: string): number | null {
   const value = row[field]
@@ -227,10 +252,7 @@ export class PlansClient {
       throw new ControlPlaneError(
         `Reading the plan catalogue failed with HTTP ${response.status}: ` +
           summarise(response.body, this.env) +
-          (response.status === 403
-            ? '\n  A 403 here usually means the service account has no platform billing role. ' +
-              'Writing prices onto plans needs one; the registrar account deliberately has none.'
-            : ''),
+          _whyRefused(response.status),
         { status: response.status, retryable: response.status >= 500 },
       )
     }

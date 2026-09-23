@@ -2542,14 +2542,38 @@ is the one the work does not close by itself.
       write nothing.
 - [ ] A corrected amount on that account, to see a superseded price with the
       first left active and unreferenced.
-- [ ] The second service account itself. Nothing in the estate has one yet: it
-      needs a ZITADEL service user with a JWT access-token type and the
-      platform **billing** role, and its key stored as
-      `KORAS_CONTROL_PLANE_BILLING_KEY_JSON`. It must not be `registrar`, and
-      the reason is in `CLAUDE.md`. Until it exists, the first run's failure
-      will be a 403 — which the step names in those words.
+- [x] ~~The second service account itself.~~ **Withdrawn 2026-09-23: it cannot
+      exist.** A platform role requires a second factor and a machine identity
+      has no interactive authentication to reference, so a service account
+      granted the billing role is refused at verification — and the Control
+      Plane's verifier says so outright: machine identities are how products
+      and internal jobs call the platform API, and they are never granted
+      platform roles. The entry stood for a day telling somebody to create an
+      account that could not work, which is what comes of proposing a
+      credential without reading the verifier that would judge it.
+
+      What replaces it is below: a person's token now, a machine door later.
 - [ ] Live mode, which is F21's remaining half and arrives with it rather than
       separately.
+
+- [ ] **The machine door, which is the real fix.** A person's token lasts
+      hours, so catalogue provisioning is a thing somebody does by hand in a
+      window rather than a thing a pipeline can do. Closing that means letting
+      the catalogue endpoints admit a *named* machine: a machine identity plus
+      an allowlist of subjects permitted to price a catalogue, configured per
+      environment. The allowlist is the load-bearing half — a bare machine gate
+      would let any product's service account write any plan, which is the
+      registrar problem inverted and worse, because a product could price
+      itself. Decided 2026-09-23 as the destination, with the staff token as
+      the way through until then.
+
+**How it is authorised today, since 2026-09-23.** A staff `id_token` from a
+signed-in console session, in `KORAS_CONTROL_PLANE_BILLING_TOKEN`, set for the
+run rather than stored: a credential that lasts hours is wrong more often than
+right in a secret store, and the failure would arrive during provisioning
+rather than where somebody could fix it. A service-account key is refused with
+the reason rather than sent, because the 401 it would earn reads exactly like
+an expired token. `docs/PROVISIONING_RUNBOOK.md` step 9 has the four steps.
 
 **Not built, and named rather than left to be rediscovered.** There is no
 `--provision-billing` for more than one currency: the lookup key carries a

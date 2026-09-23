@@ -813,12 +813,32 @@ created — the endpoint would happily create one, and a mistyped code becomes a
 real priced tier granting nothing. And nothing in the path may delete a price,
 archive one or edit an amount.
 
-**It needs a second service account, and cannot borrow the first.** Writing a
-price onto a plan needs a platform billing role; `registrar` deliberately has
-no platform role, because one reclassifies its token as staff and the
-registration endpoint admits machines only. Granting `registrar` what this
-needs would break the thing it exists for — which is why the Control Plane
-answering 403 says so in those words rather than leaving it to be rediscovered.
+**No service account can authorise it, and that is a platform rule rather than
+a gap.** Writing a price onto a plan needs a platform billing role; a platform
+role requires a second factor; and a machine identity has no interactive
+authentication to reference, so its token is refused at verification. The
+Control Plane's verifier says it outright: machine identities are how products
+and internal jobs call the platform API, and they are **never granted platform
+roles**.
+
+This was recorded the other way round for a day — as "create a second service
+account with the billing role" — which is an instruction to build something
+that cannot work, and came of proposing a credential without reading the
+verifier that would judge it. Corrected 2026-09-23.
+
+**So it is a person's token**: the `id_token` of a signed-in console session,
+in `KORAS_CONTROL_PLANE_BILLING_TOKEN`, set for the run rather than stored,
+because a credential lasting hours is wrong more often than right in a secret
+store. A service-account key is refused with the reason rather than sent — the
+401 it would earn reads exactly like an expired token, and somebody would spend
+an afternoon on it. `docs/PROVISIONING_RUNBOOK.md` step 9 has the four steps.
+
+**The destination is a machine door**, decided the same day: the catalogue
+endpoints admitting a *named* machine — a machine identity plus an allowlist of
+subjects permitted to price a catalogue. The allowlist is the load-bearing
+half, because a bare machine gate would let any product's service account write
+any plan, which is the registrar problem inverted and worse: a product could
+price itself.
 
 **`PUT /plans` overwrites the whole row**, including name, self-serve and seat
 bounds. So the step reads each plan back and round-trips every field it does

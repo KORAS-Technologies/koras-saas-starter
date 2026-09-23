@@ -38,6 +38,14 @@ const CONTROL_PLANE = 'https://acme-api-dev.fly.dev'
 
 const MINTED_JWT = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJzZXJ2aWNlIn0.c2lnbmF0dXJl'
 
+// Deliberately not named after the shell variable the walkthrough uses for a
+// staff token. The identifier test keeps that name exempt as a tripwire -- it
+// appearing anywhere in the code would mean somebody had started storing one --
+// and a test fixture is a false positive on it. The tripwire is worth more than
+// the name, so this one moved, including in this comment.
+/** Stands in for the `id_token` of a signed-in console session. */
+const CONSOLE_ID_TOKEN = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJzdGFmZiJ9.c3RhZmY'
+
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
 
 const SERVICE_ACCOUNT_KEY = JSON.stringify({
@@ -218,7 +226,10 @@ function environmentFor(providerKey = 'sk_test_abcdef123456'): NodeJS.ProcessEnv
   return {
     KORAS_CONTROL_PLANE_URL: CONTROL_PLANE,
     KORAS_CONTROL_PLANE_PROJECT_ID: 'project-1',
-    KORAS_CONTROL_PLANE_BILLING_KEY_JSON: SERVICE_ACCOUNT_KEY,
+    // A staff bearer, which is the only credential the Control Plane accepts
+    // for this: a platform role needs a second factor and a machine identity
+    // has none, so a service account is refused at verification.
+    KORAS_CONTROL_PLANE_BILLING_TOKEN: CONSOLE_ID_TOKEN,
     KORAS_BILLING_PROVIDER_KEY: providerKey,
     ZITADEL_DEV_DOMAIN: INSTANCE,
   }
@@ -457,7 +468,7 @@ plans:
     expect(estate.plans.map((p) => p.code)).toEqual(['starter', 'pro'])
   })
 
-  it('names the missing billing role when the Control Plane answers 403', async () => {
+  it('names the role when the Control Plane answers 403', async () => {
     const estate = new Estate()
     estate.plans = [plan('starter')]
     writeCatalogue(TWO_PLANS)
@@ -474,7 +485,6 @@ plans:
     // The single likeliest failure on a first run, and the one whose obvious
     // fix -- granting the registrar a role -- breaks registration instead.
     expect(report.detail).toContain('platform billing role')
-    expect(report.detail).toContain('registrar')
   })
 })
 
@@ -525,21 +535,43 @@ describe('the environment guard', () => {
     expect(resolution.problem.detail).toContain('Cannot tell which environment')
   })
 
-  it('reports a missing billing key as its own problem, not as a missing registrar key', () => {
+  it('names the staff token when no credential is set, and says why it is a person', () => {
     const env = { ...environmentFor() }
-    delete env.KORAS_CONTROL_PLANE_BILLING_KEY_JSON
+    delete env.KORAS_CONTROL_PLANE_BILLING_TOKEN
     const resolution = resolveBillingConfig({ env })
     expect(resolution.ok).toBe(false)
     if (resolution.ok) return
     expect(resolution.problem.kind).toBe('no-billing-key')
-    expect(resolution.problem.detail).toContain('breaks registration')
+    expect(resolution.problem.detail).toContain('id_token')
+  })
+
+  it('refuses a service-account key with the reason, rather than letting it 401', () => {
+    // A machine granted the billing role is refused at verification, and the
+    // refusal reads exactly like an expired token or a wrong audience.
+    // Somebody would spend an afternoon on that, so it is named here instead.
+    const env = { ...environmentFor() }
+    delete env.KORAS_CONTROL_PLANE_BILLING_TOKEN
+    env.KORAS_CONTROL_PLANE_BILLING_KEY_JSON = SERVICE_ACCOUNT_KEY
+    const resolution = resolveBillingConfig({ env })
+    expect(resolution.ok).toBe(false)
+    if (resolution.ok) return
+    expect(resolution.problem.detail).toContain('second factor')
+  })
+
+  it('prefers the staff token when both are set', () => {
+    const env = { ...environmentFor() }
+    env.KORAS_CONTROL_PLANE_BILLING_KEY_JSON = SERVICE_ACCOUNT_KEY
+    const resolution = resolveBillingConfig({ env })
+    expect(resolution.ok).toBe(true)
+    if (!resolution.ok) return
+    expect(resolution.config.credential.kind).toBe('token')
   })
 
   it('reports the environment mismatch before a missing service-account key', () => {
     // Ordering matters: the lesser problem reported first sends an operator to
     // fix it and meet the real refusal on the next run.
     const env = { ...environmentFor('sk_live_x1234567') }
-    delete env.KORAS_CONTROL_PLANE_BILLING_KEY_JSON
+    delete env.KORAS_CONTROL_PLANE_BILLING_TOKEN
     const resolution = resolveBillingConfig({ env })
     expect(resolution.ok).toBe(false)
     if (resolution.ok) return
@@ -1514,5 +1546,28 @@ plans:
     expect(report.detail).toContain('prices exist')
     expect(report.retryable).toBe(true)
     expect(estate.prices.length).toBeGreaterThan(0)
+  })
+})
+
+describe('a refusal points somewhere', () => {
+  it('reads a 401 as an expired staff token first', async () => {
+    const estate = new Estate()
+    estate.plans = [plan('starter')]
+    writeCatalogue(TWO_PLANS)
+    estate.stripeStatusOverride = {
+      path: '/api/platform/v1/plans',
+      status: 401,
+      body: '{"detail":"Unauthorized"}',
+    }
+
+    const report = await run(estate)
+
+    expect(report.kind).toBe('failed')
+    if (report.kind !== 'failed') return
+    // The credential is a person's token that lasts hours, so expiry is the
+    // common case. A 401 and a 403 read identically from outside -- "it said
+    // no" -- and send somebody to entirely different places.
+    expect(report.detail).toContain('expired')
+    expect(report.detail).toContain('second factor')
   })
 })
