@@ -866,6 +866,21 @@ is the whole of R-042. Corrected before Phase 2 began, and the correction made
 Phase 2 **smaller**: what is left is the quantity, and making the seat count
 come from the plan rather than from a number the customer types at signup.
 
+**Phase 2 shipped in `koras-control-plane` on 2026-09-22**, ahead of the
+provisioning it protects. A plan records what it includes, the quantity is one
+everywhere, the seat count comes from the plan rather than the signup form, and
+nothing that reads the provider can write a seat count back. The refusal a
+member hits now names the tier that includes more, because a flat fee has no
+seat to buy and advice that cannot be followed is worse than none.
+
+**The finding that cost the most to notice was in the reconciliation repair,
+not the checkout.** The repair wrote seats, reading a missing value as one — so
+a repair triggered by a status, a period or an interval, none of which a
+customer controls, would have silently reduced a twenty-five-seat customer to
+a single seat and locked every colleague out. The tests failing is what found
+it; and the first guard written against it asserted the wrong layer and passed
+with the defect restored, which mutation-testing caught and review had not.
+
 **Provisioning a price is what arms that.** Nothing can be sold self-serve
 until a plan has a price reference, so the overcharge is latent today; writing
 $99 onto Starter is what lets the signup page sell it and multiply it. So the

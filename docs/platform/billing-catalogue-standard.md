@@ -471,17 +471,41 @@ the standard's, and a hand-edited one is refused for every way of getting it
 wrong — a misspelt amount key, a fractional amount, a zero, a negotiated tier
 that also names a price, a bad currency, and a plan including nobody.
 
-**Phase 2 — the flat-fee correction. Reordered on 2026-09-22 to sit here, and
-it is the change the ordering exists for.** The subscription quantity becomes
+**Phase 2 — the flat-fee correction. Built 2026-09-22, in
+`koras-control-plane`, and it is the change the ordering exists for.** The subscription quantity becomes
 one; the seat count becomes state this platform keeps rather than a number
 derived from the provider's answer; the included-user count becomes an enforced
 limit. Control Plane only — no provider work, no new prices, no proration.
 
-Exit: a subscription for a plan costing $99 is charged $99 whatever the seat
-count, and a product refuses the user who would exceed the plan's included
-count. Both observed rather than asserted, because the second has never been
-enforced anywhere and an enforcement nobody has seen work is an enforcement
-nobody should believe in.
+`plans.included_users` records what a plan includes, seeded from the standard
+by `00047_plan_included_users.sql`. The quantity is one at both call sites. The
+seat count comes from the plan rather than the form. The repository function
+that applies a webhook's state no longer takes a seats parameter at all — a
+column absent from the statement cannot be written by anything that reads the
+provider, which is the rule rather than an instance of it. It is described
+rather than named here because it is another repository's internal, and the
+identifier test is right to refuse this repository vouching for one.
+
+**The finding that cost the most to notice was in the repair, not the
+checkout.** Reconciliation's repair wrote seats, reading a missing value as
+one. The check no longer puts seats in the desired state, so a repair triggered
+by anything else — a status, a period, an interval, none of which a customer
+controls — would have silently reduced a twenty-five-seat customer to a single
+seat and locked every colleague out of the product. The reconciliation tests
+failing is what found it.
+
+**And the first guard written against it did not guard.** It asserted that the
+*check* leaves seats out of the desired state, and passed with the repository's
+seat write put back — two layers, and the hazard is in the second.
+Mutation-testing caught that; review had not.
+
+Exit, partly met. 817 tests pass across unit, provisioning, security and
+contract, and the two money assertions — the quantity is one, and the plan
+decides the seat count — are mutation-proven. **What is not met is the
+end-to-end half**: the billing integration tests fail identically with and
+without the change, against a local database behind on migrations and carrying
+37,000 plans. Pre-existing and environmental, and recorded rather than allowed
+to read as a pass.
 
 **Phase 3 — provider provisioning.** Products, prices, the standard lookup
 keys, metadata, idempotency, the environment guard, and the report. Includes
