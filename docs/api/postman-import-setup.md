@@ -4,6 +4,86 @@ Step by step: get a KORAS Postman collection open, pointed at a running DEV
 API, and returning real responses. For how the collection is generated and
 what it's allowed to contain, see `docs/api/postman-standard.md`.
 
+## Local, or deployed dev? Pick one before you start
+
+Both use the exact same collection and environment file -- only the base URL
+and where you sign in change. Don't mix them: a token from one environment's
+ZITADEL is refused by the other.
+
+- **Local** -- you have the repository's stack running on your own machine
+  (`pnpm stack:up` / `pnpm dev`, or the control-plane's equivalent). Base URL
+  stays at the environment's shipped default (`http://localhost:8000` or
+  `:8001`), or whatever `local/.env` resolved to if that port was taken --
+  step 4's "Local" bullets.
+- **Deployed dev** -- you want to hit `*-api-dev.fly.dev`, the shared dev
+  instance everyone's changes land on after merge. Base URL has to be edited
+  to the Fly hostname, and your token has to come from that same dev
+  ZITADEL, not your laptop's local one -- step 4's "Deployed dev" bullets and
+  step 5.
+
+If you don't know which one you need: if you're testing a change before it's
+merged, or the stack is already running on your machine for other reasons,
+use **local**. If you're checking what's actually live after a merge, or
+your machine doesn't have the stack running, use **deployed dev**.
+
+## 0. Verify it works, before anything else
+
+This confirms Postman, the import, and the base URL are all correct --
+nothing here needs a token, an organization, or any setup beyond step 1-3.
+
+1. Do steps 1-3 below (locate the files, import both, select the
+   `<Name> - DEV` environment).
+2. Open **CI Smoke** at the top of the collection -> **Liveness**.
+3. Hit **Send**, with no other setup.
+4. You should get back `200` and a small JSON body (`{"status": "ok"}` or
+   similar). That's it -- setup works.
+
+If you get anything else, don't go further until it's fixed:
+
+- **`ECONNREFUSED` or a timeout** -- nothing is listening on the base URL.
+  Local: is the stack actually up? Deployed dev: did you leave the base URL
+  at `localhost` instead of switching to the Fly hostname (step 4)?
+- **A response, but not `200`** -- you're reaching *a* server, just not the
+  right one, or it isn't healthy. Check the base URL value against step 4
+  again.
+- **Every `{{variable}}` in the request stays literally unresolved** -- the
+  environment isn't selected (step 3).
+
+## Who should test, and as whom
+
+There is no shared seeded test account -- each environment (your laptop's
+local ZITADEL, and the shared dev ZITADEL behind `*-api-dev.fly.dev`) is its
+own identity provider with its own users, and putting a password in a doc
+that gets committed is exactly the kind of secret exposure `.claude/CLAUDE.md`
+refuses. Get an identity the same way a real one would exist:
+
+- **Testing as a customer** (product `apps/web`/`apps/portal` routes,
+  anything a paying organization would call): sign yourself up. Every
+  product's signup is self-serve (`/signup` on `apps/web`) -- the first
+  person to sign up for a new organization becomes its owner automatically,
+  which is exactly the identity most product requests need. Locally, the
+  verification email lands in Mailhog, not your real inbox --
+  `http://localhost:8025` by default (`KORAS_PORT_MAIL_UI`, check
+  `local/.env` if that port moved). On deployed dev, it goes to whatever
+  address you actually used, for real.
+- **Testing as staff** (a product's `apps/admin`, or the Control Plane's
+  `apps/admin`/platform routes): staff access is not self-serve by design --
+  a customer signing up and granting themselves a platform role would be the
+  registrar problem this estate has already found and closed once (see
+  `FOLLOW_UPS.md`). You need an account that already holds that role. If you
+  don't have one:
+  - **Local** -- create it yourself in your own local ZITADEL console
+    (`http://localhost:8080` by default, `KORAS_PORT_ZITADEL`) and grant it
+    the role the request needs; it's your own throwaway instance.
+  - **Deployed dev** -- ask whoever administers that repository's dev
+    ZITADEL instance for a staff account, or use one you already have. This
+    doc can't hand you one.
+- **Testing the Security & Negative folder** (step 7): some cases
+  specifically want an identity *without* the access being tested --
+  `no_tenant_access_token` is a real token for a real person, just one with
+  no organization provisioned in this product. Sign up a second, separate
+  throwaway account for it rather than reusing your main one.
+
 ## 1. Locate the files
 
 Every KORAS repository that carries an API ships its collection and
@@ -43,52 +123,67 @@ Top-right corner of Postman -> the environment dropdown -> pick
 / `{{product_base_url}}` / `{{access_token}}` in a request stays literally
 unresolved and every call fails.
 
-## 4. Set the base URL (only if not running on the default port, or against a deployed environment)
+## 4. Set the base URL
 
-The environment ships with a default local address:
+**Set only the one variable the collection you imported actually calls** --
+`control_plane_base_url` for the Control Plane collection, `product_base_url`
+for any product's. The other one is present in the file but unused (see the
+note at the end of this step); leave it alone.
 
-| Variable | Default | Used by |
-|---|---|---|
-| `control_plane_base_url` | `http://localhost:8000` | Control Plane collection |
-| `product_base_url` | `http://localhost:8001` | any product collection |
+### Local
 
-If your local stack runs on a different port (`local/scripts/ports.sh`
-resolves one per machine -- check `local/.env` for what it actually picked),
-open the environment (the eye icon, or Environments in the sidebar -> edit)
-and update the value.
+- The environment ships with this default already set -- change nothing if
+  your stack is on its default port:
 
-**Both variables exist in every environment file regardless of which repository
-generated it, and only one of them is ever actually used.** The Control
-Plane's own collection references `{{control_plane_base_url}}` and nothing
-else -- `{{product_base_url}}` sits there unused, at whatever value it was
-last set to, carried along from the fixed set of identity variables every
-KORAS environment ships with (`generate-environment.mjs`'s `ALWAYS_PRESENT`),
-so switching between a Control Plane environment and a product environment in
-the same workspace doesn't produce a missing-variable error. The same is true
-in reverse in a product's own environment file: `control_plane_base_url` sits
-there unused. Leaving the unused one at its default is fine and changes
-nothing about what the collection you're actually running sends.
+  | Variable | Default |
+  |---|---|
+  | `control_plane_base_url` | `http://localhost:8000` |
+  | `product_base_url` | `http://localhost:8001` |
 
-**Pointing either one at a deployed environment instead of localhost:** the
-API has no DNS record of its own (`docs/ENVIRONMENT_STRATEGY.md`) -- it
-answers on its Fly hostname, `https://<project>-api-<env>.fly.dev`, which is
-a different host from the `admin-dev.<apex>` / `app-dev.<project>.<apex>`
-addresses you sign into in step 5. For example:
+- If your local stack runs on a different port (`local/scripts/ports.sh`
+  resolves one per machine when the default is taken), check `local/.env`
+  for what it actually picked and use that instead.
+- To change it: open the environment (the eye icon, or Environments in the
+  sidebar -> edit) and update the value.
 
-| Variable | Points at | Value |
-|---|---|---|
-| `control_plane_base_url` | the Control Plane's dev API | `https://koras-control-plane-api-dev.fly.dev` |
-| `product_base_url` | a specific product's dev API (`docoris`, `lexveria`, ...) | `https://<that product's project slug>-api-dev.fly.dev` |
+### Deployed dev
 
-Set only the one the collection you're running actually calls. The generator
-only ever produces a **DEV** collection and environment (`tooling/postman/README.md`)
--- there is no generated `-test` / `-stg` / `-prod` variant to import. Pointing
-the same environment at another Fly app (`<project>-api-test.fly.dev`, per the
-naming in `docs/ENVIRONMENT_STRATEGY.md`) works, since it is only a URL, but it
-is a manual edit you are making yourself, not a supported second file -- and
-`access_token` has to come from *that* environment's own sign-in app (a
-`test`/`stg` counterpart of step 5's table), never from a token issued against
-a different environment's ZITADEL instance.
+- The API has no DNS record of its own (`docs/ENVIRONMENT_STRATEGY.md`) -- it
+  answers on its Fly hostname, a different host from the
+  `admin-dev.<apex>` / `app-dev.<project>.<apex>` addresses you sign into in
+  step 5:
+
+  | Variable | Set it to |
+  |---|---|
+  | `control_plane_base_url` | `https://koras-control-plane-api-dev.fly.dev` |
+  | `product_base_url` | `https://<that product's project slug>-api-dev.fly.dev`, e.g. `https://docoris-api-dev.fly.dev` |
+
+- The generator only ever produces a **DEV** collection and environment
+  (`tooling/postman/README.md`) -- there is no generated `-test` / `-stg` /
+  `-prod` variant to import. Pointing the same environment at another Fly app
+  (`<project>-api-test.fly.dev`, per the naming in
+  `docs/ENVIRONMENT_STRATEGY.md`) works, since it is only a URL, but it is a
+  manual edit you are making yourself, not a supported second file --
+  `access_token` then has to come from *that* environment's own sign-in app,
+  never from a token issued against a different environment's ZITADEL
+  instance.
+
+### Why the unused variable is there, and why that's fine
+
+Both `control_plane_base_url` and `product_base_url` exist in every
+environment file regardless of which repository generated it, and only one
+of them is ever actually used:
+
+- The Control Plane's own collection references `{{control_plane_base_url}}`
+  and nothing else -- `{{product_base_url}}` sits there unused, carried along
+  from the fixed set of identity variables every KORAS environment ships
+  with (`generate-environment.mjs`'s `ALWAYS_PRESENT`), so switching between
+  a Control Plane environment and a product environment in the same
+  workspace doesn't produce a missing-variable error.
+- The same is true in reverse in a product's own environment file:
+  `control_plane_base_url` sits there unused.
+- Leaving the unused one at its default changes nothing about what the
+  collection you're actually running sends.
 
 ## 4a. Every variable in the environment, in detail
 
@@ -164,13 +259,14 @@ verifiable token the same way the application does:
   | `koras-control-plane` | `apps/admin` (platform admin) | `http://localhost:3001` | the platform API, `{{control_plane_base_url}}` -- a platform staff identity |
   | `koras-control-plane` | `apps/portal` ("account") | `http://localhost:3011` | the platform API, `{{control_plane_base_url}}` -- a customer/account identity, not staff |
 
-  Ports are *preferences*, the same as step 4's: `local/scripts/ports.sh`
-  walks upward when one is taken, which is exactly what happens the moment
-  you run a product and the Control Plane on the same machine at once --
-  check each repository's own `local/.env` for what it actually resolved to
-  rather than assuming the default held. A product has no `apps/portal` and
-  the Control Plane has no `apps/web`; sign into whichever app the table
-  above pairs with the token you need.
+  - Ports are *preferences*, the same as step 4's: `local/scripts/ports.sh`
+    walks upward when one is taken, which is exactly what happens the moment
+    you run a product and the Control Plane on the same machine at once --
+    check each repository's own `local/.env` for what it actually resolved
+    to rather than assuming the default held.
+  - A product has no `apps/portal`, and the Control Plane has no `apps/web`
+    -- sign into whichever app the table above pairs with the token you
+    need.
 - **Or**, for a service/test identity, request a token directly from
   ZITADEL's token endpoint for that identity.
 
@@ -196,20 +292,19 @@ safe:
   rather than failing, so an empty run there means "set the token," not
   "something is broken."
 
-From there, any folder is organized by the API's own tags (Organizations,
-Settings, Notifications, ...) -- open one, pick a request, hit Send.
-
-**Path parameters** (anything shown as `:organization_id`, `:account_id`,
-etc. in the request URL) resolve from an environment variable of the same
-name in snake_case (`organization_id`, `account_id`). Set the ones you need
-before running a request that isn't a pure list/search -- Postman leaves an
-unset path variable as literally `:organization_id` in the request, and
-you'll see that exact string echoed back in a 404 or 422 if you forget.
-
-**Request bodies** are pre-filled with realistic example values from the
-API's real schema (field names are real; the values are placeholders like
-`"string"` / `0` / today's date) -- edit them before sending a create/update
-request.
+- From there, any folder is organized by the API's own tags (Organizations,
+  Settings, Notifications, ...) -- open one, pick a request, hit Send.
+- **Path parameters** (anything shown as `:organization_id`, `:account_id`,
+  etc. in the request URL) resolve from an environment variable of the same
+  name in snake_case (`organization_id`, `account_id`). Set the ones you
+  need before running a request that isn't a pure list/search -- Postman
+  leaves an unset path variable as literally `:organization_id` in the
+  request, and you'll see that exact string echoed back in a 404 or 422 if
+  you forget.
+- **Request bodies** are pre-filled with realistic example values from the
+  API's real schema (field names are real; the values are placeholders like
+  `"string"` / `0` / today's date) -- edit them before sending a
+  create/update request.
 
 ## 7. Security & Negative Tests, if you're checking the boundary rather than the happy path
 
