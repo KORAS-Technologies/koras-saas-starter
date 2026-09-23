@@ -74,11 +74,37 @@ class _Session:
         self.statements: list[str] = []
         self.parameters: list[dict[str, Any]] = []
         self._answers = answers or []
+        self.savepoints = 0
 
     async def execute(self, statement: Any, parameters: Any = None) -> _Result:  # noqa: ANN401
         self.statements.append(str(statement))
         self.parameters.append(dict(parameters or {}))
         return self._answers.pop(0) if self._answers else _Result()
+
+    def begin_nested(self) -> Any:  # noqa: ANN401 - a savepoint context manager
+        """A savepoint, shaped like SQLAlchemy's and doing nothing.
+
+        `enqueue` writes inside one so that a refusal rolls back to it rather
+        than poisoning the caller's transaction -- the promise its docstring
+        has always made, which catching the exception alone never kept.
+
+        **Nothing here can check that it works**, and that is worth saying
+        rather than leaving implied: this double has no transaction, so there
+        is nothing for a savepoint to protect and nothing to lose without one.
+        `tests/integration/test_outbox_enqueue_rls.py` is where that claim is
+        actually tested, against a real PostgreSQL. This exists so the shape
+        of the call is satisfied.
+        """
+        self.savepoints += 1
+
+        class _Savepoint:
+            async def __aenter__(self) -> None:
+                return None
+
+            async def __aexit__(self, *exc: object) -> bool:
+                return False
+
+        return _Savepoint()
 
 
 def _sql(session: _Session) -> str:

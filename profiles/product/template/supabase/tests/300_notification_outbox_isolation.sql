@@ -47,6 +47,7 @@ set local app.provisioning = '';
 do $$
 declare
   seen integer;
+  seen_id uuid;
 begin
   -- ── A customer cannot read their own organisation's outbox ────────────────
   --
@@ -72,6 +73,34 @@ begin
     (tenant_id, kind, recipient, locale, subject, body_text, body_html)
   values ('00000000-0000-0000-0000-000000000001', 'ai.approval_requested',
           'alpha@example.test', 'en', 'Written by the API', 'text', '<p>html</p>');
+
+  -- ── But not with `returning`, and that is not a detail ───────────────────
+  --
+  -- `insert ... returning` asks PostgreSQL to hand the new row back, and
+  -- reading a row needs a policy that admits it. This table has no tenant
+  -- select policy -- the clause above is the whole point of the table -- so
+  -- the insert above succeeds and the same insert with `returning id` is
+  -- refused.
+  --
+  -- **`core/outbox.py` used `returning id` until 2026-09-22**, so every
+  -- customer request that owed a message was refused by row-level security,
+  -- in every generated product, for the whole life of the outbox. This suite
+  -- was green throughout because the insert it asserts is not the insert the
+  -- product makes -- so the assertion is inverted here: the failing form is
+  -- named, and the reason the shipped statement omits it is written down
+  -- where somebody putting it back will read it.
+  begin
+    insert into public.notification_outbox
+      (tenant_id, kind, recipient, locale, subject, body_text, body_html)
+    values ('00000000-0000-0000-0000-000000000001', 'ai.approval_requested',
+            'alpha@example.test', 'en', 'With returning', 'text', '<p>html</p>')
+    returning id into seen_id;
+    raise exception
+      'notification_outbox: `returning` succeeded, so this table now has a '
+      'tenant select policy and a member can read a colleague''s mail';
+  exception
+    when insufficient_privilege then null;
+  end;
 
   -- ── And not into somebody else's ──────────────────────────────────────────
   begin

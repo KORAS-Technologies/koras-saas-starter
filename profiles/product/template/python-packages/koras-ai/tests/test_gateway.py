@@ -125,6 +125,12 @@ async def test_tool_calls_are_parsed_from_json_strings_and_objects() -> None:
     ("status", "code"),
     [
         (401, ErrorCode.CONFIGURATION_ERROR),
+        # 403 is about the route, not the credential, so it is not
+        # `CONFIGURATION_ERROR` and the runtime may try the next route. This
+        # row was absent until 2026-09-22, which is how a deployed gateway
+        # answering 403 on every OpenAI model took an assistant down while a
+        # healthy Anthropic route sat unused. See `_safe_error`.
+        (403, ErrorCode.UPSTREAM_ERROR),
         (404, ErrorCode.CONFIGURATION_ERROR),
         (429, ErrorCode.PROVIDER_UNAVAILABLE),
         (500, ErrorCode.PROVIDER_UNAVAILABLE),

@@ -34,6 +34,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,12 +72,30 @@ class Owed:
     attempts: int
 
 
+#: **No `returning`, and the id is generated here instead.**
+#:
+#: `insert ... returning` asks PostgreSQL to hand the new row back, and reading
+#: a row under row-level security needs a policy that admits it. This table
+#: deliberately has **no tenant select policy at all** -- it holds the rendered
+#: body of every notification, including ones addressed to a colleague, so a
+#: member who could read it could read what the product wrote to somebody else.
+#:
+#: Those two facts are incompatible, and for two days nothing noticed. The
+#: insert was refused with "new row violates row-level security policy" on
+#: every customer request, in every generated product, so the outbox could
+#: never record a single message from the only producer that writes it.
+#:
+#: The suites were green because `300_notification_outbox_isolation.sql`
+#: asserts the *absence* of the select policy -- the very thing that breaks
+#: this statement -- and everything that exercised `enqueue` did so under a
+#: provisioning context, whose policy is `for all` and therefore admits the
+#: read. Found on 2026-09-22 by sending one notification through a running
+#: product.
 _INSERT = text(
     "insert into public.notification_outbox "
-    "(tenant_id, kind, recipient, locale, subject, body_text, body_html) "
-    "values (cast(:tenant_id as uuid), :kind, :recipient, :locale, :subject, "
-    ":body_text, :body_html) "
-    "returning id"
+    "(id, tenant_id, kind, recipient, locale, subject, body_text, body_html) "
+    "values (cast(:id as uuid), cast(:tenant_id as uuid), :kind, :recipient, "
+    ":locale, :subject, :body_text, :body_html)"
 )
 
 #: What is owed, whose turn has come, oldest first.
@@ -123,16 +142,30 @@ async def enqueue(
 ) -> str | None:
     """Owe one message. Returns its id, or nothing if it could not be recorded.
 
-    **Never raises.** The caller is in the middle of doing the thing the
-    customer actually asked for, and a notification that could not be recorded
-    must not undo an upload. That is the same rule `notify` follows for the
-    feed, and the reason both are swallowed here rather than at each call site.
+    **Never raises**, and since 2026-09-22 that is true of the transaction as
+    well as of this function. The caller is in the middle of doing the thing
+    the customer actually asked for, and a notification that could not be
+    recorded must not undo an upload.
+
+    Catching the exception was never enough to deliver that. PostgreSQL aborts
+    the whole transaction on an error, so a swallowed failure here left the
+    caller holding a transaction in which nothing further could be written and
+    everything already written was lost -- including the in-app notifications
+    `dispatch` had just made, which is how one channel's failure silently took
+    the other one with it. The savepoint is what makes the promise the
+    paragraph above has always made.
     """
+    message_id = str(uuid4())
     try:
-        row = (
+        # A savepoint, so a refusal rolls back to here rather than poisoning
+        # the caller's transaction. `begin_nested` issues `SAVEPOINT` and its
+        # context manager releases it on success and rolls back to it on an
+        # exception; the outer transaction is untouched either way.
+        async with session.begin_nested():
             await session.execute(
                 _INSERT,
                 {
+                    "id": message_id,
                     "tenant_id": tenant_id,
                     "kind": kind,
                     "recipient": recipient,
@@ -142,11 +175,10 @@ async def enqueue(
                     "body_html": body_html,
                 },
             )
-        ).first()
     except Exception:
         logger.exception("a notification could not be added to the outbox")
         return None
-    return str(row.id) if row is not None else None
+    return message_id
 
 
 async def claim(session: AsyncSession, *, limit: int = 50) -> list[Owed]:

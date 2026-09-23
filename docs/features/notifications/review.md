@@ -159,3 +159,114 @@ write reads the ref.
 - **A real send.** No mail has left a deployed product through this seam.
 - **Concurrency.** Two dispatches for one tenant in flight at once share
   nothing, which looks right and has not been exercised.
+
+---
+
+# The first run — 2026-09-23
+
+Not a review. One notification, caused by a real producer, carried through a
+running product to an inbox — the claim nothing in this estate had ever made.
+It was attempted because CAT-01 Phase 3 shipped on 2026-09-20 and
+`notification_outbox` had held **zero rows, ever**, in every environment.
+
+It failed three times before it worked, and each failure is recorded here
+because none of them was visible to any gate.
+
+| ID | Severity | Summary | State |
+|----|----------|---------|-------|
+| OBX-01 | **Critical** | The outbox could never record a message written on a customer's session | **Fixed** |
+| OBX-02 | **High** | A swallowed refusal destroyed the in-app notifications written beside it | **Fixed** |
+| AI-07 | **High** | A gateway 403 ended the turn instead of trying the next route | **Fixed** |
+
+### OBX-01 — `insert ... returning id` against a table with no select policy. **Critical.**
+
+`core/outbox.py` recorded a message with `insert ... returning id`. Returning a
+row means reading it, and reading a row under row-level security needs a policy
+that admits it. `notification_outbox` deliberately has **no tenant select
+policy at all** — it holds the rendered body of every notification, including
+ones addressed to a colleague, so a member who could select from it could read
+what the product wrote to somebody else. That property is correct and is not
+what changed.
+
+The two facts are incompatible. Every enqueue made on a customer's session was
+refused with `new row violates row-level security policy`, in every generated
+product, from the day the outbox shipped. The only producer a product has is
+the assistant's approval notice, so the outcome was that an action waiting for
+a human decision told nobody, by either channel, ever.
+
+Reproduced at the database, which is the cleanest form of the finding: the same
+insert, the same transaction, the same bound tenant — succeeds without
+`returning`, refused with it.
+
+**Fixed** by generating the id in Python and returning no row. The alternative —
+a narrow select policy — was rejected: it would trade a property the product
+deliberately holds for a value it already knows.
+
+### OBX-02 — A caught exception is not an isolated one. **High.**
+
+`enqueue` catches everything and its docstring promises that "a notification
+that could not be recorded must not undo an upload". PostgreSQL aborts the
+whole transaction on an error, so catching it delivered nothing: the caller was
+left holding a transaction in which nothing further could be written and
+everything already written was lost.
+
+In `dispatch` that meant the refused mail took the two in-app notifications
+written moments earlier with it, while the returned count said one mail had
+failed. One channel's failure silently destroyed the other's, and the report
+said the opposite.
+
+**Fixed** with `session.begin_nested()`. The rule generalises past this file:
+catching an exception from a shared session isolates the caller from the
+*exception* and not from the *transaction*, and every other place that swallows
+a write is making the same promise.
+
+### AI-07 — 401 and 403 were one code, and one of them is per-route. **High.**
+
+`_safe_error` mapped both to `CONFIGURATION_ERROR`, which `_RETRY_NEXT_ROUTE`
+excludes on the reasoning that a credential refusal fails the same way on every
+route. True of 401. A 403 is about the route: the gateway's key works and the
+provider account behind it is not entitled to that model.
+
+On the deployed `docoris` dev gateway, every OpenAI route answers 403 — "Project
+… does not have access to model `gpt-4o`" — and `claude-sonnet-4-6`, the next
+route in the same catalogue entry, answers 200. So the assistant was entirely
+down, with a healthy configured fallback unused, reporting a problem whose
+remedy was rotating a working key.
+
+**Fixed** by mapping 403 to `UPSTREAM_ERROR`, which is retryable. 403 was never
+in the status-mapping test's parametrize list, which is how it survived.
+
+## Why nothing caught any of this
+
+`300_notification_outbox_isolation.sql` asserts that a tenant *may* insert. It
+is right, it passes, and the insert it makes has no `returning` clause — so it
+is not the insert the product made. Everything in Python that reached `enqueue`
+used a double or a provisioning context, whose policy is `for all` and
+therefore admits the read. A double has no transaction and no policies, so
+neither OBX-01 nor OBX-02 can happen against one.
+
+That is the same shape as FW-HARDEN-001 and as data import Phase 2: an
+assertion that asks what a contract says rather than what the code does. This
+is the fourth time it has produced a green suite over work that had never run
+once.
+
+What catches it now is `tests/integration/test_outbox_enqueue_rls.py`, which
+calls `enqueue` on a tenant-bound session against a real PostgreSQL with a role
+that has no `BYPASSRLS`. Both cases are mutation-checked: restore `returning
+id` and both fail, remove the savepoint and the second does.
+
+## What the run actually proved
+
+A real RS256 token from a local provider whose JWKS the API discovered and
+verified; a real upload through the presign path to a real bucket; the
+assistant calling `claude-sonnet-4-6` through the **deployed** dev gateway,
+listing the tenant's files and proposing `files.rename`; the action held for
+approval; two feed rows and one outbox row on the caller's own transaction; the
+worker's own sweep claiming and sending; and the mail delivered — `status`
+`sent`, `attempts` 1, `simulated` false, with the provider's message id
+recorded on the row, which is the thing every call site used to discard.
+
+**What it did not prove**: none of it ran against a *deployed* product. The
+producer needs the `ai.assistant` entitlement, and the one dev tenant is on a
+plan that grants only `storage.files`. The remaining step is that entitlement
+and one sentence typed into a deployed assistant.

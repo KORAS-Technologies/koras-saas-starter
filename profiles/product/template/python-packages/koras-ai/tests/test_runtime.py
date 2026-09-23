@@ -7,6 +7,7 @@ store standing in for the tenant-scoped session.
 
 from __future__ import annotations
 
+import httpx
 import pytest
 from koras_ai import (
     ActionStatus,
@@ -15,6 +16,7 @@ from koras_ai import (
     ErrorCode,
     FailingProvider,
     FakeProvider,
+    GatewayProvider,
     GenerateRequest,
     Limits,
     Message,
@@ -283,6 +285,55 @@ async def test_a_failing_route_falls_back_and_both_attempts_are_metered(
         ("anthropic", "ok"),
     ]
     assert store.usage[0].error_code == "provider_unavailable"
+
+
+async def test_a_gateway_403_on_one_route_reaches_the_next_one(
+    owner_a: AIContext, catalogue: ModelCatalogue, tools: ToolRegistry, agents: AgentRegistry
+) -> None:
+    """A model this provider may not serve is a reason to try the other one.
+
+    Built from a **real** `GatewayProvider` over a transport that answers 403,
+    rather than from a hand-made `AIError`, because the defect this covers was
+    the mapping: 401 and 403 shared one code, that code is excluded from
+    `_RETRY_NEXT_ROUTE`, and so a route-specific refusal ended the turn. A test
+    that constructed the error itself would have agreed with whatever the
+    mapping did.
+
+    The body is the one a deployed gateway actually returned on 2026-09-22.
+    """
+    refused = GatewayProvider(
+        base_url="http://gateway.test",
+        api_key="sk-test",
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                403,
+                json={
+                    "error": {
+                        "message": (
+                            "litellm.NotFoundError: OpenAIException - Project "
+                            "`proj_x` does not have access to model `gpt-4o`."
+                        ),
+                        "type": "permission_error",
+                        "code": "403",
+                    }
+                },
+            )
+        ),
+    )
+    up = FakeProvider([ANSWER])
+    runtime, store, _ = runtime_for(up, catalogue=catalogue, tools=tools, agents=agents)
+    providers = ProviderRegistry()
+    providers.register("openai", refused)
+    providers.register("anthropic", up)
+    runtime.providers = providers
+
+    conversation = await runtime.start(owner_a)
+    turn = await runtime.send(owner_a, conversation.id, "hi")
+    assert turn.messages[-1].message.content == "Here you are."
+    assert [(e.provider, e.status) for e in store.usage] == [
+        ("openai", "error"),
+        ("anthropic", "ok"),
+    ]
 
 
 async def test_a_credential_refusal_does_not_fall_back(

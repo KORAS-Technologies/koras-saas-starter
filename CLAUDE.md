@@ -832,6 +832,40 @@ lost on restart. A deploy during a send lost the send; a mail server refusing
 connections for ten minutes lost every notice raised in them, with nothing
 saying so.
 
+**None of that worked until 2026-09-23, and the whole estate was green over
+it.** `enqueue` wrote its row with `insert ... returning id`; returning a row
+means reading it, and reading a row under row-level security needs a policy
+that admits it — which this table deliberately does not have, for the reason
+two paragraphs below. So every enqueue from a customer's request was refused,
+in every generated product, from the day the outbox shipped. The assistant's
+approval notice — the only `dispatch` caller a product has — reached nobody by
+either channel, because the refusal aborted the transaction and took the
+in-app rows with it while `unrecorded` reported one failed mail.
+
+**What made it invisible is worth more than the defect.**
+`300_notification_outbox_isolation.sql` asserts that a tenant *may* insert, and
+it is right, and it passes — because the insert it makes has no `returning`
+clause and is therefore not the insert the product made. Everything in Python
+that reached `enqueue` used a double or a provisioning context, whose policy is
+`for all` and admits the read. That is the FW-HARDEN-001 shape again — an
+assertion that asks what a contract says rather than what the code does — and
+it is now the **fourth** time it has produced a green suite over work that
+never ran once. Data import Phase 2 was the third.
+
+What catches it is the product's own `test_outbox_enqueue_rls.py`, at
+`profiles/product/template/tests/integration/test_outbox_enqueue_rls.py`: it calls
+`enqueue` itself, on a tenant-bound session, against a real PostgreSQL with a
+role that has no `BYPASSRLS`. Against a double it proves nothing, because a
+double has no policies to refuse it.
+
+**And a swallowed database error is not swallowed.** `enqueue` caught its
+exception and its docstring promised the caller's own work survived; PostgreSQL
+aborts the whole transaction on an error, so it did not. The insert is in a
+savepoint now. The rule generalises past this file: catching an exception from
+a shared session isolates the caller from the *exception* and not from the
+*transaction*, and every other place in this repository that swallows a write
+is making the same promise.
+
 Five attempts over about fifty-one minutes, then `abandoned` **with the reason
 on the row** — the whole difference from the log line it replaces. No
 dead-letter queue, per ADR 0008: a destination nothing reads is not evidence.

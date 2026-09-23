@@ -258,10 +258,29 @@ def _finish(
 
 def _safe_error(status: int, body: str) -> AIError:
     detail = f"gateway answered {status}: {body[:500]}"
-    if status in (401, 403):
+    if status == 401:
         return AIError(
             ErrorCode.CONFIGURATION_ERROR,
             "the AI gateway refused this product's credential",
+            detail=detail,
+        )
+    if status == 403:
+        # **Not the same answer as 401, and conflating them took an assistant
+        # down.** A 401 is about the credential and fails identically on every
+        # route, which is why `_RETRY_NEXT_ROUTE` excludes it. A 403 here is
+        # about *this route*: the gateway holds a working key and the provider
+        # account behind it is not entitled to that particular model. Those are
+        # exactly the conditions a second route exists for.
+        #
+        # Found on 2026-09-22 against a deployed gateway, where every OpenAI
+        # route answered 403 -- "Project ... does not have access to model
+        # gpt-4o" -- and `claude-sonnet-4-6`, the next route in the catalogue,
+        # answered 200. The product refused the whole turn and reported a
+        # credential problem, so the remedy it pointed at was rotating a key
+        # that was working.
+        return AIError(
+            ErrorCode.UPSTREAM_ERROR,
+            "the model provider will not serve this model",
             detail=detail,
         )
     if status == 404:
