@@ -11,6 +11,7 @@ import {
   negotiateLocale,
   resolveLocale,
   safeReturnPath,
+  type Translator,
 } from './index.js'
 import { en } from './messages/en.js'
 
@@ -87,6 +88,18 @@ test('the translator speaks the requested language', () => {
   assert.equal(createTranslator('en')('common.signIn'), 'Sign in')
   assert.equal(createTranslator('de')('common.signIn'), 'Anmelden')
   assert.equal(createTranslator('de')('login.heading', { product: 'Acme' }), 'Bei Acme anmelden')
+})
+
+test('a key no catalogue carries comes back as the key, not as undefined', () => {
+  // `settings.option.<value>` for a currency code is built at runtime and cast
+  // past the type check in apps/web/src/lib/setting-fields.ts -- the option
+  // label caller relies on getting the key back unchanged so it can fall back
+  // to the raw value. Before this, a key absent from every catalogue produced
+  // `undefined`, which reached a Currency dropdown as the literal text
+  // "undefined" -- both in its options and in its "Platform default" line.
+  const missing = 'settings.option.EUR' as unknown as Parameters<Translator>[0]
+  assert.equal(createTranslator('en')(missing), 'settings.option.EUR')
+  assert.equal(createTranslator('de')(missing), 'settings.option.EUR')
 })
 
 test('negotiation is quality-ordered and falls back by language', () => {

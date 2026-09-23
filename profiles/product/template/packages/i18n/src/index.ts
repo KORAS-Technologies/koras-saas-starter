@@ -214,13 +214,27 @@ export function interpolate(message: string, params?: MessageParams): string {
  *
  * Falls back to English for a key whose translation is the empty string, so a
  * catalogue can be committed with a line left blank on purpose and the page
- * still says something. A key missing altogether cannot happen: the type of
- * every catalogue forbids it.
+ * still says something. A key missing altogether cannot happen *for a key the
+ * type system checked* -- every catalogue is typed against English, so a key
+ * present in one and not the other fails `tsc`.
+ *
+ * **It can still happen for a key built at runtime and cast past that check.**
+ * `settings.option.<value>` in `apps/web/src/lib/setting-fields.ts` is exactly
+ * this: an enum option like a currency code is deliberately given no catalogue
+ * entry, on the theory that this function would hand the caller the key back
+ * unchanged so the caller can fall back to the raw value. It did not -- a key
+ * absent from every catalogue read as `undefined`, not as the key, and that
+ * `undefined` reached the screen as the literal text "undefined" in a
+ * `Currency` dropdown and its "Platform default" line. Falling back to the key
+ * itself, last, is what the option-label caller has always assumed this
+ * function does.
  */
 export function createTranslator(locale: Locale): Translator {
   const messages = MESSAGES[locale]
   return (key, params) => {
-    const message = messages[key] !== '' ? messages[key] : en[key]
+    const localized = messages[key]
+    const fallback = en[key]
+    const message = localized !== undefined && localized !== '' ? localized : fallback || key
     return interpolate(message, params)
   }
 }
