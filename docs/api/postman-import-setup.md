@@ -64,10 +64,27 @@ doesn't match the deployed ZITADEL client would be exactly the kind of
 guessed contract `docs/api/postman-standard.md` exists to avoid. Get a real,
 verifiable token the same way the application does:
 
-- **Sign in through the running application** (the product's own sign-in
-  page, or the Control Plane admin app) and pull the access token from the
-  browser's network tab or your local dev tooling -- whichever your stack
-  already gives you.
+- **Sign in through the running application** and pull the access token from
+  the browser's network tab or your local dev tooling -- whichever your
+  stack already gives you. Which app to sign into depends on the repository
+  (`docoris`/`lexveria`/any generated product vs. `koras-control-plane`) and
+  which token you need -- these are separate Next.js apps, on separate
+  ports, each with its own `/login`:
+
+  | Repository | App | Default dev URL | Signs into |
+  | --- | --- | --- | --- |
+  | any product (`docoris`, `lexveria`, ...) | `apps/web` | `http://localhost:3000` | the product's own API, `{{product_base_url}}` -- a customer identity |
+  | any product | `apps/admin` ("product-admin") | `http://localhost:3001` | the same product API, but a staff identity with that product's admin role |
+  | `koras-control-plane` | `apps/admin` (platform admin) | `http://localhost:3001` | the platform API, `{{control_plane_base_url}}` -- a platform staff identity |
+  | `koras-control-plane` | `apps/portal` ("account") | `http://localhost:3011` | the platform API, `{{control_plane_base_url}}` -- a customer/account identity, not staff |
+
+  Ports are *preferences*, the same as step 4's: `local/scripts/ports.sh`
+  walks upward when one is taken, which is exactly what happens the moment
+  you run a product and the Control Plane on the same machine at once --
+  check each repository's own `local/.env` for what it actually resolved to
+  rather than assuming the default held. A product has no `apps/portal` and
+  the Control Plane has no `apps/web`; sign into whichever app the table
+  above pairs with the token you need.
 - **Or**, for a service/test identity, request a token directly from
   ZITADEL's token endpoint for that identity.
 
