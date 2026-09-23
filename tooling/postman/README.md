@@ -48,20 +48,8 @@ node tooling/postman/scripts/generate-environment.mjs \
 
 ## Importing into Postman
 
-1. Postman -> Import -> select `postman/<Name>-DEV.postman_collection.json`
-   and `postman/environments/DEV.postman_environment.json`.
-2. Select the imported environment in Postman's environment dropdown.
-3. Set `access_token` (and `control_plane_base_url` / `product_base_url` if
-   not running on the default local ports) to a real value — never commit
-   one. Every secret-shaped variable ships blank.
-4. Obtaining `access_token`: this API verifies a ZITADEL-issued OIDC access
-   token (`core/auth.py` / `core/organization_auth.py`); Postman does not mint
-   one for you. Sign in through the application's own flow (or the identity
-   provider's own token endpoint for a service/test identity) and paste the
-   token in. There is no OAuth2 flow configured in the collection itself,
-   because inventing one that does not match the deployed ZITADEL client
-   would be exactly the kind of invented contract this tooling exists to
-   avoid — see `docs/api/postman-standard.md`.
+Full step-by-step walkthrough (import, environment, access token, running
+CI Smoke, troubleshooting): `docs/api/postman-import-setup.md`.
 
 ## Adding product-specific security or smoke coverage
 

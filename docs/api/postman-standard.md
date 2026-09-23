@@ -1,7 +1,9 @@
 # Postman standard
 
 How every KORAS repository's Postman collection is produced, kept current,
-and told apart from the tests a person adds by hand.
+and told apart from the tests a person adds by hand. Importing a collection
+and actually running requests against a local server is a separate,
+step-by-step document: `docs/api/postman-import-setup.md`.
 
 ## The one rule everything else follows
 
