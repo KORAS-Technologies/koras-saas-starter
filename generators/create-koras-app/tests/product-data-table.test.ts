@@ -33,6 +33,16 @@ function read(...segments: string[]): string {
   return readFileSync(join(PRODUCT, ...segments), 'utf8').split(String.fromCharCode(13)).join('')
 }
 
+/**
+ * A copy of the substitution `data-table.tsx` uses, not an import of it: the
+ * function is private to that module. Exercised here so the regression this
+ * guards is a behaviour, not a string in the source — grep-for-the-shape
+ * catches nothing if the same defect is written back with different spacing.
+ */
+function fill(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? '')
+}
+
 const COLUMNS = [{ key: 'name' }, { key: 'size' }, { key: 'when' }]
 
 describe('an arrangement is a hint about order, never a source of columns', () => {
@@ -158,8 +168,8 @@ describe('the table itself', () => {
     // A drag is invisible to a keyboard and awkward on a touch screen. Drag may
     // be added on top one day; it may not replace these.
     expect(table).toContain('function MoveButtons(')
-    expect(table).toContain('aria-label={labels.moveColumnLeft(header)}')
-    expect(table).toContain('aria-label={labels.moveColumnRight(header)}')
+    expect(table).toContain("aria-label={fill(labels.moveColumnLeft, { column: header })}")
+    expect(table).toContain("aria-label={fill(labels.moveColumnRight, { column: header })}")
     expect(table).not.toContain('draggable')
   })
 
@@ -266,5 +276,81 @@ describe('the settings this closes', () => {
     expect(table).toContain("useSettingValue('grid.allowColumnReorder', false)")
     expect(body('grid.allowColumnResize')).toContain('True,')
     expect(table).toContain("useSettingValue('grid.allowColumnResize', true)")
+  })
+})
+
+describe('a label needing a value crosses the server/client boundary as a string', () => {
+  // `KorasDataTable` is `'use client'`; `dataTableLabels()` runs on the
+  // server. A function cannot be a prop from one to the other — React throws
+  // at request time, which is invisible to every check here except one that
+  // asks what the labels actually are. TEST-SET-01 found this live: the one
+  // page in the estate using this table 500'd, because `showing` and `page`
+  // were built as closures over the translator instead of as templates.
+  const table = read('packages', 'ui', 'src', 'data-table', 'data-table.tsx')
+  const types = read('packages', 'ui', 'src', 'data-table', 'types.ts')
+  const builder = read('apps', 'web', 'src', 'lib', 'data-table-labels.ts.hbs')
+
+  const fakeTranslator = (key: string) =>
+    ({
+      'grid.pagination': 'Pagination',
+      'grid.rowsPerPage': 'Rows per page',
+      'grid.previous': 'Previous',
+      'grid.next': 'Next',
+      'grid.showing': 'Showing {from} to {to} of {total}',
+      'grid.page': 'Page {page} of {pages}',
+      'grid.moveColumnLeft': 'Move {column} left',
+      'grid.moveColumnRight': 'Move {column} right',
+    })[key] ?? key
+
+  it('declares every label a string, never a function', () => {
+    // A function type here is exactly what shipped broken: it type-checks,
+    // and only throws once a Server Component actually passes one.
+    expect(types).toMatch(/showing:\s*string/)
+    expect(types).toMatch(/page:\s*string/)
+    expect(types).toMatch(/moveColumnLeft:\s*string/)
+    expect(types).toMatch(/moveColumnRight:\s*string/)
+    expect(types).not.toMatch(/showing:\s*\(/)
+    expect(types).not.toMatch(/page:\s*\(/)
+  })
+
+  it('builds every label as a plain string, not a closure over the translator', () => {
+    // `t(key)` with no params leaves `{placeholder}`s in place — see
+    // `interpolate` in `packages/i18n` — which is what lets the templates
+    // reach the client unfilled and get filled there.
+    expect(builder).toContain("showing: t('grid.showing')")
+    expect(builder).toContain("page: t('grid.page')")
+    expect(builder).toContain("moveColumnLeft: t('grid.moveColumnLeft')")
+    expect(builder).toContain("moveColumnRight: t('grid.moveColumnRight')")
+    expect(builder).not.toMatch(/showing:\s*\(/)
+    expect(builder).not.toMatch(/page:\s*\(/)
+  })
+
+  it('fills each template with the numbers only once they are known, on the client', () => {
+    expect(table).toContain('fill(labels.showing,')
+    expect(table).toContain('fill(labels.page,')
+    expect(table).toContain('fill(labels.moveColumnLeft,')
+    expect(table).toContain('fill(labels.moveColumnRight,')
+    // The old shape called the label directly. Its return, still present as
+    // the object property name, must never again be followed by `(`.
+    expect(table).not.toMatch(/labels\.showing\(/)
+    expect(table).not.toMatch(/labels\.page\(/)
+    expect(table).not.toMatch(/labels\.moveColumnLeft\(/)
+    expect(table).not.toMatch(/labels\.moveColumnRight\(/)
+  })
+
+  it('actually substitutes what the builder and the table agree on', () => {
+    // The behaviour, not the shape: build labels the way the server does,
+    // then fill them the way the client does, and read an actual sentence.
+    const labels = {
+      showing: fakeTranslator('grid.showing'),
+      page: fakeTranslator('grid.page'),
+      moveColumnLeft: fakeTranslator('grid.moveColumnLeft'),
+      moveColumnRight: fakeTranslator('grid.moveColumnRight'),
+    }
+    expect(fill(labels.showing, { from: '1', to: '50', total: '312' })).toBe(
+      'Showing 1 to 50 of 312',
+    )
+    expect(fill(labels.page, { page: '1', pages: '7' })).toBe('Page 1 of 7')
+    expect(fill(labels.moveColumnLeft, { column: 'Amount' })).toBe('Move Amount left')
   })
 })

@@ -9,12 +9,14 @@ import type { DataTableLabels } from '@{{projectSlug}}/ui'
  * nothing of the catalogue, which is what lets it live in `packages/ui` without
  * pulling every language into the bundle of anything that imports it.
  *
- * `showing` and `page` are functions rather than pre-rendered strings because
- * their numbers change as somebody pages, and a label bundle is built once per
- * request. Calling the translator inside them keeps the placeholder
- * substitution in the one place that knows the language — a component that
- * built "Showing 1 to 50 of 312" by concatenation would put the numbers in
- * English order in every language.
+ * `showing`, `page`, `moveColumnLeft` and `moveColumnRight` are templates
+ * rather than pre-filled strings, because their numbers and column names
+ * change as somebody pages or reorders and a label bundle is built once per
+ * request. They must also be strings rather than functions: `KorasDataTable`
+ * is a Client Component and this function runs on the server, and a function
+ * cannot cross that boundary as a prop. Calling the translator with no params
+ * leaves each `{placeholder}` in the returned string, which is what
+ * `KorasDataTable` fills in once it knows the numbers.
  */
 export function dataTableLabels(t: Translator): DataTableLabels {
   return {
@@ -22,10 +24,9 @@ export function dataTableLabels(t: Translator): DataTableLabels {
     rowsPerPage: t('grid.rowsPerPage'),
     previous: t('grid.previous'),
     next: t('grid.next'),
-    showing: (from, to, total) =>
-      t('grid.showing', { from: String(from), to: String(to), total: String(total) }),
-    page: (page, pages) => t('grid.page', { page: String(page), pages: String(pages) }),
-    moveColumnLeft: (column) => t('grid.moveColumnLeft', { column }),
-    moveColumnRight: (column) => t('grid.moveColumnRight', { column }),
+    showing: t('grid.showing'),
+    page: t('grid.page'),
+    moveColumnLeft: t('grid.moveColumnLeft'),
+    moveColumnRight: t('grid.moveColumnRight'),
   }
 }

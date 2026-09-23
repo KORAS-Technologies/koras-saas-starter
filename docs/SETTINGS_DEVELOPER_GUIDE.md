@@ -89,16 +89,16 @@ implementation, in this repository or in the Control Plane.
 ## Using the shared table
 
 ```tsx
-<KorasDataTable data={orders} columns={columns} />
+<KorasDataTable data={orders} columns={columns} labels={labels} caption="Orders" empty="No orders yet." />
 ```
 
-That is the whole integration. Page size, paging, the offered sizes, the sticky
-header and the row density come from the customer's `grid.*` settings.
+Page size, paging, the offered sizes, the sticky header and the row density
+come from the customer's `grid.*` settings.
 
 To override one, pass it:
 
 ```tsx
-<KorasDataTable data={orders} columns={columns} pageSize={10} />
+<KorasDataTable data={orders} columns={columns} labels={labels} … pageSize={10} />
 ```
 
 An explicit prop always wins. That precedence lives in `chooseValue` in
@@ -109,7 +109,52 @@ inconsistently by a call site that reimplements it.
 reason is this framework: a page-local table is a page that does not honour any
 of these settings, and nobody finds out until a customer changes one.
 
-## The four things that will bite
+**`columns` and `rowKey` must be built in a Client Component.** `KorasDataTable`
+is `'use client'`, and `DataTableColumn.cell` and `rowKey` are functions.
+Building them in the Server Component page and passing them straight in —
+exactly the shape shown above, with no wrapper — throws at request time:
+"Functions cannot be passed directly to Client Components." TEST-SET-01 found
+this the hard way, live, in the one page that ever tried it. Fetch `data` in
+the page, build `labels` with `dataTableLabels(t)` (strings, safe to cross), and
+put the actual `<KorasDataTable>` call — with `columns` and `rowKey` built
+inside it — in a small colocated `'use client'` component that takes `data` and
+`labels` as props:
+
+```tsx
+// orders-table.tsx
+'use client'
+export function OrdersTable({ data, labels }: { data: Order[]; labels: DataTableLabels }) {
+  const columns: DataTableColumn<Order>[] = [
+    { key: 'customer', header: 'Customer', cell: (o) => o.customer },
+  ]
+  return (
+    <KorasDataTable
+      data={data}
+      columns={columns}
+      labels={labels}
+      rowKey={(o) => o.id}
+      caption="Orders"
+      empty="No orders yet."
+    />
+  )
+}
+
+// page.tsx — the Server Component
+export default async function OrdersPage() {
+  const [orders, t] = await Promise.all([fetchOrders(), translator()])
+  return <OrdersTable data={orders} labels={dataTableLabels(t)} />
+}
+```
+
+`labels` is safe to build on the server because `DataTableLabels` is all
+strings — `showing` and `page` are `{placeholder}` templates the table fills in
+once it knows the numbers, the same pattern `SettingsFormLabels.resetTo` uses.
+`data` is safe because it is plain JSON. `columns` and `rowKey` are not, because
+they hold functions, and no amount of memoising or hoisting them to module
+scope changes that — the restriction is about crossing the boundary as a value,
+not about where the function was defined.
+
+## The five things that will bite
 
 ### 1. A setting whose absence means "work it out"
 
@@ -148,6 +193,15 @@ They read the same on the page and are different in the database.
 into it; `member_setting_values` deletes the row. A tenant that stopped holding
 a row would start following the platform again, which is the snapshot rule
 broken by a button.
+
+### 5. A label that needs a value is a string, never a function
+
+Every label type this package defines — `SettingsFormLabels`, `ReportingLabels`,
+`DataTableLabels` — is passed from a Server Component to a Client Component.
+A field built as `(value) => t('key', { value })` type-checks and throws at
+request time, because a function cannot cross that boundary. Build it as a
+`{placeholder}` template instead and fill it on the client, with `withValue` or
+the local `fill` — see `DataTableLabels` and "Using the shared table" above.
 
 ## Tests you are expected to add
 

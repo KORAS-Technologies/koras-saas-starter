@@ -224,7 +224,7 @@ function referencedPaths(doc: string): string[] {
     // PRODUCT_SIGN_IN cites ZITADEL's own source for the behaviour of a
     // feature flag, which is worth naming by file precisely because the
     // behaviour is not in ZITADEL's documentation.
-    if (/^(koras-(control-plane|saas-starter)|zitadel\/zitadel)\//.test(token)) continue
+    if (/^(koras-(control-plane|saas-starter|e2e-shop)|zitadel\/zitadel)\//.test(token)) continue
     // An absolute path on the reader's machine -- C:/Program Files/Git/bin/bash.exe,
     // C:/WINDOWS/system32/bash.exe. Named because the reader has to type them,
     // and not this repository's to have.

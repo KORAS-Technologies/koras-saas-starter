@@ -74,36 +74,74 @@ how a gap stops being visible.
 
 ## TEST-SET-01 — A page size is a thing a person can watch work
 
-**Priority** Critical. **Verdict** BLOCKED (half executed, and the half that
-matters most did not).
+**Priority** Critical. **Verdict** BLOCKED (half executed; the defect that
+blocked the other half is found and fixed 2026-09-23, but not yet deployed or
+re-run).
 
 | Step | Result |
 |---|---|
 | A page size chosen in preferences survives a reload | **PASS** — round-trip project, and again on **deployed dev**: set to 25, read back 25 on a fresh load, marked "modified" |
 | One person's page size is not what another sees | **PASS** — round-trip project, two subjects |
-| The seeded orders table repaginates at the chosen size | **NOT EXECUTED — blocked by a live defect** |
+| The seeded orders table repaginates at the chosen size | **NOT EXECUTED — was blocked by a live defect, fixed 2026-09-23, not yet re-run** |
 
-### BLOCKED permanently, decided 2026-09-22
+### The 500 was never "no product has the page" — a real defect, found 2026-09-23
 
-The blocker moved twice in one day and then ran out of road.
+The reasoning below closed this case as permanently BLOCKED on 2026-09-22. It
+was wrong: the blocker was never that no product had grown a page over the
+shared table. It was that `KorasDataTable` itself 500'd for the one usage
+pattern its own docs recommended, and `koras-e2e-shop`'s `/dashboard/orders`
+was simply the first (and only) page ever to try it.
 
-It began as "no product page uses the shared data table". `koras-e2e-shop` had
-one — `/dashboard/orders` — and on deployed dev **that page returned HTTP 500**
-while every other dashboard page answered 200, so the settings surface was
-healthy and the orders page specifically was not. Then that repository was
-scheduled for teardown, and with it went the only product in the estate with
-such a page.
+`KorasDataTable` is `'use client'`. `DataTableLabels.showing`/`.page`/
+`.moveColumnLeft`/`.moveColumnRight` were typed as functions, and
+`DataTableColumn.cell` and `rowKey` are functions by design. The orders page —
+an `async` Server Component — built all of them and passed them straight into
+the table, which is exactly the shape `SETTINGS_DEVELOPER_GUIDE.md`'s own
+example showed. React refuses a function prop crossing from a Server Component
+into a Client Component at request time: "Functions cannot be passed directly
+to Client Components." No build, lint or type check catches it — it throws
+only when the route is actually requested, which is why a fully green estate
+shipped it.
 
-**Accepted as permanently BLOCKED rather than left looking deferred.** A
-BLOCKED verdict with a documented reason is an allowed outcome; what is never
-allowed is counting it as a pass, and it is not counted as one here.
+Two fixes, confirmed live against a real Next.js dev server (not just types):
 
-**The trigger that would let it run again**, so this is a state rather than a
-dead end: any product growing a page that renders `KorasDataTable` over enough
-rows to page. Giving the generated product such a page would do it, and is a
-Settings story rather than a correction — considered and declined on
-2026-09-22, because inventing a page so that a test has somewhere to live is
-the wrong way round.
+1. **`DataTableLabels`'s four fields are strings now, not functions** —
+   `{placeholder}` templates filled by a `fill()` helper inside the client
+   component, the same pattern `SettingsFormLabels.resetTo`/`withValue` already
+   established. Fixed in the starter template
+   (`profiles/product/template/packages/ui/src/data-table/{types.ts,data-table.tsx}`
+   and `apps/web/src/lib/data-table-labels.ts.hbs`) and mutation-checked: the
+   new test in `generators/create-koras-app/tests/product-data-table.test.ts`
+   fails if the old function shape is reintroduced.
+2. **`columns` and `rowKey` must be built inside a Client Component**, never
+   in the Server Component page — no amount of hoisting or memoising a render
+   function changes that it cannot cross the boundary as a value. Documented
+   in `data-table.tsx`'s own docstring and in
+   `docs/SETTINGS_DEVELOPER_GUIDE.md` ("Using the shared table"), with a
+   worked example.
+
+A standalone reproduction (a probe page built exactly like the shop's orders
+page, in a product generated fresh from the fixed template) 500'd with both
+defects present and returned 200, with the label templates correctly filled
+("Showing 1 to 2 of 2"), once both fixes were applied on 2026-09-23.
+`koras-e2e-shop`'s own `koras-e2e-shop/packages/ui`,
+`koras-e2e-shop/apps/web/src/lib/data-table-labels.ts` and
+`koras-e2e-shop/apps/web/src/app/dashboard/orders/page.tsx` carry the same fix
+as an uncommitted working-tree change (a new `orders-table.tsx` client wrapper
+owns `columns` and `rowKey`; `page.tsx` now only fetches and translates), and
+the shop's own `typecheck` passes across all 21 tasks. **As of 2026-09-23, not
+yet committed, deployed or exercised live** — that redirect-on-unauthenticated
+behaviour was confirmed (307 to `/login`), but nobody has signed in against the
+patched code yet.
+
+### The case itself is still BLOCKED, for a narrower and now-accurate reason
+
+`koras-e2e-shop` is being torn down, and it remains the only repository in the
+estate with a page over the shared table. Re-running this case needs: the fix
+above committed and deployed to a live product, and a signed-in browser
+session against it. The trigger that would let it run again is unchanged —
+any product growing such a page — except the defect that page would have hit
+is now known and fixed rather than latent.
 
 **What is proven, which is most of the case.** The value is chosen, stored,
 resolved, persisted across a reload, and kept private to its owner — all on a
@@ -114,7 +152,8 @@ that deliberately overrides it per instance.
 
 **What is unproven** is those two halves joined in a running product: a table
 drawing that many rows and repaginating when the number changes. Both ends are
-verified; the seam between them is not.
+verified; the seam between them has a fix as of 2026-09-23, and not yet a live
+run.
 
 ---
 

@@ -20,6 +20,14 @@ import {
 import type { DataTableLabels } from './types'
 
 /**
+ * Substitute a template's `{placeholder}`s, on this side of the
+ * server/client boundary — see the docstring on `DataTableLabels`.
+ */
+function fill(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? '')
+}
+
+/**
  * The product's table, which pages itself from the customer's own settings.
  *
  * ```tsx
@@ -30,6 +38,30 @@ import type { DataTableLabels } from './types'
  * all, which sizes it offers, whether the header sticks and how tall the rows
  * are all come from `grid.*`, resolved once in the dashboard layout and read
  * from context. No page fetches a setting and no page passes one down.
+ *
+ * **This component is `'use client'`, and `columns` and `rowKey` are made of
+ * functions.** A Server Component page may fetch `data` and build `labels`
+ * (strings, from a translator — see `DataTableLabels`), but it cannot build
+ * `columns` or `rowKey` itself: React refuses a function prop crossing from a
+ * Server Component into a Client Component, at request time, with no build or
+ * type error to catch it first. TEST-SET-01 found this live — the one page in
+ * this estate that tried the pattern shown in `SETTINGS_DEVELOPER_GUIDE.md`
+ * without a wrapper 500'd on every request. Build `columns` and `rowKey` in a
+ * small `'use client'` component colocated with the page, taking only `data`
+ * and `labels` as props:
+ *
+ * ```tsx
+ * // orders-table.tsx
+ * 'use client'
+ * export function OrdersTable({ data, labels }: { data: Order[]; labels: DataTableLabels }) {
+ *   const columns: DataTableColumn<Order>[] = [{ key: 'customer', header: '…', cell: (o) => o.customer }]
+ *   return <KorasDataTable data={data} columns={columns} labels={labels} rowKey={(o) => o.id} … />
+ * }
+ *
+ * // page.tsx — the Server Component
+ * const orders = await fetchOrders()
+ * return <OrdersTable data={orders} labels={dataTableLabels(await translator())} />
+ * ```
  *
  * **An explicit prop always wins.** A screen with a legitimate local
  * requirement — a dense picker inside a dialog, a preview showing three rows —
@@ -521,7 +553,11 @@ export function KorasDataTable<T>({
              * button and a screen-reader user otherwise hears nothing at all.
              */}
             <p className="text-sm text-ink-muted" aria-live="polite" data-testid={`${testId}-range`}>
-              {labels.showing(paging.from, paging.to, paging.total)}
+              {fill(labels.showing, {
+                from: String(paging.from),
+                to: String(paging.to),
+                total: String(paging.total),
+              })}
             </p>
             <div className="flex items-center gap-1">
               <PagerButton
@@ -531,7 +567,7 @@ export function KorasDataTable<T>({
                 onClick={() => goTo(paging.page - 1)}
               />
               <span className="px-1 text-sm text-ink-muted" data-testid={`${testId}-page`}>
-                {labels.page(paging.page, paging.pages)}
+                {fill(labels.page, { page: String(paging.page), pages: String(paging.pages) })}
               </span>
               <PagerButton
                 label={labels.next}
@@ -622,7 +658,7 @@ function MoveButtons({
         disabled={!canMoveLeft}
         // The column's name is in the label, because "move left" repeated
         // across nine headers is nine identical controls to a screen reader.
-        aria-label={labels.moveColumnLeft(header)}
+        aria-label={fill(labels.moveColumnLeft, { column: header })}
         onClick={() => onMove(-1)}
       >
         {'\u2039'}
@@ -632,7 +668,7 @@ function MoveButtons({
         className={base}
         data-testid={`${testId}-right`}
         disabled={!canMoveRight}
-        aria-label={labels.moveColumnRight(header)}
+        aria-label={fill(labels.moveColumnRight, { column: header })}
         onClick={() => onMove(1)}
       >
         {'\u203a'}

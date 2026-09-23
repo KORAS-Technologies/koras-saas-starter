@@ -7,11 +7,15 @@
  * the catalogue in every bundle that imports it, and `product-frontend.test.ts`
  * asserts that no component in this package carries a sentence of English.
  *
- * Two of them are functions rather than templates with placeholders. "Showing 1
- * to 50 of 312" and "Page 1 of 7" put their numbers in different places in
- * different languages, and a function lets a catalogue decide where without
- * this file knowing. It also makes the plural somebody's problem who can
- * actually solve it.
+ * Four of them are templates with `{placeholder}`s rather than functions:
+ * "Showing 1 to 50 of 312" and "Page 1 of 7" put their numbers in different
+ * places in different languages, and a catalogue entry lets a translator
+ * decide where without this file knowing. They are strings rather than
+ * functions for the same reason every other label in this package is a
+ * string — this component is a Client Component, its labels are built on the
+ * server from the request's translator, and a function cannot cross that
+ * boundary. `fill` substitutes the placeholders once the numbers are known,
+ * on this side of it.
  */
 export interface DataTableLabels {
   /** Names the pager landmark, e.g. "Pagination". */
@@ -19,11 +23,13 @@ export interface DataTableLabels {
   rowsPerPage: string
   previous: string
   next: string
-  showing: (from: number, to: number, total: number) => string
-  page: (page: number, pages: number) => string
+  /** `{from}`, `{to}`, `{total}` */
+  showing: string
+  /** `{page}`, `{pages}` */
+  page: string
   /** Names one header's move control, e.g. "Move Amount left". A column's name
    *  is in the label because "Move left" repeated across nine headers is nine
-   *  identical controls to a screen reader. */
-  moveColumnLeft: (column: string) => string
-  moveColumnRight: (column: string) => string
+   *  identical controls to a screen reader. `{column}` */
+  moveColumnLeft: string
+  moveColumnRight: string
 }
