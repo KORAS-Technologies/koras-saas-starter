@@ -361,7 +361,7 @@ shared by every product, and Starter is five gigabytes for all of them.
 | 1d | The message refusing a member says to add a seat under Billing. Under a flat fee with a hard cap that advice cannot be followed, and the answer is to move up a tier | Medium |
 | 2 | Included storage and AI allowances are platform-wide constants; no product can differ | High |
 | 3 | No plan versioning, effective dates or grandfathering model | High |
-| 4 | The plan write endpoint overwrites the whole row; a caller sending only prices resets name, self-serve and seat bounds | High |
+| 4 | ~~The plan write endpoint overwrites the whole row~~ **Fixed 2026-09-23.** A field a caller does not mention is now left as it stands; an explicit null still clears. Found in the field: the Control Plane console's plan form never sent the included-user count, so the first save from there set it to null — which stopped the seat cap working and made the additional-user line unreachable, silently, because a cleared column and one nobody ever set look identical | **Was High** |
 | 5 | The registrar identity **cannot** write plans, and granting it the role that would let it **breaks registration** — the endpoint admits machines only and a platform role reclassifies the token as staff. A second service account is required | High |
 | 6 | The standard names a Professional tier; the platform's plan code is `pro`. A subscription points at a plan row, so this is a naming decision with a migration behind it | Medium |
 | 7 | The billing capability in the product manifest gates a three-line package the billing document says may be removed. It makes `--with billing` ambiguous | Medium |

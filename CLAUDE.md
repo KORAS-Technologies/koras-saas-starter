@@ -840,11 +840,25 @@ half, because a bare machine gate would let any product's service account write
 any plan, which is the registrar problem inverted and worse: a product could
 price itself.
 
-**`PUT /plans` overwrites the whole row**, including name, self-serve and seat
-bounds. So the step reads each plan back and round-trips every field it does
-not own; a caller sending only price fields would silently reset somebody's
-administration. That is asserted by a test that mutation-checks, not by a
-comment.
+**`PUT /plans` overwrote the whole row** — including name, self-serve and seat
+bounds — so the factory reads each plan back and round-trips every field it
+does not own. **The other caller did not, and that shipped a defect on
+2026-09-23**: the Control Plane console's plan form never sent the
+included-user count, so the first save from there set it to null, which stopped
+the seat cap working and made the additional-user line unreachable. Nothing
+went red, because a cleared column and a column nobody ever set look
+identical. Found by looking at a screenshot of the form, not by a test.
+
+**The class is closed rather than the instance.** The endpoint now leaves a
+field the caller did not mention as it stands, and an explicit null still
+clears — `model_fields_set` is what tells those apart, which a default cannot
+express. The console also gained the missing input.
+
+**And the first guard written for it did not guard**: it reimplemented the
+merge rule inside the test file and asserted against its own copy, so mutating
+the route left every case green. That is the FW-HARDEN-001 shape produced
+while fixing an instance of the same shape, caught by mutation-testing and by
+nothing else. The tests drive the route now.
 
 **Phase 1 of that standard shipped on 2026-09-22.** The catalogue file now
 ships with the platform's standard pricing already in it — four tiers, flat
