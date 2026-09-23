@@ -57,7 +57,11 @@ const PATTERNS: Array<[RegExp, string]> = [
   // redacted even when the value never came from our own environment — an API
   // quoting someone else's token back is still a leak.
   [
-    /\b(?:gh[pousr]_|github_pat_|sbp_|dp\.(?:st|pt|sa)\.|FlyV1[_ ]|hcp\.|cf-|vercel_)[A-Za-z0-9._-]{8,}/g,
+    // `sk_`/`rk_` and `whsec_` are the payment provider's. Added when the
+    // factory gained a step that holds one: a provider quoting a key back in a
+    // 401 body was previously caught only by the value layer, and only when the
+    // caller happened to pass the environment holding it.
+    /\b(?:gh[pousr]_|github_pat_|sbp_|dp\.(?:st|pt|sa)\.|FlyV1[_ ]|hcp\.|cf-|vercel_|[sr]k_(?:live|test)_|whsec_)[A-Za-z0-9._-]{8,}/g,
     REDACTED,
   ],
   // KEY=value assignments where the name looks sensitive (CLI stderr, env dumps).

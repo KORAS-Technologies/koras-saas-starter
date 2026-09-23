@@ -774,12 +774,91 @@ rightly refuses. That narrows the rule
 rather than reversing it, and closes the one drift the check could not see: an
 amount edited by hand in a dashboard.
 
-**No provisioner is built, deliberately.** Creating a price needs a Managed
-Payments tax code — a product without an eligible one cannot be sold at all —
-a Stripe price is immutable in amount so no two-way sync can exist, and the
-by-hand step is three clicks per plan for a catalogue nobody has created in
-live mode even once. BILL-GAP-003 is declined with that reasoning rather than
-left PLANNED.
+**No provisioner was built, deliberately** — until 2026-09-22, when
+BILL-GAP-003 was reopened and built. The decline read: creating a price needs a
+Managed Payments tax code, a Stripe price is immutable in amount so no two-way
+sync can exist, and the by-hand step is three clicks per plan for a catalogue
+nobody has created in live mode even once. **Two of those were answered rather
+than overturned.** The tax code is pinned rather than chosen, and immutability
+is honoured rather than worked around: a corrected amount creates a *second*
+price and moves the lookup key to it, leaving the first active and
+unreferenced. A two-way sync still cannot exist and none was built. The third
+reason is what the work closes.
+
+**What reopened it was not the catalogue growing**, which is the trigger the
+decline itself named. It was that the by-hand sequence is the one step in
+provisioning a product that leaves no record of having been done — three clicks
+in a dashboard and two ids pasted into a form, with nothing able to say
+afterwards whether they were the right ones.
+
+**It is `--provision-billing` in the factory CLI**, run after registration and
+after `doppler-bootstrap`, and the order is a dependency: registration is what
+creates the plans it writes onto. It reads `.koras/billing-catalogue.yaml` —
+generator-written with **no amounts**, because a generated product does not
+know what it costs and a file shipped with plausible ones would be provisioned
+by the first operator who ran the step without reading it.
+
+**The provider key is the factory's.** The rule that no product holds a
+provider credential is about *product repositories*: this key is read by an
+operator running the factory and reaches no generated project, no template and
+no registration payload. Putting the provider work behind a Control Plane
+endpoint instead would keep the ownership principle more tidily and reuse the
+adapter already there; it was declined for this pass because it puts the work
+in a repository the plan does not touch, and it stays available.
+
+**Three refusals are the point of it.** A live provider key is refused against
+anything but production and a test key against production, both before any call
+is made. A plan code the Control Plane does not hold is refused rather than
+created — the endpoint would happily create one, and a mistyped code becomes a
+real priced tier granting nothing. And nothing in the path may delete a price,
+archive one or edit an amount.
+
+**It needs a second service account, and cannot borrow the first.** Writing a
+price onto a plan needs a platform billing role; `registrar` deliberately has
+no platform role, because one reclassifies its token as staff and the
+registration endpoint admits machines only. Granting `registrar` what this
+needs would break the thing it exists for — which is why the Control Plane
+answering 403 says so in those words rather than leaving it to be rediscovered.
+
+**`PUT /plans` overwrites the whole row**, including name, self-serve and seat
+bounds. So the step reads each plan back and round-trips every field it does
+not own; a caller sending only price fields would silently reset somebody's
+administration. That is asserted by a test that mutation-checks, not by a
+comment.
+
+**It is superseded in shape, the same day it was built.** A platform standard
+for product pricing was specified on 2026-09-22 — four tiers with included
+internal users, a standard additional-seat price, per-product storage and AI
+allowances, plan versioning, and underscore-separated lookup keys carrying no
+currency. `docs/platform/billing-catalogue-standard.md` is the audit and the
+plan; its Phase 0 records the four decisions taken. **Read it before extending
+the code described above**, because three things in that code change under the
+standard: the lookup key format, the catalogue shipping empty rather than with
+defaults, and a schema that carries prices and nothing else.
+
+**The largest finding there is not a catalogue problem at all, and it is
+ordered ahead of the catalogue rather than behind it.** A plan is a flat fee
+including a number of users — $99 for three — and the platform implements the
+inverse: the seat count is sent as the subscription's quantity, so Starter at
+$99 with five seats bills $495, and it is enforced nowhere, so the customer who
+paid for five may add fifty. It multiplies the price, which it must not, and
+limits nothing, which it must.
+
+**Provisioning a price is what arms that.** Nothing can be sold self-serve
+until a plan has a price reference, so the overcharge is latent today; writing
+$99 onto Starter is what lets the signup page sell it and multiply it. So the
+correction — quantity permanently one, the seat count kept by this platform
+rather than read back from the provider, the included count enforced — is
+Phase 2 there, **before** provisioning, and the two are one piece of work
+rather than a defect and its later fix. Extra seats at $25 are a separate line
+and are Phase 5; the included count is a hard cap from Phase 2 until Phase 5
+ships, which is a consequence of the ordering rather than a choice — decided
+2026-09-22, when the destination was settled as a soft cap.
+
+**No live run has happened.** Forty-one tests drive the whole path against a
+fake estate — an identity provider, a payment provider and a Control Plane that
+keep state — and four of the assertions were mutation-checked. What none of
+them can reach is a real provider account, and that is F29.
 
 **A plan with no recorded intent is unchecked, not clean**, and a test asserts
 that distinction. An expectation nobody stated is not a fact about the price.

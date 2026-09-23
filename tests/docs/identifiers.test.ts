@@ -139,13 +139,25 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   // checkable if the thing verified is named. All three belong elsewhere by
   // the same rule as the billing columns above: `collection_runs` is the
   // Control Plane's table recording each hourly collection, `end_behavior`
-  // and `txcd_10103001` are Stripe's own vocabulary -- a subscription
+  // and `txcd_10103001` were Stripe's own vocabulary -- a subscription
   // schedule's release behaviour and the SaaS tax code Managed Payments
   // admits. A product repository naming any of them would mean it had
   // started holding the platform's commercial state.
+  //
+  // `txcd_10103001` stopped being exempt on 2026-09-22 and the exemption is
+  // removed rather than reworded. It was exempted as "set on the product in
+  // the Stripe dashboard rather than in any file", and that claim is what
+  // `--provision-billing` ended: the code is now pinned in the factory's
+  // billing module, because a product without an eligible code cannot be sold
+  // at all and so it is not a free choice to prompt for. This test is what
+  // noticed, which is the point of asserting exemptions -- the alternative was
+  // a line asserting the dashboard is the only place it lives, sitting three
+  // files away from the constant that contradicts it.
+  //
+  // It stays out of every *product* repository, which is the half of the rule
+  // that still holds: the factory pins it, and no generated project has it.
   collection_runs: 'a Control Plane table recording each collection attempt; no product has one',
   end_behavior: "a Stripe subscription-schedule field the Control Plane's adapter sends",
-  txcd_10103001: 'a Stripe tax code, set on the product in the Stripe dashboard rather than in any file',
   // ── Another repository's names ───────────────────────────────────────────
   //
   // `PROFILE_SYNC_MATRIX.md` and the settings-framework audit are

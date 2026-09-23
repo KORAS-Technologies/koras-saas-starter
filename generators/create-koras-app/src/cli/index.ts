@@ -27,6 +27,7 @@ import { checkDrift, formatDriftReport } from '../generation/drift.js'
 import { PROJECT_MANIFEST_PATH, parseProjectManifest } from '../generation/project-manifest.js'
 import { provision, readOutputs } from '../terraform/runner.js'
 import { runRegistration, type RegistrationReport } from '../registration/index.js'
+import { runBillingProvision, BILLING_CATALOGUE_PATH } from '../billing/index.js'
 import { preflightInputs } from '../terraform/inputs.js'
 import {
   dopplerUnavailableMessage,
@@ -61,6 +62,14 @@ OPTIONS:
                              plans and never applies, so it cannot change
                              infrastructure. Use this to refresh a stale
                              registry entry.
+  --provision-billing        Create this product's prices at the payment provider
+                             and write their references onto its plans in the
+                             Control Plane. Reads .koras/billing-catalogue.yaml.
+                             Run it after registration and after
+                             doppler-bootstrap. Never deletes, never archives and
+                             never re-prices; a second run changes nothing. A
+                             live provider key is refused anywhere but prod.
+                             Add --dry-run to print what it would create.
   --check-drift              Report where an existing project no longer matches
                              the generator. Read-only; exits 1 on differences.
   --verbose                  With --check-drift --all, list repo-only files
@@ -207,6 +216,7 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   const existingProject =
     args.provisionOnly ||
     args.registerOnly ||
+    args.provisionBilling ||
     args.push ||
     args.refreshModules ||
     args.checkDrift ||
@@ -225,7 +235,9 @@ export async function run(argv: string[] = process.argv): Promise<void> {
         ? '--provision-only'
         : args.registerOnly
           ? '--register-only'
-          : args.push
+          : args.provisionBilling
+            ? '--provision-billing'
+            : args.push
             ? '--push'
             : args.checkDrift
           ? '--check-drift'
@@ -262,7 +274,12 @@ export async function run(argv: string[] = process.argv): Promise<void> {
 
   if (
     shouldReexecUnderDoppler({
-      required: args.provision || args.provisionOnly || args.registerOnly || args.push,
+      required:
+        args.provision ||
+        args.provisionOnly ||
+        args.registerOnly ||
+        args.provisionBilling ||
+        args.push,
       satisfied: preflightInputs().ok,
     })
   ) {
@@ -357,6 +374,11 @@ export async function run(argv: string[] = process.argv): Promise<void> {
 
   if (args.push) {
     await runPush(ctx, projectRoot, projectSlug)
+    return
+  }
+
+  if (args.provisionBilling) {
+    await runProvisionBilling(ctx, projectRoot, projectSlug, args)
     return
   }
 
@@ -524,6 +546,111 @@ Pushing ${projectSlug} to its repository — reading Terraform outputs, changing
  * columns. References are upserted and never pruned, so this fills the gaps and
  * disturbs nothing else.
  */
+/**
+ * `--provision-billing`: the commercial catalogue, created and synced.
+ *
+ * Reads no Terraform state and runs no plan. The product's identity comes from
+ * its manifest, exactly as `--register-only`'s does, and the two things it
+ * talks to are the payment provider and the Control Plane.
+ *
+ * Every outcome is printed per plan and per interval rather than summarised.
+ * This writes to an account that holds real money, and "3 plans provisioned"
+ * is not something an operator can check; a price id beside an amount is.
+ */
+async function runProvisionBilling(
+  ctx: import('../generation/context.js').GenerationContext,
+  projectRoot: string,
+  projectSlug: string,
+  args: import('./args.js').ParsedArgs,
+): Promise<void> {
+  console.log(
+    `\nProvisioning the commercial catalogue for ${projectSlug} — no infrastructure is touched.`,
+  )
+
+  const report = await runBillingProvision({
+    projectRoot,
+    productCode: projectSlug,
+    registersAsProduct: ctx.manifest.registration.registers_as_product,
+    dryRun: args.dryRun,
+    urlOverride: args.controlPlaneUrl,
+  })
+
+  switch (report.kind) {
+    case 'skipped':
+      // Not an error, and exits 0. A profile with no catalogue, a project
+      // generated before this existed, and an estate with no Control Plane yet
+      // are all legitimate states -- the last one is the documented bootstrap
+      // order (R-001), and failing on it would make the order impossible.
+      console.log(`\n  Skipped: ${report.detail}`)
+      return
+
+    case 'planned':
+      console.log(`\n  Dry run — nothing was sent.\n`)
+      for (const line of report.lines) console.log(`  ${line}`)
+      return
+
+    case 'failed':
+      fail(
+        `The commercial catalogue was not provisioned.\n  ${report.detail}\n` +
+          (report.retryable
+            ? '  This looks retryable. Nothing was left half-done that a second run would ' +
+              'duplicate: a price is found by its lookup key, so re-running is free.'
+            : '  This will fail the same way until something is changed.') +
+          (report.correlationId !== undefined
+            ? `\n  Correlation id: ${report.correlationId}`
+            : ''),
+      )
+      return
+
+    case 'provisioned': {
+      console.log(
+        `\n  ${report.environment} — ${report.noop ? 'already current; nothing was created or written' : 'catalogue provisioned'}`,
+      )
+
+      for (const plan of report.plans) {
+        console.log(`\n  ${plan.code}${plan.unchanged ? '  (plan row already current)' : ''}`)
+        for (const interval of ['month', 'year'] as const) {
+          const outcome = plan[interval]
+          if (outcome === undefined) continue
+          switch (outcome.kind) {
+            case 'reused':
+              console.log(`    ${interval}: ${outcome.amount}  ${outcome.priceId}  (already there)`)
+              break
+            case 'created':
+              console.log(`    ${interval}: ${outcome.amount}  ${outcome.priceId}  (created)`)
+              break
+            case 'superseded':
+              // Spelled out rather than reported as an update. A provider price
+              // is immutable in amount, so this left a second price behind, and
+              // an operator looking at a dashboard should know why there are
+              // two before they wonder which one is live.
+              console.log(
+                `    ${interval}: ${outcome.amount}  ${outcome.priceId}  (new price; ` +
+                  `${outcome.previousPriceId} was ${outcome.previousAmount ?? 'unknown'} and is ` +
+                  'left in place, active and referenced by nothing)',
+              )
+              break
+          }
+        }
+      }
+
+      if (report.unpriced.length > 0) {
+        console.log(
+          `\n  Declared with no amount, so left entirely alone: ${report.unpriced.join(', ')}`,
+        )
+      }
+
+      console.log(
+        `\n  Correlation id: ${report.correlationId}\n` +
+          `  What was sent is the intent in ${BILLING_CATALOGUE_PATH}. The provider's amount\n` +
+          "  remains the only one a customer sees or pays; the platform's billing.catalogue\n" +
+          '  check is what compares the two from here on.',
+      )
+      return
+    }
+  }
+}
+
 async function runRegisterOnly(
   ctx: import('../generation/context.js').GenerationContext,
   projectRoot: string,

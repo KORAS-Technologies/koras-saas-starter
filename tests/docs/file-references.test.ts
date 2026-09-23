@@ -53,6 +53,12 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   '.e2e/identity.json':
     'a signing key written at runtime, ignored on purpose and never committed',
   '.koras/project.yaml': 'written by create-koras-app; the factory is not a generated project',
+  // Same class, and for the same reason: generator-authored, for products
+  // only. The factory carries no commercial catalogue because it sells
+  // nothing -- a file here inviting somebody to price the factory would
+  // look entirely normal until they did.
+  '.koras/billing-catalogue.yaml':
+    'written by create-koras-app for products; the factory is not a generated project',
   'local/.env': 'written by local/scripts/ports.sh, per machine',
   'docs/AGENT_CONTEXT.md':
     'a generated project writes its own; the generator never creates or touches it',

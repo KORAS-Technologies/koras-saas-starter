@@ -60,9 +60,49 @@ make doppler-bootstrap-prod
 
 # 8. Confirm every environment holds every setting. Names only, never values.
 make doppler-check
+
+# --- back in the starter ---
+
+# 9. Create this product's prices at the payment provider and write their
+#    references onto its plans in the Control Plane. ONE TIME, per estate.
+#
+#    Fill in ../output/<name>/.koras/billing-catalogue.yaml first. It is
+#    generated with no amounts: a product does not know what it costs, and a
+#    file shipped with plausible ones would be provisioned by whoever ran this
+#    without reading it.
+#
+#    After 1-8, and that is a dependency rather than an ordering preference:
+#    registration (step 3) creates the plans this writes onto, and
+#    doppler-bootstrap (step 7) supplies the two credentials it needs.
+#
+#    Changes no infrastructure. Never deletes a price, archives one or edits an
+#    amount. Running it twice is free -- the second run finds every price
+#    already there and writes nothing.
+pnpm create-koras-app <name> --profile product --provision-billing   --dry-run --output-dir ../output          # prints what it would create
+pnpm create-koras-app <name> --profile product --provision-billing   --output-dir ../output
 ```
 
 Notes that matter:
+
+- **Step 9 needs a service account the estate does not have yet.** Writing a
+  price onto a plan needs the platform **billing** role, and `registrar`
+  deliberately carries no platform role at all -- one reclassifies its token as
+  staff, and the registration endpoint admits machines only, so granting
+  `registrar` what step 9 needs breaks step 3. It is a second ZITADEL service
+  user, access token type JWT, with the billing role, and its key stored as
+  `KORAS_CONTROL_PLANE_BILLING_KEY_JSON`. Without it step 9 fails with a 403,
+  and says so in those words.
+- **Step 9 refuses a live provider key anywhere but production**, and a test
+  key against production, both before it makes a single call. The first would
+  create real, chargeable prices while somebody believed they were rehearsing
+  -- and nothing later in the run would notice, because the calls succeed and
+  the ids look the same. The second produces a catalogue that cannot take a
+  payment, discovered at the first customer's checkout.
+- **Step 9 refuses a plan code the Control Plane does not hold.** It would
+  otherwise be created: the endpoint upserts, so a typo becomes a real, priced
+  tier that grants nothing and looks like a tier somebody meant to add. Every
+  unknown code in the file is reported in one run, because finding the second
+  typo after correcting the first is three runs against a payment account.
 
 - **`--output-dir` is effectively required.** Generating with no output
   directory would write a full project into the starter repository, so that is

@@ -6,6 +6,7 @@ import type { GenerationContext } from './context.js'
 import { contextToTemplateVars } from './context.js'
 import { templatePaths } from '../profiles/types.js'
 import { PROJECT_MANIFEST_PATH, renderProjectManifest } from './project-manifest.js'
+import { BILLING_CATALOGUE_PATH, renderBillingCatalogue } from './billing-catalogue.js'
 import { isForbiddenArtifact } from '../git.js'
 import { SKIP_ENTRIES } from './skip.js'
 
@@ -160,6 +161,7 @@ export function renderTemplate(ctx: GenerationContext): RenderedFile[] {
     ...[...byOutputPath.values()].filter((f) => shouldInclude(f.outputPath, excluded)),
     ...collectSharedAssets(ctx),
     projectManifestFile(ctx),
+    ...billingCatalogueFile(ctx),
   ]
 }
 
@@ -180,6 +182,29 @@ function projectManifestFile(ctx: GenerationContext): RenderedFile {
     content: renderProjectManifest(ctx),
     isTemplate: false,
   }
+}
+
+/**
+ * The commercial catalogue, for profiles that register as products.
+ *
+ * Gated on the manifest rather than on the profile name, the way registration
+ * is: a profile declares whether it is a product, and a future one that is
+ * should not have to be added to a condition here. The Control Plane gets no
+ * catalogue because it is the authority over other products' catalogues rather
+ * than a product with one of its own -- and a file inviting somebody to price
+ * the platform would look entirely normal until they did.
+ */
+function billingCatalogueFile(ctx: GenerationContext): RenderedFile[] {
+  if (!ctx.manifest.registration.registers_as_product) return []
+
+  return [
+    {
+      sourcePath: '(generated)',
+      outputPath: BILLING_CATALOGUE_PATH,
+      content: renderBillingCatalogue(ctx),
+      isTemplate: false,
+    },
+  ]
 }
 
 /**

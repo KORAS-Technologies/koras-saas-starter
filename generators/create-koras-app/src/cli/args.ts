@@ -29,6 +29,20 @@ export interface ParsedArgs {
    */
   registerOnly: boolean
   /**
+   * Create this product's prices at the payment provider and write their
+   * references onto its plans in the Control Plane.
+   *
+   * Like --register-only, it operates on an existing project and changes no
+   * infrastructure; unlike it, it talks to an account that holds real money, so
+   * it refuses a live provider key anywhere but production and never deletes,
+   * archives or re-prices anything it finds.
+   *
+   * Runs after registration and after doppler-bootstrap, and that is a
+   * dependency rather than a convention: registration creates the plans this
+   * writes onto, and bootstrap supplies the two credentials it needs.
+   */
+  provisionBilling: boolean
+  /**
    * Initialise git and push an already-provisioned project to its repository.
    *
    * `--provision` does this itself, as the last step of generating and building
@@ -99,6 +113,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     without: [],
     provisionOnly: false,
     registerOnly: false,
+    provisionBilling: false,
     push: false,
     refreshModules: false,
     refresh: [],
@@ -135,6 +150,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
         // repository name rather than guessing it: pushing a product's source
         // to the wrong repository is not a mistake a retry undoes.
         result.push = true
+        break
+      case '--provision-billing':
+        // Deliberately does NOT imply --provision, for the same reason
+        // --register-only does not: this reads a catalogue and talks to two
+        // APIs. Turning it into an infrastructure run would be the opposite of
+        // what it is for.
+        result.provisionBilling = true
         break
       case '--register-only':
         // Deliberately does NOT imply --provision. It reads Terraform outputs

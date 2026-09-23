@@ -146,6 +146,48 @@ declined. Not holding one means there is no provisioner, only the drift
 check below, and the dashboard stays the place a price is born. Either is
 defensible; guessing is not, so nothing was built.
 
+**Answered on 2026-09-20, and the answer was neither option.** The catalogue
+holds an *intent* — what a plan was meant to cost — compared by
+`billing.catalogue` and rendered nowhere, so the provider stays authoritative
+for everything a customer sees or pays. That made the second column of the
+table above answerable without making the platform a source of prices.
+
+**Built on 2026-09-22, and 2a is closed.** The near end of the comparison is
+`.koras/billing-catalogue.yaml` in the product's own repository: plan codes and
+amounts in minor units, one currency, a tax code, and no credential. The
+provisioner is `--provision-billing` in the factory CLI, run after registration
+and after `doppler-bootstrap`.
+
+**It is in the factory rather than in the Control Plane, and that was a
+choice.** The alternative — an endpoint on the Control Plane doing the provider
+work with its own key — keeps the ownership principle more tidily and reuses
+the adapter, the environment guard and the audit trail already there. It was
+declined for this pass because it puts the work in the repository this plan
+does not touch, and because the rule it protects is about *product*
+repositories: the key is read by an operator running the factory and reaches no
+generated project, no template and no registration payload. The tidier shape
+stays available and would not change the catalogue file or the command.
+
+**What it will not do**, each refused rather than merely unimplemented: delete a
+price, archive one, edit an amount, create a plan that does not already exist,
+or write a plan field it did not first read. The third is not a policy but a
+property of the provider — a price is immutable in amount — so a correction
+creates a second price and moves the lookup key to it, leaving the first active,
+unreferenced and available to go back to.
+
+**Two refusals are worth knowing about before the first run.** A live provider
+key is refused against anything but production and a test key against
+production, both before any call is made; and a plan code the Control Plane does
+not hold is refused rather than created, with every unknown code reported in one
+run, because the endpoint would happily create a plan and a mistyped code would
+become a real priced tier granting nothing.
+
+**It needs a second service account, and that is not an oversight.** Writing a
+price onto a plan needs a platform billing role. `registrar` deliberately has no
+platform role at all, because one reclassifies its token as staff and the
+registration endpoint admits machines only — so granting `registrar` what this
+needs would break the thing it exists for.
+
 **2b — Catalogue drift detection (BILL-GAP-004).**
 A second check in the reconciliation registry, beside the subscription check
 that already runs every fifteen minutes. Detected conditions: a catalogue price

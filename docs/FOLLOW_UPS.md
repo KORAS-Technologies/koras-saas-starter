@@ -2507,3 +2507,54 @@ provider. The design is `docs/PRODUCT_SIGN_IN.md`; the Control Plane's
       `IAM_OWNER`.
 - [ ] The remaining halves of R-90, unchanged: enrolment of a second factor
       on a product page; the Control Plane's own portal.
+
+### F29 — the commercial catalogue has never been provisioned against a real account
+
+**Built 2026-09-22.** `--provision-billing` reads
+`.koras/billing-catalogue.yaml`, creates a provider product and a price per
+declared interval, and writes the references and the recorded intent onto the
+product's plans. It reverses BILL-GAP-003, which was declined on 2026-09-20;
+the reversal and what changed about each of its three reasons are in
+`docs/platform/execution/CAT-03-stripe-billing.md`.
+
+**What is verified, and how.** Thirty-nine tests drive the whole path against a
+fake estate — an identity provider, a payment provider and a Control Plane that
+keep state between calls, so a second run really does meet what the first
+created. Four assertions were mutation-checked and each goes red when the
+behaviour it names is removed: idempotence, the plan-row round trip, the
+unknown-plan refusal, and the live-key environment guard.
+
+**What none of that reaches is a real provider account**, which is the same
+shape of gap as every other first box in this file: a fake answers what it was
+told to answer. The catalogue has still never been created in live mode even
+once, which was the third of the three reasons BILL-GAP-003 was declined and
+is the one the work does not close by itself.
+
+- [ ] One run against a real test-mode account, on `dev`, for a product whose
+      plans exist. What it would prove that the fake cannot: that the pinned
+      tax code is accepted for this account, that `transfer_lookup_key`
+      behaves as the correction path assumes, and that the provider's response
+      shapes are the ones the client reads. The first is the likeliest to
+      fail — Managed Payments eligibility is per account, and a product
+      without an eligible code cannot be sold at all.
+- [ ] The second run, immediately after, which is the assertion worth having
+      on a real account rather than a fake one: it must create nothing and
+      write nothing.
+- [ ] A corrected amount on that account, to see a superseded price with the
+      first left active and unreferenced.
+- [ ] The second service account itself. Nothing in the estate has one yet: it
+      needs a ZITADEL service user with a JWT access-token type and the
+      platform **billing** role, and its key stored as
+      `KORAS_CONTROL_PLANE_BILLING_KEY_JSON`. It must not be `registrar`, and
+      the reason is in `CLAUDE.md`. Until it exists, the first run's failure
+      will be a 403 — which the step names in those words.
+- [ ] Live mode, which is F21's remaining half and arrives with it rather than
+      separately.
+
+**Not built, and named rather than left to be rediscovered.** There is no
+`--provision-billing` for more than one currency: the lookup key carries a
+currency segment from the first key so that adding one is an addition rather
+than a re-key, but the catalogue takes a single currency and nothing resolves
+which one a customer should see. And nothing reconciles in the other
+direction from the factory — that is the Control Plane's `billing.catalogue`
+check, which is where it belongs.
