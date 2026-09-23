@@ -13,7 +13,7 @@ schema. Nothing in a generated request is invented.**
 Every KORAS Control Plane and product API is FastAPI. FastAPI computes an
 OpenAPI 3.1 document from the routes, `Depends()` declarations, Pydantic
 models and status codes that are actually registered — the same document it
-would serve at `/openapi.json`. `tooling/postman/scripts/extract_openapi.py`
+would serve at its own /openapi.json route. `tooling/postman/scripts/extract_openapi.py`
 gets that document by importing the service's own `app` object and calling
 `app.openapi()` directly, without starting the process, opening a database
 connection, or making a network call. That is the entire inventory step: a
@@ -65,8 +65,8 @@ merged into one blob a human has to untangle:
 ## Why some things the brief for this standard asked for are deliberately absent
 
 - **No `X-Tenant-Slug` / `X-Organization-Id` headers.** Read
-  `services/api/koras_api/core/tenant.py` (product) or
-  `core/organization_auth.py` (Control Plane) before assuming otherwise: the
+  `services/api/koras_api/core/tenant.py` (product) or the Control Plane's own
+  `organization_auth.py` before assuming otherwise: the
   tenant/organization comes from the verified token's claims, never from a
   request header or a path parameter the caller supplies. A collection that
   added such a header would be testing a security control the API does not
@@ -143,8 +143,9 @@ exists to avoid.
 ## Next steps (ranked)
 
 1. **Commit the extracted OpenAPI document** alongside the collection (e.g.
-   `postman/openapi.json`) and add a CI check that regenerating it produces
-   no diff — the cheapest way to catch route drift between a merge and the
+   as `openapi.json` in the same `postman/` directory) and add a CI check
+   that regenerating it produces no diff — the cheapest way to catch route
+   drift between a merge and the
    next Postman regeneration, and the natural seed for a generated SDK later.
 2. **Wire `CI Smoke` into `.github/workflows/` via Newman** on the same
    `develop`/`generator-integration` cadence the rest of the estate's gates

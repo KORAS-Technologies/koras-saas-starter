@@ -14,12 +14,15 @@ postman/<Name>-DEV.postman_collection.json
 postman/environments/DEV.postman_environment.json
 ```
 
-| Repository | Collection file |
+| Repository | `<Name>` in the path above |
 |---|---|
-| `koras-control-plane` | `postman/Koras-Control-Plane-DEV.postman_collection.json` |
-| `docoris` | `postman/Docoris-DEV.postman_collection.json` |
-| `lexveria` | `postman/Lexveria-DEV.postman_collection.json` |
-| any product generated from this starter | `postman/<ProjectName>-DEV.postman_collection.json` |
+| `koras-control-plane` | Koras-Control-Plane |
+| `docoris` | Docoris |
+| `lexveria` | Lexveria |
+| any product generated from this starter | the project's own name |
+
+These files live in each of those repositories, not in this one -- this
+starter has no `postman/` directory of its own to check them against.
 
 If the files look out of date (missing a route you know exists), regenerate
 them first -- see step 8 -- rather than importing something stale.
@@ -27,9 +30,8 @@ them first -- see step 8 -- rather than importing something stale.
 ## 2. Import into Postman
 
 1. Open Postman (desktop app or web).
-2. **Import** (top left) -> **Files** -> select both:
-   - `postman/<Name>-DEV.postman_collection.json`
-   - `postman/environments/DEV.postman_environment.json`
+2. **Import** (top left) -> **Files** -> select both files from step 1: the
+   collection and its DEV.postman_environment.json.
 3. Postman adds the collection to your workspace and the environment to your
    environment list. Nothing runs yet -- every request needs the environment
    selected first (next step).
