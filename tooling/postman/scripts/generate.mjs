@@ -63,11 +63,27 @@ function main() {
   const repoRoot = resolve(args['repo-root'] ?? process.cwd())
   const name = args.name ?? (profile === 'control-plane' ? 'Koras Control Plane' : 'Koras Product')
   const slug = args.slug ?? defaults.slug ?? name.replace(/\s+/g, '-')
-  // uv-managed Python (true of every KORAS repository today) has no bare
-  // `python` on PATH pointing at the right venv, so default to `uv run` when
-  // this looks like a uv project and the caller did not say otherwise.
-  const looksLikeUvProject = existsSync(join(repoRoot, 'uv.lock')) || existsSync(join(repoRoot, '.venv'))
-  const python = args.python ?? (looksLikeUvProject ? 'uv run --no-project python' : 'python')
+  // Resolve which Python to run the extractor with. Preference order:
+  // 1. `--python`, explicit.
+  // 2. The repo's own `.venv` interpreter, called directly by path. This is
+  //    the reliable option: `uv run --no-project` was tried first and
+  //    dropped -- "avoid discovering the project" (uv's own description of
+  //    the flag) turned out to also mean "sometimes skip discovering the
+  //    already-built .venv sitting right there", reproducibly in one shell
+  //    and not another on the same machine, which is a worse failure mode
+  //    than depending on anything (a ModuleNotFoundError for fastapi, from a
+  //    script that never touches fastapi's behavior, only its route table).
+  //    A direct path has no discovery step to get wrong.
+  // 3. `uv run --no-project python`, if there is a uv.lock but no .venv yet
+  //    (nothing has been synced) -- best-effort, since there is nothing to
+  //    point at directly.
+  // 4. Plain `python` on PATH.
+  const venvPython = process.platform === 'win32'
+    ? join(repoRoot, '.venv', 'Scripts', 'python.exe')
+    : join(repoRoot, '.venv', 'bin', 'python')
+  const python = args.python
+    ?? (existsSync(venvPython) ? venvPython : null)
+    ?? (existsSync(join(repoRoot, 'uv.lock')) ? 'uv run --no-project python' : 'python')
 
   const serviceDir = join(repoRoot, 'services', 'api')
   if (!existsSync(join(serviceDir, 'koras_api', 'main.py'))) {
@@ -82,7 +98,12 @@ function main() {
     const environmentPath = join(repoRoot, 'postman', 'environments', 'DEV.postman_environment.json')
     const customFragment = join(TOOLING_ROOT, 'templates', `${profile}-custom.postman_collection.json`)
 
-    const [pythonCmd, ...pythonPrefixArgs] = python.split(' ')
+    // `python` is either a single executable path (the resolved .venv
+    // interpreter, or plain `python`) or the multi-word `uv run --no-project
+    // python` fallback -- split into argv only in the latter case, so a
+    // space in a repository's own path is never mistaken for an argument
+    // separator.
+    const [pythonCmd, ...pythonPrefixArgs] = python.startsWith('uv run') ? python.split(' ') : [python]
     run(pythonCmd, [...pythonPrefixArgs, join(SCRIPT_DIR, 'extract_openapi.py'), '--service-dir', serviceDir, '--out', openapiPath])
 
     const converterArgs = [
