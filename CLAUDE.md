@@ -853,9 +853,18 @@ defaults, and a schema that carries prices and nothing else.
 ordered ahead of the catalogue rather than behind it.** A plan is a flat fee
 including a number of users — $99 for three — and the platform implements the
 inverse: the seat count is sent as the subscription's quantity, so Starter at
-$99 with five seats bills $495, and it is enforced nowhere, so the customer who
-paid for five may add fifty. It multiplies the price, which it must not, and
-limits nothing, which it must.
+$99 with five seats bills $495. It multiplies the price, which it must not.
+
+**The other half of that sentence was wrong and stood here for an hour.** It
+said the seat count is enforced nowhere. It is enforced, carefully, by
+`_refuse_beyond_the_seats` in the Control Plane's portal router, which takes
+the smallest seat count across the products an organisation holds because a
+member is a member of all of them. The claim came from searching the
+entitlement modules, finding nothing there, and reporting that silence as a
+finding — inference from absence, in the file every session reads first, which
+is the whole of R-042. Corrected before Phase 2 began, and the correction made
+Phase 2 **smaller**: what is left is the quantity, and making the seat count
+come from the plan rather than from a number the customer types at signup.
 
 **Provisioning a price is what arms that.** Nothing can be sold self-serve
 until a plan has a price reference, so the overcharge is latent today; writing

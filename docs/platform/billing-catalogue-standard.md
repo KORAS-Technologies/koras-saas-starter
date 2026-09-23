@@ -28,11 +28,30 @@ into a plan that would then appear to deliver them. The first was reassessed on
 
 1. **The seat count is wired to the exact inverse of the intended model.**
    Clarified 2026-09-22: a plan is a **flat fee including a number of users** —
-   $99 for three — and not a price per seat. Today the seat count is sent to
-   the provider as the subscription's quantity, so Starter at $99 with five
-   seats bills **$495**; and it is enforced nowhere, so the customer who paid
-   for five may add fifty. It multiplies the price, which it must not, and
-   limits the product, which it must.
+   $99 for three — and not a price per seat. The seat count is sent to the
+   provider as the subscription's quantity, so Starter at $99 with five seats
+   bills **$495**. It multiplies the price, which it must not.
+
+   **Corrected 2026-09-22, before Phase 2 began.** The first version of this
+   document said the seat count was also enforced nowhere, and that is wrong.
+   `_refuse_beyond_the_seats` in the Control Plane's portal router refuses a
+   member the subscription has no seat for, takes the *smallest* seat count
+   across the products an organization holds because a member is a member of
+   all of them, skips a product with no subscription and one whose
+   subscription is over, and says which product and how many. It is careful
+   work and it was there all along.
+
+   The claim came from searching the entitlement modules, where seat
+   enforcement would plausibly live and does not, and concluding from their
+   silence. That is inference from absence presented as a finding, which is
+   the failure this repository keeps a register for — and it reached a
+   committed document and the file every session reads first before a search
+   of one more router found it.
+
+   **The correction makes Phase 2 smaller rather than larger**, which is the
+   part worth acting on: the enforcement half is built and correct, so the
+   work is to stop the quantity multiplying the price and to make the seat
+   count come from the plan rather than from a number the customer types.
 
    **This is the smaller half of a fix, not a rewrite** — see the revised
    ordering below. The quantity becomes one, permanently; the seat count
@@ -331,7 +350,9 @@ shared by every product, and Starter is five gigabytes for all of them.
 | # | Finding | Severity |
 |---|---|---|
 | 1 | The seat count is sent as the subscription quantity, so a flat-fee plan is multiplied by its seats. Latent while plans have no price; armed by the first provisioning run | **Critical** |
-| 1b | The seat count is enforced nowhere. It is collected at signup, billed on, stored, and gates nothing — so a customer may add any number of users regardless of what they bought | **Critical** |
+| 1b | ~~The seat count is enforced nowhere.~~ **Withdrawn 2026-09-22: wrong.** It is enforced, carefully, in the portal's member route. Left in the table rather than deleted, because a finding that quietly disappears is indistinguishable from one that was fixed | — |
+| 1c | The seat count is chosen by the customer at signup, where under a flat fee it should come from the plan's included count. A customer picking one seat on a plan including three pays for three and receives one | High |
+| 1d | The message refusing a member says to add a seat under Billing. Under a flat fee with a hard cap that advice cannot be followed, and the answer is to move up a tier | Medium |
 | 2 | Included storage and AI allowances are platform-wide constants; no product can differ | High |
 | 3 | No plan versioning, effective dates or grandfathering model | High |
 | 4 | The plan write endpoint overwrites the whole row; a caller sending only prices resets name, self-serve and seat bounds | High |
