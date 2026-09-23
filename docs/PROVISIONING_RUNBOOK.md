@@ -64,62 +64,37 @@ make doppler-check
 # --- back in the starter ---
 
 # 9. Create this product's prices at the payment provider and write their
-#    references onto its plans in the Control Plane. ONE TIME, per estate.
+#    references onto its plans in the Control Plane.
 #
-#    Fill in ../output/<name>/.koras/billing-catalogue.yaml first. It is
-#    generated with no amounts: a product does not know what it costs, and a
-#    file shipped with plausible ones would be provisioned by whoever ran this
-#    without reading it.
+#    NEEDS TWO CREDENTIALS, set up once each -- see "Secrets for step 9" below.
+#    Do that first; without them this refuses and names which is missing.
+#
+#    ../output/<name>/.koras/billing-catalogue.yaml already holds the platform
+#    standard. Read it and change what differs; a product that wants the
+#    standard changes nothing.
 #
 #    After 1-8, and that is a dependency rather than an ordering preference:
-#    registration (step 3) creates the plans this writes onto, and
-#    doppler-bootstrap (step 7) supplies the two credentials it needs.
+#    registration (step 3) creates the plans this writes onto.
 #
 #    Changes no infrastructure. Never deletes a price, archives one or edits an
 #    amount. Running it twice is free -- the second run finds every price
 #    already there and writes nothing.
-pnpm create-koras-app <name> --profile product --provision-billing   --dry-run --output-dir ../output          # prints what it would create
-pnpm create-koras-app <name> --profile product --provision-billing   --output-dir ../output
+
+# Prints every amount and lookup key, sends nothing:
+pnpm create-koras-app <name> --profile product --provision-billing --dry-run --output-dir ../output
+
+# Creates them:
+pnpm create-koras-app <name> --profile product --provision-billing --output-dir ../output
 ```
 
 Notes that matter:
 
-- **Step 9 is authorised by a person, not a service account, and that is a
-  platform rule rather than a gap.** Writing a price onto a plan needs the
-  platform **billing** role; a platform role requires a second factor; and a
-  service account has no interactive authentication to reference, so its token
-  is refused at verification. The Control Plane's own verifier says so --
-  machine identities are how products and internal jobs call the platform API,
-  and they are never granted platform roles. A service-account key here is
-  therefore **refused with the reason** rather than sent, because the 401 it
-  would earn reads exactly like an expired token or a wrong audience.
-
-  **What to do, per run:**
-
-  1. Sign in to the Control Plane console for that environment, as an account
-     holding `platform_billing` (or admin, or super admin), **with a second
-     factor**. Without one the token is refused and the message says so.
-  2. DevTools -> **Application** -> Cookies -> the console's own origin.
-  3. Copy the **Value** of the cookie named `id_token`. It has to be the
-     Application tab: the cookie is `httpOnly`, so `document.cookie` returns
-     nothing, which looks exactly like the cookie being absent.
-  4. `export KORAS_CONTROL_PLANE_BILLING_TOKEN='<paste>'` and run step 9 in
-     that shell.
-
-  **No Doppler setting is added for it**, deliberately. The token lasts hours,
-  so a stored copy is a credential that is wrong more often than it is right --
-  and the failure would arrive as a 401 during provisioning rather than at the
-  moment somebody could fix it. Everything else step 9 needs is already in
-  `koras-platform-bootstrap` / `prod`: the Control Plane URL, the project id
-  and the `ZITADEL_*_DOMAIN` family. The environment is derived from the URL.
-
-  **The one Doppler setting step 9 does add** is the payment provider's key,
-  `KORAS_BILLING_PROVIDER_KEY`, in that same config. It is the factory's, never
-  a product's, and a live key is refused anywhere but production.
-
-  A 401 from step 9 is an expired token or a sign-in without a second factor; a
-  403 is the role. The command names both rather than reporting that the
-  Control Plane said no.
+- **Step 9 needs two credentials, set up in different ways.** The payment
+  provider's key goes in Doppler once; your own staff token is exported per
+  run and is never stored. **There is no service account for this and one
+  cannot be created** — a platform role requires a second factor and a
+  machine identity has none. See **Secrets for step 9** below, which has
+  the commands.
 - **Step 9 refuses a live provider key anywhere but production**, and a test
   key against production, both before it makes a single call. The first would
   create real, chargeable prices while somebody believed they were rehearsing
@@ -666,6 +641,118 @@ credential as live. Rotate and paste the new one.
 as `bash ...` and need the explicit path — see the note above.
 
 ---
+
+## Secrets for step 9
+
+Two credentials, and they are set up in completely different ways for a reason
+that is worth knowing before you start: one belongs to the factory and is
+stored, the other belongs to *you* and is not.
+
+| | What | Where it lives | How long it lasts |
+|---|---|---|---|
+| 1 | The payment provider's secret key | Doppler, once per estate | Until rotated |
+| 2 | Your own staff token | An environment variable, per run | Hours |
+
+### 1. The provider key — in Doppler, once
+
+This is the factory's key, not a product's. No generated repository ever holds
+one, and nothing in a product's template reads it: it is read by the operator
+running `create-koras-app`, which is why it sits beside the other provisioning
+credentials rather than in the product's own config.
+
+**Where it goes:** the `koras-platform-bootstrap` project, `prod` config. That
+is the config the factory already re-execs itself under — the same one
+`bootstrap:doctor`, `teardown` and `pnpm koras:token` read — so no `doppler run`
+wrapper is typed and no outer one should be.
+
+**`prod` is the config's name, not the target estate.** It holds the
+bootstrap credentials for the whole estate; which environment a command acts
+on comes from the Control Plane URL, not from here.
+
+**Where the value comes from:** the payment provider's dashboard, Developers →
+API keys, the **secret** key. Use the **test-mode** key. Live mode is for
+production only and is refused anywhere else — see the note below.
+
+```bash
+# Read it without echoing and pipe it in on stdin -- the same pattern
+# doppler-bootstrap uses, so the value reaches neither `ps` nor your history.
+read -rs -p 'provider secret key: ' KEY && printf '%s' "$KEY" | \
+  doppler secrets set KORAS_BILLING_PROVIDER_KEY \
+    --project koras-platform-bootstrap --config prod && unset KEY
+
+# Confirm the name is there. Prints names, never values.
+doppler secrets --project koras-platform-bootstrap --config prod \
+  --only-names | grep KORAS_BILLING
+```
+
+Nothing else is added to Doppler for step 9. The Control Plane URL, its project
+id and the `ZITADEL_*_DOMAIN` family are already in that config, put there when
+registration was set up, and the environment is derived from the URL rather than
+answered separately.
+
+### 2. Your staff token — per run, not stored
+
+**There is no service account for this, and one cannot be created.** Writing a
+price onto a plan needs the platform **billing** role; a platform role requires
+a second factor; a machine identity has no interactive authentication to
+reference, so its token is refused at verification. The Control Plane's verifier
+says it outright: machine identities are how products and internal jobs call the
+platform API, and they are never granted platform roles.
+
+So the credential is yours, and it is the same one the walkthrough uses for any
+staff call that has no console form:
+
+1. Sign in to the **Control Plane console** for the environment you are
+   provisioning, as an account holding `platform_billing`, `platform_admin` or
+   `platform_super_admin` — **with a second factor**. A sign-in without one
+   produces a token the API refuses, and the refusal looks like an expired one.
+2. Open DevTools → **Application** → Cookies → the console's own origin.
+3. Copy the **Value** of the cookie named `id_token`.
+4. Export it in the shell you are about to run step 9 in:
+
+```bash
+export KORAS_CONTROL_PLANE_BILLING_TOKEN='<paste>'
+```
+
+**It has to be the Application tab.** The cookie is `httpOnly` on purpose, so a
+script injected into the page cannot read the session — which means
+`document.cookie` in the browser console returns nothing, and that looks exactly
+like the cookie being absent. DevTools shows `httpOnly` cookies anyway; that is
+why this route works and the obvious one does not.
+
+**Check it before running step 9**, because the failure it prevents happens
+after prices have been created:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "authorization: Bearer $KORAS_CONTROL_PLANE_BILLING_TOKEN" \
+  "$KORAS_CONTROL_PLANE_URL/api/platform/v1/plans?product_code=<name>"
+```
+
+`200` is good. `401` is expired, or a sign-in without a second factor. `403` is
+the role — the account is staff but not billing staff.
+
+**Why it is not stored.** It lasts hours. A copy in Doppler would be wrong more
+often than right, and its failure would arrive in the middle of provisioning
+rather than where somebody could fix it. A credential shorter-lived than the
+gap between uses belongs in the shell that uses it. Decided 2026-09-23, and it
+changes when the machine door lands.
+
+**A service-account key is refused rather than attempted.** If
+`KORAS_CONTROL_PLANE_BILLING_KEY_JSON` is set, step 9 stops and says why —
+because the `401` it would otherwise earn is indistinguishable from an expired
+token, and somebody would spend an afternoon on it. That variable is reserved
+for when the catalogue endpoints learn to admit a named machine, which is the
+proper fix and is recorded in `docs/FOLLOW_UPS.md` F29.
+
+### What step 9 does with them
+
+The provider key creates products and prices. The staff token writes their
+references onto the plans and records what each plan was sold as. Neither
+credential is logged, and neither appears in any failure message: the redactor
+knows the provider's key prefixes and the client adds the token in hand to what
+it must never print.
+
 
 ## 2. Estate prerequisites
 
