@@ -49,7 +49,9 @@ node tooling/postman/scripts/generate-environment.mjs \
 ## Importing into Postman
 
 Full step-by-step walkthrough (import, environment, access token, running
-CI Smoke, troubleshooting): `docs/api/postman-import-setup.md`.
+CI Smoke, troubleshooting): `docs/api/postman-import-setup.md` in
+`koras-saas-starter` (this doc is not copied into generated repositories --
+it's about the standard itself, not this repository's own API).
 
 ## Adding product-specific security or smoke coverage
 
