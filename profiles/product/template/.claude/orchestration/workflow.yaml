@@ -88,6 +88,15 @@ workflow:
         writing prose, it re-opens the engineering flow at test_and_fix, and
         it is recorded as such rather than as a documentation fix.
     - stage: final_documentation
+      # THE BUILD SUSPENSION POINT. A BUILD-disposition feature
+      # (acceptance-batching.yaml) stops here: the three stages below --
+      # documentation_audit, final_acceptance, pass_or_escalate -- are exactly
+      # the gates that file marks `deferrable_in_build`, and the feature sits
+      # at lifecycle.yaml's IMPLEMENTED_PENDING_VALIDATION until a validation
+      # batch resumes the flow at documentation_audit. An IMMEDIATE-disposition
+      # feature runs straight through, as every feature always has. This note
+      # exists instead of a second stage list, because a second list is how
+      # the two come to disagree about where the flow actually stops.
     - stage: documentation_audit
       bounded_by: max_documentation_audits
       independent: true

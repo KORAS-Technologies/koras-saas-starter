@@ -138,6 +138,7 @@ interface Lifecycle {
     epic: { scope: string; when: string; runs: string[]; gate_reuse: string }
     never: string[]
     risk_exception: string
+    build_disposition_interaction?: string
   }
   policy_disabled_steps: Record<
     string,
@@ -307,12 +308,35 @@ interface QualityGates {
     owner_optional_in?: string[]
     judges?: string[]
     does_not_judge?: string[]
+    deferrable_in_build?: boolean
   }>
   owner_optional_closure: {
     permitted_when: string[]
     evidence_required: string[]
     status: string
     never: string[]
+  }
+  rules: string[]
+}
+
+interface AcceptanceBatching {
+  schema_version: number
+  dispositions: Record<string, { summary: string; produces: string }>
+  selection: {
+    rule: string
+    never: string[]
+    raise_to_immediate: { allowed: string; record: string }
+  }
+  deferred_gates: string[]
+  never_deferred: Record<string, string>
+  validate_batch: {
+    scope: string
+    triggered_by: string[]
+    never_triggered_by: string[]
+    runs_per_feature: Record<string, string>
+    runs_once_for_the_batch: string[]
+    never: string[]
+    gate_reuse: string
   }
   rules: string[]
 }
@@ -398,6 +422,7 @@ const activation = readYaml<ActivationRules>(join(ORCHESTRATION, 'activation-rul
 const workflow = readYaml<Workflow>(join(ORCHESTRATION, 'workflow.yaml'))
 const gates = readYaml<QualityGates>(join(ORCHESTRATION, 'quality-gates.yaml'))
 const docPolicy = readYaml<DocumentationPolicy>(join(ORCHESTRATION, 'documentation-policy.yaml'))
+const batching = readYaml<AcceptanceBatching>(join(ORCHESTRATION, 'acceptance-batching.yaml'))
 
 const AGENT_IDS: string[] = registry.agents.map((a) => a.id)
 const CONDITION_IDS: string[] = Object.keys(conditions.conditions)
@@ -486,7 +511,7 @@ describe('the framework reaches the product profile and only the product profile
     }
   })
 
-  it('leaves the four shared commands shared and adds six product-only ones', () => {
+  it('leaves the four shared commands shared and adds seven product-only ones', () => {
     for (const gen of [PRODUCT, CONTROL_PLANE]) {
       for (const c of ['feature', 'review', 'test', 'ui-review']) {
         expect(gen.has(`.claude/commands/${c}.md`)).toBe(true)
@@ -499,6 +524,7 @@ describe('the framework reaches the product profile and only the product profile
       'manual-test-doc',
       'agent-status',
       'remediate',
+      'validate-batch',
     ]) {
       expect(PRODUCT.has(`.claude/commands/${c}.md`)).toBe(true)
       expect(CONTROL_PLANE.has(`.claude/commands/${c}.md`)).toBe(false)
@@ -2089,6 +2115,114 @@ describe('a feature is not done when the local tree says so', () => {
     const requires = (closed?.requires ?? []).join(' ')
     expect(requires).toMatch(/every applicable state/i)
     expect(requires).toMatch(/PENDING/)
+  })
+})
+
+describe('acceptance evidence may be deferred to a validation batch, never skipped', () => {
+  /**
+   * ADR 0011. A BUILD-disposition feature owes the same evidence an
+   * IMMEDIATE one does; only the timing moves. The risk that this axis
+   * quietly becomes a fourth mode, or a second high-risk subject list that
+   * drifts from risk-model.yaml's own, is exactly what these assertions
+   * check for.
+   */
+  const gateIds = gates.feature_gates.map((g) => g.id)
+  const deferrableIds = gates.feature_gates.filter((g) => g.deferrable_in_build).map((g) => g.id)
+  const independentIds = gates.feature_gates.filter((g) => g.independent).map((g) => g.id)
+
+  it('offers exactly two per-feature dispositions, never a third meaning of FULL', () => {
+    expect(Object.keys(batching.dispositions).sort()).toEqual(['BUILD', 'IMMEDIATE'])
+    expect(Object.keys(batching.dispositions)).not.toContain('FULL')
+    expect(Object.keys(batching.dispositions)).not.toContain('VALIDATE')
+  })
+
+  it('never lets an agent select BUILD once risk-model.yaml would select FULL', () => {
+    const rule = batching.selection.rule.toLowerCase()
+    expect(rule).toMatch(/full/)
+    expect(rule).toMatch(/build/)
+    expect(batching.selection.never.join(' ')).toMatch(/risk_mode is full/i)
+  })
+
+  it('flags deferrable gates on the gate itself, and the two files agree on the list', () => {
+    expect(deferrableIds.sort()).toEqual([...batching.deferred_gates].sort())
+    for (const id of batching.deferred_gates) {
+      expect(gateIds, `deferred gate ${id} does not exist`).toContain(id)
+    }
+  })
+
+  it('never defers a gate a floor signal already makes non-deferrable', () => {
+    // security_review and privacy_review apply only under a floor-signal
+    // condition, so they are unreachable in BUILD by the selection rule --
+    // asserted here so a future edit widening `deferred_gates` cannot make
+    // one of these deferrable by accident.
+    for (const id of ['security_review', 'privacy_review', 'independent_code_review', 'automated_tests_pass']) {
+      expect(deferrableIds, `${id} must never be deferrable`).not.toContain(id)
+      expect(Object.keys(batching.never_deferred), `${id} is not explained`).toContain(id)
+    }
+  })
+
+  it('leaves accessibility targeted and immediate, deferring only the broader check', () => {
+    expect(deferrableIds).not.toContain('accessibility_pass')
+    expect(batching.never_deferred.accessibility_pass).toMatch(/targeted/i)
+    expect(batching.never_deferred.accessibility_pass).toMatch(/now/)
+  })
+
+  it('never explains a gate that is not real, and never defers an independent gate silently', () => {
+    for (const id of Object.keys(batching.never_deferred)) {
+      expect(gateIds, `never_deferred names unknown gate ${id}`).toContain(id)
+    }
+    // Deferred gates may be independent -- independence is about WHO signs
+    // off, not WHEN. What must never happen is a deferred gate losing its
+    // independence in the deferral.
+    for (const id of batching.deferred_gates) {
+      const gate = gates.feature_gates.find((g) => g.id === id)
+      if (independentIds.includes(id)) {
+        expect(gate?.independent, `${id} lost independence when deferred`).toBe(true)
+      }
+    }
+  })
+
+  it('reaches IMPLEMENTED_PENDING_VALIDATION instead of, never in addition to, LOCAL_ACCEPTANCE_READY', () => {
+    const stateIds = lifecycle.states.map((s) => s.id)
+    expect(stateIds).toContain('IMPLEMENTED_PENDING_VALIDATION')
+    const pending = lifecycle.states.find((s) => s.id === 'IMPLEMENTED_PENDING_VALIDATION')
+    expect(pending?.applicable_when).toMatch(/BUILD/)
+    const at = (id: string) => stateIds.indexOf(id)
+    expect(at('TESTING')).toBeLessThan(at('IMPLEMENTED_PENDING_VALIDATION'))
+    expect(at('IMPLEMENTED_PENDING_VALIDATION')).toBeLessThan(at('LOCAL_ACCEPTANCE_READY'))
+  })
+
+  it('never triggers a validation batch on a fixed count or a schedule', () => {
+    const never = batching.validate_batch.never_triggered_by.join(' ').toLowerCase()
+    expect(never).toMatch(/fixed number/)
+    expect(never).toMatch(/elapsed time|schedule/)
+    expect(batching.validate_batch.triggered_by.join(' ').toLowerCase()).toMatch(/milestone|epic/)
+  })
+
+  it('runs each feature\'s own deferred gates in a batch, not only the cross-feature seams', () => {
+    // The one real difference from epic_acceptance: an epic pass only tests
+    // seams because a story already closed its own gates. A validation
+    // batch cannot make that assumption, so it must run both.
+    expect(batching.validate_batch.runs_per_feature.what).toMatch(/deferred_gates/)
+    expect(batching.validate_batch.never.join(' ')).toMatch(/without running that feature.s own deferred gates/i)
+  })
+
+  it('never lets one failing feature hold the rest of a batch', () => {
+    expect(batching.validate_batch.never.join(' ').toLowerCase()).toMatch(/holding the rest/)
+  })
+
+  it('has the Product Planner state an execution mode and both gate lists', () => {
+    const body = readFileSync(join(PRODUCT_TEMPLATE, '.claude/commands/plan-next.md'), 'utf8')
+    expect(body).toMatch(/acceptance-batching\.yaml/)
+    expect(body).toMatch(/BUILD or IMMEDIATE/)
+    expect(body).toMatch(/never on a fixed count/)
+  })
+
+  it('ships a validate-batch command that runs per-feature gates before batch-wide checks', () => {
+    const body = readFileSync(join(PRODUCT_TEMPLATE, '.claude/commands/validate-batch.md'), 'utf8')
+    expect(body).toMatch(/IMPLEMENTED_PENDING_VALIDATION/)
+    expect(body).toMatch(/deferrable_in_build/)
+    expect(body).toMatch(/does not.* hold up the rest/i)
   })
 })
 

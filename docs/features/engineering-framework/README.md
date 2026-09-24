@@ -140,3 +140,27 @@ All three were deliberately left out of V2.1: building the store before the
 contract is how a store comes to record the wrong fields, and automating a
 comparison before anybody has read two reports by hand is how the wrong thing
 gets measured precisely.
+
+## Extension: acceptance batching (2026-09-23)
+
+A process-change request asked for LOW/MEDIUM-risk features to defer
+manual QA, screenshots, the evidence audit, the full E2E suite, the
+documentation audit and Final Acceptance to a later batch, while keeping
+every risk-triggered gate immediate. `docs/adr/0011-koras-engineering-
+framework-build-validate.md` is the decision; `acceptance-batching.yaml` is
+the file; `docs/ENGINEERING_FRAMEWORK.md`'s "Build now, validate later"
+section is the summary.
+
+It is additive to V2.1 rather than a new phase of it: no existing gate, mode,
+condition or agent changed meaning. What changed is `quality-gates.yaml`
+(seven gates flagged `deferrable_in_build`), `lifecycle.yaml` (one new state,
+`IMPLEMENTED_PENDING_VALIDATION`), `workflow.yaml` (one note at the
+suspension point, not a second stage list), `documentation-policy.yaml` and
+`definition-of-done.md` (cross-references only), plus a new command,
+`/validate-batch`, and an extended `/plan-next` that states an execution
+mode and a deferred-gate list per recommendation.
+
+Not yet done, and not this pass: no generated product has run a BUILD
+feature through `IMPLEMENTED_PENDING_VALIDATION` to a validation batch and
+back. Doing that once, in a generated product, the way G7 R1 did for V2.1
+above, is the case study this extension does not yet have.

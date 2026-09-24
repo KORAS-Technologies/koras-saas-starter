@@ -61,6 +61,19 @@ applies and was not met means the feature is not done, however small the gap.
 22. Observability exists for the new production paths, and any new alert has a
     documented action.
 
+## When and BUILD are different questions
+
+Items 9–14 and item 8 name gates that `acceptance-batching.yaml` may allow a
+BUILD-disposition feature to satisfy in a later validation batch rather than
+before it reaches `IMPLEMENTED_PENDING_VALIDATION`. That changes *when* the
+item is judged, never *whether*: a feature is not done, in either lifecycle
+state, until every applicable item on this page holds. Item 13's own targeted
+half — accessibility on the changed surface — is never deferred, in any
+disposition; what a validation batch may add is the broader check across a
+combined surface, which is the epic-level check `lifecycle.yaml` already
+describes. A feature meeting any floor signal in `risk-model.yaml` is never
+BUILD-eligible, so items 15–19 are never the ones a batch defers.
+
 ## What done does not mean
 
 Done is not merged and not deployed. Human approval remains required for

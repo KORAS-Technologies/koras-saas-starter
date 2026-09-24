@@ -21,11 +21,18 @@ schema_version: 1
 # stages. One sequence written twice is how the two come to disagree about
 # what has happened.
 engineering_flow_join:
-  covers_states: [IMPLEMENTING, TESTING, LOCAL_ACCEPTANCE_READY]
+  covers_states: [IMPLEMENTING, TESTING, IMPLEMENTED_PENDING_VALIDATION, LOCAL_ACCEPTANCE_READY]
   rule: >-
-    The engineering flow runs inside those three states and owns their
-    internal ordering. LOCAL_ACCEPTANCE_READY is reached when the flow
-    reaches `pass_or_escalate` with a PASS.
+    The engineering flow runs inside those states and owns their internal
+    ordering. LOCAL_ACCEPTANCE_READY is reached when the flow reaches
+    `pass_or_escalate` with a PASS. For a feature whose acceptance-batching.yaml
+    disposition is BUILD, the flow suspends after `quality_freeze` and
+    `final_documentation` -- it does not run `documentation_audit`,
+    `final_acceptance` or `pass_or_escalate` yet -- and the feature sits at
+    IMPLEMENTED_PENDING_VALIDATION until a validation batch resumes the flow
+    at `documentation_audit` and carries it through to `pass_or_escalate`. An
+    IMMEDIATE-disposition feature never stops there; the state is
+    NOT_APPLICABLE for it, exactly as any other skipped state is.
 
 # Statuses come from quality-gates.yaml. They are not restated here, for the
 # same reason: a policy-disabled step must mean the same thing in both files
@@ -47,6 +54,19 @@ states:
 
   - id: TESTING
     means: Verification is running, and defects are being fixed within budget.
+
+  - id: IMPLEMENTED_PENDING_VALIDATION
+    means: >-
+      Implementation, unit and targeted integration tests, one independent
+      code review, and every gate that is not deferrable have all passed.
+      What remains is the set of gates acceptance-batching.yaml marks
+      `deferrable_in_build`, owed to a validation batch rather than run now.
+    applicable_when: The feature's acceptance-batching.yaml disposition is BUILD.
+    # Reached instead of LOCAL_ACCEPTANCE_READY, never in addition to it. A
+    # feature does not pass through both -- BUILD features stop here until a
+    # validation batch runs their deferred gates, at which point they reach
+    # LOCAL_ACCEPTANCE_READY directly, exactly as an IMMEDIATE feature does.
+    not_yet: [validated, merged, pushed, deployed, closed]
 
   - id: LOCAL_ACCEPTANCE_READY
     means: final-acceptance reports READY against the local tree.
@@ -119,6 +139,7 @@ rules:
   - A step switched off by policy is NOT_APPLICABLE_BY_POLICY and is never counted as a failure of the feature.
   - Merge and production release remain human gates. Reaching MERGE_READY asks for the decision; it does not make it.
   - A feature that cannot leave a state because something outside this repository has not happened is PENDING_EXTERNAL, not FAIL.
+  - IMPLEMENTED_PENDING_VALIDATION is not a lighter LOCAL_ACCEPTANCE_READY. Every gate deferred into it is still owed, still independent, and still bounded by execution-budget.yaml -- see acceptance-batching.yaml, which owns the disposition and the deferred gate list rather than restating them here.
 
 # A story is accepted on its own terms. An epic is accepted on the terms no
 # single story could satisfy.
@@ -164,6 +185,15 @@ epic_acceptance:
     surface a sibling story also touches runs the cross-story check
     immediately rather than waiting for the epic. Deferring a tenancy or
     authorization seam until the end means building on it first.
+
+  build_disposition_interaction: >-
+    A story built with a BUILD disposition (acceptance-batching.yaml) still
+    has to reach CLOSED, exactly as any story does, before "every story in
+    the epic has reached CLOSED" can be true. It does that by passing through
+    a validation batch first. The epic pass is unaffected: it still runs once,
+    after the last story closes, and it still reuses each story's own gates
+    rather than re-running them -- whether those gates ran immediately or in
+    a batch is invisible to the epic pass, which only cares that they ran.
 
 # The standing example of the distinction, and the reason the status exists.
 #

@@ -38,6 +38,7 @@ to answer four questions the same way twice:
   gate-invalidation.yaml     Change classes, reuse, targeted remediation
   execution-budget.yaml      Caps, escalation, the stop report
   lifecycle.yaml             Feature states, through deployment to closed
+  acceptance-batching.yaml   BUILD vs IMMEDIATE, and the validation batch
   deployment-awareness.yaml  Push impact and partial deployment
   documentation-policy.yaml  Documents, evidence, manual QA, screenshots
   telemetry.yaml             What a run reports about itself
@@ -222,6 +223,47 @@ once, after the last story, and tests the **seams**, reusing the story gates.
 The exception: a floor-signal story touching a surface a sibling also touches
 runs its cross-story check immediately, because deferring a tenancy seam
 means building on it first.
+
+## Build now, validate later
+
+A second and unrelated question sits beside "how much machinery does this
+change get": *when* does the evidence a feature still owes get produced.
+`acceptance-batching.yaml` answers it, and it is deliberately not a fourth
+value on `execution-modes.yaml` — that file already changes two things
+(planning depth, gate-reuse restriction) and a third, unrelated thing it
+changed once before, `evidence_depth`, was removed on 2026-09-20 for reading
+as though it controlled evidence while controlling nothing.
+
+A feature is BUILD or IMMEDIATE, never both and never chosen by preference.
+BUILD is available only when `risk-model.yaml` selects FAST or STANDARD;
+every floor signal already forces FULL, which forces IMMEDIATE, with no
+override in either direction. That single rule is the whole of "auth, tenant
+isolation, secrets, destructive data, storage, payments, AI authority,
+sensitive data and platform contracts keep their gates" — there is no second
+subject-area list to fall out of sync with the first.
+
+Seven gates may be deferred by a BUILD feature, flagged individually on the
+gate in `quality-gates.yaml` rather than kept in a second table:
+`manual_qa_pass`, `screenshot_evidence_complete`, `qa_evidence_audit`,
+`e2e_pass`, `documentation_audit`, `regression_pass`, `final_acceptance`. A
+BUILD feature reaches `IMPLEMENTED_PENDING_VALIDATION` instead of
+`LOCAL_ACCEPTANCE_READY` once implementation, automated tests, targeted
+integration coverage, one independent review and its own documentation are
+in place — the gates the request behind ADR 0011 called the BUILD minimum,
+none of which moved.
+
+Deferred is a timing decision, never a discount: a deferred gate keeps its
+independence, its evidence rules and its budget accounting, and runs, later,
+in a validation batch — `/validate-batch`, over the features a risk
+boundary, a dependency or a milestone actually justifies batching, never a
+fixed count. A batch does two things: it runs each feature's own deferred
+gates, and it runs the batch-wide seam checks `epic_acceptance` already has a
+shape for (cross-feature regression, one end-to-end manual pass, broader
+accessibility and security across the combined surface) — reused rather than
+duplicated, because a second acceptance vocabulary is how the two come to
+disagree about what "accepted" means. See
+`docs/adr/0011-koras-engineering-framework-build-validate.md` for the
+reconciliation this required and the alternatives it rejected.
 
 ## What it reports, and when it may say it
 

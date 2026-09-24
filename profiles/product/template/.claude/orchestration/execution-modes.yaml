@@ -58,6 +58,15 @@ schema_version: 1
 # The mode is chosen by `risk-model.yaml` from the conditions the change
 # meets. It is never chosen by preference, by deadline, or by how the last
 # feature was run.
+#
+# THIS FILE ANSWERS "HOW MUCH MACHINERY", NEVER "WHEN". A second and
+# unrelated question -- whether this feature's evidence-heavy acceptance
+# gates run now or in a later validation batch -- is answered by
+# `acceptance-batching.yaml`, and deliberately not by adding a fourth value
+# here. That file's IMMEDIATE disposition is what "run everything now" meant
+# before it existed; its BUILD disposition is unavailable the moment this
+# file selects FULL, which is the whole of how the two files agree without
+# either restating the other's list.
 
 modes:
   FAST:

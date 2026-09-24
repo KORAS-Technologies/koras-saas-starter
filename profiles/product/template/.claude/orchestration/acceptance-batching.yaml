@@ -1,0 +1,185 @@
+schema_version: 1
+
+# WHEN a feature's expensive acceptance evidence is produced: now, or in a
+# later batch. This is a SECOND axis, deliberately not a fourth value bolted
+# onto `execution-modes.yaml`.
+#
+# risk-model.yaml already answers "how much machinery does this change get" --
+# FAST, STANDARD or FULL, chosen from boundary signals, never from preference.
+# This file answers a different question: "does the evidence this change
+# still owes get produced immediately, or deferred to a batch with other
+# changes." The two questions were on a collision course under one name --
+# the request that produced this file called its three values BUILD, VALIDATE
+# and FULL, and this package already has a FULL that means something else.
+# Two meanings of one word is the exact defect `conditions.yaml` exists to
+# prevent, so the third value here is called IMMEDIATE instead. It is what
+# that request called FULL: nothing deferred, the feature closes its own
+# acceptance the way every feature did before this file existed.
+#
+# A DISPOSITION IS A PROPERTY OF ONE FEATURE, CHOSEN ONCE, AT PLANNING TIME.
+# There are exactly two: BUILD and IMMEDIATE. VALIDATE is not a disposition a
+# feature holds -- it is the batch process, below, that a set of BUILD
+# features passes through together. A feature is never "in VALIDATE mode"; a
+# *run* is a validation batch, over features that were built in BUILD.
+
+dispositions:
+  BUILD:
+    summary: Implement now. Defer the gates named in `deferred_gates` to a validation batch.
+    produces: The lifecycle state IMPLEMENTED_PENDING_VALIDATION, in place of LOCAL_ACCEPTANCE_READY.
+  IMMEDIATE:
+    summary: What every feature did before this file existed. No gate is deferred.
+    produces: LOCAL_ACCEPTANCE_READY, exactly as lifecycle.yaml already describes it.
+
+# SELECTION IS DERIVED FROM THE RISK MODE, NOT CHOSEN BY PREFERENCE.
+#
+# This is the whole of the reconciliation with risk-model.yaml, and it is one
+# rule rather than a second list of high-risk subject areas to keep in sync
+# with the first. Every floor signal in risk-model.yaml -- authentication,
+# authorization, tenant isolation, secrets, destructive or irreversible data
+# change, the storage boundary, payments, AI authority or data reach,
+# sensitive or regulated data, a platform contract -- already forces FULL.
+# Binding BUILD to "risk mode is not FULL" therefore already excludes every
+# one of those, with no second enumeration that could drift from the first.
+selection:
+  rule: >-
+    disposition = IMMEDIATE when risk_mode (risk-model.yaml) = FULL.
+    disposition = BUILD or IMMEDIATE, chosen by the Orchestrator or a human,
+    when risk_mode = FAST or STANDARD. BUILD is the default recommendation for
+    an ordinary feature; IMMEDIATE remains available at any time, at the cost
+    of paying for the deferred gates now instead of in a batch.
+  never:
+    - Selecting BUILD when risk_mode is FULL. There is no override for this, in either direction -- risk-model.yaml already says an agent may never lower a mode, and a BUILD disposition on a FULL-risk feature would be exactly that, wearing a different name.
+    - Selecting a disposition to fit a schedule. risk-model.yaml forbids this for its own mode and the reason is identical here.
+    - Treating BUILD as a weaker set of gates. Every gate that applies still applies; only when it runs moves.
+  raise_to_immediate:
+    allowed: always
+    record: who chose it, and why waiting for a batch was not worth it for this feature.
+  # There is no "lower to BUILD" override to speak of, because BUILD is never
+  # the higher-cost path. The only direction that needs a record is the one
+  # that skips deferral, above.
+
+# THE GATES A BUILD FEATURE OWES LATER, RATHER THAN NOW.
+#
+# Each one is flagged `deferrable_in_build: true` on its own definition in
+# quality-gates.yaml, the same way a gate's inputs live on the gate rather
+# than in a second table. Deferring a gate changes WHEN it runs, never
+# WHETHER it must, and never who may satisfy it: an independent gate deferred
+# to a validation batch is still closed by an agent that did not do the work,
+# still bounded by execution-budget.yaml, and still evidenced exactly as
+# documentation-policy.yaml requires. "A mode changes cost, never standards"
+# is execution-modes.yaml's rule about risk mode; the identical sentence
+# applies here, about timing instead of staffing.
+deferred_gates:
+  - manual_qa_pass
+  - screenshot_evidence_complete
+  - qa_evidence_audit
+  - e2e_pass
+  - documentation_audit
+  - regression_pass
+  - final_acceptance
+
+# THE GATES THAT NEVER MOVE, AND WHY. Named individually rather than left as
+# "everything else", because a list that only says what is deferred invites
+# the next gate that is added to default to deferred by omission.
+never_deferred:
+  implementation_complete: The work existing is not a later question.
+  automated_tests_pass: Unit evidence is cheap, deterministic, and the BUILD minimum names it explicitly.
+  api_integration_tests_pass: Targeted integration coverage is the BUILD minimum's own item, not something owed later.
+  independent_code_review: One independent review is the BUILD minimum's own item. It was never optional and this file does not make it so.
+  requirements_ready: Answered by being the change, or closed under `owner_optional_closure` in FAST. Nothing here changes that.
+  architecture_ready: As above.
+  documentation_complete: BUILD's minimum requires the documentation be written now. Only the independent AUDIT of it -- documentation_audit -- defers.
+  accessibility_pass: >-
+    Applies scoped to the changed surface, and runs now, in every disposition.
+    This is the HIGH-RISK EXCEPTION's own line: "accessibility-affecting UI ->
+    required targeted accessibility checks now." What defers is not this gate;
+    it is the BROADER accessibility validation across a combined surface,
+    which is exactly what lifecycle.yaml's `epic_acceptance.epic.runs` already
+    names, and which the validation batch below reuses rather than duplicates.
+  security_review: >-
+    Applies under `security_boundary`, whose trigger in `conditions.yaml` is
+    broader than any single risk-model floor signal's boundary text - it
+    names uploads, webhooks, redirects and server-side fetches, none of which
+    is guaranteed to trip `authentication_or_session`, `authorization_or_
+    permission`, `tenant_isolation` or `secret_or_credential_handling`
+    specifically. So this gate is protected by its own absence from
+    `deferred_gates` above, not by an inference that BUILD cannot reach it:
+    a feature meeting `security_boundary` without tripping a floor signal
+    would select BUILD, and `security_review` would still run immediately,
+    because nothing here ever marks it deferrable. Do not read the
+    `never_deferred` explanation as a redundant restatement of the selection
+    rule - it is the reason this gate is safe even when that rule alone
+    would not be.
+  privacy_review: As `security_review` - protected by its own absence from `deferred_gates`, not by an inference from `sensitive_or_regulated_data`'s reach.
+  architecture_review: >-
+    Not a floor signal by itself, so it CAN occur inside a BUILD-disposition
+    feature. Deferring an independent architecture look was never asked for,
+    and this file does not extend the deferred list past what the request
+    named.
+  ai_evaluation: Applies under `ai`, and `ai_authority_or_data_reach` is a floor signal wherever authority or reach actually changed. Presentation-only AI change does not meet the gate's own applicability at all, deferred or not.
+  domain_review: Product-owned, and not named as deferrable by the request this file reconciles.
+
+# THE BATCH PROCESS. Not a third disposition -- a run, over every feature
+# currently sitting at IMPLEMENTED_PENDING_VALIDATION that the Orchestrator
+# selects into it.
+#
+# THE DIFFERENCE FROM `epic_acceptance` IN lifecycle.yaml, STATED BECAUSE IT
+# IS EASY TO MISS: an epic's stories already closed their own gates before the
+# epic pass runs, so the epic pass only has to test the seams between them. A
+# BUILD feature's OWN deferred gates were never run at all. So a validation
+# batch does two things an epic pass does only one of: it runs each feature's
+# own deferred gates, AND it runs the batch-wide seam checks the epic pass
+# already has a shape for. Reusing that shape for the second half, rather than
+# inventing a third acceptance vocabulary, is the point of this paragraph.
+validate_batch:
+  scope: Every feature named into this run that is at IMPLEMENTED_PENDING_VALIDATION.
+  # Deliberately not "every N features" or "once a day". Copied from the
+  # request this file reconciles, because it is the correct rule and not
+  # merely the one asked for: a fixed count is arithmetic standing in for
+  # judgement, and arithmetic is what gets gamed.
+  triggered_by:
+    - a risk boundary a pending feature now touches that it did not touch when BUILD was selected
+    - a dependency: a pending feature about to be built on by new work
+    - a milestone or epic boundary being reached
+    - accumulated pending validation becoming material -- judged, not counted
+  never_triggered_by:
+    - a fixed number of pending features
+    - a fixed elapsed time
+    - a schedule with no feature behind it
+  runs_per_feature:
+    # Each feature's own deferred gates, exactly as quality-gates.yaml and
+    # documentation-policy.yaml already specify them. Deferred is a timing
+    # decision; it was never a discount.
+    what: the gates listed in `deferred_gates` above, for that feature
+    independence: unchanged from quality-gates.yaml
+    budget: unchanged from execution-budget.yaml -- counters were never reset by the deferral
+    on_pass: the feature reaches LOCAL_ACCEPTANCE_READY and continues through lifecycle.yaml exactly as an IMMEDIATE feature would
+    on_fail: >-
+      routed to bug-triage per workflow.yaml's rework rules, exactly as an
+      immediate failure would be. It remains IMPLEMENTED_PENDING_VALIDATION
+      (or regresses to TESTING, if the fix is not narrow) and does not block
+      the rest of the batch -- see `never` below.
+  runs_once_for_the_batch:
+    # Reusing epic_acceptance.epic.runs, over the batch's combined surface
+    # instead of an epic's stories. A feature that is ALSO part of a formal
+    # epic still waits for its epic's own pass afterward; this list is not a
+    # substitute for that, it is the same shape applied one level down.
+    - cross-feature regression on the combined result of the batch, not on each feature separately
+    - one manual workflow pass end to end, where the batch has a combined user-facing workflow
+    - broader accessibility validation across the combined surface, where any batched feature added or changed one
+    - security or privacy validation still pending across the batch -- expected to be NOT_APPLICABLE in practice, since a floor-signal feature never reaches BUILD, and recorded as such rather than silently omitted
+    - a documentation consistency pass across the batch, beyond each feature's own documentation_audit
+  never:
+    - Closing a feature's IMPLEMENTED_PENDING_VALIDATION state without running that feature's own deferred gates. The batch-wide list above tests seams; it does not stand in for a feature's own evidence.
+    - Failing one feature in the batch and holding the rest. A batch exists for throughput; making it all-or-nothing recreates the serialization cost BUILD was introduced to avoid.
+    - Treating a passed batch-wide check as satisfying an individual feature's own gate, or the reverse.
+    - Running the batch-wide list after every single BUILD feature closes. That is the batch's own bill, paid once per feature, for seams that are not finished converging yet -- the identical mistake `epic_acceptance.never` already names for epics.
+  gate_reuse: Governed by gate-invalidation.yaml, unchanged. A deferred gate that runs during a batch is reused or re-run by the same rule as any other gate -- whether a change touched its inputs since the code froze, never elapsed time.
+
+rules:
+  - A disposition is chosen once, at planning time, and recorded with the plan -- the same discipline risk-model.yaml already requires for its own mode.
+  - BUILD is never available to a FULL-risk feature, with no override in either direction.
+  - Deferring a gate never changes its independence, its evidence requirements, or its budget accounting.
+  - IMPLEMENTED_PENDING_VALIDATION is not a resting state with no further obligation. Every feature in it still owes every gate in `deferred_gates`.
+  - A validation batch runs each feature's own deferred gates AND the batch-wide seam checks. Neither substitutes for the other.
+  - Status IMPLEMENTED_PENDING_VALIDATION is a lifecycle.yaml state, not a gate result, and it carries no status of its own -- see the note in lifecycle.yaml about a second copy of the status list.

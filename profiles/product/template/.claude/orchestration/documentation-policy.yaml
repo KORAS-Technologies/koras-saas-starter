@@ -244,6 +244,14 @@ documentation:
       BLOCKED, with the reason, is the correct outcome when execution is
       impossible. It is never counted as a pass, and it is never a failure of
       the feature.
+    # WHEN a required pass happens is a third question, answered by neither
+    # clause above. `governs_gates` names manual_qa_pass, screenshot_evidence_
+    # complete and qa_evidence_audit, and all three are `deferrable_in_build`
+    # in quality-gates.yaml -- so a BUILD-disposition feature that required
+    # them still requires them, just not yet. acceptance-batching.yaml owns
+    # that timing decision; this file still owns whether a person is needed
+    # at all, and neither clause above is softened by the other existing.
+    timing_owned_by: .claude/orchestration/acceptance-batching.yaml
 
   # WHICH screenshots are worth keeping.
   #

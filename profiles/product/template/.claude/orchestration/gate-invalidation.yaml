@@ -103,8 +103,15 @@ path_domain:
   #
   # All three register rows are open. This block fixes none of them; it
   # stops them being discovered one stop at a time.
+  #
+  # UPDATED 2026-09-24, not re-measured from scratch: `acceptance-batching.yaml`
+  # joined `.claude/orchestration/` for ADR 0011, and the same fail-closed rule
+  # that stops an unclassified path from being read as "nothing relevant
+  # changed" also refuses to let a comment quietly go stale about how many
+  # there are. Group 1 is 16 files now, and the total is 20. The other two
+  # groups, and the two out-of-domain holes below, are unaffected.
   known_unclassified_groups: 3
-  known_unclassified_files_in_templates: 19
+  known_unclassified_files_in_templates: 20
 
 # What kind of thing changed. Distinct from `conditions.yaml`, which
 # describes the FEATURE; a change class describes one EDIT. A feature that
