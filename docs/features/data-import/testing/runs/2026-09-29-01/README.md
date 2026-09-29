@@ -170,3 +170,56 @@ Manual cases 44 to 52 need an upload -- a storage bucket, a queue and a
 worker -- and a spreadsheet application. The round-trip harness is
 deliberately bare of all three, and this machine has no Excel. They stay
 blank in `../../manual/manual-test-results.md`, with the reason.
+
+## Remote CI, the authoritative run
+
+Everything above is local evidence. The commit it describes,
+`090dfa95d482845ee347f348235721dcc1b6f9c5`, was pushed to `origin/develop` on
+2026-09-29 and these are the runs GitHub Actions recorded for that exact SHA.
+Where the local and remote evidence differ in environment -- PostgreSQL 17
+without pgvector here, `pgvector/pgvector:pg16` there -- the remote run is the
+one that counts.
+
+| Workflow | Run | Jobs | Outcome |
+|---|---|---|---|
+| CI | 36640086463 | Lint & Typecheck, Test (Python), Test (Node), Build | all success |
+| Security | 36640086378 | Secret scan (gitleaks) 109650043020, CodeQL python, CodeQL javascript-typescript | all success |
+| Generator Integration | 36640086477 | integration-product-full, integration-product, integration-product-minimal, integration-control-plane | all success |
+| Dependency graph update | 36640091189 | pip graph for the three changed project files | success |
+
+**Gitleaks executed on CI and passed.** It was not run locally, because the
+binary was not installed; the local grep in the commit report is not evidence
+and is not counted here.
+
+**PostgreSQL 16.15 with pgvector**, on every Generator Integration row. On
+`integration-product-full` the log shows migrations `00036_imports.sql`,
+`00037_notification_outbox.sql` and `00038_import_counts.sql` applied in order,
+`320_imports_isolation.sql` passing its three named checks, the removed-force
+mutation check refusing as designed, and
+`tests/integration/test_import_commit_rls.py` passing four cases.
+
+**The browser, with the fixture.** `integration-product-full` set
+`E2E_IMPORT_FIXTURE=1`, ran the step that installs the fixture target, and
+Playwright reported "Running 188 tests": 179 passed, 9 skipped, 0 failed. The
+nine skips are the viewport-conditional shell cases, the same nine as the
+local run. Had the fixture been absent, the seven round-trip import cases --
+the four from 2026-09-22, the Excel and CSV download case, the ceilings case
+and the 375-pixel case -- would have added to that count, so they executed.
+`integration-product` ran 157 tests without the fixture by design, 148 passed
+and 9 skipped; `integration-control-plane` ran its 9.
+
+**CI counts.** Node: 2370, 493 (documentation), 120 and 21 passed, 2
+pre-existing skips. Python: the starter's own 7. Build 2 of 2 tasks, lint and
+typecheck 5 of 5.
+
+## Status after this run
+
+- **Automated: PASS**, local and remote, as tabled above.
+- **Expected skips**: 9 viewport-conditional browser cases per product row;
+  2 Node tests unrelated to this work.
+- **NOT EXECUTED**: manual cases 42 to 52, each with its reason in
+  `../../manual/manual-test-results.md`. They need Excel, an upload with a
+  bucket and a queue, or a target with a writer or a matcher, and stay owed
+  under F28.
+- **Follow-ups**: F28's remaining manual pass; F30 / IMPORT-GAP-014, the
+  Docoris alignment, open and not to be built from this repository.

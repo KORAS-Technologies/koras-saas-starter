@@ -2436,9 +2436,12 @@ of proof nobody has.
 - [ ] **Templates, XLSX and the preview counts shipped on 2026-09-29.**
       Verified the same day against a private PostgreSQL 17 and in a browser
       with the fixture target -- `docs/features/data-import/testing/runs/2026-09-29-01/README.md`
-      -- which found and fixed three defects. Manual cases 41 and 53 are
+      -- which found and fixed three defects, and then on CI for commit
+      `090dfa9` (runs 36640086463, 36640086378, 36640086477, all green, the
+      round-trip cases executed with the fixture). Manual cases 41 and 53 are
       done; 42 to 52 need Excel, an upload with a bucket and a queue, or a
-      target with a writer or a matcher, and are the pass still owed.
+      target with a writer or a matcher, and are the pass still owed. They do
+      not reopen the starter gate.
 
 ### F23 — the sign-in page, on a host of ours — opened 2026-09-09, built 2026-09-11 as the product's own page
 

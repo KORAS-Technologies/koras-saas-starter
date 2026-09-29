@@ -1219,10 +1219,12 @@ Twice is a pattern, and the pattern is that a sentence about a live system
 decays the moment it is written. That is R-042 on the file every session reads
 first.
 
-**Last validated baseline: 2026-09-21, commit `62780bc`** — CI, Security and
-Generator Integration all green at attempt 1 on the merge commit itself. That
-is a status, not a capability: check the branch you are on rather than
-inheriting this line, for the reason the paragraph above gives twice.
+**Last validated baseline: 2026-09-29, commit `090dfa9`** — CI, Security and
+Generator Integration all green at attempt 1 on the pushed commit itself
+(runs 36640086463, 36640086378 and 36640086477). That is a status, not a
+capability: check the branch you are on rather than inheriting this line, for
+the reason the paragraph above gives twice. The previous baseline was
+2026-09-21, commit `62780bc`, the same three green.
 
 **The post-G7 hardened baseline is `62780bc`.** It supersedes `7199f85` as the
 current framework baseline; `7199f85` remains the historical G7 R2 accepted

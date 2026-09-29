@@ -526,6 +526,13 @@ a permanent round-trip case.
 **Not executed:** manual cases 42 to 52, which need Excel, an upload with a
 bucket and a queue, or a target with a writer or a matcher.
 
+**Remote CI, the authoritative run**, on commit
+`090dfa95d482845ee347f348235721dcc1b6f9c5` pushed 2026-09-29: CI 36640086463,
+Security 36640086378 (gitleaks executed and passed) and Generator Integration
+36640086477 all green, the last against PostgreSQL 16.15 with pgvector, with
+the fixture installed and 179 browser cases passing on the full product row.
+The run record has the table.
+
 ## What has not been done
 
 - **No manual pass.** `manual-test-plan.md` here has the cases; every verdict
