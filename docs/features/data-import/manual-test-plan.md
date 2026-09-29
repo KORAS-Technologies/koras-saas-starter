@@ -65,7 +65,7 @@ EXECUTED.
 | 24 | After case 23, count rows in the target table | Exactly 20 more, each carrying the run id if the target attributes to the run | |
 | 25 | Press the confirm control twice quickly | The second is refused with a 409. **One** copy of the records exists | |
 | 26 | Make the writer raise on row 15 of 20, then confirm | The run is *Failed* with a sentence, and the target table has **zero** new rows. This is the criterion the phase exists for | |
-| 27 | Make the writer raise, and check the audit log afterwards | `import.run.committed` is there for the confirmation; the failure is on the run row, not a fourth audit action | |
+| 27 | Make the writer raise, and check the audit log afterwards | `import.run.committed` is there for the confirmation, **and since 2026-09-29** `import.run.finished` with outcome `error` and the run's own sentence (ADR 0012 D5). This row said "not a fourth audit action" until that day | |
 | 28 | Confirm a run against a target whose writer was removed | No confirm control renders at all; a POST to the route answers `import_not_committable` | |
 | 29 | Kill the worker mid-commit, then look at the run | It stays in *Confirming…*. The target table has zero new rows. It is findable | |
 | 30 | Unset `REDIS_URL` on the API, then confirm | 503 with the queue sentence, **and** the run is marked failed rather than left looking confirmed | |
@@ -86,3 +86,25 @@ Cases 1–22 exercise Phase 1 and write nothing. Cases 23–40 exercise the comm
 Neither set reaches XLSX or JSON, saved mapping profiles, cancelling a commit in
 flight, or a file at the row ceiling under real latency — those are Phases 3
 and 4.
+
+## Templates and formats
+
+Added 2026-09-29, with the template, the XLSX reader and the preview counts.
+None has been executed. Each needs the estate the cases above need, and a
+spreadsheet application.
+
+| # | Case | Expected | Verdict |
+|---|------|----------|---------|
+| 41 | Open the Imports page and activate *Download template* with the keyboard | Enter opens the panel with one item per format the target accepts and focus on the first; Escape closes it and returns focus to the button | |
+| 42 | Download the Excel template and open it in Excel | A *Data* sheet with the field names in row 1, required ones shaded, a comment on each heading; an *Instructions* sheet naming target, version, fingerprint and every field | |
+| 43 | In the Excel template, type a value outside an enumerated column's list | Excel refuses it with the sheet's own message | |
+| 44 | Fill ten rows in the Excel template, save, upload | The mapping card says every column matches and nothing needs mapping by hand; the sheet named is *Data* | |
+| 45 | Check the file from case 44 | The preview shows total, ready, with problems and duplicated; the predicted figures when the target declares a matcher, or the sentence saying they are unknown | |
+| 46 | Save the same rows from Excel as CSV and upload that | The same verdict and the same figures as case 45 | |
+| 47 | Download a template, then have the product bump the target's version, then upload the old template filled in | The mapping card says the file was made from an older template and names both versions; the run still proceeds if the header fits | |
+| 48 | Rename a heading in a downloaded template and upload it | The verdict names the column as unknown and, if required, the field as missing | |
+| 49 | Upload an `.xlsm` renamed to `.xlsx` | Refused as a workbook with macros, before any sheet is read | |
+| 50 | Confirm an import against a target with a writer | The card draws total, created, updated, skipped and failed, and the history row keeps the format | |
+| 51 | After case 50, read the audit page | `import.template.downloaded`, `import.run.validated` and `import.run.finished` are there under the right actor, with counts and no cell values | |
+| 52 | Under `create`, upload a file naming a record that exists, on a target with a matcher | The row is listed with the already-exists sentence and the run does not reach `validated` | |
+| 53 | Open the page at 375 pixels and repeat case 41 | The panel opens below the button at full width; nothing scrolls sideways | |

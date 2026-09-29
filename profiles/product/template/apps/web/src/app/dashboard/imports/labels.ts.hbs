@@ -9,11 +9,15 @@ import type { Translator } from '@{{projectSlug}}/i18n'
  * and passed down as plain strings — the arrangement the Restore and Files
  * panels use for the same reason.
  *
- * Two of these are maps rather than strings. A run's state and a row error's
- * code both arrive from the API as stable identifiers, and mapping them here
- * means a state the catalogue has no sentence for falls back to the identifier
- * rather than rendering nothing. That fallback is deliberate: a new state
- * should look untranslated, not invisible.
+ * Several of these are maps rather than strings. A run's state, a row error's
+ * code and a template format all arrive from the API as stable identifiers,
+ * and mapping them here means a state the catalogue has no sentence for falls
+ * back to the identifier rather than rendering nothing. That fallback is
+ * deliberate: a new state should look untranslated, not invisible.
+ *
+ * Sentences with a value in them cross the boundary as templates and are
+ * filled on the client, because a function cannot -- `withValue` in the
+ * settings form and `withCount` in the bell are the same rule.
  */
 export interface ImportLabels {
   startTitle: string
@@ -23,6 +27,27 @@ export interface ImportLabels {
   operationHint: string
   file: string
   ceiling: string
+  /** `{size}`, `{rows}` and `{formats}`. */
+  limits: string
+  /** `{name}` and `{size}`. */
+  chosenFile: string
+  format: string
+  template: {
+    download: string
+    hint: string
+    formatRefused: string
+    /** Keyed by format: `xlsx`, `csv`. */
+    formats: Record<string, string>
+    compatible: string
+    /** `{columns}`. */
+    unknownColumns: string
+    /** `{fields}`. */
+    incompatible: string
+    /** `{found}` and `{current}`. */
+    stale: string
+  }
+  /** `{sheet}`. */
+  sheet: string
   mapTitle: string
   mapDescription: string
   mapColumn: string
@@ -43,6 +68,26 @@ export interface ImportLabels {
   committing: string
   notCommittable: string
   wrote: string
+  preview: {
+    total: string
+    valid: string
+    invalid: string
+    duplicate: string
+    create: string
+    update: string
+    skip: string
+    unknown: string
+  }
+  result: {
+    title: string
+    total: string
+    created: string
+    updated: string
+    skipped: string
+    failed: string
+  }
+  consequence: string
+  consequenceInvalid: string
   showReport: string
   downloadReport: string
   reportCut: string
@@ -90,9 +135,9 @@ export function importLabels(t: Translator): ImportLabels {
     failed: t('imports.state.failed'),
     cancelled: t('imports.state.cancelled'),
   }
-  // Keyed by the exact codes `koras_import.mapping` raises. A code with no
-  // sentence falls back to the identifier in the panel, which is what makes a
-  // new rule look untranslated rather than invisible.
+  // Keyed by the exact codes `koras_import.mapping` and `koras_import.matching`
+  // raise. A code with no sentence falls back to the identifier in the panel,
+  // which is what makes a new rule look untranslated rather than invisible.
   const problems: Record<string, string> = {
     'import.error.required': t('imports.problem.required'),
     'import.error.too_long': t('imports.problem.tooLong'),
@@ -105,6 +150,7 @@ export function importLabels(t: Translator): ImportLabels {
     'import.error.email': t('imports.problem.email'),
     'import.error.extra_cells': t('imports.problem.extraCells'),
     'import.error.duplicate_in_file': t('imports.problem.duplicateInFile'),
+    'import.error.already_exists': t('imports.problem.alreadyExists'),
   }
   return {
     startTitle: t('imports.startTitle'),
@@ -114,6 +160,23 @@ export function importLabels(t: Translator): ImportLabels {
     operationHint: t('imports.operationHint'),
     file: t('imports.file'),
     ceiling: t('imports.ceiling'),
+    limits: t('imports.limits'),
+    chosenFile: t('imports.chosenFile'),
+    format: t('imports.format'),
+    template: {
+      download: t('imports.template.download'),
+      hint: t('imports.template.hint'),
+      formatRefused: t('imports.template.formatRefused'),
+      formats: {
+        xlsx: t('imports.template.xlsx'),
+        csv: t('imports.template.csv'),
+      },
+      compatible: t('imports.template.compatible'),
+      unknownColumns: t('imports.template.unknownColumns'),
+      incompatible: t('imports.template.incompatible'),
+      stale: t('imports.template.stale'),
+    },
+    sheet: t('imports.sheet'),
     mapTitle: t('imports.mapTitle'),
     mapDescription: t('imports.mapDescription'),
     mapColumn: t('imports.mapColumn'),
@@ -136,6 +199,26 @@ export function importLabels(t: Translator): ImportLabels {
     committing: t('imports.committing'),
     notCommittable: t('imports.notCommittable'),
     wrote: t('imports.wrote'),
+    preview: {
+      total: t('imports.preview.total'),
+      valid: t('imports.preview.valid'),
+      invalid: t('imports.preview.invalid'),
+      duplicate: t('imports.preview.duplicate'),
+      create: t('imports.preview.create'),
+      update: t('imports.preview.update'),
+      skip: t('imports.preview.skip'),
+      unknown: t('imports.preview.unknown'),
+    },
+    result: {
+      title: t('imports.result.title'),
+      total: t('imports.result.total'),
+      created: t('imports.result.created'),
+      updated: t('imports.result.updated'),
+      skipped: t('imports.result.skipped'),
+      failed: t('imports.result.failed'),
+    },
+    consequence: t('imports.consequence'),
+    consequenceInvalid: t('imports.consequence.invalid'),
     showReport: t('imports.showReport'),
     downloadReport: t('imports.downloadReport'),
     reportCut: t('imports.reportCut'),

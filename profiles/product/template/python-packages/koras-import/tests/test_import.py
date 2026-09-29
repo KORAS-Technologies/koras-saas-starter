@@ -634,3 +634,98 @@ def test_a_decimal_is_parsed_or_refused_and_never_guessed(
     row = Row(number=2, cells={"SKU": "a", "Amount": value}, short=False, long=False)
     codes = [problem.code for problem in validate_row(target, resolved, row)]
     assert codes == ([] if expected is None else [expected])
+
+
+# ── what the template work changed in the declaration and the mapping ────────
+
+
+def test_a_declaration_from_before_templates_constructs_unchanged() -> None:
+    """Every new field has a default: ADR 0012's backward-compatibility rule."""
+    assert CUSTOMERS.version == 1
+    assert CUSTOMERS.matcher is None
+    assert all(spec.example == "" and spec.help == "" for spec in CUSTOMERS.fields)
+
+
+def test_a_version_below_one_and_a_matcher_without_keys_are_refused() -> None:
+    with pytest.raises(ValueError, match="version"):
+        ImportTarget(
+            key="shop.x",
+            label_key="k",
+            permission="imports.manage",
+            fields=(FieldSpec("a", "k"),),
+            operations=(Operation.CREATE,),
+            version=0,
+        )
+
+    async def matcher(_session: object, _request: object) -> set[tuple[str, ...]]:
+        return set()
+
+    with pytest.raises(ValueError, match="no match keys"):
+        ImportTarget(
+            key="shop.x",
+            label_key="k",
+            permission="imports.manage",
+            fields=(FieldSpec("a", "k"),),
+            operations=(Operation.CREATE,),
+            matcher=matcher,
+        )
+    with pytest.raises(ValueError, match="not callable"):
+        ImportTarget(
+            key="shop.x",
+            label_key="k",
+            permission="imports.manage",
+            fields=(FieldSpec("a", "k"),),
+            match_keys=("a",),
+            operations=(Operation.SKIP_DUPLICATE,),
+            matcher="nope",
+        )
+
+
+def test_an_operation_that_recognises_rows_needs_its_key_mapped() -> None:
+    """IMP2-20. Left unmapped, duplicate detection silently switched off."""
+    by_code = ImportTarget(
+        key="shop.products",
+        label_key="k",
+        permission="imports.manage",
+        fields=(
+            FieldSpec("code", "k"),
+            FieldSpec("name", "k", required=True),
+        ),
+        match_keys=("code",),
+        operations=(Operation.CREATE, Operation.UPSERT),
+    )
+    # Without the requirement -- a plain create -- an optional key may stay unmapped.
+    resolve(by_code, ("Name", "Other"), {"Name": "name"})
+    with pytest.raises(MappingRefused, match="recognises an existing record"):
+        resolve(by_code, ("Name", "Other"), {"Name": "name"}, require_match_keys=True)
+
+
+def test_a_non_finite_number_is_not_a_number() -> None:
+    """IMP2-18. `float()` accepts these; a NaN in a numeric column poisons every SUM."""
+    spec = FieldSpec("balance", "k", kind=FieldKind.DECIMAL)
+    resolved = resolve(
+        ImportTarget(
+            key="shop.b",
+            label_key="k",
+            permission="imports.manage",
+            fields=(spec,),
+            operations=(Operation.CREATE,),
+        ),
+        ("Balance",),
+        {"Balance": "balance"},
+    )
+    target = ImportTarget(
+        key="shop.b",
+        label_key="k",
+        permission="imports.manage",
+        fields=(spec,),
+        operations=(Operation.CREATE,),
+    )
+    for bad in ("nan", "NaN", "inf", "-inf", "1e400"):
+        problems = validate_row(
+            target, resolved, Row(number=2, cells={"Balance": bad}, short=False, long=False)
+        )
+        assert [p.code for p in problems] == ["import.error.decimal"], bad
+    assert validate_row(
+        target, resolved, Row(number=2, cells={"Balance": "1e3"}, short=False, long=False)
+    ) == []

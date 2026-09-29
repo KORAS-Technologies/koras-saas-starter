@@ -92,6 +92,16 @@ class FieldSpec:
     #: and stored as declared, because a spreadsheet's capitalisation is
     #: whatever the person typing felt like.
     options: tuple[str, ...] = ()
+    #: A synthetic value a template shows for this column. Never real data:
+    #: it is rendered into a file every customer of the product downloads.
+    #: Empty means the engine synthesises one from the kind, so a target
+    #: declared before templates existed still renders a complete template.
+    example: str = ""
+    #: Plain text, one language, for the template's Instructions sheet and
+    #: the header comment. Not a key: the product's label keys resolve in the
+    #: web application's catalogue and nowhere in Python, and the template is
+    #: rendered in Python. ADR 0012 D8 records the limitation and its trigger.
+    help: str = ""
 
     def __post_init__(self) -> None:
         if not _FIELD.match(self.name):
@@ -155,6 +165,17 @@ class ImportTarget:
     #: the question an import exists to keep answerable.
     attributes_to_run: bool = False
     tags: tuple[str, ...] = field(default_factory=tuple)
+    #: The product's own import-definition version, bumped when a field's
+    #: *meaning* changes -- a rename, a narrowed option set, a type change.
+    #: The engine never bumps it; it fingerprints the shape instead, and a
+    #: template's identity is the two together. ADR 0012.
+    version: int = 1
+    #: The writer's reading half: an async callable taking the caller's open
+    #: session and a `MatchRequest`, answering which match-key tuples already
+    #: name a record. Optional. It mutates nothing, runs once per run rather
+    #: than once per row, and its answer is a prediction the commit does not
+    #: trust -- the writer decides again with the rows in front of it.
+    matcher: Any | None = None
 
     def __post_init__(self) -> None:
         if not _DOTTED.match(self.key):
@@ -190,6 +211,14 @@ class ImportTarget:
             raise ValueError(f"target {self.key} has a max_rows below 1")
         if self.writer is not None and not callable(self.writer):
             raise ValueError(f"target {self.key} declares a writer that is not callable")
+        if self.version < 1:
+            raise ValueError(f"target {self.key} has a version below 1")
+        if self.matcher is not None and not callable(self.matcher):
+            raise ValueError(f"target {self.key} declares a matcher that is not callable")
+        if self.matcher is not None and not self.match_keys:
+            raise ValueError(
+                f"target {self.key} declares a matcher and no match keys for it to match on"
+            )
         if self.attributes_to_run and self.writer is None:
             # A claim about what a writer does, on a target that has none.
             raise ValueError(

@@ -22,19 +22,31 @@ from typing import Any
 
 from koras_audit import AuditAction, Classification, actions
 from koras_import import (
+    Compatibility,
+    Format,
     ImportTarget,
+    Operation,
+    Prediction,
     ReadRefused,
+    ResolvedMapping,
+    Row,
     RowError,
     RunState,
     Validation,
+    compare,
     count_rows,
     decode,
+    normalise_row,
+    predict,
     read_header,
     read_rows,
+    read_workbook,
+    request_for,
     require_move,
     resolve,
     sniff_delimiter,
     suggest,
+    with_rejections,
 )
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -85,6 +97,32 @@ IMPORT_ACTIONS = (
         classification=Classification.SECURITY,
         summary="A commit was refused: the target accepts no writer, or the run could not move.",
     ),
+    # The three below arrived with the templates on 2026-09-29. Two of them are
+    # written by the worker, which reverses the Phase 2 position that the run
+    # row is the only record of an outcome: it still is the *state*, and these
+    # are the evidence that a moment happened, carrying counts and never a
+    # cell. ADR 0012 D5.
+    AuditAction(
+        key="import.template.downloaded",
+        classification=Classification.ACTIVITY,
+        summary="A person downloaded a template for a target, in a format, at a version.",
+    ),
+    AuditAction(
+        key="import.run.validated",
+        classification=Classification.ACTIVITY,
+        summary=(
+            "A dry run finished. Outcome ok means every row passed; error means "
+            "the report lists problems. The counts are in the details."
+        ),
+    ),
+    AuditAction(
+        key="import.run.finished",
+        classification=Classification.AUDIT,
+        summary=(
+            "A confirmed import finished. Outcome ok carries what was written; "
+            "error carries the safe sentence the run records."
+        ),
+    ),
 )
 
 for _action in IMPORT_ACTIONS:
@@ -116,16 +154,50 @@ class Run:
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    #: Everything below is nullable where a run from before 2026-09-29 cannot
+    #: know it. A default of zero would render three false figures for every
+    #: such run; null renders the sentence the page drew before.
+    template_version: int | None = None
+    job_id: str | None = None
+    rows_duplicate: int = 0
+    predicted_create: int | None = None
+    predicted_update: int | None = None
+    predicted_skip: int | None = None
+    rows_created: int | None = None
+    rows_updated: int | None = None
+    rows_skipped: int | None = None
+    #: From the file row, when it still exists. Read by a join, never stored
+    #: twice.
+    source_name: str | None = None
+    source_bytes: int | None = None
 
     @property
     def state(self) -> RunState:
         return RunState(self.status)
 
+    @property
+    def written(self) -> tuple[int, int, int] | None:
+        if self.rows_created is None or self.rows_updated is None or self.rows_skipped is None:
+            return None
+        return (self.rows_created, self.rows_updated, self.rows_skipped)
+
 
 _COLUMNS = (
     "id, target, status, format, source_file_id, delimiter, encoding, columns, "
     "mapping, operation, rows_total, rows_valid, errors_total, errors_cut, "
-    "error, requested_by, committed_by, created_at, started_at, finished_at"
+    "error, requested_by, committed_by, created_at, started_at, finished_at, "
+    "template_version, job_id, rows_duplicate, predicted_create, predicted_update, "
+    "predicted_skip, rows_created, rows_updated, rows_skipped"
+)
+
+#: The same columns qualified, plus the source's name and size from `files`.
+#: A left join: a run whose file retention purged still lists, with nulls.
+#: Row-level security on `files` applies to the joined row exactly as it does
+#: to a direct read, so nothing crosses a tenant here that could not before.
+_SELECT = (
+    "select " + ", ".join(f"r.{name}" for name in _COLUMNS.split(", ")) + ", "
+    "f.name as source_name, f.size_bytes as source_bytes "
+    "from public.import_runs r left join public.files f on f.id = r.source_file_id"
 )
 
 
@@ -151,6 +223,17 @@ def _run(row: Any) -> Run:  # noqa: ANN401 - a driver row, shaped by the select
         created_at=row.created_at,
         started_at=row.started_at,
         finished_at=row.finished_at,
+        template_version=row.template_version,
+        job_id=row.job_id,
+        rows_duplicate=row.rows_duplicate or 0,
+        predicted_create=row.predicted_create,
+        predicted_update=row.predicted_update,
+        predicted_skip=row.predicted_skip,
+        rows_created=row.rows_created,
+        rows_updated=row.rows_updated,
+        rows_skipped=row.rows_skipped,
+        source_name=getattr(row, "source_name", None),
+        source_bytes=getattr(row, "source_bytes", None),
     )
 
 
@@ -162,6 +245,7 @@ async def create(
     source_file_id: str,
     requested_by: str,
     operation: str,
+    format: Format = Format.CSV,  # noqa: A002 - the column's name
 ) -> Run:
     """Start a run against a file that is already uploaded and confirmed.
 
@@ -173,9 +257,9 @@ async def create(
         text(
             # `_COLUMNS` is a module constant; every value is bound.
             "insert into public.import_runs "  # noqa: S608
-            "(tenant_id, target, source_file_id, requested_by, operation) "
-            "values (:tenant_id, :target, cast(:file_id as uuid), :by, :operation) "
-            f"returning {_COLUMNS}"
+            "(tenant_id, target, source_file_id, requested_by, operation, format) "
+            "values (:tenant_id, :target, cast(:file_id as uuid), :by, :operation, "
+            f":format) returning {_COLUMNS}"
         ),
         {
             "tenant_id": tenant_id,
@@ -183,6 +267,9 @@ async def create(
             "file_id": source_file_id,
             "by": requested_by,
             "operation": operation,
+            # The column was always its default until 2026-09-29: this insert
+            # never named it, so every run said `csv` whatever it read.
+            "format": format.value,
         },
     )
     return _run(result.one())
@@ -198,9 +285,7 @@ async def get(session: AsyncSession, run_id: str) -> Run | None:
     result = await session.execute(
         # `_COLUMNS` is a module constant and the id is bound. Every value a
         # caller supplies in this file is a parameter.
-        text(
-            f"select {_COLUMNS} from public.import_runs where id = cast(:id as uuid)"  # noqa: S608
-        ),
+        text(f"{_SELECT} where r.id = cast(:id as uuid)"),  # noqa: S608 - a constant
         {"id": run_id},
     )
     row = result.first()
@@ -209,10 +294,7 @@ async def get(session: AsyncSession, run_id: str) -> Run | None:
 
 async def recent(session: AsyncSession, *, limit: int = 50) -> list[Run]:
     result = await session.execute(
-        text(
-            f"select {_COLUMNS} from public.import_runs "  # noqa: S608 - a constant
-            "order by created_at desc limit :limit"
-        ),
+        text(f"{_SELECT} order by r.created_at desc limit :limit"),  # noqa: S608 - a constant
         {"limit": max(1, min(limit, 200))},
     )
     return [_run(row) for row in result]
@@ -234,6 +316,19 @@ async def _advance(
             "where id = cast(:id as uuid)"
         ),
         {"status": target.value, "id": run.id, **columns},
+    )
+
+
+async def set_job(session: AsyncSession, run: Run, job_id: str) -> None:
+    """Remember the queue's id for the last job this run was handed to.
+
+    Not through `_advance`: no state changes, and the id is written *after*
+    the enqueue answers, so a run in `validating` with no job id is one whose
+    enqueue was refused before it could be recorded.
+    """
+    await session.execute(
+        text("update public.import_runs set job_id = :job_id where id = cast(:id as uuid)"),
+        {"job_id": job_id[:200], "id": run.id},
     )
 
 
@@ -278,7 +373,13 @@ async def fail(session: AsyncSession, run: Run, reason: str) -> None:
 
 
 async def record_validation(
-    session: AsyncSession, run: Run, *, tenant_id: str, result: Validation
+    session: AsyncSession,
+    run: Run,
+    *,
+    tenant_id: str,
+    result: Validation,
+    prediction: Prediction | None = None,
+    template_version: int | None = None,
 ) -> RunState:
     """Store what the dry run found, and move the run accordingly.
 
@@ -321,6 +422,13 @@ async def record_validation(
         rows_valid=result.valid,
         errors_total=len(result.errors),
         errors_cut=result.truncated,
+        rows_duplicate=result.duplicates,
+        # Null when the target declares no matcher: the page then says the
+        # figures are unknown rather than drawing three zeros.
+        predicted_create=prediction.create if prediction else None,
+        predicted_update=prediction.update if prediction else None,
+        predicted_skip=prediction.skip if prediction else None,
+        template_version=template_version,
         finished_at=datetime.now().astimezone(),
     )
     return landed
@@ -358,6 +466,11 @@ async def record_commit(
         RunState.COMMITTED,
         rows_total=created + updated + skipped,
         rows_valid=created + updated,
+        # Kept apart as well as summed. The sum was all the row held until
+        # 2026-09-29, and "wrote 920 of 1000" cannot say which were new.
+        rows_created=created,
+        rows_updated=updated,
+        rows_skipped=skipped,
         finished_at=datetime.now().astimezone(),
     )
 
@@ -426,14 +539,63 @@ class Analysis:
     #: proceeds; the run says so, and a customer wondering why one name looks
     #: wrong has an answer.
     replaced: bool
+    format: Format = Format.CSV
+    #: The workbook sheet that was read; None for a CSV.
+    sheet: str | None = None
+    #: The template identity the file carried; None for a CSV and for any
+    #: file not made from a template.
+    identity: str | None = None
+    #: The header judged against the target as declared today. ADR 0012.
+    template: Compatibility | None = None
 
 
-def analyse(raw: bytes, target: ImportTarget) -> Analysis:
+#: What `files` says about a source's format, from its name first and its
+#: content type second. A spreadsheet's own content type is unambiguous; a
+#: CSV arrives as text/csv, text/plain, application/vnd.ms-excel and worse,
+#: so the extension is what a person sees and what decides.
+_WORKBOOK_TYPES = frozenset(
+    {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+)
+
+
+def source_format(name: str | None, content_type: str | None) -> Format:
+    """The format a source file is in, as far as its row can say."""
+    suffix = (name or "").rpartition(".")[2].lower()
+    if suffix == "xlsx":
+        return Format.XLSX
+    if suffix in {"csv", "tsv", "txt"}:
+        return Format.CSV
+    if suffix == "json":
+        return Format.JSON
+    if (content_type or "").split(";")[0].strip().lower() in _WORKBOOK_TYPES:
+        return Format.XLSX
+    return Format.CSV
+
+
+def analyse(raw: bytes, target: ImportTarget, fmt: Format = Format.CSV) -> Analysis:
     """What the file looks like, and a mapping to offer before anybody types.
 
     Pure: bytes in, an answer out. That is what lets the analysis be tested
     against the files real spreadsheets produce without a database or a bucket.
     """
+    if fmt is Format.XLSX:
+        read = read_workbook(raw, limit=PREVIEW, ceiling=target.max_rows)
+        return Analysis(
+            delimiter=",",
+            encoding="utf-8",
+            columns=read.header.columns,
+            suggested=suggest(target, read.header.columns),
+            preview=[row.cells for row in read.rows],
+            rows_seen=read.rows_seen,
+            over_ceiling=read.rows_seen > target.max_rows,
+            replaced=False,
+            format=fmt,
+            sheet=read.sheet,
+            identity=read.identity,
+            template=compare(target, read.header.columns, found=read.identity),
+        )
+    if fmt is not Format.CSV:
+        raise ReadRefused(f"{fmt.value} files are not read in this release")
     decoded = decode(raw)
     delimiter = sniff_delimiter(decoded.text)
     lines = decoded.text.splitlines(keepends=True)
@@ -451,24 +613,103 @@ def analyse(raw: bytes, target: ImportTarget) -> Analysis:
         rows_seen=seen,
         over_ceiling=seen > target.max_rows,
         replaced=decoded.replaced,
+        format=fmt,
+        template=compare(target, header.columns),
     )
 
 
-def _parse(raw: bytes, target: ImportTarget, run: Run) -> tuple[Any, list[Any]]:
+def _needs_match_keys(run: Run) -> bool:
+    """Every operation but a plain create recognises rows, and needs its keys mapped."""
+    return run.operation != Operation.CREATE.value
+
+
+def _parse(
+    raw: bytes, target: ImportTarget, run: Run
+) -> tuple[ResolvedMapping, list[Row], str | None]:
     """The mapping and the rows, resolved once. Shared by the dry run and the commit.
 
     One reader for both passes on purpose: a commit that parsed differently
     from the validation that approved it would write rows nobody checked, and
     the difference would be invisible -- both would look like they had run.
     """
-    decoded = decode(raw)
-    lines = decoded.text.splitlines(keepends=True)
-    header = read_header(lines, delimiter=run.delimiter)
-    resolved = resolve(target, header.columns, run.mapping)
-    rows = list(
-        read_rows(lines, header=header, delimiter=run.delimiter, limit=target.max_rows)
+    found: str | None = None
+    if run.format == Format.XLSX.value:
+        read = read_workbook(raw, limit=target.max_rows, ceiling=target.max_rows)
+        header = read.header
+        rows = list(read.rows)
+        found = read.identity
+    else:
+        decoded = decode(raw)
+        lines = decoded.text.splitlines(keepends=True)
+        header = read_header(lines, delimiter=run.delimiter)
+        rows = list(
+            read_rows(lines, header=header, delimiter=run.delimiter, limit=target.max_rows)
+        )
+    resolved = resolve(
+        target, header.columns, run.mapping, require_match_keys=_needs_match_keys(run)
     )
-    return resolved, rows
+    return resolved, rows, found
+
+
+@dataclass(frozen=True)
+class Examined:
+    """A dry run's three products, for a caller that goes on to predict."""
+
+    resolved: ResolvedMapping
+    rows: tuple[Row, ...]
+    verdict: Validation
+    #: The version the file's template identity named for this target, or None.
+    template_version: int | None = None
+
+
+def examine(raw: bytes, target: ImportTarget, run: Run) -> Examined:
+    """`check`, keeping the mapping and the rows so a matcher can be asked."""
+    from koras_import import validate
+
+    resolved, rows, found = _parse(raw, target, run)
+    version = compare(target, (), found=found).version_found if found else None
+    return Examined(
+        resolved=resolved,
+        rows=tuple(rows),
+        verdict=validate(target, resolved, rows),
+        template_version=version,
+    )
+
+
+async def predict_outcome(
+    session: AsyncSession,
+    *,
+    target: ImportTarget,
+    run: Run,
+    tenant_id: str,
+    examined: Examined,
+) -> tuple[Validation, Prediction | None]:
+    """Ask the target's matcher once, and count what the operation would do.
+
+    None when the target declares no matcher: the page then says the figures
+    are unknown. The call runs in a savepoint, so a matcher that raises leaves
+    the run's own rows intact -- catching an exception from a shared session
+    isolates the caller from the exception and not from the transaction.
+
+    With `create`, a row that names an existing record is a row error from
+    here on, and the verdict returned carries it. ADR 0012 D9.
+    """
+    if target.matcher is None:
+        return examined.verdict, None
+    request = request_for(
+        target, examined.resolved, examined.rows, tenant_id=tenant_id, verdict=examined.verdict
+    )
+    async with session.begin_nested():
+        existing = await target.matcher(session, request)
+    prediction = predict(
+        target,
+        Operation(run.operation),
+        examined.resolved,
+        examined.rows,
+        verdict=examined.verdict,
+        existing=existing,
+    )
+    return with_rejections(examined.verdict, prediction), prediction
 
 
 def check(raw: bytes, target: ImportTarget, run: Run) -> Validation:
@@ -481,7 +722,7 @@ def check(raw: bytes, target: ImportTarget, run: Run) -> Validation:
     """
     from koras_import import validate
 
-    resolved, rows = _parse(raw, target, run)
+    resolved, rows, _ = _parse(raw, target, run)
     return validate(target, resolved, rows)
 
 
@@ -502,12 +743,12 @@ def prepare(
     """
     from koras_import import validate
 
-    resolved, rows = _parse(raw, target, run)
+    resolved, rows, _ = _parse(raw, target, run)
     verdict = validate(target, resolved, rows)
-    mapped = tuple(
-        {field: row.cells.get(column, "").strip() for field, column in resolved.fields.items()}
-        for row in rows
-    )
+    # Canonical, not raw: a date the validator accepted as `31.12.2025` reaches
+    # the writer as `2025-12-31`, a decimal with a point, a boolean as `true`.
+    # The same function the matcher's keys go through. IMP2-19.
+    mapped = tuple(normalise_row(target, resolved, row) for row in rows)
     return verdict, mapped
 
 
@@ -551,7 +792,7 @@ UNPARSEABLE_SCANS: frozenset[str] = frozenset({"pending", "skipped", "infected"}
 MAX_SOURCE_BYTES = 64 * 1024 * 1024
 
 _SOURCE = text(
-    "select storage_key, size_bytes, status, scan_status, name "
+    "select storage_key, size_bytes, status, scan_status, name, content_type, category "
     "from public.files where id = cast(:id as uuid)"
 )
 
@@ -602,6 +843,7 @@ __all__ = [
     "MAX_SOURCE_BYTES",
     "PREVIEW",
     "Analysis",
+    "Examined",
     "ReadRefused",
     "Reported",
     "Run",
@@ -609,6 +851,10 @@ __all__ = [
     "UNPARSEABLE_SCANS",
     "analyse",
     "begin_commit",
+    "examine",
+    "predict_outcome",
+    "set_job",
+    "source_format",
     "begin_validation",
     "check_source",
     "cancel",

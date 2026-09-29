@@ -91,6 +91,8 @@ export function apiErrorMessage(t: Translator, code: string | null | undefined):
       return t('errors.importNotCommittable')
     case 'import_file_too_large':
       return t('errors.importFileTooLarge')
+    case 'import_format_refused':
+      return t('errors.importFormatRefused')
     case 'file_under_hold':
       return t('errors.fileUnderHold')
     case 'file_quarantined':

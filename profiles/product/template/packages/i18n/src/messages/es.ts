@@ -858,6 +858,66 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'Esto se puede leer de dos maneras que difieren en mil veces. Escríbalo sin separador de millares.',
   'imports.problem.duplicateInFile':
     'Otra fila de este mismo archivo ya tiene este valor',
+  'imports.template.download':
+    'Descargar plantilla',
+  'imports.template.hint':
+    'Empiece con una plantilla que tenga los encabezados de columna correctos. Rellénela, guárdela y súbala aquí.',
+  'imports.template.xlsx':
+    'Excel (.xlsx)',
+  'imports.template.csv':
+    'CSV (.csv)',
+  'imports.template.formatRefused':
+    'No hay plantilla disponible en ese formato para esta importación.',
+  'imports.limits':
+    'Archivos de hasta {size}. Hasta {rows} filas por ejecución. Formatos aceptados: {formats}.',
+  'imports.chosenFile':
+    '{name} ({size})',
+  'imports.sheet':
+    'Leído de la hoja «{sheet}».',
+  'imports.template.compatible':
+    'Todas las columnas coinciden con esta importación. No hay nada que asignar a mano.',
+  'imports.template.unknownColumns':
+    'Estas columnas no forman parte de esta importación y no se importarán a menos que las asigne: {columns}.',
+  'imports.template.incompatible':
+    'Estos campos obligatorios no tienen columna correspondiente: {fields}. Asígnelos abajo o descargue una plantilla nueva.',
+  'imports.template.stale':
+    'Este archivo se creó a partir de una plantilla anterior (versión {found}; la actual es {current}). Revise las columnas antes de continuar.',
+  'imports.preview.total':
+    'Filas',
+  'imports.preview.valid':
+    'Listas para importar',
+  'imports.preview.invalid':
+    'Con problemas',
+  'imports.preview.duplicate':
+    'Duplicadas en el archivo',
+  'imports.preview.create':
+    'Se añadirían',
+  'imports.preview.update':
+    'Se actualizarían',
+  'imports.preview.skip':
+    'Se dejarían igual',
+  'imports.preview.unknown':
+    'Si una fila añade o actualiza un registro no se sabe hasta que se ejecuta la importación: esta importación no puede consultar registros de antemano.',
+  'imports.result.title':
+    'Importación completada',
+  'imports.result.total':
+    'Total',
+  'imports.result.created':
+    'Creados',
+  'imports.result.updated':
+    'Actualizados',
+  'imports.result.skipped':
+    'Omitidos',
+  'imports.result.failed':
+    'Fallidos',
+  'imports.consequence':
+    'Consecuencia',
+  'imports.consequence.invalid':
+    'La fila no se importará',
+  'imports.problem.alreadyExists':
+    'Ya existe un registro con este valor, y esta importación solo añade registros nuevos',
+  'imports.format':
+    'Formato',
   'imports.error.forbidden':
     'No tiene permiso para importar registros.',
   'imports.error.unavailable':
@@ -1109,6 +1169,8 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'Esta importación se puede comprobar pero no escribir. Todavía no hay nada en este producto que acepte estos registros.',
   'errors.importFileTooLarge':
     'Este archivo es más grande de lo que lee una importación. Divídalo e importe las partes por separado.',
+  'errors.importFormatRefused':
+    'Este tipo de archivo no se puede importar aquí. Descargue una plantilla para ver los formatos aceptados.',
   'errors.uploadRefusedByPolicy':
     'Este archivo no se admite. Compruebe su tamaño y su tipo frente a la configuración de su organización.',
   'errors.fileUnderHold':

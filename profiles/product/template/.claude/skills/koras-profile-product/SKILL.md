@@ -62,6 +62,12 @@ it consumes the KORAS Control Plane, it does not administer it.
   background job payload and export.
 - Reference `koras-supabase` and `koras-multitenancy` for the concrete
   patterns; this skill states the boundary, those state the mechanics.
+- An import target is declared in `services/api/koras_api/imports/targets.py`
+  and nowhere else: fields with `example` and `help` for the template, a
+  `version` bumped when a field's meaning changes, an optional read-only
+  `matcher` so the dry run can say what the import would do, and a `writer`
+  that is the only thing allowed to write a record. The engine renders the
+  template from that declaration; never keep a second column list.
 
 ## Frontend work
 

@@ -165,3 +165,107 @@ function parseCsv(text: string): string[][] {
   }
   return rows
 }
+
+
+test('the template control is one control, keyboard-operable, with a download per format', async ({
+  page,
+  context,
+}) => {
+  /*
+   * ADR 0012 D7. One button that discloses one plain anchor per format the
+   * target accepts -- two for the fixture -- rather than a row of buttons.
+   * Enter opens it and moves focus to the first item, Escape closes it and
+   * returns focus to the button, and each item is a real download.
+   */
+  await signInAs(context, { roles: ['organization_admin'], subject: 'e2e-subject' })
+  await page.goto('/dashboard/imports')
+
+  const button = page.getByRole('button', { name: /download template/i })
+  await expect(button).toBeVisible()
+  await expect(button).toHaveAttribute('aria-expanded', 'false')
+
+  await button.focus()
+  await page.keyboard.press('Enter')
+  await expect(button).toHaveAttribute('aria-expanded', 'true')
+  const xlsx = page.getByTestId('imports-template-menu-xlsx')
+  const csv = page.getByTestId('imports-template-menu-csv')
+  await expect(xlsx).toBeVisible()
+  await expect(csv).toBeVisible()
+  await expect(xlsx).toBeFocused()
+  // Plain anchors at the route handler, so the router never prefetches one.
+  expect(await xlsx.getAttribute('href')).toBe('/api/imports/fixture.contacts/template?format=xlsx')
+  expect(await csv.getAttribute('href')).toBe('/api/imports/fixture.contacts/template?format=csv')
+
+  await page.keyboard.press('Escape')
+  await expect(button).toHaveAttribute('aria-expanded', 'false')
+  await expect(button).toBeFocused()
+
+  // The CSV: the header row alone, with a byte-order mark, and nothing else.
+  await button.click()
+  const csvDownload = page.waitForEvent('download')
+  await csv.click()
+  const csvFile = await csvDownload
+  expect(csvFile.suggestedFilename()).toBe('fixture-contacts-template-v2.csv')
+  const csvText = await readAll(csvFile)
+  expect(csvText.charCodeAt(0)).toBe(0xfeff)
+  expect(csvText.slice(1)).toBe('email,name,kind\r\n')
+
+  // The workbook: a zip whose first sheet carries the same header. Read as
+  // bytes rather than opened, because the browser suite has no spreadsheet
+  // library and needs none -- the engine's own tests open it; what this
+  // proves is that the route streams the file the API rendered.
+  await button.click()
+  const xlsxDownload = page.waitForEvent('download')
+  await xlsx.click()
+  const xlsxFile = await xlsxDownload
+  expect(xlsxFile.suggestedFilename()).toBe('fixture-contacts-template-v2.xlsx')
+  const bytes = await readBytes(xlsxFile)
+  expect(bytes.subarray(0, 2).toString('latin1')).toBe('PK')
+  expect(bytes.length).toBeGreaterThan(2000)
+  expect(bytes.toString('latin1')).toContain('docProps/custom.xml')
+})
+
+test('the start card names the ceilings and the accepted formats', async ({ page, context }) => {
+  await signInAs(context, { roles: ['organization_admin'], subject: 'e2e-subject' })
+  await page.goto('/dashboard/imports')
+  const limits = page.getByTestId('imports-limits')
+  await expect(limits).toContainText('csv, xlsx')
+  await expect(limits).toContainText('MB')
+  await expect(page.locator('#import-file')).toHaveAttribute('accept', /xlsx/)
+})
+
+async function readAll(file: import('@playwright/test').Download): Promise<string> {
+  return (await readBytes(file)).toString('utf8')
+}
+
+async function readBytes(file: import('@playwright/test').Download): Promise<Buffer> {
+  const stream = await file.createReadStream()
+  const chunks: Buffer[] = []
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk))
+  return Buffer.concat(chunks)
+}
+
+test('the page with a target rendered does not scroll sideways at a phone width', async ({
+  page,
+  context,
+}) => {
+  /*
+   * Manual case 53, 2026-09-29. The frame suite checks this at 375 with no
+   * target, so nothing had ever measured the page with the panel drawn; the
+   * history table's screen-reader-only heading is absolutely positioned and
+   * escaped an unpositioned scroll wrapper, widening the document by a table
+   * nobody could see.
+   */
+  await signInAs(context, { roles: ['organization_admin'], subject: 'e2e-subject' })
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.goto('/dashboard/imports')
+  await expect(page.getByTestId('imports-panel')).toBeVisible()
+  const overflows = () =>
+    page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+    )
+  expect(await overflows()).toBe(false)
+  await page.getByRole('button', { name: /download template/i }).click()
+  await expect(page.getByTestId('imports-template-menu-xlsx')).toBeVisible()
+  expect(await overflows()).toBe(false)
+})

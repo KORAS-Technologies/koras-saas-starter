@@ -379,3 +379,315 @@ async def test_a_run_whose_file_retention_purged_answers_missing() -> None:
         await store.source_bytes(session, _Store(), None)  # type: ignore[arg-type]
     assert str(refused.value) == "import.source.missing"
     assert session.statements == [], "a null id was sent to the database as a cast"
+
+
+# ── templates and formats, 2026-09-29 ────────────────────────────────────────
+
+
+class _Nested:
+    """`session.begin_nested()` as an async context manager, recording the savepoint."""
+
+    def __init__(self, owner: _SavepointSession) -> None:
+        self._owner = owner
+
+    async def __aenter__(self) -> _Nested:
+        self._owner.savepoints += 1
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        return None
+
+
+class _SavepointSession(_Session):
+    def __init__(self, answers: list[_Result] | None = None) -> None:
+        super().__init__(answers)
+        self.savepoints = 0
+
+    def begin_nested(self) -> _Nested:
+        return _Nested(self)
+
+
+class _RunRow:
+    """A driver row shaped like the run select, for the one insert that returns one."""
+
+    def __init__(self, **overrides: object) -> None:
+        values: dict[str, object] = {
+            "id": "11111111-1111-1111-1111-111111111111",
+            "target": "shop.customers",
+            "status": "created",
+            "format": "xlsx",
+            "source_file_id": "22222222-2222-2222-2222-222222222222",
+            "delimiter": ",",
+            "encoding": "utf-8",
+            "columns": [],
+            "mapping": {},
+            "operation": "skip_duplicate",
+            "rows_total": 0,
+            "rows_valid": 0,
+            "errors_total": 0,
+            "errors_cut": False,
+            "error": None,
+            "requested_by": "user-1",
+            "committed_by": None,
+            "created_at": datetime.now(UTC),
+            "started_at": None,
+            "finished_at": None,
+            "template_version": None,
+            "job_id": None,
+            "rows_duplicate": 0,
+            "predicted_create": None,
+            "predicted_update": None,
+            "predicted_skip": None,
+            "rows_created": None,
+            "rows_updated": None,
+            "rows_skipped": None,
+        }
+        values.update(overrides)
+        for name, value in values.items():
+            setattr(self, name, value)
+
+
+def _workbook(rows: list[list[object]]) -> bytes:
+    import io
+
+    from openpyxl import Workbook
+
+    book = Workbook()
+    sheet = book.active
+    assert sheet is not None
+    for row in rows:
+        sheet.append(row)
+    out = io.BytesIO()
+    book.save(out)
+    return out.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_a_run_records_the_format_it_was_started_against() -> None:
+    """The column was always its default: the insert never named it."""
+    session = _Session([_Result([_RunRow()])])
+    run = await store.create(
+        session,  # type: ignore[arg-type]
+        tenant_id="tenant-1",
+        target=CUSTOMERS,
+        source_file_id="22222222-2222-2222-2222-222222222222",
+        requested_by="user-1",
+        operation="skip_duplicate",
+        format=Format.XLSX,
+    )
+    assert "format" in session.statements[0].lower()
+    assert session.parameters[0]["format"] == "xlsx"
+    assert run.format == "xlsx"
+    assert run.written is None
+
+
+def test_the_format_is_read_from_the_name_first_and_the_type_second() -> None:
+    assert store.source_format("Kunden.XLSX", "application/octet-stream") is Format.XLSX
+    assert store.source_format("export.csv", "application/vnd.ms-excel") is Format.CSV
+    assert store.source_format("export.txt", None) is Format.CSV
+    assert store.source_format("data.json", None) is Format.JSON
+    assert (
+        store.source_format(
+            "blob", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        is Format.XLSX
+    )
+    assert store.source_format(None, None) is Format.CSV
+
+
+def test_a_workbook_is_analysed_like_a_csv_and_judged_against_the_target() -> None:
+    raw = _workbook([["Name", "Email", "Phone"], ["Ada", "ada@example.com", "1"]])
+    found = store.analyse(raw, CUSTOMERS, Format.XLSX)
+    assert found.format is Format.XLSX
+    assert found.sheet == "Sheet"
+    assert found.columns == ("Name", "Email", "Phone")
+    assert found.suggested == {"Name": "name", "Email": "email"}
+    assert found.preview[0]["Email"] == "ada@example.com"
+    assert found.template is not None
+    assert found.template.verdict == "unknown_columns"
+    assert found.template.unknown_columns == ("Phone",)
+    assert found.identity is None
+
+    csv_found = store.analyse(b"Name,Email\nAda,ada@example.com\n", CUSTOMERS)
+    assert csv_found.template is not None
+    assert csv_found.template.verdict == "compatible"
+
+
+def test_a_json_source_is_refused_by_name_rather_than_by_absence() -> None:
+    """ADR 0012 D4: deferred, and the reader says so."""
+    with pytest.raises(store.ReadRefused, match="json"):
+        store.analyse(b"[]", CUSTOMERS, Format.JSON)
+
+
+def test_the_commit_parses_a_workbook_run_as_a_workbook() -> None:
+    raw = _workbook([["Name", "Email"], ["Ada", "ada@example.com"]])
+    run = replace(A_RUN, format=Format.XLSX.value)
+    verdict, mapped = store.prepare(raw, CUSTOMERS, run)
+    assert verdict.ok
+    assert mapped == ({"name": "Ada", "email": "ada@example.com"},)
+
+
+@pytest.mark.asyncio
+async def test_a_validation_records_the_duplicates_and_the_prediction() -> None:
+    from koras_import import Prediction
+
+    session = _Session()
+    await store.record_validation(
+        session,  # type: ignore[arg-type]
+        A_RUNNING,
+        tenant_id="tenant-1",
+        result=Validation(rows=5, valid=4, errors=(), truncated=False, duplicates=1),
+        prediction=Prediction(create=3, update=1, skip=0),
+        template_version=2,
+    )
+    update = next(row for row in session.parameters if "rows_duplicate" in row)
+    assert update["rows_duplicate"] == 1
+    assert (update["predicted_create"], update["predicted_update"], update["predicted_skip"]) == (
+        3,
+        1,
+        0,
+    )
+    assert update["template_version"] == 2
+
+
+@pytest.mark.asyncio
+async def test_without_a_matcher_the_prediction_is_null_not_zero() -> None:
+    session = _Session()
+    await store.record_validation(
+        session,  # type: ignore[arg-type]
+        A_RUNNING,
+        tenant_id="tenant-1",
+        result=Validation(rows=1, valid=1, errors=(), truncated=False),
+    )
+    update = next(row for row in session.parameters if "rows_duplicate" in row)
+    assert update["predicted_create"] is None
+    assert update["template_version"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_commit_keeps_the_three_figures_apart() -> None:
+    session = _Session()
+    committing = replace(A_RUN, status=RunState.COMMITTING.value)
+    await store.record_commit(
+        session,  # type: ignore[arg-type]
+        committing,
+        created=820,
+        updated=100,
+        skipped=80,
+    )
+    update = next(row for row in session.parameters if "rows_created" in row)
+    assert (update["rows_created"], update["rows_updated"], update["rows_skipped"]) == (
+        820,
+        100,
+        80,
+    )
+    assert update["rows_total"] == 1000
+
+
+@pytest.mark.asyncio
+async def test_the_job_id_is_written_outside_the_state_machine() -> None:
+    session = _Session()
+    await store.set_job(session, A_RUNNING, "imports.validate:abc")  # type: ignore[arg-type]
+    assert "job_id" in session.statements[0]
+    assert "status" not in session.statements[0]
+
+
+@pytest.mark.asyncio
+async def test_the_matcher_is_asked_once_in_a_savepoint_and_only_about_valid_rows() -> None:
+    asked: list[Any] = []
+
+    async def matcher(_session: object, request: Any) -> set[tuple[str, ...]]:  # noqa: ANN401
+        asked.append(request)
+        return {("ada@example.com",)}
+
+    predicting = replace(CUSTOMERS, matcher=matcher, operations=(Operation.SKIP_DUPLICATE,))
+    raw = b"Name,Email\nAda,ada@example.com\nBo,bo@example.com\n,broken\n"
+    examined = store.examine(raw, predicting, A_RUN)
+    session = _SavepointSession()
+    verdict, prediction = await store.predict_outcome(
+        session,  # type: ignore[arg-type]
+        target=predicting,
+        run=A_RUN,
+        tenant_id="tenant-1",
+        examined=examined,
+    )
+    assert len(asked) == 1
+    assert asked[0].tenant_id == "tenant-1"
+    assert asked[0].keys == (("ada@example.com",), ("bo@example.com",))
+    assert session.savepoints == 1
+    assert prediction is not None
+    assert (prediction.create, prediction.skip) == (1, 1)
+    # A prediction under skip_duplicate changes no verdict.
+    assert verdict.valid == examined.verdict.valid
+
+
+@pytest.mark.asyncio
+async def test_under_create_an_existing_record_becomes_a_row_error() -> None:
+    async def matcher(_session: object, _request: object) -> set[tuple[str, ...]]:
+        return {("ada@example.com",)}
+
+    predicting = replace(CUSTOMERS, matcher=matcher, operations=(Operation.CREATE,))
+    run = replace(A_RUN, operation=Operation.CREATE.value)
+    raw = b"Name,Email\nAda,ada@example.com\nBo,bo@example.com\n"
+    examined = store.examine(raw, predicting, run)
+    assert examined.verdict.ok
+    verdict, prediction = await store.predict_outcome(
+        _SavepointSession(),  # type: ignore[arg-type]
+        target=predicting,
+        run=run,
+        tenant_id="tenant-1",
+        examined=examined,
+    )
+    assert prediction is not None
+    assert prediction.reject == 1
+    assert not verdict.ok
+    assert verdict.errors[-1].code == "import.error.already_exists"
+    assert verdict.errors[-1].row == 2
+
+
+@pytest.mark.asyncio
+async def test_a_target_without_a_matcher_is_not_asked() -> None:
+    examined = store.examine(b"Name,Email\nAda,ada@example.com\n", CUSTOMERS, A_RUN)
+    session = _SavepointSession()
+    verdict, prediction = await store.predict_outcome(
+        session,  # type: ignore[arg-type]
+        target=CUSTOMERS,
+        run=A_RUN,
+        tenant_id="tenant-1",
+        examined=examined,
+    )
+    assert prediction is None
+    assert verdict is examined.verdict
+    assert session.savepoints == 0
+
+
+def test_an_operation_that_recognises_rows_needs_its_key_mapped_at_the_store() -> None:
+    """IMP2-20, at the seam the worker uses."""
+    by_name = replace(
+        CUSTOMERS,
+        fields=(
+            FieldSpec(name="name", label_key="k", required=True),
+            FieldSpec(name="email", label_key="k", kind=FieldKind.EMAIL),
+        ),
+    )
+    run = replace(A_RUN, mapping={"Name": "name"}, operation=Operation.UPSERT.value)
+    from koras_import import MappingRefused
+
+    with pytest.raises(MappingRefused, match="recognises an existing record"):
+        store.check(b"Name,Email\nAda,ada@example.com\n", by_name, run)
+    plain = replace(run, operation=Operation.CREATE.value)
+    assert store.check(b"Name,Email\nAda,ada@example.com\n", by_name, plain).ok
+
+
+def test_the_template_version_reaches_the_verdict_from_a_workbook() -> None:
+    from koras_import import render
+
+    versioned = replace(CUSTOMERS, version=3, formats=(Format.CSV, Format.XLSX))
+    raw = render(versioned, Format.XLSX).content
+    run = replace(A_RUN, format=Format.XLSX.value, mapping={"name": "name", "email": "email"})
+    examined = store.examine(raw, versioned, run)
+    assert examined.template_version == 3
+    found = store.analyse(raw, versioned, Format.XLSX)
+    assert found.template is not None
+    assert found.template.stale is False
+    assert found.template.version_found == 3

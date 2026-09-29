@@ -81,6 +81,7 @@ class ApiErrorCode(StrEnum):
     IMPORT_QUEUE_UNAVAILABLE = "import_queue_unavailable"
     IMPORT_NOT_COMMITTABLE = "import_not_committable"
     IMPORT_FILE_TOO_LARGE = "import_file_too_large"
+    IMPORT_FORMAT_REFUSED = "import_format_refused"
     # notifications
     NOTIFICATION_NOT_FOUND = "notification_not_found"
     # settings

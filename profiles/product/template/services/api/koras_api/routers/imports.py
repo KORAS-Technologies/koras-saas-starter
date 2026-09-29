@@ -23,18 +23,25 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from koras_auth import JWTClaims
 from koras_auth.permissions import permissions_for
 from koras_import import (
     COMMIT_RUN,
+    TEMPLATE_FORMATS,
     VALIDATE_RUN,
+    Format,
     ImportTarget,
     MappingRefused,
     Operation,
     ReadRefused,
     RunState,
+    TemplateRefused,
+    example_for,
+    fingerprint,
+    format_hint,
     may_move,
+    render,
 )
 from pydantic import BaseModel, Field
 
@@ -125,6 +132,17 @@ class FieldView(BaseModel):
     kind: str
     required: bool
     options: list[str]
+    max_length: int | None = None
+    #: Synthetic, from the declaration or synthesised by kind. Never a value
+    #: of anybody's.
+    example: str = ""
+    help: str = ""
+    format_hint: str = ""
+
+
+class LimitsView(BaseModel):
+    max_bytes: int
+    max_rows: int
 
 
 class TargetView(BaseModel):
@@ -135,10 +153,31 @@ class TargetView(BaseModel):
     operations: list[str]
     formats: list[str]
     max_rows: int
+    version: int = 1
+    fingerprint: str = ""
+    #: The formats a template can be downloaded in: the target's formats that
+    #: the engine renders. JSON is a format a target may accept and is not
+    #: rendered (ADR 0012 D4), so this is not always `formats`.
+    template_formats: list[str] = Field(default_factory=list)
+    limits: LimitsView | None = None
+    #: Whether the target can say what a run would do to existing records.
+    predicts: bool = False
     #: False for a target that declares no writer. The page needs this to know
     #: whether to offer a confirm control at all -- absent rather than disabled,
     #: which is the shape Phase 1 used for the whole feature.
     committable: bool
+
+
+class CountsView(BaseModel):
+    create: int
+    update: int
+    skip: int
+
+
+class WrittenView(BaseModel):
+    created: int
+    updated: int
+    skipped: int
 
 
 class RunView(BaseModel):
@@ -158,6 +197,24 @@ class RunView(BaseModel):
     committed_by: str | None
     created_at: datetime
     finished_at: datetime | None
+    format: str = "csv"
+    template_version: int | None = None
+    job_id: str | None = None
+    source_name: str | None = None
+    source_bytes: int | None = None
+    rows_duplicate: int = 0
+    #: Null when the target declares no matcher, or the run predates it.
+    predicted: CountsView | None = None
+    #: Null until committed, and for a run committed before the columns existed.
+    written: WrittenView | None = None
+
+
+class TemplateVerdictView(BaseModel):
+    verdict: str
+    missing_required: list[str]
+    unknown_columns: list[str]
+    version_found: int | None
+    stale: bool
 
 
 class AnalysisView(BaseModel):
@@ -167,6 +224,9 @@ class AnalysisView(BaseModel):
     rows_seen: int
     over_ceiling: bool
     replaced: bool
+    format: str = "csv"
+    sheet: str | None = None
+    template: TemplateVerdictView | None = None
 
 
 class RowErrorView(BaseModel):
@@ -211,6 +271,59 @@ def _view(run: store.Run) -> RunView:
         committed_by=run.committed_by,
         created_at=run.created_at,
         finished_at=run.finished_at,
+        format=run.format,
+        template_version=run.template_version,
+        job_id=run.job_id,
+        source_name=run.source_name,
+        source_bytes=run.source_bytes,
+        rows_duplicate=run.rows_duplicate,
+        predicted=(
+            CountsView(
+                create=run.predicted_create,
+                update=run.predicted_update,
+                skip=run.predicted_skip,
+            )
+            if run.predicted_create is not None
+            and run.predicted_update is not None
+            and run.predicted_skip is not None
+            else None
+        ),
+        written=(
+            WrittenView(created=run.written[0], updated=run.written[1], skipped=run.written[2])
+            if run.written is not None
+            else None
+        ),
+    )
+
+
+def _target_view(target: ImportTarget, limits: LimitsView) -> TargetView:
+    return TargetView(
+        key=target.key,
+        label_key=target.label_key,
+        fields=[
+            FieldView(
+                name=spec.name,
+                label_key=spec.label_key,
+                kind=spec.kind.value,
+                required=spec.required,
+                options=list(spec.options),
+                max_length=spec.max_length,
+                example=example_for(spec),
+                help=spec.help,
+                format_hint=format_hint(spec),
+            )
+            for spec in target.fields
+        ],
+        match_keys=list(target.match_keys),
+        operations=[operation.value for operation in target.operations],
+        formats=[fmt.value for fmt in target.formats],
+        max_rows=target.max_rows,
+        committable=target.committable,
+        version=target.version,
+        fingerprint=fingerprint(target),
+        template_formats=[fmt.value for fmt in target.formats if fmt in TEMPLATE_FORMATS],
+        limits=limits,
+        predicts=target.matcher is not None,
     )
 
 
@@ -218,7 +331,7 @@ def _view(run: store.Run) -> RunView:
 
 
 @router.get("/imports/targets", response_model=list[TargetView])
-async def targets(claims: AuthDep, _tenant: TenantDep) -> list[TargetView]:
+async def targets(claims: AuthDep, tenant: TenantDep, session: DbSession) -> list[TargetView]:
     """What this product accepts, of what this caller may use.
 
     **Filtered rather than refused.** A caller holding `imports.manage` and not
@@ -230,29 +343,80 @@ async def targets(claims: AuthDep, _tenant: TenantDep) -> list[TargetView]:
     """
     _require(claims, "listing what may be imported")
     held = permissions_for(claims.roles)
+    # The byte ceiling the page shows is the one the upload ticket applies:
+    # the organisation's setting inside the hard ceiling, and inside the
+    # source ceiling one run reads. Resolved once for every target.
+    from ..core.storage import upload_limits
+
+    resolved = await upload_limits(session, tenant.id)
+    max_bytes = min(resolved.max_bytes, store.MAX_SOURCE_BYTES)
     return [
-        TargetView(
-            key=target.key,
-            label_key=target.label_key,
-            fields=[
-                FieldView(
-                    name=spec.name,
-                    label_key=spec.label_key,
-                    kind=spec.kind.value,
-                    required=spec.required,
-                    options=list(spec.options),
-                )
-                for spec in target.fields
-            ],
-            match_keys=list(target.match_keys),
-            operations=[operation.value for operation in target.operations],
-            formats=[fmt.value for fmt in target.formats],
-            max_rows=target.max_rows,
-            committable=target.committable,
-        )
+        _target_view(target, LimitsView(max_bytes=max_bytes, max_rows=target.max_rows))
         for target in registry
         if target.permission in held
     ]
+
+
+@router.get("/imports/targets/{key}/template")
+async def template(
+    key: str,
+    claims: AuthDep,
+    tenant: TenantDep,
+    session: DbSession,
+    format: str = Query(default="csv"),  # noqa: A002 - the query parameter's name
+) -> Response:
+    """A file to start from, rendered from the declaration the validator reads.
+
+    Permission first, then the render, then the audit row, then the bytes: a
+    caller who may not import this target learns nothing about its fields,
+    and a download the audit table does not know about never happens. The
+    template carries no tenant data by construction -- `render` takes the
+    declaration and nothing else -- so the only tenant-scoped thing here is
+    the audit row. ADR 0012.
+    """
+    _require(claims, "downloading an import template")
+    target = _target(key)
+    _require_target(claims, target)
+    try:
+        fmt = Format(format)
+    except ValueError:
+        raise api_error(
+            status.HTTP_406_NOT_ACCEPTABLE,
+            ApiErrorCode.IMPORT_FORMAT_REFUSED,
+            f"{format!r} is not a format a template comes in",
+        ) from None
+    try:
+        rendered = render(target, fmt)
+    except TemplateRefused as refused:
+        raise api_error(
+            status.HTTP_406_NOT_ACCEPTABLE,
+            ApiErrorCode.IMPORT_FORMAT_REFUSED,
+            str(refused),
+        ) from refused
+    await record(
+        session,
+        tenant_id=tenant.id,
+        actor_id=require_subject(tenant),
+        action="import.template.downloaded",
+        target_type="import_target",
+        target_id=target.key,
+        outcome="ok",
+        details={
+            "target": target.key,
+            "format": fmt.value,
+            "version": target.version,
+            "fingerprint": fingerprint(target),
+        },
+    )
+    # `record` flushes and commits: the row is durable before the bytes go.
+    return Response(
+        content=rendered.content,
+        media_type=rendered.media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{rendered.filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get("/imports", response_model=list[RunView])
@@ -309,9 +473,20 @@ async def start(
     # it is inside the ceiling one run reads. Told now rather than after forty
     # columns have been mapped.
     try:
-        await store.check_source(session, body.file_id)
+        source = await store.check_source(session, body.file_id)
     except store.SourceRefused as refused:
         raise _source_refusal(str(refused)) from refused
+
+    # The format is the file's, read from its row, and it has to be one the
+    # target accepts. Decided here so every later read of the run -- the
+    # analysis, the dry run, the commit -- parses it the same way.
+    fmt = store.source_format(source.name, source.content_type)
+    if not target.accepts(fmt) or fmt is Format.JSON:
+        raise api_error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            ApiErrorCode.IMPORT_FORMAT_REFUSED,
+            f"{target.key} does not accept {fmt.value} files",
+        )
 
     run = await store.create(
         session,
@@ -320,6 +495,7 @@ async def start(
         source_file_id=body.file_id,
         requested_by=require_subject(tenant),
         operation=operation,
+        format=fmt,
     )
     # In the same transaction as the run: an activity row for a run that does
     # not exist, or a run with no record of having been started, are both
@@ -332,7 +508,14 @@ async def start(
         target_type="import_run",
         target_id=run.id,
         outcome="ok",
-        details={"target": run.target, "operation": run.operation},
+        details={
+            "target": run.target,
+            "operation": run.operation,
+            "format": run.format,
+            # IMP2-16: the file an import read was never named in its record.
+            "file_id": body.file_id,
+            "size_bytes": int(source.size_bytes or 0),
+        },
     )
     await session.commit()
     return _view(run)
@@ -376,7 +559,7 @@ async def analysis(
     _require_target(claims, target)
     raw = await _bytes(session, storage, run)
     try:
-        found = store.analyse(raw, target)
+        found = store.analyse(raw, target, Format(run.format))
     except ReadRefused as refused:
         raise api_error(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -390,6 +573,19 @@ async def analysis(
         rows_seen=found.rows_seen,
         over_ceiling=found.over_ceiling,
         replaced=found.replaced,
+        format=found.format.value,
+        sheet=found.sheet,
+        template=(
+            TemplateVerdictView(
+                verdict=found.template.verdict,
+                missing_required=list(found.template.missing_required),
+                unknown_columns=list(found.template.unknown_columns),
+                version_found=found.template.version_found,
+                stale=found.template.stale,
+            )
+            if found.template is not None
+            else None
+        ),
     )
 
 
@@ -410,10 +606,15 @@ async def set_mapping(
     raw = await _bytes(session, storage, run)
 
     try:
-        found = store.analyse(raw, target)
+        found = store.analyse(raw, target, Format(run.format))
         from koras_import import resolve
 
-        resolve(target, found.columns, body.mapping)
+        resolve(
+            target,
+            found.columns,
+            body.mapping,
+            require_match_keys=run.operation != Operation.CREATE.value,
+        )
     except ReadRefused as refused:
         raise api_error(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -524,6 +725,7 @@ async def validate(
         )
 
     await store.begin_validation(session, run)
+    await store.set_job(session, run, queued.job_id)
     await session.commit()
     return _view(_run_or_404(await store.get(session, run_id)))
 
@@ -641,7 +843,11 @@ async def commit(
             "this import is already being written",
         )
 
-    return _view(_run_or_404(await store.get(session, run_id)))
+    fresh = _run_or_404(await store.get(session, run_id))
+    await store.set_job(session, fresh, queued.job_id)
+    await session.commit()
+    return _view(fresh)
+
 
 async def _refused(
     session: DbSession, tenant: TenantDep, run: store.Run, why: str

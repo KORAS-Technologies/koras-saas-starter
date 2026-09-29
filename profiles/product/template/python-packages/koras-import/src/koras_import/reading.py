@@ -30,7 +30,7 @@ reads it and stops looking. IMP2-08 in
 from __future__ import annotations
 
 import csv
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 
 #: Tried in order, **strictly**. UTF-8 first because it is right most of the
@@ -167,7 +167,17 @@ def read_header(lines: Iterable[str], *, delimiter: str) -> Header:
         raw = next(reader)
     except StopIteration:
         raise ReadRefused("the file is empty") from None
+    return header_from(raw)
 
+
+def header_from(raw: Sequence[str]) -> Header:
+    """Column names from the first row's cells, whatever produced them.
+
+    Factored out of `read_header` on 2026-09-29 so the workbook reader
+    names, suffixes and fills columns by exactly the rule the CSV reader
+    does. Two readers with two header rules would be two files that map
+    differently from the same spreadsheet saved twice.
+    """
     seen: dict[str, int] = {}
     columns: list[str] = []
     duplicated: list[str] = []
@@ -224,24 +234,45 @@ def read_rows(
     except StopIteration:
         return
 
-    width = len(header.columns)
     produced = 0
     for offset, raw in enumerate(reader, start=2):
         if not any(cell.strip() for cell in raw):
             continue
-        cells = {
-            name: (raw[index].strip() if index < len(raw) else "")
-            for index, name in enumerate(header.columns)
-        }
-        yield Row(
-            number=offset,
-            cells=cells,
-            short=len(raw) < width,
-            long=len(raw) > width,
-        )
+        yield row_from(offset, raw, header)
         produced += 1
         if produced >= limit:
             return
+
+
+#: C0 control characters other than tab, newline and carriage return. A NUL
+#: passes every check the validator makes and fails at the database, on row
+#: forty thousand, after a dry run said the file was clean -- IMP2-21 in
+#: `docs/features/data-import/phase-2-review.md`. Removed at the reader, for
+#: every format, because a control character in a spreadsheet cell is never
+#: something the person typing meant.
+_CONTROLS = {chr(code) for code in range(32) if chr(code) not in "\t\n\r"}
+
+
+def clean_cell(text: str) -> str:
+    """A cell as the validator should see it: stripped, and free of controls."""
+    if any(char in _CONTROLS for char in text):
+        text = "".join(char for char in text if char not in _CONTROLS)
+    return text.strip()
+
+
+def row_from(number: int, raw: Sequence[str], header: Header) -> Row:
+    """One row from its cells, by the rule both readers share."""
+    width = len(header.columns)
+    cells = {
+        name: (clean_cell(raw[index]) if index < len(raw) else "")
+        for index, name in enumerate(header.columns)
+    }
+    return Row(
+        number=number,
+        cells=cells,
+        short=len(raw) < width,
+        long=len(raw) > width,
+    )
 
 
 def _bounded(lines: Iterable[str]) -> Iterator[str]:

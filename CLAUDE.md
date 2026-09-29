@@ -692,6 +692,27 @@ falls to `BODY`, and the outcome was a bare paragraph that no live region would
 announce. It uses `SaveOutcome` now, which is the component the settings fix
 produced — the third caller the extraction was waiting for.
 
+**Downloadable templates, XLSX and the preview counts shipped on 2026-09-29**,
+from `docs/features/data-import/templates-and-formats-analysis.md` and ADR
+0012, which also records the owner's answer to the twelve questions the
+analysis put: the commit stays atomic, JSON and manual review are deferred,
+the worker now witnesses a dry run and a commit in the audit table. A
+template is the target declaration written out by `koras_import.templates`
+and nothing else; a workbook reads by the CSV reader's own header and row
+rules; a target may declare a read-only `matcher` so the dry run can say what
+the import would do. **Three carried findings closed with it** -- IMP2-18,
+IMP2-19 and IMP2-21 -- because a workbook cell arrives typed and the engine
+had to decide what text it becomes. Verified on a generated product: ruff,
+mypy and 753 tests green; all 30 migrations and 23 isolation suites against a
+private PostgreSQL 17; and the whole browser suite with the fixture target,
+which found three defects in the page and the menu that were fixed the same
+day. Manual cases needing an upload or Excel are not executed.
+
+**Generating that product found IMPORT-DEF-010**: SQLAlchemy 2.1 resolved and
+no longer installs `greenlet`, so a fresh product's unit suite could not be
+collected. Six declarations read `sqlalchemy[asyncio]` now. R-044's class,
+from the other direction.
+
 **It was reviewed the same day and the review returned BLOCK** — the third in
 three, after both governance reviews and the settings one. One critical
 finding, two high, three medium, all fixed;

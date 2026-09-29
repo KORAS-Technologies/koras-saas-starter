@@ -103,6 +103,17 @@ A download is activity because it is noise a month later; a refusal is security
 because it is the thing somebody asks about two years later. An export is audit
 rather than activity because a copy of the rows left the product.
 
+**Three actions are written by a worker, since 2026-09-29.** The data import
+feature's `import.run.validated` and `import.run.finished` are recorded by the
+worker that ran the dry run and the commit, through this same sink, reached
+by name; `import.template.downloaded` is the route's. The run row stays the
+authoritative execution state and result; these rows are evidence that a
+moment happened, carrying counts, identifiers and the run's own safe sentence,
+and never a cell of a customer's file. ADR 0012 D5 is the decision, and the
+one change it needed here is that `core/audit.py` reaches `.database` at the
+point of use rather than at import, so a worker without the API's settings
+can import it.
+
 ## The table
 
 `public.audit_events`, created by `00013_audit_events.sql` and classified by

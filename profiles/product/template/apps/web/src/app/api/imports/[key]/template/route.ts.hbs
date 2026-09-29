@@ -1,0 +1,68 @@
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { ApiError, fetchImportTemplate } from '@{{projectSlug}}/api-client'
+import { can, signedInContext } from '../../../../../lib/access'
+import { translator } from '../../../../../lib/locale'
+import { apiBaseUrl, providerToken } from '../../../../../lib/session'
+
+/**
+ * An import template as a file.
+ *
+ * The report export handler's twin, for the same reason: a server function
+ * returns a value and a download is a body. It decides again who is calling
+ * and what they may do, asks the API with the caller's own token, and streams
+ * the bytes on with the type and filename the API chose. The API renders the
+ * template from the target declaration and records the download under the
+ * person who asked; this handler adds nothing to either.
+ *
+ * Same-site only, so a page elsewhere cannot make a customer's browser fetch
+ * one -- a template carries no tenant data, but the audit row it produces is
+ * a claim that this person asked for it, and that claim should be true.
+ */
+const FORMATS = new Set(['csv', 'xlsx'])
+
+export async function GET(request: NextRequest, context: { params: Promise<{ key: string }> }) {
+  const site = request.headers.get('sec-fetch-site')
+  if (site !== null && site !== 'same-origin' && site !== 'none') {
+    return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
+  }
+  const t = await translator()
+  const signedIn = await signedInContext()
+  if (signedIn === null || !can(signedIn.access, 'imports.manage')) {
+    return NextResponse.json({ message: t('imports.error.forbidden') }, { status: 403 })
+  }
+  const token = await providerToken()
+  const baseUrl = apiBaseUrl()
+  if (!token || !baseUrl) {
+    return NextResponse.json({ message: t('imports.error.unavailable') }, { status: 503 })
+  }
+
+  const { key } = await context.params
+  const wanted = request.nextUrl.searchParams.get('format') ?? 'csv'
+  const format = FORMATS.has(wanted) ? wanted : 'csv'
+
+  let upstream: Response
+  try {
+    upstream = await fetchImportTemplate({ baseUrl, token, key, format })
+  } catch (error) {
+    const status = error instanceof ApiError ? error.status : 502
+    const message =
+      status === 403 || status === 404
+        ? t('imports.error.forbidden')
+        : status === 406
+          ? t('imports.template.formatRefused')
+          : t('imports.error.unavailable')
+    return NextResponse.json({ message }, { status: status >= 400 && status < 600 ? status : 502 })
+  }
+
+  return new Response(upstream.body, {
+    status: 200,
+    headers: {
+      'Content-Type': upstream.headers.get('content-type') ?? 'application/octet-stream',
+      'Content-Disposition':
+        upstream.headers.get('content-disposition') ??
+        `attachment; filename="${key.replace(/\./g, '-')}-template.${format}"`,
+      'Cache-Control': 'no-store',
+    },
+  })
+}

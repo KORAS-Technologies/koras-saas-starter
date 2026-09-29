@@ -860,6 +860,66 @@ export const en = {
     'This could be read two ways and they differ by a thousand. Write it without a thousands separator.',
   'imports.problem.duplicateInFile':
     'Another row in this same file already has this value',
+  'imports.template.download':
+    'Download template',
+  'imports.template.hint':
+    'Start from a template with the right column headings. Fill it in, save it, and upload it here.',
+  'imports.template.xlsx':
+    'Excel (.xlsx)',
+  'imports.template.csv':
+    'CSV (.csv)',
+  'imports.template.formatRefused':
+    'A template is not available in that format for this import.',
+  'imports.limits':
+    'Files up to {size}. Up to {rows} rows in one run. Accepted formats: {formats}.',
+  'imports.chosenFile':
+    '{name} ({size})',
+  'imports.sheet':
+    'Read from the sheet "{sheet}".',
+  'imports.template.compatible':
+    'Every column matches this import. Nothing to map by hand.',
+  'imports.template.unknownColumns':
+    'These columns are not part of this import and will not be imported unless you map them: {columns}.',
+  'imports.template.incompatible':
+    'These required fields have no matching column: {fields}. Map them below, or download a fresh template.',
+  'imports.template.stale':
+    'This file was made from an older template (version {found}; the current one is {current}). Check the columns before continuing.',
+  'imports.preview.total':
+    'Rows',
+  'imports.preview.valid':
+    'Ready to import',
+  'imports.preview.invalid':
+    'With problems',
+  'imports.preview.duplicate':
+    'Duplicated in the file',
+  'imports.preview.create':
+    'Would be added',
+  'imports.preview.update':
+    'Would be updated',
+  'imports.preview.skip':
+    'Would be left alone',
+  'imports.preview.unknown':
+    'Whether a row adds or updates a record is not known until the import runs: this import cannot look records up beforehand.',
+  'imports.result.title':
+    'Import complete',
+  'imports.result.total':
+    'Total',
+  'imports.result.created':
+    'Created',
+  'imports.result.updated':
+    'Updated',
+  'imports.result.skipped':
+    'Skipped',
+  'imports.result.failed':
+    'Failed',
+  'imports.consequence':
+    'Consequence',
+  'imports.consequence.invalid':
+    'Row will not be imported',
+  'imports.problem.alreadyExists':
+    'A record with this value already exists, and this import only adds new records',
+  'imports.format':
+    'Format',
   'imports.error.forbidden':
     'You do not have permission to import records.',
   'imports.error.unavailable':
@@ -1111,6 +1171,8 @@ export const en = {
     'This import can be checked but not written. Nothing in this product accepts these records yet.',
   'errors.importFileTooLarge':
     'This file is larger than one import reads. Split it and import the parts separately.',
+  'errors.importFormatRefused':
+    'This kind of file cannot be imported here. Download a template to see which formats are accepted.',
   'errors.uploadRefusedByPolicy':
     'This file is not allowed. Check its size and its file type against the settings for your organization.',
   'errors.fileUnderHold':

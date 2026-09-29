@@ -17,7 +17,11 @@ requires-python = ">=3.12"
 # enqueues them and the worker binds them -- so either other home would make
 # one service import the other. `TaskDefinition` carries no coroutine, which is
 # exactly what makes that possible.
-dependencies = ["koras-queue"]
+# `openpyxl` arrived on 2026-09-29 with the XLSX template and reader, exactly
+# as the paragraph above said it would. Imported lazily, so the CSV path and
+# every test that does not touch a workbook still needs no spreadsheet
+# library to run.
+dependencies = ["koras-queue", "openpyxl>=3.1.0"]
 
 [tool.uv.sources]
 koras-queue = { workspace = true }

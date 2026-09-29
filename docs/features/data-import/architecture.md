@@ -340,6 +340,192 @@ contain all three.
   the product knows how to look a record up.
 - The three Phase 1 items named above are still not built.
 
+## Templates and formats
+
+2026-09-29. `templates-and-formats-analysis.md` here is the analysis this was
+built from and `docs/adr/0012-import-template-versioning.md` is the decision
+record, including the resolution of the twelve questions the analysis put to
+the owner. What follows is what was built.
+
+### The workflow is one workflow
+
+Download Template, in Excel or CSV, then Upload, Validate, Preview, Confirm,
+Background Processing, Results. A CSV and an XLSX go through the same ticket,
+the same run, the same mapping and the same dry run. The format is decided
+once, at `POST /imports`, from the file row the run is started against -- its
+name's extension first, its content type second -- refused with
+`import_format_refused` when the target does not accept it, and stored on the
+run, which until this day always said `csv` because the insert never named the
+column.
+
+### The template is the declaration, written out
+
+`koras_import.templates.render` takes an `ImportTarget` and a `Format` and
+returns bytes. No session, no tenant, no locale: a test renders every target
+without a database, and a template can never carry a customer's row because
+it never sees one. There is no second description of the schema.
+
+`FieldSpec` gained `example` and `help`, both optional, both plain text in one
+language. An example is synthesised from the kind when the declaration has
+none, deterministically, so a target declared before templates existed renders
+a complete template. The help text cannot be localised because the product's
+label keys resolve in the web application's catalogue and nowhere in Python;
+ADR 0012 D8 records the limitation and its trigger.
+
+**The XLSX** has a `Data` sheet -- the field names in row 1, bold, required
+ones filled, each with a comment carrying the help and the format guidance;
+data validation on enumerated, date, integer and decimal columns over ten
+thousand rows or the target's ceiling, whichever is smaller -- and an
+`Instructions` sheet naming the target, its version, its fingerprint, the row
+ceiling, and one row per field: required or optional, type, format, allowed
+values, example, help. The identity is also a custom document property.
+**The CSV** is the header row alone, UTF-8 with a byte-order mark, comma, CRLF.
+Neither carries an example row: a row of synthetic values on the sheet a
+customer fills in is a record that gets imported by whoever forgets to delete
+it, and no header-parsing reader can tell it from data.
+
+Every string the renderer writes passes the same formula guard the reporting
+writer applies. Every string is the product engineer's, and the guard is three
+lines.
+
+### The identity, and what is judged from it
+
+`ImportTarget.version` is the product's, default 1, bumped when a field's
+meaning changes. The engine computes a fingerprint over the declared shape --
+name, kind, required, options -- and a template's identity is
+`key/vN/fingerprint`. XLSX carries it as a document property; CSV carries
+nothing, by decision. `koras_import.compatibility.compare` judges every file
+from its header, by the same normalised name match the mapping suggestion
+uses: `compatible`, `unknown_columns` or `incompatible`, with the missing
+required fields and the unknown columns named. A file whose property names an
+older version or a different shape is reported `stale` and is still usable if
+its header fits. The mapping is the gate, exactly as before; the verdict tells
+a person why before they reach it.
+
+### A workbook reads by the CSV reader's rules
+
+`koras_import.reading_xlsx` reuses `header_from` and `row_from`, factored out
+of the CSV reader for this purpose, so a spreadsheet saved as CSV and the same
+spreadsheet saved as XLSX name their columns identically and produce the same
+cells. Bounded three ways before a sheet is opened: the zip directory's
+uncompressed sizes are summed and refused past 256 MiB (ADR 0012 D12), a
+workbook carrying a macro project is refused, and one with no workbook part is
+not a workbook. Cells are read with cached values, so a formula never runs.
+The `Data` sheet is preferred and the first sheet is the fallback.
+
+**The three typed-value findings the Phase 2 review carried closed with it.**
+IMP2-19: `mapping.canonical` writes every accepted spelling in one shape -- a
+date as ISO, a decimal with a point and no thousands separator, a boolean as
+`true` or `false`, an option as declared -- and `prepare` hands the writer
+those rather than the stripped cell. IMP2-18: `float()` accepting `nan`, `inf`
+and `1e400` is refused with `import.error.decimal`. IMP2-21: a C0 control
+character is removed at the reader for every format. And IMP2-20 with them:
+an operation that recognises rows now refuses a mapping that omits a match
+key, at the store and at the mapping route.
+
+### The matcher: what an import would do, before it does it
+
+`ImportTarget.matcher` is optional: an async callable taking the caller's
+tenant-bound session and a `MatchRequest` -- every distinct canonical match
+key among the rows the validator passed -- and answering which exist. The
+worker asks it once per run, inside a savepoint, and `koras_import.matching`
+counts by the operation's table: with `create` an existing record is a
+rejection and a row error (`import.error.already_exists`), with `update` an
+absent one is a skip, with `upsert` an existing one is an update, with
+`skip_duplicate` a skip. The prediction lands on the run as three nullable
+columns; a target with no matcher records null and the page says the figures
+are unknown rather than drawing zeros. The commit trusts none of it: the
+writer decides again with the rows in front of it. ADR 0012 D9.
+
+### What the run knows since 00038
+
+Nine nullable columns, by `00038_import_counts.sql`: the template version the
+file carried, the job id of the last enqueue, the in-file duplicate count, the
+three predicted figures and the three written figures. `record_commit` keeps
+created, updated and skipped apart as well as summed, and the page draws the
+five-row table -- total, created, updated, skipped, failed -- where failed is
+zero for every committed run because a commit is atomic (ADR 0012 D1). A run
+from before the migration renders the sentence it rendered before.
+
+### The page
+
+One `Download Template` control, a disclosure over one plain anchor per format
+the target accepts, from a new `DownloadMenu` primitive in `packages/ui` that
+combines the shell's profile-menu pattern with the export menu's anchors:
+Enter opens and focuses the first item, Escape closes and returns focus, no
+menu role, no prefetch. The anchors point at
+`apps/web/src/app/api/imports/[key]/template/route.ts`, the export handler's
+twin. The start card names the byte ceiling -- the organisation's upload
+setting inside the source ceiling, resolved by the API and carried on the
+target view -- the row ceiling and the accepted formats, and the chosen file's
+name and size. The mapping card carries the compatibility verdict and, for a
+workbook, the sheet it was read from. The preview card draws total, valid,
+invalid and duplicate, and the three predicted figures when there are any.
+
+### The audit
+
+Three actions joined the registry: `import.template.downloaded` (activity,
+from the route, before the bytes go), `import.run.validated` (activity, from
+the worker, in the transaction that records the verdict) and
+`import.run.finished` (audit, from the worker, in a transaction of its own
+after the write and before the notice). This supersedes the Phase 2 position
+that the outcome lives on the run row alone; the run row is still the
+authoritative state, and these carry counts, identifiers and the safe sentence,
+never a cell. Reaching the sink from the worker cost the same change
+`core/recipients` needed on 2026-09-20: `core/audit.py` imported `.database`
+at module level, which builds the API's settings, and now imports it at the
+point of use. The worker image copies the module.
+
+### What the browser found beside itself
+
+Three defects, all on 2026-09-29, all fixed the same day, all in
+`testing/runs/2026-09-29-01/README.md`: the template menu listed the target's
+formats in declaration order, so Enter focused CSV on a target that declares
+CSV first; the panel stayed open after a download, so the next press closed it;
+and the imports page scrolled sideways at 375 pixels once a target was
+rendered, because `sr-only` positions its span absolutely and the history
+table's scroll wrapper was not positioned. The first two are the menu's;
+the third predates this work and was unmeasurable until a target rendered at
+a phone width.
+
+### What the build found beside itself
+
+A freshly generated product could not collect its unit suite: SQLAlchemy 2.1
+resolved, and 2.1 stopped installing `greenlet` on its own, so the first
+`sqlalchemy.ext.asyncio` import failed. R-044's class -- the declared floor
+works, the resolved version does not. Every declaration is
+`sqlalchemy[asyncio]` now.
+
+### Verified, and how
+
+On 2026-09-29, against a product generated `--with data_import` into a
+scratchpad: `ruff` clean, `mypy` clean over 157 files, 753 tests passing in
+`tests/unit` and the packages, of which 116 are the engine's own, 33 the
+store's and 7 the template route's. `product-import.test.ts` passes 52 cases
+in the generator, and `turbo run lint typecheck test build` on the same
+product finished 71 of 71 tasks.
+
+**Against PostgreSQL, the same day**, on a private PostgreSQL 17 cluster
+because the Docker engine did not answer: all 30 migrations applied in
+order on a clean database, every one of the 23 isolation suites exit 0 as a
+role with no `BYPASSRLS`, the removed-force mutation check refused, and
+`tests/integration/test_import_commit_rls.py` passed its four cases against
+the round-trip database. `testing/runs/2026-09-29-01/README.md` is the
+record.
+
+**In a browser, the same day**, with the fixture target installed as CI
+installs it: the whole Playwright suite, and the round-trip imports suite
+rerun after two defects the first run found in the new control -- the panel
+listed CSV before Excel and stayed open after a download -- and one manual
+case 53 found in the page: the history table's screen-reader-only heading
+escaped its scroll wrapper and the page scrolled sideways at 375 pixels with
+a target rendered, which nothing had measured before because the frame suite
+runs that width with no target. All three fixed the same day, the third with
+a permanent round-trip case.
+
+**Not executed:** manual cases 42 to 52, which need Excel, an upload with a
+bucket and a queue, or a target with a writer or a matcher.
+
 ## What has not been done
 
 - **No manual pass.** `manual-test-plan.md` here has the cases; every verdict
@@ -350,6 +536,9 @@ contain all three.
 - **No independent review of Phase 2.** Closed 2026-09-22: four reviewers, one
   per seam, all four returning BLOCK. `phase-2-review.md` is the record, and
   the headline was that the commit path had never worked.
+- **No live template has been downloaded from a deployed product**, and no
+  workbook filled in Excel has been imported through one. `manual-test-plan.md`
+  cases 41 onward are the pass.
 - **No product declares a target, so nothing renders the page.** A generated
   product declares none and should not — a target names a table the product
   owns. `koras-e2e-shop` had a domain that could declare real ones and was

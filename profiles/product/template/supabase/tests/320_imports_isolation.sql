@@ -121,6 +121,31 @@ begin
     when insufficient_privilege then null;
   end;
 
+  -- The columns 00037 added, under the same clause rather than assumed. The
+  -- figures a commit writes are exactly the kind of update a second tenant
+  -- must not be able to reach, and a check constraint refuses half a record.
+  update public.import_runs
+     set rows_duplicate = 2, template_version = 2, job_id = 'imports.validate:x',
+         predicted_create = 3, predicted_update = 1, predicted_skip = 0
+   where id = '00000000-0000-0000-0000-0000000000a1';
+  get diagnostics visible = row_count;
+  if visible <> 1 then
+    raise exception 'import_runs: could not record the figures on my own run';
+  end if;
+  update public.import_runs set rows_created = 1
+   where tenant_id = '00000000-0000-0000-0000-000000000002';
+  get diagnostics visible = row_count;
+  if visible <> 0 then
+    raise exception 'import_runs: another tenant''s figures were updated';
+  end if;
+  begin
+    update public.import_runs set rows_created = 1
+     where id = '00000000-0000-0000-0000-0000000000a1';
+    raise exception 'import_runs: half a written record was accepted';
+  exception
+    when check_violation then null;
+  end;
+
   begin
     insert into public.import_runs (tenant_id, target, source_file_id, requested_by)
     values ('00000000-0000-0000-0000-000000000002', 'shop.customers',

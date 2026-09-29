@@ -869,6 +869,66 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Das lässt sich auf zwei Arten lesen, die sich um das Tausendfache unterscheiden. Schreiben Sie es ohne Tausendertrennzeichen.',
   'imports.problem.duplicateInFile':
     'Eine andere Zeile derselben Datei hat diesen Wert bereits',
+  'imports.template.download':
+    'Vorlage herunterladen',
+  'imports.template.hint':
+    'Beginnen Sie mit einer Vorlage mit den richtigen Spaltenüberschriften. Füllen Sie sie aus, speichern Sie sie und laden Sie sie hier hoch.',
+  'imports.template.xlsx':
+    'Excel (.xlsx)',
+  'imports.template.csv':
+    'CSV (.csv)',
+  'imports.template.formatRefused':
+    'Für diesen Import ist keine Vorlage in diesem Format verfügbar.',
+  'imports.limits':
+    'Dateien bis {size}. Bis zu {rows} Zeilen pro Durchlauf. Akzeptierte Formate: {formats}.',
+  'imports.chosenFile':
+    '{name} ({size})',
+  'imports.sheet':
+    'Gelesen aus dem Blatt „{sheet}“.',
+  'imports.template.compatible':
+    'Jede Spalte passt zu diesem Import. Nichts muss von Hand zugeordnet werden.',
+  'imports.template.unknownColumns':
+    'Diese Spalten gehören nicht zu diesem Import und werden nur importiert, wenn Sie sie zuordnen: {columns}.',
+  'imports.template.incompatible':
+    'Für diese Pflichtfelder gibt es keine passende Spalte: {fields}. Ordnen Sie sie unten zu oder laden Sie eine neue Vorlage herunter.',
+  'imports.template.stale':
+    'Diese Datei stammt aus einer älteren Vorlage (Version {found}; aktuell ist {current}). Prüfen Sie die Spalten, bevor Sie fortfahren.',
+  'imports.preview.total':
+    'Zeilen',
+  'imports.preview.valid':
+    'Bereit zum Import',
+  'imports.preview.invalid':
+    'Mit Problemen',
+  'imports.preview.duplicate':
+    'In der Datei doppelt',
+  'imports.preview.create':
+    'Würden hinzugefügt',
+  'imports.preview.update':
+    'Würden aktualisiert',
+  'imports.preview.skip':
+    'Blieben unverändert',
+  'imports.preview.unknown':
+    'Ob eine Zeile einen Datensatz anlegt oder aktualisiert, ist erst beim Import bekannt: dieser Import kann Datensätze vorher nicht nachschlagen.',
+  'imports.result.title':
+    'Import abgeschlossen',
+  'imports.result.total':
+    'Gesamt',
+  'imports.result.created':
+    'Angelegt',
+  'imports.result.updated':
+    'Aktualisiert',
+  'imports.result.skipped':
+    'Übersprungen',
+  'imports.result.failed':
+    'Fehlgeschlagen',
+  'imports.consequence':
+    'Folge',
+  'imports.consequence.invalid':
+    'Zeile wird nicht importiert',
+  'imports.problem.alreadyExists':
+    'Ein Datensatz mit diesem Wert existiert bereits, und dieser Import legt nur neue Datensätze an',
+  'imports.format':
+    'Format',
   'imports.error.forbidden':
     'Sie haben keine Berechtigung, Datensätze zu importieren.',
   'imports.error.unavailable':
@@ -1122,6 +1182,8 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Dieser Import kann geprüft, aber nicht geschrieben werden. In diesem Produkt nimmt noch nichts diese Datensätze entgegen.',
   'errors.importFileTooLarge':
     'Diese Datei ist größer, als ein Import einlesen kann. Teilen Sie sie und importieren Sie die Teile einzeln.',
+  'errors.importFormatRefused':
+    'Diese Art von Datei kann hier nicht importiert werden. Laden Sie eine Vorlage herunter, um die akzeptierten Formate zu sehen.',
   'errors.uploadRefusedByPolicy':
     'Diese Datei ist nicht zulässig. Prüfen Sie Größe und Dateityp gegen die Einstellungen Ihrer Organisation.',
   'errors.fileUnderHold':

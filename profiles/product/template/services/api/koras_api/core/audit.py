@@ -22,7 +22,20 @@ from koras_audit import AuditAction, AuditEvent, Classification, Outcome, action
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .database import rebind_tenant
+
+async def rebind_tenant(session: AsyncSession, tenant_id: str) -> None:
+    """`core.database.rebind_tenant`, reached at the point of use.
+
+    `.database` builds the API's `Settings()` at import, and the worker
+    reaches this module by name to witness a finished import (ADR 0012 D5).
+    A module-level name rather than an import inside the method, so a test
+    can still replace it. The same move `core/recipients` made on 2026-09-20
+    for the same reason.
+    """
+    from .database import rebind_tenant as rebind
+
+    await rebind(session, tenant_id)
+
 
 _AUDIT_INSERT = text(
     "insert into public.audit_events "

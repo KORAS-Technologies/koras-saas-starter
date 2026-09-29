@@ -44,6 +44,7 @@ recommendation rather than a record — revise it, do not preserve it.
 | 7 | **F19 — the DNS half of the asset fetch** | The branding route refuses raw addresses and private suffixes at two gates, and a *name* that resolves to a private address still passes both. Closing it needs resolving the host, refusing loopback, RFC1918, link-local and unique-local answers, and connecting to the address rather than the name — which needs the socket rather than `fetch`. | ~half a day |
 | 8 | **F22 — Files** | Six items, each waiting on a real trigger rather than on time: multipart uploads (a file over 5 GB), an orphan sweep, the `customer-owned` and `azure-blob` policies, a real upload in CI, a foreign bucket's origin in the browser policy, and quota by period. | ~1 day per item |
 | 9 | **F25 — reporting** | Three items, none of which blocks a product registering reports today: `reporting.api` enforcement becomes real with the first machine caller, pre-aggregation when a table outgrows a range scan, and report names in the customer's language when somebody asks for one. | ~1 day per item |
+| 10 | **F30 — Docoris data import alignment with the starter** | Docoris carries its own import (E24-F01-S01) with no analysis step and a mapping form a person types headings into, so matching CSV or XLSX headings prefill nothing there, however well they match. Opened 2026-09-29; the starter's framework is complete and documented, and the next move is a comparison and a migration path in the docoris repository, not a third implementation. | ~1 day to compare, the migration unknown |
 
 **F21 and F23 do not contend with the top row.** They are a person at a dashboard and two ZITADEL writes per instance; nothing in either is code, so an order that reads as a queue is misleading for those two. Run them whenever the dashboard is open.
 
@@ -2428,11 +2429,16 @@ of proof nobody has.
       the estate with a domain that could declare real import targets, and
       declaring one is what would make the registry, the mapping and the
       permission observable rather than asserted. Nothing has been synced.
-- [ ] **No audit action is registered for an import.** IMPORT-US-016 is a
-      Phase 2 story and the run row already records who asked, but a product
-      answering "who loaded these records" from the audit log cannot do so
-      today. It is recorded here because the audit registry is the kind of
-      thing added when the feature lands, not after.
+- [x] **No audit action is registered for an import.** Closed twice over:
+      three actions on 2026-09-20 from the request, and three more on
+      2026-09-29 — the template download from the route, the verdict and the
+      commit's outcome from the worker (ADR 0012 D5).
+- [ ] **Templates, XLSX and the preview counts shipped on 2026-09-29.**
+      Verified the same day against a private PostgreSQL 17 and in a browser
+      with the fixture target -- `docs/features/data-import/testing/runs/2026-09-29-01/README.md`
+      -- which found and fixed three defects. Manual cases 41 and 53 are
+      done; 42 to 52 need Excel, an upload with a bucket and a queue, or a
+      target with a writer or a matcher, and are the pass still owed.
 
 ### F23 — the sign-in page, on a host of ours — opened 2026-09-09, built 2026-09-11 as the product's own page
 
@@ -2582,3 +2588,42 @@ than a re-key, but the catalogue takes a single currency and nothing resolves
 which one a customer should see. And nothing reconciles in the other
 direction from the factory — that is the Control Plane's `billing.catalogue`
 check, which is where it belongs.
+
+### F30 — Docoris data import alignment with the starter — opened 2026-09-29
+
+**What was seen.** On 2026-09-29, importing an Excel file into docoris's
+*Import accounts and contacts* page left every field on the *Map columns*
+step empty although the workbook's headings matched the fields by name. The
+same happens with a CSV. It is not a workbook defect and not a starter
+defect: docoris's import is its own implementation, `E24-F01-S01`, built on
+docoris's own tables with its own router and wizard, and that router has no
+analysis route — nothing reads the file's first row before the mapping step,
+so there is nothing to prefill from. The wizard asks a person to type the
+exact heading for each field.
+
+**Why it is here and not fixed.** `docs/platform/execution/CAT-02-data-import.md`
+says the docoris repository is read for requirements and never written to
+from this work, and the starter's own framework — `koras-import`, the run
+store, the routes, the panel, and since 2026-09-29 the downloadable template,
+the XLSX reader, the compatibility verdict and the matcher — is the canonical
+one. A prefill added to docoris's own wizard would be a third import
+implementation in the estate, with its own template format to keep level.
+
+**What the docoris work should do first.** Compare `E24-F01-S01` against
+`docs/features/data-import/architecture.md` — the target declaration, the
+run table, the state machine, the permission, the atomic commit through a
+writer — and decide the safest path: adopt the starter's framework with
+docoris's accounts and contacts declared as targets and writers, or, if that
+cannot be done in one step, the narrowest change that gives the existing
+wizard the starter's analysis-and-suggest behaviour without a second template
+format. Either way, docoris has no `import_runs` table today (its
+starter-range migrations stop at `00028`), so the framework arrives with
+`00036` and `00038` and the settings framework before it.
+
+- [ ] Compare the two implementations and record the migration path in the
+      docoris repository.
+- [ ] Decide whether the existing docoris runs and their history survive the
+      move, and how.
+- [ ] Until then, tell docoris's users that headings are typed, not read:
+      the page's own sentence says so and the screenshot shows it being
+      missed.

@@ -232,3 +232,25 @@ panel holds in state, so reaching any of them means going through
 upload → map → check in a browser. That needs the API started with a bucket and
 a queue rather than the round-trip harness's deliberately bare configuration,
 and a target with a writer. It is a stack bring-up, not a spec.
+
+## Cases 41 to 53 — templates and formats, 2026-09-29
+
+Added the day the feature shipped, and run the same day where the estate
+allowed. `../runs/2026-09-29-01/README.md` has the commands and the output.
+The two kinds of evidence are kept apart here as above.
+
+| # | Verdict | How |
+|---|---------|-----|
+| 41 | covered by the round-trip suite | `e2e/roundtrip/imports.spec.ts`, the template-control case: Enter opens with focus on the Excel item, Escape closes with focus on the button, one anchor per format |
+| 42 | NOT EXECUTED | Needs Excel. The engine's own tests open the rendered workbook with `openpyxl` and assert both sheets, the shading, the comments and the property, which is a different kind of evidence and is recorded as such |
+| 43 | NOT EXECUTED | Needs Excel to refuse the value; the validation's presence and formula are asserted by the engine's tests |
+| 44 | NOT EXECUTED | Needs an upload: a bucket, a queue and a worker the round-trip harness does not carry |
+| 45 | NOT EXECUTED | As 44 |
+| 46 | NOT EXECUTED | As 44 |
+| 47 | NOT EXECUTED | As 44 |
+| 48 | NOT EXECUTED | As 44 |
+| 49 | NOT EXECUTED | As 44; the refusal is asserted by the engine's tests on the bytes |
+| 50 | NOT EXECUTED | Needs a target with a writer and an upload |
+| 51 | NOT EXECUTED | As 50 |
+| 52 | NOT EXECUTED | Needs a target with a matcher and an upload |
+| 53 | **PASS**, in a browser at 375 pixels | A throwaway Playwright spec against the round-trip stack: the panel opens below the button at 224 pixels wide, Escape returns focus, and the page does not scroll sideways with the panel open or closed. **It failed first**: the page scrolled to 497 pixels with a target rendered, before the menu was touched, because the history table's screen-reader-only heading escaped an unpositioned scroll wrapper. Fixed the same day and kept as a permanent round-trip case |

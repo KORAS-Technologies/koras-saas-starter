@@ -52,6 +52,16 @@ it be tested without a database, and what would let it be promoted to another
 repository without a rewrite.
 """
 
+from .compatibility import (
+    FINGERPRINT_LENGTH,
+    PROPERTY_NAME,
+    Compatibility,
+    Identity,
+    compare,
+    fingerprint,
+    identity,
+    parse_identity,
+)
 from .jobs import COMMIT_RUN, VALIDATE_RUN
 from .mapping import (
     MAX_REPORTED_ERRORS,
@@ -59,10 +69,23 @@ from .mapping import (
     ResolvedMapping,
     RowError,
     Validation,
+    canonical,
+    match_key,
+    normalise_row,
     resolve,
     suggest,
     validate,
     validate_row,
+)
+from .matching import (
+    ALREADY_EXISTS,
+    Matcher,
+    MatchRequest,
+    Prediction,
+    keys_of,
+    predict,
+    request_for,
+    with_rejections,
 )
 from .reading import (
     DELIMITERS,
@@ -74,11 +97,22 @@ from .reading import (
     Header,
     ReadRefused,
     Row,
+    clean_cell,
     count_rows,
     decode,
+    header_from,
     read_header,
     read_rows,
+    row_from,
     sniff_delimiter,
+)
+from .reading_xlsx import (
+    DATA_SHEET,
+    DECOMPRESSED_CEILING,
+    WorkbookRead,
+    cell_text,
+    read_workbook,
+    template_identity,
 )
 from .states import (
     TERMINAL,
@@ -101,6 +135,18 @@ from .targets import (
     TargetRegistry,
     build_registry,
 )
+from .templates import (
+    MEDIA_TYPES,
+    TEMPLATE_FORMATS,
+    VALIDATED_ROWS,
+    Rendered,
+    TemplateRefused,
+    example_for,
+    format_hint,
+    render,
+    render_csv,
+    render_xlsx,
+)
 from .writing import (
     Writer,
     WriteRefused,
@@ -111,6 +157,44 @@ from .writing import (
 )
 
 __all__ = [
+    "ALREADY_EXISTS",
+    "DATA_SHEET",
+    "DECOMPRESSED_CEILING",
+    "FINGERPRINT_LENGTH",
+    "MEDIA_TYPES",
+    "PROPERTY_NAME",
+    "TEMPLATE_FORMATS",
+    "VALIDATED_ROWS",
+    "Compatibility",
+    "Identity",
+    "MatchRequest",
+    "Matcher",
+    "Prediction",
+    "Rendered",
+    "TemplateRefused",
+    "WorkbookRead",
+    "canonical",
+    "cell_text",
+    "clean_cell",
+    "compare",
+    "example_for",
+    "fingerprint",
+    "format_hint",
+    "header_from",
+    "identity",
+    "keys_of",
+    "match_key",
+    "normalise_row",
+    "parse_identity",
+    "predict",
+    "read_workbook",
+    "render",
+    "render_csv",
+    "render_xlsx",
+    "request_for",
+    "row_from",
+    "template_identity",
+    "with_rejections",
     "COMMIT_RUN",
     "DELIMITERS",
     "ENCODINGS",

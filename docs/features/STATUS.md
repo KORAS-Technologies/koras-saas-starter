@@ -333,6 +333,16 @@ Phases 1 and 2 of four, shipped 2026-09-19 and 2026-09-20. Stories are
 | IMPORT-US-012 | Cancel a running import | 3 | Part built — `cancel` refuses a commit in flight by state, and now there is one. Stopping a commit mid-transaction is not offered and will not be |
 | IMPORT-US-013 | Retry a failed import without losing its history | 3 | Not started |
 | IMPORT-US-014 | A large file works | 4 | Not started — bounded and **refused** rather than truncated, which is the rule audit exports follow |
+| IMPORT-US-019 | Download a template for a target | 3 | **Built 2026-09-29** — one control, a disclosure over one anchor per format; `docs/adr/0012-import-template-versioning.md` |
+| IMPORT-US-020 | Choose the template's format | 3 | **Built 2026-09-29** — Excel and CSV; JSON deferred by decision |
+| IMPORT-US-021 | The template says how to fill it in | 3 | **Built 2026-09-29** — an Instructions sheet, header comments, data validation on enumerated, date and number columns |
+| IMPORT-US-022 | Upload the filled template in either format | 3 | **Built 2026-09-29** — a workbook reads by the CSV reader's own header and row rules; one workflow for both |
+| IMPORT-US-023 | Be told when the template is out of date | 3 | **Built 2026-09-29** — a product-owned version plus an engine fingerprint, carried by XLSX as a document property; CSV judged by its header |
+| IMPORT-US-024 | See what an import would do before confirming | 3 | **Built 2026-09-29** — total, valid, invalid and duplicate; predicted create, update and skip through the target's optional matcher, null and said so without one |
+| IMPORT-US-025 | See what an import did | 3 | **Built 2026-09-29** — created, updated and skipped kept apart on the run; a five-row table on the page |
+| IMPORT-US-026 | See the file I chose | 3 | **Built 2026-09-29** — name and size, and the byte and row ceilings beside the accepted formats |
+| IMPORT-US-027 | Declare examples and help once | 3 | **Built 2026-09-29** — `example` and `help` on `FieldSpec`, synthesised by kind when absent |
+| IMPORT-US-028 | Know who downloaded a template and how every run ended | 3 | **Built 2026-09-29** — three audit actions, two written by the worker, which supersedes the IMPORT-US-016 halves above |
 
 ### The review
 

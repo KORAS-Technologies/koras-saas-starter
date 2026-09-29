@@ -13,6 +13,7 @@ reports all of them at once.
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -96,7 +97,11 @@ def suggest(target: ImportTarget, columns: Iterable[str]) -> dict[str, str]:
 
 
 def resolve(
-    target: ImportTarget, columns: Iterable[str], mapping: Mapping[str, str]
+    target: ImportTarget,
+    columns: Iterable[str],
+    mapping: Mapping[str, str],
+    *,
+    require_match_keys: bool = False,
 ) -> ResolvedMapping:
     """Check a browser-supplied mapping against the target and the file.
 
@@ -138,6 +143,20 @@ def resolve(
             "them"
         )
 
+    if require_match_keys:
+        # An operation that has to recognise a row it has seen before cannot
+        # do so through a mapping that omits the key it recognises by. Left
+        # unmapped, duplicate detection silently switched itself off and the
+        # writer met a constraint instead -- IMP2-20 in
+        # `docs/features/data-import/phase-2-review.md`.
+        unmapped_keys = sorted(set(target.match_keys) - set(assigned))
+        if unmapped_keys:
+            raise MappingRefused(
+                f"target {target.key} recognises an existing record by "
+                f"{unmapped_keys}, and no column is mapped to them; map them, or "
+                "choose to add every row as new"
+            )
+
     return ResolvedMapping(
         columns=dict(mapping),
         unmapped_columns=tuple(name for name in available if name not in mapping),
@@ -170,6 +189,13 @@ class Validation:
     errors: tuple[RowError, ...]
     #: True when more errors existed than the report carries.
     truncated: bool = False
+    #: Rows the in-file duplicate check flagged. A figure of its own because
+    #: the preview shows it beside the invalid count rather than inside it.
+    duplicates: int = 0
+    #: Every row with at least one problem, whether or not its problems made
+    #: it into `errors` before the report was cut. The matcher needs the full
+    #: set: a prediction over a row the report could not list is still wrong.
+    bad_rows: frozenset[int] = frozenset()
 
     @property
     def ok(self) -> bool:
@@ -296,10 +322,88 @@ def _check_decimal(value: str) -> str | None:
         cleaned = value
 
     try:
-        float(cleaned)
+        parsed = float(cleaned)
     except ValueError:
         return "import.error.decimal"
+    if not math.isfinite(parsed):
+        # `float()` accepts `nan`, `inf` and `1e400`, and a NaN that reaches a
+        # numeric column makes every later SUM over that tenant NaN. IMP2-18.
+        return "import.error.decimal"
     return None
+
+
+def _canonical_decimal(value: str) -> str:
+    """The number as the writer should receive it: a point, no thousands."""
+    dot = value.rfind(".")
+    comma = value.rfind(",")
+    if dot >= 0 and comma >= 0:
+        thousands = "," if dot > comma else "."
+        return value.replace(thousands, "").replace(",", ".")
+    return value.replace(",", ".")
+
+
+def canonical(spec: FieldSpec, value: str) -> str:
+    """A cell that passed `_check`, in the one shape the writer is handed.
+
+    The validator decided `31.12.2025` was a date and then handed the writer
+    `31.12.2025`, so the decision did not survive to the thing that stores it
+    -- IMP2-19. Every kind with more than one accepted spelling is written
+    here in exactly one: a date as ISO, a decimal with a point and no
+    thousands separator, a boolean as `true` or `false`, an option as the
+    target declared it. Text is text.
+    """
+    if not value:
+        return value
+    if spec.options:
+        lowered = value.lower()
+        for option in spec.options:
+            if option.lower() == lowered:
+                return option
+        return value
+    if spec.kind is FieldKind.DATE:
+        parsed = _parse_date(value)
+        return parsed.isoformat() if parsed is not None else value
+    if spec.kind is FieldKind.DECIMAL:
+        return _canonical_decimal(value)
+    if spec.kind is FieldKind.BOOLEAN:
+        lowered = value.lower()
+        if lowered in _TRUE:
+            return "true"
+        if lowered in _FALSE:
+            return "false"
+    return value
+
+
+def normalise_row(
+    target: ImportTarget, resolved: ResolvedMapping, row: Row
+) -> dict[str, str]:
+    """The mapped, canonical row: what a writer and a matcher are given."""
+    return {
+        field: canonical(target.spec(field), row.cells.get(column, "").strip())
+        for field, column in resolved.fields.items()
+    }
+
+
+def match_key(
+    target: ImportTarget, resolved: ResolvedMapping, row: Row
+) -> tuple[str, ...] | None:
+    """What makes this row the same record as another, or None if nothing does.
+
+    One function for the in-file duplicate check and the matcher's request,
+    so the product's identity semantics are applied once: stripped, canonical
+    for the field's kind, and case-folded. A key with no value at all names
+    nothing and is None; a partly empty key is still a key, because an empty
+    part is a value the product may well store.
+    """
+    if not target.match_keys:
+        return None
+    parts = tuple(
+        canonical(
+            target.spec(name), row.cells.get(resolved.fields.get(name, ""), "").strip()
+        ).lower()
+        for name in target.match_keys
+    )
+    return parts if any(parts) else None
 
 
 def _parse_date(value: str) -> date | None:
@@ -327,30 +431,27 @@ def validate(
     total = 0
     bad_rows: set[int] = set()
     truncated = False
+    duplicates = 0
 
     for row in rows:
         total += 1
         problems = validate_row(target, resolved, row)
-
-        if target.match_keys:
-            key = tuple(
-                row.cells.get(resolved.fields.get(name, ""), "").strip().lower()
-                for name in target.match_keys
-            )
-            if any(key):
-                first = seen.get(key)
-                if first is not None:
-                    problems.append(
-                        RowError(
-                            row=row.number,
-                            column=resolved.fields.get(target.match_keys[0], ""),
-                            field=target.match_keys[0],
-                            code="import.error.duplicate_in_file",
-                            value=str(first),
-                        )
+        key = match_key(target, resolved, row)
+        if key is not None:
+            first = seen.get(key)
+            if first is not None:
+                problems.append(
+                    RowError(
+                        row=row.number,
+                        column=resolved.fields.get(target.match_keys[0], ""),
+                        field=target.match_keys[0],
+                        code="import.error.duplicate_in_file",
+                        value=str(first),
                     )
-                else:
-                    seen[key] = row.number
+                )
+                duplicates += 1
+            else:
+                seen[key] = row.number
 
         if problems:
             bad_rows.add(row.number)
@@ -365,4 +466,6 @@ def validate(
         valid=total - len(bad_rows),
         errors=tuple(errors),
         truncated=truncated,
+        duplicates=duplicates,
+        bad_rows=frozenset(bad_rows),
     )

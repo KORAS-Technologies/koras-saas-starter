@@ -333,6 +333,10 @@ describe('data import', () => {
       'core/notifications.py',
       'core/recipients.py',
       'core/settings_store.py',
+      // The audit sink, since 2026-09-29: the worker witnesses a dry run and
+      // a commit (ADR 0012 D5). Reached by `importlib` like the rest, so a
+      // missing COPY would be evidence that silently never lands.
+      'core/audit.py',
     ]) {
       expect(dockerfile).toContain(`koras_api/${file}`)
     }
@@ -342,6 +346,127 @@ describe('data import', () => {
     const recipients = read('services/api/koras_api/core/recipients.py')
     expect(recipients).not.toMatch(/^from \. import platform$/m)
     expect(recipients).toContain('def _platform()')
+    // The audit sink has the same shape: `.database` builds `Settings()` at
+    // import, so it is imported where the tenant is rebound and nowhere
+    // above.
+    const audit = read('services/api/koras_api/core/audit.py')
+    expect(audit).not.toMatch(/^from \.database import/m)
+    expect(audit).toContain('    from .database import rebind_tenant as rebind')
+  })
+
+  /* ---------------------------------------------------------------------- */
+  /* Templates and formats, 2026-09-29                                      */
+  /* ---------------------------------------------------------------------- */
+
+  it('renders a template from the declaration the validator reads, and nothing else', () => {
+    // No second description of the schema: the renderer takes an
+    // `ImportTarget` and reads `fields`. A module holding column lists of its
+    // own would be the thing the brief forbids.
+    const templates = read('python-packages/koras-import/src/koras_import/templates.py')
+    expect(templates).toContain('def render(target: ImportTarget, fmt: Format) -> Rendered:')
+    expect(templates).toContain('for spec in target.fields')
+    expect(templates).not.toMatch(/AsyncSession|tenant_id|session:/)
+    // JSON is in the vocabulary and refused by name (ADR 0012 D4).
+    expect(templates).toContain('TEMPLATE_FORMATS: tuple[Format, ...] = (Format.CSV, Format.XLSX)')
+  })
+
+  it('serves the template behind the permission and records the download', () => {
+    const router = read('services/api/koras_api/routers/imports.py')
+    const route = router.slice(
+      router.indexOf('@router.get("/imports/targets/{key}/template")'),
+      router.indexOf('@router.get("/imports", response_model=list[RunView])'),
+    )
+    expect(route).toContain('_require(claims, "downloading an import template")')
+    expect(route).toContain('_require_target(claims, target)')
+    // Permission before the render, the audit row before the bytes.
+    expect(route.indexOf('_require_target(')).toBeLessThan(route.indexOf('render(target, fmt)'))
+    expect(route.indexOf('action="import.template.downloaded"')).toBeLessThan(
+      route.indexOf('return Response('),
+    )
+    // And the web half is a route handler, the export handler's twin, gated
+    // with the rest of the capability.
+    expect(has('apps/web/src/app/api/imports/[key]/template/route.ts.hbs')).toBe(true)
+    expect(gatedPaths('data_import')).toContain('apps/web/src/app/api/imports')
+    const handler = read('apps/web/src/app/api/imports/[key]/template/route.ts.hbs')
+    expect(handler).toContain("request.headers.get('sec-fetch-site')")
+    expect(handler).toContain("can(signedIn.access, 'imports.manage')")
+  })
+
+  it('offers one template control, as a disclosure over plain anchors', () => {
+    const panel = read('apps/web/src/app/dashboard/imports/ImportPanel.tsx.hbs')
+    expect(panel).toContain('<DownloadMenu')
+    expect(panel).toContain("href: `/api/imports/${encodeURIComponent(target?.key ?? '')}/template?format=${format}`")
+    // Not a row of one button per format: the export menu's shape is not this
+    // control's.
+    expect(panel).not.toContain('ExportMenu')
+    const menu = read('packages/ui/src/primitives/download-menu.tsx')
+    expect(menu).toContain('aria-expanded={open}')
+    expect(menu).toContain("event.key !== 'Escape'")
+    expect(menu).not.toContain('role="menu"')
+    expect(menu).toContain('<ButtonLink')
+    expect(read('packages/ui/src/index.ts')).toContain(
+      "export { DownloadMenu } from './primitives/download-menu'",
+    )
+  })
+
+  it('registers the four audit moments and writes two of them from the worker', () => {
+    const store = read('services/api/koras_api/core/imports.py')
+    for (const key of [
+      'import.template.downloaded',
+      'import.run.validated',
+      'import.run.finished',
+    ]) {
+      expect(store).toContain(`key="${key}"`)
+    }
+    const worker = read('services/worker/koras_worker/tasks/imports.py')
+    expect(worker).toContain('action="import.run.validated"')
+    expect(worker).toContain('action="import.run.finished"')
+    // The commit's evidence is its own transaction, after the write and
+    // before the notice, and swallows everything: a record that could roll
+    // an import back is not a record.
+    const commit = worker.slice(worker.indexOf('async def commit_run('), worker.indexOf('async def _record('))
+    expect(commit.indexOf('await _witness(')).toBeLessThan(commit.indexOf('await _tell('))
+    const witness = worker.slice(worker.indexOf('async def _witness('), worker.indexOf('async def _tell('))
+    expect(witness).toContain('except Exception:')
+    expect(BARE_RAISE.test(witness)).toBe(false)
+    // Never a cell: counts, identifiers and the safe sentence.
+    expect(witness).not.toMatch(/cells|rows\[/)
+  })
+
+  it('gates the migration that carries the figures, and the figures are nullable', () => {
+    expect(gatedPaths('data_import')).toContain('supabase/migrations/00038_import_counts.sql')
+    const migration = read('supabase/migrations/00038_import_counts.sql')
+    for (const column of ['rows_created', 'rows_updated', 'rows_skipped', 'predicted_create']) {
+      expect(migration).toMatch(new RegExp(`add column ${column}\\s+integer check`))
+      expect(migration).not.toMatch(new RegExp(`add column ${column}\\s+integer not null`))
+    }
+    expect(migration).toContain('import_runs_written_counts_together')
+  })
+
+  it('reads a workbook by the CSV reader-s own header and row rules', () => {
+    const xlsx = read('python-packages/koras-import/src/koras_import/reading_xlsx.py')
+    expect(xlsx).toContain('header_from(cells)')
+    expect(xlsx).toContain('row_from(number, cells, header)')
+    expect(xlsx).toContain('read_only=True, data_only=True')
+    // Bounded from the zip directory before any sheet is opened, and a
+    // macro-bearing workbook refused there too.
+    expect(xlsx.indexOf('DECOMPRESSED_CEILING')).toBeLessThan(xlsx.indexOf('load_workbook('))
+    expect(xlsx).toContain('xl/vbaProject.bin')
+  })
+
+  it('hands the writer canonical values whatever the source', () => {
+    // IMP2-19, closed: `prepare` normalises rather than stripping.
+    const store = read('services/api/koras_api/core/imports.py')
+    expect(store).toContain('mapped = tuple(normalise_row(target, resolved, row) for row in rows)')
+    expect(store).not.toContain('row.cells.get(column, "").strip() for field, column in resolved.fields.items()')
+  })
+
+  it('translates the rejection a matcher can produce', () => {
+    const labels = read('apps/web/src/app/dashboard/imports/labels.ts.hbs')
+    expect(labels).toContain("'import.error.already_exists': t('imports.problem.alreadyExists')")
+    for (const locale of readdirSync(join(PRODUCT, 'packages', 'i18n', 'src', 'messages'))) {
+      expect(read('packages', 'i18n', 'src', 'messages', locale)).toContain("'imports.problem.alreadyExists':")
+    }
   })
 
   it('lets a person take every bad row away in a file', () => {
@@ -643,7 +768,10 @@ describe('data import', () => {
     // Ten since the commit: `import_not_committable` is what a target with
     // no writer answers, and it is a sentence rather than a 500 because a
     // person confirming an import they cannot make should be told why.
-    expect(codes.length).toBe(10)
+    // Eleven since the templates: `import_format_refused` is a 406 for a
+    // template in a format the target does not accept, and a 422 for a
+    // source file in one.
+    expect(codes.length).toBe(11)
 
     const mapping = read('apps/web/src/lib/api-errors.ts.hbs')
     const english = read('packages/i18n/src/messages/en.ts')

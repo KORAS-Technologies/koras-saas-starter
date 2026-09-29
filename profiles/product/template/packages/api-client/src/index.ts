@@ -1678,6 +1678,18 @@ export interface ImportFieldView {
   kind: string
   required: boolean
   options: string[]
+  max_length?: number | null
+  /** Synthetic: the declaration's own example or one made from the kind. */
+  example?: string
+  /** Plain text in one language, from the declaration. Empty when none. */
+  help?: string
+  /** "YYYY-MM-DD", "yes or no", "one of: a, b" -- or empty for plain text. */
+  format_hint?: string
+}
+
+export interface ImportLimitsView {
+  max_bytes: number
+  max_rows: number
 }
 
 export interface ImportTargetView {
@@ -1695,6 +1707,26 @@ export interface ImportTargetView {
    * feature used before a commit existed.
    */
   committable: boolean
+  /** The product's own import-definition version. ADR 0012. */
+  version?: number
+  fingerprint?: string
+  /** The formats a template can be downloaded in; a subset of `formats`. */
+  template_formats?: string[]
+  limits?: ImportLimitsView | null
+  /** True when the target can say what a run would do to existing records. */
+  predicts?: boolean
+}
+
+export interface ImportCountsView {
+  create: number
+  update: number
+  skip: number
+}
+
+export interface ImportWrittenView {
+  created: number
+  updated: number
+  skipped: number
 }
 
 export interface ImportRunView {
@@ -1715,6 +1747,24 @@ export interface ImportRunView {
   committed_by: string | null
   created_at: string
   finished_at: string | null
+  format?: string
+  template_version?: number | null
+  job_id?: string | null
+  source_name?: string | null
+  source_bytes?: number | null
+  rows_duplicate?: number
+  /** Null when the target declares no matcher, or the run predates one. */
+  predicted?: ImportCountsView | null
+  /** Null until committed, and for a run committed before the columns existed. */
+  written?: ImportWrittenView | null
+}
+
+export interface ImportTemplateVerdictView {
+  verdict: 'compatible' | 'unknown_columns' | 'incompatible'
+  missing_required: string[]
+  unknown_columns: string[]
+  version_found: number | null
+  stale: boolean
 }
 
 export interface ImportAnalysisView {
@@ -1726,6 +1776,10 @@ export interface ImportAnalysisView {
   over_ceiling: boolean
   /** A character the file's encoding could not represent was substituted. */
   replaced: boolean
+  format?: string
+  /** The workbook sheet that was read; null for a CSV. */
+  sheet?: string | null
+  template?: ImportTemplateVerdictView | null
 }
 
 export interface ImportRowErrorView {
@@ -1745,6 +1799,32 @@ export interface ImportRowErrorView {
 
 export function fetchImportTargets(options: RequestOptions): Promise<ImportTargetView[]> {
   return request<ImportTargetView[]>('/api/v1/imports/targets', options)
+}
+
+/**
+ * A template as the raw response, for the route handler that streams it on.
+ *
+ * Not through `request`, which parses JSON: the body is the file. A refusal
+ * is an `ApiError` with the status the API gave -- 403 for a caller without
+ * the permission, 406 for a format the target does not accept.
+ */
+export async function fetchImportTemplate(
+  options: RequestOptions & { key: string; format: string },
+): Promise<Response> {
+  const base = options.baseUrl.replace(/\/$/, '')
+  if (!base) throw new ApiError('no API base URL is configured', 0)
+  const path =
+    `/api/v1/imports/targets/${encodeURIComponent(options.key)}/template` +
+    `?format=${encodeURIComponent(options.format)}`
+  const response = await (options.fetchImpl ?? fetch)(`${base}${path}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${options.token}`, Accept: '*/*' },
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    throw new ApiError(`${path} answered ${response.status}`, response.status, await errorCode(response))
+  }
+  return response
 }
 
 export function fetchImportRuns(options: RequestOptions): Promise<ImportRunView[]> {

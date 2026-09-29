@@ -6,7 +6,7 @@
 | **Feature name** | Data import and migration framework |
 | **Owner** | CAT-02 lead |
 | **Written** | 2026-09-19 |
-| **Status** | **Phase 1 built 2026-09-19.** PLAT-F1 shipped the same day and this is its first caller. Phases 2-4 not started. Three Phase 1 items deliberately unbuilt — see `docs/features/data-import/architecture.md` |
+| **Status** | **Phase 1 built 2026-09-19.** PLAT-F1 shipped the same day and this is its first caller. Phases 2-4 not started. Three Phase 1 items deliberately unbuilt — see `docs/features/data-import/architecture.md`. **Phase 2 built 2026-09-20; Phase 3's format bullet built 2026-09-29** with downloadable templates, XLSX and the preview counts, from `docs/features/data-import/templates-and-formats-analysis.md` and ADR 0012 rather than from this plan's wording |
 | **Read first** | `docs/platform/master-platform-plan.md` §7, §9; `docs/platform/feature-dependency-map.md`; `docs/platform/gap-defect-register.md` IMPORT rows; and `docoris/docs/architecture/IMPORT.md`, which is a requirements source written by the product that needs this |
 
 ## Objective

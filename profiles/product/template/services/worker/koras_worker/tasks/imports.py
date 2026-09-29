@@ -177,9 +177,21 @@ async def validate_run(ctx: dict[str, Any], envelope: JobEnvelope) -> dict[str, 
                 await session.commit()
                 return {"status": "failed", "reason": "unknown target"}
 
+            prediction = None
             try:
                 raw = await store.source_bytes(session, _object_store(), run.source_file_id)
-                result = store.check(raw, target, run)
+                examined = store.examine(raw, target, run)
+                # The target's matcher, once, in a savepoint, on this tenant-bound
+                # session. Read-only by contract; a prediction the commit does
+                # not trust. With `create`, a row naming an existing record is a
+                # row error from here on. ADR 0012 D9.
+                result, prediction = await store.predict_outcome(
+                    session,
+                    target=target,
+                    run=run,
+                    tenant_id=envelope.tenant_id,
+                    examined=examined,
+                )
             except store.SourceRefused as refused:
                 await store.fail(session, run, _sentence(str(refused)))
                 await session.commit()
@@ -197,7 +209,37 @@ async def validate_run(ctx: dict[str, Any], envelope: JobEnvelope) -> dict[str, 
                 return {"status": "failed", "reason": "error"}
 
             landed = await store.record_validation(
-                session, run, tenant_id=envelope.tenant_id, result=result
+                session,
+                run,
+                tenant_id=envelope.tenant_id,
+                result=result,
+                prediction=prediction,
+                template_version=examined.template_version,
+            )
+            # In the same transaction as the state change: an audit row for a
+            # verdict that rolled back, or a verdict with no record of having
+            # been reached, are both worse than either alone. ADR 0012 D5.
+            await _record(
+                session,
+                tenant_id=envelope.tenant_id,
+                actor_id=run.requested_by,
+                action="import.run.validated",
+                run_id=run_id,
+                outcome="ok" if landed.value == "validated" else "error",
+                details={
+                    "target": run.target,
+                    "operation": run.operation,
+                    "format": run.format,
+                    "template_version": examined.template_version or 0,
+                    "job_id": run.job_id or "",
+                    "rows": result.rows,
+                    "valid": result.valid,
+                    "errors": len(result.errors),
+                    "duplicates": result.duplicates,
+                    "predicted_create": prediction.create if prediction else -1,
+                    "predicted_update": prediction.update if prediction else -1,
+                    "predicted_skip": prediction.skip if prediction else -1,
+                },
             )
             await session.commit()
     finally:
@@ -391,11 +433,12 @@ async def commit_run(ctx: dict[str, Any], envelope: JobEnvelope) -> dict[str, An
                             run.status,
                         )
 
-        # **A third transaction, and the last thing that happens.** A
-        # notification must never be able to undo an import: by this point the
-        # rows are either written and committed or rolled back, and nothing
-        # below can change either. It runs on both paths -- a person who
-        # confirmed an import that failed is the one who most needs telling.
+        # **The evidence, then the notice, and neither can undo the import.**
+        # By this point the rows are either written and committed or rolled
+        # back, and nothing below can change either. The audit row is its own
+        # transaction for the same reason the notice is: a record that could
+        # roll an import back is not a record. ADR 0012 D5.
+        await _witness(engine, envelope.tenant_id, run_id, written, failure)
         await _tell(engine, envelope.tenant_id, run_id, written, failure)
     finally:
         await engine.dispose()
@@ -461,6 +504,81 @@ async def _write(
     # of fewer records than the file held.
     check_total(request, written)
     return written
+
+async def _record(
+    session: Any,  # noqa: ANN401 - the caller's open session
+    *,
+    tenant_id: str,
+    actor_id: str,
+    action: str,
+    run_id: str,
+    outcome: str,
+    details: dict[str, str | int | bool],
+) -> None:
+    """One audit row, through the API's own sink, reached by name.
+
+    The same arrangement as the notice: the worker image carries the module
+    and the worker does not depend on the API's distribution. A sink that
+    cannot be reached is a warning rather than a failed job, because the run
+    row is the authoritative state and this is evidence beside it. What it
+    never carries is a cell: counts, identifiers and the outcome, and no
+    more.
+    """
+    try:
+        audit = importlib.import_module("koras_api.core.audit")
+    except Exception:
+        logger.warning("import: the audit sink is not on this worker's path")
+        return
+    await audit.record(
+        session,
+        tenant_id=tenant_id,
+        actor_id=actor_id or "system",
+        action=action,
+        target_type="import_run",
+        target_id=run_id,
+        outcome=outcome,
+        details=details,
+    )
+
+
+async def _witness(
+    engine: Any,  # noqa: ANN401 - the engine the commit used
+    tenant_id: str,
+    run_id: str,
+    written: Any,  # noqa: ANN401 - whatever the product's writer reported, or None
+    failure: str | None,
+) -> None:
+    """`import.run.finished`, in a transaction of its own, swallowing everything."""
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+            await session.execute(_AS_TENANT, {"tenant_id": tenant_id})
+            store = _run_store()
+            run = await store.get(session, run_id) if store else None
+            if run is None:
+                return
+            await _record(
+                session,
+                tenant_id=tenant_id,
+                actor_id=run.committed_by or run.requested_by,
+                action="import.run.finished",
+                run_id=run_id,
+                outcome="ok" if failure is None else "error",
+                details={
+                    "target": run.target,
+                    "operation": run.operation,
+                    "format": run.format,
+                    "job_id": run.job_id or "",
+                    "created": getattr(written, "created", 0),
+                    "updated": getattr(written, "updated", 0),
+                    "skipped": getattr(written, "skipped", 0),
+                    # The run's own recorded sentence, never a stack.
+                    "error": (run.error or "")[:400] if failure is not None else "",
+                },
+            )
+            await session.commit()
+    except Exception:
+        logger.exception("import commit: run %s finished and could not be witnessed", run_id)
+
 
 async def _tell(
     engine: Any,  # noqa: ANN401 - the engine the commit used

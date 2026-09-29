@@ -1,6 +1,6 @@
 'use client'
 
-import { Banner, Button, Card, SaveOutcome, SelectField } from '@{{projectSlug}}/ui'
+import { Banner, Button, Card, DownloadMenu, SaveOutcome, SelectField } from '@{{projectSlug}}/ui'
 import type {
   ImportAnalysisView,
   ImportRowErrorView,
@@ -24,7 +24,19 @@ import {
 import type { ImportLabels } from './labels'
 
 /**
- * Upload, map, check -- and, since Phase 2, confirm.
+ * Download a template, upload, map, check -- and, since Phase 2, confirm.
+ *
+ * **One workflow for both formats.** A CSV and an XLSX go through the same
+ * ticket, the same run, the same mapping and the same dry run; the format is
+ * decided once, on the server, from the file the run was started against,
+ * and nothing on this page branches on it except the sentence naming the
+ * sheet a workbook was read from.
+ *
+ * **The template control is one control.** A disclosure over one plain
+ * anchor per format the target accepts, pointing at the web route handler
+ * that streams what the API renders. Anchors so the router never prefetches
+ * a download, which would be a template download recorded in the audit table
+ * as if somebody had asked for it. ADR 0012 D7.
  *
  * **The confirm control is absent rather than disabled for a target that
  * declares no writer.** `committable` is false for such a target and no button
@@ -38,6 +50,13 @@ import type { ImportLabels } from './labels'
  * records, separately from `requested_by`, and they are frequently the same
  * person -- the fact worth keeping is that somebody read a dry run and said
  * yes.
+ *
+ * **The figures are predictions until the commit, and say so.** A target
+ * that declares a matcher lets the dry run say how many rows would be added,
+ * updated or left alone; one that does not gets a sentence saying the figures
+ * are unknown rather than three zeros. After the commit the card draws the
+ * five-row table -- total, created, updated, skipped, failed -- and failed is
+ * zero for every committed run, because a commit is atomic.
  *
  * **The report downloads.** A person fixing a file works in a spreadsheet, not
  * in a table on a web page, and the criterion for a failed run is that they can
@@ -98,8 +117,37 @@ function guardCell(cell: string): string {
  */
 const IN_FLIGHT = new Set(['validating', 'commit_requested', 'committing'])
 
+/**
+ * The order the template menu lists formats in, whatever order the target
+ * declared them: Excel first, because it is the one with the Instructions
+ * sheet, then CSV. A format outside this list -- none today -- lists after.
+ */
+const TEMPLATE_ORDER = ['xlsx', 'csv']
+
+/** The content types a file input accepts for each format a target takes. */
+const ACCEPT: Record<string, string> = {
+  csv: '.csv,.tsv,text/csv',
+  xlsx: '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+}
+
 function fill(template: string, values: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? '')
+}
+
+/** `1.5 MB`, `640 KB`, `12 B`: enough precision to compare with a ceiling. */
+function sizeOf(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${bytes} B`
+}
+
+function Figure({ label, value, testId }: { label: string; value: string; testId: string }) {
+  return (
+    <div className="rounded-brand border border-line px-3 py-2" data-testid={testId}>
+      <dt className="text-xs uppercase text-ink-muted">{label}</dt>
+      <dd className="text-lg font-semibold tabular-nums text-ink">{value}</dd>
+    </div>
+  )
 }
 
 export function ImportPanel({
@@ -117,6 +165,7 @@ export function ImportPanel({
 
   const [targetKey, setTargetKey] = useState<string>(targets[0]?.key ?? '')
   const [operation, setOperation] = useState<string>(targets[0]?.operations[0] ?? '')
+  const [chosen, setChosen] = useState<{ name: string; size: number } | null>(null)
   const [run, setRun] = useState<ImportRunView | null>(null)
   const [analysis, setAnalysis] = useState<ImportAnalysisView | null>(null)
   const [mapping, setMapping] = useState<Record<string, string>>({})
@@ -145,11 +194,11 @@ export function ImportPanel({
    * whichever run was open before, and a report from one run shown under
    * another is worse than no report at all.
    */
-  const open = useCallback((chosen: ImportRunView) => {
+  const open = useCallback((picked: ImportRunView) => {
     setError(null)
     setAnalysis(null)
     setProblems(null)
-    setRun(chosen)
+    setRun(picked)
   }, [])
 
   const refresh = useCallback(async () => {
@@ -178,6 +227,7 @@ export function ImportPanel({
       setError(null)
       setProblems(null)
       setAnalysis(null)
+      setChosen({ name: file.name, size: file.size })
       try {
         const checksum = await digestOf(file)
         const ticket = await requestSourceUpload({
@@ -228,6 +278,7 @@ export function ImportPanel({
     if (run === null) return
     setBusy(true)
     setError(null)
+    setProblems(null)
     try {
       const saved = await saveMapping(run.id, mapping)
       if (saved.status === 'error') {
@@ -250,6 +301,7 @@ export function ImportPanel({
     if (run === null) return
     setBusy(true)
     setError(null)
+    setProblems(null)
     try {
       const queued = await commitRun(run.id)
       if (queued.status === 'error') {
@@ -272,13 +324,24 @@ export function ImportPanel({
         setError(answer.message)
         return
       }
-      const header = [labels.row, labels.column, labels.field, labels.problem, labels.value]
+      const header = [
+        labels.row,
+        labels.column,
+        labels.field,
+        labels.problem,
+        labels.value,
+        labels.consequence,
+      ]
       const lines = [header, ...answer.value.map((problem) => [
         String(problem.row),
         problem.column,
         problem.field,
         labels.problems[problem.code] ?? problem.code,
         problem.value,
+        // Every listed row has the same consequence -- it is not imported --
+        // and the column says so, because a file headed "every problem" read
+        // beside a file of results should say what became of each row.
+        labels.consequenceInvalid,
       ])]
       // Quoted unconditionally, and every quote doubled. A cell holding a
       // comma, a newline or a quote is exactly the kind of cell an import
@@ -337,13 +400,35 @@ export function ImportPanel({
 
   // Built outside the JSX: a prop given an object literal opens with two
   // braces, which the generator reads as a Handlebars expression.
+  const formats = target?.formats ?? []
+  const templateFormats = target?.template_formats ?? []
   const ceiling =
     target === null
       ? ''
-      : fill(labels.ceiling, {
-          rows: String(target.max_rows),
-          formats: target.formats.join(', '),
-        })
+      : target.limits
+        ? fill(labels.limits, {
+            size: sizeOf(target.limits.max_bytes),
+            rows: String(target.max_rows),
+            formats: formats.join(', '),
+          })
+        : fill(labels.ceiling, {
+            rows: String(target.max_rows),
+            formats: formats.join(', '),
+          })
+  const accept = formats.map((format) => ACCEPT[format] ?? `.${format}`).join(',')
+  const orderOf = (format: string) => {
+    const at = TEMPLATE_ORDER.indexOf(format)
+    return at === -1 ? TEMPLATE_ORDER.length : at
+  }
+  const templateItems = [...templateFormats].sort((a, b) => orderOf(a) - orderOf(b)).map((format) => ({
+    key: format,
+    href: `/api/imports/${encodeURIComponent(target?.key ?? '')}/template?format=${format}`,
+    label: labels.template.formats[format] ?? format.toUpperCase(),
+  }))
+  const verdict = analysis?.template ?? null
+  const predicted = run?.predicted ?? null
+  const written = run?.written ?? null
+  const invalid = run === null ? 0 : run.rows_total - run.rows_valid
 
   return (
     <div className="mt-8 space-y-8" data-testid="imports-panel">
@@ -365,8 +450,8 @@ export function ImportPanel({
             onChange={(event) => {
               const next = event.target.value
               setTargetKey(next)
-              const chosen = targets.find((candidate) => candidate.key === next)
-              setOperation(chosen?.operations[0] ?? '')
+              const picked = targets.find((candidate) => candidate.key === next)
+              setOperation(picked?.operations[0] ?? '')
             }}
           >
             {targets.map((candidate) => (
@@ -389,7 +474,21 @@ export function ImportPanel({
             ))}
           </SelectField>
         </div>
-        <p className="mt-3 text-xs text-ink-muted">{ceiling}</p>
+        {/* The template first, because the workflow starts there: download,
+            fill in, upload. One control with the formats inside it, and the
+            same control for a target with one format as with two. */}
+        <div className="mt-4 flex flex-wrap items-center gap-3" data-testid="imports-template">
+          <DownloadMenu
+            label={labels.template.download}
+            items={templateItems}
+            disabled={busy}
+            testId="imports-template-menu"
+          />
+          <p className="text-sm text-ink-muted">{labels.template.hint}</p>
+        </div>
+        <p className="mt-3 text-xs text-ink-muted" data-testid="imports-limits">
+          {ceiling}
+        </p>
         <div className="mt-4">
           <label className="text-sm font-medium text-ink" htmlFor="import-file">
             {labels.file}
@@ -398,7 +497,7 @@ export function ImportPanel({
             id="import-file"
             ref={input}
             type="file"
-            accept=".csv,.tsv,text/csv"
+            accept={accept}
             disabled={busy}
             className="mt-1 block w-full text-sm text-ink"
             onChange={(event) => {
@@ -406,6 +505,11 @@ export function ImportPanel({
               if (file) void choose(file)
             }}
           />
+          {chosen === null ? null : (
+            <p className="mt-2 text-sm text-ink" data-testid="imports-chosen">
+              {fill(labels.chosenFile, { name: chosen.name, size: sizeOf(chosen.size) })}
+            </p>
+          )}
         </div>
       </Card>
 
@@ -413,9 +517,41 @@ export function ImportPanel({
         <Card>
           <h2 className="font-display text-lg font-semibold text-ink">{labels.mapTitle}</h2>
           <p className="mt-1 text-sm text-ink-muted">{labels.mapDescription}</p>
+          {analysis.sheet ? (
+            <p className="mt-1 text-xs text-ink-muted" data-testid="imports-sheet">
+              {fill(labels.sheet, { sheet: analysis.sheet })}
+            </p>
+          ) : null}
+          {verdict === null ? null : (
+            <div className="mt-3 space-y-2" data-testid="imports-verdict" data-verdict={verdict.verdict}>
+              {verdict.stale ? (
+                <Banner tone="warning">
+                  {fill(labels.template.stale, {
+                    found: String(verdict.version_found ?? ''),
+                    current: String(runTarget?.version ?? target?.version ?? ''),
+                  })}
+                </Banner>
+              ) : null}
+              {verdict.verdict === 'compatible' ? (
+                <Banner tone="info">{labels.template.compatible}</Banner>
+              ) : verdict.verdict === 'unknown_columns' ? (
+                <Banner tone="info">
+                  {fill(labels.template.unknownColumns, {
+                    columns: verdict.unknown_columns.join(', '),
+                  })}
+                </Banner>
+              ) : (
+                <Banner tone="warning">
+                  {fill(labels.template.incompatible, {
+                    fields: verdict.missing_required.join(', '),
+                  })}
+                </Banner>
+              )}
+            </div>
+          )}
           {analysis.over_ceiling ? <Banner tone="warning">{labels.tooManyRows}</Banner> : null}
           {analysis.replaced ? <Banner tone="warning">{labels.replaced}</Banner> : null}
-          <div className="mt-4 overflow-x-auto">
+          <div className="relative mt-4 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase text-ink-muted">
@@ -447,7 +583,7 @@ export function ImportPanel({
                         }}
                       >
                         <option value="">{labels.ignore}</option>
-                        {(target?.fields ?? []).map((field) => (
+                        {(runTarget?.fields ?? []).map((field) => (
                           <option key={field.name} value={field.name}>
                             {field.name}
                           </option>
@@ -479,6 +615,30 @@ export function ImportPanel({
           <h2 className="font-display text-lg font-semibold text-ink">{labels.resultTitle}</h2>
           <p className="mt-1 text-sm text-ink-muted">{labels.states[run.status] ?? run.status}</p>
           {run.error === null ? null : <Banner tone="error">{run.error}</Banner>}
+          {run.status === 'validated' || run.status === 'validation_failed' ? (
+            <dl className="mt-3 grid gap-2 sm:grid-cols-4" data-testid="imports-preview">
+              <Figure label={labels.preview.total} value={String(run.rows_total)} testId="imports-preview-total" />
+              <Figure label={labels.preview.valid} value={String(run.rows_valid)} testId="imports-preview-valid" />
+              <Figure label={labels.preview.invalid} value={String(invalid)} testId="imports-preview-invalid" />
+              <Figure
+                label={labels.preview.duplicate}
+                value={String(run.rows_duplicate ?? 0)}
+                testId="imports-preview-duplicate"
+              />
+              {predicted === null ? null : (
+                <>
+                  <Figure label={labels.preview.create} value={String(predicted.create)} testId="imports-preview-create" />
+                  <Figure label={labels.preview.update} value={String(predicted.update)} testId="imports-preview-update" />
+                  <Figure label={labels.preview.skip} value={String(predicted.skip)} testId="imports-preview-skip" />
+                </>
+              )}
+            </dl>
+          ) : null}
+          {(run.status === 'validated' || run.status === 'validation_failed') && predicted === null ? (
+            <p className="mt-2 text-xs text-ink-muted" data-testid="imports-preview-unknown">
+              {labels.preview.unknown}
+            </p>
+          ) : null}
           {run.status === 'validated' ? (
             <p className="mt-3 text-sm text-ink">
               {fill(labels.summary, {
@@ -517,11 +677,42 @@ export function ImportPanel({
               className="mt-3 text-sm text-ink"
               testId="imports-committed"
               outcome="ok"
-              message={fill(labels.wrote, {
-                created: String(run.rows_valid),
-                total: String(run.rows_total),
-              })}
+              message={
+                written === null
+                  ? fill(labels.wrote, {
+                      created: String(run.rows_valid),
+                      total: String(run.rows_total),
+                    })
+                  : labels.result.title
+              }
             />
+          ) : null}
+          {run.status === 'committed' && written !== null ? (
+            <table className="mt-3 w-auto text-sm" data-testid="imports-result">
+              <caption className="sr-only">{labels.result.title}</caption>
+              <tbody>
+                {[
+                  [labels.result.total, run.rows_total, 'total'],
+                  [labels.result.created, written.created, 'created'],
+                  [labels.result.updated, written.updated, 'updated'],
+                  [labels.result.skipped, written.skipped, 'skipped'],
+                  // Zero for every committed run: a commit is atomic. Drawn
+                  // anyway, because a table compared across runs should have
+                  // the same rows every time, and a missing row reads as a
+                  // figure withheld.
+                  [labels.result.failed, 0, 'failed'],
+                ].map(([label, value, key]) => (
+                  <tr key={String(key)} className="border-t border-border">
+                    <th scope="row" className="py-1 pr-8 text-left font-medium text-ink">
+                      {label}
+                    </th>
+                    <td className="py-1 text-right tabular-nums text-ink" data-testid={`imports-result-${key}`}>
+                      {String(value)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : null}
           {run.status === 'failed' ? (
             <SaveOutcome
@@ -550,7 +741,7 @@ export function ImportPanel({
             <p className="mt-2 text-xs text-ink-muted">{labels.reportCut}</p>
           ) : null}
           {problems === null ? null : (
-            <div className="mt-4 overflow-x-auto">
+            <div className="relative mt-4 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs uppercase text-ink-muted">
@@ -584,17 +775,24 @@ export function ImportPanel({
         {runs.length === 0 ? (
           <p className="mt-2 text-sm text-ink-muted">{labels.noRuns}</p>
         ) : (
-          <div className="mt-4 overflow-x-auto">
+          <div className="relative mt-4 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase text-ink-muted">
                   <th className="py-2 pr-4">{labels.target}</th>
+                  <th className="py-2 pr-4">{labels.format}</th>
                   <th className="py-2 pr-4">{labels.state}</th>
                   <th className="py-2 pr-4">{labels.rows}</th>
                   <th className="py-2">{labels.started}</th>
                   {/* No heading: a column of controls has nothing to name that
                       the controls do not say themselves, and an empty string
-                      here is read out as a blank cell rather than skipped. */}
+                      here is read out as a blank cell rather than skipped.
+                      The wrapper above is `relative` because this span is
+                      absolutely positioned by `sr-only`, and an absolute
+                      descendant of an unpositioned scroll container escapes
+                      its clipping -- at 375 pixels the page scrolled
+                      sideways by the width of a table nobody could see.
+                      Found by manual case 53 on 2026-09-29. */}
                   <th className="py-2">
                     <span className="sr-only">{labels.open}</span>
                   </th>
@@ -604,6 +802,7 @@ export function ImportPanel({
                 {runs.map((row) => (
                   <tr key={row.id} className="border-t border-border" data-run-id={row.id}>
                     <td className="py-2 pr-4">{row.target}</td>
+                    <td className="py-2 pr-4 uppercase">{row.format ?? 'csv'}</td>
                     <td className="py-2 pr-4">{labels.states[row.status] ?? row.status}</td>
                     <td className="py-2 pr-4 tabular-nums">{row.rows_total}</td>
                     <td className="py-2 text-ink-muted">{row.created_at}</td>

@@ -60,6 +60,11 @@ COPY services/api/koras_api/core/outbox.py ./services/api/koras_api/core/outbox.
 COPY services/api/koras_api/imports/ ./services/api/koras_api/imports/
 COPY services/api/koras_api/core/imports.py ./services/api/koras_api/core/imports.py
 COPY services/api/koras_api/core/import_notify.py ./services/api/koras_api/core/import_notify.py
+# The audit sink, so the dry run and the commit can leave evidence of
+# their outcome beside the run row (ADR 0012 D5). It reaches the API's
+# settings only inside the method that rebinds a tenant, which is why it can
+# be here at all; `import_notify` above has the same shape.
+COPY services/api/koras_api/core/audit.py ./services/api/koras_api/core/audit.py
 # And the dispatch point itself, because the commit tells whoever confirmed the
 # run that it finished, and there is exactly one place a notification leaves
 # from. Five modules rather than a re-implementation in the worker -- a second

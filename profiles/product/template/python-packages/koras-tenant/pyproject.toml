@@ -4,7 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 # koras-database for the declaration guard: this package supplies the
 # vocabulary, that one supplies the mechanism that refuses without it.
-dependencies = ["koras-auth", "koras-database", "sqlalchemy>=2.0.0"]
+dependencies = ["koras-auth", "koras-database", "sqlalchemy[asyncio]>=2.0.0"]
 
 [tool.uv.sources]
 koras-auth = { workspace = true }

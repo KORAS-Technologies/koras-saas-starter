@@ -177,11 +177,18 @@ template_map:
       - services/api/koras_api/routers/imports.py
       - services/worker/koras_worker/tasks/imports.py
       - supabase/migrations/00036_imports.sql
+      - supabase/migrations/00038_import_counts.sql
       - supabase/tests/320_imports_isolation.sql
       - tests/unit/test_imports.py
       - tests/unit/test_import_commit.py
+      - tests/unit/test_import_templates_api.py
       - tests/integration/test_import_commit_rls.py
       - apps/web/src/app/dashboard/imports
+      # The template download: a route handler, because a download is a body
+      # and a server action returns a value. The menu it is reached from is a
+      # `packages/ui` primitive and stays outside the gate with the rest of
+      # that package.
+      - apps/web/src/app/api/imports
       - e2e/imports.spec.ts
       # The round-trip half, which needs a declared target and so skips
       # unless `Generator Integration` installed the fixture. It is in

@@ -3,7 +3,12 @@ name = "koras-database"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-  "sqlalchemy>=2.0.0",
+  # The `asyncio` extra names `greenlet`, which every async session needs and
+  # which SQLAlchemy 2.1 stopped installing on its own. Without it a freshly
+  # generated product resolves 2.1, imports cleanly, and fails at the first
+  # `sqlalchemy.ext.asyncio` import -- found on 2026-09-29 by a generated
+  # product whose whole unit suite could not be collected. R-044's class.
+  "sqlalchemy[asyncio]>=2.0.0",
 ]
 
 [build-system]

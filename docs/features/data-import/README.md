@@ -41,6 +41,8 @@ gate in the estate was green over it.
 | `manual-test-plan.md` (here) | The cases no automated test in this estate reaches | After |
 | `review.md` (here) | The first independent review, its six findings and what each one broke | After Phase 1 |
 | `phase-2-review.md` (here) | The second, over both phases: four reviewers, and the commit path that had never run | After Phase 2 |
+| `templates-and-formats-analysis.md` (here) | The gap analysis and design for downloadable templates, XLSX and the preview counts, with the twelve decisions it put to the owner | Before the template code |
+| `docs/adr/0012-import-template-versioning.md` | What a template carries, how a file is judged, and the resolution of those twelve | Before the template code |
 
 The plan is left as it was written. Where it and `architecture.md` disagree,
 the as-built one is right — a design document edited after the fact stops being
@@ -76,7 +78,12 @@ either table. That is the test `audit_events` failed until 2026-09-16.
 
 - **Delete, merge and replace** are absent from the operation set. The brief
   says delete must not be enabled by default; it is not in this plan at all.
-- **XLSX and JSON.** Declared in `Format` so the vocabulary is settled, refused
-  by the reader. Phase 3.
+- **JSON.** Declared in `Format` so the vocabulary is settled, refused by
+  the reader and by the template renderer by name. Deferred on 2026-09-29 by
+  ADR 0012 D4. XLSX reads and renders since the same day.
+- **A commit that completes with errors, progress counts during a commit, a
+  manual-review duplicate strategy, an annotated error file for re-import, and
+  per-row outcomes from the writer.** Each was put to the owner on 2026-09-29
+  and refused or deferred; ADR 0012 has the table.
 - **Anything about Docoris, Dianova or the shop.** The engine takes a
   declaration and nothing else.

@@ -45,7 +45,7 @@ The fields describe a file, not a schema.
 
 from __future__ import annotations
 
-from koras_import import FieldKind, FieldSpec, ImportTarget, Operation
+from koras_import import FieldKind, FieldSpec, Format, ImportTarget, Operation
 
 FIXTURE = ImportTarget(
     key="fixture.contacts",
@@ -57,13 +57,28 @@ FIXTURE = ImportTarget(
             "import.field.fixture.email",
             kind=FieldKind.EMAIL,
             required=True,
+            help="The address the contact is reached at.",
         ),
-        FieldSpec("name", "import.field.fixture.name", required=True, max_length=200),
+        FieldSpec(
+            "name",
+            "import.field.fixture.name",
+            required=True,
+            max_length=200,
+            example="Ada Example",
+        ),
+        # An enumerated column, so the template's list validation and the
+        # Instructions sheet's allowed-values column both have something to
+        # render on a generated product.
+        FieldSpec("kind", "import.field.fixture.kind", options=("person", "organisation")),
     ),
     match_keys=("email",),
     # Both, so the operation picker has something to be a picker of. One option
     # renders a control that cannot be wrong, which tests nothing.
     operations=(Operation.SKIP_DUPLICATE, Operation.UPSERT),
+    # Both formats, so the template menu has two items and the browser suite
+    # can download each and open it. ADR 0012.
+    formats=(Format.CSV, Format.XLSX),
+    version=2,
     # No `writer`: see the module docstring. `committable` is False, which is
     # itself worth rendering — the page must draw no confirm control at all
     # rather than a disabled one.
