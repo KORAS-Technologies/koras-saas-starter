@@ -28,13 +28,16 @@ from koras_auth import JWTClaims
 from koras_auth.permissions import permissions_for
 from koras_import import (
     COMMIT_RUN,
+    ENVELOPE_CODES,
     TEMPLATE_FORMATS,
     VALIDATE_RUN,
     Format,
     ImportTarget,
     MappingRefused,
     Operation,
+    PreflightRefused,
     ReadRefused,
+    RefusalCode,
     RunState,
     TemplateRefused,
     example_for,
@@ -561,11 +564,7 @@ async def analysis(
     try:
         found = store.analyse(raw, target, Format(run.format))
     except ReadRefused as refused:
-        raise api_error(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            ApiErrorCode.IMPORT_FILE_UNREADABLE,
-            str(refused),
-        ) from refused
+        raise _read_refusal(refused) from refused
     return AnalysisView(
         columns=list(found.columns),
         suggested=found.suggested,
@@ -616,11 +615,7 @@ async def set_mapping(
             require_match_keys=run.operation != Operation.CREATE.value,
         )
     except ReadRefused as refused:
-        raise api_error(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            ApiErrorCode.IMPORT_FILE_UNREADABLE,
-            str(refused),
-        ) from refused
+        raise _read_refusal(refused) from refused
     except MappingRefused as refused:
         # Named, because "the mapping is wrong" without saying which field is a
         # refusal a person cannot act on.
@@ -961,6 +956,36 @@ def _source_refusal(code: str) -> HTTPException:
         status.HTTP_409_CONFLICT,
         ApiErrorCode.IMPORT_FILE_UNREADABLE,
         "the file this import was started against could not be read",
+    )
+
+
+def _read_refusal(refused: ReadRefused) -> HTTPException:
+    """A file the reader, or the safety pass before it, would not take.
+
+    Three answers, all of them codes this API already had. A file outside the
+    safety envelope is too large for one run whichever dimension it broke --
+    bytes, decoded text, cells or columns -- and the sentence says which. The
+    engine's own code is narrower than these and is not surfaced by this
+    route: a translated message per dimension is the page's work, and the
+    slice that added the safety pass changed no page. GR-352.
+    """
+    if isinstance(refused, PreflightRefused):
+        if refused.code in ENVELOPE_CODES:
+            return api_error(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                ApiErrorCode.IMPORT_FILE_TOO_LARGE,
+                str(refused),
+            )
+        if refused.code is RefusalCode.TOO_MANY_ROWS:
+            return api_error(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                ApiErrorCode.IMPORT_TOO_MANY_ROWS,
+                str(refused),
+            )
+    return api_error(
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        ApiErrorCode.IMPORT_FILE_UNREADABLE,
+        str(refused),
     )
 
 

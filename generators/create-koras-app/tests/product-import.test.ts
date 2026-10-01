@@ -454,6 +454,54 @@ describe('data import', () => {
     expect(xlsx).toContain('xl/vbaProject.bin')
   })
 
+  it('runs the safety pass before either reader, on every path that parses', () => {
+    // GR-352A. `openpyxl` builds a workbook's whole shared-string table on
+    // load and the CSV path decodes the whole file into one string, so a
+    // limit checked after either has already paid for what it refuses.
+    //
+    // This is the shape only: that the call is there and comes first. Whether
+    // it *works* is asked of the code itself, by replacing both readers with
+    // something that fails when reached -- `tests/unit/test_import_preflight.py`
+    // in the product and `test_preflight.py` in the engine. A test that read
+    // only this text would pass over a safety pass that refused nothing.
+    const xlsx = read('python-packages/koras-import/src/koras_import/reading_xlsx.py')
+    const pass = xlsx.indexOf('preflight(raw, Format.XLSX, limits)')
+    expect(pass).toBeGreaterThan(-1)
+    expect(pass).toBeLessThan(xlsx.indexOf('load_workbook('))
+
+    // Every whole-file decode in the store has a safety pass ahead of it, and
+    // every workbook read is handed the envelope rather than taking a default.
+    const store = read('services/api/koras_api/core/imports.py')
+    const decodes = [...store.matchAll(/decoded = decode\(raw\)/g)]
+    expect(decodes).toHaveLength(2)
+    for (const found of decodes) {
+      const before = store.slice(0, found.index)
+      const guard = before.lastIndexOf('preflight(raw, Format.CSV, limits')
+      // In the same function as the decode, not merely somewhere above it.
+      expect(guard).toBeGreaterThan(before.lastIndexOf('def '))
+    }
+    const workbooks = [...store.matchAll(/read_workbook\(([^)]*)\)/g)]
+    expect(workbooks).toHaveLength(2)
+    for (const found of workbooks) expect(found[1]).toContain('limits=limits')
+
+    // One envelope for the routes and the worker, and it says what it is.
+    expect(store).toContain('SAFETY_LIMITS = SafetyLimits(max_source_bytes=MAX_SOURCE_BYTES)')
+    const safety = read('python-packages/koras-import/src/koras_import/safety.py')
+    for (const limit of ['MAX_DECODED_STRING_BYTES', 'MAX_CELLS', 'MAX_COLUMNS']) {
+      // The comment block directly above the constant, and no other.
+      const comment = safety.slice(0, safety.indexOf(`\n${limit} = `)).split('\n\n').pop() ?? ''
+      expect(comment, `${limit} is not marked provisional`).toContain('#: PROVISIONAL (GR-352')
+    }
+
+    // The worker reaches a source only through the store, so it has no reader
+    // of its own to guard.
+    const worker = read('services/worker/koras_worker/tasks/imports.py')
+    expect(worker).not.toMatch(/read_workbook|load_workbook|[^a-z_.]decode[(]/)
+
+    expect(gatedPaths('data_import')).toContain('tests/unit/test_import_preflight.py')
+    expect(has('python-packages/koras-import/tests/test_preflight_memory.py')).toBe(true)
+  })
+
   it('hands the writer canonical values whatever the source', () => {
     // IMP2-19, closed: `prepare` normalises rather than stripping.
     const store = read('services/api/koras_api/core/imports.py')

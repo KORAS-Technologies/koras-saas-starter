@@ -26,6 +26,11 @@ Four parts, and the first is the whole design:
     duplicate and blank names, and rows with the wrong number of cells. It
     streams.
 
+``safety``
+    Whether a file is safe to hand to the reader at all, decided by streaming
+    it rather than by loading it: decoded text at its real width, cells,
+    columns and what a workbook expands to. GR-352; the limits are provisional.
+
 ``mapping``
     Which column is which, checked against both the target and the file — and
     whether the values under them are acceptable, every problem in one pass.
@@ -114,6 +119,20 @@ from .reading_xlsx import (
     read_workbook,
     template_identity,
 )
+from .safety import (
+    ENVELOPE_CODES,
+    PROVISIONAL_LIMITS,
+    Preflight,
+    PreflightRefused,
+    Refusal,
+    RefusalCode,
+    SafetyLimits,
+    decoded_cost,
+    preflight,
+    string_cost,
+    survey,
+    width_of,
+)
 from .states import (
     TERMINAL,
     WROTE_NOTHING,
@@ -160,6 +179,18 @@ __all__ = [
     "ALREADY_EXISTS",
     "DATA_SHEET",
     "DECOMPRESSED_CEILING",
+    "ENVELOPE_CODES",
+    "PROVISIONAL_LIMITS",
+    "Preflight",
+    "PreflightRefused",
+    "Refusal",
+    "RefusalCode",
+    "SafetyLimits",
+    "decoded_cost",
+    "preflight",
+    "string_cost",
+    "survey",
+    "width_of",
     "FINGERPRINT_LENGTH",
     "MEDIA_TYPES",
     "PROPERTY_NAME",

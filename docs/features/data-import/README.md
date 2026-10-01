@@ -43,6 +43,7 @@ gate in the estate was green over it.
 | `phase-2-review.md` (here) | The second, over both phases: four reviewers, and the commit path that had never run | After Phase 2 |
 | `templates-and-formats-analysis.md` (here) | The gap analysis and design for downloadable templates, XLSX and the preview counts, with the twelve decisions it put to the owner | Before the template code |
 | `docs/adr/0012-import-template-versioning.md` | What a template carries, how a file is judged, and the resolution of those twelve | Before the template code |
+| `preflight-safety-envelope.md` (here) | The safety pass that runs before either reader, its provisional limits, and what GR-352 still needs | With GR-352A, 2026-10-01 |
 
 The plan is left as it was written. Where it and `architecture.md` disagree,
 the as-built one is right — a design document edited after the fact stops being

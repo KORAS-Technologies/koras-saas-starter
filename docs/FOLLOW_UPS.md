@@ -45,6 +45,7 @@ recommendation rather than a record — revise it, do not preserve it.
 | 8 | **F22 — Files** | Six items, each waiting on a real trigger rather than on time: multipart uploads (a file over 5 GB), an orphan sweep, the `customer-owned` and `azure-blob` policies, a real upload in CI, a foreign bucket's origin in the browser policy, and quota by period. | ~1 day per item |
 | 9 | **F25 — reporting** | Three items, none of which blocks a product registering reports today: `reporting.api` enforcement becomes real with the first machine caller, pre-aggregation when a table outgrows a range scan, and report names in the customer's language when somebody asks for one. | ~1 day per item |
 | 10 | **F30 — Docoris data import alignment with the starter** | Docoris carries its own import (E24-F01-S01) with no analysis step and a mapping form a person types headings into, so matching CSV or XLSX headings prefill nothing there, however well they match. Opened 2026-09-29; the starter's framework is complete and documented, and the next move is a comparison and a migration path in the docoris repository, not a third implementation. | ~1 day to compare, the migration unknown |
+| 11 | **F31 — GR-352, the import memory envelope** — *opened 2026-10-01; slice A built the same day* | **A release gate rather than a queue position**, and placed last only because nobody has ordered it: the import framework accepted files that took a worker to 1.4 GiB against 512 MB. A safety pass now refuses the measured worst cases before they are loaded, under four limits that are provisional. What is left is an NFR decision this repository cannot take, two more slices, and a Linux measurement repeated against whatever is ratified | One decision by Platform/NFR architecture; then two slices of about the size of the first |
 
 **F21 and F23 do not contend with the top row.** They are a person at a dashboard and two ZITADEL writes per instance; nothing in either is code, so an order that reads as a queue is misleading for those two. Run them whenever the dashboard is open.
 
@@ -2630,3 +2631,60 @@ starter-range migrations stop at `00028`), so the framework arrives with
 - [ ] Until then, tell docoris's users that headings are typed, not read:
       the page's own sentence says so and the screenshot shows it being
       missed.
+
+### F31 — GR-352: the import memory envelope — opened 2026-10-01
+
+**What was found.** `docoris` raised GR-352 on 2026-10-01, from the final
+acceptance of its move onto this framework: the limits it took unchanged from
+the starter admit files that exceed the 512 MB its API and worker are deployed
+with. It is the starter's defect -- the parser and the limits are here -- and
+it was escalated as finding S7-1. Measured the same day in a Linux container
+against `b953c35`: forty cases, the worst a worker at 1,468 MiB, and a 0.3 MiB
+upload at 1,458. IMPORT-DEF-013 in `docs/platform/gap-defect-register.md` is the
+row; `docs/features/data-import/preflight-safety-envelope.md` is the
+description.
+
+**It is a release gate, and not this repository's alone to open.** In `docoris`
+it blocks closing OD-12, registering a scanner that lets an import file become
+`clean`, and post-scan import processing in any environment. Nothing here
+should be read as lifting that.
+
+**Why it is here and not finished.** The remedy was cut into three slices so
+that each could be reviewed, and the first is the only one built:
+
+- [x] **GR-352A — a safety pass before either reader.** Built 2026-10-01.
+      Streams the file, costs decoded text at its real width, counts cells and
+      columns, and refuses before `openpyxl` or a whole-file decode is reached.
+      Verified on a generated product, mutation-checked six ways, and its own
+      memory measured on Linux at under 5 MiB on inputs that decode to 256.
+- [ ] **The NFR decision.** The headroom below the service allocation, the
+      concurrency assumption, and therefore the real limits. It belongs to
+      Platform/NFR architecture -- in `docoris`'s terms OD-22's NFR owner, with
+      Platform/Operations consulted on sizing and cost -- and is **not** the
+      implementer's to choose. Four limits in the safety pass are provisional
+      guardrails standing in for it, approved by the owner for the slice on
+      2026-10-01. One of them intentionally tightens what was accepted: a
+      50,000-row file with more than twenty populated cells a row is refused
+      as of 2026-10-01, pending NFR ratification.
+- [ ] **GR-352B — the analysis path.** A file that passes is still parsed
+      whole, synchronously, inside an async route, to preview 200 rows of it.
+      IMPORT-DEF-015 is the CPU half of the same thing.
+- [ ] **GR-352C — the worker.** Concurrency, queue topology, an import
+      semaphore and machine size. Two imports at once double whatever one
+      costs, and nothing bounds that.
+- [ ] **The measurement, repeated.** GR-352 closes on the *reader's* memory
+      under the worst *accepted* input, on Linux, in the API and the worker,
+      against the ratified headroom. Every figure in hand predates the safety
+      pass, and nothing at the new cell limit was ever measured.
+- [ ] **IMPORT-DEF-014 — and in this order.** `source_bytes` awaits a
+      synchronous `S3ObjectStore.get`, so against a real bucket no import can
+      read its source at all. That is a defect, and it is also the only reason
+      the memory path is unreachable in a deployed starter product. Fixing it
+      before the envelope is ratified opens the path the gate exists to keep
+      shut.
+- [ ] **IMPORT-GAP-015 and IMPORT-GAP-016.** The workbook parts `openpyxl`
+      loads that are neither strings nor sheets, unmeasured; and the AI
+      knowledge reader, which opens workbooks with no safety pass.
+- [ ] **Existing products.** A generated product has no upstream, so this
+      reaches `docoris` only when somebody carries it there, in that
+      repository, by its own process. The envelope document lists the files.

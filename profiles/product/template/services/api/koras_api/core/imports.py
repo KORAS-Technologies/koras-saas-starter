@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
 
@@ -27,17 +27,20 @@ from koras_import import (
     ImportTarget,
     Operation,
     Prediction,
+    PreflightRefused,
     ReadRefused,
     ResolvedMapping,
     Row,
     RowError,
     RunState,
+    SafetyLimits,
     Validation,
     compare,
     count_rows,
     decode,
     normalise_row,
     predict,
+    preflight,
     read_header,
     read_rows,
     read_workbook,
@@ -572,14 +575,62 @@ def source_format(name: str | None, content_type: str | None) -> Format:
     return Format.CSV
 
 
+#: The largest source file this phase will read.
+#:
+#: **Not the upload ceiling**, which is what this used to rely on: `source_bytes`
+#: selected `size_bytes` and never looked at it, and its docstring claimed the
+#: read was "bounded by the upload ceiling rather than by hope" -- a ceiling
+#: whose default is five thousand megabytes. Two concurrent analyses of a four
+#: gigabyte upload take the API process out, and the route that does it is
+#: reachable by any member with `imports.manage` pressing a button twice.
+#: IMP-02 in `docs/features/data-import/review.md`.
+#:
+#: Sixty-four mebibytes is far above fifty thousand rows at any realistic width
+#: and far below anything that threatens the process. Phase 4 streams and this
+#: constant goes with it; until then the bound is a number rather than a hope.
+#:
+#: **"Far below anything that threatens the process" was wrong**, and GR-352
+#: measured by how much on 2026-10-01: a file inside this ceiling took a worker
+#: past 1.4 GiB. The transfer is what this bounds. What the bytes become is
+#: bounded by `SAFETY_LIMITS` below.
+MAX_SOURCE_BYTES = 64 * 1024 * 1024
+
+#: The envelope every source must fit **before** a reader is handed it.
+#:
+#: The same object for the API and the worker, so there is one answer to
+#: whether a file is safe. Everything in it but the source ceiling is an
+#: interim GR-352 default from `koras_import.safety`, not a ratified limit:
+#: a product that has measured its own envelope replaces this, and the NFR
+#: decision GR-352 is waiting on will replace the defaults themselves.
+SAFETY_LIMITS = SafetyLimits(max_source_bytes=MAX_SOURCE_BYTES)
+
+
+def limits_for(target: ImportTarget, *, rows: bool) -> SafetyLimits:
+    """The envelope for one read of one target's file.
+
+    `rows` says whether the safety pass refuses a file over the target's row
+    ceiling. The dry run and the commit ask it to: they would otherwise read
+    `max_rows` rows of a longer file and say nothing about the rest. The
+    analysis does not, because it has its own answer -- `over_ceiling`, which
+    the mapping route turns into a refusal -- and a route that answered 200
+    yesterday should not answer 422 today for a file that threatens nothing.
+    """
+    return replace(SAFETY_LIMITS, max_rows=target.max_rows if rows else None)
+
+
 def analyse(raw: bytes, target: ImportTarget, fmt: Format = Format.CSV) -> Analysis:
     """What the file looks like, and a mapping to offer before anybody types.
 
     Pure: bytes in, an answer out. That is what lets the analysis be tested
     against the files real spreadsheets produce without a database or a bucket.
+
+    **The safety pass runs first, for both formats.** For a workbook it is
+    inside `read_workbook`; for a CSV it is the call below, before `decode`
+    builds one string out of the whole file.
     """
+    limits = limits_for(target, rows=False)
     if fmt is Format.XLSX:
-        read = read_workbook(raw, limit=PREVIEW, ceiling=target.max_rows)
+        read = read_workbook(raw, limit=PREVIEW, ceiling=target.max_rows, limits=limits)
         return Analysis(
             delimiter=",",
             encoding="utf-8",
@@ -596,6 +647,7 @@ def analyse(raw: bytes, target: ImportTarget, fmt: Format = Format.CSV) -> Analy
         )
     if fmt is not Format.CSV:
         raise ReadRefused(f"{fmt.value} files are not read in this release")
+    preflight(raw, Format.CSV, limits)
     decoded = decode(raw)
     delimiter = sniff_delimiter(decoded.text)
     lines = decoded.text.splitlines(keepends=True)
@@ -633,12 +685,19 @@ def _parse(
     the difference would be invisible -- both would look like they had run.
     """
     found: str | None = None
+    # Before either reader, and by the same envelope the analysis used. This is
+    # the one function the dry run and the commit both come through, so a file
+    # that is not safe reaches neither.
+    limits = limits_for(target, rows=True)
     if run.format == Format.XLSX.value:
-        read = read_workbook(raw, limit=target.max_rows, ceiling=target.max_rows)
+        read = read_workbook(
+            raw, limit=target.max_rows, ceiling=target.max_rows, limits=limits
+        )
         header = read.header
         rows = list(read.rows)
         found = read.identity
     else:
+        preflight(raw, Format.CSV, limits, delimiter=run.delimiter)
         decoded = decode(raw)
         lines = decoded.text.splitlines(keepends=True)
         header = read_header(lines, delimiter=run.delimiter)
@@ -776,21 +835,6 @@ class SourceRefused(RuntimeError):
 #: an import is the one surface where a product parses a stranger's file.
 UNPARSEABLE_SCANS: frozenset[str] = frozenset({"pending", "skipped", "infected"})
 
-#: The largest source file this phase will read.
-#:
-#: **Not the upload ceiling**, which is what this used to rely on: `source_bytes`
-#: selected `size_bytes` and never looked at it, and its docstring claimed the
-#: read was "bounded by the upload ceiling rather than by hope" -- a ceiling
-#: whose default is five thousand megabytes. Two concurrent analyses of a four
-#: gigabyte upload take the API process out, and the route that does it is
-#: reachable by any member with `imports.manage` pressing a button twice.
-#: IMP-02 in `docs/features/data-import/review.md`.
-#:
-#: Sixty-four mebibytes is far above fifty thousand rows at any realistic width
-#: and far below anything that threatens the process. Phase 4 streams and this
-#: constant goes with it; until then the bound is a number rather than a hope.
-MAX_SOURCE_BYTES = 64 * 1024 * 1024
-
 _SOURCE = text(
     "select storage_key, size_bytes, status, scan_status, name, content_type, category "
     "from public.files where id = cast(:id as uuid)"
@@ -842,8 +886,10 @@ async def source_bytes(session: AsyncSession, store: Any, file_id: str | None) -
 __all__ = [
     "MAX_SOURCE_BYTES",
     "PREVIEW",
+    "SAFETY_LIMITS",
     "Analysis",
     "Examined",
+    "PreflightRefused",
     "ReadRefused",
     "Reported",
     "Run",
@@ -852,6 +898,7 @@ __all__ = [
     "analyse",
     "begin_commit",
     "examine",
+    "limits_for",
     "predict_outcome",
     "set_job",
     "source_format",

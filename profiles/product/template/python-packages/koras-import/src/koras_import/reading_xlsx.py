@@ -7,13 +7,15 @@ saved as XLSX name their columns identically and produce the same cells. The
 only thing a workbook has that a CSV does not is a typed cell, and `cell_text`
 turns every one into the text the validator expects before anything sees it.
 
-**Bounded three ways before a sheet is opened.** The caller has already
-refused a file over the compressed ceiling. Here the zip directory is read and
-the uncompressed sizes summed, and a file claiming more than
-`DECOMPRESSED_CEILING` is refused without decompressing any of it -- a small
-workbook can expand by two orders of magnitude, and IMP2-15 already said the
-byte ceiling bounded the transfer rather than the memory. A workbook carrying
-a macro project is refused, and one with no workbook part is not a workbook.
+**Bounded before a sheet is opened, and since 2026-10-01 before `openpyxl` is
+called at all.** `preflight` streams the workbook's parts and refuses one
+whose decoded strings, cells or columns are outside the safety envelope --
+`openpyxl` builds the whole shared-string table on load, so a check made after
+it has already paid for what it refuses. GR-352, and `safety.py` says what
+was measured. The directory checks that were here first still run: a file
+claiming more than `DECOMPRESSED_CEILING` is refused without decompressing any
+of it, a workbook carrying a macro project is refused, and one with no
+workbook part is not a workbook.
 
 **Cells are read with their cached values.** A formula never runs; it
 contributes whatever the spreadsheet last calculated, or nothing. A cell whose
@@ -35,9 +37,18 @@ from xml.etree import ElementTree  # noqa: S405 - bounded input, no entities res
 
 from .compatibility import PROPERTY_NAME
 from .reading import MAX_CELL, Header, ReadRefused, Row, header_from, row_from
+from .safety import (
+    MAX_UNCOMPRESSED_BYTES,
+    PROVISIONAL_LIMITS,
+    Preflight,
+    SafetyLimits,
+    preflight,
+)
+from .targets import Format
 
 #: Summed from the zip directory before any entry is opened. ADR 0012 D12.
-DECOMPRESSED_CEILING = 256 * 1024 * 1024
+#: The number lives in `safety.py` now, with the rest of the envelope.
+DECOMPRESSED_CEILING = MAX_UNCOMPRESSED_BYTES
 
 #: The document-properties part is a few hundred bytes. One larger than this
 #: is not read, so a hostile part cannot make the identity check expensive.
@@ -64,6 +75,8 @@ class WorkbookRead:
     sheet: str
     #: The template identity the file carried, or None.
     identity: str | None
+    #: What the safety pass counted before the workbook was opened.
+    preflight: Preflight | None = None
 
 
 def inspect(raw: bytes) -> zipfile.ZipFile:
@@ -165,8 +178,21 @@ def _trimmed(values: Sequence[Any]) -> list[str]:
     return cells
 
 
-def read_workbook(raw: bytes, *, limit: int, ceiling: int) -> WorkbookRead:
-    """The header, up to `limit` rows, and a count that stops past `ceiling`."""
+def read_workbook(
+    raw: bytes,
+    *,
+    limit: int,
+    ceiling: int,
+    limits: SafetyLimits = PROVISIONAL_LIMITS,
+) -> WorkbookRead:
+    """The header, up to `limit` rows, and a count that stops past `ceiling`.
+
+    **The safety pass is inside this function rather than asked of its
+    callers**, so there is no way to reach `openpyxl` through here without it.
+    A caller chooses the envelope; it cannot choose to have none.
+    """
+    checked = preflight(raw, Format.XLSX, limits)
+
     from openpyxl import load_workbook
 
     archive = inspect(raw)
@@ -208,6 +234,7 @@ def read_workbook(raw: bytes, *, limit: int, ceiling: int) -> WorkbookRead:
             rows_seen=seen,
             sheet=sheet.title,
             identity=found,
+            preflight=checked,
         )
     finally:
         book.close()
