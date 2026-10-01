@@ -69,6 +69,7 @@ All planning and reference documents live in `docs/`, matching
 | `docs/platform/gap-defect-register.md` | The 45 findings that audit produced, by category, with IDs |
 | `docs/platform/execution/` | One manifest per category, each executable without repeating the audit |
 | `docs/features/data-import/` | Data import as built: Phase 1 stops at the dry run, and the three plan items it deliberately left |
+| `docs/features/data-import/preflight-safety-envelope.md` | The import safety pass: what runs before either reader, its provisional limits, and what GR-352 still needs |
 | `docs/adr/0009-import-runs-are-not-a-third-export.md` | Why an import run has its own table rather than a third copy of the export pattern |
 | `docs/ENGINEERING_FRAMEWORK.md` | The product's multi-agent framework: one vocabulary, risk by boundary, gate reuse, bounded loops |
 | `docs/adr/0010-koras-engineering-framework-v2-1.md` | The decision record for V2.1 of that framework |
@@ -707,6 +708,30 @@ mypy and 753 tests green; all 30 migrations and 23 isolation suites against a
 private PostgreSQL 17; and the whole browser suite with the fixture target,
 which found three defects in the page and the menu that were fixed the same
 day. Manual cases needing an upload or Excel are not executed.
+
+**GR-352 is open, HIGH, and a release gate — and its first slice shipped on
+2026-10-01.** The import framework accepted files that took a worker to
+1.4 GiB against the 512 MB it is deployed with: `openpyxl` builds a workbook's
+whole shared-string table on load, the CSV path decoded the whole file into one
+string, and CPython stores a string at the width of its widest character, so
+one emoji quadruples everything beside it. Compressed size predicted nothing
+and every limit was consulted after the cost. `koras_import.preflight` now
+streams the file first and refuses before either reader is reached;
+`docs/features/data-import/preflight-safety-envelope.md` is the description
+and F31 is what is left.
+
+**Three things about it are worth carrying.** The four new limits are
+**provisional** — safety guardrails the owner approved for the slice on
+2026-10-01, not the supported import envelope, and standing in for an NFR
+decision on headroom that is not this repository's to take. One of them
+tightens on purpose: a million cells refuses a 50,000-row file with more than
+twenty populated cells a row, which the starter accepted before. The
+slice does **not** close the gate: the readers have not been re-measured
+against the new envelope. And IMPORT-DEF-014 found beside it is the stranger
+half — `source_bytes` awaits a synchronous `S3ObjectStore.get`, so no import can
+read its source from a real bucket at all, every test passes because every test
+hands in a coroutine, and that defect is the only thing keeping the memory path
+unreachable in a deployed product. Fix it second.
 
 **Generating that product found IMPORT-DEF-010**: SQLAlchemy 2.1 resolved and
 no longer installs `greenlet`, so a fresh product's unit suite could not be

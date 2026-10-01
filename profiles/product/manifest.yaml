@@ -182,6 +182,7 @@ template_map:
       - tests/unit/test_imports.py
       - tests/unit/test_import_commit.py
       - tests/unit/test_import_templates_api.py
+      - tests/unit/test_import_preflight.py
       - tests/integration/test_import_commit_rls.py
       - apps/web/src/app/dashboard/imports
       # The template download: a route handler, because a download is a body

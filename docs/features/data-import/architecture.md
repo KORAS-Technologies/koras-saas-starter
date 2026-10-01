@@ -423,6 +423,27 @@ character is removed at the reader for every format. And IMP2-20 with them:
 an operation that recognises rows now refuses a mapping that omits a match
 key, at the store and at the mapping route.
 
+### The safety pass, before either reader
+
+Added 2026-10-01 as GR-352A. "Bounded three ways before a sheet is opened",
+two paragraphs up, was true and was not enough: GR-352 measured a workbook
+inside all three bounds taking a worker to 1,458 MiB, because `openpyxl` builds
+the whole shared-string table on load and CPython stores a string at the width
+of its widest character. The CSV path had the same shape -- the whole file
+decoded into one string before a line was split.
+
+`koras_import.preflight` now runs first on every path that parses a source:
+inside `read_workbook` for a workbook, and ahead of `decode` in `analyse` and
+`_parse` for a CSV. It streams the file, counts decoded text at its real width,
+cells and columns, and refuses with a `PreflightRefused` -- a `ReadRefused`, so
+every existing handler already answers it. It reinterprets no value.
+
+**The numbers in it are provisional and GR-352 is open.** The envelope has not
+been ratified, the readers have not been re-measured against it, and the API
+still parses a whole safe file to preview 200 rows of it.
+`preflight-safety-envelope.md` here is the description, including what the
+slice deliberately left.
+
 ### The matcher: what an import would do, before it does it
 
 `ImportTarget.matcher` is optional: an async callable taking the caller's
@@ -537,6 +558,11 @@ The run record has the table.
 
 - **No manual pass.** `manual-test-plan.md` here has the cases; every verdict
   is blank.
+- **GR-352 is open, and it is a release gate.** The safety pass of 2026-10-01
+  refuses the measured worst cases before they are loaded; it does not
+  establish that what is still accepted fits the machines. That needs an NFR
+  decision nobody has taken and a Linux measurement nobody has repeated.
+  IMPORT-DEF-013 and FOLLOW_UPS F31.
 - **No live run.** Nothing has imported a file through a deployed product.
   Neither the dry run nor the commit has executed against a real Redis, a real
   bucket and a real scanner.
