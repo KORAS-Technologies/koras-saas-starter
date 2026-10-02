@@ -12,11 +12,13 @@
 >
 > **Closing GR-352 does not make imports ready to switch on.** IMPORT-DEF-014
 > -- a deployed product could not read an import's source from a real
-> bucket -- was fixed on 2026-10-02 and verified locally, with the capped
-> measurement repeated against real object storage. Remote verification is
-> pending as of 2026-10-02, and until it exists no product may activate
-> canonical imports against real object storage. After it, `docoris`'s
-> alignment comes before anything is switched on.
+> bucket -- was fixed on 2026-10-02, with the capped measurement repeated
+> against real object storage, and is **CLOSED, VERIFIED** as of that day:
+> fix `2db0dc4`, merged as `eba279c` in PR #29, with CI, Security and
+> Generator Integration green on both commits. The Starter-level activation
+> constraint it represented is lifted. That activates nothing: `docoris`'s
+> alignment and its own product-specific verification come before anything
+> is switched on, and OD-12 stays blocked.
 
 ## The slices
 
@@ -216,6 +218,23 @@ These measurements supersede the disk-backed source measurements as evidence
 for real-object-storage activation. They do not alter the ratified 512 MiB
 NFR or its concurrency limits, and GR-352 is not reopened.
 
+**Remote verification, 2026-10-02.** The fix is
+`2db0dc41b627339468083ef005626ad171adc9c3`, merged to `develop` as
+`eba279cc5b9a08daa7897ae84142b33787fe3195` in PR #29. On the fix commit, CI
+`37071313822`, Security `37071313818` and Generator Integration
+`37071313945` passed at attempt 1; on the merge commit, CI `37075313266`,
+Security `37075313325` and Generator Integration `37075313282` passed at
+attempt 1. Generator Integration exercised, on a product it generated:
+`tests/unit/test_imports.py`, 42 of 42, which is the synchronous
+production-shaped store regression coverage; the PostgreSQL commit RLS and
+atomicity suites, 17 passed; the import memory suites, 74 passed; the
+heavy-gate and report-bound suites, 62 passed; and the generated worker
+image, 9 passed -- with no relevant dedicated-suite skips. That is what made
+IMPORT-DEF-014 **CLOSED, VERIFIED** rather than fixed and verified locally,
+and what lifts the Starter-level activation constraint the row represented.
+The measurements in the table above are the activation evidence; the runs
+are the verification that the code measured is the code on `develop`.
+
 They are higher than the historical figures because a whole-object fetch
 through boto3 retains more memory than reading a fixture from disk does: an
 API process that has analysed near-limit sources idles at about 249 MiB where
@@ -236,25 +255,29 @@ says it is small.
 GR-352 closing does not enable imports in `docoris` or anywhere else. The
 order, as of 2026-10-02:
 
-1. Close the GR-352 resource envelope. Done, 2026-10-02.
-2. Fix IMPORT-DEF-014. Fixed and verified locally on 2026-10-02; remote
-   verification is pending as of 2026-10-02, and this is the current gate.
+1. Close the GR-352 resource envelope. Done, 2026-10-02: CLOSED.
+2. Fix IMPORT-DEF-014. Done, 2026-10-02: CLOSED, VERIFIED -- fix `2db0dc4`,
+   merged as `eba279c` in PR #29, remotely verified on both commits. The
+   Starter-level activation constraint is lifted.
 3. Repeat the capped source-fetch measurement, because that fix changes how
    a source is fetched. Done, 2026-10-02: the section above.
-4. Align and verify `docoris` against the updated Starter framework. Not
-   started as of 2026-10-02.
-5. Resume OD-12 scanner work, once its own prerequisites are met. Blocked
-   as of 2026-10-02.
+4. Align `docoris`'s import with the updated Starter framework, verify its
+   own writer, matcher and validator, and measure its resource use against
+   the envelope -- IMPORT-GAP-022 is why that measurement is its own. **Next.**
+   Not started as of 2026-10-02.
+5. Resume OD-12 scanner work, once its own prerequisites pass and the owner
+   explicitly approves. Blocked as of 2026-10-02.
 
 This list said until IMPORT-DEF-014 was fixed that steps 2 to 5 were not
-started. No product has activated imports, and nothing above activates
-them.
+started, and until it was remotely verified that step 2 was the current
+gate. No product has activated imports -- `docoris`'s are not switched on --
+and nothing above activates them.
 
 ### What stays open
 
 | Row | Standing, 2026-10-02 |
 |-----|----------------------|
-| IMPORT-DEF-014 | Fixed and verified locally, with the 512 MiB capped measurement repeated against real object storage; remote verification pending. An activation constraint until that exists |
+| IMPORT-DEF-014 | **Closed, verified**, 2026-10-02: fix `2db0dc4`, merged as `eba279c` in PR #29, CI, Security and Generator Integration green on both commits, with the 512 MiB capped measurement repeated against real object storage. The activation constraint it represented is lifted; it is in this table because it was open when the table was first written |
 | IMPORT-GAP-016 | Open, outside the canonical import envelope. AI knowledge workbook ingestion is a separate resource risk |
 | IMPORT-GAP-017 | Open. The 4 MiB budget is ratified; a shortened preview is still not indicated in the response or on the page |
 | IMPORT-GAP-018 | Open. The double workbook walk is a latency optimisation |
@@ -262,7 +285,7 @@ them.
 | IMPORT-GAP-022 | Open, product-specific. The envelope excludes the cost of a product's validator, matcher and writer; `docoris` measures its own before its envelope is ratified |
 | IMPORT-GAP-024 | Open. The CSV widest-character costing stays conservative on purpose |
 | IMPORT-GAP-026 | Open, outside GR-352. The API's background export is unbounded and unmeasured |
-| IMPORT-GAP-027 | Open, an optimisation. boto3's whole-object fetch retains more memory than a disk-backed source did, inside 512 MiB. It blocks neither IMPORT-DEF-014's closure nor activation |
+| IMPORT-GAP-027 | Open, an optimisation, non-blocking. boto3's whole-object fetch retains more memory than a disk-backed source did, inside 512 MiB. It blocked neither IMPORT-DEF-014's closure nor activation |
 
 ### A difference in test counts, explained
 
@@ -1192,13 +1215,15 @@ Four things that were put to whoever ratified them. The ratification of
   IMPORT-GAP-021, IMPORT-GAP-022 and IMPORT-GAP-024. IMPORT-GAP-023 is
   closed and remotely verified. GR-352E opened IMPORT-GAP-026, which is open
   and outside GR-352. IMPORT-GAP-018 is open as it was.
-- **IMPORT-DEF-014 is fixed and verified locally, and is an activation
-  constraint until it is verified remotely**, which is pending as of
-  2026-10-02. This bullet said until the fix that a deployed product could
-  not read an import's source from a real bucket. The capped measurement
-  was repeated against real object storage and is in the contract section
-  above; it was a defect in reading storage and was not a reason to hold
-  the finished resource envelope open.
+- **IMPORT-DEF-014 is closed and verified, as of 2026-10-02** -- fix
+  `2db0dc4`, merged as `eba279c` in PR #29, remotely verified on both
+  commits -- and the activation constraint it represented is lifted. This
+  bullet said until the fix that a deployed product could not read an
+  import's source from a real bucket, and until the remote runs passed that
+  the fix was verified locally. The capped measurement was repeated against
+  real object storage and is in the contract section above; it was a defect
+  in reading storage and was not a reason to hold the finished resource
+  envelope open.
 - **`docoris` is not aligned with any of it** as of 2026-10-02. It carries
   the framework by hand and has received none of the slices. The Starter's
   closure does not enable its imports and does not unblock its OD-12: the
@@ -1271,7 +1296,7 @@ Four things that were put to whoever ratified them. The ratification of
 | Left | Where it is tracked |
 |------|---------------------|
 | The NFR decision | **Taken 2026-10-02.** The limits were ratified as they stood, so the measurement already taken is the one against the ratified values. IMPORT-DEF-013, closed |
-| `source_bytes` awaits a synchronous `S3ObjectStore.get`, and is what keeps all of this unreachable in a deployed product | IMPORT-DEF-014. Fixed and verified locally on 2026-10-02, remote verification pending that day, and the activation constraint until it exists |
+| `source_bytes` awaits a synchronous `S3ObjectStore.get`, and is what keeps all of this unreachable in a deployed product | IMPORT-DEF-014. Closed and verified 2026-10-02: fix `2db0dc4`, merged as `eba279c` in PR #29. The activation constraint it represented is lifted |
 | A waiting import's time counts against its queue timeout; imports have no queue of their own | IMPORT-GAP-021 |
 | A product's validator, matcher and writer are outside the budget and outside the measurement | IMPORT-GAP-022 |
 | What else the worker holds while an import runs | IMPORT-GAP-023. Closed 2026-10-02 by GR-352E, remotely verified |
