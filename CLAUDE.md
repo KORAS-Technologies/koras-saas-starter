@@ -727,16 +727,17 @@ and both measurements: the worker beside each other heavy job at 286 to 303
 MiB, and the API under two near-limit analyses at about 254.
 
 **Two things about the closure are worth carrying.** It does not switch
-imports on anywhere: IMPORT-DEF-014 is open as of 2026-10-02, no product may
-activate canonical imports against real object storage until it is fixed and
-verified, and the order after it is the capped measurement repeated, then
-`docoris`'s alignment, and only then OD-12. And `EXPORT_ROW_LIMIT` is not a
+imports on anywhere: IMPORT-DEF-014 was open when GR-352 closed, no product
+could activate canonical imports against real object storage until it was
+fixed and verified, and the order after it was the capped measurement
+repeated, then `docoris`'s alignment, and only then OD-12 -- the next
+paragraph has where that order stands. And `EXPORT_ROW_LIMIT` is not a
 universal export maximum: for an interactive export it is where the
 foreground hands over to the background, and only a scheduled delivery is
 refused past it.
 
-**IMPORT-DEF-014 was fixed later on 2026-10-02, and is verified locally
-rather than closed.** `source_bytes` calls the store on a thread and holds
+**IMPORT-DEF-014 was fixed later on 2026-10-02, and is CLOSED, VERIFIED, as
+of that day.** `source_bytes` calls the store on a thread and holds
 the object to the index row that was validated: the bucket is asked its
 size before any transfer, the bytes are counted after, and SHA-256 is
 compared where the provider verified one at upload confirmation. The capped
@@ -745,9 +746,15 @@ S3-compatible bucket -- 362 MiB at most in the worker, 342 in the API,
 inside 512 with no OOM and no swap -- so the NFR stands and GR-352 is not
 reopened. Those figures are higher than the disk-backed ones above because
 boto3 retains memory, which is IMPORT-GAP-027: an optimisation, and not a
-blocker. Remote verification is pending as of 2026-10-02; check the
-register rather than inheriting this line. `docoris`'s alignment is not
-started and OD-12 is blocked, both as of 2026-10-02.
+blocker. The fix is `2db0dc4`, merged as `eba279c` in PR #29, and CI,
+Security and Generator Integration passed on both commits at attempt 1 —
+the register has the six run ids. This paragraph said "verified locally
+rather than closed" and "remote verification is pending" until those runs
+passed. **The Starter-level activation constraint IMPORT-DEF-014 represented
+is lifted, and that activates nothing**: `docoris`'s import alignment and its
+own writer, matcher and validator verification are next and not started, and
+OD-12 is blocked until its prerequisites pass and the owner explicitly
+approves it, both as of 2026-10-02.
 
 **GR-352 was opened HIGH and as a release gate, and its first slice shipped
 on 2026-10-01.** The import framework accepted files that took a worker to
@@ -1405,13 +1412,15 @@ decays the moment it is written. That is R-042 on the file every session reads
 first.
 
 **Last validated baseline: 2026-10-02, commit
-`3e731901332a6986df1b37ae91504d21e699edc2`** — CI, Security and Generator
-Integration all green at attempt 1 on the pushed commit itself (runs
-37044176366, 37044176279 and 37044176367). That is a status, not a
-capability: check the branch you are on rather than inheriting this line, for
-the reason the paragraph above gives twice. The previous baselines were
-2026-09-29, commit `090dfa9` (runs 36640086463, 36640086378 and 36640086477),
-and 2026-09-21, commit `62780bc`, the same three green each time.
+`eba279cc5b9a08daa7897ae84142b33787fe3195`** — the IMPORT-DEF-014 merge; CI,
+Security and Generator Integration all green at attempt 1 on the pushed
+commit itself (runs 37075313266, 37075313325 and 37075313282). That is a
+status, not a capability: check the branch you are on rather than inheriting
+this line, for the reason the paragraph above gives twice. The previous
+baselines were earlier on 2026-10-02, commit `3e73190` (runs 37044176366,
+37044176279 and 37044176367), 2026-09-29, commit `090dfa9` (runs
+36640086463, 36640086378 and 36640086477), and 2026-09-21, commit `62780bc`,
+the same three green each time.
 
 **The post-G7 hardened baseline is `62780bc`.** It supersedes `7199f85` as the
 current framework baseline; `7199f85` remains the historical G7 R2 accepted
