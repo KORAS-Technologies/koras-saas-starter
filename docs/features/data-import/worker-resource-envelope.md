@@ -1,24 +1,29 @@
 # The worker's resource envelope
 
-> **Status, 2026-10-02: GR-352C is built. GR-352 is open, HIGH, and a release
-> gate.** This document describes the third slice of that gate and the
-> measurements a decision can be taken from. It is not the decision. The
+> **Status, 2026-10-02: GR-352C and GR-352E are built. GR-352 is open, HIGH,
+> and a release gate.** This document describes the third slice of that gate,
+> the slice that followed from measuring it in the product's own image, and
+> the measurements a decision can be taken from. It is not the decision. The
 > limits it runs inside are the provisional ones of
-> `preflight-safety-envelope.md`, the three numbers it adds are provisional as
+> `preflight-safety-envelope.md`, the four numbers it adds are provisional as
 > well, nobody has ratified a memory envelope, and the import framework is not
 > claimed to be safe for production until every GR-352 acceptance criterion
 > has passed. IMPORT-DEF-014 is untouched, so a deployed product still cannot
 > read an import's source from a real bucket.
 
-## The three slices
+## The slices
 
 | | What it bounds | Where |
 |-|----------------|-------|
 | GR-352A | What a file may be before any reader is handed it | `koras_import/safety.py`; `preflight-safety-envelope.md` |
 | GR-352B | What the two API routes cost to show a mapping page | `koras_import/inspection.py`; `bounded-inspection.md` |
 | GR-352C | What a dry run and a commit cost the worker, in memory, time and number | `koras_import/streaming.py`, `koras_import/budget.py`, `core/imports.py`, `tasks/imports.py`; this document |
+| GR-352E | What may be heavy in a worker at the same time as an import, and how large a scheduled report may be | `koras_worker/heavy.py`, the four tasks that hold it, `core/rebind.py`; this document |
 
-What is left after all three is one decision that is not this repository's:
+There is no GR-352D in the code: it was the measurement, on 2026-10-02, that
+GR-352E answers.
+
+What is left after all four is one decision that is not this repository's:
 the headroom a 512 MB machine must keep, and therefore the limits a product
 is told it supports. OD-22 in `docoris`'s terms.
 
@@ -298,11 +303,15 @@ nothing narrower, which is IMPORT-GAP-022 and is open as of 2026-10-02.
 
 ### One import to a process
 
-`_import_slot` is a semaphore of `IMPORT_SLOTS`, which is 1, held by
-`validate_run` and `commit_run` from their first statement to their last --
-taken **before** the source is fetched, so an import that is waiting holds no
-file. The worker's ten job slots are unchanged and every other job runs
-beside an import. A second import waits; it is not refused.
+`IMPORT_SLOTS` is 1, and it is how many imports hold the worker's heavy gate
+at once. The gate is held by `validate_run` and `commit_run` from their first
+statement to their last -- taken **before** the source is fetched, so an
+import that is waiting holds no file. The worker's ten job slots are
+unchanged. A second import waits; it is not refused.
+
+As GR-352C built it this was a semaphore of the import's own and every other
+job ran beside an import. Since GR-352E it is a limit inside the gate the
+worker's other heavy jobs share, which is its own section below.
 
 It is per process, which is the scope the memory has. No queue was added and
 no topology changed.
@@ -310,23 +319,26 @@ no topology changed.
 **It is not a limit on the estate.** Two worker machines read two imports at
 once, one each; ten machines read ten. Nothing here says how many imports a
 product runs, only how many one process holds in memory, which is the
-question a 512 MiB machine asks. And it covers imports alone: what the other
-nine job slots are doing beside one is IMPORT-GAP-023.
+question a 512 MiB machine asks. As GR-352C left it, it covered imports
+alone, and what the other nine job slots were doing beside one was
+IMPORT-GAP-023 -- which GR-352E measured and resolved locally on 2026-10-02.
 
 ### Memory handed back
 
 When an import ends its strings are freed to the allocator, which keeps the
-pages. `_give_back` calls the C library's `malloc_trim` before the slot is
-released. Without it the capped worker's resident memory stayed where its
-largest import had left it.
+pages. `give_back`, in `koras_worker/heavy.py`, calls the C library's
+`malloc_trim` before the gate is let go -- for every job that holds it, since
+GR-352E, and not for an import alone. Without it the capped worker's resident
+memory stayed where its largest import had left it.
 
 **It is a courtesy to the machine and not a step of the job.** `malloc_trim`
 is glibc's. Where the library is not there under that name -- Windows, macOS,
-an image built on another C library -- or is there without the call,
-`_give_back` does nothing, and an import is as correct as it was and holds
-more than it needs afterwards. No allocator was added as a dependency.
+an image built on another C library -- or is there without the call, it does
+nothing, and an import is as correct as it was and holds more than it needs
+afterwards. No allocator was added as a dependency.
 `tests/unit/test_import_worker_envelope.py` runs both jobs to their end with
-the library made unavailable.
+the library made unavailable, and `tests/unit/test_worker_heavy_gate.py` asks
+the call itself.
 
 ### The API: how many sources at once
 
@@ -477,9 +489,9 @@ every row.
 | Resident when the run ended, with nothing in hand | 166 MiB | 340 MiB |
 | A job enqueued and answered afterwards | yes | yes |
 
-"Without" is this slice before `_give_back` was added, which is how it came
-to be added: the worker's resident memory stayed where its largest import
-had left it.
+"Without" is this slice before memory was handed back, which is how that
+came to be added: the worker's resident memory stayed where its largest
+import had left it.
 
 **Two imports enqueued together** -- the 60 MiB CSV twice -- finished one
 after the other, at 5.0 and 7.5 seconds, with a peak of 216 MiB: one import's
@@ -509,7 +521,7 @@ The model the slot makes true is
 
 ```
 the worker, idle        +  1  ×  the largest accepted import  +  whatever else is running
-66 MiB, to 166 after work      about 170 to 270 MiB over that         not measured: IMPORT-GAP-023
+66 MiB, to 166 after work      about 170 to 270 MiB over that         not measured by GR-352C
 ```
 
 and the largest it was observed to reach is 340 MiB, which leaves 172 MiB of
@@ -520,6 +532,240 @@ many imports the queue hands over, up to ten.
 each file, a writer that batches a thousand rows and holds nothing else, and
 no other job doing anything. Whether 172 MiB is enough, and what the limits
 should be so that it is, is the decision this document is evidence for.
+
+**And it was a measurement of the source tree.** The harness mounted the
+repository into the container. The third term, and the product's own image,
+are the next section.
+
+## GR-352E: what else is in the worker
+
+IMPORT-GAP-023 said that one import had been measured fitting a 512 MiB
+worker and that nothing else the worker does had been. On 2026-10-02 it was
+measured, at `cf17a6e`, and this time in **the product's own images** -- the
+worker and the API built from the generated Dockerfiles, with nothing
+mounted over them -- under 512 MiB of memory, 512 MiB of memory plus swap and
+one CPU. The cron jobs were the real ones, triggered by enqueueing them; two
+MinIO servers stood as the source and as a destination at another provider;
+the destination answered no digest, as the code's own comment records of
+Supabase, so every copy was read back.
+
+| The worker, at `cf17a6e` | cgroup maximum, MiB |
+|--------------------------|--------------------:|
+| Idle | 74 to 75 |
+| The worst accepted import alone -- the 57.2 MiB CSV, 50,000 rows by 2, a long unique key | 357 to 371 |
+| A cross-provider backup alone, 64 MiB objects | 268, which is 193 over idle and not the 128 that had been modelled |
+| That import and that backup together | **512 on one run, 499 on the other** |
+| That import and a restore | 413 to 416 |
+| That import and scheduled reports of 10,000 rows | 323 to 328 |
+
+Nothing was killed and both jobs were correct. At the limit with no swap,
+that is the last thing that can be said for it: the next allocation is the
+kernel's to refuse.
+
+So an import does not fit beside the worker's other heavy work, and three
+things followed. All three are in this slice.
+
+### One gate for everything that holds a payload
+
+`services/worker/koras_worker/heavy.py`. An import, a backup's copy, a restore
+and a scheduled report each hold the section of the job in which a payload is
+in hand inside one gate, and `HEAVY_SLOTS`, which is 1, is how many sections a
+process is inside at once.
+
+| Job | Where the gate is taken | Where it is let go |
+|-----|-------------------------|--------------------|
+| Import, dry run and commit | First statement of the job, before the source is fetched | Last statement of the job |
+| Backup | Once an object, before the first byte is read | Once the copy's verdict is in hand, after the read-back |
+| Restore | Once a request, **before the request is claimed** | Once the object is written; the two rows that record it are outside |
+| Scheduled report | Once a schedule, before the query that answers it | After the last mail that carries it; the audit row is outside |
+
+**It is not a queue, not a lock another process can see, and not a job
+slot.** `max_jobs` is still ten. A job that holds no payload -- the outbox
+sweep that runs every minute, the retention sweeps, a product's own tasks --
+never asks for the gate and is never held up by it, and the same is true of
+the parts of a heavy job that hold nothing: a backup's query for what is due,
+its catalogue rows, the copies it dates and retires, and an object past the
+64 MiB stream ceiling, which is skipped unread. A second worker machine has a
+gate of its own, which is the scope the memory has.
+
+**One primitive, taken once.** A job never holds two gates, so there is no
+order between two to get wrong. The import's own limit did not become a
+second semaphore taken before or after this one: `IMPORT_SLOTS` is passed to
+the same acquisition as the number of imports that may be inside, and it is
+what still holds imports to one if the gate is ever widened. While the gate
+is one wide the two say the same thing.
+
+**First come, first served.** A backup lets go once an object and asks again
+in the same turn of the loop. Whoever was already waiting goes in first, so
+an import a person is watching goes in between two objects rather than after
+the night's run.
+
+**A restore that is waiting has not been claimed.** The gate is taken before
+the claim. A sweep that the queue cancels while it waits -- a cron job has
+300 seconds and an import may hold the gate for longer -- leaves its request
+`approved`, which is where the next pass looks, rather than `restoring`,
+which nothing picks up.
+
+**A section that fails lets go of what it held.** An exception carries its
+traceback, a traceback its frames and a frame its locals, so a failed job's
+payload outlives the gate by as long as the queue takes to record the
+failure. The gate clears those frames before it lets go. This is measured
+and it corrects a figure above: at `cf17a6e` every dry run in the image
+ended in an exception (IMPORT-DEF-020, below), and the commit that followed
+began with 166 MiB resident where it now begins with 97. The 69 MiB between
+them was the dry run's working set, and it is inside every import peak that
+measurement reported. The same image in this slice's harness gave 359 MiB;
+this slice's gives 286 to 301.
+
+### A scheduled delivery carries at most 10,000 rows
+
+The delivery path had no bound. `EXPORT_ROW_LIMIT`, which is 10,000, was
+read by the export route and by nothing in the worker, so a schedule over a
+report that had grown was resolved, rendered whole and attached to a mail for
+every recipient.
+
+It has one now: `SCHEDULED_DELIVERY_ROW_LIMIT`, in `tasks/reporting.py`,
+which is `EXPORT_ROW_LIMIT` under a name of its own -- derived from the
+framework's number, not a second number. A report past it is refused:
+nothing is rendered, nobody is sent anything, the schedule's `last_error`
+says how many rows there were, what the most is and what to do, and its next
+time is set so that it is not asked again every hour. In every format -- CSV,
+XLSX and PDF: what is held is the rows.
+
+**Two names, because the number means two things.** The owner's decision of
+2026-10-02:
+
+- *An interactive export through the API.* `EXPORT_ROW_LIMIT` is the handoff
+  between the inline export and the background one. It is not a maximum: an
+  export past it still happens, as a file in the tenant's bucket written
+  after the response. GR-352E does not change that route and does not cap
+  it.
+- *A scheduled delivery.* 10,000 rows is the most that is supported. It is
+  deliberately stricter: a delivery is unattended, it runs inside the
+  worker's shared resource envelope, and its only output is an attachment
+  built whole in the worker, with no bucket to fall back to.
+
+**The rows are in hand when they are counted.** A resolver answers whole and
+its count is not known until it has. What the bound prevents is the file and
+the mails; the query's own result is bounded by the report's declared
+filters and its 366-day range and by nothing in the framework, which is
+IMPORT-GAP-026 and is open as of 2026-10-02. It is why the count happens
+inside the gate.
+
+### IMPORT-DEF-020: the image was missing a module, and every suite was green
+
+Running the image rather than the tree found something that has nothing to
+do with memory. The worker reaches a handful of API modules by name, and the
+Dockerfile copies them a line at a time. The audit sink -- which an import
+uses to witness a dry run and a commit -- called `rebind_tenant` after it
+committed, and imported it from `core/database.py` inside that function.
+`core/database.py` is the request's sessions: it imports FastAPI and builds
+the API's `Settings()`. The image never carried it and could not have.
+
+So in a deployed worker a dry run did this: recorded its verdict, wrote its
+audit row, **committed both**, and then raised `ModuleNotFoundError`. The
+queue recorded a failed job. The run said `validated`. Every commit logged
+that it finished and could not be witnessed, after the row that witnessed it
+had been written.
+
+**The run was right and the job was wrong.** The verdict was committed
+before the error and it was true; what was false was the failure. Two things
+were changed and neither is the state machine:
+
+- `rebind_tenant` is a module of its own, `core/rebind.py`, which imports
+  nothing of the API. The sink imports it at the top of the file and the
+  image copies it. `core/database.py` still names it, so every caller in the
+  API finds it where it was.
+- A job that raises says so on its run. The handlers recorded a cancellation
+  and not an error, so an exception before the verdict was committed left a
+  run `validating` for ever. They record both now, through the same guarded
+  update: a run that is no longer unfinished -- a verdict or a commit that
+  did land -- is left exactly as it is.
+
+**Why nothing saw it.** Every suite in this repository runs where the whole
+source tree is on the path, and the harness GR-352C was measured with
+bind-mounted the tree. The generator's own test asserted the lazy import by
+its exact text, as the thing that kept the API's settings out of the worker
+-- which it did, by moving the failure from import time to the first flush.
+An assertion about what a line says, and nothing asking what it does:
+FW-HARDEN-001's shape, again.
+
+What holds it now is two tests that ask what it does.
+`tests/unit/test_worker_image_contents.py` walks every import of every
+module the worker names -- at the top of a file or inside a function -- and
+fails on one the Dockerfile does not copy; removing any one copy line fails
+it. `tests/integration/test_worker_image.py` builds nothing itself and
+mounts nothing: given the image, it starts a worker from it by its own
+command and feeds `worker_image_probe.py` to a second container on standard
+input, which loads every module the worker names and takes a dry run and a
+commit from first line to last against a real PostgreSQL. Run against an
+image with the defect put back, it fails on exactly the two symptoms above.
+
+### Under the same 512 MiB limit, after
+
+The same harness, the same fixtures, the same two object stores; the image
+built from a product generated from this slice. Two runs of each case, a
+fresh worker for each. Idle was 73 to 75 MiB.
+
+| Case | Peak resident (`VmHWM`) | cgroup maximum | Left of 512 MiB | Waited for the gate |
+|------|------------------------:|---------------:|----------------:|--------------------:|
+| The worst accepted import alone | 289, 302 | 286, 301 | 226, 211 (44.0%, 41.3%) | -- |
+| Cross-provider backup alone, twelve 64 MiB objects | 266 | 264 | 248 (48.5%) | -- |
+| Restore alone, twelve 64 MiB objects | 208 | 210 | 302 (59.0%) | -- |
+| Twenty scheduled workbooks of 10,000 rows, ten recipients each, alone | 137 | 141 | 371 (72.4%) | -- |
+| Twelve scheduled PDFs of 10,000 rows, alone | 140 | 145 | 367 (71.7%) | -- |
+| **That import and that backup** | 304, 303 | **301, 303** | 211, 209 (41.2%, 40.9%) | the backup, 3.9 s and 5.7 s |
+| **That import and that restore** | 303, 303 | **302, 303** | 210, 209 (41.1%, 40.9%) | the restore, 4.1 s and 6.8 s |
+| **That import and the workbooks** | 289, 288 | **286, 287** | 226, 225 (44.1%, 44.0%) | the report, 4.2 s and 4.0 s |
+| **That import and the PDFs** | 289, 289 | **286, 287** | 226, 225 (44.2%, 43.9%) | the report, 4.6 s and 3.7 s |
+
+In every case both jobs finished and were correct: 50,000 rows written;
+twelve copies `verified` with matching digests; twelve objects restored at
+67,108,864 bytes with the digest their backup recorded; twenty workbooks and
+twelve PDFs delivered to ten recipients each. No swap was used, nothing was
+killed, the cgroup's failure count was zero, a small job enqueued afterwards
+was answered in 0.5 to 3.7 seconds against a five-second poll, and no run,
+restore, backup or schedule was left unfinished.
+
+**The peak of two jobs is the peak of the larger one.** The gate's own log
+lines -- a section entering, a section leaving -- were read for every run:
+across 51 sections in the busiest of them, the most that were ever inside at
+once was one.
+
+**That is a measurement and not a headroom**, for the reasons the first
+capped run gives and one more: these figures are lower than the ones the
+decision was last shown, by the 69 MiB a defect had added to them.
+
+### What GR-352E leaves
+
+- **A heavy job that is waiting is a job the queue is timing.** A cron job
+  has 300 seconds. A backup, a restore or a delivery that waits that long
+  behind an import is cancelled having taken nothing, and its work is where
+  its next run looks: a schedule still due, an object still without a copy,
+  a request still `approved`. IMPORT-GAP-021 is the same fact about a second
+  import. Open as of 2026-10-02.
+- **A backup's copy holds the event loop**, as it did: it is synchronous
+  calls with no `await` between them. Nothing else in the worker runs while
+  one object is copied. Not changed by this slice and not measured as time.
+- **The export route's own background export is not behind any of this.** It
+  runs in the API process, after the response, with no row ceiling and no
+  gate, and its resource envelope has not been measured. IMPORT-GAP-026,
+  open as of 2026-10-02.
+- **What the API process keeps resident after an analysis has ended** was
+  noticed during the GR-352 measurements and not characterised. The worker
+  hands freed memory back before it lets go of the gate; nothing in the API
+  does the same. An observation to follow up, recorded on 2026-10-02 with no
+  figure, and not a finding against any limit.
+- **`HEAVY_SLOTS` is the implementer's number**, marked provisional where it
+  is declared, like the three before it. The architecture was approved by the
+  owner on 2026-10-02; the number stays provisional until remote validation
+  and the NFR ratification.
+
+**Status of this slice, 2026-10-02: resolved locally, in an uncommitted
+tree.** IMPORT-DEF-020, IMPORT-GAP-023 and IMPORT-GAP-025 are recorded as
+locally resolved, pending committed and remote verification, and are not
+closed until Generator Integration has built the image and run these suites
+on the pushed commit. GR-352 is HIGH, open and a release gate.
 
 
 ## IMPORT-GAP-020, part by part
@@ -646,7 +892,12 @@ Three things for whoever ratifies them, none of which is acted on here:
   files that are refused as of 2026-10-02, which is a decision.
 - **Three numbers were added, and they are the implementer's.**
   `IMPORT_SLOTS` (1), `WORK_BUDGET_SECONDS` (600) and `ANALYSIS_SLOTS` (2).
-  Each is marked provisional where it is declared.
+  Each is marked provisional where it is declared. GR-352E added a fourth,
+  `HEAVY_SLOTS` (1), and changed none of the three.
+- **One number was reused and not added.** A scheduled delivery is bounded
+  by `SCHEDULED_DELIVERY_ROW_LIMIT`, which is derived from `EXPORT_ROW_LIMIT`
+  (10,000). For a delivery it is a maximum; for the export route the same
+  number is the inline-to-background handoff and no maximum at all.
 - **The source ceiling is what the worst peak is made of.** See below.
 
 ## Where this stands, 2026-10-02
@@ -664,8 +915,15 @@ Three things for whoever ratifies them, none of which is acted on here:
   sources in hand in an API process. They stand beside the four limits of
   GR-352A, which are provisional as well. None is a ratified value, and
   ratifying them is OD-22's, after remote validation.
-- **Four gaps this slice opened are open**: IMPORT-GAP-021 to IMPORT-GAP-024,
-  in the table below. IMPORT-GAP-018 is open as it was.
+- **Of the four gaps GR-352C opened, three are open**: IMPORT-GAP-021,
+  IMPORT-GAP-022 and IMPORT-GAP-024, in the table below. IMPORT-GAP-023 was
+  measured by GR-352E the same day and is resolved locally, pending committed
+  and remote verification; GR-352E also opened IMPORT-GAP-026.
+  IMPORT-GAP-018 is open as it was.
+- **The import's own peak is lower than this document first said.** In the
+  product's own image, with the defect that inflated it removed, the worst
+  accepted import peaks at 286 to 301 MiB of the cgroup's 512, and no pair of
+  heavy jobs was observed above 303.
 - **IMPORT-DEF-014 is deliberately unfixed.** A deployed product cannot read
   an import's source from a real bucket, and that is what keeps every path in
   this document unreachable outside a test until the envelope is ratified.
@@ -710,6 +968,31 @@ Three things for whoever ratifies them, none of which is acted on here:
 - **Generator Integration** runs the memory suites and the envelope suite by
   name and fails if any test in them skips, and on the row that has a
   database runs the two commit suites the same way.
+- **One heavy section at a time** (GR-352E):
+  `tests/unit/test_worker_heavy_sections.py` runs the product's own jobs in
+  pairs -- import with import, backup, restore, a scheduled workbook and a
+  scheduled PDF; backup with restore and with each report -- and counts how
+  many hold a payload at once. Every pair has a second test with the gate
+  widened, in which the count must rise.
+  `tests/unit/test_worker_heavy_gate.py` asks the gate itself: let go on a
+  return, an exception and a cancellation, inside or waiting; first come,
+  first served; and a job that never asks is never held up.
+- **A scheduled report's bound**:
+  `tests/unit/test_reporting_delivery_bound.py`, with real tables of 10,000
+  and 10,001 rows in each format.
+- **The image**: `tests/unit/test_worker_image_contents.py` and
+  `tests/integration/test_worker_image.py`, as the section above describes.
+- **Mutation, GR-352E.** Six wrong edits on 2026-10-02, one at a time, each
+  turning a suite red: the gate removed from the import, from the backup,
+  from the restore and from the delivery; the audit sink's import put back
+  inside its function, which the walk of imports caught; and an image built
+  with that import put back and the copy of `core/rebind.py` removed,
+  against which the container test failed on the two symptoms the defect
+  had. The walk has a test of its own that removes each copy line in turn.
+- **Generator Integration, GR-352E** names the four unit suites on the row
+  that has every heavy job and fails if any test in them skips, and on the
+  row that has a database builds the worker image and runs the container
+  test the same way.
 
 ## What this slice leaves, by name
 
@@ -719,11 +1002,15 @@ Three things for whoever ratifies them, none of which is acted on here:
 | `source_bytes` awaits a synchronous `S3ObjectStore.get`, and is what keeps all of this unreachable in a deployed product | IMPORT-DEF-014. Deliberately not fixed, 2026-10-02 |
 | A waiting import's time counts against its queue timeout; imports have no queue of their own | IMPORT-GAP-021 |
 | A product's validator, matcher and writer are outside the budget and outside the measurement | IMPORT-GAP-022 |
-| What else the worker holds while an import runs | IMPORT-GAP-023 |
+| What else the worker holds while an import runs | IMPORT-GAP-023. Resolved locally by GR-352E on 2026-10-02, pending committed and remote verification |
+| A heavy job that waits for the gate is timed by the queue while it waits | IMPORT-GAP-021, widened 2026-10-02 |
+| The rows of a report are in hand before they can be counted; the API's background export has no row maximum, no gate and no measured envelope | IMPORT-GAP-026 |
+| A backup's copy holds the worker's event loop for as long as one object takes | This document, "What GR-352E leaves". Not changed, 2026-10-02 |
+| What the API process keeps resident after an analysis | This document, "What GR-352E leaves". An observation, 2026-10-02 |
 | The CSV text budget costs a string nothing builds; the source is held whole | IMPORT-GAP-024 |
 | A workbook is walked twice, by the safety pass and then the reader | IMPORT-GAP-018 |
 | `read_workbook` is still exported and still builds everything measured here; the AI knowledge reader calls `openpyxl` with no safety pass | IMPORT-GAP-016 |
-| The three numbers this slice added are the implementer's | With the NFR decision |
+| The three numbers this slice added, and the one GR-352E added, are the implementer's | With the NFR decision |
 | No live run: nothing has imported a file through a deployed worker | F31 |
 
 ## Generated products
@@ -744,6 +1031,19 @@ A generated product has no upstream. The factory pushes to nothing.
   `test_preflight.py`, `tests/unit/test_import_preflight.py` and
   `tests/unit/test_import_inspection.py`. No migration, no setting, no
   environment variable, no route and no page.
+- **GR-352E is carried with them or after them, and whole.** The worker's
+  `heavy.py` and its four tasks -- `tasks/imports.py`,
+  `tasks/storage_backup.py`, `tasks/storage_restore.py`, `tasks/reporting.py`
+  -- with `worker.py`'s comment; the API's `core/rebind.py`, `core/audit.py`
+  and `core/database.py`; the worker's Dockerfile; `koras_reporting`'s
+  `export.py`, for a comment; and the tests `test_worker_heavy_gate.py`,
+  `test_worker_heavy_sections.py`, `test_worker_image_contents.py`,
+  `test_reporting_delivery_bound.py`, the changed
+  `test_import_worker_envelope.py`, and `tests/integration/`'s
+  `test_worker_image.py` with `worker_image_probe.py`. No migration, no
+  setting, no environment variable, no route and no page. The gate is
+  generated with the worker rather than with `data_import`: a product that
+  has backups and scheduled reports and no imports has it too.
 - **A product's own writer is unchanged.** It is handed what it was handed.
   A product whose writer kept a reference to the rows and expected a private
   copy of each has one fewer copy than it had.

@@ -22,20 +22,17 @@ from koras_audit import AuditAction, AuditEvent, Classification, Outcome, action
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
-async def rebind_tenant(session: AsyncSession, tenant_id: str) -> None:
-    """`core.database.rebind_tenant`, reached at the point of use.
-
-    `.database` builds the API's `Settings()` at import, and the worker
-    reaches this module by name to witness a finished import (ADR 0012 D5).
-    A module-level name rather than an import inside the method, so a test
-    can still replace it. The same move `core/recipients` made on 2026-09-20
-    for the same reason.
-    """
-    from .database import rebind_tenant as rebind
-
-    await rebind(session, tenant_id)
-
+# From `.rebind` and not from `.database`, and not inside a function either.
+#
+# `.database` builds the API's `Settings()` at import, and the worker reaches
+# this module by name to witness a finished import (ADR 0012 D5). Until
+# 2026-10-02 this was `from .database import ...` inside the function that
+# rebinds, so that importing this module would not need the API -- which moved
+# the failure rather than removing it: the worker image has no `.database`,
+# so the import failed on the first flush instead, *after* the flush had
+# committed. IMPORT-DEF-020. An import at the top of a module the image
+# carries cannot fail later than the build's own test.
+from .rebind import rebind_tenant as rebind_tenant
 
 _AUDIT_INSERT = text(
     "insert into public.audit_events "

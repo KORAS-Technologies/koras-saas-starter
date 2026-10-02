@@ -40,6 +40,18 @@ any copy whose object has gone, and remove any copy past its date.
    settings already promised both, and a setting accepted while doing nothing
    is the defect this work exists to close.
 
+   **Bounded per object, and since 2026-10-02 per process as well.** One
+   64 MiB object copied to another provider and read back was measured at 193
+   MiB over an idle worker, in the product's own image, and beside the worst
+   accepted import that was the whole of a 512 MiB machine. So a copy that
+   can hold an object's bytes, and a restore, are each made inside the
+   worker's heavy gate -- `services/worker/koras_worker/heavy.py` -- which an
+   import and a scheduled report share: one such section to a process. The
+   gate is taken an object at a time, and a restore takes it *before* it
+   claims its request, so a restore that waits is still `approved` if the
+   sweep is cancelled while it does. GR-352E;
+   `docs/features/data-import/worker-resource-envelope.md` has the figures.
+
 ## The shape
 
 ```

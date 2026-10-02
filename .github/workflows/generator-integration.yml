@@ -561,6 +561,80 @@ jobs:
           fi
           grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/import-commit.txt"
 
+      # What may be heavy in a worker at once, asked of the product's own
+      # jobs, and not allowed to skip.
+      #
+      # GR-352E. An import measured beside a cross-provider backup, in the
+      # product's own image under the 512 MiB it is deployed with, reached the
+      # limit. So an import, a backup's copy, a restore and a scheduled report
+      # share one gate, and a scheduled report carries no more rows than an
+      # export does.
+      #
+      # `test_worker_heavy_sections.py` runs each pair of those jobs through
+      # its real function and counts how many hold a payload at once; a job a
+      # product was generated without is skipped inside it, which is right for
+      # that product and would be a hole here. This is the row that has all
+      # four -- `data_import` asked for, and the worker, reporting and storage
+      # governance on by default -- so here a skip is a failure.
+      - name: The heavy-job gate and the report bound ran, and nothing skipped
+        if: contains(matrix.components, 'data_import')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: |
+          uv run pytest \
+            tests/unit/test_worker_heavy_gate.py \
+            tests/unit/test_worker_heavy_sections.py \
+            tests/unit/test_reporting_delivery_bound.py \
+            tests/unit/test_worker_image_contents.py \
+            --no-cov -q -rs | tee "$RUNNER_TEMP/heavy-gate.txt"
+          if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/heavy-gate.txt"; then
+            echo "::error::a heavy-gate test was skipped; this row has every job the gate holds and every one of them must run"
+            exit 1
+          fi
+          grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/heavy-gate.txt"
+
+      # The worker's own image, built and run with nothing mounted.
+      #
+      # **Every other step in this job runs where the whole source tree is on
+      # the path, and a deployed worker does not.** It runs in an image that
+      # carries the worker, the shared packages and a handful of API files the
+      # Dockerfile copies one line at a time. On 2026-10-02 that image was run
+      # for the first time, to measure memory, and the audit sink in it
+      # imported a module the image had never carried -- after it had
+      # committed. Every dry run in a deployed worker was a failed job over a
+      # run already `validated`, every commit logged that it could not be
+      # witnessed, and every gate here was green. IMPORT-DEF-020.
+      #
+      # So the image is built from the generated Dockerfile, a worker is
+      # started from it by its own command, and `worker_image_probe.py` is fed
+      # to a second container of it on standard input -- no volume, no bind
+      # mount -- to load every module the worker names and to take a dry run
+      # and a commit from first line to last against this row's database.
+      #
+      # `--network host`, so the containers reach the Postgres this job
+      # already has on localhost and a Redis started here for the length of
+      # the step.
+      - name: The worker image was built, ran an import, and did not skip
+        if: matrix.roundtrip && contains(matrix.components, 'data_import')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        env:
+          WORKER_IMAGE: koras-worker-image:${{ github.sha }}
+          E2E_DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+          WORKER_IMAGE_REDIS_URL: redis://localhost:6379/0
+          WORKER_IMAGE_NETWORK: host
+        run: |
+          set -euo pipefail
+          docker build -f services/worker/Dockerfile -t "$WORKER_IMAGE" .
+          docker run -d --name worker-image-redis --network host redis:7-alpine
+          trap 'docker rm -f worker-image-redis >/dev/null 2>&1 || true' EXIT
+          uv run pytest \
+            tests/integration/test_worker_image.py \
+            --no-cov -q -rs | tee "$RUNNER_TEMP/worker-image.txt"
+          if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/worker-image.txt"; then
+            echo "::error::a worker image test was skipped; this row built the image and every one of them must run"
+            exit 1
+          fi
+          grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/worker-image.txt"
+
       # A project generated a moment ago must match what the generator would
       # produce for it. If it does not, either the drift check is wrong or
       # generation is not deterministic, and both are worth failing over —

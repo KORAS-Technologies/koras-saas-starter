@@ -16,6 +16,17 @@ the run and the next due time on the schedule. A schedule that fails keeps
 its error and its next time, so one bad night does not stop the report
 for good and does not repeat it every hour either.
 
+**Bounded, and never beside an import.** Since GR-352E a delivery is made
+inside the worker's heavy gate -- `koras_worker/heavy.py` -- from the query
+that answers the report to the last mail that carries it, and a report with
+more rows than `SCHEDULED_DELIVERY_ROW_LIMIT` is refused rather than rendered,
+whatever its format. This path
+had no bound at all: the route hands such a report to the background export,
+which puts a file in the tenant's bucket, and a delivery has no such place to
+put one -- its only output is an attachment built whole in this process. The
+refusal is the schedule's `last_error`, in words its owner can act on, and
+nobody is sent anything.
+
 The plan is the one the platform last synced into `tenant_plans`: the
 worker holds no customer token to resolve it live, and the product holds
 no identity toward the platform to ask, so the platform tells it hourly
@@ -40,6 +51,7 @@ from typing import Any, Protocol
 
 from koras_email import Attachment, EmailSender, resolve_locale, sender_for, translate
 from koras_reporting import (
+    EXPORT_ROW_LIMIT,
     UNRESOLVED_PLAN,
     DateRange,
     Entitlement,
@@ -53,6 +65,7 @@ from koras_reporting import (
     export_filename,
     render,
     resolve_filters,
+    row_count,
 )
 from pydantic_settings import SettingsConfigDict
 from sqlalchemy import text
@@ -64,6 +77,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from ..heavy import REPORT, heavy
 from ..settings import SweepSettings, settings
 
 
@@ -168,6 +182,34 @@ class Catalogue(Protocol):
 
 class PlanLapsed(Exception):
     """The plan the platform last told us of no longer includes this delivery."""
+
+
+#: The most rows a scheduled delivery carries, as CSV, XLSX or PDF.
+#:
+#: Derived from `EXPORT_ROW_LIMIT`, the framework's own number, and not a
+#: second one. The two names mean different things. In the export route that
+#: number is where a download stops being the response and is handed to the
+#: background export -- a threshold, past which the export still happens. Here
+#: it is a maximum: a delivery is unattended, is built whole inside the
+#: worker's heavy gate and has no bucket to fall back to, so past it the
+#: delivery is refused.
+SCHEDULED_DELIVERY_ROW_LIMIT = EXPORT_ROW_LIMIT
+
+
+class ReportTooLarge(Exception):
+    """The report has more rows than one delivery carries.
+
+    The bound is `SCHEDULED_DELIVERY_ROW_LIMIT`. Its message is what the
+    schedule's owner reads.
+    """
+
+    def __init__(self, rows: int) -> None:
+        super().__init__(
+            f"the report has {rows} rows and a scheduled delivery carries at most "
+            f"{SCHEDULED_DELIVERY_ROW_LIMIT}; narrow its filters, or export it from the "
+            "report's page"
+        )
+        self.rows = rows
 
 
 #: What a delivery needs the plan to include, beside the report's own gate.
@@ -277,9 +319,7 @@ async def deliver_one(
         tenant_id=tenant_id,
         now=now,
     )
-    result = await definition.resolver(context, filters)
     fmt = ExportFormat(str(schedule["format"]))
-    rendered = render(result, fmt, title=definition.name)
     filename = export_filename(
         definition.key, period.start.isoformat(), period.end.isoformat(), fmt.value
     )
@@ -296,16 +336,36 @@ async def deliver_one(
     }
     subject = translate(locale, "report_subject", **words)
     body = translate(locale, "report_body", **words)
+    # Nothing has been written. Ended here so that a wait for the gate -- an
+    # import may hold it for minutes -- is not a transaction held open.
+    await session.commit()
     sent = 0
-    for to in recipients:
-        await sender.send(
-            to=to,
-            subject=subject,
-            body=body,
-            tag="report-delivery",
-            attachments=[Attachment(filename, rendered.content, rendered.media_type.split(";")[0])],
-        )
-        sent += 1
+    # From the query to the last mail: the rows, the file made from them and
+    # every attachment are in hand for exactly this long, and for no longer.
+    async with heavy(REPORT):
+        await session.execute(_AS_TENANT, {"tenant_id": tenant_id})
+        result = await definition.resolver(context, filters)
+        rows = row_count(result)
+        if rows > SCHEDULED_DELIVERY_ROW_LIMIT:
+            # Before the file is made and before anybody is sent anything.
+            # The rows themselves are already here -- a resolver answers
+            # whole, and its count is not known until it has -- which is why
+            # this is inside the gate and not in front of it.
+            raise ReportTooLarge(rows)
+        rendered = render(result, fmt, title=definition.name)
+        del result
+        attachment = Attachment(filename, rendered.content, rendered.media_type.split(";")[0])
+        del rendered
+        for to in recipients:
+            await sender.send(
+                to=to,
+                subject=subject,
+                body=body,
+                tag="report-delivery",
+                attachments=[attachment],
+            )
+            sent += 1
+        del attachment
     await session.execute(
         _AUDIT_INSERT,
         {
@@ -363,6 +423,15 @@ async def deliver_due(
             paused += 1
             error = str(lapsed)
             logger.info("scheduled report %s paused: %s", schedule["id"], lapsed)
+        except ReportTooLarge as large:
+            # A failure, and one whose reason is the customer's to read: the
+            # sentence names the count and the bound and says what to do. The
+            # next time is set, so it is asked again when the period has moved
+            # on and is not retried every hour in between.
+            await session.rollback()
+            failed += 1
+            error = str(large)
+            logger.warning("scheduled report %s refused: %s", schedule["id"], large)
         except Exception as problem:
             await session.rollback()
             failed += 1

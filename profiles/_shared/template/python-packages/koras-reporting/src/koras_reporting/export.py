@@ -11,8 +11,9 @@ figures and a table of rows, in the framework's own formatting, and no
 branding: a product that wants its mark on a document renders its own.
 
 Bounded. A result with more rows than `EXPORT_ROW_LIMIT` is handed to the
-background export by the caller before it gets here; these write what they
-are given.
+background export by the caller before it gets here, or -- where the caller
+has no background to hand it to, which is a scheduled delivery -- refused;
+these write what they are given.
 """
 
 from __future__ import annotations
@@ -26,6 +27,16 @@ from .results import Cell, MetricValue, ReportResult
 
 #: The most rows one synchronous export carries. Past this the export runs
 #: in the background and lands in the tenant's bucket.
+#:
+#: A handoff threshold, and not the most an export may be: the background
+#: export has no row maximum of its own.
+#:
+#: The worker's scheduled delivery derives its maximum from this number, as
+#: `SCHEDULED_DELIVERY_ROW_LIMIT` in `koras_worker/tasks/reporting.py`, since
+#: GR-352E. There it *is* a maximum: a delivery is an attachment built whole
+#: in the worker and has no bucket to fall back to, so past it the delivery is
+#: refused and the schedule says why. One number, on purpose, and two
+#: meanings, each under its own name.
 EXPORT_ROW_LIMIT = 10_000
 
 _FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")

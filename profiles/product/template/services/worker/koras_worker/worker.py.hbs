@@ -165,8 +165,9 @@ class WorkerSettings(WorkerSettingsBase):
     # perceptible and removes ninety per cent of the idle traffic.
     poll_delay = 5.0
     # How many jobs may be in hand at once, which is a statement about
-    # coroutines waiting on a database and not about memory. A job that reads
-    # a customer's file whole is bounded separately and far lower: an import
-    # holds a slot of its own, one to a process, in `tasks/imports.py`.
+    # coroutines waiting on a database and not about memory. A job that holds
+    # a payload is bounded separately and far lower: an import, a backup's
+    # copy, a restore and a scheduled report share one gate, one to a process,
+    # in `heavy.py`. Everything else runs beside whichever of them has it.
     max_jobs = 10
     job_timeout = 300

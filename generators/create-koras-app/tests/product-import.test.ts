@@ -341,6 +341,9 @@ describe('data import', () => {
       // a commit (ADR 0012 D5). Reached by `importlib` like the rest, so a
       // missing COPY would be evidence that silently never lands.
       'core/audit.py',
+      // And what the sink calls after it commits. IMPORT-DEF-020: this was
+      // inside `core/database.py`, which the image never carried.
+      'core/rebind.py',
     ]) {
       expect(dockerfile).toContain(`koras_api/${file}`)
     }
@@ -350,12 +353,34 @@ describe('data import', () => {
     const recipients = read('services/api/koras_api/core/recipients.py')
     expect(recipients).not.toMatch(/^from \. import platform$/m)
     expect(recipients).toContain('def _platform()')
-    // The audit sink has the same shape: `.database` builds `Settings()` at
-    // import, so it is imported where the tenant is rebound and nowhere
-    // above.
+    // The audit sink must not reach `.database` at all -- at the top of the
+    // file or inside a function.
+    //
+    // **This asserted the opposite until 2026-10-02, and the assertion was the
+    // defect.** `.database` builds `Settings()` at import, so the sink
+    // imported it inside the function that rebinds, and this test held it to
+    // exactly that line. In the worker's image there is no `.database`: the
+    // import failed on the first flush, after the flush had committed, and
+    // every dry run in a deployed worker was a failed job over a run already
+    // `validated`. IMPORT-DEF-020. A shape was asserted and nothing asked
+    // what the shape did -- found by running the image, and held now by
+    // `tests/unit/test_worker_image_contents.py`, which walks the imports,
+    // and `tests/integration/test_worker_image.py`, which runs it.
     const audit = read('services/api/koras_api/core/audit.py')
-    expect(audit).not.toMatch(/^from \.database import/m)
-    expect(audit).toContain('    from .database import rebind_tenant as rebind')
+    expect(audit).not.toMatch(/^\s*from \.database import/m)
+    expect(audit).toMatch(/^from \.rebind import rebind_tenant as rebind_tenant$/m)
+    // And the module it does reach imports nothing of the API, which is what
+    // lets the image carry it whole.
+    const rebind = read('services/api/koras_api/core/rebind.py')
+    expect(rebind).not.toMatch(/^\s*(from \.|from koras_api|import koras_api)/m)
+    // Every caller in the API still finds it where it always was.
+    expect(read('services/api/koras_api/core/database.py')).toContain(
+      'from .rebind import rebind_tenant as rebind_tenant',
+    )
+    for (const path of ['tests/integration/test_worker_image.py', 'tests/integration/worker_image_probe.py']) {
+      expect(gatedPaths('data_import')).toContain(path)
+    }
+    expect(has('tests/unit/test_worker_image_contents.py')).toBe(true)
   })
 
   /* ---------------------------------------------------------------------- */
@@ -638,13 +663,17 @@ describe('data import', () => {
     const worker = read('services/worker/koras_worker/tasks/imports.py')
 
     // One slot, held by both handlers from before the source is fetched.
-    expect([...worker.matchAll(/async with _import_slot\(\):/g)]).toHaveLength(2)
+    // Since GR-352E it is the worker's heavy gate, with the import's own
+    // limit passed to the same acquisition -- one gate taken once, and no
+    // second semaphore before or after it for an order to go wrong between.
+    const held = 'async with heavy(IMPORT, limit=IMPORT_SLOTS):'
+    expect(worker.split(held)).toHaveLength(3)
     for (const name of ['validate_run', 'commit_run']) {
       const handler = worker.slice(worker.indexOf(`async def ${name}(`))
-      expect(handler.indexOf('async with _import_slot():')).toBeLessThan(
-        handler.indexOf(`return await _${name}(`),
-      )
+      expect(handler.indexOf(held)).toBeGreaterThan(-1)
+      expect(handler.indexOf(held)).toBeLessThan(handler.indexOf(`return await _${name}(`))
     }
+    expect(worker).not.toContain('asyncio.Semaphore')
     for (const limit of ['IMPORT_SLOTS', 'WORK_BUDGET_SECONDS']) {
       const comment = worker.slice(0, worker.indexOf(`\n${limit} = `)).split('\n\n').pop() ?? ''
       expect(comment, `${limit} is not marked provisional`).toContain('#: PROVISIONAL (GR-352C')
@@ -660,6 +689,9 @@ describe('data import', () => {
     const offLoop = worker.slice(worker.indexOf('async def _off_loop'), worker.indexOf('_AS_TENANT = '))
     expect(offLoop.indexOf('except asyncio.CancelledError:')).toBeLessThan(offLoop.indexOf('budget.cancel()'))
     expect([...worker.matchAll(/except asyncio\.CancelledError:[\s\S]{0,400}?await _abandon\(envelope\)\n\s+raise/g)]).toHaveLength(2)
+    // And so is a job that raised: its run must not go on saying it is being
+    // checked, or being written.
+    expect([...worker.matchAll(/except Exception:[\s\S]{0,500}?await _abandon\(envelope, _BROKE\)\n\s+raise/g)]).toHaveLength(2)
     // And that telling can never overwrite a commit that landed.
     const store = read('services/api/koras_api/core/imports.py')
     const abandon = store.slice(store.indexOf('async def abandon('), store.indexOf('async def record_validation('))
@@ -690,6 +722,112 @@ describe('data import', () => {
     for (const path of ['test_streaming.py', 'test_equivalence.py']) {
       expect(has(`python-packages/koras-import/tests/${path}`)).toBe(true)
     }
+  })
+
+  it('holds every job that carries a payload behind one gate', () => {
+    // GR-352E. The shape only, as above -- each is a line somebody could
+    // remove in one plausible edit. Whether two jobs are in fact kept apart
+    // is asked of the jobs themselves by
+    // `tests/unit/test_worker_heavy_sections.py`, where every pair has a
+    // second test showing the first can fail, and of the gate by
+    // `tests/unit/test_worker_heavy_gate.py`.
+    const gate = read('services/worker/koras_worker/heavy.py')
+    expect(gate).toContain('HEAVY_SLOTS = 1\n')
+    const comment = gate.slice(0, gate.indexOf('\nHEAVY_SLOTS = ')).split('\n\n').pop() ?? ''
+    expect(comment, 'HEAVY_SLOTS is not marked provisional').toContain('#: PROVISIONAL (GR-352E')
+    // Not a job slot: the worker still has ten.
+    expect(read('services/worker/koras_worker/worker.py.hbs')).toContain('max_jobs = 10\n')
+
+    // A backup: every copy goes through the gated one, and the gate is taken
+    // before `copy_one` reads anything.
+    const backup = read('services/worker/koras_worker/tasks/storage_backup.py')
+    const run = backup.slice(backup.indexOf('async def back_up_tenant_objects('))
+    expect(run).toContain('outcome = await _copy_gated(')
+    expect(run).not.toMatch(/=\s*copy_one\(/)
+    const gated = backup.slice(backup.indexOf('async def _copy_gated('), backup.indexOf('def backup_key_for('))
+    expect(gated).toMatch(/async with heavy\(BACKUP\):\n\s+return copy_one\(/)
+
+    // A restore: the gate, then the claim, then the read.
+    const restore = read('services/worker/koras_worker/tasks/storage_restore.py')
+    const approved = restore.slice(restore.indexOf('async def restore_approved('))
+    const inGate = approved.indexOf('async with heavy(RESTORE):')
+    expect(inGate).toBeGreaterThan(-1)
+    expect(inGate).toBeLessThan(approved.indexOf('session.execute(_CLAIM'))
+    expect(approved.indexOf('session.execute(_CLAIM')).toBeLessThan(approved.indexOf('await run_one('))
+
+    // A scheduled report: the gate before the query, the count before the
+    // file, and the bound is the framework's own.
+    const report = read('services/worker/koras_worker/tasks/reporting.py')
+    const deliver = report.slice(report.indexOf('async def deliver_one('), report.indexOf('async def deliver_due('))
+    const order = [
+      'async with heavy(REPORT):',
+      'await definition.resolver(context, filters)',
+      'if rows > SCHEDULED_DELIVERY_ROW_LIMIT:',
+      'raise ReportTooLarge(rows)',
+      'render(result, fmt, title=definition.name)',
+      'await sender.send(',
+    ].map((line) => deliver.indexOf(line))
+    expect(order.every((at) => at > -1), `${order}`).toBe(true)
+    expect([...order].sort((a, b) => a - b)).toEqual(order)
+    // Derived from the framework's number under a name of its own, and the
+    // framework's number is not rebound here.
+    expect(report).toContain('\nSCHEDULED_DELIVERY_ROW_LIMIT = EXPORT_ROW_LIMIT\n')
+    expect(report).not.toMatch(/(^|\n)EXPORT_ROW_LIMIT\s*=/)
+    expect(report).not.toContain('10_000')
+    expect(gatedPaths('reporting')).toContain('tests/unit/test_reporting_delivery_bound.py')
+
+    for (const path of ['test_worker_heavy_gate.py', 'test_worker_heavy_sections.py']) {
+      expect(has(`tests/unit/${path}`)).toBe(true)
+    }
+  })
+
+  it('is run by name on the row that has every heavy job, and in the image on the row with a database', () => {
+    // A job a product was generated without is skipped inside
+    // `test_worker_heavy_sections.py`, and the image test skips without an
+    // image -- both right for a product, and both a silent pass in the step
+    // that runs everything. So the workflow names them and fails on a skip.
+    const workflow = readFileSync(
+      join(PROFILE, '..', '..', '.github', 'workflows', 'generator-integration.yml'),
+      'utf8',
+    )
+      .split(String.fromCharCode(13))
+      .join('')
+    const step = (name: string): string => {
+      const at = workflow.indexOf(`- name: ${name}`)
+      expect(at, `no step named ${name}`).toBeGreaterThan(-1)
+      const rest = workflow.slice(at + 1)
+      const next = rest.search(/\n {6}- name: /)
+      return next === -1 ? rest : rest.slice(0, next)
+    }
+
+    const gate = step('The heavy-job gate and the report bound ran, and nothing skipped')
+    for (const suite of [
+      'tests/unit/test_worker_heavy_gate.py',
+      'tests/unit/test_worker_heavy_sections.py',
+      'tests/unit/test_reporting_delivery_bound.py',
+      'tests/unit/test_worker_image_contents.py',
+    ]) {
+      expect(gate).toContain(suite)
+    }
+    expect(gate).toContain("if: contains(matrix.components, 'data_import')")
+    expect(gate).toMatch(/skipped'[^\n]*; then\n\s+echo "::error::[^\n]*\n\s+exit 1/)
+
+    const image = step('The worker image was built, ran an import, and did not skip')
+    expect(image).toContain("if: matrix.roundtrip && contains(matrix.components, 'data_import')")
+    // Built from the generated Dockerfile, at the generated project's root.
+    expect(image).toContain('docker build -f services/worker/Dockerfile -t "$WORKER_IMAGE" .')
+    expect(image).toContain('tests/integration/test_worker_image.py')
+    expect(image).toMatch(/skipped'[^\n]*; then\n\s+echo "::error::[^\n]*\n\s+exit 1/)
+    // Nothing of the tree is mounted into either container: the test passes
+    // no volume, and neither does the step.
+    expect(image).not.toMatch(/\s-v\s|--volume|--mount/)
+    const test = read('tests/integration/test_worker_image.py')
+    expect(test).not.toMatch(/"-v"|"--volume"|"--mount"/)
+    // And the row that names `data_import` owns a round trip, or the image
+    // step would never run.
+    expect(workflow).toMatch(
+      /components: "--with [^"]*data_import[^"]*"\n(\s+#[^\n]*\n)*\s+roundtrip: true/,
+    )
   })
 
   it('translates the rejection a matcher can produce', () => {
