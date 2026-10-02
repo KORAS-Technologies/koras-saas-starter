@@ -31,6 +31,12 @@ Four parts, and the first is the whole design:
     it rather than by loading it: decoded text at its real width, cells,
     columns and what a workbook expands to. GR-352; the limits are provisional.
 
+``inspection``
+    A file's head -- the header, the first rows, whether it is over the
+    target's ceiling -- by streaming, for a route that draws a mapping page.
+    Not a second reader: the dry run and the commit still read through
+    ``reading``. GR-352B.
+
 ``mapping``
     Which column is which, checked against both the target and the file — and
     whether the values under them are acceptable, every problem in one pass.
@@ -67,6 +73,7 @@ from .compatibility import (
     identity,
     parse_identity,
 )
+from .inspection import MAX_SAMPLE_CHARACTERS, Inspection, inspect_source
 from .jobs import COMMIT_RUN, VALIDATE_RUN
 from .mapping import (
     MAX_REPORTED_ERRORS,
@@ -180,7 +187,10 @@ __all__ = [
     "DATA_SHEET",
     "DECOMPRESSED_CEILING",
     "ENVELOPE_CODES",
+    "MAX_SAMPLE_CHARACTERS",
     "PROVISIONAL_LIMITS",
+    "Inspection",
+    "inspect_source",
     "Preflight",
     "PreflightRefused",
     "Refusal",

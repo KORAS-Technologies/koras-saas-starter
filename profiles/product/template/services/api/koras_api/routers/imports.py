@@ -562,7 +562,9 @@ async def analysis(
     _require_target(claims, target)
     raw = await _bytes(session, storage, run)
     try:
-        found = store.analyse(raw, target, Format(run.format))
+        # Off the event loop: bounded in memory, and still seconds of parsing
+        # for a file at the edge of the envelope. GR-352B.
+        found = await store.analysed(raw, target, Format(run.format))
     except ReadRefused as refused:
         raise _read_refusal(refused) from refused
     return AnalysisView(
@@ -605,7 +607,9 @@ async def set_mapping(
     raw = await _bytes(session, storage, run)
 
     try:
-        found = store.analyse(raw, target, Format(run.format))
+        # The header and the count, and no rows: a mapping is checked against
+        # the columns the file has, and this route shows nobody a preview.
+        found = await store.analysed(raw, target, Format(run.format), sample=0)
         from koras_import import resolve
 
         resolve(

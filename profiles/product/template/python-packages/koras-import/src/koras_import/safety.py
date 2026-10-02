@@ -32,6 +32,18 @@ of the file ever exists here. Both stop at the first limit crossed.
 **It decides nothing about the data.** No value is converted, trimmed or
 reinterpreted. The answer is only whether the existing reader may be called.
 
+**It scans the parts the reader will read, found the way the reader finds
+them.** Until IMPORT-DEF-017 was closed on 2026-10-01 it did not: it knew a
+string table and a worksheet by their root element, read the sheet list from a
+fixed part name, and counted only cells called `c` -- while `openpyxl` takes
+the string table from the content types, the workbook part from the content
+types, the sheet from the *last* `sheets` element through whatever relationship
+it names, and treats every child of a row as a cell. Nine different packages
+were called safe with their text and cells uncounted, and then read in full.
+`_package` below is the reader's own resolution, restated; `read_workbook`
+then refuses any sheet this pass did not scan, so the two cannot drift apart
+quietly again.
+
 **The numbers are provisional.** `SafetyLimits` carries interim GR-352
 defaults, chosen to be conservative and not ratified by anybody: the memory
 envelope these protect is an open NFR decision, and GR-352 stays open until it
@@ -45,7 +57,7 @@ import io
 import posixpath
 import zipfile
 import zlib
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from itertools import chain
@@ -224,6 +236,15 @@ class Preflight:
     #: The encoding the CSV decoded under. None for a workbook.
     encoding: str | None = None
     refusal: Refusal | None = None
+    #: The workbook part the reader will open, the worksheet part it will
+    #: read rows from with that sheet's title, and the part it will load its
+    #: string table from -- each resolved the way the reader resolves it, and
+    #: each scanned by this pass whatever its root element is called. None for
+    #: a CSV, and where the package cannot be followed.
+    workbook_part: str | None = None
+    sheet_part: str | None = None
+    sheet_title: str | None = None
+    strings_part: str | None = None
 
     @property
     def safe(self) -> bool:
@@ -282,6 +303,7 @@ class _Tally:
         self.rows = 0
         self.uncompressed: int | None = None
         self.encoding: str | None = None
+        self.package: _Package | None = None
 
     def reset(self) -> None:
         self.decoded = 0
@@ -342,6 +364,7 @@ class _Tally:
             )
 
     def result(self, fmt: Format, source_bytes: int, refusal: Refusal | None) -> Preflight:
+        found = self.package
         return Preflight(
             format=fmt,
             source_bytes=source_bytes,
@@ -353,6 +376,10 @@ class _Tally:
             rows=self.rows,
             encoding=self.encoding,
             refusal=refusal,
+            workbook_part=found.workbook if found else None,
+            sheet_part=found.sheet if found else None,
+            sheet_title=found.title if found else None,
+            strings_part=found.strings[0] if found and found.strings else None,
         )
 
 
@@ -408,24 +435,9 @@ def _csv_pass(
     first = next(stream, "")
     chosen = delimiter or sniff_delimiter(first)
 
-    def lines() -> Iterator[str]:
-        # The same boundaries `str.splitlines` gives the reader, found without
-        # the whole text: the last piece of each chunk is carried, because it
-        # may be half a line -- or a `\r` whose `\n` is in the next chunk.
-        carry = ""
-        for text in chain((first,), stream):
-            parts = (carry + text).splitlines(keepends=True)
-            carry = parts.pop() if parts else ""
-            for line in parts:
-                yield _line(line)
-            if len(carry) > MAX_CELL:
-                _line(carry)
-        if carry:
-            yield _line(carry)
-
     try:
         header = True
-        for record in _reader(lines(), delimiter=chosen):
+        for record in _reader(_lines(chain((first,), stream)), delimiter=chosen):
             tally.add_cells(len(record))
             tally.note_columns(len(record))
             if header:
@@ -439,6 +451,26 @@ def _csv_pass(
         raise
     except ReadRefused as broken:
         raise PreflightRefused(RefusalCode.MALFORMED, str(broken)) from broken
+
+
+def _lines(pieces: Iterable[str]) -> Iterator[str]:
+    """Lines from decoded pieces, on the boundaries `str.splitlines` gives.
+
+    Found without the whole text: the last piece of each chunk is carried,
+    because it may be half a line -- or a `\\r` whose `\\n` is in the next
+    chunk. A function of its own since GR-352B, so the inspection that reads a
+    CSV's head splits lines by the rule this pass counted them with.
+    """
+    carry = ""
+    for text in pieces:
+        parts = (carry + text).splitlines(keepends=True)
+        carry = parts.pop() if parts else ""
+        for line in parts:
+            yield _line(line)
+        if len(carry) > MAX_CELL:
+            _line(carry)
+    if carry:
+        yield _line(carry)
 
 
 def _line(line: str) -> str:
@@ -482,8 +514,29 @@ def _survey_csv(raw: bytes, tally: _Tally, delimiter: str | None) -> None:
 # ── XLSX ─────────────────────────────────────────────────────────────────────
 
 _WORKBOOK_PART = "xl/workbook.xml"
-_WORKBOOK_RELS = "xl/_rels/workbook.xml.rels"
 _MACRO_PART = "xl/vbaProject.bin"
+_CONTENT_TYPES = "[Content_Types].xml"
+
+#: What the content types call a string table. `openpyxl` loads the first
+#: part declared with it, whatever that part's root element is.
+_STRINGS_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"
+
+#: What the content types may call the workbook part, in the order `openpyxl`
+#: looks for them: macro template, template, macro workbook, workbook.
+#: `test_preflight_package.py` compares this against `openpyxl`'s own list.
+_WORKBOOK_TYPES = (
+    "application/vnd.ms-excel.template.macroEnabled.main+xml",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.template.main+xml",
+    "application/vnd.ms-excel.sheet.macroEnabled.main+xml",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+)
+
+#: The namespace a sheet's relationship id is written in.
+_RELATIONSHIPS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+#: How deep a part's elements may nest. A workbook part nests about ten deep;
+#: the scan keeps one name a level, so this is what bounds that.
+_MAX_DEPTH = 256
 _DIRECTORY_ENTRY = b"PK\x01\x02"
 
 #: The sheet the reader prefers. `reading_xlsx.DATA_SHEET` is the same word;
@@ -560,13 +613,26 @@ class _Strings:
 class _Scanner:
     """`expat` handlers for one part. No tree: nothing is kept but counts."""
 
-    def __init__(self, tally: _Tally, strings: _Strings, *, sheet: bool) -> None:
+    def __init__(
+        self, tally: _Tally, strings: _Strings, *, sheet: bool, force: str | None = None
+    ) -> None:
         self.tally = tally
         self.strings = strings
         #: True on the pass that reads worksheets, False on the one that
         #: reads string tables and notes which parts are worksheets.
         self.sheet = sheet
+        #: What this part *is*, when the package says so. The reader takes its
+        #: string table and its sheet from the package's index and reads them
+        #: whatever their root element is called, so a part it will read is
+        #: scanned as what it will be read as. Without this the root decides,
+        #: which is all the pass had until IMPORT-DEF-017.
+        self.force = force
         self.kind: str | None = None
+        #: The names of the open elements, outermost first. Bounded by
+        #: `_MAX_DEPTH`. Kept so a cell is known by where it is: `openpyxl`
+        #: reads *every* child of a row as a cell, whatever it is called.
+        self.path: list[str] = []
+        self.cell_depth = 0
         #: Handler calls so far. `_scan` watches it to notice a token that
         #: never ends.
         self.events = 0
@@ -597,14 +663,34 @@ class _Scanner:
     def start(self, name: str, attributes: dict[str, str]) -> None:
         self.events += 1
         local = _local(name)
+        parent = self.path[-1] if self.path else ""
+        if len(self.path) >= _MAX_DEPTH:
+            raise PreflightRefused(RefusalCode.MALFORMED, _UNREADABLE)
+        self.path.append(local)
         if self.kind is None:
-            self.kind = local if local in ("sst", "worksheet") else "other"
+            self.kind = self.force or (local if local in ("sst", "worksheet") else "other")
             if self.kind == "other" or (self.kind == "worksheet") != self.sheet:
                 raise _Stop
             if self.kind == "sst":
                 self.strings.tables += 1
             return
-        if local == "rPh":
+        if self.kind == "worksheet" and (parent == "row" or local == "c"):
+            # A cell is a child of a row, by position and not by name. Asked
+            # before anything else, so no name a cell is given -- `rPh`, `row`,
+            # `t` -- can make it something other than a cell.
+            self.tally.add_cells(1)
+            named = _column(attributes.get("r", ""))
+            self.column = named or self.column + 1
+            self.tally.note_columns(self.column)
+            self.cell_type = attributes.get("t", "n")
+            self.in_cell = True
+            self.cell_depth = len(self.path)
+            self.in_value = False
+            self.in_inline = False
+            self.in_text = False
+            self.index = ""
+            self._begin_string()
+        elif local == "rPh":
             self.phonetic += 1
         elif self.kind == "sst":
             if local == "si":
@@ -615,15 +701,6 @@ class _Scanner:
         elif local == "row":
             self.row_has_value = False
             self.column = 0
-        elif local == "c":
-            self.tally.add_cells(1)
-            named = _column(attributes.get("r", ""))
-            self.column = named or self.column + 1
-            self.tally.note_columns(self.column)
-            self.cell_type = attributes.get("t", "n")
-            self.in_cell = True
-            self.index = ""
-            self._begin_string()
         elif self.in_cell:
             if local == "v":
                 self.in_value = True
@@ -662,6 +739,12 @@ class _Scanner:
     def end(self, name: str) -> None:
         self.events += 1
         local = _local(name)
+        depth = len(self.path)
+        if self.path:
+            self.path.pop()
+        if self.in_cell and depth == self.cell_depth:
+            self._end_cell()
+            return
         if local == "rPh":
             self.phonetic -= 1
         elif local == "t":
@@ -675,8 +758,6 @@ class _Scanner:
             self.in_value = False
         elif local == "is":
             self.in_inline = False
-        elif local == "c" and self.in_cell:
-            self._end_cell()
         elif local == "row":
             self.rows_seen += 1
             # The first row is the header, whatever is in it.
@@ -777,34 +858,186 @@ def _attributes(
     return collector.found
 
 
-def _data_part(archive: zipfile.ZipFile, ceiling: int) -> str | None:
-    """The part holding the sheet the reader will read, or None if unsure.
+# ── the package, resolved as the reader resolves it ──────────────────────────
 
-    The reader takes the sheet named `Data`, or the first worksheet. Only that
-    sheet's cells are ever materialised, so only that sheet is counted -- a
-    workbook is not refused for a lookup sheet nobody reads. None means the
-    workbook's own index could not be followed, and every worksheet is then
-    counted, which can only refuse more.
+
+@dataclass(frozen=True)
+class _Package:
+    """The parts `openpyxl` will consume, by its own rules.
+
+    Not a guess at them. Each rule below is the one `openpyxl` 3.1 applies,
+    including the ones that look like accidents -- the last `sheets` element
+    wins, a duplicated relationship id resolves to the later one, a target
+    marked external is used as it is written -- because a pass that resolves
+    a tidier package than the reader does is scanning a different file.
     """
-    sheets = _attributes(archive, _WORKBOOK_PART, "sheet", ceiling)
-    targets = {
-        relation.get("Id", ""): relation.get("Target", "")
-        for relation in _attributes(archive, _WORKBOOK_RELS, "Relationship", ceiling)
-        if relation.get("Type", "").endswith("/worksheet")
-    }
-    worksheets = [
-        (sheet.get("name", ""), targets[sheet.get("id", "")])
-        for sheet in sheets
-        if sheet.get("id", "") in targets
-    ]
-    if not worksheets:
+
+    #: The workbook part: what the content types call one, or the usual name.
+    workbook: str
+    #: The part rows will be read from and its sheet's title, or None when
+    #: the package gives the reader no worksheet -- in which case it reads
+    #: none, and every worksheet-shaped part is counted instead.
+    sheet: str | None
+    title: str | None
+    #: Every part the content types call a string table. The reader loads the
+    #: first; all of them are scanned as one, which can only refuse more.
+    strings: tuple[str, ...]
+
+
+class _Outline:
+    """A part's top two levels: the root's children, and one kind's children.
+
+    Names are resolved against their namespaces, unlike the scan below: a
+    sheet's relationship id is an attribute in a namespace, and a pass that
+    read it by its prefix would be told which sheet to scan by whoever chose
+    the prefix.
+    """
+
+    def __init__(self, inside: str | None, ceiling: int) -> None:
+        self.inside = inside
+        self.ceiling = ceiling
+        self.events = 0
+        self.depth = 0
+        self.within = False
+        #: `(depth, local name, attributes)`, in document order.
+        self.found: list[tuple[int, str, dict[str, str]]] = []
+
+    def doctype(self, *_: object) -> None:
+        raise PreflightRefused(RefusalCode.MALFORMED, _UNREADABLE)
+
+    def start(self, name: str, attributes: dict[str, str]) -> None:
+        self.events += 1
+        self.depth += 1
+        if self.depth == 2 or (self.depth == 3 and self.within):
+            if len(self.found) >= self.ceiling:
+                # More entries than a spreadsheet has parts. Stopping here and
+                # resolving from what was read would be resolving a different
+                # package than the reader, which reads to the end.
+                raise PreflightRefused(RefusalCode.MALFORMED, _UNREADABLE)
+            local = name.rpartition(" ")[2]
+            self.found.append((self.depth, local, attributes))
+            if self.depth == 2:
+                self.within = local == self.inside
+
+    def text(self, _data: str) -> None:
+        self.events += 1
+
+    def end(self, _name: str) -> None:
+        self.events += 1
+        self.depth -= 1
+
+
+def _outline(
+    archive: zipfile.ZipFile, name: str, ceiling: int, *, inside: str | None = None
+) -> list[tuple[int, str, dict[str, str]]] | None:
+    """One small part's outline, or None when the reader could not read it either."""
+    collector = _Outline(inside, ceiling)
+    parser = expat.ParserCreate(namespace_separator=" ")
+    parser.buffer_text = True
+    parser.StartDoctypeDeclHandler = collector.doctype
+    parser.StartElementHandler = collector.start
+    parser.EndElementHandler = collector.end
+    parser.CharacterDataHandler = collector.text
+    stalled = 0
+    try:
+        with archive.open(name) as part:
+            while chunk := part.read(_CHUNK):
+                before = collector.events
+                parser.Parse(chunk, False)
+                stalled = stalled + len(chunk) if collector.events == before else 0
+                if stalled > _MAX_TOKEN:
+                    raise PreflightRefused(RefusalCode.MALFORMED, _UNREADABLE)
+        parser.Parse(b"", True)
+    except PreflightRefused:
+        raise
+    except (KeyError, expat.ExpatError, *_ENTRY_ERRORS):
         return None
-    target = next(
-        (part for name, part in worksheets if name == _DATA_SHEET), worksheets[0][1]
+    return collector.found
+
+
+def _relationships(
+    archive: zipfile.ZipFile, owner: str, ceiling: int
+) -> dict[str, tuple[str, str]]:
+    """Relationship id to `(type, target)`, for the part that owns them.
+
+    `openpyxl.packaging.relationship.get_dependents`: a target is relative to
+    the owning part's folder unless it starts with a slash, in which case one
+    slash is dropped and nothing else is done to it; a target marked external
+    is left exactly as written. A later relationship with an id already seen
+    replaces the earlier one.
+    """
+    folder, part = posixpath.split(owner)
+    found = _outline(archive, posixpath.join(folder, "_rels", f"{part}.rels"), ceiling)
+    resolved: dict[str, tuple[str, str]] = {}
+    for _, _, attributes in found or ():
+        target = attributes.get("Target", "")
+        if attributes.get("TargetMode") != "External":
+            if target.startswith("/"):
+                target = target[1:]
+            else:
+                target = posixpath.normpath(posixpath.join(folder, target))
+        resolved[attributes.get("Id", "")] = (attributes.get("Type", ""), target)
+    return resolved
+
+
+def _package(archive: zipfile.ZipFile, names: set[str], ceiling: int) -> _Package:
+    """Which parts the reader will consume. See `_Package`."""
+    declared = [
+        attributes
+        for depth, local, attributes in _outline(archive, _CONTENT_TYPES, ceiling) or ()
+        if depth == 2 and local == "Override"
+    ]
+
+    def part(content_type: str) -> str | None:
+        for override in declared:
+            if override.get("ContentType") == content_type:
+                return override.get("PartName", "")[1:]
+        return None
+
+    strings = tuple(
+        dict.fromkeys(
+            name
+            for name in (
+                override.get("PartName", "")[1:]
+                for override in declared
+                if override.get("ContentType") == _STRINGS_TYPE
+            )
+            if name in names
+        )
     )
-    if target.startswith("/"):
-        return posixpath.normpath(target.lstrip("/"))
-    return posixpath.normpath(posixpath.join("xl", target))
+    workbook = next(
+        (found for found in map(part, _WORKBOOK_TYPES) if found is not None), _WORKBOOK_PART
+    )
+
+    # The sheets: the children, whatever they are called, of the *last*
+    # `sheets` element directly under the root.
+    entries: list[dict[str, str]] = []
+    for depth, local, attributes in _outline(archive, workbook, ceiling, inside="sheets") or ():
+        if depth == 2:
+            if local == "sheets":
+                entries = []
+        else:
+            entries.append(attributes)
+
+    relationships = _relationships(archive, workbook, ceiling)
+    worksheets: list[tuple[str, str]] = []
+    for entry in entries:
+        # The id in the relationships namespace, or a plain one where there
+        # is none: the reader accepts either, and prefers the first.
+        link = entry.get(f"{_RELATIONSHIPS} id", entry.get("id", ""))
+        if not link or link not in relationships:
+            continue
+        kind, target = relationships[link]
+        if target in names and "chartsheet" not in kind:
+            worksheets.append((entry.get("name", ""), target))
+
+    # `Data`, or the first worksheet. `reading_xlsx.read_workbook` chooses the
+    # same way, and then checks that it chose the part named here.
+    title, sheet = next(
+        (found for found in worksheets if found[0] == _DATA_SHEET),
+        worksheets[0] if worksheets else (None, None),
+    )
+    return _Package(workbook=workbook, sheet=sheet, title=title, strings=strings)
 
 
 def _survey_xlsx(raw: bytes, tally: _Tally) -> None:
@@ -845,24 +1078,48 @@ def _survey_xlsx(raw: bytes, tally: _Tally) -> None:
                 observed=total,
             )
 
-        # Parts are recognised by their root element, never by their name: a
-        # workbook may keep its strings and its sheets wherever its own index
-        # says, and a scan that trusted `xl/sharedStrings.xml` would be
-        # walked around by renaming one file.
+        # The parts the reader will read, found the way the reader finds
+        # them, and scanned as what it will read them as -- whatever their
+        # root element is called. IMPORT-DEF-017.
+        package = _package(archive, names, limits.max_archive_entries)
+        tally.package = package
+
+        # And, beside those, every part that *is* a string table by its root,
+        # wherever it is kept. Neither rule alone is enough: the index names
+        # what will be read, the root catches what an index left out, and a
+        # part caught by both is scanned once.
         strings = _Strings()
         worksheets: list[zipfile.ZipInfo] = []
         for info in infos:
             if info.is_dir() or not info.file_size:
                 continue
-            scanner = _Scanner(tally, strings, sheet=False)
+            named = info.filename in package.strings
+            # Emptiness is asked of the table the reader will load, when the
+            # package names one; any other table is costed and not consulted.
+            consulted = not package.strings or info.filename == package.strings[0]
+            scanner = _Scanner(
+                tally,
+                strings if consulted else _Strings(),
+                sheet=False,
+                force="sst" if named else None,
+            )
             _scan(archive, info, scanner)
             if scanner.kind == "worksheet":
                 worksheets.append(info)
 
-        chosen = _data_part(archive, limits.max_archive_entries)
-        read = [info for info in worksheets if info.filename == chosen] or worksheets
-        for info in read:
-            _scan(archive, info, _Scanner(tally, strings, sheet=True))
+        if package.sheet is not None:
+            # Exactly the sheet the reader reads -- a workbook is not refused
+            # for a lookup sheet nobody opens.
+            _scan(
+                archive,
+                archive.getinfo(package.sheet),
+                _Scanner(tally, strings, sheet=True, force="worksheet"),
+            )
+        else:
+            # The package gives the reader no worksheet, so it will read none.
+            # Every part shaped like one is counted, which can only refuse more.
+            for info in worksheets:
+                _scan(archive, info, _Scanner(tally, strings, sheet=True))
 
 
 # ── the two ways in ──────────────────────────────────────────────────────────

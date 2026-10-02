@@ -503,6 +503,31 @@ jobs:
           E2E_DATABASE_URL: ${{ matrix.roundtrip && 'postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e' || '' }}
         run: uv run pytest
 
+      # The import memory suites, asked for by name, and not allowed to skip.
+      #
+      # Both read the kernel's peak resident set from `/proc`, so both skip on
+      # any platform without one -- which is right on a laptop and would be a
+      # silent hole here: the step above reports a skip as a pass, and these
+      # are the only tests in the estate that measure what GR-352 is about.
+      # `test_preflight_memory.py` is the safety pass's own memory (GR-352A);
+      # `test_import_inspection_memory.py` is the analysis route's, through
+      # `core/imports.analyse` (GR-352B). A runner that stops being Linux, or
+      # a marker that starts matching it, fails this step rather than passing
+      # over nothing.
+      - name: The import memory suites ran, and none of them skipped
+        if: contains(matrix.components, 'data_import')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: |
+          uv run pytest \
+            python-packages/koras-import/tests/test_preflight_memory.py \
+            tests/unit/test_import_inspection_memory.py \
+            --no-cov -q -rs | tee "$RUNNER_TEMP/import-memory.txt"
+          if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/import-memory.txt"; then
+            echo "::error::an import memory test was skipped; on this runner every one of them must run"
+            exit 1
+          fi
+          grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/import-memory.txt"
+
       # A project generated a moment ago must match what the generator would
       # produce for it. If it does not, either the drift check is wrong or
       # generation is not deterministic, and both are worth failing over —

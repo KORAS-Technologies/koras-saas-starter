@@ -45,7 +45,7 @@ recommendation rather than a record — revise it, do not preserve it.
 | 8 | **F22 — Files** | Six items, each waiting on a real trigger rather than on time: multipart uploads (a file over 5 GB), an orphan sweep, the `customer-owned` and `azure-blob` policies, a real upload in CI, a foreign bucket's origin in the browser policy, and quota by period. | ~1 day per item |
 | 9 | **F25 — reporting** | Three items, none of which blocks a product registering reports today: `reporting.api` enforcement becomes real with the first machine caller, pre-aggregation when a table outgrows a range scan, and report names in the customer's language when somebody asks for one. | ~1 day per item |
 | 10 | **F30 — Docoris data import alignment with the starter** | Docoris carries its own import (E24-F01-S01) with no analysis step and a mapping form a person types headings into, so matching CSV or XLSX headings prefill nothing there, however well they match. Opened 2026-09-29; the starter's framework is complete and documented, and the next move is a comparison and a migration path in the docoris repository, not a third implementation. | ~1 day to compare, the migration unknown |
-| 11 | **F31 — GR-352, the import memory envelope** — *opened 2026-10-01; slice A built the same day* | **A release gate rather than a queue position**, and placed last only because nobody has ordered it: the import framework accepted files that took a worker to 1.4 GiB against 512 MB. A safety pass now refuses the measured worst cases before they are loaded, under four limits that are provisional. What is left is an NFR decision this repository cannot take, two more slices, and a Linux measurement repeated against whatever is ratified | One decision by Platform/NFR architecture; then two slices of about the size of the first |
+| 11 | **F31 — GR-352, the import memory envelope** — *opened 2026-10-01; slices A and B built the same day* | **A release gate rather than a queue position**, and placed last only because nobody has ordered it: the import framework accepted files that took a worker to 1.4 GiB against 512 MB. A safety pass now refuses the measured worst cases before they are loaded, under four limits that are provisional. What is left is an NFR decision this repository cannot take, two more slices, and a Linux measurement repeated against whatever is ratified | One decision by Platform/NFR architecture; then two slices of about the size of the first |
 
 **F21 and F23 do not contend with the top row.** They are a person at a dashboard and two ZITADEL writes per instance; nothing in either is code, so an order that reads as a queue is misleading for those two. Run them whenever the dashboard is open.
 
@@ -2666,9 +2666,40 @@ that each could be reviewed, and the first is the only one built:
       2026-10-01. One of them intentionally tightens what was accepted: a
       50,000-row file with more than twenty populated cells a row is refused
       as of 2026-10-01, pending NFR ratification.
-- [ ] **GR-352B — the analysis path.** A file that passes is still parsed
-      whole, synchronously, inside an async route, to preview 200 rows of it.
-      IMPORT-DEF-015 is the CPU half of the same thing.
+- [x] **GR-352B — the analysis path.** Built 2026-10-01. The analysis and
+      mapping routes inspect a head of the file by streaming it and call
+      neither reader; a workbook's shared strings are resolved for the sample
+      alone; both routes run it on a thread. Measured on Linux through
+      `analyse` on sixteen files at the edges of the envelope: 1.8 to 6.7 MiB
+      over the file, where `b24a72d` took 4 to 136. Compared against the
+      canonical readers on 145 files, mutation-checked sixteen ways.
+      `docs/features/data-import/bounded-inspection.md`. It closes the API
+      half of IMPORT-DEF-015 and of IMPORT-GAP-015, and nothing of the worker.
+- [ ] **IMPORT-DEF-016 — found by that measurement, and High.** A string the
+      safety pass costs once is copied for every cell that names it: a 78 KiB
+      workbook took the analysis to 1,834 MiB and a 611 MiB response at
+      `b24a72d`, inside every limit. Closed for the routes by a budget on the
+      sample. **Open in the worker**, where the dry run and the commit clean
+      every cell of every row, and not measured there. It belongs with GR-352C
+      and it changes what the envelope has to count: the worker's memory must
+      be measured against repeated references before any envelope is ratified.
+- [x] **IMPORT-DEF-017 — the safety pass did not scan the parts the reader
+      reads.** Found building GR-352B, and closed before it was committed, on
+      2026-10-01. The pass found a workbook's parts by its own rules and
+      `openpyxl` by others; nine different packages were called safe and read
+      in full. The pass resolves the package the reader's way now, and the
+      reader refuses a sheet the pass did not scan.
+      `docs/features/data-import/preflight-safety-envelope.md`.
+- [x] **The sample budget, decided 2026-10-01.** Kept at 4 MiB of characters
+      as a provisional guardrail: 200 rows is the most a preview holds, not a
+      guarantee. Its final value waits on GR-352C and OD-22/NFR ratification
+      (IMPORT-GAP-017).
+- [ ] **Two things GR-352B left.** Whether the routes should walk a workbook
+      once rather than twice (IMPORT-GAP-018), and a bound on analyses running
+      at once (IMPORT-GAP-019).
+- [ ] **IMPORT-GAP-020.** What `openpyxl` builds from a sheet that is neither
+      a string nor a cell -- merged ranges, links, validations -- is counted by
+      nothing. Unmeasured; the worker's, with GR-352C.
 - [ ] **GR-352C — the worker.** Concurrency, queue topology, an import
       semaphore and machine size. Two imports at once double whatever one
       costs, and nothing bounds that.
