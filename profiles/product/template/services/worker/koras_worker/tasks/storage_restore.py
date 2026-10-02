@@ -17,6 +17,13 @@ one, and the audit row says plainly that nothing was compared.
 **Non-overwriting by default.** A restore writes a new object under a new file
 id and destroys nothing. Overwriting is a separate decision taken twice, at the
 request and at the approval, and only then does this reuse the original key.
+
+**One object in hand at a time, and never beside an import.** Since GR-352E
+each request is run inside the worker's heavy gate -- `koras_worker/heavy.py`
+-- and the gate is taken *before the request is claimed*. A restore that is
+waiting for an import to finish is therefore still `approved`: if the queue
+cancels the sweep while it waits, or the worker is replaced, the request is
+exactly where the next pass looks for it.
 """
 
 from __future__ import annotations
@@ -36,6 +43,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from ..heavy import RESTORE, heavy
 from ..settings import settings
 from .storage_backup import backup as backup_settings
 from .storage_backup import destination_from
@@ -295,64 +303,87 @@ async def run_restores(ctx: dict[str, Any]) -> dict[str, Any]:
     source = S3ObjectStore(backup_destination)
     target = _primary()
     engine = _engine()
-    done = 0
-    failed = 0
     try:
         async with async_sessionmaker(engine, expire_on_commit=False)() as session:
-            await session.execute(_PROVISIONING)
-            for row in (await session.execute(_APPROVED, {"limit": RESTORE_LIMIT})).all():
-                # Claimed first, so two workers cannot run the same request.
-                claimed = (await session.execute(_CLAIM, {"id": row.id})).first()
-                await session.commit()
-                await session.execute(_PROVISIONING)
-                if claimed is None:
-                    continue
-
-                try:
-                    outcome, restored, error = await run_one(session, source, target, row)
-                except Exception:
-                    logger.exception("a restore failed")
-                    await session.rollback()
-                    await session.execute(_PROVISIONING)
-                    outcome, restored, error = "failed", None, "the restore could not be completed"
-
-                # Back to the platform's context before touching the request
-                # row. `run_one` ends on the tenant's, because the index row it
-                # writes belongs to the tenant -- and `_FINISH` is written
-                # against `restore_requests_run_provisioning`, which is the
-                # policy that admits `restoring` -> `completed`. Leaving the
-                # tenant context set would have it permitted by the tenant's
-                # own policy instead: the same outcome today, by a rule nobody
-                # chose, and a silent failure the day either policy changes.
-                await session.execute(_PROVISIONING)
-                await session.execute(
-                    _FINISH,
-                    {
-                        "id": row.id,
-                        "status": outcome,
-                        "error": error,
-                        "restored": restored,
-                    },
-                )
-                await _record(
-                    session,
-                    row.tenant_id,
-                    action=f"storage.restore.{outcome}",
-                    target_id=row.file_id,
-                    outcome="ok" if outcome == "completed" else "failed",
-                    details={
-                        "overwrite": bool(row.overwrite),
-                        # Whether anything was compared, and never the digest
-                        # itself: it identifies the bytes.
-                        "verified": bool(row.backup_digest),
-                    },
-                )
-                await session.commit()
-                await session.execute(_PROVISIONING)
-                done += outcome == "completed"
-                failed += outcome == "failed"
+            done, failed = await restore_approved(session, source, target)
     finally:
         await engine.dispose()
 
     logger.info("restore: %d completed, %d failed", done, failed)
     return {"status": "ok", "completed": done, "failed": failed}
+
+
+async def restore_approved(
+    session: AsyncSession, source: ObjectStore, target: ObjectStore
+) -> tuple[int, int]:
+    """Every approved request on this session. Returns how many completed and failed."""
+    done = 0
+    failed = 0
+    await session.execute(_PROVISIONING)
+    approved = (await session.execute(_APPROVED, {"limit": RESTORE_LIMIT})).all()
+    # Ended here, so that a wait for the gate is not a transaction held open.
+    await session.commit()
+    for row in approved:
+        # The gate first, then the claim. A request that waits here for an
+        # import to finish has not been claimed, so a sweep the queue cancels
+        # while it waits leaves an `approved` row for the next pass rather
+        # than a `restoring` one nothing will ever pick up. GR-352E.
+        async with heavy(RESTORE):
+            await session.execute(_PROVISIONING)
+            # Claimed before anything is read, so two workers cannot run the
+            # same request.
+            claimed = (await session.execute(_CLAIM, {"id": row.id})).first()
+            await session.commit()
+            await session.execute(_PROVISIONING)
+            if claimed is None:
+                await session.commit()
+                continue
+
+            try:
+                outcome, restored, error = await run_one(session, source, target, row)
+            except Exception:
+                logger.exception("a restore failed")
+                await session.rollback()
+                await session.execute(_PROVISIONING)
+                outcome, restored, error = "failed", None, "the restore could not be completed"
+
+        # Outside the gate: the object has been written and is no longer in
+        # hand, and what is left is two rows.
+        #
+        # Back to the platform's context before touching the request
+        # row. `run_one` ends on the tenant's, because the index row it
+        # writes belongs to the tenant -- and `_FINISH` is written
+        # against `restore_requests_run_provisioning`, which is the
+        # policy that admits `restoring` -> `completed`. Leaving the
+        # tenant context set would have it permitted by the tenant's
+        # own policy instead: the same outcome today, by a rule nobody
+        # chose, and a silent failure the day either policy changes.
+        await session.execute(_PROVISIONING)
+        await session.execute(
+            _FINISH,
+            {
+                "id": row.id,
+                "status": outcome,
+                "error": error,
+                "restored": restored,
+            },
+        )
+        await _record(
+            session,
+            row.tenant_id,
+            action=f"storage.restore.{outcome}",
+            target_id=row.file_id,
+            outcome="ok" if outcome == "completed" else "failed",
+            details={
+                "overwrite": bool(row.overwrite),
+                # Whether anything was compared, and never the digest
+                # itself: it identifies the bytes.
+                "verified": bool(row.backup_digest),
+            },
+        )
+        # The last statement of a request: nothing is left open for the next
+        # one's wait.
+        await session.commit()
+        done += outcome == "completed"
+        failed += outcome == "failed"
+    return done, failed

@@ -65,6 +65,15 @@ COPY services/api/koras_api/core/import_notify.py ./services/api/koras_api/core/
 # settings only inside the method that rebinds a tenant, which is why it can
 # be here at all; `import_notify` above has the same shape.
 COPY services/api/koras_api/core/audit.py ./services/api/koras_api/core/audit.py
+# What the sink calls after it commits. It was reached inside
+# `core/database.py`, which is the API's sessions, FastAPI and `Settings()` and
+# was never in this image -- so every audit row an import wrote here was
+# followed by a `ModuleNotFoundError`, with the run already committed and its
+# job recorded as failed. IMPORT-DEF-020. A module of its own now, importing
+# nothing of the API, and `tests/unit/test_worker_image_contents.py` walks
+# every import of every module the worker reaches and fails on one this file
+# does not copy.
+COPY services/api/koras_api/core/rebind.py ./services/api/koras_api/core/rebind.py
 # And the dispatch point itself, because the commit tells whoever confirmed the
 # run that it finished, and there is exactly one place a notification leaves
 # from. Five modules rather than a re-implementation in the worker -- a second

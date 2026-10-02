@@ -7,7 +7,15 @@ job is asserted here, against the product's own task and not a copy of it:
 **One import at a time.** The worker has ten job slots and one machine's
 memory. An accepted import was measured fitting that memory once, so the heavy
 part of a dry run or a commit is held behind a slot, and a second import waits
-holding nothing. The test counts how many are inside at once.
+holding nothing. The test counts how many are inside at once. Since GR-352E
+the slot is the worker's heavy gate, which a backup, a restore and a scheduled
+report share -- `test_worker_heavy_sections.py` is where an import is held
+apart from those, and `test_worker_heavy_gate.py` is where the gate itself and
+the memory it hands back are asked.
+
+**A job that raises does not leave its run saying it is still being
+checked**, and a verdict that was committed before the error is not
+overwritten by it.
 
 **The event loop keeps turning.** The reading runs on a thread. Run inline it
 stopped everything else the worker does for as long as it took.
@@ -49,6 +57,7 @@ import pytest
 os.environ.setdefault("ENVIRONMENT", "dev")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
+import koras_worker.heavy as gate  # noqa: E402
 import koras_worker.tasks.imports as task  # noqa: E402
 from koras_import import (  # noqa: E402
     BudgetExceeded,
@@ -63,6 +72,10 @@ from koras_import import (  # noqa: E402
 from koras_queue import JobEnvelope  # noqa: E402
 
 TENANT = "00000000-0000-4000-8000-000000000001"
+
+#: The task's own, before the fixture below replaces them with nothing.
+_REAL_WITNESS = task._witness
+_REAL_TELL = task._tell
 
 
 async def _writer(_session: object, request: Any) -> Written:  # noqa: ANN401
@@ -245,7 +258,7 @@ async def _four_at_once(store: _Store) -> list[dict[str, Any]]:
 async def test_two_imports_are_never_read_at_once(worker: Callable[..., _Store]) -> None:
     inside = _Inside()
     store = worker(inside, **FOUR)
-    assert task.IMPORT_SLOTS == 1
+    assert task.IMPORT_SLOTS == 1 and gate.HEAVY_SLOTS == 1
 
     answers = await _four_at_once(store)
 
@@ -259,13 +272,29 @@ async def test_two_imports_are_never_read_at_once(worker: Callable[..., _Store])
 async def test_the_count_above_does_rise_when_the_slot_is_widened(
     worker: Callable[..., _Store], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Both: the import's own limit, and the gate it is a limit inside.
     monkeypatch.setattr(task, "IMPORT_SLOTS", 4)
+    monkeypatch.setattr(gate, "HEAVY_SLOTS", 4)
     inside = _Inside()
     store = worker(inside, **FOUR)
 
     await _four_at_once(store)
 
     assert inside.most > 1
+
+
+@pytest.mark.parametrize("widened", ["IMPORT_SLOTS", "HEAVY_SLOTS"])
+async def test_either_limit_alone_still_holds_imports_to_one(
+    worker: Callable[..., _Store], monkeypatch: pytest.MonkeyPatch, widened: str
+) -> None:
+    """Two statements, and each is enough: neither is decoration beside the other."""
+    monkeypatch.setattr(task if widened == "IMPORT_SLOTS" else gate, widened, 4)
+    inside = _Inside()
+    store = worker(inside, **FOUR)
+
+    await _four_at_once(store)
+
+    assert inside.total == 4 and inside.most == 1
 
 
 async def test_a_waiting_import_holds_no_file(worker: Callable[..., _Store]) -> None:
@@ -551,54 +580,8 @@ async def test_the_writer_is_handed_the_rows_that_were_prepared_and_no_copy(
 
 
 # ── memory handed back, where there is a way to ──────────────────────────────
-
-
-class _Library:
-    """A C library, as far as `_give_back` is concerned."""
-
-    def __init__(self) -> None:
-        self.trimmed: list[int] = []
-
-    def malloc_trim(self, pad: int) -> int:
-        self.trimmed.append(pad)
-        return 1
-
-
-def test_freed_memory_is_handed_back_through_the_c_library_s_own_call(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    library = _Library()
-    asked: list[str] = []
-
-    def load(name: str) -> _Library:
-        asked.append(name)
-        return library
-
-    monkeypatch.setattr(task.ctypes, "CDLL", load)
-    task._give_back()
-    assert asked == ["libc.so.6"] and library.trimmed == [0]
-
-
-@pytest.mark.parametrize(
-    "missing",
-    [OSError("libc.so.6: cannot open shared object file"), FileNotFoundError("no such library")],
-    ids=["no-such-library", "not-found"],
-)
-def test_a_platform_with_no_such_library_is_a_worker_that_does_nothing_here(
-    monkeypatch: pytest.MonkeyPatch, missing: Exception
-) -> None:
-    # Windows, macOS, and any image whose C library is not glibc.
-    def load(_name: str) -> None:
-        raise missing
-
-    monkeypatch.setattr(task.ctypes, "CDLL", load)
-    task._give_back()
-
-
-def test_a_c_library_without_the_call_is_the_same(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A library that loads under that name and has no `malloc_trim`.
-    monkeypatch.setattr(task.ctypes, "CDLL", lambda _name: object())
-    task._give_back()
+#
+# What is handed back, and how, is the gate's: `test_worker_heavy_gate.py`.
 
 
 async def test_an_import_finishes_where_nothing_can_be_handed_back(
@@ -613,7 +596,7 @@ async def test_an_import_finishes_where_nothing_can_be_handed_back(
     def load(_name: str) -> None:
         raise OSError("not this platform")
 
-    monkeypatch.setattr(task.ctypes, "CDLL", load)
+    monkeypatch.setattr(gate.ctypes, "CDLL", load)
     store = worker(lambda _watch: None, v1="validating", c1="commit_requested")
 
     checked = await task.validate_run({}, _job("v1"))
@@ -621,3 +604,146 @@ async def test_an_import_finishes_where_nothing_can_be_handed_back(
 
     assert (checked["status"], written["status"]) == ("ok", "ok")
     assert (store.runs["v1"].status, store.runs["c1"].status) == ("validated", "committed")
+
+
+# ── a job that raises ────────────────────────────────────────────────────────
+#
+# IMPORT-DEF-020. In the product's own image the audit sink raised after it
+# had committed, so a dry run's job was recorded as failed with its run
+# already `validated`. That was a job reported wrongly rather than a run
+# recorded wrongly -- the verdict was true. These two hold both halves: a job
+# that raises before its verdict is committed leaves a run that says it
+# failed, and one that raises afterwards leaves the verdict alone.
+
+
+async def test_a_dry_run_that_raises_before_its_verdict_is_kept_says_it_failed(
+    worker: Callable[..., _Store], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def no_evidence(*_: object, **__: object) -> None:
+        raise RuntimeError("the audit table refused the row")
+
+    monkeypatch.setattr(task, "_record", no_evidence)
+    store = worker(lambda _watch: None, v1="validating")
+    # The verdict is written and not yet committed when the evidence fails, so
+    # the database rolls it back: the run is where it was before the job.
+    store.record_validation = _verdict_that_rolls_back  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError):
+        await task.validate_run({}, _job("v1"))
+
+    assert store.runs["v1"].status == "failed", "the run still says it is being checked"
+    assert store.abandoned == {"v1": task._BROKE}
+    assert gate.occupancy() == {}
+
+
+async def _verdict_that_rolls_back(_session: object, _run: _Run, **_: object) -> Any:  # noqa: ANN401
+    return SimpleNamespace(value="validated")
+
+
+async def test_a_dry_run_that_raises_after_its_verdict_is_kept_leaves_the_verdict(
+    worker: Callable[..., _Store], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def evidence_then_error(*_: object, **__: object) -> None:
+        raise RuntimeError("something after the commit")
+
+    monkeypatch.setattr(task, "_record", evidence_then_error)
+    # `record_validation` here marks the run as the store's own commit would
+    # have by the time the error is raised.
+    store = worker(lambda _watch: None, v1="validating")
+
+    with pytest.raises(RuntimeError):
+        await task.validate_run({}, _job("v1"))
+
+    assert store.runs["v1"].status == "validated"
+    assert store.abandoned == {}
+
+
+async def test_the_first_of_those_does_fail_when_an_error_is_not_recorded(
+    worker: Callable[..., _Store], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """What the task did before: only a cancellation was written down."""
+
+    async def no_evidence(*_: object, **__: object) -> None:
+        raise RuntimeError("the audit table refused the row")
+
+    async def only_when_interrupted(_envelope: object, reason: str = task._INTERRUPTED) -> None:
+        assert reason == task._BROKE
+
+    monkeypatch.setattr(task, "_record", no_evidence)
+    monkeypatch.setattr(task, "_abandon", only_when_interrupted)
+    store = worker(lambda _watch: None, v1="validating")
+    store.record_validation = _verdict_that_rolls_back  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError):
+        await task.validate_run({}, _job("v1"))
+
+    assert store.runs["v1"].status == "validating"
+
+
+async def test_a_commit_that_raises_outside_its_transaction_says_it_failed(
+    worker: Callable[..., _Store], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def breaks(*_: object, **__: object) -> None:
+        raise RuntimeError("the claim could not be read back")
+
+    store = worker(lambda _watch: None, c1="commit_requested")
+    claim = store.begin_commit
+
+    async def begin_commit(session: object, run: _Run) -> None:
+        await claim(session, run)
+        # After the claim is committed, the run cannot be read again.
+        store.get = breaks  # type: ignore[method-assign]
+
+    store.begin_commit = begin_commit  # type: ignore[method-assign]
+    real_abandon = task._abandon
+
+    async def abandon(envelope: Any, reason: str = task._INTERRUPTED) -> None:  # noqa: ANN401
+        store.get = _Store.get.__get__(store)  # type: ignore[method-assign]
+        await real_abandon(envelope, reason)
+
+    monkeypatch.setattr(task, "_abandon", abandon)
+
+    with pytest.raises(RuntimeError):
+        await task.commit_run({}, _job("c1"))
+
+    assert store.runs["c1"].status == "failed"
+    assert store.abandoned == {"c1": task._BROKE}
+
+
+async def test_a_commit_that_cannot_be_witnessed_or_announced_is_still_a_commit(
+    worker: Callable[..., _Store], monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The evidence and the notice are beside the import, and neither is the import.
+
+    By the time either runs the rows and the run's `committed` are one
+    transaction that has landed. An error in the audit row or in the notice
+    is logged and swallowed: the job answers what happened to the records,
+    the run keeps the state that is true, and nothing records a failure over
+    it. The task's own `_witness` and `_tell` run here, not the fixture's
+    stand-ins, and both are made to fail.
+    """
+
+    async def breaks(*_: object, **__: object) -> None:
+        raise RuntimeError("the run could not be read for its evidence")
+
+    store = worker(lambda _watch: None, c1="commit_requested")
+    monkeypatch.setattr(task, "_witness", _REAL_WITNESS)
+    monkeypatch.setattr(task, "_tell", _REAL_TELL)
+    landed = store.record_commit
+
+    async def record_commit(session: object, run: _Run, **counts: object) -> None:
+        await landed(session, run, **counts)
+        # From here on nothing can read the run: the witness and the notice
+        # both begin by reading it.
+        store.get = breaks  # type: ignore[method-assign]
+
+    store.record_commit = record_commit  # type: ignore[method-assign]
+
+    with caplog.at_level("ERROR"):
+        answer = await task.commit_run({}, _job("c1"))
+
+    assert answer["status"] == "ok" and answer["created"] == 1
+    assert store.runs["c1"].status == "committed"
+    assert store.abandoned == {} and store.failed == {}
+    assert "could not be witnessed" in caplog.text
+    assert gate.occupancy() == {}

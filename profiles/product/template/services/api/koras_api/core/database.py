@@ -19,6 +19,11 @@ from koras_tenant import Provisioning, Tenant
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .engine import SessionLocal
+
+# Defined in a module of its own, which imports nothing of the API, so that
+# the worker image can carry it; named here because this is where every
+# caller in the API has always found it.
+from .rebind import rebind_tenant as rebind_tenant
 from .settings import settings
 from .tenant import TenantDep
 
@@ -41,19 +46,6 @@ async def tenant_session(
     async with SessionLocal() as session:
         declare(Tenant(tenant_id=tenant_id, user_id=user_id))
         yield session
-
-
-async def rebind_tenant(session: AsyncSession, tenant_id: str) -> None:
-    """Bind the tenant again after a commit, where the binding is a statement.
-
-    The tenant setting is transaction-local and a commit ends the
-    transaction; a store that commits mid-request still has rows to write
-    on the same session. Here the engine re-declares the caller at the
-    start of every transaction from the task's declaration, so there is
-    nothing to do -- the function exists so the AI core, which runs on
-    repositories with either design, has one name to call.
-    """
-    del session, tenant_id
 
 
 async def get_db(tenant: TenantDep) -> AsyncGenerator[AsyncSession, None]:

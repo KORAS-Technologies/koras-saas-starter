@@ -2734,13 +2734,51 @@ is left is the decision none of them could take:
       provisional limits on 2026-10-02, including under a 512 MiB limit with
       no swap, and it is evidence for the decision rather than the acceptance:
       the limits it was taken against are the ones the decision replaces.
-- [ ] **What GR-352C leaves, four rows, all dated 2026-10-02.** A waiting
-      import's time counts against its queue timeout (IMPORT-GAP-021); a
-      product's own validator, matcher and writer are outside every bound
-      (IMPORT-GAP-022); what else the worker holds beside an import was not
-      measured (IMPORT-GAP-023); and the envelope still costs a CSV as the one
-      string nothing builds any more, and holds the source whole
-      (IMPORT-GAP-024).
+- [ ] **What GR-352C leaves, three rows of four, all dated 2026-10-02.** A
+      waiting import's time counts against its queue timeout (IMPORT-GAP-021);
+      a product's own validator, matcher and writer are outside every bound
+      (IMPORT-GAP-022); and the envelope still costs a CSV as the one string
+      nothing builds any more, and holds the source whole (IMPORT-GAP-024).
+      The fourth -- what else the worker holds beside an import
+      (IMPORT-GAP-023) -- is the next entry.
+- [ ] **GR-352E — what else is in the worker.** Resolved locally and not
+      closed: as of 2026-10-02 it is an uncommitted tree, and this box is
+      ticked when the pushed commit has passed Generator Integration. IMPORT-GAP-023
+      and IMPORT-GAP-025 are the rows it resolves. Built 2026-10-02, after the
+      worker was measured in the product's own image at `cf17a6e`: the worst
+      accepted import beside a cross-provider backup reached the 512 MiB
+      limit. An import, a backup's copy, a restore and a scheduled report
+      share one gate now, one section to a process, with ten job slots as
+      before; and a scheduled delivery carries at most 10,000 rows, as CSV,
+      XLSX or PDF, which is stricter than an interactive export on purpose --
+      there the same number is only where the inline export hands over to the
+      background one. In the same image under the same limit every pair peaked at 286
+      to 303 MiB. Neither machine was given more memory.
+      `docs/features/data-import/worker-resource-envelope.md`.
+- [ ] **IMPORT-DEF-020 — the worker's image was missing a module.** Found by
+      that measurement and resolved locally with GR-352E on 2026-10-02,
+      pending committed and remote verification. The audit sink
+      imported `core/database.py` after it committed and the image never
+      carried it, so a deployed worker recorded every dry run as a failed job
+      over a run that said `validated`. The image is built and run in a test
+      of its own now.
+- [ ] **What GR-352E leaves, dated 2026-10-02.** A heavy job waiting for the
+      gate is timed by the queue while it waits (IMPORT-GAP-021, widened); a
+      report's rows are in hand before they can be counted, and the export
+      route's background export has no ceiling at all and sits outside the
+      worker's gate (IMPORT-GAP-026); a backup's copy holds the worker's event
+      loop for as long as one object takes, as it did before; what the API
+      process keeps resident after an analysis was noticed and not
+      characterised; and the fourth provisional number, one heavy section to
+      a process, is the implementer's like the three before it.
+- [ ] **A process finding, not a defect: PR #24 was merged early.** GR-352C's
+      pull request was merged on 2026-10-02 before its owner-review stop and
+      before its own checks had finished. The checks passed afterwards and
+      nothing was found to have regressed, so nothing was reverted. The order
+      a slice is meant to take -- built, verified locally, committed and
+      opened, validated remotely, reviewed by its owner, merged -- was not
+      the order that one took, and GR-352E was returned for review before
+      anything was committed for that reason.
 - [ ] **IMPORT-DEF-014 — and in this order.** `source_bytes` awaits a
       synchronous `S3ObjectStore.get`, so against a real bucket no import can
       read its source at all. That is a defect, and it is also the only reason

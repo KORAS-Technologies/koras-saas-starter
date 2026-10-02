@@ -23,12 +23,15 @@ tenant would be the wrong shape for work one customer asked for.
 
 Three more, since GR-352C, and they are about the machine rather than the run.
 
-**One import at a time in this process.** `_import_slot` is held for the whole
-of a dry run or a commit. Every other job the worker runs goes on beside it;
-a second import waits, holding nothing, until the first has let go of its
-file. The worker's ten job slots are a statement about how many coroutines may
-be waiting on a database, and said nothing about how many files may be in
-memory -- one accepted import fits this machine and two do not have to.
+**One import at a time in this process, and nothing else heavy beside it.**
+The heavy gate -- `koras_worker/heavy.py` -- is held for the whole of a dry run
+or a commit. A second import waits, holding nothing, until the first has let
+go of its file; so, since GR-352E, does a backup's copy, a restore and a
+scheduled report, because an import measured beside a cross-provider backup
+left this machine no memory at all. Every job that holds no payload goes on
+beside it. The worker's ten job slots are a statement about how many
+coroutines may be waiting on a database, and said nothing about how many
+files may be in memory.
 
 **The file is read off the event loop.** `store.examine` and `store.prepare`
 are seconds of parsing with no `await` in them. Run inline, the worker
@@ -49,11 +52,8 @@ past its timeout went on reading until the file was finished.
 from __future__ import annotations
 
 import asyncio
-import ctypes
-import gc
 import importlib
 import logging
-import weakref
 from collections.abc import Callable
 from functools import partial
 from typing import Any
@@ -79,6 +79,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from ..heavy import IMPORT, heavy
 from ..settings import SweepSettings, settings
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,11 @@ imports = ImportSettings()
 #:
 #: Per process, which is the scope the memory has. A second worker machine has
 #: a slot of its own.
+#:
+#: Since GR-352E this is the import's own limit *inside* the heavy gate rather
+#: than a semaphore beside it: one acquisition, so there is no order between
+#: two to get wrong. While the gate is one wide the two say the same thing;
+#: this is what still holds imports to one if the gate is ever widened.
 IMPORT_SLOTS = 1
 
 #: PROVISIONAL (GR-352C, pending NFR ratification). Seconds one run may spend
@@ -121,46 +127,7 @@ WORK_BUDGET_SECONDS = 600.0
 _STOP_GRACE_SECONDS = 15.0
 
 _INTERRUPTED = "the import was interrupted before it finished; start it again"
-
-_slots: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = (
-    weakref.WeakKeyDictionary()
-)
-
-
-def _import_slot() -> asyncio.Semaphore:
-    """The gate a dry run or a commit holds from its first statement to its last.
-
-    One semaphore for each event loop, made on first use: a semaphore belongs
-    to the loop it first waited on, a worker has one loop for its whole life,
-    and a test suite has many.
-    """
-    loop = asyncio.get_running_loop()
-    slot = _slots.get(loop)
-    if slot is None:
-        slot = _slots[loop] = asyncio.Semaphore(IMPORT_SLOTS)
-    return slot
-
-
-def _give_back() -> None:
-    """Return what an import freed to the machine, rather than to the heap.
-
-    An import's memory is mostly strings, and when the job ends they are
-    freed -- to the allocator, which keeps the pages. GR-352C watched a
-    worker's resident memory stay where its largest import had left it, 329
-    MiB of a 512 MiB machine, with nothing in hand: memory no other job could
-    be said to be using and none could be promised. `malloc_trim` hands the
-    free pages back.
-
-    The C library's own call, where there is one. Anywhere else -- another
-    allocator, another platform -- this does nothing, and the worker is what
-    it was before: correct, and holding more than it needs.
-    """
-    gc.collect()
-    try:
-        ctypes.CDLL("libc.so.6").malloc_trim(0)
-    except (OSError, AttributeError):
-        return
-
+_BROKE = "the import stopped on an error before it finished; start it again"
 
 async def _off_loop[T](budget: WorkBudget, work: Callable[[], T]) -> T:
     """Run the reading on a thread, and stop it if this job is cancelled.
@@ -266,18 +233,22 @@ async def validate_run(ctx: dict[str, Any], envelope: JobEnvelope) -> dict[str, 
     """Check one run's file, and record what was wrong with it."""
     del ctx
     try:
-        async with _import_slot():
-            try:
-                return await _validate_run(envelope, WorkBudget(WORK_BUDGET_SECONDS))
-            finally:
-                # Before the slot is let go, so the next import starts from
-                # what this one gave back and not from what it left behind.
-                _give_back()
+        # From before the source is fetched. What the run freed is handed
+        # back by the gate before it is let go.
+        async with heavy(IMPORT, limit=IMPORT_SLOTS):
+            return await _validate_run(envelope, WorkBudget(WORK_BUDGET_SECONDS))
     except asyncio.CancelledError:
         # The queue's timeout, or the worker shutting down. The reading has
         # been stopped by `_off_loop`; what is left is the run, which would
         # otherwise say `validating` for ever.
         await _abandon(envelope)
+        raise
+    except Exception:
+        # A job that raised is a job the queue records as failed, and its run
+        # must not go on saying it is being checked. Guarded by the state it
+        # reads: a verdict that was committed before the error is left as it
+        # is, because it is true. GR-352E.
+        await _abandon(envelope, _BROKE)
         raise
 
 
@@ -444,16 +415,18 @@ async def commit_run(ctx: dict[str, Any], envelope: JobEnvelope) -> dict[str, An
     """
     del ctx
     try:
-        async with _import_slot():
-            try:
-                return await _commit_run(envelope, WorkBudget(WORK_BUDGET_SECONDS))
-            finally:
-                _give_back()
+        async with heavy(IMPORT, limit=IMPORT_SLOTS):
+            return await _commit_run(envelope, WorkBudget(WORK_BUDGET_SECONDS))
     except asyncio.CancelledError:
         # By here the writing transaction has been rolled back by the session
         # that held it, or has committed. `_abandon` reads which, and records a
         # failure only for a run that is still unfinished.
         await _abandon(envelope)
+        raise
+    except Exception:
+        # The same, for an error nothing below caught. A run whose one
+        # transaction landed is `committed` and is left alone.
+        await _abandon(envelope, _BROKE)
         raise
 
 
@@ -682,8 +655,8 @@ async def _write(
     return written
 
 
-async def _abandon(envelope: JobEnvelope) -> None:
-    """A job that was cancelled says so on its run. Swallows everything.
+async def _abandon(envelope: JobEnvelope, reason: str = _INTERRUPTED) -> None:
+    """A job that was cancelled, or that raised, says so on its run. Swallows everything.
 
     The queue cancels a job at its timeout and the worker cancels every job
     when it shuts down, and neither is an exception a handler's own `except`
@@ -707,7 +680,7 @@ async def _abandon(envelope: JobEnvelope) -> None:
                     run = await store.get(session, run_id)
                     if run is None or run.status not in _UNFINISHED:
                         return
-                    if await store.abandon(session, run, _INTERRUPTED):
+                    if await store.abandon(session, run, reason):
                         await session.commit()
                         logger.warning(
                             "import: run %s was interrupted in %s and is recorded as failed",
@@ -758,6 +731,11 @@ async def _record(
         outcome=outcome,
         details=details,
     )
+    # The sink commits, and the tenant this session was bound to is
+    # transaction-local. In the API the engine declares it again at the start
+    # of every transaction; nothing does that for a worker's session, so it is
+    # said again here rather than left for the next statement to find missing.
+    await session.execute(_AS_TENANT, {"tenant_id": tenant_id})
 
 
 async def _witness(

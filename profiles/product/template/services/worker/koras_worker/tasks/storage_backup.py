@@ -28,6 +28,15 @@ objects are at Supabase -- no single provider can make that copy, so the object
 passes through the worker. That is bounded: an object larger than
 `STREAM_CEILING` is left for a person to decide about rather than pulled into a
 worker's memory, and a run that leaves any is partial.
+
+**One object in hand at a time, and never beside an import.** Since GR-352E
+each copy that can hold an object's bytes is made inside the worker's heavy
+gate -- `koras_worker/heavy.py` -- which an import, a restore and a scheduled
+report share. Measured in the product's own image, one 64 MiB object copied to
+another provider and read back took 193 MiB over an idle worker, and beside
+the worst accepted import that was the whole machine. The gate is taken an
+object at a time, so an import somebody is waiting on goes in between two
+objects rather than after the night's run.
 """
 
 from __future__ import annotations
@@ -59,6 +68,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from ..heavy import BACKUP, heavy
 from ..settings import SweepSettings, settings
 
 
@@ -437,6 +447,58 @@ def copy_one(
     return verdict(source_digest, backup_digest)
 
 
+def holds_payload(size_bytes: int | None) -> bool:
+    """Whether copying this object can put its bytes in this process.
+
+    It cannot for an object past `STREAM_CEILING`, by either route: the
+    stream skips it and `digest_by_reading` answers nothing for it, each
+    before reading a byte. Anything else can -- a cross-provider copy reads
+    it, and a server-side one reads it back twice wherever the provider
+    volunteers no digest, which on the only provider configured anywhere is
+    always. A size nobody recorded is treated as one that can.
+    """
+    return size_bytes is None or size_bytes <= STREAM_CEILING
+
+
+async def _copy_gated(
+    store: ObjectStore,
+    target_store: ObjectStore,
+    target: Destination,
+    *,
+    source_key: str,
+    backup_key: str,
+    size_bytes: int | None,
+    streaming: bool,
+) -> Outcome:
+    """`copy_one`, inside the heavy gate wherever it can hold the object.
+
+    The gate is taken before the first byte is read and let go once the
+    verdict is in hand, which is after the read-back. Everything around it --
+    the query for what is due, the catalogue row, the audit row -- holds no
+    payload and is outside it.
+    """
+    if not holds_payload(size_bytes):
+        return copy_one(
+            store,
+            target_store,
+            target,
+            source_key=source_key,
+            backup_key=backup_key,
+            size_bytes=size_bytes,
+            streaming=streaming,
+        )
+    async with heavy(BACKUP):
+        return copy_one(
+            store,
+            target_store,
+            target,
+            source_key=source_key,
+            backup_key=backup_key,
+            size_bytes=size_bytes,
+            streaming=streaming,
+        )
+
+
 def backup_key_for(source_key: str) -> str:
     """Where the copy lives at the destination.
 
@@ -525,7 +587,7 @@ async def back_up_tenant_objects(
         )
         key = backup_key_for(row.storage_key)
         try:
-            outcome = copy_one(
+            outcome = await _copy_gated(
                 store,
                 target_store,
                 target,

@@ -492,8 +492,10 @@ from inside a file used to be raised before a reader returned its first row.
 From a stream it arrives when the walk reaches it. `prepare` returns before
 the writer is called, so it still arrives before anything is written.
 
-**The job itself changed.** It holds a slot -- one import to a worker process
--- from before the source is fetched; the read runs on a thread, so the
+**The job itself changed.** It holds a slot -- one import to a worker process,
+and since GR-352E the same gate a backup's copy, a restore and a scheduled
+report hold, so none of the four is heavy beside another -- from before the
+source is fetched; the read runs on a thread, so the
 worker's event loop is free; and the read is given a time budget it asks as
 it goes, because the queue's timeout cancels a coroutine and a parse has no
 `await` for that to land on. Before this a job past its timeout read on to
@@ -551,6 +553,16 @@ never a cell. Reaching the sink from the worker cost the same change
 `core/recipients` needed on 2026-09-20: `core/audit.py` imported `.database`
 at module level, which builds the API's settings, and now imports it at the
 point of use. The worker image copies the module.
+
+**That last move was a defect, found on 2026-10-02.** Importing `.database`
+at the point of use kept the API's settings out of the worker by moving the
+failure: the worker's image has no `core/database.py`, so the import failed
+on the sink's first flush, after the flush had committed. Every dry run in a
+deployed worker was a failed job over a run already `validated`.
+IMPORT-DEF-020. What the sink calls is `core/rebind.py` now -- a module that
+imports nothing of the API, imported at the top of the file and copied into
+the image -- and the image is built and run by a test of its own.
+`worker-resource-envelope.md` has the account.
 
 ### What the browser found beside itself
 

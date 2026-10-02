@@ -193,6 +193,18 @@ template_map:
       - tests/unit/test_import_worker_memory.py
       - tests/integration/test_import_commit_rls.py
       - tests/integration/test_import_commit_atomic.py
+      # GR-352E: the worker's own image, built and run with nothing mounted.
+      # A dry run and a commit taken from first line to last inside it, and
+      # the probe that is fed to the container. IMPORT-DEF-020 was a module
+      # the source tree has and the image did not, and every other suite here
+      # runs where the tree is.
+      #
+      # The gate these jobs share is not listed anywhere, because it is not a
+      # capability's: `services/worker/koras_worker/heavy.py` and its two
+      # suites are generated with the worker, and a job a product was
+      # generated without is skipped inside them.
+      - tests/integration/test_worker_image.py
+      - tests/integration/worker_image_probe.py
       - apps/web/src/app/dashboard/imports
       # The template download: a route handler, because a download is a body
       # and a server action returns a value. The menu it is reached from is a
@@ -251,6 +263,8 @@ template_map:
       - tests/unit/test_reporting_standard.py
       - tests/unit/test_reporting_retention.py
       - tests/unit/test_reporting_delivery.py
+      # GR-352E: a scheduled delivery carries as many rows as an export does.
+      - tests/unit/test_reporting_delivery_bound.py
       - tests/unit/test_reporting_schedules.py
       - tests/unit/test_platform_activity.py
       - tests/unit/reporting_support.py

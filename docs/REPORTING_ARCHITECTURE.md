@@ -153,9 +153,31 @@ There is no free-text filter kind. A date range is bounded to 366 days and
 defaults to the last thirty, so a report cannot be asked to scan a table
 without limit.
 
-Exports are bounded to `EXPORT_ROW_LIMIT` rows; a larger export is refused
-with a sentence saying to narrow the range, and the asynchronous export is a
-follow-up rather than a silent truncation.
+One number, 10,000 rows, means two different things, and they are kept under
+two names.
+
+- **An interactive export, asked for through the API.** `EXPORT_ROW_LIMIT` is
+  the handoff between the inline export and the background one, and it is
+  not a maximum. Up to it the export is the response; past it the same
+  export is handed to the background export, which the Exports section below
+  describes, and still happens. Nothing refuses an export for its size, and
+  the background export has no row maximum of its own -- IMPORT-GAP-026 in
+  `docs/platform/gap-defect-register.md`, open as of 2026-10-02.
+- **A scheduled delivery.** `SCHEDULED_DELIVERY_ROW_LIMIT`, in the worker's
+  `tasks/reporting.py`, is the most rows a scheduled delivery is supported to
+  carry, as CSV, XLSX or PDF, and past it the delivery is refused. It is
+  derived from `EXPORT_ROW_LIMIT` rather than declared beside it, so there is
+  one number. It is stricter on purpose: a delivery is unattended, runs
+  inside the worker's shared resource envelope, and has no background to be
+  handed to. Decided by the owner on 2026-10-02 (GR-352E).
+
+This paragraph said until 2026-10-02 that a larger export "is refused with a
+sentence saying to narrow the range, and the asynchronous export is a
+follow-up". That was the first wave. The second built the asynchronous
+export, the route has not refused since, and the sentence outlived both --
+found when GR-352E went to apply "the export bound" to scheduled deliveries
+and read the route to see what the bound was. Recorded rather than quietly
+corrected: R-042, in a document that describes the system as built.
 
 ## RBAC
 
@@ -359,6 +381,24 @@ error and its next time. The catalogue reaches the worker by name: the
 worker image carries the API's `koras_api/reporting` package and nothing
 else of the API, and imports it through `importlib` so the dependency
 check does not read it as an undeclared dependency on the API.
+
+**A delivery is bounded and is never made beside an import**, since
+2026-10-02 (GR-352E). A report with more rows than
+`SCHEDULED_DELIVERY_ROW_LIMIT` -- 10,000, in CSV, XLSX and PDF alike -- is
+refused: nothing is rendered, nobody is sent anything -- not the first
+recipient of ten either -- and the schedule's `last_error` says how many rows
+there were, what the most is and that the filters should be narrowed or the
+report exported from its page. It counts as a failed run, its next time is
+set, and no audit row says it was delivered. And the delivery itself -- from
+the query that answers the report to the last mail that carries it -- is made
+inside the worker's heavy gate, which an import, a backup's copy and a
+restore share, one to a process. Before this the path had no bound of either
+kind. What it does not reach is in `docs/platform/gap-defect-register.md` as
+IMPORT-GAP-026: a resolver answers whole, so the rows are in hand before they
+are counted, and the route's own background export is rendered in the API
+with no ceiling. That export is a different mechanism with a different
+bound, which is none: this refusal is the scheduled delivery's alone, and a
+customer who asks for the same report from its page still gets it.
 
 The plan at delivery time is the one the platform last told the product
 of. The worker holds no customer token to resolve it live and the product
