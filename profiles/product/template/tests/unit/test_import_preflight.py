@@ -8,17 +8,21 @@ the two routes, `check`, `examine` and `prepare` for the dry run and the commit
 otherwise do with it.
 
 That is asserted by replacing the expensive things with something that fails
-the test when reached: `openpyxl.load_workbook` for a workbook and the
-whole-file `decode` for a CSV. A second test then shows the same replacements
-*are* reached by a file that passes, because a guard that cannot fire proves
-nothing about the code it stands in front of.
+the test when reached. A second test then shows the same replacements *are*
+reached by a file that passes, because a guard that cannot fire proves nothing
+about the code it stands in front of.
 
-**Since GR-352B `analyse` has a different expensive thing.** It no longer
-calls either reader, for any file: it streams the head through
-`koras_import.inspection`. So what stands behind the safety pass there is the
-inspection, and that is what is replaced for it -- while the two readers stay
-replaced too, which now asserts they are never reached from `analyse` at all.
-`test_import_inspection.py` has the rest of that route's assertions.
+**What the expensive thing is has changed twice.** Until GR-352B it was
+`openpyxl.load_workbook` for a workbook and the whole-file `decode` for a CSV,
+for all four. Since GR-352B `analyse` streams the head through
+`koras_import.inspection`, so the inspection is what stands behind the pass
+there. Since GR-352C the other three read rows as a stream through
+`koras_import.streaming`, so the stream is what stands behind it for them.
+
+The two whole-file readers stay replaced throughout, which now asserts
+something stronger than order: **nothing in this module reaches either of
+them for any file**, safe or not. `test_import_inspection.py` has the rest of
+the route's assertions and `test_import_worker_envelope.py` the worker's.
 
 The limits are made small here so no test builds a large file. The envelope a
 product actually runs under is `SAFETY_LIMITS`, and the numbers in it are
@@ -57,6 +61,7 @@ from koras_import import (  # noqa: E402
     RunState,
     SafetyLimits,
     inspection,
+    streaming,
 )
 
 EMOJI = "\U0001f600"
@@ -206,8 +211,8 @@ READERS: dict[str, Callable[[bytes, Format], Any]] = {
     "prepare": lambda raw, fmt: store.prepare(raw, PEOPLE, _run(fmt)),
 }
 
-#: The three that parse the whole file through the canonical readers. The
-#: fourth, `analyse`, has inspected the head instead since GR-352B.
+#: The three that read every row, as a stream since GR-352C. The fourth,
+#: `analyse`, has inspected the head instead since GR-352B.
 PARSERS = ("check", "examine", "prepare")
 
 
@@ -218,24 +223,38 @@ def _run(fmt: Format) -> store.Run:
 @pytest.fixture
 def guarded(monkeypatch: pytest.MonkeyPatch) -> None:
     """A tight envelope, and every expensive read replaced with a failure."""
-    import openpyxl
-    from koras_import import reading
-
-    def workbook_reached(*_: object, **__: object) -> None:
-        raise AssertionError("openpyxl was reached before the safety pass refused")
-
-    def decode_reached(_: bytes) -> None:
-        raise AssertionError("the whole file was decoded before the safety pass refused")
 
     def inspection_reached(*_: object, **__: object) -> None:
         raise AssertionError("the file was inspected before the safety pass refused")
 
+    def stream_reached(*_: object, **__: object) -> None:
+        raise AssertionError("the file was streamed before the safety pass refused")
+
     monkeypatch.setattr(store, "SAFETY_LIMITS", TIGHT)
-    monkeypatch.setattr(openpyxl, "load_workbook", workbook_reached)
-    monkeypatch.setattr(store, "decode", decode_reached)
-    monkeypatch.setattr(reading, "decode", decode_reached)
+    _no_whole_file_reader(monkeypatch)
     monkeypatch.setattr(inspection, "_inspect_csv", inspection_reached)
     monkeypatch.setattr(inspection, "_inspect_xlsx", inspection_reached)
+    monkeypatch.setattr(streaming, "_csv_rows", stream_reached)
+    monkeypatch.setattr(streaming, "_workbook_rows", stream_reached)
+
+
+def _no_whole_file_reader(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`openpyxl`, `read_workbook` and the whole-file `decode`, each a failure."""
+    import koras_import
+    import openpyxl
+    from koras_import import reading, reading_xlsx
+
+    def workbook_reached(*_: object, **__: object) -> None:
+        raise AssertionError("openpyxl was reached")
+
+    def decode_reached(_: bytes) -> None:
+        raise AssertionError("the whole file was decoded")
+
+    monkeypatch.setattr(openpyxl, "load_workbook", workbook_reached)
+    monkeypatch.setattr(reading_xlsx, "read_workbook", workbook_reached)
+    monkeypatch.setattr(koras_import, "read_workbook", workbook_reached)
+    monkeypatch.setattr(reading, "decode", decode_reached)
+    monkeypatch.setattr(koras_import, "decode", decode_reached)
 
 
 @pytest.mark.parametrize("reader", sorted(READERS))
@@ -260,21 +279,52 @@ def test_an_unsafe_file_is_refused_before_any_reader_is_handed_it(
 
 
 @pytest.mark.parametrize("reader", PARSERS)
+@pytest.mark.parametrize(
+    ("raw", "fmt"), [(SAFE_CSV, Format.CSV), (SAFE_XLSX, Format.XLSX)], ids=["csv", "xlsx"]
+)
 @pytest.mark.usefixtures("guarded")
-def test_the_guard_fires_for_a_csv_that_passes(reader: str) -> None:
+def test_the_guard_fires_for_a_file_that_passes(reader: str, raw: bytes, fmt: Format) -> None:
     # Not `ReadRefused`: nothing catches the failure, so it arrives as itself.
-    with pytest.raises(AssertionError, match="whole file was decoded"):
-        READERS[reader](SAFE_CSV, Format.CSV)
+    with pytest.raises(AssertionError, match="the file was streamed"):
+        READERS[reader](raw, fmt)
 
 
-@pytest.mark.parametrize("reader", PARSERS)
-@pytest.mark.usefixtures("guarded")
-def test_the_guard_fires_for_a_workbook_that_passes(reader: str) -> None:
+@pytest.mark.parametrize("reader", sorted(READERS))
+@pytest.mark.parametrize(
+    ("raw", "fmt"), [(SAFE_CSV, Format.CSV), (SAFE_XLSX, Format.XLSX)], ids=["csv", "xlsx"]
+)
+def test_no_way_in_reaches_a_whole_file_reader(
+    monkeypatch: pytest.MonkeyPatch, reader: str, raw: bytes, fmt: Format
+) -> None:
+    """GR-352C: a file that passes is read to its end, and neither is reached.
+
+    `load_workbook` is what builds a sheet's merged ranges and walks the
+    workbook's other sheets -- none of it counted by the safety pass -- and
+    the whole-file `decode` is the first of four copies of a CSV. The dry run
+    and the commit reached both until 2026-10-01.
+    """
+    _no_whole_file_reader(monkeypatch)
+    answer = READERS[reader](raw, fmt)
+    rows = {
+        "analyse": lambda: answer.rows_seen,
+        "check": lambda: answer.rows,
+        "examine": lambda: answer.verdict.rows,
+        "prepare": lambda: len(answer[1]),
+    }[reader]()
+    assert rows == 1
+
+
+def test_the_guard_above_does_fail_when_a_whole_file_reader_is_reached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from koras_import import read_workbook
+
+    kept = read_workbook
+    _no_whole_file_reader(monkeypatch)
     # `read_workbook` turns whatever `openpyxl` raises into its own refusal,
     # so the failure is found as the cause.
     with pytest.raises(ReadRefused) as caught:
-        READERS[reader](SAFE_XLSX, Format.XLSX)
-    assert not isinstance(caught.value, PreflightRefused)
+        kept(SAFE_XLSX, limit=10, ceiling=10)
     assert isinstance(caught.value.__cause__, AssertionError)
 
 

@@ -158,6 +158,124 @@ def predict(
     )
 
 
+@dataclass(frozen=True)
+class Candidates:
+    """What a dry run keeps of the rows it passed, so a matcher can be asked.
+
+    `request_for` and `predict` are handed every row of the file, twice. A
+    worker that reads rows as a stream has none to hand over once they have
+    gone by, and does not need them: of a row the validator passed, the
+    prediction uses its key, its number, and -- under `create` alone -- the
+    cell a rejection quotes. Those are kept here and the row is not.
+
+    **Each key is in the file once among these rows.** A second row carrying
+    a key is a duplicate, which is a problem, which is not a row the validator
+    passed. So `keys` is `keys_of`'s answer already: distinct, in file order.
+    """
+
+    #: The key of each row that passed and has one, in file order.
+    keys: tuple[tuple[str, ...], ...] = ()
+    #: That row's number, beside its key.
+    rows: tuple[int, ...] = ()
+    #: That row's first match-key cell, cut as a problem's value is cut.
+    values: tuple[str, ...] = ()
+    #: Rows that passed and carry no key at all. They cannot name a record.
+    unkeyed: int = 0
+
+
+class Candidate:
+    """Collects `Candidates` from `validate`, a row at a time.
+
+    Pass `collect` as `validate`'s `each`. The key it is given for a row that
+    passed is the very tuple the validator's duplicate index holds, so keeping
+    it here keeps no second copy of any key.
+    """
+
+    def __init__(self, target: ImportTarget, resolved: ResolvedMapping) -> None:
+        self._column = (
+            resolved.fields.get(target.match_keys[0], "") if target.match_keys else ""
+        )
+        self._keys: list[tuple[str, ...]] = []
+        self._rows: list[int] = []
+        self._values: list[str] = []
+        self._unkeyed = 0
+
+    def collect(self, row: Row, key: tuple[str, ...] | None, bad: bool) -> None:
+        if bad:
+            return
+        if key is None:
+            self._unkeyed += 1
+            return
+        self._keys.append(key)
+        self._rows.append(row.number)
+        self._values.append(row.cells.get(self._column, "")[:120])
+
+    def candidates(self) -> Candidates:
+        return Candidates(
+            keys=tuple(self._keys),
+            rows=tuple(self._rows),
+            values=tuple(self._values),
+            unkeyed=self._unkeyed,
+        )
+
+
+def request_from(
+    target: ImportTarget, candidates: Candidates, *, tenant_id: str
+) -> MatchRequest:
+    """`request_for`, from what a streamed dry run kept."""
+    return MatchRequest(
+        tenant_id=tenant_id,
+        target=target.key,
+        match_keys=tuple(target.match_keys),
+        keys=candidates.keys,
+    )
+
+
+def predict_from(
+    target: ImportTarget,
+    operation: Operation,
+    resolved: ResolvedMapping,
+    candidates: Candidates,
+    *,
+    existing: Collection[tuple[str, ...]],
+) -> Prediction:
+    """`predict`, from what a streamed dry run kept. The same table, row for row.
+
+    Held to `predict` by `test_matching.py`, which hands both the same files
+    under every operation and compares the answers whole.
+    """
+    known = set(existing)
+    found = 0
+    errors: list[RowError] = []
+    reject = operation is Operation.CREATE
+    field = target.match_keys[0] if target.match_keys else ""
+    column = resolved.fields.get(field, "")
+    for key, number, value in zip(
+        candidates.keys, candidates.rows, candidates.values, strict=True
+    ):
+        if key not in known:
+            continue
+        found += 1
+        if reject:
+            errors.append(
+                RowError(
+                    row=number,
+                    column=column,
+                    field=field,
+                    code=ALREADY_EXISTS,
+                    value=value,
+                )
+            )
+    absent = len(candidates.keys) - found + candidates.unkeyed
+    if operation is Operation.CREATE:
+        return Prediction(create=absent, reject=found, errors=tuple(errors))
+    if operation is Operation.UPDATE:
+        return Prediction(update=found, skip=absent)
+    if operation is Operation.UPSERT:
+        return Prediction(update=found, create=absent)
+    return Prediction(skip=found, create=absent)
+
+
 def with_rejections(verdict: Validation, prediction: Prediction) -> Validation:
     """The verdict with every rejected row added as a problem, bounded as before."""
     if not prediction.errors:
@@ -182,11 +300,15 @@ def with_rejections(verdict: Validation, prediction: Prediction) -> Validation:
 
 __all__ = [
     "ALREADY_EXISTS",
+    "Candidate",
+    "Candidates",
     "MatchRequest",
     "Matcher",
     "Prediction",
     "keys_of",
     "predict",
+    "predict_from",
     "request_for",
+    "request_from",
     "with_rejections",
 ]

@@ -1,0 +1,583 @@
+"""All of a file or none of it, against a real PostgreSQL, after GR-352C.
+
+GR-352C changed how the worker reads a file -- rows as a stream, off the event
+loop, under a time budget, with the queue's cancellation passed on to the
+reading thread. None of that may change the one sentence the commit exists
+for: **a commit that fails leaves zero rows.** `test_import_commit_rls.py`
+beside this file proves the commit completes and that a failure is recorded;
+this file counts rows.
+
+**The writer here writes.** The starter owns no product table, so the rows go
+into `import_row_errors` -- the import's own tenant-scoped table, with
+row-level security on and forced -- one row for each row of the file, keyed to
+the run. It stands in for a product's table: what is counted afterwards is
+rows a writer inserted on the commit's own session, visible or not once the
+transaction has ended, which is the whole of the property.
+
+Every case reads the row count on a second connection after the job has
+returned. A count read on the writer's own session would see its own
+uncommitted work.
+
+Skipped without a database, for the reason `test_import_commit_rls.py` gives.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import io
+import os
+import uuid
+import zipfile
+from collections.abc import AsyncIterator
+from typing import Any
+
+import pytest
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+
+DATABASE_URL = os.environ.get("E2E_DATABASE_URL", "")
+
+if DATABASE_URL:
+    os.environ["DATABASE_URL"] = DATABASE_URL
+os.environ.setdefault("ENVIRONMENT", "dev")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+# The dry run records its verdict through the API's own audit sink, which in
+# this suite -- unlike in the worker's image, where only that one module is
+# present -- arrives with the API's settings. As `test_import_preflight.py`
+# supplies them.
+os.environ.setdefault("ZITADEL_DOMAIN", "https://example.invalid")
+os.environ.setdefault("ZITADEL_PROJECT_ID", "0")
+
+pytestmark = pytest.mark.skipif(
+    not DATABASE_URL,
+    reason="needs a real PostgreSQL; set E2E_DATABASE_URL (see playwright.config.ts)",
+)
+
+#: The organisation `e2e/support/seed.sql` creates.
+TENANT = "00000000-0000-4e2e-8000-000000000001"
+#: An organisation nothing created. Its context sees nothing, which is the point.
+STRANGER = "00000000-0000-4e2e-8000-00000000ffff"
+SUBJECT = "e2e-owner"
+
+AS_TENANT = text(
+    "select set_config('app.provisioning', '', true), "
+    "set_config('app.tenant_id', :tenant_id, true)"
+)
+
+ROWS = 600
+
+
+def _csv(rows: int = ROWS, *, spoil: dict[int, str] | None = None) -> bytes:
+    """`rows` good rows, with any row in `spoil` replaced by that line."""
+    lines = ["Email,Name"]
+    for number in range(rows):
+        lines.append((spoil or {}).get(number, f"person{number}@example.test,Person {number}"))
+    return ("\n".join(lines) + "\n").encode()
+
+
+_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+_RELS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_PACKAGE = "http://schemas.openxmlformats.org/package/2006/relationships"
+_TYPES = "application/vnd.openxmlformats-officedocument.spreadsheetml"
+
+
+def _workbook(rows: int, *, bad_at: int) -> bytes:
+    """A workbook of `rows` good rows, but for one cell that is not a number.
+
+    The safety pass counts cells and does not convert them, so it passes this.
+    The reader refuses it where it meets it -- which, for a reader that hands
+    rows over as it goes, is after the rows above it.
+    """
+
+    def text(value: str) -> str:
+        return f'<c t="inlineStr"><is><t>{value}</t></is></c>'
+
+    body = [f"<row>{text('Email')}{text('Name')}</row>"]
+    for number in range(rows):
+        name = "<c><v>not a number</v></c>" if number == bad_at else text(f"Person {number}")
+        body.append(f"<row>{text(f'person{number}@example.test')}{name}</row>")
+    parts = {
+        "[Content_Types].xml": (
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.'
+            'relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
+            f'<Override PartName="/xl/workbook.xml" ContentType="{_TYPES}.sheet.main+xml"/>'
+            f'<Override PartName="/xl/worksheets/sheet1.xml" ContentType="{_TYPES}.worksheet+xml"/>'
+            "</Types>"
+        ),
+        "_rels/.rels": (
+            f'<Relationships xmlns="{_PACKAGE}"><Relationship Id="rId1" '
+            f'Type="{_RELS}/officeDocument" Target="xl/workbook.xml"/></Relationships>'
+        ),
+        "xl/workbook.xml": (
+            f'<workbook xmlns="{_MAIN}" xmlns:r="{_RELS}"><sheets>'
+            '<sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>'
+        ),
+        "xl/_rels/workbook.xml.rels": (
+            f'<Relationships xmlns="{_PACKAGE}"><Relationship Id="rId1" '
+            f'Type="{_RELS}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'
+        ),
+        "xl/worksheets/sheet1.xml": (
+            f'<worksheet xmlns="{_MAIN}"><sheetData>{"".join(body)}</sheetData></worksheet>'
+        ),
+    }
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, content in parts.items():
+            archive.writestr(name, content)
+    return buffer.getvalue()
+
+
+class _Bucket:
+    def __init__(self, raw: bytes) -> None:
+        self.raw = raw
+
+    async def get(self, key: str) -> bytes:
+        del key
+        return self.raw
+
+
+def _target(writer: Any, matcher: Any = None) -> Any:  # noqa: ANN401
+    from koras_import import FieldKind, FieldSpec, ImportTarget, Operation
+
+    return ImportTarget(
+        key="test.commit_probe",
+        label_key="import.target.test.commit_probe",
+        permission="imports.manage",
+        fields=(
+            FieldSpec("email", "import.field.test.email", kind=FieldKind.EMAIL, required=True),
+            FieldSpec("name", "import.field.test.name", required=True),
+        ),
+        match_keys=("email",),
+        operations=(Operation.SKIP_DUPLICATE,),
+        writer=writer,
+        matcher=matcher,
+    )
+
+
+@pytest.fixture
+async def engine() -> AsyncIterator[AsyncEngine]:
+    made = create_async_engine(DATABASE_URL)
+    yield made
+    await made.dispose()
+
+
+async def _seed(engine: AsyncEngine, raw: bytes, *, status: str, fmt: str = "csv") -> str:
+    run_id, file_id = str(uuid.uuid4()), str(uuid.uuid4())
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        await session.execute(AS_TENANT, {"tenant_id": TENANT})
+        await session.execute(
+            text(
+                "insert into public.files (id, tenant_id, category, name, storage_key,"
+                " size_bytes, content_type, status, scan_status, uploaded_by)"
+                " values (cast(:id as uuid), cast(:t as uuid), 'imports', 'probe.csv',"
+                " :key, :size, 'text/csv', 'ready', 'clean', :by)"
+            ),
+            {
+                "id": file_id,
+                "t": TENANT,
+                "key": f"imports/{file_id}.csv",
+                "size": len(raw),
+                "by": SUBJECT,
+            },
+        )
+        await session.execute(
+            text(
+                "insert into public.import_runs (id, tenant_id, target, status, format,"
+                " source_file_id, delimiter, encoding, columns, mapping, operation,"
+                " rows_total, rows_valid, errors_total, requested_by, committed_by)"
+                " values (cast(:id as uuid), cast(:t as uuid), 'test.commit_probe',"
+                " :status, :fmt, cast(:f as uuid), ',', 'utf-8-sig', :cols,"
+                " cast(:map as jsonb), 'skip_duplicate', 0, 0, 0, :by, :by)"
+            ),
+            {
+                "id": run_id,
+                "t": TENANT,
+                "f": file_id,
+                "status": status,
+                "fmt": fmt,
+                "cols": ["Email", "Name"],
+                "map": '{"Email":"email","Name":"name"}',
+                "by": SUBJECT,
+            },
+        )
+        await session.commit()
+    return run_id
+
+
+async def _state(engine: AsyncEngine, run_id: str, *, tenant: str = TENANT) -> tuple[Any, int]:
+    """The run as its tenant sees it, and how many rows a writer left behind."""
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        await session.execute(AS_TENANT, {"tenant_id": tenant})
+        run = (
+            await session.execute(
+                text(
+                    "select status, error, rows_total, rows_created, errors_total"
+                    " from public.import_runs where id = cast(:id as uuid)"
+                ),
+                {"id": run_id},
+            )
+        ).first()
+        written = (
+            await session.execute(
+                text(
+                    "select count(*) from public.import_row_errors"
+                    " where run_id = cast(:id as uuid) and code = 'probe.written'"
+                ),
+                {"id": run_id},
+            )
+        ).scalar_one()
+    return run, int(written)
+
+
+def _writing(*, fail_at: int | None = None, tenant: str = TENANT, pause: float = 0.0) -> Any:  # noqa: ANN401
+    """A writer that inserts a row for every row it is handed, in file order."""
+
+    async def writer(session: AsyncSession, request: Any) -> Any:  # noqa: ANN401
+        from koras_import import Written
+
+        for position, row in enumerate(request.rows):
+            if fail_at is not None and position == fail_at:
+                raise RuntimeError("the writer fell over part of the way through")
+            await session.execute(
+                text(
+                    "insert into public.import_row_errors"
+                    " (run_id, tenant_id, row_number, code, value)"
+                    " values (cast(:run as uuid), cast(:t as uuid), :n, 'probe.written', :v)"
+                ),
+                {"run": request.run_id, "t": tenant, "n": position + 2, "v": row["email"]},
+            )
+            if pause:
+                await asyncio.sleep(pause)
+        return Written(created=len(request.rows))
+
+    return writer
+
+
+def _install(monkeypatch: pytest.MonkeyPatch, raw: bytes, target: Any) -> Any:  # noqa: ANN401
+    import koras_worker.tasks.imports as task
+    from koras_import import build_registry
+
+    # The worker's settings are built when its module is first imported, which
+    # in a run that collected a unit test of it first was before this file
+    # named the database. Set here so the order of collection cannot decide
+    # whether the job finds one.
+    monkeypatch.setattr(task.settings, "database_url", DATABASE_URL, raising=False)
+    monkeypatch.setattr(task, "_object_store", lambda: _Bucket(raw))
+    monkeypatch.setattr(task, "_registry", lambda: build_registry([target]))
+    return task
+
+
+def _job(run_id: str) -> Any:  # noqa: ANN401
+    from koras_queue import JobEnvelope
+
+    return JobEnvelope(
+        task="imports.commit", tenant_id=TENANT, payload={"run_id": run_id}, actor_id=SUBJECT
+    )
+
+
+async def test_a_commit_that_succeeds_writes_every_row(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = _csv()
+    task = _install(monkeypatch, raw, _target(_writing()))
+    run_id = await _seed(engine, raw, status="commit_requested")
+
+    answer = await task.commit_run({}, _job(run_id))
+
+    assert answer["status"] == "ok", answer
+    run, written = await _state(engine, run_id)
+    assert written == ROWS
+    assert (run.status, run.rows_created, run.rows_total) == ("committed", ROWS, ROWS)
+
+
+async def test_a_writer_that_fails_on_row_five_hundred_leaves_no_row(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The acceptance criterion, counted."""
+    raw = _csv()
+    task = _install(monkeypatch, raw, _target(_writing(fail_at=500)))
+    run_id = await _seed(engine, raw, status="commit_requested")
+
+    answer = await task.commit_run({}, _job(run_id))
+
+    assert answer["status"] == "failed"
+    run, written = await _state(engine, run_id)
+    assert written == 0, f"{written} rows survived a commit that failed"
+    assert run.status == "failed" and run.error
+
+
+@pytest.mark.parametrize(
+    ("spoil", "why"),
+    [
+        ({577: "not-an-address,Person 577"}, "a row that does not validate"),
+        ({577: "person3@example.test,Person 3 again"}, "a key the file carries twice"),
+        ({577: "person577@example.test,"}, "a required cell left empty"),
+    ],
+    ids=["invalid", "duplicate", "required"],
+)
+async def test_a_file_that_no_longer_passes_is_refused_before_the_writer_is_called(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch, spoil: dict[int, str], why: str
+) -> None:
+    """The bad row is near the end of the file, and the writer sees no row.
+
+    The reader is a stream now, so the rows above the bad one have been read
+    and turned into the writer's dictionaries by the time it is met. None of
+    them may have been handed over.
+    """
+    calls: list[int] = []
+    inner = _writing()
+
+    async def writer(session: AsyncSession, request: Any) -> Any:  # noqa: ANN401
+        calls.append(len(request.rows))
+        return await inner(session, request)
+
+    raw = _csv(spoil=spoil)
+    task = _install(monkeypatch, raw, _target(writer))
+    run_id = await _seed(engine, raw, status="commit_requested")
+
+    answer = await task.commit_run({}, _job(run_id))
+
+    assert answer["status"] == "failed", why
+    assert calls == [], f"the writer was called for a file with {why}"
+    run, written = await _state(engine, run_id)
+    assert written == 0
+    assert run.status == "failed" and "no longer pass validation" in run.error
+
+
+async def test_a_file_that_cannot_be_read_to_its_end_writes_nothing(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refusal that arrives from inside the file, after rows above it.
+
+    The old readers read a whole file before they returned a row of it, so a
+    cell they could not read was refused before anything else happened. The
+    stream has handed over five hundred rows by the time it meets this one.
+    """
+    calls: list[int] = []
+    inner = _writing()
+
+    async def writer(session: AsyncSession, request: Any) -> Any:  # noqa: ANN401
+        calls.append(len(request.rows))
+        return await inner(session, request)
+
+    raw = _workbook(ROWS, bad_at=550)
+    task = _install(monkeypatch, raw, _target(writer))
+    run_id = await _seed(engine, raw, status="commit_requested", fmt="xlsx")
+
+    answer = await task.commit_run({}, _job(run_id))
+
+    assert answer["status"] == "failed"
+    assert answer["reason"] == "the file could not be read as a workbook"
+    assert calls == []
+    run, written = await _state(engine, run_id)
+    assert written == 0 and run.status == "failed"
+
+
+async def test_a_workbook_is_committed_whole_through_the_same_path(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = _workbook(ROWS, bad_at=-1)
+    task = _install(monkeypatch, raw, _target(_writing()))
+    run_id = await _seed(engine, raw, status="commit_requested", fmt="xlsx")
+
+    answer = await task.commit_run({}, _job(run_id))
+
+    assert answer["status"] == "ok", answer
+    run, written = await _state(engine, run_id)
+    assert written == ROWS and run.status == "committed"
+
+
+async def test_a_commit_past_its_time_budget_writes_nothing(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = _csv()
+    task = _install(monkeypatch, raw, _target(_writing()))
+    store = task._run_store()
+    real = store.prepare
+
+    def slow(raw: bytes, target: Any, run: Any, *, watch: Any = None) -> Any:  # noqa: ANN401
+        import time
+
+        # The whole file is read, and then the budget is found spent.
+        answer = real(raw, target, run, watch=watch)
+        time.sleep(0.3)
+        watch()
+        return answer
+
+    monkeypatch.setattr(store, "prepare", slow)
+    monkeypatch.setattr(task, "WORK_BUDGET_SECONDS", 0.2)
+    run_id = await _seed(engine, raw, status="commit_requested")
+
+    answer = await task.commit_run({}, _job(run_id))
+
+    assert answer["status"] == "failed"
+    run, written = await _state(engine, run_id)
+    assert written == 0
+    assert run.status == "failed" and "took longer than one run is allowed" in run.error
+
+
+async def test_a_commit_the_queue_cancels_while_it_writes_leaves_no_row(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The queue's timeout arrives with half the file written.
+
+    The rows must go, and the run must not say `committing` for ever -- which
+    it did, because a cancellation is not an exception any handler's own
+    `except` sees.
+    """
+    raw = _csv()
+    task = _install(monkeypatch, raw, _target(_writing(pause=0.005)))
+    run_id = await _seed(engine, raw, status="commit_requested")
+
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(task.commit_run({}, _job(run_id)), timeout=1.0)
+
+    run, written = await _state(engine, run_id)
+    assert written == 0, f"{written} rows survived a commit the queue cancelled"
+    assert run.status == "failed"
+    assert run.error == task._INTERRUPTED
+
+
+async def test_a_late_cancellation_never_overwrites_a_commit_that_landed(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`abandon` names the status it expects, and this is why.
+
+    A job cancelled while its one transaction was on its way to the database
+    does not know whether it landed. If it did, the rows are written; a
+    failure recorded over that would be a run saying the opposite of the
+    table.
+    """
+    raw = _csv(rows=20)
+    task = _install(monkeypatch, raw, _target(_writing()))
+    store = task._run_store()
+    run_id = await _seed(engine, raw, status="commit_requested")
+
+    # What the cancelled job last knew: the run was `committing`.
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        await session.execute(AS_TENANT, {"tenant_id": TENANT})
+        await store.begin_commit(session, await store.get(session, run_id))
+        await session.commit()
+        await session.execute(AS_TENANT, {"tenant_id": TENANT})
+        stale = await store.get(session, run_id)
+    assert stale.status == "committing"
+
+    # Meanwhile the commit lands.
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        await session.execute(AS_TENANT, {"tenant_id": TENANT})
+        await store.record_commit(session, stale, created=20, updated=0, skipped=0)
+        await session.commit()
+
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        await session.execute(AS_TENANT, {"tenant_id": TENANT})
+        assert await store.abandon(session, stale, "interrupted") is False
+        await session.commit()
+
+    run, _ = await _state(engine, run_id)
+    assert run.status == "committed" and run.error is None
+    # And the whole path leaves it alone as well.
+    await task._abandon(_job(run_id))
+    run, _ = await _state(engine, run_id)
+    assert run.status == "committed"
+
+
+async def test_what_one_organisation_imported_another_cannot_see(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = _csv(rows=50)
+    task = _install(monkeypatch, raw, _target(_writing()))
+    run_id = await _seed(engine, raw, status="commit_requested")
+
+    assert (await task.commit_run({}, _job(run_id)))["status"] == "ok"
+
+    assert (await _state(engine, run_id))[1] == 50
+    run, written = await _state(engine, run_id, tenant=STRANGER)
+    assert run is None and written == 0
+
+
+async def test_a_writer_that_reaches_for_another_organisation_writes_nothing(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Row-level security refuses the first insert, and the transaction that
+    # held it is the one that would have held all the others.
+    raw = _csv(rows=50)
+    task = _install(monkeypatch, raw, _target(_writing(tenant=STRANGER)))
+    run_id = await _seed(engine, raw, status="commit_requested")
+
+    answer = await task.commit_run({}, _job(run_id))
+
+    assert answer["status"] == "failed"
+    run, written = await _state(engine, run_id)
+    assert written == 0 and run.status == "failed"
+    assert (await _state(engine, run_id, tenant=STRANGER))[1] == 0
+
+
+async def test_a_dry_run_reads_the_whole_file_and_writes_only_its_report(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dry run end to end, through the streaming reader and the matcher.
+
+    Three rows are wrong, one of them by repeating a key, and half the valid
+    keys already name a record. The report holds the three; the counts are
+    the file's; no row of a writer's exists.
+    """
+    asked: list[int] = []
+
+    async def matcher(session: AsyncSession, request: Any) -> Any:  # noqa: ANN401
+        del session
+        asked.append(len(request.keys))
+        return set(request.keys[::2])
+
+    raw = _csv(
+        spoil={
+            100: "not-an-address,Person 100",
+            200: "person7@example.test,Person 7 again",
+            300: "person300@example.test,",
+        }
+    )
+    task = _install(monkeypatch, raw, _target(_writing(), matcher))
+    run_id = await _seed(engine, raw, status="validating")
+
+    answer = await task.validate_run({}, _job(run_id))
+
+    assert answer["status"] == "ok" and answer["state"] == "validation_failed", answer
+    assert (answer["rows"], answer["valid"], answer["errors"]) == (ROWS, ROWS - 3, 3)
+    assert asked == [ROWS - 3]
+    run, written = await _state(engine, run_id)
+    assert written == 0
+    assert (run.status, run.rows_total, run.errors_total) == ("validation_failed", ROWS, 3)
+
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        await session.execute(AS_TENANT, {"tenant_id": TENANT})
+        report = (
+            await session.execute(
+                text(
+                    "select row_number, code from public.import_row_errors"
+                    " where run_id = cast(:id as uuid) order by row_number"
+                ),
+                {"id": run_id},
+            )
+        ).all()
+        predicted = (
+            await session.execute(
+                text(
+                    "select predicted_create, predicted_skip, rows_duplicate"
+                    " from public.import_runs where id = cast(:id as uuid)"
+                ),
+                {"id": run_id},
+            )
+        ).one()
+    assert [(found.row_number, found.code) for found in report] == [
+        (102, "import.error.email"),
+        (202, "import.error.duplicate_in_file"),
+        (302, "import.error.required"),
+    ]
+    valid = ROWS - 3
+    assert (predicted.predicted_skip, predicted.predicted_create) == ((valid + 1) // 2, valid // 2)
+    assert predicted.rows_duplicate == 1

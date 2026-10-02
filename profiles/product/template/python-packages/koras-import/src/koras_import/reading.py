@@ -8,10 +8,13 @@ somebody edited by hand has a trailing blank line and one row with an extra
 comma. None of those is malformed to the person who sent it.
 
 **The reader streams.** Every function here takes an iterable of lines and
-yields rows, so nothing holds the whole file. Phase 1's caller happens to hand
-it the whole text, because the size ceiling makes that safe and a chunked
-worker is Phase 4 — but the seam is here from the start, so Phase 4 is a
-different caller rather than a different reader.
+yields rows, so nothing here holds the whole file. Until GR-352C its caller
+did: the store decoded the file into one string, split that into a list of
+lines and kept every row, on the reasoning that the size ceiling made it safe
+-- which GR-352C measured at 331 MiB for a 57 MiB file. `streaming.py` is the
+caller that hands these functions lines a chunk at a time, and it is what the
+dry run and the commit use; `decode` below stays for the description of which
+encoding a file is in, and for the tests that hold the stream to it.
 
 **A cell is never evaluated.** A value beginning `=`, `+`, `-` or `@` is text
 here and stays text. The danger is on the way back out: a spreadsheet opening
@@ -30,7 +33,8 @@ reads it and stops looking. IMP2-08 in
 from __future__ import annotations
 
 import csv
-from collections.abc import Iterable, Iterator, Sequence
+import re
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 
 #: Tried in order, **strictly**. UTF-8 first because it is right most of the
@@ -253,25 +257,63 @@ def read_rows(
 _CONTROLS = {chr(code) for code in range(32) if chr(code) not in "\t\n\r"}
 
 
+#: The same twenty-nine characters as one pattern, so finding and removing
+#: them is the regular-expression engine's loop rather than this module's.
+_CONTROL = re.compile("[" + "".join(re.escape(char) for char in sorted(_CONTROLS)) + "]")
+
+
 def clean_cell(text: str) -> str:
-    """A cell as the validator should see it: stripped, and free of controls."""
-    if any(char in _CONTROLS for char in text):
-        text = "".join(char for char in text if char not in _CONTROLS)
+    """A cell as the validator should see it: stripped, and free of controls.
+
+    **What it answers has not changed since it was written; how long it takes
+    has.** It asked `char in _CONTROLS` of every character from a generator,
+    which is a Python-level step a character: 1.7 milliseconds for one
+    32,000-character cell, and a workbook naming one such string from a
+    million cells is half an hour of it. GR-352 measured 302 seconds on a
+    tenth of that. IMPORT-DEF-015.
+
+    `str.isprintable` is false for every character this removes, so a string
+    that is printable has none of them and only needs stripping -- the common
+    case, in the interpreter's own loop. Anything else is asked the pattern.
+    `test_import.py` holds this against the implementation it replaced, over
+    every C0 character and over generated text.
+    """
+    if not text.isprintable() and _CONTROL.search(text) is not None:
+        text = _CONTROL.sub("", text)
     return text.strip()
 
 
 def row_from(number: int, raw: Sequence[str], header: Header) -> Row:
     """One row from its cells, by the rule both readers share."""
+    return row_of(number, raw, header, clean_cell)
+
+
+def row_of[Raw](
+    number: int,
+    raw: Sequence[Raw],
+    header: Header,
+    clean: Callable[[Raw], str],
+) -> Row:
+    """`row_from`, for a reader whose cells are not all text yet.
+
+    The streaming workbook reader holds a shared string once and a cell that
+    names it as the string's index. Cleaning that string again for every cell
+    naming it is the amplification IMPORT-DEF-016 is about, paid in time, so
+    it passes a `clean` that answers an index from a table cleaned once. The
+    row rule -- which cells there are, what short and long mean -- stays in
+    this one function for every reader.
+    """
     width = len(header.columns)
+    present = len(raw)
     cells = {
-        name: (clean_cell(raw[index]) if index < len(raw) else "")
+        name: (clean(raw[index]) if index < present else "")
         for index, name in enumerate(header.columns)
     }
     return Row(
         number=number,
         cells=cells,
-        short=len(raw) < width,
-        long=len(raw) > width,
+        short=present < width,
+        long=present > width,
     )
 
 

@@ -34,8 +34,13 @@ Four parts, and the first is the whole design:
 ``inspection``
     A file's head -- the header, the first rows, whether it is over the
     target's ceiling -- by streaming, for a route that draws a mapping page.
-    Not a second reader: the dry run and the commit still read through
-    ``reading``. GR-352B.
+    GR-352B.
+
+``streaming``
+    Every row of a file, one at a time, for the dry run and the commit: what
+    is held is what ``safety`` bounded, and a workbook's merged ranges, links
+    and other sheets are never built into anything. ``budget`` is how that
+    read is given a time limit it can actually be stopped at. GR-352C.
 
 ``mapping``
     Which column is which, checked against both the target and the file — and
@@ -63,6 +68,7 @@ it be tested without a database, and what would let it be promoted to another
 repository without a rewrite.
 """
 
+from .budget import BudgetExceeded, WorkBudget
 from .compatibility import (
     FINGERPRINT_LENGTH,
     PROPERTY_NAME,
@@ -84,6 +90,7 @@ from .mapping import (
     canonical,
     match_key,
     normalise_row,
+    normaliser,
     resolve,
     suggest,
     validate,
@@ -91,12 +98,16 @@ from .mapping import (
 )
 from .matching import (
     ALREADY_EXISTS,
+    Candidate,
+    Candidates,
     Matcher,
     MatchRequest,
     Prediction,
     keys_of,
     predict,
+    predict_from,
     request_for,
+    request_from,
     with_rejections,
 )
 from .reading import (
@@ -116,6 +127,7 @@ from .reading import (
     read_header,
     read_rows,
     row_from,
+    row_of,
     sniff_delimiter,
 )
 from .reading_xlsx import (
@@ -151,6 +163,7 @@ from .states import (
     require_move,
     wrote_nothing,
 )
+from .streaming import RowStream, open_rows
 from .targets import (
     FieldKind,
     FieldSpec,
@@ -184,6 +197,16 @@ from .writing import (
 
 __all__ = [
     "ALREADY_EXISTS",
+    "BudgetExceeded",
+    "Candidate",
+    "Candidates",
+    "RowStream",
+    "WorkBudget",
+    "normaliser",
+    "open_rows",
+    "predict_from",
+    "request_from",
+    "row_of",
     "DATA_SHEET",
     "DECOMPRESSED_CEILING",
     "ENVELOPE_CODES",

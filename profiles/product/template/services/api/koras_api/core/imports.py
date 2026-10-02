@@ -16,13 +16,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Mapping, Sequence
+import weakref
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
 
 from koras_audit import AuditAction, Classification, actions
 from koras_import import (
+    Candidate,
+    Candidates,
     Compatibility,
     Format,
     ImportTarget,
@@ -31,24 +34,21 @@ from koras_import import (
     PreflightRefused,
     ReadRefused,
     ResolvedMapping,
-    Row,
     RowError,
+    RowStream,
     RunState,
     SafetyLimits,
     Validation,
     compare,
-    decode,
     inspect_source,
-    normalise_row,
-    predict,
-    preflight,
-    read_header,
-    read_rows,
-    read_workbook,
-    request_for,
+    normaliser,
+    open_rows,
+    predict_from,
+    request_from,
     require_move,
     resolve,
     suggest,
+    validate,
     with_rejections,
 )
 from sqlalchemy import text
@@ -375,6 +375,36 @@ async def fail(session: AsyncSession, run: Run, reason: str) -> None:
     )
 
 
+async def abandon(session: AsyncSession, run: Run, reason: str) -> bool:
+    """`fail`, for a job that was stopped from outside. True if the run moved.
+
+    **The update names the status it expects, and that is the difference from
+    `fail`.** A handler that fails a run does so on the session that did the
+    work, knowing what state the run is in. A job cancelled by its queue does
+    not know: the cancellation may have landed while the commit's one
+    transaction was on its way to the database. If that transaction commits,
+    the run is `committed` and its rows are written, and an unguarded update
+    arriving a moment later would say `failed` over an import that happened.
+    With the status in the predicate the update waits for that transaction
+    and then matches nothing.
+    """
+    require_move(run.state, RunState.FAILED)
+    result = await session.execute(
+        text(
+            "update public.import_runs set status = :status, error = :error, "
+            "finished_at = :finished_at where id = cast(:id as uuid) and status = :was"
+        ),
+        {
+            "status": RunState.FAILED.value,
+            "error": reason[:400],
+            "finished_at": datetime.now().astimezone(),
+            "id": run.id,
+            "was": run.status,
+        },
+    )
+    return bool(getattr(result, "rowcount", 0) == 1)
+
+
 async def record_validation(
     session: AsyncSession,
     run: Run,
@@ -626,12 +656,12 @@ def analyse(
     Pure: bytes in, an answer out. That is what lets the analysis be tested
     against the files real spreadsheets produce without a database or a bucket.
 
-    **Neither reader is called.** Until GR-352B this parsed the whole file the
-    way the dry run does -- `read_workbook`, and `decode` into one string --
-    to keep two hundred rows of it. `inspect_source` streams the head instead:
-    the header, up to `sample` rows, and a count that stops past the target's
-    ceiling. The dry run and the commit still read through `_parse`, and what
-    they read is still what is validated and written.
+    **Neither whole-file reader is called.** Until GR-352B this parsed the
+    whole file the way the dry run then did -- `read_workbook`, and `decode`
+    into one string -- to keep two hundred rows of it. `inspect_source`
+    streams the head instead: the header, up to `sample` rows, and a count
+    that stops past the target's ceiling. The dry run and the commit read
+    through `_parse`, and what they read is what is validated and written.
 
     **The safety pass runs first, for both formats**, inside `inspect_source`,
     so there is no way to reach the inspection without it.
@@ -700,39 +730,55 @@ def _needs_match_keys(run: Run) -> bool:
     return run.operation != Operation.CREATE.value
 
 
+#: What a caller hands down to be asked, as the file is walked, whether the
+#: work should go on. `koras_import.WorkBudget.check` is the worker's.
+Watch = Callable[[], None]
+
+
 def _parse(
-    raw: bytes, target: ImportTarget, run: Run
-) -> tuple[ResolvedMapping, list[Row], str | None]:
-    """The mapping and the rows, resolved once. Shared by the dry run and the commit.
+    raw: bytes, target: ImportTarget, run: Run, watch: Watch | None = None
+) -> tuple[ResolvedMapping, RowStream]:
+    """The mapping, and the rows as a stream. Shared by the dry run and the commit.
 
     One reader for both passes on purpose: a commit that parsed differently
     from the validation that approved it would write rows nobody checked, and
     the difference would be invisible -- both would look like they had run.
+
+    **The rows are not a list.** Until GR-352C this returned every row of the
+    file, read through `read_workbook` or a whole-file `decode`, and the
+    caller went through them two or three times. `open_rows` yields them as
+    the file is walked, so a caller takes what it needs of a row in the one
+    pass `validate` makes, and what is held at any moment is what the safety
+    envelope already bounds rather than a second and third copy of the file.
+    `docs/features/data-import/worker-resource-envelope.md` has what that
+    was measured at.
+
+    The safety pass is inside `open_rows`, by the same envelope the analysis
+    used. This is the one function the dry run and the commit both come
+    through, so a file that is not safe reaches neither.
     """
-    found: str | None = None
-    # Before either reader, and by the same envelope the analysis used. This is
-    # the one function the dry run and the commit both come through, so a file
-    # that is not safe reaches neither.
     limits = limits_for(target, rows=True)
-    if run.format == Format.XLSX.value:
-        read = read_workbook(
-            raw, limit=target.max_rows, ceiling=target.max_rows, limits=limits
-        )
-        header = read.header
-        rows = list(read.rows)
-        found = read.identity
-    else:
-        preflight(raw, Format.CSV, limits, delimiter=run.delimiter)
-        decoded = decode(raw)
-        lines = decoded.text.splitlines(keepends=True)
-        header = read_header(lines, delimiter=run.delimiter)
-        rows = list(
-            read_rows(lines, header=header, delimiter=run.delimiter, limit=target.max_rows)
-        )
-    resolved = resolve(
-        target, header.columns, run.mapping, require_match_keys=_needs_match_keys(run)
+    workbook = run.format == Format.XLSX.value
+    stream = open_rows(
+        raw,
+        Format.XLSX if workbook else Format.CSV,
+        limits,
+        limit=target.max_rows,
+        delimiter=None if workbook else run.delimiter,
+        watch=watch,
     )
-    return resolved, rows, found
+    try:
+        resolved = resolve(
+            target,
+            stream.header.columns,
+            run.mapping,
+            require_match_keys=_needs_match_keys(run),
+        )
+    except BaseException:
+        # The stream holds the workbook open until it is read to its end.
+        stream.close()
+        raise
+    return resolved, stream
 
 
 @dataclass(frozen=True)
@@ -740,22 +786,39 @@ class Examined:
     """A dry run's three products, for a caller that goes on to predict."""
 
     resolved: ResolvedMapping
-    rows: tuple[Row, ...]
     verdict: Validation
+    #: What the dry run kept of the rows it passed: a key, a row number and
+    #: one cell each. The rows themselves have gone by -- GR-352C.
+    candidates: Candidates
     #: The version the file's template identity named for this target, or None.
     template_version: int | None = None
 
 
-def examine(raw: bytes, target: ImportTarget, run: Run) -> Examined:
-    """`check`, keeping the mapping and the rows so a matcher can be asked."""
-    from koras_import import validate
+def examine(
+    raw: bytes, target: ImportTarget, run: Run, *, watch: Watch | None = None
+) -> Examined:
+    """`check`, keeping the mapping and what a matcher needs to be asked.
 
-    resolved, rows, found = _parse(raw, target, run)
+    One pass over the file. What is kept of a row the validator passed is its
+    match key, its number and the one cell a rejection quotes; of a row it
+    did not pass, its problems, up to the report's own ceiling.
+
+    **Synchronous, and never called from the event loop** by a worker: it is
+    seconds of parsing for a file at the edge of the envelope, and a worker
+    whose loop is held answers no heartbeat and runs no other job.
+    """
+    resolved, stream = _parse(raw, target, run, watch)
+    try:
+        found = stream.identity
+        gathered = Candidate(target, resolved)
+        verdict = validate(target, resolved, stream, each=gathered.collect)
+    finally:
+        stream.close()
     version = compare(target, (), found=found).version_found if found else None
     return Examined(
         resolved=resolved,
-        rows=tuple(rows),
-        verdict=validate(target, resolved, rows),
+        verdict=verdict,
+        candidates=gathered.candidates(),
         template_version=version,
     )
 
@@ -780,17 +843,14 @@ async def predict_outcome(
     """
     if target.matcher is None:
         return examined.verdict, None
-    request = request_for(
-        target, examined.resolved, examined.rows, tenant_id=tenant_id, verdict=examined.verdict
-    )
+    request = request_from(target, examined.candidates, tenant_id=tenant_id)
     async with session.begin_nested():
         existing = await target.matcher(session, request)
-    prediction = predict(
+    prediction = predict_from(
         target,
         Operation(run.operation),
         examined.resolved,
-        examined.rows,
-        verdict=examined.verdict,
+        examined.candidates,
         existing=existing,
     )
     return with_rejections(examined.verdict, prediction), prediction
@@ -804,14 +864,15 @@ def check(raw: bytes, target: ImportTarget, run: Run) -> Validation:
     the run failing rather than the data being wrong, and the route and the job
     tell them apart.
     """
-    from koras_import import validate
-
-    resolved, rows, _ = _parse(raw, target, run)
-    return validate(target, resolved, rows)
+    resolved, stream = _parse(raw, target, run)
+    try:
+        return validate(target, resolved, stream)
+    finally:
+        stream.close()
 
 
 def prepare(
-    raw: bytes, target: ImportTarget, run: Run
+    raw: bytes, target: ImportTarget, run: Run, *, watch: Watch | None = None
 ) -> tuple[Validation, tuple[Mapping[str, str], ...]]:
     """What to write, and the verdict that says whether it may be.
 
@@ -824,16 +885,31 @@ def prepare(
 
     Both are returned rather than one raising, because the caller wants to say
     *which* rows are wrong, and a refusal carrying a sentence cannot.
-    """
-    from koras_import import validate
 
-    resolved, rows, _ = _parse(raw, target, run)
-    verdict = validate(target, resolved, rows)
+    **One pass, and one dictionary a row.** The writer's contract is every row
+    of the run at once, so every row's dictionary is held when the writer is
+    called -- that much is the commit's own cost and stays. What GR-352C
+    removed is everything that used to be held beside it: the parsed rows,
+    which were a second dictionary for every row, and the file as text. Each
+    dictionary is built from its row while `validate` still has the row, and
+    the row is then gone. Synchronous, like `examine`, and for its reason.
+    """
+    resolved, stream = _parse(raw, target, run, watch)
     # Canonical, not raw: a date the validator accepted as `31.12.2025` reaches
     # the writer as `2025-12-31`, a decimal with a point, a boolean as `true`.
     # The same function the matcher's keys go through. IMP2-19.
-    mapped = tuple(normalise_row(target, resolved, row) for row in rows)
-    return verdict, mapped
+    normalise = normaliser(target, resolved)
+    mapped: list[Mapping[str, str]] = []
+    try:
+        verdict = validate(
+            target,
+            resolved,
+            stream,
+            each=lambda row, _key, _bad: mapped.append(normalise(row)),
+        )
+    finally:
+        stream.close()
+    return verdict, tuple(mapped)
 
 
 # ── the source file ──────────────────────────────────────────────────────────
@@ -908,7 +984,44 @@ async def source_bytes(session: AsyncSession, store: Any, file_id: str | None) -
         raise SourceRefused("import.source.unreadable") from error
 
 
+# ── how many analyses at once ────────────────────────────────────────────────
+
+#: PROVISIONAL (GR-352C, pending NFR ratification). How many analyses one API
+#: process runs at a time, each holding the source it fetched.
+#:
+#: An analysis is cheap -- GR-352B measured it at under seven mebibytes over
+#: its file -- and the file is not: it is fetched whole, up to
+#: `MAX_SOURCE_BYTES`, before the inspection starts, and held until the
+#: inspection ends. Nothing bounded how many requests did that at once, so
+#: eight people opening a mapping page for a large file was eight sources in
+#: one 512 MB process. IMPORT-GAP-019. Two is 128 MiB of sources at the worst,
+#: beside whatever else the process is serving.
+#:
+#: Per process, which is the scope the memory has. A request past the limit
+#: waits its turn holding nothing; it is not refused.
+ANALYSIS_SLOTS = 2
+
+_analysis_slots: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def analysis_slot() -> asyncio.Semaphore:
+    """The gate a route holds from before it fetches a source until it has
+    answered: `async with store.analysis_slot(): ...`.
+
+    One semaphore for each event loop, made on first use, because a semaphore
+    belongs to the loop it first waited on and a test suite runs many loops.
+    """
+    loop = asyncio.get_running_loop()
+    slot = _analysis_slots.get(loop)
+    if slot is None:
+        slot = _analysis_slots[loop] = asyncio.Semaphore(ANALYSIS_SLOTS)
+    return slot
+
+
 __all__ = [
+    "ANALYSIS_SLOTS",
     "MAX_SOURCE_BYTES",
     "PREVIEW",
     "SAFETY_LIMITS",
@@ -920,8 +1033,10 @@ __all__ = [
     "Run",
     "SourceRefused",
     "UNPARSEABLE_SCANS",
+    "abandon",
     "analyse",
     "analysed",
+    "analysis_slot",
     "begin_commit",
     "examine",
     "limits_for",

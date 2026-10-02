@@ -20,12 +20,42 @@ tenant would be the wrong shape for work one customer asked for.
 **A failure is a run somebody can find.** Anything that goes wrong becomes
 `failed` with a safe sentence, because a job that dies silently leaves a run in
 `validating` forever and a person watching a spinner.
+
+Three more, since GR-352C, and they are about the machine rather than the run.
+
+**One import at a time in this process.** `_import_slot` is held for the whole
+of a dry run or a commit. Every other job the worker runs goes on beside it;
+a second import waits, holding nothing, until the first has let go of its
+file. The worker's ten job slots are a statement about how many coroutines may
+be waiting on a database, and said nothing about how many files may be in
+memory -- one accepted import fits this machine and two do not have to.
+
+**The file is read off the event loop.** `store.examine` and `store.prepare`
+are seconds of parsing with no `await` in them. Run inline, the worker
+answered nothing while they ran: no heartbeat, no other job, not the sweep
+that sends notifications every minute. They run on a thread, and the loop
+keeps turning.
+
+**The read can be stopped, and nothing else could stop it.** The queue's
+timeout cancels the coroutine, and a coroutine in the middle of parsing is not
+at a point where a cancellation lands. So the read is given a `WorkBudget` and
+asks it as it goes: when the time is spent the run fails with a sentence, and
+when the queue cancels the job the thread is told and stops. Before this a job
+past its timeout went on reading until the file was finished.
+
+`docs/features/data-import/worker-resource-envelope.md` has the measurements.
 """
 
 from __future__ import annotations
 
+import asyncio
+import ctypes
+import gc
 import importlib
 import logging
+import weakref
+from collections.abc import Callable
+from functools import partial
 from typing import Any
 
 from koras_import import (
@@ -33,6 +63,7 @@ from koras_import import (
     Operation,
     ReadRefused,
     TargetRegistry,
+    WorkBudget,
     WriteRefused,
     WriteRequest,
     check_total,
@@ -64,6 +95,97 @@ class ImportSettings(SweepSettings):
 
 
 imports = ImportSettings()
+
+#: PROVISIONAL (GR-352C, pending NFR ratification). How many imports this
+#: process reads at once. One, because the measurement that says an accepted
+#: import fits this machine is a measurement of one: its peak is counted
+#: against the worker's memory once, beside the process itself and whatever
+#: the other jobs hold. Raising it is a claim that N peaks fit, and needs that
+#: measured first.
+#:
+#: Per process, which is the scope the memory has. A second worker machine has
+#: a slot of its own.
+IMPORT_SLOTS = 1
+
+#: PROVISIONAL (GR-352C, pending NFR ratification). Seconds one run may spend
+#: reading and checking its file, from the moment it holds the slot.
+#:
+#: Below the 900 seconds the queue allows the job, on purpose: this is the
+#: limit that can end the work and say why, and the queue's is the one that
+#: cannot. The largest file the safety envelope accepts was measured far
+#: inside it; what it is for is the file nobody measured.
+WORK_BUDGET_SECONDS = 600.0
+
+#: How long a cancelled job waits for its reading thread to notice. The
+#: thread asks every chunk and every few hundred rows.
+_STOP_GRACE_SECONDS = 15.0
+
+_INTERRUPTED = "the import was interrupted before it finished; start it again"
+
+_slots: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _import_slot() -> asyncio.Semaphore:
+    """The gate a dry run or a commit holds from its first statement to its last.
+
+    One semaphore for each event loop, made on first use: a semaphore belongs
+    to the loop it first waited on, a worker has one loop for its whole life,
+    and a test suite has many.
+    """
+    loop = asyncio.get_running_loop()
+    slot = _slots.get(loop)
+    if slot is None:
+        slot = _slots[loop] = asyncio.Semaphore(IMPORT_SLOTS)
+    return slot
+
+
+def _give_back() -> None:
+    """Return what an import freed to the machine, rather than to the heap.
+
+    An import's memory is mostly strings, and when the job ends they are
+    freed -- to the allocator, which keeps the pages. GR-352C watched a
+    worker's resident memory stay where its largest import had left it, 329
+    MiB of a 512 MiB machine, with nothing in hand: memory no other job could
+    be said to be using and none could be promised. `malloc_trim` hands the
+    free pages back.
+
+    The C library's own call, where there is one. Anywhere else -- another
+    allocator, another platform -- this does nothing, and the worker is what
+    it was before: correct, and holding more than it needs.
+    """
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        return
+
+
+async def _off_loop[T](budget: WorkBudget, work: Callable[[], T]) -> T:
+    """Run the reading on a thread, and stop it if this job is cancelled.
+
+    **The second half is the point.** A thread cannot be cancelled. When the
+    queue's timeout or a shutdown cancels this coroutine, the `await` ends and
+    the thread would go on reading the file to its end, holding everything it
+    had read, with nobody waiting for the answer. So the cancellation is
+    handed to the budget the work is asking, and this waits -- briefly -- for
+    the thread to have stopped before it lets the cancellation continue.
+    """
+    future = asyncio.get_running_loop().run_in_executor(None, work)
+    try:
+        return await asyncio.shield(future)
+    except asyncio.CancelledError:
+        budget.cancel()
+        await asyncio.wait([future], timeout=_STOP_GRACE_SECONDS)
+        if future.done() and not future.cancelled():
+            # Retrieved so that the refusal the thread ended on is not
+            # reported as an exception nobody collected.
+            future.exception()
+        else:
+            logger.error("import: a cancelled read did not stop within its grace")
+        raise
+
 
 _AS_TENANT = text(
     "select set_config('app.provisioning', '', true), "
@@ -143,6 +265,23 @@ def _run_store() -> Any | None:  # noqa: ANN401 - a module, reached by name
 async def validate_run(ctx: dict[str, Any], envelope: JobEnvelope) -> dict[str, Any]:
     """Check one run's file, and record what was wrong with it."""
     del ctx
+    try:
+        async with _import_slot():
+            try:
+                return await _validate_run(envelope, WorkBudget(WORK_BUDGET_SECONDS))
+            finally:
+                # Before the slot is let go, so the next import starts from
+                # what this one gave back and not from what it left behind.
+                _give_back()
+    except asyncio.CancelledError:
+        # The queue's timeout, or the worker shutting down. The reading has
+        # been stopped by `_off_loop`; what is left is the run, which would
+        # otherwise say `validating` for ever.
+        await _abandon(envelope)
+        raise
+
+
+async def _validate_run(envelope: JobEnvelope, budget: WorkBudget) -> dict[str, Any]:
     run_id = str(envelope.payload.get("run_id") or "")
     if not run_id:
         # A job with no subject. Not retried: it will be no better next time.
@@ -180,7 +319,14 @@ async def validate_run(ctx: dict[str, Any], envelope: JobEnvelope) -> dict[str, 
             prediction = None
             try:
                 raw = await store.source_bytes(session, _object_store(), run.source_file_id)
-                examined = store.examine(raw, target, run)
+                # On a thread, with a budget it asks as it reads. One pass:
+                # what comes back holds no row of the file.
+                examined = await _off_loop(
+                    budget, partial(store.examine, raw, target, run, watch=budget.check)
+                )
+                # The file is not needed again, and the matcher below may take
+                # a while.
+                del raw
                 # The target's matcher, once, in a savepoint, on this tenant-bound
                 # session. Read-only by contract; a prediction the commit does
                 # not trust. With `create`, a row naming an existing record is a
@@ -297,6 +443,21 @@ async def commit_run(ctx: dict[str, Any], envelope: JobEnvelope) -> dict[str, An
     that way while somebody else's code runs.
     """
     del ctx
+    try:
+        async with _import_slot():
+            try:
+                return await _commit_run(envelope, WorkBudget(WORK_BUDGET_SECONDS))
+            finally:
+                _give_back()
+    except asyncio.CancelledError:
+        # By here the writing transaction has been rolled back by the session
+        # that held it, or has committed. `_abandon` reads which, and records a
+        # failure only for a run that is still unfinished.
+        await _abandon(envelope)
+        raise
+
+
+async def _commit_run(envelope: JobEnvelope, budget: WorkBudget) -> dict[str, Any]:
     run_id = str(envelope.payload.get("run_id") or "")
     if not run_id:
         logger.error("import commit: a job arrived with no run id")
@@ -385,7 +546,9 @@ async def commit_run(ctx: dict[str, Any], envelope: JobEnvelope) -> dict[str, An
                 run = claimed
 
                 try:
-                    written = await _write(session, store, target, run, envelope.tenant_id)
+                    written = await _write(
+                        session, store, target, run, envelope.tenant_id, budget
+                    )
                     await store.record_commit(
                         session,
                         run,
@@ -469,6 +632,7 @@ async def _write(
     target: Any,  # noqa: ANN401 - a product's own target
     run: Any,  # noqa: ANN401 - the store's own row type
     tenant_id: str,
+    budget: WorkBudget,
 ) -> Any:  # noqa: ANN401 - whatever the product's writer reported
     """Read the file again, check it again, and hand the rows to the product.
 
@@ -480,7 +644,14 @@ async def _write(
     immutable, and the scan gate has already passed.
     """
     raw = await store.source_bytes(session, _object_store(), run.source_file_id)
-    verdict, mapped = store.prepare(raw, target, run)
+    # On a thread, with a budget it asks as it reads. One pass, and one
+    # dictionary a row: what comes back is what the writer is handed.
+    verdict, mapped = await _off_loop(
+        budget, partial(store.prepare, raw, target, run, watch=budget.check)
+    )
+    # Before the writer, which is the product's code and may hold a good deal
+    # of its own: the file has been read and is not needed again.
+    del raw
     if not verdict.ok:
         # The dry run said this was clean and this pass disagrees. Refused
         # rather than written around: the rows a person approved are not the
@@ -496,14 +667,62 @@ async def _write(
         run_id=run.id,
         operation=Operation(run.operation),
         match_keys=tuple(target.match_keys),
-        rows=rows_from(mapped, ceiling=target.max_rows),
+        # `owned`: these dictionaries were built for this request a moment
+        # ago and nothing here reads them again, so they are handed over as
+        # they are rather than copied -- a copy is a second dictionary for
+        # every row of the file, held beside the first.
+        rows=rows_from(mapped, ceiling=target.max_rows, owned=True),
     )
+    del mapped
     written = await target.writer(session, request)
     # Cheap, and it catches what a writer is most likely to get wrong: a filter
     # that skips rows without counting them, which would report a clean import
     # of fewer records than the file held.
     check_total(request, written)
     return written
+
+
+async def _abandon(envelope: JobEnvelope) -> None:
+    """A job that was cancelled says so on its run. Swallows everything.
+
+    The queue cancels a job at its timeout and the worker cancels every job
+    when it shuts down, and neither is an exception a handler's own `except`
+    sees. Without this the run keeps the state it was in -- `validating` or
+    `committing` -- for ever, which is a person watching a spinner.
+
+    **Guarded by the state it read**, through `store.abandon`: the update
+    names the status it expects, so a commit whose one transaction did land
+    is never overwritten with a failure. A run that finished is left alone.
+    """
+    run_id = str(envelope.payload.get("run_id") or "")
+    store = _run_store()
+    if not run_id or store is None or not settings.database_url:
+        return
+    try:
+        async with asyncio.timeout(_STOP_GRACE_SECONDS):
+            engine = _engine()
+            try:
+                async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+                    await session.execute(_AS_TENANT, {"tenant_id": envelope.tenant_id})
+                    run = await store.get(session, run_id)
+                    if run is None or run.status not in _UNFINISHED:
+                        return
+                    if await store.abandon(session, run, _INTERRUPTED):
+                        await session.commit()
+                        logger.warning(
+                            "import: run %s was interrupted in %s and is recorded as failed",
+                            run_id,
+                            run.status,
+                        )
+            finally:
+                await engine.dispose()
+    except Exception:
+        logger.exception("import: run %s was interrupted and could not be marked", run_id)
+
+
+#: The states a worker leaves a run in while it is working on it.
+_UNFINISHED = frozenset({"validating", "commit_requested", "committing"})
+
 
 async def _record(
     session: Any,  # noqa: ANN401 - the caller's open session

@@ -57,12 +57,13 @@ import io
 import posixpath
 import zipfile
 import zlib
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from itertools import chain
 from xml.parsers import expat
 
+from .budget import BudgetExceeded
 from .reading import (
     ENCODINGS,
     FALLBACK_ENCODING,
@@ -294,8 +295,13 @@ def string_cost(text: str) -> int:
 class _Tally:
     """The running counts, each checked against its limit as it moves."""
 
-    def __init__(self, limits: SafetyLimits) -> None:
+    def __init__(self, limits: SafetyLimits, watch: Callable[[], None] | None = None) -> None:
         self.limits = limits
+        #: Asked once a chunk, and may raise `BudgetExceeded` to end the pass.
+        #: The pass is a walk of the whole file, seconds of it for a file at
+        #: the edge of the envelope, and a time limit that could not reach in
+        #: here would be a limit on everything but the first of those seconds.
+        self.watch = watch
         self.decoded = 0
         self.widest = 1
         self.cells = 0
@@ -304,6 +310,10 @@ class _Tally:
         self.uncompressed: int | None = None
         self.encoding: str | None = None
         self.package: _Package | None = None
+
+    def pulse(self) -> None:
+        if self.watch is not None:
+            self.watch()
 
     def reset(self) -> None:
         self.decoded = 0
@@ -422,6 +432,7 @@ def _csv_pass(
     def pieces() -> Iterator[str]:
         nonlocal characters
         for start in range(0, len(raw), _CHUNK):
+            tally.pulse()
             text = decoder.decode(raw[start : start + _CHUNK], start + _CHUNK >= len(raw))
             if not text:
                 continue
@@ -447,7 +458,8 @@ def _csv_pass(
             # `reading.py` is the other copy.
             if any(cell.strip() for cell in record):
                 tally.note_rows(tally.rows + 1)
-    except PreflightRefused:
+    except (PreflightRefused, BudgetExceeded):
+        # The second is not the file's fault and is not turned into one.
         raise
     except ReadRefused as broken:
         raise PreflightRefused(RefusalCode.MALFORMED, str(broken)) from broken
@@ -799,6 +811,7 @@ def _scan(archive: zipfile.ZipFile, info: zipfile.ZipInfo, scanner: _Scanner) ->
         # yield more than the total already checked against the ceiling.
         with archive.open(info) as part:
             while chunk := part.read(_CHUNK):
+                scanner.tally.pulse()
                 before = scanner.events
                 parser.Parse(chunk, False)
                 # `expat` hands text over as it arrives and holds everything
@@ -811,7 +824,7 @@ def _scan(archive: zipfile.ZipFile, info: zipfile.ZipInfo, scanner: _Scanner) ->
         parser.Parse(b"", True)
     except _Stop:
         return
-    except PreflightRefused:
+    except (PreflightRefused, BudgetExceeded):
         # A `ValueError`, like every refusal here, so it is named before the
         # clause below can mistake it for a broken entry.
         raise
@@ -1131,13 +1144,18 @@ def survey(
     limits: SafetyLimits = PROVISIONAL_LIMITS,
     *,
     delimiter: str | None = None,
+    watch: Callable[[], None] | None = None,
 ) -> Preflight:
     """What the source contains and whether it is safe. Never raises a refusal.
 
     `delimiter` is for a CSV whose delimiter is already recorded on its run;
     without it the header is sniffed exactly as the reader sniffs it.
+
+    `watch` is called once a chunk as the file is walked. It may raise
+    `BudgetExceeded`, which ends the pass and is the one thing this function
+    lets through: a run out of time is not a fact about the file.
     """
-    tally = _Tally(limits)
+    tally = _Tally(limits, watch)
     refusal: Refusal | None = None
     try:
         if len(raw) > limits.max_source_bytes:
@@ -1167,12 +1185,13 @@ def preflight(
     limits: SafetyLimits = PROVISIONAL_LIMITS,
     *,
     delimiter: str | None = None,
+    watch: Callable[[], None] | None = None,
 ) -> Preflight:
     """`survey`, raising `PreflightRefused` when the source is not safe.
 
     The call every path makes before it hands a source to a reader.
     """
-    found = survey(raw, fmt, limits, delimiter=delimiter)
+    found = survey(raw, fmt, limits, delimiter=delimiter, watch=watch)
     if found.refusal is not None:
         raise PreflightRefused(
             found.refusal.code,

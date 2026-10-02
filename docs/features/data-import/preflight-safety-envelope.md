@@ -12,6 +12,14 @@
 > the safety pass is reached for it through `inspect_source`. Each is marked
 > where it stands rather than rewritten. `bounded-inspection.md` here is the
 > description of that slice.
+>
+> **GR-352C was built on 2026-10-02**, and more of this document describes a
+> day that has passed: the dry run and the commit no longer reach `openpyxl`
+> or a whole-file decode either, the pass is reached for them through
+> `open_rows`, and it can be told to stop. The limits are unchanged and are
+> as provisional as they were. `worker-resource-envelope.md` here is the
+> description of that slice, and the rows of "What this slice leaves" below
+> say which of them it closed.
 
 ## What GR-352 is
 
@@ -119,7 +127,10 @@ against `sys.getsizeof` rather than against itself.
   over lines. **GR-352B did not earn that**, and the term is unchanged as of
   2026-10-01: the two routes stopped decoding the file whole, and the dry run
   and the commit still do. It becomes a sum over lines when the worker's
-  reader streams, which is GR-352C's.
+  reader streams, which is GR-352C's. **The reader streams since 2026-10-02
+  and the term was left as it is**: summing over lines accepts files that are
+  refused as of that day, which is a change to a limit and so not a slice's to
+  make. IMPORT-GAP-024.
 
 ### The workbook pass
 
@@ -355,6 +366,11 @@ The inspection has the same arrangement, for the same reason. The worker has
 no reader of its own: it reaches a source only through the store. One
 operation runs the pass once.
 
+Since GR-352C on 2026-10-02 the three functions the dry run and the commit
+reach go through `_parse` to `open_rows`, which has the same arrangement
+again: the pass is inside it. `read_workbook` keeps its own, for whoever
+calls it; nothing in the store does.
+
 ## How it is proved
 
 - **The order**, by replacement. `openpyxl.load_workbook` and the whole-file
@@ -387,13 +403,13 @@ this slice changed what is accepted.
 |------|---------------------|
 | The NFR decision: headroom, concurrency, the ratified numbers | IMPORT-DEF-013; F31 |
 | The API still parses a whole safe file to show 200 rows of it | **Closed 2026-10-01** by GR-352B; `bounded-inspection.md` here |
-| Worker concurrency, queue topology, an import semaphore, machine size | GR-352C; IMPORT-DEF-013 |
-| Re-measuring the readers against the new envelope, on Linux | IMPORT-DEF-013 |
+| Worker concurrency, queue topology, an import semaphore, machine size | **Built 2026-10-02** by GR-352C: one import to a process, behind a slot; no queue added and no machine resized. The number is provisional. IMPORT-GAP-021 for the topology it did not change |
+| Re-measuring the readers against the new envelope, on Linux | Measured 2026-10-02 by GR-352C against the provisional limits, in `worker-resource-envelope.md`; owed again against ratified ones. IMPORT-DEF-013 |
 | `source_bytes` awaits a synchronous `S3ObjectStore.get` | IMPORT-DEF-014 |
-| Pathological CPU in the synchronous analysis and in `clean_cell` | IMPORT-DEF-015: the analysis half closed 2026-10-01 by GR-352B, the `clean_cell` half open |
-| Workbook parts `openpyxl` loads eagerly that are neither strings nor sheets | IMPORT-GAP-015: closed for the routes 2026-10-01, open for the worker |
-| A string the pass costs once is copied for every cell that names it | IMPORT-DEF-016, found 2026-10-01 by GR-352B's measurement; open, GR-352C |
-| What the reader builds from a sheet that is neither a string nor a cell | IMPORT-GAP-020, found 2026-10-01 while closing IMPORT-DEF-017 |
+| Pathological CPU in the synchronous analysis and in `clean_cell` | IMPORT-DEF-015: the analysis half closed 2026-10-01 by GR-352B, the `clean_cell` half on 2026-10-02 by GR-352C |
+| Workbook parts `openpyxl` loads eagerly that are neither strings nor sheets | IMPORT-GAP-015: closed for the routes 2026-10-01 and for the worker 2026-10-02 |
+| A string the pass costs once is copied for every cell that names it | IMPORT-DEF-016, found 2026-10-01 by GR-352B's measurement; closed in the worker 2026-10-02 by GR-352C |
+| What the reader builds from a sheet that is neither a string nor a cell | IMPORT-GAP-020, found 2026-10-01 while closing IMPORT-DEF-017; measured and closed 2026-10-02 by GR-352C |
 | The AI knowledge reader opens workbooks with no safety pass | IMPORT-GAP-016 |
 
 The CPU findings are not closed by this. The cell and column limits reduce how
@@ -422,7 +438,9 @@ A generated product has no upstream. The factory pushes to nothing.
   `koras_import/reading_xlsx.py`, `core/imports.py`, `routers/imports.py`, and
   the tests `test_preflight.py`, `test_preflight_memory.py` and
   `tests/unit/test_import_preflight.py`. No migration, no setting, no
-  environment variable and no page.
+  environment variable and no page. `safety.py` changed again with GR-352C
+  on 2026-10-02 and now imports `koras_import/budget.py`, so the three slices
+  are carried together or the first of them does not import.
 - **`docoris`** carries the framework by its own ADR 0017 and has changed
   nothing for this. Its alignment is its own later work, in its own repository,
   and its GR-352 stays open until the starter's does.

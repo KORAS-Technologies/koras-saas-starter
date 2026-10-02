@@ -45,7 +45,7 @@ recommendation rather than a record — revise it, do not preserve it.
 | 8 | **F22 — Files** | Six items, each waiting on a real trigger rather than on time: multipart uploads (a file over 5 GB), an orphan sweep, the `customer-owned` and `azure-blob` policies, a real upload in CI, a foreign bucket's origin in the browser policy, and quota by period. | ~1 day per item |
 | 9 | **F25 — reporting** | Three items, none of which blocks a product registering reports today: `reporting.api` enforcement becomes real with the first machine caller, pre-aggregation when a table outgrows a range scan, and report names in the customer's language when somebody asks for one. | ~1 day per item |
 | 10 | **F30 — Docoris data import alignment with the starter** | Docoris carries its own import (E24-F01-S01) with no analysis step and a mapping form a person types headings into, so matching CSV or XLSX headings prefill nothing there, however well they match. Opened 2026-09-29; the starter's framework is complete and documented, and the next move is a comparison and a migration path in the docoris repository, not a third implementation. | ~1 day to compare, the migration unknown |
-| 11 | **F31 — GR-352, the import memory envelope** — *opened 2026-10-01; slices A and B built the same day* | **A release gate rather than a queue position**, and placed last only because nobody has ordered it: the import framework accepted files that took a worker to 1.4 GiB against 512 MB. A safety pass now refuses the measured worst cases before they are loaded, under four limits that are provisional. What is left is an NFR decision this repository cannot take, two more slices, and a Linux measurement repeated against whatever is ratified | One decision by Platform/NFR architecture; then two slices of about the size of the first |
+| 11 | **F31 — GR-352, the import memory envelope** — *opened 2026-10-01; slices A and B built the same day, slice C on 2026-10-02* | **A release gate rather than a queue position**, and placed last only because nobody has ordered it: the import framework accepted files that took a worker to 1.4 GiB against 512 MB. A safety pass refuses the measured worst cases before they are loaded, the two API routes read a head, and since 2026-10-02 the worker reads rows as a stream, one import to a process -- all of it under limits that are provisional. What is left is an NFR decision this repository cannot take, and the measurement repeated against whatever it ratifies | One decision by Platform/NFR architecture; then a measurement, and IMPORT-DEF-014 |
 
 **F21 and F23 do not contend with the top row.** They are a person at a dashboard and two ZITADEL writes per instance; nothing in either is code, so an order that reads as a queue is misleading for those two. Run them whenever the dashboard is open.
 
@@ -2650,7 +2650,8 @@ it blocks closing OD-12, registering a scanner that lets an import file become
 should be read as lifting that.
 
 **Why it is here and not finished.** The remedy was cut into three slices so
-that each could be reviewed, and the first is the only one built:
+that each could be reviewed. All three are built as of 2026-10-02, and what
+is left is the decision none of them could take:
 
 - [x] **GR-352A — a safety pass before either reader.** Built 2026-10-01.
       Streams the file, costs decoded text at its real width, counts cells and
@@ -2665,7 +2666,10 @@ that each could be reviewed, and the first is the only one built:
       guardrails standing in for it, approved by the owner for the slice on
       2026-10-01. One of them intentionally tightens what was accepted: a
       50,000-row file with more than twenty populated cells a row is refused
-      as of 2026-10-01, pending NFR ratification.
+      as of 2026-10-01, pending NFR ratification. GR-352C added three numbers
+      of the same standing on 2026-10-02 -- one import to a worker process,
+      600 seconds of reading, two sources in hand in an API process -- and
+      the measurements the decision can be taken from.
 - [x] **GR-352B — the analysis path.** Built 2026-10-01. The analysis and
       mapping routes inspect a head of the file by streaming it and call
       neither reader; a workbook's shared strings are resolved for the sample
@@ -2675,14 +2679,17 @@ that each could be reviewed, and the first is the only one built:
       canonical readers on 145 files, mutation-checked sixteen ways.
       `docs/features/data-import/bounded-inspection.md`. It closes the API
       half of IMPORT-DEF-015 and of IMPORT-GAP-015, and nothing of the worker.
-- [ ] **IMPORT-DEF-016 — found by that measurement, and High.** A string the
+- [x] **IMPORT-DEF-016 — found by that measurement, and High.** A string the
       safety pass costs once is copied for every cell that names it: a 78 KiB
       workbook took the analysis to 1,834 MiB and a 611 MiB response at
       `b24a72d`, inside every limit. Closed for the routes by a budget on the
-      sample. **Open in the worker**, where the dry run and the commit clean
-      every cell of every row, and not measured there. It belongs with GR-352C
-      and it changes what the envelope has to count: the worker's memory must
-      be measured against repeated references before any envelope is ratified.
+      sample on 2026-10-01. **Closed in the worker on 2026-10-02 by GR-352C**,
+      which measured it there first and found two defects rather than one: the
+      reader made a copy for every cell -- a 0.12 MiB workbook at 1,236 MiB,
+      and a million cells killed at 8 GiB -- and the duplicate index made a
+      copy for every row of a long key part, 1,628 MiB. Neither was
+      `openpyxl`'s. Both are closed by not making the copy, so a string is
+      held as often as the safety pass costs it: once.
 - [x] **IMPORT-DEF-017 — the safety pass did not scan the parts the reader
       reads.** Found building GR-352B, and closed before it was committed, on
       2026-10-01. The pass found a workbook's parts by its own rules and
@@ -2694,28 +2701,56 @@ that each could be reviewed, and the first is the only one built:
       as a provisional guardrail: 200 rows is the most a preview holds, not a
       guarantee. Its final value waits on GR-352C and OD-22/NFR ratification
       (IMPORT-GAP-017).
-- [ ] **Two things GR-352B left.** Whether the routes should walk a workbook
-      once rather than twice (IMPORT-GAP-018), and a bound on analyses running
-      at once (IMPORT-GAP-019).
-- [ ] **IMPORT-GAP-020.** What `openpyxl` builds from a sheet that is neither
-      a string nor a cell -- merged ranges, links, validations -- is counted by
-      nothing. Unmeasured; the worker's, with GR-352C.
-- [ ] **GR-352C — the worker.** Concurrency, queue topology, an import
-      semaphore and machine size. Two imports at once double whatever one
-      costs, and nothing bounds that.
-- [ ] **The measurement, repeated.** GR-352 closes on the *reader's* memory
-      under the worst *accepted* input, on Linux, in the API and the worker,
-      against the ratified headroom. Every figure in hand predates the safety
-      pass, and nothing at the new cell limit was ever measured.
+- [ ] **One thing GR-352B left.** Whether a workbook should be walked once
+      rather than twice (IMPORT-GAP-018). It is the worker's as well since
+      2026-10-02: the safety pass walks the sheet and the reader walks it
+      again, which is twenty seconds and more at the cell limit.
+- [x] **The other: a bound on analyses running at once (IMPORT-GAP-019).**
+      Closed 2026-10-02 by GR-352C: two sources in hand at once in one API
+      process, and the number is provisional.
+- [x] **IMPORT-GAP-020.** What `openpyxl` builds from a sheet that is neither
+      a string nor a cell. Measured on 2026-10-02 and worse than its row said:
+      640 bytes a merged range, so a 0.8 MiB workbook took a worker to 2.6
+      GiB; 1,350 a data validation; and every other worksheet walked to its
+      end. Closed the same day by a reader that builds none of it, with no new
+      limit. IMPORT-GAP-015 closed with it, for the same reason.
+- [x] **GR-352C — the worker.** Built 2026-10-02.
+      `docs/features/data-import/worker-resource-envelope.md`. The worker
+      reads rows as a stream and takes what it needs of a row in one pass; one
+      import to a process, behind a slot taken before the file is fetched; the
+      read on a thread, under a time budget it is asked as it goes, with the
+      queue's cancellation passed on. No queue was added, no migration, no
+      route changed, the writer's contract is as it was and the commit is
+      still all or nothing -- counted in rows against a real PostgreSQL.
+- [x] **Two defects GR-352C found in the job itself**, both closed inside it on
+      2026-10-02. The queue's 900-second timeout did not stop an import: the
+      read had no `await` for a cancellation to land on, so a job past its
+      timeout read on to the end, with the worker's event loop held the whole
+      time (IMPORT-DEF-018). And a job the queue did cancel left its run
+      `validating` or `committing` for ever (IMPORT-DEF-019).
+- [ ] **The measurement, repeated.** GR-352 closes on the worker's and the
+      API's memory under the worst *accepted* input, on Linux, against the
+      ratified headroom. GR-352C took that measurement against the
+      provisional limits on 2026-10-02, including under a 512 MiB limit with
+      no swap, and it is evidence for the decision rather than the acceptance:
+      the limits it was taken against are the ones the decision replaces.
+- [ ] **What GR-352C leaves, four rows, all dated 2026-10-02.** A waiting
+      import's time counts against its queue timeout (IMPORT-GAP-021); a
+      product's own validator, matcher and writer are outside every bound
+      (IMPORT-GAP-022); what else the worker holds beside an import was not
+      measured (IMPORT-GAP-023); and the envelope still costs a CSV as the one
+      string nothing builds any more, and holds the source whole
+      (IMPORT-GAP-024).
 - [ ] **IMPORT-DEF-014 — and in this order.** `source_bytes` awaits a
       synchronous `S3ObjectStore.get`, so against a real bucket no import can
       read its source at all. That is a defect, and it is also the only reason
       the memory path is unreachable in a deployed starter product. Fixing it
       before the envelope is ratified opens the path the gate exists to keep
       shut.
-- [ ] **IMPORT-GAP-015 and IMPORT-GAP-016.** The workbook parts `openpyxl`
-      loads that are neither strings nor sheets, unmeasured; and the AI
-      knowledge reader, which opens workbooks with no safety pass.
+- [ ] **IMPORT-GAP-016.** The AI knowledge reader opens workbooks with
+      `openpyxl` and no safety pass. Wider than it was written, as of
+      2026-10-02: everything GR-352C measured `openpyxl` building beside the
+      strings, that caller builds too.
 - [ ] **Existing products.** A generated product has no upstream, so this
       reaches `docoris` only when somebody carries it there, in that
       repository, by its own process. The envelope document lists the files.

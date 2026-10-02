@@ -511,9 +511,16 @@ jobs:
       # are the only tests in the estate that measure what GR-352 is about.
       # `test_preflight_memory.py` is the safety pass's own memory (GR-352A);
       # `test_import_inspection_memory.py` is the analysis route's, through
-      # `core/imports.analyse` (GR-352B). A runner that stops being Linux, or
-      # a marker that starts matching it, fails this step rather than passing
-      # over nothing.
+      # `core/imports.analyse` (GR-352B); `test_import_worker_memory.py` is
+      # the worker's, through `core/imports.examine` and `prepare` (GR-352C).
+      # A runner that stops being Linux, or a marker that starts matching it,
+      # fails this step rather than passing over nothing.
+      #
+      # `test_import_worker_envelope.py` reads nothing from `/proc` and skips
+      # nowhere. It is named here so that the one-import-at-a-time guard, the
+      # read's time budget and the cancellation that stops it are things this
+      # step is known to have run, rather than things the step above ran
+      # somewhere among two thousand others.
       - name: The import memory suites ran, and none of them skipped
         if: contains(matrix.components, 'data_import')
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
@@ -521,12 +528,38 @@ jobs:
           uv run pytest \
             python-packages/koras-import/tests/test_preflight_memory.py \
             tests/unit/test_import_inspection_memory.py \
+            tests/unit/test_import_worker_memory.py \
+            tests/unit/test_import_worker_envelope.py \
             --no-cov -q -rs | tee "$RUNNER_TEMP/import-memory.txt"
           if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/import-memory.txt"; then
             echo "::error::an import memory test was skipped; on this runner every one of them must run"
             exit 1
           fi
           grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/import-memory.txt"
+
+      # The commit's all-or-nothing, counted in rows, and not allowed to skip.
+      #
+      # GR-352C changed how the worker reads a file -- rows as a stream, on a
+      # thread, under a budget, with the queue's cancellation passed on -- and
+      # the one property none of that may touch is a property of a
+      # transaction. `tests/integration/` skips without a database, and the
+      # `Test (Python)` step above reports that as a pass, so the row that
+      # prepared one asks for these two by name.
+      - name: The import commit ran against a database, and did not skip
+        if: matrix.roundtrip && contains(matrix.components, 'data_import')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        env:
+          E2E_DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+        run: |
+          uv run pytest \
+            tests/integration/test_import_commit_rls.py \
+            tests/integration/test_import_commit_atomic.py \
+            --no-cov -q -rs | tee "$RUNNER_TEMP/import-commit.txt"
+          if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/import-commit.txt"; then
+            echo "::error::an import commit test was skipped; this row has a database and every one of them must run"
+            exit 1
+          fi
+          grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/import-commit.txt"
 
       # A project generated a moment ago must match what the generator would
       # produce for it. If it does not, either the drift check is wrong or

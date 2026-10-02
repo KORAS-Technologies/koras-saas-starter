@@ -560,13 +560,19 @@ async def analysis(
     # import *something* but not this would otherwise read the contents of an
     # upload the target was meant to gate. IMP-06 in the review.
     _require_target(claims, target)
-    raw = await _bytes(session, storage, run)
-    try:
-        # Off the event loop: bounded in memory, and still seconds of parsing
-        # for a file at the edge of the envelope. GR-352B.
-        found = await store.analysed(raw, target, Format(run.format))
-    except ReadRefused as refused:
-        raise _read_refusal(refused) from refused
+    # Held from before the source is fetched until it has been let go: the
+    # analysis is small and the source it reads is not, and nothing else
+    # bounds how many of them this process holds at once. IMPORT-GAP-019.
+    async with store.analysis_slot():
+        raw = await _bytes(session, storage, run)
+        try:
+            # Off the event loop: bounded in memory, and still seconds of
+            # parsing for a file at the edge of the envelope. GR-352B.
+            found = await store.analysed(raw, target, Format(run.format))
+        except ReadRefused as refused:
+            raise _read_refusal(refused) from refused
+        finally:
+            del raw
     return AnalysisView(
         columns=list(found.columns),
         suggested=found.suggested,
@@ -604,12 +610,18 @@ async def set_mapping(
     run = _run_or_404(await store.get(session, run_id))
     target = _target(run.target)
     _require_target(claims, target)
-    raw = await _bytes(session, storage, run)
 
     try:
-        # The header and the count, and no rows: a mapping is checked against
-        # the columns the file has, and this route shows nobody a preview.
-        found = await store.analysed(raw, target, Format(run.format), sample=0)
+        # The same gate the analysis route holds, for the same source.
+        async with store.analysis_slot():
+            raw = await _bytes(session, storage, run)
+            try:
+                # The header and the count, and no rows: a mapping is checked
+                # against the columns the file has, and this route shows
+                # nobody a preview.
+                found = await store.analysed(raw, target, Format(run.format), sample=0)
+            finally:
+                del raw
         from koras_import import resolve
 
         resolve(

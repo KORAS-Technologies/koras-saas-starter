@@ -185,7 +185,14 @@ template_map:
       - tests/unit/test_import_preflight.py
       - tests/unit/test_import_inspection.py
       - tests/unit/test_import_inspection_memory.py
+      # GR-352C: what an import may cost the worker it runs in. The slot, the
+      # thread, the budget and the cancellation against the product's own
+      # task; the kernel's figure for a dry run and a commit; and the commit's
+      # all-or-nothing counted against a real database.
+      - tests/unit/test_import_worker_envelope.py
+      - tests/unit/test_import_worker_memory.py
       - tests/integration/test_import_commit_rls.py
+      - tests/integration/test_import_commit_atomic.py
       - apps/web/src/app/dashboard/imports
       # The template download: a route handler, because a download is a body
       # and a server action returns a value. The menu it is reached from is a

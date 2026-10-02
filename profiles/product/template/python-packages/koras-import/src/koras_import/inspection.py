@@ -10,12 +10,16 @@ near the limits and 126 seconds for a wide one, on the API's event loop.
 
 This module answers the same three questions by streaming.
 
-**It is not a second reader.** `reading.py` and `reading_xlsx.py` are still
-the only readers a dry run or a commit uses, and they are still authoritative:
-what is validated and what is written comes from them. This answers only what
-the mapping page draws, and it is built to agree with them on that -- the
-header, the first rows as text, the count -- which `test_inspection.py` checks
-by handing both the same files.
+**It is not what a dry run or a commit reads through.** What is validated
+and what is written comes from `streaming.open_rows`, which reads every row;
+this answers only what the mapping page draws. Both are held to
+`reading.py` and `reading_xlsx.py`, which say what a file's rows are: this
+module on the header, the first rows as text and the count, by
+`test_inspection.py`, and the stream on every row, by `test_streaming.py`.
+The stream is built from this module's sheet walk -- `_Sheet`, `_Strings`,
+`_Styles` -- asked for every row instead of a sample, so a change to one of
+those is a change to what a commit writes. Until GR-352C the dry run and the
+commit called the two readers themselves.
 
 **The safety pass runs first, inside `inspect_source`.** A caller chooses the
 envelope; it cannot choose to have none, which is the arrangement
@@ -270,6 +274,18 @@ def _stream(archive: zipfile.ZipFile, name: str, handler: Any) -> None:  # noqa:
     toward counting and this one has to agree with a reader that matches a
     row by its full name.
     """
+    for _ in _feed(archive, name, handler):
+        pass
+
+
+def _feed(archive: zipfile.ZipFile, name: str, handler: Any) -> Iterator[None]:  # noqa: ANN401
+    """`_stream`, handing control back after every chunk.
+
+    What lets a caller take what the handler has gathered so far instead of
+    waiting for the whole part: the worker's reader drains a sheet's rows
+    between chunks, so the rows of a worksheet are never all held at once.
+    GR-352C, `streaming.py`.
+    """
     parser = expat.ParserCreate(namespace_separator=" ")
     parser.buffer_text = True
     parser.StartDoctypeDeclHandler = _no_doctype
@@ -286,6 +302,7 @@ def _stream(archive: zipfile.ZipFile, name: str, handler: Any) -> None:  # noqa:
                 stalled = stalled + len(chunk) if handler.events == before else 0
                 if stalled > _MAX_TOKEN:
                     raise ReadRefused(_UNREADABLE)
+                yield
         parser.Parse(b"", True)
     except _Stop:
         return
@@ -348,10 +365,17 @@ class _Strings:
     not show: whether the cell is empty, whether it is a file in a cell, and
     what it would cost a sample. With `wanted` set this keeps the text of
     those items alone and stops at the last of them.
+
+    With `keep` it measures and keeps every item as well, in `texts`. That is
+    the worker's: a dry run reads every row, so it needs every string, held
+    once each -- which the safety pass has already bounded, because the
+    decoded-string budget is a sum over exactly these items.
     """
 
-    def __init__(self, wanted: frozenset[int] | None = None) -> None:
+    def __init__(self, wanted: frozenset[int] | None = None, *, keep: bool = False) -> None:
         self.wanted = wanted
+        self.keep = keep
+        self.texts: list[str] = []
         self.last = max(wanted) if wanted else -1
         self.events = 0
         self.depth = 0
@@ -396,8 +420,14 @@ class _Strings:
                 # limit only until its escapes are taken out.
                 self.lengths.append(MAX_CELL + 1)
                 self.oversize[self.index] = self.item.count
+                if self.keep:
+                    # Never shown: `position` refuses a cell that names it.
+                    self.texts.append("")
             else:
-                self.lengths.append(len(_unescaped(self.item.content())))
+                text = _unescaped(self.item.content())
+                self.lengths.append(len(text))
+                if self.keep:
+                    self.texts.append(text)
             return
         if self.index in self.wanted:
             self.found[self.index] = _unescaped(self.item.content())

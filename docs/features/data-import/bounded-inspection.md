@@ -6,6 +6,13 @@
 > `preflight-safety-envelope.md`, the memory envelope has not been ratified by
 > anybody, the worker is untouched, and the import framework is not claimed to
 > be safe for production until every GR-352 acceptance criterion has passed.
+>
+> **GR-352C was built on 2026-10-02**, and "the worker is untouched" was true
+> of this slice and is not true of the tree after it. The dry run and the
+> commit no longer call the canonical readers: they read rows as a stream,
+> built from the sheet walk this document describes and asked for every row.
+> The statements below about what the worker does are marked where they
+> stand. `worker-resource-envelope.md` here is the description of that slice.
 
 ## What GR-352B is
 
@@ -52,6 +59,15 @@ or written; a row is validated when the dry run reads it through the canonical
 reader, and written when the commit reads it again. The inspection is built to
 agree with them on the three things it answers, and `test_inspection.py`
 checks that by handing both the same files and comparing the answers whole.
+
+**Since GR-352C, 2026-10-02, there are three things here and not two.** The
+dry run and the commit read through `koras_import/streaming.py`, which is
+this module's sheet walk -- `_Sheet`, `_Strings`, `_Styles` -- with nothing
+held back for a sample. `reading.py` and `reading_xlsx.py` still say what a
+file's rows are, and both the inspection and the stream are held to them:
+the inspection on a head by `test_inspection.py`, the stream on every row by
+`test_streaming.py`. So a change to this module's walk is, since that day, a
+change to what a commit writes.
 
 ## The result
 
@@ -444,15 +460,15 @@ about its memory has changed.
 | Left | Where it is tracked |
 |------|---------------------|
 | The NFR decision: headroom, concurrency, the ratified numbers | IMPORT-DEF-013; F31 |
-| The worker reads every accepted file whole, twice, with no bound on how many at once | GR-352C; IMPORT-DEF-013 |
-| `clean_cell` and the many-column cost in the dry run and the commit | IMPORT-DEF-015 |
+| The worker reads every accepted file whole, twice, with no bound on how many at once | **Closed 2026-10-02** by GR-352C: a stream, and one import to a process. It is read twice as it was -- once to check, once to commit. IMPORT-DEF-013 for the decision |
+| `clean_cell` and the many-column cost in the dry run and the commit | IMPORT-DEF-015, closed 2026-10-02 |
 | `source_bytes` awaits a synchronous `S3ObjectStore.get` | IMPORT-DEF-014 |
-| A string the pass costs once is copied for every cell that names it, in the worker | IMPORT-DEF-016 |
-| What the reader builds from a sheet that is neither a string nor a cell: merged ranges, links, validations | IMPORT-GAP-020 |
+| A string the pass costs once is copied for every cell that names it, in the worker | IMPORT-DEF-016, closed 2026-10-02 |
+| What the reader builds from a sheet that is neither a string nor a cell: merged ranges, links, validations | IMPORT-GAP-020, measured and closed 2026-10-02 |
 | The sample's character budget is the implementer's number | IMPORT-GAP-017 |
-| A workbook is walked twice by the routes: once by the safety pass, once by the inspection | IMPORT-GAP-018 |
-| Nothing bounds how many analyses run at once, each holding its source | IMPORT-GAP-019 |
-| The workbook parts `openpyxl` loads eagerly, in the worker | IMPORT-GAP-015 |
+| A workbook is walked twice by the routes: once by the safety pass, once by the inspection | IMPORT-GAP-018; the worker's as well since 2026-10-02 |
+| Nothing bounds how many analyses run at once, each holding its source | IMPORT-GAP-019, closed 2026-10-02 with a provisional number: two |
+| The workbook parts `openpyxl` loads eagerly, in the worker | IMPORT-GAP-015, closed 2026-10-02 |
 | The AI knowledge reader opens workbooks with no safety pass | IMPORT-GAP-016 |
 
 ## Generated products
