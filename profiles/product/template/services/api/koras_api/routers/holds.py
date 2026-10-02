@@ -19,7 +19,7 @@ person is unsatisfiable in a tenant with two administrators.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, status
@@ -90,6 +90,36 @@ class HoldRow(BaseModel):
 
 class HoldList(BaseModel):
     holds: list[HoldRow]
+
+
+def _instant(moment: datetime) -> datetime:
+    """A naive datetime read the way it is stored: in this process's zone.
+
+    A date-only end ("2026-10-02") arrives naive, and the database driver binds
+    a naive value as local wall time in the API process. Comparing it in that
+    same zone keeps the check below about the instant that is actually stored.
+    What a date-only end *should* mean -- which zone, inclusive or not -- is a
+    product decision this function deliberately does not make.
+    """
+    return moment if moment.tzinfo is not None else moment.astimezone()
+
+
+def window_is_invalid(
+    starts_at: datetime | None, ends_at: datetime | None, *, now: datetime
+) -> bool:
+    """Whether a requested hold would end at or before it starts.
+
+    The start is the requested `starts_at`, or `now` when it is omitted --
+    the same `coalesce(:starts_at, now())` the insert uses. Comparing against
+    the *effective* start rather than only a supplied one matters, because the
+    generated UI never sends `starts_at`: checking only a supplied start
+    accepted every past end the UI could send (starter #25). A hold with no
+    end is always valid.
+    """
+    if ends_at is None:
+        return False
+    start = starts_at if starts_at is not None else now
+    return _instant(ends_at) <= _instant(start)
 
 
 def _row(hold: Hold, *, now: datetime | None = None) -> HoldRow:
@@ -165,7 +195,7 @@ async def create_hold(
 ) -> HoldRow:
     """Record a request. **It holds nothing until somebody approves it.**"""
     _require_permission(claims)
-    if body.ends_at is not None and body.starts_at is not None and body.ends_at <= body.starts_at:
+    if window_is_invalid(body.starts_at, body.ends_at, now=datetime.now(UTC)):
         raise api_error(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             ApiErrorCode.HOLD_INVALID_WINDOW,
