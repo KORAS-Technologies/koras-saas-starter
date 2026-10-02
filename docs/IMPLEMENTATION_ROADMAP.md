@@ -994,6 +994,10 @@ tasks, clean.
 every run until the billing failure is settled, and this criterion reverts to
 unmeasurable. R-030 reopens rather than being rediscovered.
 
+Corrected 2026-10-02: the billing failure was settled on 2026-08-30, and the
+repository is private and its workflows run. The criterion rests on Actions
+billing and not on the repository being public; R-030 has the evidence.
+
 ---
 
 ## Phase 12 — Security

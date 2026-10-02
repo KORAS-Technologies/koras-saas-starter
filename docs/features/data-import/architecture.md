@@ -438,11 +438,12 @@ inside `read_workbook` for a workbook, and ahead of `decode` in `analyse` and
 cells and columns, and refuses with a `PreflightRefused` -- a `ReadRefused`, so
 every existing handler already answers it. It reinterprets no value.
 
-**The numbers in it are provisional and GR-352 is open.** The envelope has not
-been ratified, the readers have not been re-measured against it, and the API
-still parses a whole safe file to preview 200 rows of it.
+**The numbers in it were provisional and GR-352 was open, on 2026-10-01.**
+The envelope had not been ratified, the readers had not been re-measured
+against it, and the API parsed a whole safe file to preview 200 rows of it.
 `preflight-safety-envelope.md` here is the description, including what the
-slice deliberately left.
+slice deliberately left. The numbers were ratified unchanged and GR-352 was
+closed on 2026-10-02.
 
 ### The inspection: a head of the file, for the two routes that draw one
 
@@ -625,14 +626,18 @@ The run record has the table.
 
 - **No manual pass.** `manual-test-plan.md` here has the cases; every verdict
   is blank.
-- **GR-352 is open, and it is a release gate.** The safety pass of 2026-10-01
-  refuses the measured worst cases before they are loaded; it does not
-  establish that what is still accepted fits the machines. That needs an NFR
-  decision nobody has taken and a Linux measurement nobody has repeated.
-  IMPORT-DEF-013 and FOLLOW_UPS F31. GR-352B, the same day, bounded the two
-  API routes and measured them. GR-352C, on 2026-10-02, bounded the worker
-  and measured it, including under a 512 MiB limit. All three slices run
-  inside limits nobody has ratified, and that decision is what is left.
+- **IMPORT-DEF-014 is open as of 2026-10-02, and it is an activation
+  constraint.** `source_bytes` cannot read a source from a real bucket, and
+  no product may activate canonical imports against real object storage
+  until that is fixed and verified, with the 512 MiB capped measurement
+  repeated. FOLLOW_UPS F31.
+- **GR-352 itself is closed, verified, and its NFRs ratified**, on
+  2026-10-02, so it has left this list. This entry said until then that it
+  was open and a release gate, waiting on an NFR decision nobody had taken.
+  GR-352A, GR-352B, GR-352C and GR-352E bounded the file, the two API
+  routes, the worker and the worker's other heavy jobs, and measured each;
+  the owner ratified the limits as they stood. IMPORT-DEF-013, and
+  `worker-resource-envelope.md` here for the contract.
 - **No live run.** Nothing has imported a file through a deployed product.
   Neither the dry run nor the commit has executed against a real Redis, a real
   bucket and a real scanner.

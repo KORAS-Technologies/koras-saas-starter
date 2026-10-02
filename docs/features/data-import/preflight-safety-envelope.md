@@ -1,5 +1,14 @@
 # The import safety pass
 
+> **Status, 2026-10-02: GR-352 is CLOSED, verified, and its NFRs are
+> ratified.** The limits this document calls provisional were ratified by the
+> owner on 2026-10-02 at the values they were built with, and
+> `worker-resource-envelope.md` here holds the contract and its evidence. The
+> three notes below are the status as each slice left it, kept as written.
+> IMPORT-DEF-014 is open as of 2026-10-02, and no product may activate
+> canonical imports against real object storage until it is fixed and
+> verified.
+>
 > **Status, 2026-10-01: GR-352A is built. GR-352 is open, and HIGH.** This
 > document describes one slice of a release gate, not its resolution. The
 > limits below are provisional, the memory envelope they protect has not been
@@ -284,17 +293,19 @@ number.
 | `max_source_bytes` | 64 MiB | **Existing.** IMP-02, 2026-09-19. Unchanged |
 | `max_uncompressed_bytes` | 256 MiB | **Existing.** ADR 0012 D12. Unchanged |
 | `max_rows` | the target's `max_rows` | **Existing.** Unchanged in meaning |
-| `max_decoded_string_bytes` | 64 MiB | **Provisional**, GR-352 |
-| `max_cells` | 1,000,000 | **Provisional**, GR-352 |
-| `max_columns` | 256 | **Provisional**, GR-352 |
-| `max_archive_entries` | 4,096 | **Provisional**, GR-352 |
+| `max_decoded_string_bytes` | 64 MiB | **Ratified 2026-10-02.** Provisional from GR-352A until then |
+| `max_cells` | 1,000,000 | **Ratified 2026-10-02.** Provisional from GR-352A until then |
+| `max_columns` | 256 | **Ratified 2026-10-02.** Provisional from GR-352A until then |
+| `max_archive_entries` | 4,096 | **Ratified 2026-10-02.** Provisional from GR-352A until then |
 
-**The four provisional numbers are safety guardrails, not the supported
-import envelope.** They were proposed by the implementer and approved by the
+**All seven are the supported Starter import envelope since 2026-10-02**,
+when the owner ratified them unchanged; a target's `max_rows` is the
+product's, and the Starter default is 50,000. The four that GR-352A added
+began as safety guardrails: proposed by the implementer and approved by the
 owner on 2026-10-01 for this slice, to keep known unsafe workloads from
-reaching the canonical parsers. They are not NFR-ratified. The final limits
-need the GR-352B and GR-352C measurements and approval by the NFR owner --
-OD-22 in `docoris`'s terms. How each was reached:
+reaching the canonical parsers, and not then NFR-ratified. The code still
+exports them as `PROVISIONAL_LIMITS` as of 2026-10-02, because the closure
+changed no runtime file. How each was reached:
 
 - *Decoded strings, 64 MiB.* Set equal to the source ceiling on purpose, so no
   one-byte-wide CSV that was accepted before is refused by it. What it newly
@@ -304,20 +315,26 @@ OD-22 in `docoris`'s terms. How each was reached:
   **This intentionally refuses some files the starter accepted before.** At
   the default 50,000 rows it is twenty populated cells a row: a 50,000-row
   file with more than that was accepted on 2026-09-29 and is refused as of
-  2026-10-01. It is a deliberate safety restriction pending NFR ratification,
-  approved as such, and not a side effect.
+  2026-10-01. It is a deliberate safety restriction, approved as such and
+  ratified on 2026-10-02, and not a side effect.
 - *Columns, 256.* Far above any declared target and the width of a pre-2007
   spreadsheet. GR-352's many-column cases were also its slowest.
 - *Entries, 4,096.* A workbook has tens.
 
-**What they do not establish.** Of the inputs GR-352 measured, the largest
-these defaults still accept is the 63 MiB ASCII CSV, at 305 MiB in a worker --
-inside 512 MB with little to spare and no stated headroom. Nothing at the new
-cell limit has been measured at all. Whether that is acceptable, what the
-headroom must be, and what the concurrency assumption is are the **NFR
-decision GR-352 is waiting on**. It belongs to Platform/NFR architecture, not
-to whoever writes the parser. When it is taken, these four defaults are
-replaced by its numbers and the measurement is repeated against them.
+**What they did not establish, as of 2026-10-01.** Of the inputs GR-352
+measured, the largest these defaults still accept is the 63 MiB ASCII CSV, at
+305 MiB in a worker -- inside 512 MB with little to spare and no stated
+headroom. Nothing at the new cell limit had been measured at all. Whether
+that was acceptable, and what the concurrency assumption is, were the NFR
+decision GR-352 was waiting on.
+
+**The decision was taken on 2026-10-02.** GR-352B, GR-352C and GR-352E
+measured the readers at these limits, in the API and in the worker under a
+512 MiB limit with no swap, and the owner ratified the four defaults as they
+stood. The requirement is completion inside the 512 MiB allocation without
+OOM or swap, with concurrency bounded by the declared gates; no
+percentage-headroom term was set. `worker-resource-envelope.md` here has the
+contract.
 
 A product that has measured its own envelope replaces `SAFETY_LIMITS` in its
 own `core/imports.py`. There is no environment variable and no setting: a
@@ -394,18 +411,19 @@ calls it; nothing in the store does.
 
 **What that is not.** It is not the GR-352 acceptance measurement. That is the
 *reader's* memory under the worst *accepted* input, in the API and in the
-worker, against a ratified headroom -- and none of it has been repeated since
-this slice changed what is accepted.
+worker -- and as of 2026-10-01 none of it had been repeated since this slice
+changed what is accepted. It was taken by the later slices and accepted on
+2026-10-02; `worker-resource-envelope.md` here has it.
 
 ## What this slice leaves, by name
 
 | Left | Where it is tracked |
 |------|---------------------|
-| The NFR decision: headroom, concurrency, the ratified numbers | IMPORT-DEF-013; F31 |
+| The NFR decision: concurrency, the ratified numbers | **Taken 2026-10-02**; IMPORT-DEF-013, closed and ratified. `worker-resource-envelope.md` here |
 | The API still parses a whole safe file to show 200 rows of it | **Closed 2026-10-01** by GR-352B; `bounded-inspection.md` here |
-| Worker concurrency, queue topology, an import semaphore, machine size | **Built 2026-10-02** by GR-352C: one import to a process, behind a slot; no queue added and no machine resized. The number is provisional. IMPORT-GAP-021 for the topology it did not change |
-| Re-measuring the readers against the new envelope, on Linux | Measured 2026-10-02 by GR-352C against the provisional limits, in `worker-resource-envelope.md`; owed again against ratified ones. IMPORT-DEF-013 |
-| `source_bytes` awaits a synchronous `S3ObjectStore.get` | IMPORT-DEF-014 |
+| Worker concurrency, queue topology, an import semaphore, machine size | **Built 2026-10-02** by GR-352C: one import to a process, behind a slot; no queue added and no machine resized. The number was ratified the same day. IMPORT-GAP-021 for the topology it did not change |
+| Re-measuring the readers against the new envelope, on Linux | Measured 2026-10-02 by GR-352C and GR-352E, in `worker-resource-envelope.md`. The limits were ratified as they stood, so nothing is owed again. IMPORT-DEF-013 |
+| `source_bytes` awaits a synchronous `S3ObjectStore.get` | IMPORT-DEF-014, open as of 2026-10-02, and the activation constraint |
 | Pathological CPU in the synchronous analysis and in `clean_cell` | IMPORT-DEF-015: the analysis half closed 2026-10-01 by GR-352B, the `clean_cell` half on 2026-10-02 by GR-352C |
 | Workbook parts `openpyxl` loads eagerly that are neither strings nor sheets | IMPORT-GAP-015: closed for the routes 2026-10-01 and for the worker 2026-10-02 |
 | A string the pass costs once is copied for every cell that names it | IMPORT-DEF-016, found 2026-10-01 by GR-352B's measurement; closed in the worker 2026-10-02 by GR-352C |
@@ -442,7 +460,8 @@ A generated product has no upstream. The factory pushes to nothing.
   on 2026-10-02 and now imports `koras_import/budget.py`, so the three slices
   are carried together or the first of them does not import.
 - **`docoris`** carries the framework by its own ADR 0017 and has changed
-  nothing for this. Its alignment is its own later work, in its own repository,
-  and its GR-352 stays open until the starter's does.
+  nothing for this. Its alignment is its own later work, in its own repository.
+  The Starter's GR-352 closed on 2026-10-02; `docoris`'s own row is that
+  repository's to change, after IMPORT-DEF-014 and its alignment.
 - **`lexveria`** has no `koras-import` package -- checked 2026-10-01 -- so
   there is nothing in it to carry this into.

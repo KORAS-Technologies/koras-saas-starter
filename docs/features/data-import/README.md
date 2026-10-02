@@ -43,9 +43,9 @@ gate in the estate was green over it.
 | `phase-2-review.md` (here) | The second, over both phases: four reviewers, and the commit path that had never run | After Phase 2 |
 | `templates-and-formats-analysis.md` (here) | The gap analysis and design for downloadable templates, XLSX and the preview counts, with the twelve decisions it put to the owner | Before the template code |
 | `docs/adr/0012-import-template-versioning.md` | What a template carries, how a file is judged, and the resolution of those twelve | Before the template code |
-| `preflight-safety-envelope.md` (here) | The safety pass that runs before either reader, its provisional limits, and what GR-352 still needs | With GR-352A, 2026-10-01 |
+| `preflight-safety-envelope.md` (here) | The safety pass that runs before either reader, and its limits, ratified 2026-10-02 | With GR-352A, 2026-10-01 |
 | `bounded-inspection.md` (here) | How the analysis and mapping routes read a file's head without parsing the file, what was measured, and where the inspection is deliberately not the reader | With GR-352B, 2026-10-01 |
-| `worker-resource-envelope.md` (here) | What a dry run and a commit cost the worker in memory, time and number: measured before and after, under a 512 MiB limit, with what is left for the NFR decision | With GR-352C, 2026-10-02 |
+| `worker-resource-envelope.md` (here) | What a dry run and a commit cost the worker in memory, time and number: measured before and after, under a 512 MiB limit; and the resource contract ratified when GR-352 closed, with the worker and API evidence | With GR-352C, 2026-10-02; the contract with the closure the same day |
 
 The plan is left as it was written. Where it and `architecture.md` disagree,
 the as-built one is right — a design document edited after the fact stops being
