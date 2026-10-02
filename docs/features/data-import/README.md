@@ -45,6 +45,7 @@ gate in the estate was green over it.
 | `docs/adr/0012-import-template-versioning.md` | What a template carries, how a file is judged, and the resolution of those twelve | Before the template code |
 | `preflight-safety-envelope.md` (here) | The safety pass that runs before either reader, its provisional limits, and what GR-352 still needs | With GR-352A, 2026-10-01 |
 | `bounded-inspection.md` (here) | How the analysis and mapping routes read a file's head without parsing the file, what was measured, and where the inspection is deliberately not the reader | With GR-352B, 2026-10-01 |
+| `worker-resource-envelope.md` (here) | What a dry run and a commit cost the worker in memory, time and number: measured before and after, under a 512 MiB limit, with what is left for the NFR decision | With GR-352C, 2026-10-02 |
 
 The plan is left as it was written. Where it and `architecture.md` disagree,
 the as-built one is right — a design document edited after the fact stops being

@@ -202,7 +202,7 @@ describe('data import', () => {
     // target's own field specifications, and the run's stored counts would
     // still say it was clean.
     const task = read('services/worker/koras_worker/tasks/imports.py')
-    expect(task).toContain('store.prepare(raw, target, run)')
+    expect(task).toContain('partial(store.prepare, raw, target, run, watch=budget.check)')
     expect(task).toContain('if not verdict.ok:')
     // Refused rather than written around. Writing only the good rows is the
     // partial commit the requirements forbid.
@@ -215,10 +215,14 @@ describe('data import', () => {
     // would write rows nobody checked, and both would look like they had run.
     const store = read('services/api/koras_api/core/imports.py')
     expect(store).toContain('def _parse(')
+    const examine = store.slice(store.indexOf('def examine('), store.indexOf('async def predict_outcome('))
     const check = store.slice(store.indexOf('def check('), store.indexOf('def prepare('))
     const prepare = store.slice(store.indexOf('def prepare('))
-    expect(check).toContain('_parse(raw, target, run)')
-    expect(prepare).toContain('_parse(raw, target, run)')
+    // With or without the budget it is asked as it reads -- GR-352C gave the
+    // dry run and the commit one, and `check` has none to give.
+    for (const body of [examine, check, prepare]) {
+      expect(body).toMatch(/_parse\(raw, target, run[,)]/)
+    }
   })
 
   it('refuses a target that declares no writer, at every layer', () => {
@@ -469,24 +473,30 @@ describe('data import', () => {
     expect(pass).toBeGreaterThan(-1)
     expect(pass).toBeLessThan(xlsx.indexOf('load_workbook('))
 
-    // Every whole-file decode in the store has a safety pass ahead of it, and
-    // every workbook read is handed the envelope rather than taking a default.
+    // The store has no whole-file decode and no workbook read left to guard.
     //
-    // One of each since GR-352B, where there were two: the analysis stopped
-    // calling either reader, so the dry run and the commit's shared `_parse`
-    // is the only place left that does.
+    // Two of each until GR-352B, when the analysis stopped calling either
+    // reader; one of each until GR-352C, when the dry run and the commit's
+    // shared `_parse` stopped as well. What `_parse` opens instead is a stream,
+    // once, and it is handed the envelope rather than taking a default.
     const store = read('services/api/koras_api/core/imports.py')
-    const decodes = [...store.matchAll(/decoded = decode\(raw\)/g)]
-    expect(decodes).toHaveLength(1)
-    for (const found of decodes) {
-      const before = store.slice(0, found.index)
-      const guard = before.lastIndexOf('preflight(raw, Format.CSV, limits')
-      // In the same function as the decode, not merely somewhere above it.
-      expect(guard).toBeGreaterThan(before.lastIndexOf('def '))
-    }
-    const workbooks = [...store.matchAll(/read_workbook\(([^)]*)\)/g)]
-    expect(workbooks).toHaveLength(1)
-    for (const found of workbooks) expect(found[1]).toContain('limits=limits')
+    const code = store.slice(store.indexOf('from __future__'))
+    expect(code).not.toMatch(/[^a-z_.`]decode\(raw|[^`a-z_]read_workbook\(|load_workbook|splitlines/)
+    const parse = store.slice(store.indexOf('def _parse('), store.indexOf('class Examined'))
+    expect([...store.matchAll(/[^`]open_rows\(/g)]).toHaveLength(1)
+    expect(parse).toMatch(/open_rows\(\s*raw,[\s\S]*?limits,[\s\S]*?limit=target\.max_rows/)
+    expect(parse).toContain('limits = limits_for(target, rows=True)')
+
+    // And the stream runs the safety pass itself, ahead of both of its
+    // readers, so there is no way to it that goes around the pass.
+    const streaming = read('python-packages/koras-import/src/koras_import/streaming.py')
+    const entry = streaming.slice(streaming.indexOf('def open_rows('))
+    const guard = entry.indexOf('checked = preflight(')
+    expect(guard).toBeGreaterThan(-1)
+    expect(guard).toBeLessThan(entry.indexOf('_workbook_rows(raw, checked'))
+    expect(guard).toBeLessThan(entry.indexOf('_csv_rows(raw, checked'))
+    const body = streaming.slice(streaming.indexOf('from __future__'))
+    expect(body).not.toMatch(/load_workbook\(|read_workbook\(|[^a-z_.]decode\(raw/)
 
     // One envelope for the routes and the worker, and it says what it is.
     expect(store).toContain('SAFETY_LIMITS = SafetyLimits(max_source_bytes=MAX_SOURCE_BYTES)')
@@ -592,8 +602,8 @@ describe('data import', () => {
       inspection.slice(0, inspection.indexOf('\nMAX_SAMPLE_CHARACTERS = ')).split('\n\n').pop() ?? ''
     expect(comment).toContain('#: PROVISIONAL (GR-352')
 
-    // The worker is untouched: it still reads through the store's `_parse`,
-    // and has no inspection of its own. GR-352C.
+    // The worker has no inspection of its own: it reads every row, through
+    // the store's `_parse`, as a stream since GR-352C.
     const worker = read('services/worker/koras_worker/tasks/imports.py')
     expect(worker).not.toMatch(/inspect_source|analysed?\(/)
 
@@ -609,8 +619,77 @@ describe('data import', () => {
   it('hands the writer canonical values whatever the source', () => {
     // IMP2-19, closed: `prepare` normalises rather than stripping.
     const store = read('services/api/koras_api/core/imports.py')
-    expect(store).toContain('mapped = tuple(normalise_row(target, resolved, row) for row in rows)')
+    const prepare = store.slice(store.indexOf('def prepare('))
+    expect(prepare).toContain('normalise = normaliser(target, resolved)')
+    expect(prepare).toContain('mapped.append(normalise(row))')
     expect(store).not.toContain('row.cells.get(column, "").strip() for field, column in resolved.fields.items()')
+  })
+
+  it('reads one import at a time, off the event loop, under a budget it can be stopped at', () => {
+    // GR-352C. Four things, and this is their shape only -- each is a line
+    // somebody could remove in one plausible edit and leave every other
+    // assertion in this file green.
+    //
+    // Whether any of them *works* is asked of the product's own task by
+    // `tests/unit/test_import_worker_envelope.py`, where each has a second
+    // test showing the first can fail; of the kernel by
+    // `tests/unit/test_import_worker_memory.py`; and of a real database by
+    // `tests/integration/test_import_commit_atomic.py`, which counts rows.
+    const worker = read('services/worker/koras_worker/tasks/imports.py')
+
+    // One slot, held by both handlers from before the source is fetched.
+    expect([...worker.matchAll(/async with _import_slot\(\):/g)]).toHaveLength(2)
+    for (const name of ['validate_run', 'commit_run']) {
+      const handler = worker.slice(worker.indexOf(`async def ${name}(`))
+      expect(handler.indexOf('async with _import_slot():')).toBeLessThan(
+        handler.indexOf(`return await _${name}(`),
+      )
+    }
+    for (const limit of ['IMPORT_SLOTS', 'WORK_BUDGET_SECONDS']) {
+      const comment = worker.slice(0, worker.indexOf(`\n${limit} = `)).split('\n\n').pop() ?? ''
+      expect(comment, `${limit} is not marked provisional`).toContain('#: PROVISIONAL (GR-352C')
+    }
+    expect(worker).toContain('IMPORT_SLOTS = 1\n')
+
+    // The reading is on a thread, and neither store function is called inline.
+    expect(worker).toMatch(/await _off_loop\(\s*budget,\s*partial\(store\.examine, raw, target, run, watch=budget\.check\)/)
+    expect(worker).toMatch(/await _off_loop\(\s*budget,\s*partial\(store\.prepare, raw, target, run, watch=budget\.check\)/)
+    expect(worker).not.toMatch(/=\s*store\.(examine|prepare)\(/)
+
+    // A cancellation is passed on to the thread, and the run is told.
+    const offLoop = worker.slice(worker.indexOf('async def _off_loop'), worker.indexOf('_AS_TENANT = '))
+    expect(offLoop.indexOf('except asyncio.CancelledError:')).toBeLessThan(offLoop.indexOf('budget.cancel()'))
+    expect([...worker.matchAll(/except asyncio\.CancelledError:[\s\S]{0,400}?await _abandon\(envelope\)\n\s+raise/g)]).toHaveLength(2)
+    // And that telling can never overwrite a commit that landed.
+    const store = read('services/api/koras_api/core/imports.py')
+    const abandon = store.slice(store.indexOf('async def abandon('), store.indexOf('async def record_validation('))
+    expect(abandon).toContain('and status = :was')
+
+    // The writer's rows are not held twice.
+    expect(worker).toContain('rows_from(mapped, ceiling=target.max_rows, owned=True)')
+
+    // The API holds a bounded number of sources at once, on both routes.
+    const slot = store.slice(0, store.indexOf('\nANALYSIS_SLOTS = ')).split('\n\n').pop() ?? ''
+    expect(slot).toContain('#: PROVISIONAL (GR-352C')
+    const router = read('services/api/koras_api/routers/imports.py')
+    expect([...router.matchAll(/async with store\.analysis_slot\(\):/g)]).toHaveLength(2)
+    for (const route of ['async def analysis(', 'async def set_mapping(']) {
+      const body = router.slice(router.indexOf(route))
+      expect(body.indexOf('async with store.analysis_slot():')).toBeLessThan(
+        body.indexOf('await _bytes(session, storage, run)'),
+      )
+    }
+
+    for (const path of [
+      'tests/unit/test_import_worker_envelope.py',
+      'tests/unit/test_import_worker_memory.py',
+      'tests/integration/test_import_commit_atomic.py',
+    ]) {
+      expect(gatedPaths('data_import')).toContain(path)
+    }
+    for (const path of ['test_streaming.py', 'test_equivalence.py']) {
+      expect(has(`python-packages/koras-import/tests/${path}`)).toBe(true)
+    }
   })
 
   it('translates the rejection a matcher can produce', () => {

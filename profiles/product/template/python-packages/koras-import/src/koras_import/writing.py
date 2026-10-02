@@ -115,18 +115,28 @@ def check_total(request: WriteRequest, written: Written) -> None:
 
 
 def rows_from(
-    mapped: Sequence[Mapping[str, str]], *, ceiling: int
+    mapped: Sequence[Mapping[str, str]], *, ceiling: int, owned: bool = False
 ) -> tuple[Mapping[str, str], ...]:
     """The rows to write, refused rather than truncated past the ceiling.
 
     The rule audit exports already follow, and the one Phase 1 applied to
     reading: half an import is worse than none, because nobody can tell which
     half.
+
+    **Copied, unless the caller says the rows are the writer's already.** The
+    copy is what keeps a writer that mutates a row from changing something the
+    caller still reads. A worker that built these dictionaries for this one
+    request and reads none of them again has nothing to protect, and copying
+    them is a second dictionary for every row of the file, held at the same
+    moment as the first -- which is what GR-352C is about. `owned` is that
+    caller saying so.
     """
     if len(mapped) > ceiling:
         raise WriteRefused(
             f"this run holds {len(mapped)} rows and the target takes {ceiling}"
         )
+    if owned:
+        return tuple(mapped)
     return tuple(dict(row) for row in mapped)
 
 

@@ -71,6 +71,7 @@ All planning and reference documents live in `docs/`, matching
 | `docs/features/data-import/` | Data import as built: Phase 1 stops at the dry run, and the three plan items it deliberately left |
 | `docs/features/data-import/preflight-safety-envelope.md` | The import safety pass: what runs before either reader, its provisional limits, and what GR-352 still needs |
 | `docs/features/data-import/bounded-inspection.md` | How the analysis and mapping routes read a file's head without parsing the file, what was measured, and where the inspection is deliberately not the reader |
+| `docs/features/data-import/worker-resource-envelope.md` | What a dry run and a commit cost the worker, measured before and after GR-352C and under a 512 MiB limit, and what is left for the NFR decision |
 | `docs/adr/0009-import-runs-are-not-a-third-export.md` | Why an import run has its own table rather than a third copy of the export pattern |
 | `docs/ENGINEERING_FRAMEWORK.md` | The product's multi-agent framework: one vocabulary, risk by boundary, gate reuse, bounded loops |
 | `docs/adr/0010-koras-engineering-framework-v2-1.md` | The decision record for V2.1 of that framework |
@@ -778,6 +779,60 @@ document describing it listed "recognised by its root element, not its name"
 as a strength. Every test it shipped with built a workbook the ordinary way
 and passed. What catches it is `test_preflight_package.py`, which asks
 `openpyxl` itself which parts it used and compares.
+
+**Its third slice, GR-352C, was built on 2026-10-02, and the gate is still
+shut.** The worker read every accepted file whole, inline on its event loop,
+ten jobs to a process. It reads rows as a stream now -- `koras_import.open_rows`,
+a CSV decoded a chunk at a time and a workbook walked with `expat` by the
+machinery GR-352B's inspection was built from -- takes what it needs of a row
+in the one pass `validate` makes, runs that pass on a thread under a budget it
+is asked as it goes, and holds one import to a process.
+`docs/features/data-import/worker-resource-envelope.md` is the description and
+has every measurement.
+
+**Measuring first is what made it the right change.** The three open rows were
+all worse than written and none was where it was assumed to be.
+IMPORT-DEF-016 was two defects and `openpyxl` was neither: `row_from` cleaned
+a cell at a time, so a 0.12 MiB workbook naming one string with a trailing
+space from 40,000 cells was 1,236 MiB; and `str.lower` answers a new string,
+so a two-part match key with one long part was 1,628 MiB of `validate`'s own
+dictionary. IMPORT-GAP-020 was 640 bytes a merged range -- a 0.8 MiB workbook
+at 2.6 GiB -- and was closed by a reader that builds none of it rather than by
+a limit fitted to one library's object size. And the many-column minutes were
+not the parser: `ResolvedMapping.fields` builds a dictionary on every read and
+was read for every cell.
+
+**The queue's timeout had never stopped an import.** It cancels the coroutine,
+and a coroutine in the middle of a parse has no `await` for a cancellation to
+land on: under a two-second timeout a 41-second read finished at 41 seconds
+and reported success, with the worker's event loop held for all of it.
+IMPORT-DEF-018. That is the FW-HARDEN-001 shape in a declaration:
+`timeout_seconds=900` said what the contract was and nothing asked what it
+did.
+
+**Under a 512 MiB limit with no swap**, the product's own worker took
+twenty-one accepted files through a dry run and a commit and peaked at 340 MiB
+resident, with nothing killed. The code before it was killed by the kernel on
+a 0.6 MiB workbook. That is evidence for the NFR decision and not the
+decision: the limits it ran inside are the provisional ones, and three more
+numbers were added that are provisional too -- one import to a worker
+process, 600 seconds of reading, two sources in hand in an API process.
+
+**Three things about it are worth carrying.** `read_workbook` and `decode` are
+still in the package and nothing in the store calls them: they say what a
+file's rows are, `test_streaming.py` holds the stream to them over 145 files,
+and a product that calls `read_workbook` on a customer's file inherits
+everything this slice measured. The commit is all or nothing for a reason that
+is now one line rather than a property of the reader -- `prepare` returns
+before the writer is called, so a refusal from row 40,000 of a stream arrives
+before anything is written -- and
+`tests/integration/test_import_commit_atomic.py` counts the rows. And a
+mutation can pass by hanging: the test for a read that never asks its budget
+used a read that never ends, so removing the budget held the suite open
+instead of failing it.
+
+**IMPORT-DEF-014 is deliberately unfixed as of 2026-10-02**, and is the only
+thing between a deployed product and all of the above.
 
 **Generating that product found IMPORT-DEF-010**: SQLAlchemy 2.1 resolved and
 no longer installs `greenlet`, so a fresh product's unit suite could not be

@@ -423,8 +423,11 @@ def no_readers(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(openpyxl, "load_workbook", workbook_reached)
     monkeypatch.setattr(reading_xlsx, "read_workbook", workbook_reached)
-    monkeypatch.setattr(store, "read_workbook", workbook_reached)
-    monkeypatch.setattr(store, "decode", decode_reached)
+    # The store itself held both names until GR-352C, when the dry run and the
+    # commit stopped calling them as well; there is nothing left there to
+    # replace.
+    assert not hasattr(store, "read_workbook")
+    assert not hasattr(store, "decode")
     monkeypatch.setattr(reading, "decode", decode_reached)
 
 
@@ -688,3 +691,100 @@ async def test_analysed_is_analyse_on_another_thread() -> None:
         store.analyse = original  # type: ignore[assignment]
     assert seen and seen[0] != here
     assert found == original(raw, ACCOUNTS, Format.CSV)
+
+
+# ── how many sources at once ─────────────────────────────────────────────────
+
+
+async def _sources_held_at_once(
+    routed: Routed, monkeypatch: pytest.MonkeyPatch, path: str, requests: int
+) -> tuple[int, list[int]]:
+    """Send `requests` together. The most sources in hand at once, and the answers.
+
+    A source is in hand from the moment the route has fetched it until its
+    inspection has returned -- which is how long the route keeps the bytes.
+    """
+    raw = as_csv(ACCOUNT_FILES["declared-names"])
+    routed.holding(raw, ACCOUNTS, Format.CSV)
+    lock = threading.Lock()
+    release = threading.Event()
+    held = 0
+    most = 0
+    analyse = store.analyse
+
+    async def source_bytes(*_: object) -> bytes:
+        nonlocal held, most
+        with lock:
+            held += 1
+            most = max(most, held)
+        return raw
+
+    def slow(raw: bytes, target: ImportTarget, fmt: Format, *, sample: int) -> store.Analysis:
+        nonlocal held
+        release.wait(GIVES_UP_AFTER)
+        try:
+            return analyse(raw, target, fmt, sample=sample)
+        finally:
+            with lock:
+                held -= 1
+
+    monkeypatch.setattr(store, "source_bytes", source_bytes)
+    monkeypatch.setattr(store, "analyse", slow)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        sent = [
+            asyncio.create_task(
+                client.get(ANALYSIS)
+                if path == "analysis"
+                else client.put(MAPPING, json={"mapping": {"email": "email", "name": "name"}})
+            )
+            for _ in range(requests)
+        ]
+        # Long enough for every request that is going to fetch to have fetched.
+        for _ in range(30):
+            await asyncio.sleep(0.01)
+        release.set()
+        answers = await asyncio.gather(*sent)
+    return most, [answer.status_code for answer in answers]
+
+
+@pytest.mark.parametrize("path", ["analysis", "mapping"])
+@pytest.mark.asyncio
+async def test_no_more_sources_are_held_at_once_than_there_are_slots(
+    routed: Routed, monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    """IMPORT-GAP-019. An analysis is small; the source it is handed is not.
+
+    Each of these requests fetches its file whole, up to 64 MiB of it, before
+    its inspection starts. Nothing bounded how many did that at once in one
+    512 MB process.
+    """
+    most, answers = await _sources_held_at_once(routed, monkeypatch, path, requests=7)
+    assert most == store.ANALYSIS_SLOTS == 2
+    # Nobody is refused for arriving while the slots are taken: they wait.
+    assert answers == [200] * 7
+
+
+@pytest.mark.asyncio
+async def test_the_count_above_does_rise_without_the_slot(
+    routed: Routed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(store, "ANALYSIS_SLOTS", 7)
+    most, answers = await _sources_held_at_once(routed, monkeypatch, "analysis", requests=7)
+    assert most == 7 and answers == [200] * 7
+
+
+@pytest.mark.asyncio
+async def test_a_refused_file_gives_its_slot_back(
+    routed: Routed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # More refusals than there are slots, one after another, and then a file
+    # that passes: a slot kept by a refusal would leave this waiting for ever.
+    monkeypatch.setattr(store, "SAFETY_LIMITS", SafetyLimits(max_decoded_string_bytes=64))
+    routed.holding(as_csv(ACCOUNT_FILES["declared-names"]), ACCOUNTS, Format.CSV)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for _ in range(store.ANALYSIS_SLOTS + 2):
+            assert (await client.get(ANALYSIS)).status_code == 413
+        monkeypatch.setattr(store, "SAFETY_LIMITS", SafetyLimits())
+        answer = await asyncio.wait_for(client.get(ANALYSIS), timeout=GIVES_UP_AFTER)
+    assert answer.status_code == 200

@@ -17,6 +17,16 @@ claiming more than `DECOMPRESSED_CEILING` is refused without decompressing any
 of it, a workbook carrying a macro project is refused, and one with no
 workbook part is not a workbook.
 
+**The worker does not call `read_workbook`, since GR-352C.** It stays as the
+description of what a workbook's rows *are* -- `openpyxl`'s own reading of
+them -- and `test_streaming.py` holds the reader the worker does use to it,
+file by file. It is not that reader because of what `openpyxl` builds beside
+the rows: every merged range, hyperlink and data validation of the sheet as an
+object, the stylesheet and the workbook part as trees, and a walk of every
+other worksheet to its end. The safety pass counts none of it, and a workbook
+inside every limit was measured at 2.6 GiB here. A product that calls this
+function on a customer's file inherits that; `open_rows` is the one to call.
+
 **Cells are read with their cached values.** A formula never runs; it
 contributes whatever the spreadsheet last calculated, or nothing. A cell whose
 first character is a formula trigger is data here and is guarded on the way

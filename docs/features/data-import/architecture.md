@@ -463,6 +463,42 @@ inspection answers what the mapping page draws and nothing that is validated
 or written. `bounded-inspection.md` here is the description, with what was
 measured and the three places the inspection is deliberately not the reader.
 
+### The stream: every row, for the dry run and the commit
+
+Added 2026-10-02 as GR-352C, and the paragraph above stopped being true that
+day in one respect: the dry run and the commit still read every row through
+`_parse`, and `_parse` no longer calls `read_workbook` or `decode`. It opens
+`koras_import.open_rows`, which runs the safety pass and then yields rows as
+the file is walked -- a CSV decoded a chunk at a time, a workbook read with
+`expat` by the sheet walk the inspection was built from, asked for every row.
+`read_workbook` and `decode` stay in the package as the description of what a
+file's rows are, and the stream is held to them file by file.
+
+Three things follow from the rows not being a list, and each is a paragraph
+of `worker-resource-envelope.md` here.
+
+**`validate` takes what is needed of a row while the row is there.** It
+always read its rows once; what needed a list was everything after it. A dry
+run keeps a key, a row number and one cell for each row the validator passed,
+and the prediction is counted from those. A commit builds the writer's
+dictionary from each row as it passes, and hands those over uncopied.
+
+**"The rows are read again, not carried", above, still holds**, and "the
+commit checks the file again" with it. What changed is how the file is read
+on each of the two occasions, not that there are two.
+
+**The atomicity is where it was, and one line now carries it.** A refusal
+from inside a file used to be raised before a reader returned its first row.
+From a stream it arrives when the walk reaches it. `prepare` returns before
+the writer is called, so it still arrives before anything is written.
+
+**The job itself changed.** It holds a slot -- one import to a worker process
+-- from before the source is fetched; the read runs on a thread, so the
+worker's event loop is free; and the read is given a time budget it asks as
+it goes, because the queue's timeout cancels a coroutine and a parse has no
+`await` for that to land on. Before this a job past its timeout read on to
+the end of the file.
+
 ### The matcher: what an import would do, before it does it
 
 `ImportTarget.matcher` is optional: an async callable taking the caller's
@@ -582,8 +618,9 @@ The run record has the table.
   establish that what is still accepted fits the machines. That needs an NFR
   decision nobody has taken and a Linux measurement nobody has repeated.
   IMPORT-DEF-013 and FOLLOW_UPS F31. GR-352B, the same day, bounded the two
-  API routes and measured them; the worker reads every accepted file whole,
-  as it did, and that is GR-352C.
+  API routes and measured them. GR-352C, on 2026-10-02, bounded the worker
+  and measured it, including under a 512 MiB limit. All three slices run
+  inside limits nobody has ratified, and that decision is what is left.
 - **No live run.** Nothing has imported a file through a deployed product.
   Neither the dry run nor the commit has executed against a real Redis, a real
   bucket and a real scanner.

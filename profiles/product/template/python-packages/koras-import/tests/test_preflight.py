@@ -190,9 +190,11 @@ def limits(**changed: Any) -> SafetyLimits:  # noqa: ANN401 - whichever limit a 
     return replace(PROVISIONAL_LIMITS, **changed)
 
 
-def refused(raw: bytes, fmt: Format, envelope: SafetyLimits, **options: str) -> PreflightRefused:
+def refused(
+    raw: bytes, fmt: Format, envelope: SafetyLimits, *, delimiter: str | None = None
+) -> PreflightRefused:
     with pytest.raises(PreflightRefused) as caught:
-        preflight(raw, fmt, envelope, **options)
+        preflight(raw, fmt, envelope, delimiter=delimiter)
     return caught.value
 
 

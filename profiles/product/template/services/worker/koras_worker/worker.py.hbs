@@ -164,5 +164,9 @@ class WorkerSettings(WorkerSettingsBase):
     # Nothing here needs sub-second pickup, so five seconds costs nothing
     # perceptible and removes ninety per cent of the idle traffic.
     poll_delay = 5.0
+    # How many jobs may be in hand at once, which is a statement about
+    # coroutines waiting on a database and not about memory. A job that reads
+    # a customer's file whole is bounded separately and far lower: an import
+    # holds a slot of its own, one to a process, in `tasks/imports.py`.
     max_jobs = 10
     job_timeout = 300

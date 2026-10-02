@@ -32,6 +32,14 @@ VALIDATE_RUN = TaskDefinition(
     # worker's timeout for everything -- would let a hung sweep hold a slot for
     # a quarter of an hour. This is the per-task patience PLAT-F1 exists to
     # make declarable.
+    #
+    # **It is not what stops a long read**, and until GR-352C it was taken to
+    # be. The queue enforces this by cancelling the coroutine, and reading a
+    # file has no `await` for a cancellation to land on, so a job past it read
+    # on to the end. What ends the work is the worker's own
+    # `WORK_BUDGET_SECONDS`, which is deliberately shorter than this and is
+    # asked from inside the read; this is the backstop for everything that
+    # does wait -- the database, the bucket, the slot.
     timeout_seconds=900,
     tags=("import",),
 )

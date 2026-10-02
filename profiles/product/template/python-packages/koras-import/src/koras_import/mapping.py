@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date
 
@@ -31,6 +31,7 @@ _EMAIL = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
 #: this platform speaks plus the shapes a database export produces.
 _TRUE = frozenset({"true", "t", "yes", "y", "1", "ja", "j", "si", "sí", "wahr"})
 _FALSE = frozenset({"false", "f", "no", "n", "0", "nein", "falsch"})
+_BOOLEANS = _TRUE | _FALSE
 
 #: Tried in order. ISO first because it is unambiguous; the other two because a
 #: spreadsheet writes them and refusing every file that contains one would
@@ -202,10 +203,70 @@ class Validation:
         return not self.errors
 
 
+@dataclass(frozen=True)
+class _Mapped:
+    """One mapped field, with everything a row will be asked about it."""
+
+    field: str
+    column: str
+    spec: FieldSpec
+    #: The field's options lower-cased, or None when it declares none.
+    options: frozenset[str] | None
+
+
+@dataclass(frozen=True)
+class _Plan:
+    """A target and a mapping, looked up once instead of once a cell.
+
+    `ResolvedMapping.fields` builds a dictionary every time it is read and
+    `ImportTarget.spec` walks the field list, so asking both of every cell is
+    work that grows with the square of the column count: GR-352C measured a
+    3,900-row file of 256 mapped columns at 7 seconds of validation and 13 of
+    preparation, almost all of it this. Nothing a row is told changes -- the
+    same fields in the same order, the same specifications -- only how often
+    the question is asked. IMPORT-DEF-015.
+    """
+
+    mapped: tuple[_Mapped, ...]
+    #: The match keys: each one's specification and the column it is read
+    #: from, which is `""` when the mapping leaves it out.
+    keys: tuple[tuple[FieldSpec, str], ...]
+    #: Target field to source column, built once. `resolved.fields`.
+    fields: dict[str, str]
+
+
+def _plan(target: ImportTarget, resolved: ResolvedMapping) -> _Plan:
+    fields = resolved.fields
+    mapped: list[_Mapped] = []
+    for name, column in fields.items():
+        spec = target.spec(name)
+        mapped.append(
+            _Mapped(
+                field=name,
+                column=column,
+                spec=spec,
+                options=(
+                    frozenset(option.lower() for option in spec.options)
+                    if spec.options
+                    else None
+                ),
+            )
+        )
+    return _Plan(
+        mapped=tuple(mapped),
+        keys=tuple((target.spec(name), fields.get(name, "")) for name in target.match_keys),
+        fields=fields,
+    )
+
+
 def validate_row(
     target: ImportTarget, resolved: ResolvedMapping, row: Row
 ) -> list[RowError]:
     """Every problem in one row. Never stops at the first."""
+    return _problems(target, _plan(target, resolved), row)
+
+
+def _problems(target: ImportTarget, plan: _Plan, row: Row) -> list[RowError]:
     problems: list[RowError] = []
     if row.long:
         problems.append(
@@ -217,16 +278,16 @@ def validate_row(
             )
         )
 
-    for field, column in resolved.fields.items():
-        spec = target.spec(field)
-        value = row.cells.get(column, "").strip()
-        code = _check(spec, value)
+    cells = row.cells
+    for item in plan.mapped:
+        value = cells.get(item.column, "").strip()
+        code = _check(item.spec, value, item.options)
         if code is not None:
             problems.append(
                 RowError(
                     row=row.number,
-                    column=column,
-                    field=field,
+                    column=item.column,
+                    field=item.field,
                     code=code,
                     value=value[:120],
                 )
@@ -238,15 +299,12 @@ def validate_row(
         # number — and never runs against a row it would only report twice.
         return problems
 
-    mapped = {
-        field: row.cells.get(column, "").strip()
-        for field, column in resolved.fields.items()
-    }
+    mapped = {item.field: cells.get(item.column, "").strip() for item in plan.mapped}
     for field, code in target.validator(mapped).items():
         problems.append(
             RowError(
                 row=row.number,
-                column=resolved.fields.get(field, ""),
+                column=plan.fields.get(field, ""),
                 field=field,
                 code=code,
                 value=mapped.get(field, "")[:120],
@@ -255,14 +313,20 @@ def validate_row(
     return problems
 
 
-def _check(spec: FieldSpec, value: str) -> str | None:
-    """The one thing wrong with this cell, or nothing."""
+def _check(
+    spec: FieldSpec, value: str, options: frozenset[str] | None = None
+) -> str | None:
+    """The one thing wrong with this cell, or nothing.
+
+    `options` is the field's options lower-cased, when the caller has them
+    already; without it they are lower-cased here, as they always were.
+    """
     if not value:
         return "import.error.required" if spec.required else None
     if spec.max_length is not None and len(value) > spec.max_length:
         return "import.error.too_long"
     if spec.options:
-        lowered = {option.lower() for option in spec.options}
+        lowered = options or {option.lower() for option in spec.options}
         return None if value.lower() in lowered else "import.error.not_an_option"
     if spec.kind is FieldKind.INTEGER:
         # `int("1.0")` raises and `int(" 1 ")` does not, which is the behaviour
@@ -274,7 +338,7 @@ def _check(spec: FieldSpec, value: str) -> str | None:
     elif spec.kind is FieldKind.DECIMAL:
         return _check_decimal(value)
     elif spec.kind is FieldKind.BOOLEAN:
-        if value.lower() not in _TRUE | _FALSE:
+        if value.lower() not in _BOOLEANS:
             return "import.error.boolean"
     elif spec.kind is FieldKind.DATE:
         if _parse_date(value) is None:
@@ -378,10 +442,31 @@ def normalise_row(
     target: ImportTarget, resolved: ResolvedMapping, row: Row
 ) -> dict[str, str]:
     """The mapped, canonical row: what a writer and a matcher are given."""
+    return _normalised(_plan(target, resolved), row)
+
+
+def _normalised(plan: _Plan, row: Row) -> dict[str, str]:
+    cells = row.cells
     return {
-        field: canonical(target.spec(field), row.cells.get(column, "").strip())
-        for field, column in resolved.fields.items()
+        item.field: canonical(item.spec, cells.get(item.column, "").strip())
+        for item in plan.mapped
     }
+
+
+def normaliser(
+    target: ImportTarget, resolved: ResolvedMapping
+) -> Callable[[Row], dict[str, str]]:
+    """`normalise_row` for one target and one mapping, looked up once.
+
+    What a commit calls for every row of a file: the same dictionary
+    `normalise_row` answers, without resolving the mapping again for each.
+    """
+    plan = _plan(target, resolved)
+
+    def normalise(row: Row) -> dict[str, str]:
+        return _normalised(plan, row)
+
+    return normalise
 
 
 def match_key(
@@ -397,13 +482,35 @@ def match_key(
     """
     if not target.match_keys:
         return None
-    parts = tuple(
-        canonical(
-            target.spec(name), row.cells.get(resolved.fields.get(name, ""), "").strip()
-        ).lower()
-        for name in target.match_keys
-    )
-    return parts if any(parts) else None
+    return _key(_plan(target, resolved), row, None)
+
+
+#: A key part longer than this is held once however many rows carry it.
+#:
+#: `str.lower` answers a new string every time, so a key part that is one long
+#: shared string named by every row -- half of a two-part key, say -- became a
+#: copy a row: fifty thousand rows of a 32,000-character part is 1.6 GiB of
+#: one string. IMPORT-DEF-016, in the duplicate index rather than the reader.
+#: Short parts are left alone: interning costs a dictionary entry, and a short
+#: part repeated cannot amount to much.
+_INTERN_OVER = 64
+
+
+def _key(
+    plan: _Plan, row: Row, interned: dict[str, str] | None
+) -> tuple[str, ...] | None:
+    """`match_key`, with the lookups done and long parts held once."""
+    if not plan.keys:
+        return None
+    cells = row.cells
+    parts: list[str] = []
+    for spec, column in plan.keys:
+        part = canonical(spec, cells.get(column, "").strip()).lower()
+        if interned is not None and len(part) > _INTERN_OVER:
+            # The copy `lower` just made is dropped for the one already held.
+            part = interned.setdefault(part, part)
+        parts.append(part)
+    return tuple(parts) if any(parts) else None
 
 
 def _parse_date(value: str) -> date | None:
@@ -417,15 +524,33 @@ def _parse_date(value: str) -> date | None:
     return None
 
 
+#: What `validate` tells a caller about each row as it passes: the row, its
+#: match key or None, and whether the row had any problem.
+EachRow = Callable[[Row, "tuple[str, ...] | None", bool], None]
+
+
 def validate(
-    target: ImportTarget, resolved: ResolvedMapping, rows: Iterable[Row]
+    target: ImportTarget,
+    resolved: ResolvedMapping,
+    rows: Iterable[Row],
+    *,
+    each: EachRow | None = None,
 ) -> Validation:
     """Every row, one pass, every problem.
 
     Also catches the duplicate a file carries within itself: two rows with the
     same match key are two rows the commit would fight over, and finding that
     at commit time means finding it after half the file is written.
+
+    **`rows` is read once and never kept**, so it may be a stream: this holds
+    the problems, the keys it has seen and the numbers of the rows that had a
+    problem, and nothing else of the file. `each` is how a caller takes what
+    it needs of a row while the row is still there -- the matcher's keys in a
+    dry run, the writer's dictionary in a commit -- without a second pass over
+    rows that are no longer held. GR-352C.
     """
+    plan = _plan(target, resolved)
+    interned: dict[str, str] = {}
     errors: list[RowError] = []
     seen: dict[tuple[str, ...], int] = {}
     total = 0
@@ -435,15 +560,15 @@ def validate(
 
     for row in rows:
         total += 1
-        problems = validate_row(target, resolved, row)
-        key = match_key(target, resolved, row)
+        problems = _problems(target, plan, row)
+        key = _key(plan, row, interned)
         if key is not None:
             first = seen.get(key)
             if first is not None:
                 problems.append(
                     RowError(
                         row=row.number,
-                        column=resolved.fields.get(target.match_keys[0], ""),
+                        column=plan.fields.get(target.match_keys[0], ""),
                         field=target.match_keys[0],
                         code="import.error.duplicate_in_file",
                         value=str(first),
@@ -460,6 +585,8 @@ def validate(
                     truncated = True
                     break
                 errors.append(problem)
+        if each is not None:
+            each(row, key, bool(problems))
 
     return Validation(
         rows=total,
