@@ -6,7 +6,9 @@
 > limits this slice runs inside. `worker-resource-envelope.md` here holds the
 > contract and the measurement of the API under a 512 MiB limit. The two
 > notes below are the status as each slice left it, kept as written.
-> IMPORT-DEF-014 is open as of 2026-10-02 and is an activation constraint.
+> IMPORT-DEF-014 was fixed and verified locally on 2026-10-02; remote
+> verification is pending as of 2026-10-02, and it is an activation
+> constraint until that exists.
 >
 > **Status, 2026-10-01: GR-352B is built. GR-352 is open, and HIGH.** This
 > document describes the second slice of a release gate, not its resolution.
@@ -471,7 +473,7 @@ about its memory has changed.
 | The NFR decision: concurrency, the ratified numbers | **Taken 2026-10-02**; IMPORT-DEF-013, closed and ratified. `worker-resource-envelope.md` here |
 | The worker reads every accepted file whole, twice, with no bound on how many at once | **Closed 2026-10-02** by GR-352C: a stream, and one import to a process. It is read twice as it was -- once to check, once to commit |
 | `clean_cell` and the many-column cost in the dry run and the commit | IMPORT-DEF-015, closed 2026-10-02 |
-| `source_bytes` awaits a synchronous `S3ObjectStore.get` | IMPORT-DEF-014, open as of 2026-10-02, and the activation constraint |
+| `source_bytes` awaits a synchronous `S3ObjectStore.get` | IMPORT-DEF-014, fixed and verified locally on 2026-10-02, remote verification pending that day, and the activation constraint until it exists |
 | A string the pass costs once is copied for every cell that names it, in the worker | IMPORT-DEF-016, closed 2026-10-02 |
 | What the reader builds from a sheet that is neither a string nor a cell: merged ranges, links, validations | IMPORT-GAP-020, measured and closed 2026-10-02 |
 | The sample's character budget was the implementer's number | Ratified at 4 MiB on 2026-10-02. IMPORT-GAP-017 stays open for the missing indication of a shortened preview |

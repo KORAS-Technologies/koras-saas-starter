@@ -735,6 +735,20 @@ universal export maximum: for an interactive export it is where the
 foreground hands over to the background, and only a scheduled delivery is
 refused past it.
 
+**IMPORT-DEF-014 was fixed later on 2026-10-02, and is verified locally
+rather than closed.** `source_bytes` calls the store on a thread and holds
+the object to the index row that was validated: the bucket is asked its
+size before any transfer, the bytes are counted after, and SHA-256 is
+compared where the provider verified one at upload confirmation. The capped
+measurement was repeated with the unmodified `S3ObjectStore` against an
+S3-compatible bucket -- 362 MiB at most in the worker, 342 in the API,
+inside 512 with no OOM and no swap -- so the NFR stands and GR-352 is not
+reopened. Those figures are higher than the disk-backed ones above because
+boto3 retains memory, which is IMPORT-GAP-027: an optimisation, and not a
+blocker. Remote verification is pending as of 2026-10-02; check the
+register rather than inheriting this line. `docoris`'s alignment is not
+started and OD-12 is blocked, both as of 2026-10-02.
+
 **GR-352 was opened HIGH and as a release gate, and its first slice shipped
 on 2026-10-01.** The import framework accepted files that took a worker to
 1.4 GiB against the 512 MB it is deployed with: `openpyxl` builds a workbook's
@@ -861,7 +875,8 @@ instead of failing it.
 **IMPORT-DEF-014 is deliberately unfixed as of 2026-10-02**, and is the only
 thing between a deployed product and all of the above. Since the closure it
 is the next step rather than the one to hold back, and an activation
-constraint until it is done.
+constraint until it is done. It was fixed later that day; the paragraph
+on the closure above has where it stands.
 
 **GR-352E followed the same day, from measuring the worker in the product's
 own image.** An import beside a cross-provider backup reached the 512 MiB

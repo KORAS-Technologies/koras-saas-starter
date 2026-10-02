@@ -21,6 +21,7 @@ an import is the product parsing a stranger's file unattended.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterator
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -236,19 +237,39 @@ async def test_a_failure_reason_is_cut_to_something_a_column_holds() -> None:
 class _File:
     def __init__(self, status: str = "ready", scan_status: str = "clean") -> None:
         self.storage_key = "tenants/t/imports/f/customers.csv"
-        self.size_bytes = 12
+        self.size_bytes = 11
+        self.checksum_sha256: str | None = None
+        self.checksum_verified_at: object | None = None
         self.status = status
         self.scan_status = scan_status
         self.name = "customers.csv"
 
 
 class _Store:
-    def __init__(self) -> None:
-        self.read: list[str] = []
+    """A bucket of the shape `ObjectStore` has: plain functions, not coroutines.
 
-    async def get(self, key: str) -> bytes:
+    It was a coroutine until IMPORT-DEF-014, and that is why the defect
+    survived -- `source_bytes` awaited it, and the real store cannot be
+    awaited. `threads` records where each call ran.
+    """
+
+    def __init__(self, content: bytes | None = b"Name,Email\n", size: int | None = None) -> None:
+        self.content = content
+        self.size = size
+        self.read: list[str] = []
+        self.threads: list[int] = []
+
+    def head(self, key: str) -> int | None:
+        del key
+        self.threads.append(threading.get_ident())
+        if self.size is not None:
+            return self.size
+        return None if self.content is None else len(self.content)
+
+    def get(self, key: str) -> bytes | None:
         self.read.append(key)
-        return b"Name,Email\n"
+        self.threads.append(threading.get_ident())
+        return self.content
 
 
 @pytest.mark.parametrize("scan", sorted(store.UNPARSEABLE_SCANS))
@@ -288,6 +309,127 @@ async def test_a_clean_ready_file_is_read() -> None:
     raw = await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
     assert raw.startswith(b"Name,Email")
     assert objects.read == ["tenants/t/imports/f/customers.csv"]
+
+
+# ── IMPORT-DEF-014: the store is synchronous, and the object is held to its row ─
+
+
+@pytest.mark.asyncio
+async def test_the_store_is_called_off_the_event_loop() -> None:
+    """A fetch is a network transfer of up to 64 MiB. On the loop it stops
+    every other request, and a worker's heartbeat, for as long as it takes."""
+    session = _Session([_Result([_File()])])
+    objects = _Store()
+    await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+    assert objects.threads, "the store was never asked"
+    assert threading.get_ident() not in objects.threads
+
+
+@pytest.mark.asyncio
+async def test_the_real_store_class_is_what_source_bytes_can_call() -> None:
+    """The double above is the thing under test unless something holds it to
+    the real one. `S3ObjectStore` itself, with its client replaced: no network,
+    and every line of `head` and `get` runs."""
+    from koras_storage import S3ObjectStore
+
+    content = b"Name,Email\n"
+
+    class _Body:
+        def read(self) -> bytes:
+            return content
+
+    class _Client:
+        def head_object(self, **_: object) -> dict[str, object]:
+            return {"ContentLength": len(content)}
+
+        def get_object(self, **_: object) -> dict[str, object]:
+            return {"Body": _Body()}
+
+    class _Destination:
+        bucket = "b"
+
+    real = S3ObjectStore.__new__(S3ObjectStore)
+    real.destination = _Destination()  # type: ignore[assignment]
+    real._client = _Client()  # noqa: SLF001
+    session = _Session([_Result([_File()])])
+    assert await store.source_bytes(session, real, "file-1") == content  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_an_object_that_is_not_in_the_bucket_answers_missing() -> None:
+    """`get` answers None for an absent object; awaiting that was a TypeError
+    reported as unreadable, and handing it on would be worse."""
+    session = _Session([_Result([_File()])])
+    objects = _Store(content=None)
+    with pytest.raises(store.SourceRefused) as refused:
+        await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+    assert str(refused.value) == "import.source.missing"
+    assert objects.read == []
+
+
+@pytest.mark.asyncio
+async def test_an_object_that_grew_is_refused_before_it_is_transferred() -> None:
+    """The ceiling was checked against the row. The bucket is asked too, or an
+    object replaced by a larger one is a transfer nothing bounded."""
+    session = _Session([_Result([_File()])])
+    objects = _Store(size=store.MAX_SOURCE_BYTES * 4)
+    with pytest.raises(store.SourceRefused) as refused:
+        await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+    assert str(refused.value) == "import.source.changed"
+    assert objects.read == [], "the object was fetched before its size was compared"
+
+
+@pytest.mark.asyncio
+async def test_bytes_of_another_length_than_the_bucket_said_are_refused() -> None:
+    session = _Session([_Result([_File()])])
+    objects = _Store(content=b"Name,Email\nreplaced,row\n", size=11)
+    with pytest.raises(store.SourceRefused) as refused:
+        await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+    assert str(refused.value) == "import.source.changed"
+
+
+@pytest.mark.asyncio
+async def test_a_verified_digest_binds_the_bytes_and_a_claimed_one_does_not() -> None:
+    """Same length, other bytes. Only a digest the provider corroborated at
+    confirmation is evidence; a claim nobody checked would refuse good files."""
+    import hashlib
+
+    other = hashlib.sha256(b"Eman,Liame\n").hexdigest()
+
+    verified = _File()
+    verified.checksum_sha256 = other
+    verified.checksum_verified_at = object()
+    with pytest.raises(store.SourceRefused) as refused:
+        await store.source_bytes(_Session([_Result([verified])]), _Store(), "f")  # type: ignore[arg-type]
+    assert str(refused.value) == "import.source.changed"
+
+    claimed = _File()
+    claimed.checksum_sha256 = other
+    assert await store.source_bytes(_Session([_Result([claimed])]), _Store(), "f")  # type: ignore[arg-type]
+
+    matching = _File()
+    matching.checksum_sha256 = hashlib.sha256(b"Name,Email\n").hexdigest()
+    matching.checksum_verified_at = object()
+    assert await store.source_bytes(_Session([_Result([matching])]), _Store(), "f")  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_a_provider_error_is_unreadable_and_a_coroutine_store_is_not_bytes() -> None:
+    class _Broken(_Store):
+        def get(self, key: str) -> bytes | None:
+            raise OSError("connection reset")
+
+    with pytest.raises(store.SourceRefused) as refused:
+        await store.source_bytes(_Session([_Result([_File()])]), _Broken(), "f")  # type: ignore[arg-type]
+    assert str(refused.value) == "import.source.unreadable"
+
+    class _Awaitable(_Store):
+        async def get(self, key: str) -> bytes:  # type: ignore[override]
+            return b"Name,Email\n"
+
+    with pytest.raises(store.SourceRefused) as refused:
+        await store.source_bytes(_Session([_Result([_File()])]), _Awaitable(), "f")  # type: ignore[arg-type]
+    assert str(refused.value) == "import.source.unreadable"
 
 
 # ── reading, without a database or a bucket ──────────────────────────────────
@@ -366,7 +508,7 @@ async def test_a_source_at_the_ceiling_is_read() -> None:
     exact = _File()
     exact.size_bytes = store.MAX_SOURCE_BYTES
     session = _Session([_Result([exact])])
-    objects = _Store()
+    objects = _Store(bytes(store.MAX_SOURCE_BYTES))
     assert await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
 
 

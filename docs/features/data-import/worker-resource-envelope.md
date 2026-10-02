@@ -11,9 +11,12 @@
 > the correction.
 >
 > **Closing GR-352 does not make imports ready to switch on.** IMPORT-DEF-014
-> is open as of 2026-10-02: a deployed product cannot read an import's source
-> from a real bucket, and no product may activate canonical imports against
-> real object storage until it is fixed and verified.
+> -- a deployed product could not read an import's source from a real
+> bucket -- was fixed on 2026-10-02 and verified locally, with the capped
+> measurement repeated against real object storage. Remote verification is
+> pending as of 2026-10-02, and until it exists no product may activate
+> canonical imports against real object storage. After it, `docoris`'s
+> alignment comes before anything is switched on.
 
 ## The slices
 
@@ -170,25 +173,88 @@ boto3-shaped source peaked at about 280.5 MiB for two analyses and about
 296.1 MiB with the third queued. It is recorded for whoever fixes
 IMPORT-DEF-014 and does not replace the figures above.
 
+### IMPORT-DEF-014: real-object-storage activation evidence
+
+The worker and API evidence above is the **historical GR-352 evidence**:
+disk-backed and stubbed-source measurements, taken while IMPORT-DEF-014 kept
+a real bucket unreachable, and what the ratification of 2026-10-02 rested
+on. It is kept as measured, for traceability. None of it was taken with S3.
+
+This section is the **IMPORT-DEF-014 real-object-storage activation
+evidence**, taken on 2026-10-02 once that defect was fixed. Real-object-storage
+verification after IMPORT-DEF-014 used the production-shaped synchronous
+`S3ObjectStore`, unmodified, against an S3-compatible bucket under the
+ratified 512 MiB process cap: no swap, one CPU, and the worker's and the
+API's own images built from a product generated with `data_import`.
+
+**What was measured.** Baseline `3c5a0eb` plus the IMPORT-DEF-014
+working-tree change, before that change was committed. The runtime files
+measured -- `core/imports.py`, `routers/imports.py` and the worker's
+`tasks/imports.py` -- were compared afterwards with the ones committed and
+are the same. The harness and its raw output were session scratch and are
+not committed, so the figures below are the record. Local and by hand; no CI
+run produced them.
+
+| Scenario | cgroup peak, MiB |
+|----------|-----------------:|
+| Worker, an import alone: three near-limit files, each dry-run and committed | 352 |
+| Worker, an import beside a cross-provider backup | 362 |
+| API, the first group of analyses on a fresh process | 291 |
+| API, repeated groups of analyses | 341 to 342, stable |
+
+- No OOM kill, no swap, and a failcnt of zero, in the worker and in the API.
+- The third API analysis waited for a slot, and its source was fetched only
+  once one was free. The slots returned to 2.
+- The heavy worker jobs ran one at a time.
+- Nothing was stranded: no import left short of a terminal state and no
+  backup owed. The worker answered a job after each run, and the API's health
+  probe answered throughout.
+- The lowest headroom observed is about 150 MiB, on the import beside a
+  backup.
+
+These measurements supersede the disk-backed source measurements as evidence
+for real-object-storage activation. They do not alter the ratified 512 MiB
+NFR or its concurrency limits, and GR-352 is not reopened.
+
+They are higher than the historical figures because a whole-object fetch
+through boto3 retains more memory than reading a fixture from disk does: an
+API process that has analysed near-limit sources idles at about 249 MiB where
+a fresh one idles at about 139. That is IMPORT-GAP-027 -- an optimisation,
+open as of 2026-10-02, and not a blocker for activation inside this envelope.
+
+**What the fix holds a source to.** The object is fetched on a thread, and
+is held to the index row that was validated: the bucket is asked for the
+size before any transfer, the bytes are counted after it, and where the
+provider corroborated a SHA-256 when the upload was confirmed the bytes are
+held to that as well. A missing object is `import.source.missing` and one
+that differs is `import.source.changed`. So an object replaced by a larger
+one cannot pass the 64 MiB source limit above by way of a row that still
+says it is small.
+
 ### What the closure does not authorise
 
 GR-352 closing does not enable imports in `docoris` or anywhere else. The
 order, as of 2026-10-02:
 
 1. Close the GR-352 resource envelope. Done, 2026-10-02.
-2. Fix IMPORT-DEF-014.
+2. Fix IMPORT-DEF-014. Fixed and verified locally on 2026-10-02; remote
+   verification is pending as of 2026-10-02, and this is the current gate.
 3. Repeat the capped source-fetch measurement, because that fix changes how
-   a source is fetched.
-4. Align and verify `docoris` against the updated Starter framework.
-5. Resume OD-12 scanner work, once its own prerequisites are met.
+   a source is fetched. Done, 2026-10-02: the section above.
+4. Align and verify `docoris` against the updated Starter framework. Not
+   started as of 2026-10-02.
+5. Resume OD-12 scanner work, once its own prerequisites are met. Blocked
+   as of 2026-10-02.
 
-Steps 2 to 5 are not started.
+This list said until IMPORT-DEF-014 was fixed that steps 2 to 5 were not
+started. No product has activated imports, and nothing above activates
+them.
 
 ### What stays open
 
 | Row | Standing, 2026-10-02 |
 |-----|----------------------|
-| IMPORT-DEF-014 | Open. An activation constraint: no product may activate canonical imports against real object storage until it is fixed and verified, and its fix repeats the 512 MiB capped measurement |
+| IMPORT-DEF-014 | Fixed and verified locally, with the 512 MiB capped measurement repeated against real object storage; remote verification pending. An activation constraint until that exists |
 | IMPORT-GAP-016 | Open, outside the canonical import envelope. AI knowledge workbook ingestion is a separate resource risk |
 | IMPORT-GAP-017 | Open. The 4 MiB budget is ratified; a shortened preview is still not indicated in the response or on the page |
 | IMPORT-GAP-018 | Open. The double workbook walk is a latency optimisation |
@@ -196,6 +262,7 @@ Steps 2 to 5 are not started.
 | IMPORT-GAP-022 | Open, product-specific. The envelope excludes the cost of a product's validator, matcher and writer; `docoris` measures its own before its envelope is ratified |
 | IMPORT-GAP-024 | Open. The CSV widest-character costing stays conservative on purpose |
 | IMPORT-GAP-026 | Open, outside GR-352. The API's background export is unbounded and unmeasured |
+| IMPORT-GAP-027 | Open, an optimisation. boto3's whole-object fetch retains more memory than a disk-backed source did, inside 512 MiB. It blocks neither IMPORT-DEF-014's closure nor activation |
 
 ### A difference in test counts, explained
 
@@ -1125,12 +1192,13 @@ Four things that were put to whoever ratified them. The ratification of
   IMPORT-GAP-021, IMPORT-GAP-022 and IMPORT-GAP-024. IMPORT-GAP-023 is
   closed and remotely verified. GR-352E opened IMPORT-GAP-026, which is open
   and outside GR-352. IMPORT-GAP-018 is open as it was.
-- **IMPORT-DEF-014 is open and is an activation constraint.** A deployed
-  product cannot read an import's source from a real bucket as of
-  2026-10-02. It is a defect in reading storage and not a reason to hold the
-  finished resource envelope open; no product may activate canonical imports
-  against real object storage until it is fixed and verified, and its fix
-  repeats the capped measurement.
+- **IMPORT-DEF-014 is fixed and verified locally, and is an activation
+  constraint until it is verified remotely**, which is pending as of
+  2026-10-02. This bullet said until the fix that a deployed product could
+  not read an import's source from a real bucket. The capped measurement
+  was repeated against real object storage and is in the contract section
+  above; it was a defect in reading storage and was not a reason to hold
+  the finished resource envelope open.
 - **`docoris` is not aligned with any of it** as of 2026-10-02. It carries
   the framework by hand and has received none of the slices. The Starter's
   closure does not enable its imports and does not unblock its OD-12: the
@@ -1203,7 +1271,7 @@ Four things that were put to whoever ratified them. The ratification of
 | Left | Where it is tracked |
 |------|---------------------|
 | The NFR decision | **Taken 2026-10-02.** The limits were ratified as they stood, so the measurement already taken is the one against the ratified values. IMPORT-DEF-013, closed |
-| `source_bytes` awaits a synchronous `S3ObjectStore.get`, and is what keeps all of this unreachable in a deployed product | IMPORT-DEF-014. Open as of 2026-10-02, and the activation constraint |
+| `source_bytes` awaits a synchronous `S3ObjectStore.get`, and is what keeps all of this unreachable in a deployed product | IMPORT-DEF-014. Fixed and verified locally on 2026-10-02, remote verification pending that day, and the activation constraint until it exists |
 | A waiting import's time counts against its queue timeout; imports have no queue of their own | IMPORT-GAP-021 |
 | A product's validator, matcher and writer are outside the budget and outside the measurement | IMPORT-GAP-022 |
 | What else the worker holds while an import runs | IMPORT-GAP-023. Closed 2026-10-02 by GR-352E, remotely verified |

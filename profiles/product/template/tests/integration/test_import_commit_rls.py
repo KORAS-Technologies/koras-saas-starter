@@ -114,7 +114,11 @@ class _Bucket:
     under test and would make this suite need credentials.
     """
 
-    async def get(self, key: str) -> bytes:
+    def head(self, key: str) -> int | None:
+        del key
+        return len(CSV)
+
+    def get(self, key: str) -> bytes | None:
         del key
         return CSV
 
