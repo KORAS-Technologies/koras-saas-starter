@@ -45,7 +45,7 @@ recommendation rather than a record — revise it, do not preserve it.
 | 8 | **F22 — Files** | Six items, each waiting on a real trigger rather than on time: multipart uploads (a file over 5 GB), an orphan sweep, the `customer-owned` and `azure-blob` policies, a real upload in CI, a foreign bucket's origin in the browser policy, and quota by period. | ~1 day per item |
 | 9 | **F25 — reporting** | Three items, none of which blocks a product registering reports today: `reporting.api` enforcement becomes real with the first machine caller, pre-aggregation when a table outgrows a range scan, and report names in the customer's language when somebody asks for one. | ~1 day per item |
 | 10 | **F30 — Docoris data import alignment with the starter** | Docoris carries its own import (E24-F01-S01) with no analysis step and a mapping form a person types headings into, so matching CSV or XLSX headings prefill nothing there, however well they match. Opened 2026-09-29; the starter's framework is complete and documented, and the next move is a comparison and a migration path in the docoris repository, not a third implementation. | ~1 day to compare, the migration unknown |
-| 11 | **F31 — GR-352, the import memory envelope** — *opened 2026-10-01; slices A and B built the same day, slices C and E on 2026-10-02; **GR-352 closed 2026-10-02, verified, its NFRs ratified by the owner*** | **The resource envelope is closed and what is left is an activation constraint.** The import framework accepted files that took a worker to 1.4 GiB against 512 MB. A safety pass refuses the measured worst cases before they are loaded, the two API routes read a head, the worker reads rows as a stream, and one gate holds an import, a backup, a restore and a scheduled delivery to one at a time in a process -- at limits the owner ratified on 2026-10-02. **IMPORT-DEF-014 is open as of 2026-10-02**: no product may activate canonical imports against real object storage until it is fixed and verified, and its fix repeats the 512 MiB capped measurement. Closing GR-352 does not enable imports in `docoris` | IMPORT-DEF-014, then the repeated measurement, then `docoris`'s alignment |
+| 11 | **F31 — GR-352, the import memory envelope** — *opened 2026-10-01; slices A and B built the same day, slices C and E on 2026-10-02; **GR-352 closed 2026-10-02, verified, its NFRs ratified by the owner*** | **The resource envelope is closed and what is left is an activation constraint.** The import framework accepted files that took a worker to 1.4 GiB against 512 MB. A safety pass refuses the measured worst cases before they are loaded, the two API routes read a head, the worker reads rows as a stream, and one gate holds an import, a backup, a restore and a scheduled delivery to one at a time in a process -- at limits the owner ratified on 2026-10-02. **IMPORT-DEF-014 was fixed on 2026-10-02 and verified locally, with the 512 MiB capped measurement repeated against real object storage; remote verification is pending as of 2026-10-02**, and until it exists no product may activate canonical imports against real object storage. Closing GR-352 does not enable imports in `docoris` | IMPORT-DEF-014's remote verification, then `docoris`'s alignment |
 | 12 | **F32 — `develop` is not protected against an early merge** — *opened 2026-10-02* | Two pull requests in one day, #24 and #27, were merged before their owner's authorisation and before their checks had finished. Both passed afterwards. Nothing in the repository's settings would have stopped either, and nothing was changed here: the entry records the recommendation and the one thing to do first, which is that Generator Integration is path-filtered and cannot be made a required check as it stands | ~1h in repository settings, after one workflow change |
 
 **F21 and F23 do not contend with the top row.** They are a person at a dashboard and two ZITADEL writes per instance; nothing in either is code, so an order that reads as a queue is misleading for those two. Run them whenever the dashboard is open.
@@ -2656,6 +2656,19 @@ retrigger the path-filtered workflow.
 align and verify `docoris` against the updated Starter framework; and resume
 OD-12 scanner work only once its own prerequisites are met.
 
+**IMPORT-DEF-014 was fixed later on 2026-10-02**, so the order above has
+moved. `source_bytes` calls the store on a thread and holds the object to
+the index row that was validated -- its size before any transfer, the
+count of its bytes after, and its SHA-256 where the provider verified one
+at upload confirmation. The capped measurement was repeated with the
+unmodified `S3ObjectStore` against an S3-compatible bucket: 352 and 362 MiB
+in the worker, 291 and then 341 to 342 in the API, inside 512 with no OOM,
+no swap and a failcnt of zero. The 512 MiB NFR stands and GR-352 is not
+reopened. Where things are as of 2026-10-02: GR-352 complete; the fix
+verified locally and its remote verification pending, which is the current
+gate; `docoris`'s alignment not started; OD-12 blocked. No product has
+activated imports.
+
 The paragraphs and boxes below are the account as the slices were built.
 Where one says provisional, or that the gate is shut, it is describing its
 own day.
@@ -2847,6 +2860,18 @@ of them could take, which the owner took that day:
       fixed and verified. Its fix repeats the 512 MiB capped measurement,
       because it changes how a source is fetched. It is a defect in reading
       storage and was not a reason to hold the finished envelope open.
+      **Fixed and verified locally on 2026-10-02**, source binding included,
+      with the measurement repeated against real object storage. This box
+      is ticked when CI, Security and Generator Integration have passed on
+      the commit, which is pending as of 2026-10-02.
+- [ ] **IMPORT-GAP-027 — S3 whole-object fetch retained-memory
+      optimisation.** Opened 2026-10-02. boto3's whole-object fetch retains
+      materially more process memory than the disk-backed source path the
+      envelope was first measured with. The measured workloads stay inside
+      the ratified 512 MiB, so it blocks neither IMPORT-DEF-014's closure
+      nor activation. Investigate bounded or streaming retrieval
+      separately, without weakening the size, digest and source-identity
+      checks and without changing the NFR.
 - [ ] **IMPORT-GAP-016.** The AI knowledge reader opens workbooks with
       `openpyxl` and no safety pass. Wider than it was written, as of
       2026-10-02: everything GR-352C measured `openpyxl` building beside the

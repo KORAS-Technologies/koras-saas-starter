@@ -14,6 +14,7 @@ reads as "the run disappeared".
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import weakref
@@ -937,7 +938,8 @@ class SourceRefused(RuntimeError):
 UNPARSEABLE_SCANS: frozenset[str] = frozenset({"pending", "skipped", "infected"})
 
 _SOURCE = text(
-    "select storage_key, size_bytes, status, scan_status, name, content_type, category "
+    "select storage_key, size_bytes, status, scan_status, name, content_type, category, "
+    "checksum_sha256, checksum_verified_at "
     "from public.files where id = cast(:id as uuid)"
 )
 
@@ -967,18 +969,69 @@ async def check_source(session: AsyncSession, file_id: str | None) -> Any:  # no
     return row
 
 
+def _fetch(store: Any, row: Any) -> bytes:  # noqa: ANN401
+    """The object the index row describes, or a refusal. Synchronous.
+
+    `ObjectStore` is a synchronous protocol -- boto3 underneath -- so this is
+    the half of `source_bytes` that runs on a thread.
+
+    **The row is what was validated, so the object is held to it.** The size
+    was compared with the bucket's own answer when the upload was confirmed,
+    and it is what `check_source` measured against `MAX_SOURCE_BYTES`. An
+    object that no longer has that size is not the file somebody mapped, and
+    one that has grown is a transfer the ceiling never agreed to -- so the
+    bucket is asked before the bytes are, and the bytes are counted after.
+    Where the provider corroborated a SHA-256 at confirmation, the bytes are
+    held to that as well; a digest that was only ever claimed proves nothing
+    and is not compared.
+    """
+    size = int(row.size_bytes or 0)
+    found = store.head(row.storage_key)
+    if found is None:
+        raise SourceRefused("import.source.missing")
+    if found != size:
+        raise SourceRefused("import.source.changed")
+    raw = store.get(row.storage_key)
+    if raw is None:
+        # Deleted between the two calls.
+        raise SourceRefused("import.source.missing")
+    if not isinstance(raw, bytes):
+        raise TypeError(f"the object store answered {type(raw).__name__}, not bytes")
+    if len(raw) != size:
+        raise SourceRefused("import.source.changed")
+    digest = getattr(row, "checksum_sha256", None)
+    if digest and getattr(row, "checksum_verified_at", None) is not None:
+        if hashlib.sha256(raw).hexdigest() != digest:
+            raise SourceRefused("import.source.changed")
+    return raw
+
+
 async def source_bytes(session: AsyncSession, store: Any, file_id: str | None) -> bytes:  # noqa: ANN401
-    """The uploaded file, or a refusal saying which of five things was wrong.
+    """The uploaded file, or a refusal saying which of six things was wrong.
 
     Held whole in memory, and bounded by `MAX_SOURCE_BYTES` -- checked against
     the size the index recorded, **before** the object is fetched, so an
     oversized file costs a row read rather than a transfer. Phase 4 streams;
     this is the caller a streaming reader will replace, and the reader it hands
     rows to already streams, so that change is here and not in `koras_import`.
+
+    **The store is called on a thread, and is not awaited.** Until
+    IMPORT-DEF-014 this awaited `store.get`, and `S3ObjectStore.get` is a plain
+    function: against a real bucket the object was fetched on the event loop
+    and the `await` of its bytes then raised, so every import answered
+    `import.source.unreadable`. Every test passed, because every test handed
+    in a store whose `get` was a coroutine. The doubles are synchronous now,
+    like the thing they stand for.
+
+    A cancelled caller stops waiting and the thread finishes its transfer: at
+    most one source, which is what the slot or the heavy gate the caller holds
+    already counts.
     """
     row = await check_source(session, file_id)
     try:
-        return await store.get(row.storage_key)  # type: ignore[no-any-return]
+        return await asyncio.to_thread(_fetch, store, row)
+    except SourceRefused:
+        raise
     except Exception as error:  # noqa: BLE001 - the provider's own type is not ours
         logger.exception("the source file for an import could not be read")
         raise SourceRefused("import.source.unreadable") from error

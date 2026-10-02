@@ -5,9 +5,9 @@
 > owner on 2026-10-02 at the values they were built with, and
 > `worker-resource-envelope.md` here holds the contract and its evidence. The
 > three notes below are the status as each slice left it, kept as written.
-> IMPORT-DEF-014 is open as of 2026-10-02, and no product may activate
-> canonical imports against real object storage until it is fixed and
-> verified.
+> IMPORT-DEF-014 was fixed and verified locally on 2026-10-02; remote
+> verification is pending as of 2026-10-02, and it is an activation
+> constraint until that exists.
 >
 > **Status, 2026-10-01: GR-352A is built. GR-352 is open, and HIGH.** This
 > document describes one slice of a release gate, not its resolution. The
@@ -423,7 +423,7 @@ changed what is accepted. It was taken by the later slices and accepted on
 | The API still parses a whole safe file to show 200 rows of it | **Closed 2026-10-01** by GR-352B; `bounded-inspection.md` here |
 | Worker concurrency, queue topology, an import semaphore, machine size | **Built 2026-10-02** by GR-352C: one import to a process, behind a slot; no queue added and no machine resized. The number was ratified the same day. IMPORT-GAP-021 for the topology it did not change |
 | Re-measuring the readers against the new envelope, on Linux | Measured 2026-10-02 by GR-352C and GR-352E, in `worker-resource-envelope.md`. The limits were ratified as they stood, so nothing is owed again. IMPORT-DEF-013 |
-| `source_bytes` awaits a synchronous `S3ObjectStore.get` | IMPORT-DEF-014, open as of 2026-10-02, and the activation constraint |
+| `source_bytes` awaits a synchronous `S3ObjectStore.get` | IMPORT-DEF-014, fixed and verified locally on 2026-10-02, remote verification pending that day, and the activation constraint until it exists |
 | Pathological CPU in the synchronous analysis and in `clean_cell` | IMPORT-DEF-015: the analysis half closed 2026-10-01 by GR-352B, the `clean_cell` half on 2026-10-02 by GR-352C |
 | Workbook parts `openpyxl` loads eagerly that are neither strings nor sheets | IMPORT-GAP-015: closed for the routes 2026-10-01 and for the worker 2026-10-02 |
 | A string the pass costs once is copied for every cell that names it | IMPORT-DEF-016, found 2026-10-01 by GR-352B's measurement; closed in the worker 2026-10-02 by GR-352C |

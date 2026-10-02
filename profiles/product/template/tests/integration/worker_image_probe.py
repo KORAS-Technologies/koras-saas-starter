@@ -12,9 +12,10 @@ the test, where a failure names what it was looking for.
 
 Two things are replaced, because a generated product has neither:
 
-- **the import's object store**, with one that answers from memory. A real
-  bucket cannot serve an import at all -- `source_bytes` awaits a synchronous
-  `get`, IMPORT-DEF-014 -- and that is deliberately not touched here;
+- **the import's object store**, with one that answers from memory and has
+  the shape `ObjectStore` has: plain functions, and a `head`. Until
+  IMPORT-DEF-014 it was a coroutine, which is what `source_bytes` awaited
+  and what no real bucket is;
 - **the import target registry**, with one target that has a writer. The
   starter owns no table, so the writer puts its rows in `import_row_errors`,
   as `test_import_commit_atomic.py` does.
@@ -84,8 +85,11 @@ class _Bucket:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
 
-    async def get(self, key: str) -> bytes:
-        return self.objects[key]
+    def head(self, key: str) -> int | None:
+        return len(self.objects[key]) if key in self.objects else None
+
+    def get(self, key: str) -> bytes | None:
+        return self.objects.get(key)
 
 
 def _csv(rows: int = ROWS) -> bytes:

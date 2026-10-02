@@ -137,7 +137,11 @@ class _Bucket:
     def __init__(self, raw: bytes) -> None:
         self.raw = raw
 
-    async def get(self, key: str) -> bytes:
+    def head(self, key: str) -> int | None:
+        del key
+        return len(self.raw)
+
+    def get(self, key: str) -> bytes | None:
         del key
         return self.raw
 

@@ -385,6 +385,9 @@ def _sentence(code: str) -> str:
     return {
         "import.source.missing": "the file this import was started against is gone",
         "import.source.not_ready": "the file was not finished uploading",
+        "import.source.changed": (
+            "the file is not the one this import was started against"
+        ),
         "import.source.unscanned": (
             "the file has not been checked for malware, and an import will not "
             "read a file nobody has looked at"
@@ -613,8 +616,9 @@ async def _write(
     counts and errors, not rows; carrying a file's worth of parsed records
     between two jobs would mean either a queue payload the size of the upload or
     a second copy of the data in the database. Reading it again costs one fetch,
-    and the file cannot have changed underneath: an object under a run is
-    immutable, and the scan gate has already passed.
+    and a file that changed underneath is refused rather than written:
+    `source_bytes` holds the object to the size, and where there is one the
+    digest, its index row recorded -- the row the dry run read by too.
     """
     raw = await store.source_bytes(session, _object_store(), run.source_file_id)
     # On a thread, with a budget it asks as it reads. One pass, and one

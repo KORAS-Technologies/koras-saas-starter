@@ -626,11 +626,14 @@ The run record has the table.
 
 - **No manual pass.** `manual-test-plan.md` here has the cases; every verdict
   is blank.
-- **IMPORT-DEF-014 is open as of 2026-10-02, and it is an activation
-  constraint.** `source_bytes` cannot read a source from a real bucket, and
-  no product may activate canonical imports against real object storage
-  until that is fixed and verified, with the 512 MiB capped measurement
-  repeated. FOLLOW_UPS F31.
+- **IMPORT-DEF-014 is not verified remotely as of 2026-10-02, and it is an
+  activation constraint until it is.** `source_bytes` could not read a
+  source from a real bucket. It was fixed on 2026-10-02 -- the store is
+  called on a thread, and the object is held to the size and, where the
+  provider verified one, the digest its index row recorded -- and verified
+  locally, with the 512 MiB capped measurement repeated against real object
+  storage. No product has activated imports. FOLLOW_UPS F31, and
+  `worker-resource-envelope.md` here for the evidence.
 - **GR-352 itself is closed, verified, and its NFRs ratified**, on
   2026-10-02, so it has left this list. This entry said until then that it
   was open and a release gate, waiting on an NFR decision nobody had taken.
