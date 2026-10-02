@@ -5,6 +5,13 @@
 > limits below are provisional, the memory envelope they protect has not been
 > ratified by anybody, and the import framework is not claimed to be safe for
 > production until every GR-352 acceptance criterion has passed.
+>
+> **GR-352B was built the same day**, and three statements below were true of
+> slice A and are not true of the tree as it stands on 2026-10-01: the analysis
+> no longer reaches either reader, it no longer runs on the event loop, and
+> the safety pass is reached for it through `inspect_source`. Each is marked
+> where it stands rather than rewritten. `bounded-inspection.md` here is the
+> description of that slice.
 
 ## What GR-352 is
 
@@ -109,7 +116,10 @@ against `sys.getsizeof` rather than against itself.
   63 MiB ASCII file with a single emoji is costed at 252 MiB. That is
   pessimistic about the file and accurate about the reader; when the reader
   stops decoding the file whole -- GR-352B -- this term should become a sum
-  over lines.
+  over lines. **GR-352B did not earn that**, and the term is unchanged as of
+  2026-10-01: the two routes stopped decoding the file whole, and the dry run
+  and the commit still do. It becomes a sum over lines when the worker's
+  reader streams, which is GR-352C's.
 
 ### The workbook pass
 
@@ -124,16 +134,20 @@ grow with the workbook's text.
 2. **The directory checks that were already there**: a workbook part must
    exist, a macro project is refused, the declared uncompressed total is
    summed and refused past its ceiling.
-3. **Every part is recognised by its root element, not its name.** A string
-   table is a part whose root is `sst`, wherever the workbook keeps it. A scan
-   that trusted `xl/sharedStrings.xml` would be walked around by renaming one
-   file.
+3. **The parts the reader will read are found the way the reader finds
+   them**, and scanned as what it will read them as, whatever their root
+   element is called. The workbook part and the string table come from the
+   content types; the sheet from the workbook part's own list, through its
+   relationships. See "The parts" below. Beside those, any part whose root is
+   `sst` is costed as a string table wherever it is kept, so an index that
+   leaves one out does not hide it.
 4. **String tables are streamed**, costing each item as its text arrives -- so
    one enormous string is refused partway through it -- and keeping one byte
    per item, recording only whether it is empty. Nothing else is retained.
 5. **The sheet the reader will read is streamed**: `Data`, or the first
    worksheet, resolved from the workbook's own index. Cells are counted as they
-   are met. The column is taken from each cell's reference -- a single cell at
+   are met, and a cell is any child of a row, whatever it is called -- which is
+   what `openpyxl` reads as one. The column is taken from each cell's reference -- a single cell at
    `ZZ1` is 702 columns wide whatever `<dimension>` claims -- and by position
    where a writer omitted references. Inline strings, cached formula strings
    and the text of formulas are costed like shared ones.
@@ -145,8 +159,77 @@ grow with the workbook's text.
    before it becomes a string.
 
 Only the sheet that will be read is counted, so a workbook is not refused for a
-lookup sheet nobody opens. If the workbook's index cannot be followed, every
-worksheet is counted, which can only refuse more.
+lookup sheet nobody opens. If the workbook's index gives the reader no
+worksheet, it reads none, and every part shaped like one is counted instead,
+which can only refuse more.
+
+### The parts: IMPORT-DEF-017, found and closed on 2026-10-01
+
+**Step 3 said, until that day, that every part is recognised by its root
+element and not its name.** That was the design, it was written as a strength,
+and it was the defect. `openpyxl` does not find a workbook's parts by their
+roots. Wherever its rule and the pass's rule gave different answers, the pass
+scanned one part and the reader read another -- a workbook called safe with
+none of its text and none of its cells counted, then loaded in full.
+
+It was found while building GR-352B, as a string table with a renamed root,
+and first recorded as that. Reproducing it with the smallest packages showed
+nine doors:
+
+| What the package does | The pass, before | `openpyxl` |
+|-----------------------|------------------|------------|
+| The string table's root is not `sst` | not a string table; nothing costed | loads the part the content types name, whatever its root |
+| The sheet's root is not `worksheet` | not a worksheet; nothing counted | reads rows from the part the relationship names |
+| The sheet's relationship is not typed as a worksheet's | ignored that sheet, counted another | follows any relationship that is not a chart sheet's |
+| The content types name a second workbook part | read the sheet list from `xl/workbook.xml` | reads it from the part the content types name |
+| Two `sheets` elements | took the first sheet of the first | takes the last element |
+| A sheet entry not called `sheet` | did not see it | every child of `sheets` is one |
+| A plain `id` beside the namespaced one | took whichever came last | takes the namespaced one |
+| A target with two leading slashes | stripped both, found a part | strips one, finds none, moves to the next sheet |
+| Cells not called `c` | not cells; no cell or column counted | every child of a row is a cell |
+
+The first description -- "can be walked around by renaming a root element" --
+was two of the nine. And the string table is not found through the workbook's
+relationships at all, as a later statement of the defect assumed: `openpyxl`
+takes it from the content types, and a relationship to it is never consulted.
+
+**The correction is two halves.**
+
+*The pass resolves the package by the reader's rules.* `_package` in
+`koras_import/safety.py` restates them, including the ones that look like
+accidents -- the last `sheets` element wins, a duplicated relationship id
+resolves to the later one, a target marked external is used as written --
+because a pass that resolves a tidier package than the reader does is scanning
+a different file. The parts it names are scanned as a string table and a
+worksheet whatever their roots are. `Preflight` reports them: the workbook
+part, the sheet part, the sheet's title and the string-table part.
+
+*The reader checks.* `read_workbook`, after `openpyxl` has resolved the
+package its own way, compares the sheet it is about to read with the part the
+pass scanned and refuses if they differ. So a rule this module missed, or one
+a later `openpyxl` changes, is a refusal rather than rows from a part nothing
+counted.
+
+It stays bounded. The three index parts are streamed through `expat` with no
+tree, only their top two levels are kept, an index with more entries than the
+archive may have parts is refused rather than read in part, and a token that
+never ends is refused as it is everywhere else. `openpyxl` is not asked which
+parts it would read: that would be loading the workbook to find out whether it
+is safe to load.
+
+**How it is proved.** `test_preflight_package.py` has nineteen package shapes.
+For each, an unsafe file is refused with `load_workbook` replaced by something
+that fails the test, and it is not reached; and a safe file of the same shape
+is loaded by `openpyxl` itself, whose chosen sheet and string-table part are
+compared with the two the pass reported. Fifteen broken indexes are each a
+refusal with a sentence. Nine mutations, each putting back one of the old
+rules or removing the reader's check, each turn the suite red.
+
+**A malformed sheet is a refusal too.** A cell naming a string the table
+lacks, a number that is not one, a workbook with no worksheet: `openpyxl`
+raises each from inside its own iteration, and until 2026-10-01 they reached
+the caller as they were. `read_workbook` answers all of them with the sentence
+it already had for a workbook it cannot read.
 
 ### The CSV pass
 
@@ -261,15 +344,16 @@ through it.
 
 | Function | Reached by | How |
 |----------|-----------|-----|
-| `analyse` | `GET /imports/{id}/analysis`, `PUT /imports/{id}/mapping` | CSV: `preflight` before `decode`. XLSX: inside `read_workbook` |
+| `analyse` | `GET /imports/{id}/analysis`, `PUT /imports/{id}/mapping` | Inside `inspect_source`, for both formats, since GR-352B on 2026-10-01. Until then -- CSV: `preflight` before `decode`. XLSX: inside `read_workbook` |
 | `check` | the dry run | through `_parse` |
 | `examine` | the worker's `validate_run` | through `_parse` |
 | `prepare` | the worker's `commit_run` | through `_parse` |
 
 For a workbook the pass is **inside** `read_workbook` rather than asked of its
 callers, so there is no way to reach `openpyxl` through the engine without it.
-The worker has no reader of its own: it reaches a source only through the
-store. One operation runs the pass once.
+The inspection has the same arrangement, for the same reason. The worker has
+no reader of its own: it reaches a source only through the store. One
+operation runs the pass once.
 
 ## How it is proved
 
@@ -277,7 +361,9 @@ store. One operation runs the pass once.
   `decode` are swapped for something that fails the test when reached, and
   every one of the four functions is handed an unsafe file in each format. A
   second test shows the same replacements *are* reached by a file that passes,
-  so the guard cannot be vacuous.
+  so the guard cannot be vacuous. Since GR-352B the thing behind the pass in
+  `analyse` is the inspection, so that is what is replaced for it; the two
+  readers stay replaced as well, which asserts `analyse` reaches neither.
 - **Mutation.** Six changes were made to a generated product on 2026-10-01 --
   the workbook pass moved after `openpyxl`, the CSV pass removed from the
   analysis, the CSV pass moved after `decode`, width ignored, inline strings
@@ -300,18 +386,22 @@ this slice changed what is accepted.
 | Left | Where it is tracked |
 |------|---------------------|
 | The NFR decision: headroom, concurrency, the ratified numbers | IMPORT-DEF-013; F31 |
-| The API still parses a whole safe file to show 200 rows of it | GR-352B; IMPORT-DEF-013 |
+| The API still parses a whole safe file to show 200 rows of it | **Closed 2026-10-01** by GR-352B; `bounded-inspection.md` here |
 | Worker concurrency, queue topology, an import semaphore, machine size | GR-352C; IMPORT-DEF-013 |
 | Re-measuring the readers against the new envelope, on Linux | IMPORT-DEF-013 |
 | `source_bytes` awaits a synchronous `S3ObjectStore.get` | IMPORT-DEF-014 |
-| Pathological CPU in the synchronous analysis and in `clean_cell` | IMPORT-DEF-015 |
-| Workbook parts `openpyxl` loads eagerly that are neither strings nor sheets | IMPORT-GAP-015 |
+| Pathological CPU in the synchronous analysis and in `clean_cell` | IMPORT-DEF-015: the analysis half closed 2026-10-01 by GR-352B, the `clean_cell` half open |
+| Workbook parts `openpyxl` loads eagerly that are neither strings nor sheets | IMPORT-GAP-015: closed for the routes 2026-10-01, open for the worker |
+| A string the pass costs once is copied for every cell that names it | IMPORT-DEF-016, found 2026-10-01 by GR-352B's measurement; open, GR-352C |
+| What the reader builds from a sheet that is neither a string nor a cell | IMPORT-GAP-020, found 2026-10-01 while closing IMPORT-DEF-017 |
 | The AI knowledge reader opens workbooks with no safety pass | IMPORT-GAP-016 |
 
 The CPU findings are not closed by this. The cell and column limits reduce how
 bad the worst case is; they do not make the analysis asynchronous or
 `clean_cell` linear, and a file inside the envelope can still hold a request
-for tens of seconds.
+for tens of seconds. That was the position of slice A. As of 2026-10-01 and
+GR-352B the analysis runs on a thread and inspects a head; `clean_cell` and
+the worker are where they were.
 
 **The pass has a cost of its own, and it is paid on the same thread.** It is
 Python handling one parser event at a time: a 600,000-cell sheet took about
@@ -319,6 +409,7 @@ three seconds and a 32 MiB CSV about two, in `python:3.12-slim` on 2026-10-01.
 For a workbook that is an extra pass before `openpyxl` makes its own. It is
 cheap against what it prevents and it is still synchronous inside an async
 route, which is IMPORT-DEF-015's subject and one more reason for GR-352B.
+GR-352B moved it, with the inspection behind it, onto a thread on 2026-10-01.
 
 ## Generated products
 

@@ -70,6 +70,7 @@ All planning and reference documents live in `docs/`, matching
 | `docs/platform/execution/` | One manifest per category, each executable without repeating the audit |
 | `docs/features/data-import/` | Data import as built: Phase 1 stops at the dry run, and the three plan items it deliberately left |
 | `docs/features/data-import/preflight-safety-envelope.md` | The import safety pass: what runs before either reader, its provisional limits, and what GR-352 still needs |
+| `docs/features/data-import/bounded-inspection.md` | How the analysis and mapping routes read a file's head without parsing the file, what was measured, and where the inspection is deliberately not the reader |
 | `docs/adr/0009-import-runs-are-not-a-third-export.md` | Why an import run has its own table rather than a third copy of the export pattern |
 | `docs/ENGINEERING_FRAMEWORK.md` | The product's multi-agent framework: one vocabulary, risk by boundary, gate reuse, bounded loops |
 | `docs/adr/0010-koras-engineering-framework-v2-1.md` | The decision record for V2.1 of that framework |
@@ -732,6 +733,51 @@ half — `source_bytes` awaits a synchronous `S3ObjectStore.get`, so no import c
 read its source from a real bucket at all, every test passes because every test
 hands in a coroutine, and that defect is the only thing keeping the memory path
 unreachable in a deployed product. Fix it second.
+
+**Its second slice, GR-352B, was built on 2026-10-01 as well, and the gate is
+still shut.** The analysis and mapping routes used to hand a safe file to the
+readers the dry run uses, inline on the event loop, to keep two hundred rows of
+it. They call `koras_import.inspect_source` now: the safety pass, then a
+streamed head — the header, the sample, a count that stops one past the
+ceiling — with a workbook's shared strings resolved for the sample alone and
+the whole of it on a thread. Measured on Linux through `analyse`, on sixteen
+files at the edges of the envelope: 1.8 to 6.7 MiB over the file, where
+`b24a72d` took 4 to 136. `docs/features/data-import/bounded-inspection.md` is
+the description.
+
+**Three things about that are worth carrying.** The readers are still the
+only thing the worker uses and are still authoritative: the inspection answers
+what the mapping page draws and nothing that is validated or written, so
+**the worker's memory is exactly what it was** and GR-352C owes all of it. The
+measurement found **IMPORT-DEF-016**, which GR-352's own cases could not —
+they all had distinct strings: the envelope costs a shared string once and the
+reader copies it for every cell that names it, so a 78 KiB workbook took the
+analysis to 1,834 MiB and a 611 MiB response, inside every limit. A character
+budget on the sample closes it for the routes; it is open in the worker and
+unmeasured there. And that budget is the one place a preview can be shorter
+than it was: 200 rows is the most a preview holds and not a guarantee, which
+the owner approved on 2026-10-01 as a provisional guardrail pending GR-352C
+and OD-22/NFR ratification — IMPORT-GAP-017.
+
+**And building it found a hole in the safety pass itself, IMPORT-DEF-017,
+closed the same day before the slice was committed.** The pass found a
+workbook's parts by its own rules — a string table is a part whose root is
+`sst`, the sheets are in `xl/workbook.xml`, a cell is called `c` — and
+`openpyxl` finds them by others. Wherever the two disagreed the pass scanned
+one part and the reader read another: nine different packages called safe with
+none of their text or cells counted, then loaded in full. It was first written
+down as "renaming a root element", which was two of the nine, and found only
+by reproducing it with the smallest packages rather than fixing the
+description. The pass resolves the package by the reader's own rules now, and
+`read_workbook` refuses a sheet the pass did not scan — so the two cannot
+drift apart quietly again.
+
+**That is the FW-HARDEN-001 shape in a safety control.** The pass asked what a
+part *is called* rather than what the reader will *do* with it, and the
+document describing it listed "recognised by its root element, not its name"
+as a strength. Every test it shipped with built a workbook the ordinary way
+and passed. What catches it is `test_preflight_package.py`, which asks
+`openpyxl` itself which parts it used and compares.
 
 **Generating that product found IMPORT-DEF-010**: SQLAlchemy 2.1 resolved and
 no longer installs `greenlet`, so a fresh product's unit suite could not be

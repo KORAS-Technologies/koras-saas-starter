@@ -444,6 +444,25 @@ still parses a whole safe file to preview 200 rows of it.
 `preflight-safety-envelope.md` here is the description, including what the
 slice deliberately left.
 
+### The inspection: a head of the file, for the two routes that draw one
+
+Added 2026-10-01 as GR-352B, and the last clause of the paragraph above
+stopped being true the same day. `analyse` no longer calls `read_workbook` or
+`decode`: it calls `koras_import.inspect_source`, which runs the safety pass
+and then streams the header, up to two hundred rows and a count that stops one
+past the target's ceiling. A workbook's shared strings are resolved
+selectively -- the table is walked for lengths, then again for the strings the
+sample names, wherever in it they are -- and no string the size of a CSV is
+made. Both routes await `analysed`, which runs it on a thread, so a file that
+takes seconds to walk no longer holds every other request for those seconds.
+The mapping route asks for no rows at all.
+
+**The canonical readers are untouched and stay authoritative.** The dry run
+and the commit read every row through `_parse` exactly as before; the
+inspection answers what the mapping page draws and nothing that is validated
+or written. `bounded-inspection.md` here is the description, with what was
+measured and the three places the inspection is deliberately not the reader.
+
 ### The matcher: what an import would do, before it does it
 
 `ImportTarget.matcher` is optional: an async callable taking the caller's
@@ -562,7 +581,9 @@ The run record has the table.
   refuses the measured worst cases before they are loaded; it does not
   establish that what is still accepted fits the machines. That needs an NFR
   decision nobody has taken and a Linux measurement nobody has repeated.
-  IMPORT-DEF-013 and FOLLOW_UPS F31.
+  IMPORT-DEF-013 and FOLLOW_UPS F31. GR-352B, the same day, bounded the two
+  API routes and measured them; the worker reads every accepted file whole,
+  as it did, and that is GR-352C.
 - **No live run.** Nothing has imported a file through a deployed product.
   Neither the dry run nor the commit has executed against a real Redis, a real
   bucket and a real scanner.

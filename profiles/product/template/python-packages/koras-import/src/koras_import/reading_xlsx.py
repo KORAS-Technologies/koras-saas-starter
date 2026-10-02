@@ -63,6 +63,7 @@ _WORKBOOK_PART = "xl/workbook.xml"
 _MACRO_PART = "xl/vbaProject.bin"
 _PROPERTIES_PART = "docProps/custom.xml"
 _VT = "{http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes}"
+_UNREADABLE = "the file could not be read as a workbook"
 
 
 @dataclass(frozen=True)
@@ -163,11 +164,16 @@ def cell_text(value: Any) -> str:  # noqa: ANN401 - whatever openpyxl handed ove
         return value.isoformat()
     text = str(value)
     if len(text) > MAX_CELL:
-        raise ReadRefused(
-            f"a cell is {len(text)} characters, over the {MAX_CELL} limit; "
-            "this is a file in a cell rather than a value"
-        )
+        raise cell_too_long(len(text))
     return text
+
+
+def cell_too_long(characters: int) -> ReadRefused:
+    """The refusal for a cell that is a file. One sentence, for both readers."""
+    return ReadRefused(
+        f"a cell is {characters} characters, over the {MAX_CELL} limit; "
+        "this is a file in a cell rather than a value"
+    )
 
 
 def _trimmed(values: Sequence[Any]) -> list[str]:
@@ -202,9 +208,25 @@ def read_workbook(
     try:
         book = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
     except Exception as broken:  # noqa: BLE001 - openpyxl raises several types
-        raise ReadRefused("the file could not be read as a workbook") from broken
+        raise ReadRefused(_UNREADABLE) from broken
     try:
-        sheet = book[DATA_SHEET] if DATA_SHEET in book.sheetnames else book.worksheets[0]
+        # `Data`, or the first worksheet. Among worksheets only: a chart sheet
+        # has no rows, and one named `Data` used to be chosen and then fail
+        # with an error no caller answered.
+        worksheets = book.worksheets
+        sheet = next(
+            (found for found in worksheets if found.title == DATA_SHEET),
+            worksheets[0] if worksheets else None,
+        )
+        # **The sheet about to be read is the sheet the safety pass scanned,
+        # or it is not read.** The pass resolves the package by `openpyxl`'s
+        # own rules and scans the part those rules name; this is the other
+        # half, asked of `openpyxl` itself after it has resolved the package
+        # its own way. If the two ever disagree -- a rule missed, a release
+        # that changes one -- the answer is a refusal rather than rows from a
+        # part nothing counted. IMPORT-DEF-017.
+        if sheet is None or getattr(sheet, "_worksheet_path", None) != checked.sheet_part:
+            raise ReadRefused(_UNREADABLE)
         if hasattr(sheet, "reset_dimensions"):
             sheet.reset_dimensions()
         rows_iter = sheet.iter_rows(values_only=True)
@@ -212,20 +234,31 @@ def read_workbook(
         rows: list[Row] = []
         seen = 0
         number = 0
-        for number, values in enumerate(rows_iter, start=1):
-            cells = _trimmed(values)
-            if header is None:
-                if not cells:
-                    raise ReadRefused("the file's first row names no columns")
-                header = header_from(cells)
-                continue
-            if not any(cells):
-                continue
-            seen += 1
-            if seen > ceiling:
-                break
-            if len(rows) < limit:
-                rows.append(row_from(number, cells, header))
+        try:
+            for number, values in enumerate(rows_iter, start=1):
+                cells = _trimmed(values)
+                if header is None:
+                    if not cells:
+                        raise ReadRefused("the file's first row names no columns")
+                    header = header_from(cells)
+                    continue
+                if not any(cells):
+                    continue
+                seen += 1
+                if seen > ceiling:
+                    break
+                if len(rows) < limit:
+                    rows.append(row_from(number, cells, header))
+        except ReadRefused:
+            raise
+        except Exception as broken:  # noqa: BLE001 - whatever a malformed sheet raises
+            # A cell naming a string the table lacks, a number that is not
+            # one, a reference that is not a reference: `openpyxl` raises
+            # each as it meets it, from inside the iteration, and none of
+            # them is a `ReadRefused`. They reached the caller as they were
+            # until 2026-10-01 -- a failed job with a traceback for a
+            # sentence. A sheet that cannot be read is a refusal.
+            raise ReadRefused(_UNREADABLE) from broken
         if header is None:
             raise ReadRefused("the file is empty")
         return WorkbookRead(
@@ -246,6 +279,7 @@ __all__ = [
     "MAX_PROPERTY_BYTES",
     "WorkbookRead",
     "cell_text",
+    "cell_too_long",
     "inspect",
     "read_workbook",
     "template_identity",

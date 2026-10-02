@@ -13,6 +13,7 @@ reads as "the run disappeared".
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import Mapping, Sequence
@@ -36,8 +37,8 @@ from koras_import import (
     SafetyLimits,
     Validation,
     compare,
-    count_rows,
     decode,
+    inspect_source,
     normalise_row,
     predict,
     preflight,
@@ -47,7 +48,6 @@ from koras_import import (
     request_for,
     require_move,
     resolve,
-    sniff_delimiter,
     suggest,
     with_rejections,
 )
@@ -618,56 +618,81 @@ def limits_for(target: ImportTarget, *, rows: bool) -> SafetyLimits:
     return replace(SAFETY_LIMITS, max_rows=target.max_rows if rows else None)
 
 
-def analyse(raw: bytes, target: ImportTarget, fmt: Format = Format.CSV) -> Analysis:
+def analyse(
+    raw: bytes, target: ImportTarget, fmt: Format = Format.CSV, *, sample: int = PREVIEW
+) -> Analysis:
     """What the file looks like, and a mapping to offer before anybody types.
 
     Pure: bytes in, an answer out. That is what lets the analysis be tested
     against the files real spreadsheets produce without a database or a bucket.
 
-    **The safety pass runs first, for both formats.** For a workbook it is
-    inside `read_workbook`; for a CSV it is the call below, before `decode`
-    builds one string out of the whole file.
+    **Neither reader is called.** Until GR-352B this parsed the whole file the
+    way the dry run does -- `read_workbook`, and `decode` into one string --
+    to keep two hundred rows of it. `inspect_source` streams the head instead:
+    the header, up to `sample` rows, and a count that stops past the target's
+    ceiling. The dry run and the commit still read through `_parse`, and what
+    they read is still what is validated and written.
+
+    **The safety pass runs first, for both formats**, inside `inspect_source`,
+    so there is no way to reach the inspection without it.
+
+    `sample=0` is the mapping route's: it needs the header and whether the
+    file is over the ceiling, and no rows at all.
+
+    **Synchronous, and never called from the event loop.** A file inside the
+    envelope can still take seconds to walk. A route awaits `analysed`.
     """
-    limits = limits_for(target, rows=False)
-    if fmt is Format.XLSX:
-        read = read_workbook(raw, limit=PREVIEW, ceiling=target.max_rows, limits=limits)
-        return Analysis(
-            delimiter=",",
-            encoding="utf-8",
-            columns=read.header.columns,
-            suggested=suggest(target, read.header.columns),
-            preview=[row.cells for row in read.rows],
-            rows_seen=read.rows_seen,
-            over_ceiling=read.rows_seen > target.max_rows,
-            replaced=False,
-            format=fmt,
-            sheet=read.sheet,
-            identity=read.identity,
-            template=compare(target, read.header.columns, found=read.identity),
-        )
-    if fmt is not Format.CSV:
-        raise ReadRefused(f"{fmt.value} files are not read in this release")
-    preflight(raw, Format.CSV, limits)
-    decoded = decode(raw)
-    delimiter = sniff_delimiter(decoded.text)
-    lines = decoded.text.splitlines(keepends=True)
-    header = read_header(lines, delimiter=delimiter)
-    rows = list(read_rows(lines, header=header, delimiter=delimiter, limit=PREVIEW))
-    # Counted separately and bounded: the answer a caller needs is whether the
-    # file is over the target's ceiling, not how far over.
-    seen = count_rows(lines, delimiter=delimiter, ceiling=target.max_rows)
-    return Analysis(
-        delimiter=delimiter,
-        encoding=decoded.encoding,
-        columns=header.columns,
-        suggested=suggest(target, header.columns),
-        preview=[row.cells for row in rows],
-        rows_seen=seen,
-        over_ceiling=seen > target.max_rows,
-        replaced=decoded.replaced,
-        format=fmt,
-        template=compare(target, header.columns),
+    found = inspect_source(
+        raw, fmt, limits_for(target, rows=False), sample=sample, ceiling=target.max_rows
     )
+    columns = found.header.columns
+    if found.sample_cut:
+        # Counts and never a cell. The preview is shorter than it could have
+        # been because the next row would have passed the sample's character
+        # budget; the response has no field to say so, and adding one is a
+        # contract change GR-352B did not make.
+        logger.info(
+            "an import preview stopped at its character budget: %d of up to %d rows, "
+            "target %s",
+            len(found.rows),
+            sample,
+            target.key,
+        )
+    return Analysis(
+        delimiter=found.delimiter,
+        encoding=found.encoding,
+        columns=columns,
+        suggested=suggest(target, columns),
+        preview=[row.cells for row in found.rows],
+        rows_seen=found.rows_seen,
+        over_ceiling=found.over_ceiling,
+        replaced=found.replaced,
+        format=fmt,
+        sheet=found.sheet,
+        identity=found.identity,
+        # A CSV carries no identity, so there is none to judge there and the
+        # verdict is the header's alone -- what it always was.
+        template=compare(target, columns, found=found.identity),
+    )
+
+
+async def analysed(
+    raw: bytes, target: ImportTarget, fmt: Format = Format.CSV, *, sample: int = PREVIEW
+) -> Analysis:
+    """`analyse`, on a worker thread, for a caller that is on the event loop.
+
+    The inspection is bounded in memory and not in time: it is Python handling
+    one parser event after another, and a file at the edge of the envelope is
+    several seconds of it. Run inline, every other request this process is
+    serving waits for those seconds -- GR-352 measured 126 of them. On a
+    thread the loop keeps turning; the interpreter lock is shared, so the
+    other requests are slower while it runs rather than stopped.
+
+    `asyncio.to_thread`, which is what `core/knowledge.py` already does for
+    its own CPU-bound read. No queue and no job: an analysis stores nothing,
+    and somebody is waiting for the answer.
+    """
+    return await asyncio.to_thread(analyse, raw, target, fmt, sample=sample)
 
 
 def _needs_match_keys(run: Run) -> bool:
@@ -896,6 +921,7 @@ __all__ = [
     "SourceRefused",
     "UNPARSEABLE_SCANS",
     "analyse",
+    "analysed",
     "begin_commit",
     "examine",
     "limits_for",

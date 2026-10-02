@@ -471,9 +471,13 @@ describe('data import', () => {
 
     // Every whole-file decode in the store has a safety pass ahead of it, and
     // every workbook read is handed the envelope rather than taking a default.
+    //
+    // One of each since GR-352B, where there were two: the analysis stopped
+    // calling either reader, so the dry run and the commit's shared `_parse`
+    // is the only place left that does.
     const store = read('services/api/koras_api/core/imports.py')
     const decodes = [...store.matchAll(/decoded = decode\(raw\)/g)]
-    expect(decodes).toHaveLength(2)
+    expect(decodes).toHaveLength(1)
     for (const found of decodes) {
       const before = store.slice(0, found.index)
       const guard = before.lastIndexOf('preflight(raw, Format.CSV, limits')
@@ -481,7 +485,7 @@ describe('data import', () => {
       expect(guard).toBeGreaterThan(before.lastIndexOf('def '))
     }
     const workbooks = [...store.matchAll(/read_workbook\(([^)]*)\)/g)]
-    expect(workbooks).toHaveLength(2)
+    expect(workbooks).toHaveLength(1)
     for (const found of workbooks) expect(found[1]).toContain('limits=limits')
 
     // One envelope for the routes and the worker, and it says what it is.
@@ -500,6 +504,106 @@ describe('data import', () => {
 
     expect(gatedPaths('data_import')).toContain('tests/unit/test_import_preflight.py')
     expect(has('python-packages/koras-import/tests/test_preflight_memory.py')).toBe(true)
+  })
+
+  it('scans the parts the reader reads, and reads only the sheet that was scanned', () => {
+    // IMPORT-DEF-017. The safety pass found a workbook's parts by its own
+    // rules and `openpyxl` finds them by others, so nine different packages
+    // were called safe with their text and cells uncounted and then read in
+    // full. Two halves, and each is worthless alone.
+    //
+    // The shape only. That every such package is refused *before* `openpyxl`
+    // is reached, and that the parts the pass names are the ones `openpyxl`
+    // goes on to use, is asked of the code and of the library --
+    // `test_preflight_package.py` in the engine, which a generated product
+    // runs.
+    const safety = read('python-packages/koras-import/src/koras_import/safety.py')
+    const survey = safety.slice(safety.indexOf('def _survey_xlsx('), safety.indexOf('def survey('))
+    // The pass resolves the package, and scans what that names as what it is.
+    expect(survey).toContain('package = _package(archive, names, limits.max_archive_entries)')
+    expect(survey).toContain('force="worksheet"')
+    expect(survey).toContain('force="sst" if named else None')
+    // Not by a fixed name, and not by the prefix an attribute happens to use.
+    const resolve = safety.slice(safety.indexOf('def _package('), safety.indexOf('def _survey_xlsx('))
+    expect(resolve).toContain('map(part, _WORKBOOK_TYPES)')
+    expect(resolve).toContain('entry.get(f"{_RELATIONSHIPS} id", entry.get("id", ""))')
+    // A cell is a child of a row, whatever it is called.
+    expect(safety).toContain('if self.kind == "worksheet" and (parent == "row" or local == "c"):')
+
+    // The reader's half: the sheet it is about to read is the one the pass
+    // scanned, checked before a row is asked for.
+    const xlsx = read('python-packages/koras-import/src/koras_import/reading_xlsx.py')
+    const check = xlsx.indexOf('!= checked.sheet_part')
+    expect(check).toBeGreaterThan(xlsx.indexOf('load_workbook('))
+    expect(check).toBeLessThan(xlsx.indexOf('sheet.iter_rows('))
+    // And whatever a malformed sheet raises is a refusal, not a traceback.
+    expect(xlsx).toMatch(/except Exception as broken:[^\n]*\n(?:\s*#[^\n]*\n)+\s*raise ReadRefused\(_UNREADABLE\) from broken/)
+
+    // The inspection has no resolution of its own: it reads what the pass named.
+    const inspection = read('python-packages/koras-import/src/koras_import/inspection.py')
+    expect(inspection).toContain('checked.sheet_part, checked.sheet_title, checked.strings_part')
+    expect(inspection).not.toMatch(/_WORKBOOK_RELS|\[Content_Types\]/)
+
+    expect(has('python-packages/koras-import/tests/test_preflight_package.py')).toBe(true)
+  })
+
+  it('inspects a file-s head for the mapping page instead of parsing the file', () => {
+    // GR-352B. The analysis and mapping routes used to hand the whole file to
+    // the readers the dry run uses, inline on the event loop, to keep two
+    // hundred rows of it.
+    //
+    // The shape only, again. That the inspection *agrees* with the readers,
+    // holds none of what it does not show and leaves the loop free is asked
+    // of the code -- `test_inspection.py` in the engine, and
+    // `tests/unit/test_import_inspection.py` and its Linux memory twin in the
+    // product, each of which Generator Integration runs on a generated
+    // product. A test that read only this text would pass over an inspection
+    // that returned the wrong rows.
+    const store = read('services/api/koras_api/core/imports.py')
+    const analyse = store.slice(store.indexOf('def analyse('), store.indexOf('async def analysed('))
+    expect(analyse).toContain('inspect_source(')
+    // Neither reader, and no whole-file decode, anywhere in the analysis.
+    expect(analyse).not.toMatch(/read_workbook\(|[^a-z_.`]decode\(|load_workbook|splitlines/)
+    // The envelope the routes were always given, and no row refusal from it:
+    // the analysis answers `over_ceiling` and the mapping route refuses.
+    expect(analyse).toContain('limits_for(target, rows=False)')
+
+    // The routes await the thread wrapper and never call the synchronous one.
+    expect(store).toContain('return await asyncio.to_thread(analyse, raw, target, fmt, sample=sample)')
+    const router = read('services/api/koras_api/routers/imports.py')
+    expect(router).not.toMatch(/store\.analyse\(/)
+    expect([...router.matchAll(/await store\.analysed\(/g)]).toHaveLength(2)
+    // The mapping route shows nobody a preview and asks for no rows.
+    const mapping = router.slice(router.indexOf('async def set_mapping('))
+    expect(mapping.slice(0, mapping.indexOf('await store.set_mapping('))).toContain('sample=0')
+
+    // The inspection is in the engine, runs the safety pass itself before
+    // anything else, and never opens a workbook through `openpyxl`.
+    const inspection = read('python-packages/koras-import/src/koras_import/inspection.py')
+    const entry = inspection.slice(inspection.indexOf('def inspect_source('))
+    const pass = entry.indexOf('checked = preflight(raw, fmt, limits)')
+    expect(pass).toBeGreaterThan(-1)
+    expect(pass).toBeLessThan(entry.indexOf('_inspect_xlsx('))
+    expect(pass).toBeLessThan(entry.indexOf('_inspect_csv('))
+    const code = inspection.slice(inspection.indexOf('from __future__'))
+    expect(code).not.toMatch(/load_workbook|read_workbook|[^a-z_.]decode\(raw/)
+    // The sample's own budget says what it is.
+    const comment =
+      inspection.slice(0, inspection.indexOf('\nMAX_SAMPLE_CHARACTERS = ')).split('\n\n').pop() ?? ''
+    expect(comment).toContain('#: PROVISIONAL (GR-352')
+
+    // The worker is untouched: it still reads through the store's `_parse`,
+    // and has no inspection of its own. GR-352C.
+    const worker = read('services/worker/koras_worker/tasks/imports.py')
+    expect(worker).not.toMatch(/inspect_source|analysed?\(/)
+
+    for (const path of [
+      'tests/unit/test_import_inspection.py',
+      'tests/unit/test_import_inspection_memory.py',
+    ]) {
+      expect(gatedPaths('data_import')).toContain(path)
+    }
+    expect(has('python-packages/koras-import/tests/test_inspection.py')).toBe(true)
   })
 
   it('hands the writer canonical values whatever the source', () => {
