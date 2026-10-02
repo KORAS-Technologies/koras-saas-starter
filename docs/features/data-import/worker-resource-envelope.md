@@ -1,15 +1,19 @@
 # The worker's resource envelope
 
-> **Status, 2026-10-02: GR-352C and GR-352E are built. GR-352 is open, HIGH,
-> and a release gate.** This document describes the third slice of that gate,
-> the slice that followed from measuring it in the product's own image, and
-> the measurements a decision can be taken from. It is not the decision. The
-> limits it runs inside are the provisional ones of
-> `preflight-safety-envelope.md`, the four numbers it adds are provisional as
-> well, nobody has ratified a memory envelope, and the import framework is not
-> claimed to be safe for production until every GR-352 acceptance criterion
-> has passed. IMPORT-DEF-014 is untouched, so a deployed product still cannot
-> read an import's source from a real bucket.
+> **Status, 2026-10-02: GR-352 is CLOSED, verified, and its NFRs are
+> ratified.** The owner ratified the resource contract on 2026-10-02, after
+> GR-352E merged as `3e73190` and CI, Security and Generator Integration
+> passed on that commit. "The ratified resource contract" below is the
+> contract; the rest of this document is the account of the slices and the
+> measurements it was taken from, left as written. Where a passage below
+> calls a number provisional, says the gate is shut or says a row is resolved
+> locally, it describes the day it was written and the contract section is
+> the correction.
+>
+> **Closing GR-352 does not make imports ready to switch on.** IMPORT-DEF-014
+> is open as of 2026-10-02: a deployed product cannot read an import's source
+> from a real bucket, and no product may activate canonical imports against
+> real object storage until it is fixed and verified.
 
 ## The slices
 
@@ -23,9 +27,186 @@
 There is no GR-352D in the code: it was the measurement, on 2026-10-02, that
 GR-352E answers.
 
-What is left after all four is one decision that is not this repository's:
-the headroom a 512 MB machine must keep, and therefore the limits a product
-is told it supports. OD-22 in `docoris`'s terms.
+What was left after all four was one decision that was not this repository's:
+the limits a product is told it supports. The owner took it on 2026-10-02,
+and the next section is what was ratified.
+
+## The ratified resource contract
+
+Ratified by the owner on 2026-10-02. GR-352A, GR-352B, GR-352C and GR-352E
+together establish it; no value below was changed by the ratification, and
+each is the number the slices were measured against.
+
+**The operational requirement.** "The supported Starter workloads defined by
+the import/resource envelope must complete within the configured 512 MiB
+process allocation without OOM or swap, while preserving bounded concurrency
+through the declared resource gates."
+
+There is no percentage-headroom requirement. The headroom figures in this
+document are measured evidence and not a term of the contract.
+
+### Runtime and concurrency
+
+| Term | Ratified value | Where it is declared |
+|------|----------------|----------------------|
+| Worker memory | 512 MiB | the worker's `fly.toml` template, `memory_mb = 512` |
+| API memory | 512 MiB | the API's `fly.toml` template, `memory_mb = 512` |
+| Heavy-resource slots | 1 per worker process | `HEAVY_SLOTS`, `koras_worker/heavy.py` |
+| Import concurrency | one heavy import per worker process | `IMPORT_SLOTS`, `tasks/imports.py` |
+| General worker jobs | `max_jobs = 10` | `WorkerSettings` |
+| API analysis slots | 2 per API process | `ANALYSIS_SLOTS`, `core/imports.py` |
+
+The heavy gate covers the canonical import, the cross-provider backup, the
+restore and the scheduled CSV, XLSX and PDF delivery. A lightweight job may
+run beside a heavy one: the gate is not a job slot.
+
+A request acquires an analysis slot **before** it fetches or retains its
+import source, so a request that is waiting holds nothing.
+
+### Time budgets
+
+| Term | Value | Standing |
+|------|-------|----------|
+| Streaming import work budget | 600 seconds, `WORK_BUDGET_SECONDS` | Ratified 2026-10-02 |
+| Import job timeout | 900 seconds, in `koras_import/jobs.py` | Existing arq semantics, recorded and not redefined |
+| Ordinary worker job timeout | 300 seconds, `job_timeout` | Existing arq semantics, recorded and not redefined |
+
+Waiting for the heavy gate consumes the queue's timeout for the job that
+waits -- 900 seconds for an import, 300 for a cron job. That is
+IMPORT-GAP-021, which is open as of 2026-10-02.
+
+### Preview and import limits
+
+| Limit | Ratified value |
+|-------|----------------|
+| Retained preview or sample characters | 4 MiB of characters, `MAX_SAMPLE_CHARACTERS` |
+| Source | 64 MiB |
+| XLSX declared uncompressed | 256 MiB |
+| Decoded strings | 64 MiB |
+| Cells | 1,000,000 |
+| Columns | 256 |
+| Archive entries | 4,096 |
+| Target rows | Product-defined; the Starter default is 50,000 |
+
+### Scheduled reporting
+
+A scheduled delivery carries at most 10,000 rows, as CSV, XLSX or PDF:
+`SCHEDULED_DELIVERY_ROW_LIMIT`.
+
+**`EXPORT_ROW_LIMIT = 10,000` is not a universal export maximum.** For an
+interactive export through the API it is the threshold at which the
+foreground export hands over to the background one, and an export past it
+still happens.
+
+### The names in the code
+
+The declarations still say `PROVISIONAL` in their comments, and the default
+limits are still exported as `PROVISIONAL_LIMITS`, as of 2026-10-02. The
+closure was a documentation change and touched no runtime or template file,
+so the wording in the code is one day behind the decision. This section is
+the authority on the standing of each number; renaming is a separate change.
+
+That is behavior-neutral naming and documentation debt. It does not reopen
+GR-352 and it changes no limit: the ratification stands and this document
+is the canonical contract. It is to be cleaned up before the next
+canonical-import activation or release work, so that the code's terminology
+agrees with the ratified contract. F31 in `docs/FOLLOW_UPS.md` carries the
+box.
+
+### Worker evidence
+
+GR-352E, in the product's own worker image, under a 512 MiB limit with no
+swap. Two local runs of each pair; the table further down has every figure.
+
+| Scenario | cgroup peak, MiB, run 1 / run 2 |
+|----------|--------------------------------:|
+| Import and backup | 301 / 303 |
+| Import and restore | 302 / 303 |
+| Import and scheduled XLSX | 286 / 287 |
+| Import and scheduled PDF | 286 / 287 |
+
+Nothing was killed, no swap was used, and a job enqueued after each run was
+answered by a healthy worker.
+
+**Before GR-352E, import and backup together peaked at 512 and 499 MiB** --
+the limit itself on one run. That is why unrestricted overlap of heavy jobs
+was rejected and the gate exists.
+
+The capped memory measurement is local. Remote CI verifies that heavy jobs
+exclude one another and does not repeat the measurement under a memory limit.
+
+### API evidence
+
+The canonical GR-352 measurement of the API, recorded here on 2026-10-02
+because the final review found it absent from committed documentation.
+
+**What was measured, and where the evidence is.** The repository and
+runtime under measurement was Starter commit
+`cf17a6e593bf37018cc48ad110215e414d9b1c52`: the API was generated from that
+commit and run. The measurement harness and its raw output were session
+scratch evidence and are not committed repository artifacts, so the figures
+below are the record. The measurement was taken locally and by hand; no CI
+run on that commit produced it.
+
+A real generated API process, in a 512 MiB cgroup with no swap, given two
+near-limit analyses at once and then a third.
+
+| Measured | Value |
+|----------|------:|
+| Idle resident set | about 140 to 142 MiB |
+| Peak resident set, two analyses | about 254.3 MiB |
+| cgroup peak | about 250.8 MiB |
+| cgroup headroom left | about 261.2 MiB, 51% |
+
+- The CSV analysis and the XLSX analysis both completed, and their protected
+  sections overlapped.
+- A third request waited while both slots were held, and its source was
+  fetched only after a slot became available.
+- No OOM and no swap. The event loop stayed responsive, health was good
+  after the run, and the slots returned to 2.
+
+**Supplementary, and not contract evidence.** A second measurement with a
+boto3-shaped source peaked at about 280.5 MiB for two analyses and about
+296.1 MiB with the third queued. It is recorded for whoever fixes
+IMPORT-DEF-014 and does not replace the figures above.
+
+### What the closure does not authorise
+
+GR-352 closing does not enable imports in `docoris` or anywhere else. The
+order, as of 2026-10-02:
+
+1. Close the GR-352 resource envelope. Done, 2026-10-02.
+2. Fix IMPORT-DEF-014.
+3. Repeat the capped source-fetch measurement, because that fix changes how
+   a source is fetched.
+4. Align and verify `docoris` against the updated Starter framework.
+5. Resume OD-12 scanner work, once its own prerequisites are met.
+
+Steps 2 to 5 are not started.
+
+### What stays open
+
+| Row | Standing, 2026-10-02 |
+|-----|----------------------|
+| IMPORT-DEF-014 | Open. An activation constraint: no product may activate canonical imports against real object storage until it is fixed and verified, and its fix repeats the 512 MiB capped measurement |
+| IMPORT-GAP-016 | Open, outside the canonical import envelope. AI knowledge workbook ingestion is a separate resource risk |
+| IMPORT-GAP-017 | Open. The 4 MiB budget is ratified; a shortened preview is still not indicated in the response or on the page |
+| IMPORT-GAP-018 | Open. The double workbook walk is a latency optimisation |
+| IMPORT-GAP-021 | Open. Waiting for the heavy gate consumes the existing arq timeout; no queue or topology change is authorised |
+| IMPORT-GAP-022 | Open, product-specific. The envelope excludes the cost of a product's validator, matcher and writer; `docoris` measures its own before its envelope is ratified |
+| IMPORT-GAP-024 | Open. The CSV widest-character costing stays conservative on purpose |
+| IMPORT-GAP-026 | Open, outside GR-352. The API's background export is unbounded and unmeasured |
+
+### A difference in test counts, explained
+
+The generator suite reported 2,384 tests locally and 2,376 remotely on the
+closing verification. The eight are four gitignored `__pycache__/*.pyc`
+files under the shared template on the local machine:
+`shared-template-parity.test.ts` makes two tests for every file it
+discovers. It is a difference in what each environment has on disk, and no
+tracked file is missing remote coverage. No test was changed for it;
+excluding ignored and bytecode files from parity discovery is a possible
+hygiene change for later.
 
 ## What GR-352C found
 
@@ -321,7 +502,8 @@ once, one each; ten machines read ten. Nothing here says how many imports a
 product runs, only how many one process holds in memory, which is the
 question a 512 MiB machine asks. As GR-352C left it, it covered imports
 alone, and what the other nine job slots were doing beside one was
-IMPORT-GAP-023 -- which GR-352E measured and resolved locally on 2026-10-02.
+IMPORT-GAP-023 -- which GR-352E measured and resolved on 2026-10-02, and
+which closed that day once the merge commit had passed remotely.
 
 ### Memory handed back
 
@@ -536,6 +718,10 @@ should be so that it is, is the decision this document is evidence for.
 **And it was a measurement of the source tree.** The harness mounted the
 repository into the container. The third term, and the product's own image,
 are the next section.
+
+**340 MiB is not the final figure.** It is GR-352C's, from the source tree
+and with a defect inflating it. The evidence the contract was ratified on is
+GR-352E's, from the product's own image: 286 to 303 MiB.
 
 ## GR-352E: what else is in the worker
 
@@ -756,16 +942,31 @@ decision was last shown, by the 69 MiB a defect had added to them.
   hands freed memory back before it lets go of the gate; nothing in the API
   does the same. An observation to follow up, recorded on 2026-10-02 with no
   figure, and not a finding against any limit.
-- **`HEAVY_SLOTS` is the implementer's number**, marked provisional where it
-  is declared, like the three before it. The architecture was approved by the
-  owner on 2026-10-02; the number stays provisional until remote validation
-  and the NFR ratification.
+- **`HEAVY_SLOTS` was the implementer's number and is ratified**, by the
+  owner on 2026-10-02, at 1. Its declaration still carries the word
+  provisional as of 2026-10-02, for the reason "The names in the code" gives.
 
-**Status of this slice, 2026-10-02: resolved locally, in an uncommitted
-tree.** IMPORT-DEF-020, IMPORT-GAP-023 and IMPORT-GAP-025 are recorded as
-locally resolved, pending committed and remote verification, and are not
-closed until Generator Integration has built the image and run these suites
-on the pushed commit. GR-352 is HIGH, open and a release gate.
+**Status of this slice, 2026-10-02: closed and remotely verified.** GR-352E
+merged as `3e73190`, and CI `37044176366`, Security `37044176279` and
+Generator Integration `37044176367` passed on that commit at the first
+attempt.
+
+| Row | Status | Remote evidence |
+|-----|--------|-----------------|
+| IMPORT-DEF-020 | Closed, remotely verified | The worker-image tests ran against the real generated image on the merge commit |
+| IMPORT-GAP-023 | Closed, remotely verified | The heavy-resource gate's exclusion suites; the capped memory evidence is local |
+| IMPORT-GAP-025 | Closed, remotely verified | The 10,000 and 10,001 row boundaries in CSV, XLSX and PDF |
+
+This paragraph said "resolved locally, in an uncommitted tree" until the
+closure, which was true when GR-352E was returned for review.
+
+**The closure itself is documentation-only, 2026-10-02.** It changes no
+runtime or template file. Generator Integration is path-filtered, so the
+closure commit is not expected to trigger it, and that is acceptable:
+Generator Integration is inherited implementation evidence from the
+validated runtime baseline, `3e731901332a6986df1b37ae91504d21e699edc2`,
+where the three runs above succeeded at the first attempt; a docs-only
+closure does not retrigger the path-filtered workflow.
 
 
 ## IMPORT-GAP-020, part by part
@@ -866,9 +1067,10 @@ failure exactly as it did.
 called on the worker's reading thread and not on its event loop. It is a
 synchronous function of one row's values and was never anything else.
 
-## The provisional limits
+## The limits
 
-None was changed and no change is requested.
+Ratified on 2026-10-02 at the values below; none was changed. This section
+was headed "The provisional limits" until then.
 
 | Limit | Value | What GR-352C measured against it |
 |-------|-------|----------------------------------|
@@ -881,7 +1083,8 @@ None was changed and no change is requested.
 | API preview characters | 4 MiB | Not exercised by this slice |
 | Rows | the target's | About 265 bytes each in a dry run's index |
 
-Three things for whoever ratifies them, none of which is acted on here:
+Four things that were put to whoever ratified them. The ratification of
+2026-10-02 kept every number and acted on none of the four:
 
 - **The CSV text budget is pessimistic now.** The safety pass costs a CSV as
   one string at the width of its widest character, because that is what the
@@ -889,11 +1092,12 @@ Three things for whoever ratifies them, none of which is acted on here:
   string at its own width. One emoji still quarters the largest CSV that is
   accepted. `preflight-safety-envelope.md` said this term should become a sum
   over lines when the worker's reader streams. It can; changing it accepts
-  files that are refused as of 2026-10-02, which is a decision.
-- **Three numbers were added, and they are the implementer's.**
+  files that are refused as of 2026-10-02, which is a decision. The decision
+  of 2026-10-02 was to keep it conservative: IMPORT-GAP-024.
+- **Three numbers were added by the implementer, and all are ratified.**
   `IMPORT_SLOTS` (1), `WORK_BUDGET_SECONDS` (600) and `ANALYSIS_SLOTS` (2).
-  Each is marked provisional where it is declared. GR-352E added a fourth,
-  `HEAVY_SLOTS` (1), and changed none of the three.
+  GR-352E added a fourth, `HEAVY_SLOTS` (1), and changed none of the three;
+  it is ratified with them.
 - **One number was reused and not added.** A scheduled delivery is bounded
   by `SCHEDULED_DELIVERY_ROW_LIMIT`, which is derived from `EXPORT_ROW_LIMIT`
   (10,000). For a delivery it is a maximum; for the export route the same
@@ -902,35 +1106,35 @@ Three things for whoever ratifies them, none of which is acted on here:
 
 ## Where this stands, 2026-10-02
 
-- **These are measurements and not a contract.** They are evidence for the
-  NFR decision. No number in this document is a supported limit.
-- **512 MiB is the memory that was tested**, because it is what both
-  `fly.toml` templates declare. Nothing was tested at another size and no
-  change of size is asked for.
-- **The largest accepted import peaked at 268 MiB in a process of its own and
-  335 MiB in the product's worker**, and the worker's peak over the whole
-  capped run was 340 MiB, with no swap and nothing killed.
-- **Three controls were approved by the owner on 2026-10-02 as provisional
-  guardrails**: one import to a worker process, 600 seconds of reading, two
-  sources in hand in an API process. They stand beside the four limits of
-  GR-352A, which are provisional as well. None is a ratified value, and
-  ratifying them is OD-22's, after remote validation.
-- **Of the four gaps GR-352C opened, three are open**: IMPORT-GAP-021,
-  IMPORT-GAP-022 and IMPORT-GAP-024, in the table below. IMPORT-GAP-023 was
-  measured by GR-352E the same day and is resolved locally, pending committed
-  and remote verification; GR-352E also opened IMPORT-GAP-026.
-  IMPORT-GAP-018 is open as it was.
-- **The import's own peak is lower than this document first said.** In the
+- **GR-352 is closed, verified, and its NFRs are ratified**, on 2026-10-02.
+  "The ratified resource contract" above is the contract.
+- **The measurements are the evidence and the contract is the section that
+  cites them.** The supported limits are the ones that section lists.
+- **512 MiB is the memory that was tested and the memory that is ratified**,
+  for the worker and for the API, because it is what both `fly.toml`
+  templates declare. Nothing was tested at another size.
+- **The worker's 340 MiB is GR-352C's figure and not the final one.** In the
   product's own image, with the defect that inflated it removed, the worst
   accepted import peaks at 286 to 301 MiB of the cgroup's 512, and no pair of
   heavy jobs was observed above 303.
-- **IMPORT-DEF-014 is deliberately unfixed.** A deployed product cannot read
-  an import's source from a real bucket, and that is what keeps every path in
-  this document unreachable outside a test until the envelope is ratified.
-- **`docoris` is not aligned with any of it.** It carries the framework by
-  hand and has received none of the three slices. Its GR-352 is open, and
-  closing its OD-12 stays blocked on that.
-- **GR-352 is open, HIGH, and a release gate.**
+- **The seven limits and four controls are ratified at the values they were
+  built with**: the limits of GR-352A, the 4 MiB sample budget, one heavy
+  section and one import to a worker process, 600 seconds of reading, and
+  two sources in hand in an API process.
+- **Of the four gaps GR-352C opened, three are open as of 2026-10-02**:
+  IMPORT-GAP-021, IMPORT-GAP-022 and IMPORT-GAP-024. IMPORT-GAP-023 is
+  closed and remotely verified. GR-352E opened IMPORT-GAP-026, which is open
+  and outside GR-352. IMPORT-GAP-018 is open as it was.
+- **IMPORT-DEF-014 is open and is an activation constraint.** A deployed
+  product cannot read an import's source from a real bucket as of
+  2026-10-02. It is a defect in reading storage and not a reason to hold the
+  finished resource envelope open; no product may activate canonical imports
+  against real object storage until it is fixed and verified, and its fix
+  repeats the capped measurement.
+- **`docoris` is not aligned with any of it** as of 2026-10-02. It carries
+  the framework by hand and has received none of the slices. The Starter's
+  closure does not enable its imports and does not unblock its OD-12: the
+  order is in "What the closure does not authorise".
 
 ## How it is proved
 
@@ -998,11 +1202,11 @@ Three things for whoever ratifies them, none of which is acted on here:
 
 | Left | Where it is tracked |
 |------|---------------------|
-| The NFR decision: headroom, and so the ratified limits; then this measurement repeated against them | IMPORT-DEF-013; F31; OD-22 in `docoris` |
-| `source_bytes` awaits a synchronous `S3ObjectStore.get`, and is what keeps all of this unreachable in a deployed product | IMPORT-DEF-014. Deliberately not fixed, 2026-10-02 |
+| The NFR decision | **Taken 2026-10-02.** The limits were ratified as they stood, so the measurement already taken is the one against the ratified values. IMPORT-DEF-013, closed |
+| `source_bytes` awaits a synchronous `S3ObjectStore.get`, and is what keeps all of this unreachable in a deployed product | IMPORT-DEF-014. Open as of 2026-10-02, and the activation constraint |
 | A waiting import's time counts against its queue timeout; imports have no queue of their own | IMPORT-GAP-021 |
 | A product's validator, matcher and writer are outside the budget and outside the measurement | IMPORT-GAP-022 |
-| What else the worker holds while an import runs | IMPORT-GAP-023. Resolved locally by GR-352E on 2026-10-02, pending committed and remote verification |
+| What else the worker holds while an import runs | IMPORT-GAP-023. Closed 2026-10-02 by GR-352E, remotely verified |
 | A heavy job that waits for the gate is timed by the queue while it waits | IMPORT-GAP-021, widened 2026-10-02 |
 | The rows of a report are in hand before they can be counted; the API's background export has no row maximum, no gate and no measured envelope | IMPORT-GAP-026 |
 | A backup's copy holds the worker's event loop for as long as one object takes | This document, "What GR-352E leaves". Not changed, 2026-10-02 |
@@ -1010,7 +1214,7 @@ Three things for whoever ratifies them, none of which is acted on here:
 | The CSV text budget costs a string nothing builds; the source is held whole | IMPORT-GAP-024 |
 | A workbook is walked twice, by the safety pass and then the reader | IMPORT-GAP-018 |
 | `read_workbook` is still exported and still builds everything measured here; the AI knowledge reader calls `openpyxl` with no safety pass | IMPORT-GAP-016 |
-| The three numbers this slice added, and the one GR-352E added, are the implementer's | With the NFR decision |
+| The three numbers this slice added, and the one GR-352E added, were the implementer's | Ratified 2026-10-02. The word provisional in their declarations is a later, separate change |
 | No live run: nothing has imported a file through a deployed worker | F31 |
 
 ## Generated products
@@ -1049,6 +1253,7 @@ A generated product has no upstream. The factory pushes to nothing.
   copy of each has one fewer copy than it had.
 - **A product without `data_import`** is unaffected: every file above is
   inside the capability's gate.
-- **`docoris`** has changed nothing for this, and its GR-352 stays open until
-  the starter's does.
+- **`docoris`** has changed nothing for this as of 2026-10-02. The Starter's
+  GR-352 closed that day; `docoris`'s own row is its own repository's to
+  change, after IMPORT-DEF-014 and its alignment.
 

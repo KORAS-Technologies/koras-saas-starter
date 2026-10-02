@@ -1,5 +1,13 @@
 # The bounded inspection
 
+> **Status, 2026-10-02: GR-352 is CLOSED, verified, and its NFRs are
+> ratified.** The sample budget of 4 MiB of characters and the two analysis
+> slots to an API process were ratified by the owner on 2026-10-02, with the
+> limits this slice runs inside. `worker-resource-envelope.md` here holds the
+> contract and the measurement of the API under a 512 MiB limit. The two
+> notes below are the status as each slice left it, kept as written.
+> IMPORT-DEF-014 is open as of 2026-10-02 and is an activation constraint.
+>
 > **Status, 2026-10-01: GR-352B is built. GR-352 is open, and HIGH.** This
 > document describes the second slice of a release gate, not its resolution.
 > The limits it runs inside are the provisional ones of
@@ -123,13 +131,13 @@ than choosing one.
 ### The sample's budget
 
 **The analysis returns up to 200 preview rows.** Two hundred is the most a
-preview holds, not a number it always reaches. A provisional budget of 4 MiB
+preview holds, not a number it always reaches. A budget of 4 MiB
 of preview characters can stop the sample earlier when a file's first rows are
 unusually large. A shorter preview does not prevent validation or the commit,
 and it changes nothing about how the worker reads the source: the dry run and
 the commit read every row through the canonical readers whatever the preview
-showed. The budget is a provisional safety guardrail, approved by the owner on
-2026-10-01, pending GR-352C's measurements and OD-22/NFR ratification.
+showed. The budget was approved by the owner on 2026-10-01 as a provisional
+safety guardrail and ratified at this value on 2026-10-02.
 
 Two hundred rows is a contract about rows and says nothing about bytes. One
 32,000-character string named by every cell of two hundred hundred-column
@@ -154,10 +162,11 @@ twenty thousand a row -- gets a shorter preview than it did.
 **What was decided, on 2026-10-01.** The budget stays, at this value, as a
 provisional guardrail. An otherwise safe import is not refused to guarantee
 exactly two hundred rows, and the budget is not raised to preserve them. The
-final value waits on GR-352C's measurements and on OD-22/NFR ratification.
+value was ratified on 2026-10-02.
 The response has no field for `sample_cut` and none was added -- no existing
 field carries it, and a new one is a contract decision of its own -- so the
-store logs a line with the counts. IMPORT-GAP-017.
+store logs a line with the counts. That missing indication is what
+IMPORT-GAP-017 keeps open as of 2026-10-02.
 
 ## The CSV inspection
 
@@ -459,15 +468,15 @@ about its memory has changed.
 
 | Left | Where it is tracked |
 |------|---------------------|
-| The NFR decision: headroom, concurrency, the ratified numbers | IMPORT-DEF-013; F31 |
-| The worker reads every accepted file whole, twice, with no bound on how many at once | **Closed 2026-10-02** by GR-352C: a stream, and one import to a process. It is read twice as it was -- once to check, once to commit. IMPORT-DEF-013 for the decision |
+| The NFR decision: concurrency, the ratified numbers | **Taken 2026-10-02**; IMPORT-DEF-013, closed and ratified. `worker-resource-envelope.md` here |
+| The worker reads every accepted file whole, twice, with no bound on how many at once | **Closed 2026-10-02** by GR-352C: a stream, and one import to a process. It is read twice as it was -- once to check, once to commit |
 | `clean_cell` and the many-column cost in the dry run and the commit | IMPORT-DEF-015, closed 2026-10-02 |
-| `source_bytes` awaits a synchronous `S3ObjectStore.get` | IMPORT-DEF-014 |
+| `source_bytes` awaits a synchronous `S3ObjectStore.get` | IMPORT-DEF-014, open as of 2026-10-02, and the activation constraint |
 | A string the pass costs once is copied for every cell that names it, in the worker | IMPORT-DEF-016, closed 2026-10-02 |
 | What the reader builds from a sheet that is neither a string nor a cell: merged ranges, links, validations | IMPORT-GAP-020, measured and closed 2026-10-02 |
-| The sample's character budget is the implementer's number | IMPORT-GAP-017 |
+| The sample's character budget was the implementer's number | Ratified at 4 MiB on 2026-10-02. IMPORT-GAP-017 stays open for the missing indication of a shortened preview |
 | A workbook is walked twice by the routes: once by the safety pass, once by the inspection | IMPORT-GAP-018; the worker's as well since 2026-10-02 |
-| Nothing bounds how many analyses run at once, each holding its source | IMPORT-GAP-019, closed 2026-10-02 with a provisional number: two |
+| Nothing bounds how many analyses run at once, each holding its source | IMPORT-GAP-019, closed 2026-10-02: two, ratified the same day |
 | The workbook parts `openpyxl` loads eagerly, in the worker | IMPORT-GAP-015, closed 2026-10-02 |
 | The AI knowledge reader opens workbooks with no safety pass | IMPORT-GAP-016 |
 
@@ -486,5 +495,6 @@ A generated product has no upstream. The factory pushes to nothing.
   environment variable and no page.
 - **A product without `data_import`** is unaffected: every file above is inside
   the capability's gate.
-- **`docoris`** has changed nothing for this, and its GR-352 stays open until
-  the starter's does.
+- **`docoris`** has changed nothing for this as of 2026-10-02. The Starter's
+  GR-352 closed that day; `docoris`'s own row is that repository's to change,
+  after IMPORT-DEF-014 and its alignment.

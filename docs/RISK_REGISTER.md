@@ -960,6 +960,23 @@ over: by this, and by F2b turning that job off by default. Only the second
 blocker is real, and it is a deliberate default rather than an impossibility. A
 criterion phrased as "the generated project's CI passes" is measurable again.
 
+### Corrected 2026-10-02 — this repository is private, and its workflows run
+
+"Resolved 2026-08-25" above says the repository is public and that this is
+why its jobs execute, and the cause table reads as though a private
+repository cannot run them. Both were true on the day. Neither is true on
+2026-10-02: the repository is private, and CI `37044176366`, Security
+`37044176279` and Generator Integration `37044176367` all succeeded at the
+first attempt on `3e73190`.
+
+What blocked a run was the billing failure and never the visibility by
+itself: a private repository consumes paid minutes, and the payment was
+failing. Billing was resolved on 2026-08-30, as the section above records for
+products, and the same resolution is what lets this repository run while
+private. The risk is unchanged in kind -- an Actions billing failure would
+re-block every run -- and it is no longer true that making the repository
+private does.
+
 **What does not change.** The trade below is intact: products are private by
 design, private repositories consume paid minutes, and an Actions billing
 failure re-blocks every run. This reopens rather than being rediscovered — which

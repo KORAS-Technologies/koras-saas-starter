@@ -69,9 +69,9 @@ All planning and reference documents live in `docs/`, matching
 | `docs/platform/gap-defect-register.md` | The 45 findings that audit produced, by category, with IDs |
 | `docs/platform/execution/` | One manifest per category, each executable without repeating the audit |
 | `docs/features/data-import/` | Data import as built: Phase 1 stops at the dry run, and the three plan items it deliberately left |
-| `docs/features/data-import/preflight-safety-envelope.md` | The import safety pass: what runs before either reader, its provisional limits, and what GR-352 still needs |
+| `docs/features/data-import/preflight-safety-envelope.md` | The import safety pass: what runs before either reader, and its limits, ratified 2026-10-02 |
 | `docs/features/data-import/bounded-inspection.md` | How the analysis and mapping routes read a file's head without parsing the file, what was measured, and where the inspection is deliberately not the reader |
-| `docs/features/data-import/worker-resource-envelope.md` | What a dry run and a commit cost the worker, measured before and after GR-352C and under a 512 MiB limit, and what is left for the NFR decision |
+| `docs/features/data-import/worker-resource-envelope.md` | The import resource contract ratified when GR-352 closed on 2026-10-02, with the worker and API measurements under a 512 MiB limit it was taken from |
 | `docs/adr/0009-import-runs-are-not-a-third-export.md` | Why an import run has its own table rather than a third copy of the export pattern |
 | `docs/ENGINEERING_FRAMEWORK.md` | The product's multi-agent framework: one vocabulary, risk by boundary, gate reuse, bounded loops |
 | `docs/adr/0010-koras-engineering-framework-v2-1.md` | The decision record for V2.1 of that framework |
@@ -711,8 +711,32 @@ private PostgreSQL 17; and the whole browser suite with the fixture target,
 which found three defects in the page and the menu that were fixed the same
 day. Manual cases needing an upload or Excel are not executed.
 
-**GR-352 is open, HIGH, and a release gate — and its first slice shipped on
-2026-10-01.** The import framework accepted files that took a worker to
+**GR-352 is closed: verified, and its NFRs ratified by the owner, on
+2026-10-02.** The paragraphs after this one are the account of its slices as
+each was built, and where one says provisional or that the gate is shut it
+is describing its own day. What was ratified, unchanged from what was built:
+512 MiB for the worker and for the API; one heavy section to a worker
+process, shared by an import, a cross-provider backup, a restore and a
+scheduled delivery, with `max_jobs` still ten; two analyses in hand in an API
+process; 600 seconds of reading; a 4 MiB sample; the seven import limits; and
+a scheduled delivery of at most 10,000 rows. The requirement is that the
+supported Starter workloads complete inside that allocation without OOM or
+swap -- there is no percentage-headroom term.
+`docs/features/data-import/worker-resource-envelope.md` holds the contract
+and both measurements: the worker beside each other heavy job at 286 to 303
+MiB, and the API under two near-limit analyses at about 254.
+
+**Two things about the closure are worth carrying.** It does not switch
+imports on anywhere: IMPORT-DEF-014 is open as of 2026-10-02, no product may
+activate canonical imports against real object storage until it is fixed and
+verified, and the order after it is the capped measurement repeated, then
+`docoris`'s alignment, and only then OD-12. And `EXPORT_ROW_LIMIT` is not a
+universal export maximum: for an interactive export it is where the
+foreground hands over to the background, and only a scheduled delivery is
+refused past it.
+
+**GR-352 was opened HIGH and as a release gate, and its first slice shipped
+on 2026-10-01.** The import framework accepted files that took a worker to
 1.4 GiB against the 512 MB it is deployed with: `openpyxl` builds a workbook's
 whole shared-string table on load, the CSV path decoded the whole file into one
 string, and CPython stores a string at the width of its widest character, so
@@ -817,6 +841,9 @@ a 0.6 MiB workbook. That is evidence for the NFR decision and not the
 decision: the limits it ran inside are the provisional ones, and three more
 numbers were added that are provisional too -- one import to a worker
 process, 600 seconds of reading, two sources in hand in an API process.
+340 MiB is not the final figure: it was measured from the source tree with a
+defect inflating it, and GR-352E's, in the product's own image, is 286 to
+303. All of those numbers were ratified on 2026-10-02.
 
 **Three things about it are worth carrying.** `read_workbook` and `decode` are
 still in the package and nothing in the store calls them: they say what a
@@ -832,7 +859,24 @@ used a read that never ends, so removing the budget held the suite open
 instead of failing it.
 
 **IMPORT-DEF-014 is deliberately unfixed as of 2026-10-02**, and is the only
-thing between a deployed product and all of the above.
+thing between a deployed product and all of the above. Since the closure it
+is the next step rather than the one to hold back, and an activation
+constraint until it is done.
+
+**GR-352E followed the same day, from measuring the worker in the product's
+own image.** An import beside a cross-provider backup reached the 512 MiB
+limit, so the four heavy jobs share one gate now and the pairs peak at the
+import's own figure. Running the image rather than the tree also found
+IMPORT-DEF-020: the worker's image lacked a module the audit sink imported,
+so a deployed worker recorded every dry run as a failed job over a run that
+said `validated`, with every suite green because every suite runs where the
+whole tree is on the path.
+
+**PR #24 and PR #27 were both merged early on 2026-10-02** -- before the
+owner's authorisation and before their checks had finished. Both passed
+afterwards. `develop` has no branch protection, and F32 in `FOLLOW_UPS.md` is
+the recommendation, with the one thing to do first: Generator Integration is
+path-filtered and cannot be a required check as it stands.
 
 **Generating that product found IMPORT-DEF-010**: SQLAlchemy 2.1 resolved and
 no longer installs `greenlet`, so a fresh product's unit suite could not be
@@ -1345,12 +1389,14 @@ Twice is a pattern, and the pattern is that a sentence about a live system
 decays the moment it is written. That is R-042 on the file every session reads
 first.
 
-**Last validated baseline: 2026-09-29, commit `090dfa9`** — CI, Security and
-Generator Integration all green at attempt 1 on the pushed commit itself
-(runs 36640086463, 36640086378 and 36640086477). That is a status, not a
+**Last validated baseline: 2026-10-02, commit
+`3e731901332a6986df1b37ae91504d21e699edc2`** — CI, Security and Generator
+Integration all green at attempt 1 on the pushed commit itself (runs
+37044176366, 37044176279 and 37044176367). That is a status, not a
 capability: check the branch you are on rather than inheriting this line, for
-the reason the paragraph above gives twice. The previous baseline was
-2026-09-21, commit `62780bc`, the same three green.
+the reason the paragraph above gives twice. The previous baselines were
+2026-09-29, commit `090dfa9` (runs 36640086463, 36640086378 and 36640086477),
+and 2026-09-21, commit `62780bc`, the same three green each time.
 
 **The post-G7 hardened baseline is `62780bc`.** It supersedes `7199f85` as the
 current framework baseline; `7199f85` remains the historical G7 R2 accepted
@@ -1442,9 +1488,14 @@ Caveats when reading the roadmap:
 - **The workflows now run** (resolved 2026-08-25). They had zero recorded runs
   across 85+ commits; the cause was Actions billing on a private repository,
   and the repository being public is what makes minutes free. Jobs are observed
-  starting and succeeding. **Making the repository private again re-blocks
-  every run** and returns each CI-based criterion to unmeasurable — see R-030,
-  which reopens rather than being rediscovered.
+  starting and succeeding. This said until 2026-10-02 that making the
+  repository private again re-blocks every run. **The repository is private
+  as of 2026-10-02 and its workflows run** — the three runs of the validated
+  baseline above are the evidence. What blocked a run was the billing
+  failure, which was resolved on 2026-08-30, and never the visibility by
+  itself. An Actions billing failure would re-block every run and return each
+  CI-based criterion to unmeasurable — see R-030, which reopens rather than
+  being rediscovered.
 - The roadmap does not cover R-020 through R-027 or the OIDC sign-in work.
   Roughly twenty commits of deployment and authentication work sit outside the
   phase structure, recorded only in `docs/RISK_REGISTER.md`. Nothing in the plan has

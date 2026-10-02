@@ -45,7 +45,8 @@ recommendation rather than a record — revise it, do not preserve it.
 | 8 | **F22 — Files** | Six items, each waiting on a real trigger rather than on time: multipart uploads (a file over 5 GB), an orphan sweep, the `customer-owned` and `azure-blob` policies, a real upload in CI, a foreign bucket's origin in the browser policy, and quota by period. | ~1 day per item |
 | 9 | **F25 — reporting** | Three items, none of which blocks a product registering reports today: `reporting.api` enforcement becomes real with the first machine caller, pre-aggregation when a table outgrows a range scan, and report names in the customer's language when somebody asks for one. | ~1 day per item |
 | 10 | **F30 — Docoris data import alignment with the starter** | Docoris carries its own import (E24-F01-S01) with no analysis step and a mapping form a person types headings into, so matching CSV or XLSX headings prefill nothing there, however well they match. Opened 2026-09-29; the starter's framework is complete and documented, and the next move is a comparison and a migration path in the docoris repository, not a third implementation. | ~1 day to compare, the migration unknown |
-| 11 | **F31 — GR-352, the import memory envelope** — *opened 2026-10-01; slices A and B built the same day, slice C on 2026-10-02* | **A release gate rather than a queue position**, and placed last only because nobody has ordered it: the import framework accepted files that took a worker to 1.4 GiB against 512 MB. A safety pass refuses the measured worst cases before they are loaded, the two API routes read a head, and since 2026-10-02 the worker reads rows as a stream, one import to a process -- all of it under limits that are provisional. What is left is an NFR decision this repository cannot take, and the measurement repeated against whatever it ratifies | One decision by Platform/NFR architecture; then a measurement, and IMPORT-DEF-014 |
+| 11 | **F31 — GR-352, the import memory envelope** — *opened 2026-10-01; slices A and B built the same day, slices C and E on 2026-10-02; **GR-352 closed 2026-10-02, verified, its NFRs ratified by the owner*** | **The resource envelope is closed and what is left is an activation constraint.** The import framework accepted files that took a worker to 1.4 GiB against 512 MB. A safety pass refuses the measured worst cases before they are loaded, the two API routes read a head, the worker reads rows as a stream, and one gate holds an import, a backup, a restore and a scheduled delivery to one at a time in a process -- at limits the owner ratified on 2026-10-02. **IMPORT-DEF-014 is open as of 2026-10-02**: no product may activate canonical imports against real object storage until it is fixed and verified, and its fix repeats the 512 MiB capped measurement. Closing GR-352 does not enable imports in `docoris` | IMPORT-DEF-014, then the repeated measurement, then `docoris`'s alignment |
+| 12 | **F32 — `develop` is not protected against an early merge** — *opened 2026-10-02* | Two pull requests in one day, #24 and #27, were merged before their owner's authorisation and before their checks had finished. Both passed afterwards. Nothing in the repository's settings would have stopped either, and nothing was changed here: the entry records the recommendation and the one thing to do first, which is that Generator Integration is path-filtered and cannot be made a required check as it stands | ~1h in repository settings, after one workflow change |
 
 **F21 and F23 do not contend with the top row.** They are a person at a dashboard and two ZITADEL writes per instance; nothing in either is code, so an order that reads as a queue is misleading for those two. Run them whenever the dashboard is open.
 
@@ -2632,7 +2633,32 @@ starter-range migrations stop at `00028`), so the framework arrives with
       the page's own sentence says so and the screenshot shows it being
       missed.
 
-### F31 — GR-352: the import memory envelope — opened 2026-10-01
+### F31 — GR-352: the import memory envelope — opened 2026-10-01, GR-352 closed 2026-10-02
+
+**GR-352 is closed, verified, and its NFRs are ratified, as of 2026-10-02.**
+The owner ratified the resource contract after GR-352E merged as `3e73190`
+and CI `37044176366`, Security `37044176279` and Generator Integration
+`37044176367` passed on that commit at the first attempt.
+`docs/features/data-import/worker-resource-envelope.md` holds the contract
+and the evidence. This entry stays open for what the closure does not cover,
+and the first of those is IMPORT-DEF-014.
+
+**The closure is documentation-only.** It changes no runtime or template
+file, and Generator Integration is path-filtered, so the closure commit is
+not expected to trigger it. Generator Integration is inherited
+implementation evidence from the validated runtime baseline,
+`3e731901332a6986df1b37ae91504d21e699edc2`; a docs-only closure does not
+retrigger the path-filtered workflow.
+
+**What the closure does not authorise.** It does not enable imports in
+`docoris` or in any other product. The order, none of it started as of
+2026-10-02: fix IMPORT-DEF-014; repeat the capped source-fetch measurement;
+align and verify `docoris` against the updated Starter framework; and resume
+OD-12 scanner work only once its own prerequisites are met.
+
+The paragraphs and boxes below are the account as the slices were built.
+Where one says provisional, or that the gate is shut, it is describing its
+own day.
 
 **What was found.** `docoris` raised GR-352 on 2026-10-01, from the final
 acceptance of its move onto this framework: the limits it took unchanged from
@@ -2644,21 +2670,31 @@ upload at 1,458. IMPORT-DEF-013 in `docs/platform/gap-defect-register.md` is the
 row; `docs/features/data-import/preflight-safety-envelope.md` is the
 description.
 
-**It is a release gate, and not this repository's alone to open.** In `docoris`
+**It was a release gate, and not this repository's alone to open.** In `docoris`
 it blocks closing OD-12, registering a scanner that lets an import file become
 `clean`, and post-scan import processing in any environment. Nothing here
-should be read as lifting that.
+should be read as lifting that, and the Starter's closure on 2026-10-02 does
+not lift it either: `docoris`'s own row is its own repository's to change.
 
-**Why it is here and not finished.** The remedy was cut into three slices so
-that each could be reviewed. All three are built as of 2026-10-02, and what
-is left is the decision none of them could take:
+**Why it was here and not finished.** The remedy was cut into slices so
+that each could be reviewed -- three, and then GR-352E from measuring the
+third. All were built by 2026-10-02, and what was left was the decision none
+of them could take, which the owner took that day:
 
 - [x] **GR-352A — a safety pass before either reader.** Built 2026-10-01.
       Streams the file, costs decoded text at its real width, counts cells and
       columns, and refuses before `openpyxl` or a whole-file decode is reached.
       Verified on a generated product, mutation-checked six ways, and its own
       memory measured on Linux at under 5 MiB on inputs that decode to 256.
-- [ ] **The NFR decision.** The headroom below the service allocation, the
+- [x] **The NFR decision. Taken by the owner on 2026-10-02**, and the
+      limits were ratified at the values they were built with: 512 MiB for
+      the worker and for the API, one heavy section and one import to a
+      worker process with ten job slots, two analyses in hand in an API
+      process, 600 seconds of reading, a 4 MiB sample, and the seven import
+      limits. The requirement is completion inside the 512 MiB allocation
+      without OOM or swap, with concurrency bounded by the declared gates;
+      there is no percentage-headroom term. As this box stood before: the
+      headroom below the service allocation, the
       concurrency assumption, and therefore the real limits. It belongs to
       Platform/NFR architecture -- in `docoris`'s terms OD-22's NFR owner, with
       Platform/Operations consulted on sizing and cost -- and is **not** the
@@ -2699,15 +2735,16 @@ is left is the decision none of them could take:
       `docs/features/data-import/preflight-safety-envelope.md`.
 - [x] **The sample budget, decided 2026-10-01.** Kept at 4 MiB of characters
       as a provisional guardrail: 200 rows is the most a preview holds, not a
-      guarantee. Its final value waits on GR-352C and OD-22/NFR ratification
-      (IMPORT-GAP-017).
+      guarantee. **Ratified at 4 MiB on 2026-10-02.** What IMPORT-GAP-017
+      keeps open is that a shortened preview is indicated nowhere in the
+      response or on the page.
 - [ ] **One thing GR-352B left.** Whether a workbook should be walked once
       rather than twice (IMPORT-GAP-018). It is the worker's as well since
       2026-10-02: the safety pass walks the sheet and the reader walks it
       again, which is twenty seconds and more at the cell limit.
 - [x] **The other: a bound on analyses running at once (IMPORT-GAP-019).**
       Closed 2026-10-02 by GR-352C: two sources in hand at once in one API
-      process, and the number is provisional.
+      process. The number was provisional and was ratified the same day.
 - [x] **IMPORT-GAP-020.** What `openpyxl` builds from a sheet that is neither
       a string nor a cell. Measured on 2026-10-02 and worse than its row said:
       640 bytes a merged range, so a 0.8 MiB workbook took a worker to 2.6
@@ -2728,12 +2765,28 @@ is left is the decision none of them could take:
       timeout read on to the end, with the worker's event loop held the whole
       time (IMPORT-DEF-018). And a job the queue did cancel left its run
       `validating` or `committing` for ever (IMPORT-DEF-019).
-- [ ] **The measurement, repeated.** GR-352 closes on the worker's and the
+- [x] **The measurement. Accepted 2026-10-02.** The limits were ratified
+      as they stood, so the measurements taken against them are the ones
+      against the ratified values. The worker, in the product's own image
+      under 512 MiB with no swap, beside each other heavy job: 301 and 303
+      MiB with a backup, 302 and 303 with a restore, 286 and 287 with
+      scheduled XLSX, 286 and 287 with scheduled PDF -- two local runs of
+      each, nothing killed, a healthy worker afterwards. Before GR-352E an
+      import beside a backup reached 512 and 499 MiB, which is why
+      unrestricted overlap was rejected. The API, a real generated process
+      under the same limit: idle at about 140 to 142 MiB, about 254.3 MiB
+      resident under two near-limit analyses, about 261.2 MiB of the cgroup
+      left, a third request waiting with nothing fetched. The API
+      measurement ran against Starter commit
+      `cf17a6e593bf37018cc48ad110215e414d9b1c52`; its harness and raw output
+      were session scratch evidence, not committed artifacts, and no CI run
+      on that commit produced it. Remote CI verifies
+      the exclusion and does not repeat the capped measurement. As this box
+      stood before: GR-352 closes on the worker's and the
       API's memory under the worst *accepted* input, on Linux, against the
       ratified headroom. GR-352C took that measurement against the
       provisional limits on 2026-10-02, including under a 512 MiB limit with
-      no swap, and it is evidence for the decision rather than the acceptance:
-      the limits it was taken against are the ones the decision replaces.
+      no swap.
 - [ ] **What GR-352C leaves, three rows of four, all dated 2026-10-02.** A
       waiting import's time counts against its queue timeout (IMPORT-GAP-021);
       a product's own validator, matcher and writer are outside every bound
@@ -2741,10 +2794,10 @@ is left is the decision none of them could take:
       nothing builds any more, and holds the source whole (IMPORT-GAP-024).
       The fourth -- what else the worker holds beside an import
       (IMPORT-GAP-023) -- is the next entry.
-- [ ] **GR-352E — what else is in the worker.** Resolved locally and not
-      closed: as of 2026-10-02 it is an uncommitted tree, and this box is
-      ticked when the pushed commit has passed Generator Integration. IMPORT-GAP-023
-      and IMPORT-GAP-025 are the rows it resolves. Built 2026-10-02, after the
+- [x] **GR-352E — what else is in the worker.** Closed 2026-10-02 and
+      remotely verified: merged as `3e73190`, with Generator Integration
+      `37044176367` green on that commit. IMPORT-GAP-023
+      and IMPORT-GAP-025 are the rows it closes. Built 2026-10-02, after the
       worker was measured in the product's own image at `cf17a6e`: the worst
       accepted import beside a cross-provider backup reached the 512 MiB
       limit. An import, a backup's copy, a restore and a scheduled report
@@ -2755,9 +2808,10 @@ is left is the decision none of them could take:
       background one. In the same image under the same limit every pair peaked at 286
       to 303 MiB. Neither machine was given more memory.
       `docs/features/data-import/worker-resource-envelope.md`.
-- [ ] **IMPORT-DEF-020 — the worker's image was missing a module.** Found by
-      that measurement and resolved locally with GR-352E on 2026-10-02,
-      pending committed and remote verification. The audit sink
+- [x] **IMPORT-DEF-020 — the worker's image was missing a module.** Found by
+      that measurement and closed with GR-352E on 2026-10-02, remotely
+      verified: the worker-image tests ran against the real generated image
+      on the merge commit. The audit sink
       imported `core/database.py` after it committed and the image never
       carried it, so a deployed worker recorded every dry run as a failed job
       over a run that said `validated`. The image is built and run in a test
@@ -2769,8 +2823,9 @@ is left is the decision none of them could take:
       worker's gate (IMPORT-GAP-026); a backup's copy holds the worker's event
       loop for as long as one object takes, as it did before; what the API
       process keeps resident after an analysis was noticed and not
-      characterised; and the fourth provisional number, one heavy section to
-      a process, is the implementer's like the three before it.
+      characterised. The fourth number, one heavy section to a process, was
+      the implementer's like the three before it, and all four were ratified
+      on 2026-10-02.
 - [ ] **A process finding, not a defect: PR #24 was merged early.** GR-352C's
       pull request was merged on 2026-10-02 before its owner-review stop and
       before its own checks had finished. The checks passed afterwards and
@@ -2778,17 +2833,81 @@ is left is the decision none of them could take:
       a slice is meant to take -- built, verified locally, committed and
       opened, validated remotely, reviewed by its owner, merged -- was not
       the order that one took, and GR-352E was returned for review before
-      anything was committed for that reason.
+      anything was committed for that reason. **It happened a second time
+      the same day, with GR-352E's own PR #27**, and F32 is the entry for
+      both.
 - [ ] **IMPORT-DEF-014 — and in this order.** `source_bytes` awaits a
       synchronous `S3ObjectStore.get`, so against a real bucket no import can
       read its source at all. That is a defect, and it is also the only reason
       the memory path is unreachable in a deployed starter product. Fixing it
       before the envelope is ratified opens the path the gate exists to keep
-      shut.
+      shut. **The envelope was ratified on 2026-10-02, so this is next, and
+      it is an activation constraint until it is done**: no product may
+      activate canonical imports against real object storage until it is
+      fixed and verified. Its fix repeats the 512 MiB capped measurement,
+      because it changes how a source is fetched. It is a defect in reading
+      storage and was not a reason to hold the finished envelope open.
 - [ ] **IMPORT-GAP-016.** The AI knowledge reader opens workbooks with
       `openpyxl` and no safety pass. Wider than it was written, as of
       2026-10-02: everything GR-352C measured `openpyxl` building beside the
-      strings, that caller builds too.
+      strings, that caller builds too. Outside the canonical import envelope
+      that was ratified, and a separate resource risk.
+- [ ] **The other rows the closure leaves open, all as of 2026-10-02.**
+      IMPORT-GAP-018, the double workbook walk, a latency optimisation.
+      IMPORT-GAP-021, where no queue or topology change was authorised.
+      IMPORT-GAP-022, product-specific: `docoris` measures its own writer,
+      matcher and validator before its own envelope is ratified.
+      IMPORT-GAP-024, where the CSV widest-character costing stays
+      conservative on purpose. IMPORT-GAP-026, outside GR-352: the API's
+      background export is unbounded and unmeasured.
+- [ ] **The word provisional in the code.** The declarations of the ratified
+      numbers still say `PROVISIONAL` in their comments, and the default
+      limits are still exported as `PROVISIONAL_LIMITS`, as of 2026-10-02.
+      The closure changed no runtime or template file. Rewording them is a
+      template change with its own verification. This is behavior-neutral
+      naming and documentation debt: it does not reopen GR-352, it changes
+      no limit, and the ratified contract is the envelope document rather
+      than the names. It is to be cleaned up before the next
+      canonical-import activation or release work, so that the code's
+      terminology agrees with the ratified contract.
 - [ ] **Existing products.** A generated product has no upstream, so this
       reaches `docoris` only when somebody carries it there, in that
       repository, by its own process. The envelope document lists the files.
+
+### F32 — `develop` is not protected against an early merge — opened 2026-10-02
+
+**What happened.** Two pull requests were merged into `develop` on
+2026-10-02 ahead of the order a slice is meant to take.
+
+| Pull request | Merged | What it was ahead of |
+|--------------|--------|----------------------|
+| #24, GR-352C | 13:31 UTC | Its owner-review stop, and its own checks |
+| #27, GR-352E | 17:57 UTC | The owner's merge authorisation, and its required checks -- the last of them finished at 18:11 UTC |
+
+Both sets of checks passed afterwards and nothing was reverted. The
+repository records the `kkora` account as the one that merged each. It does
+not record which client started the merge, and nothing here attributes it
+further than that.
+
+**Why it is an entry.** Once is a slip and was recorded as one, under F31.
+Twice in a day, with the first already written down, is a control that is
+missing: an instruction to wait is the only thing that stood between an
+open pull request and `develop`, and it did not hold either time.
+
+**What is recommended, and not done.** Nothing in the repository's settings
+or workflows was changed on 2026-10-02.
+
+- [ ] Require a pull request for `develop`.
+- [ ] Require CI, Security and Generator Integration to pass.
+- [ ] Require the branch to be up to date before merging.
+- [ ] Block force pushes and deletion.
+- [ ] Allow no administrator bypass.
+
+**One thing has to come first.** Generator Integration is path-filtered:
+`generator-integration.yml` runs only when a pull request touches the paths
+it names. A required check that never reports leaves a pull request
+unmergeable for good, so making its four jobs required as they stand would
+block every change that touches none of those paths.
+
+- [ ] Before requiring it: either an aggregate check that always runs and
+      reports for the four jobs, or the path filter removed.
