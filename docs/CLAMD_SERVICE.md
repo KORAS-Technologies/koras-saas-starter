@@ -159,7 +159,8 @@ Measured against the real engine (`tests/clamd-image.test.ts`):
 | scan over the time limit | `Heuristics.Limits.Exceeded.MaxScanTime FOUND` |
 
 **For Docoris (OD-12), which owns the state mapping:** `OK` is the only answer
-that may become `clean`. Every `FOUND` — including every `Heuristics.*` — and
+that may *become a candidate for* `clean`, and it is **not sufficient on its
+own** -- see "A known gap" below. Every `FOUND` — including every `Heuristics.*` — and
 every `ERROR`, a refused or dropped connection, a timeout and a malformed reply
 must become a non-clean, held outcome. The scanner is configured so that limits
 and encryption *arrive as `FOUND`*; mapping them is the product's job.
@@ -173,12 +174,25 @@ a few hundred bytes in, returned `OK`, while the same content in an ordinary
 archive was found. No limit reaches it; the entry is simply not inspected.
 
 So **"incompletely inspected content never reads as clean" holds for every
-limit and for encryption, and does not hold for this entry form.** A product
-that must close it has to do so outside clamd — for instance by refusing, or
-rewriting, an archive whose entries use that form, which a DOCX or XLSX from a
-real office suite does not. That is a product-policy decision and is recorded
-here, not made. `tests/clamd-image.test.ts` pins the behaviour as a tripwire: the
-day the engine starts finding the marker, that test fails and this section goes.
+limit and for encryption, and does not hold for this entry form.** Neither this
+service nor ClamAV can guarantee complete inspection of that form, and this
+document does not claim that ClamAV fully inspects every archive it accepts.
+**A product must not treat the affected `OK` as sufficient for release to
+`clean`.** The scanner's `OK` is a *candidate-clean* answer; a supported
+container (ZIP and the ZIP-derived formats, DOCX and XLSX among them) must also
+pass the product's own bounded structural-safety check before it is `clean`.
+
+Owner decision D1, ratified 2026-10-03, for Phase 1 of the product policy:
+`FOUND` is infected; an explicit encrypted, incomplete or limit result is held;
+a streamed, deflated zip64 entry is held pending, never `clean`, never
+`infected` on structure alone, never `skipped`. Customer files are not
+modified or repacked, here or by the product. That check belongs to the product
+(Docoris OD-12), not to this service.
+
+`tests/clamd-image.test.ts` pins the behaviour as a tripwire. The day the engine
+starts finding the marker, that test fails -- and that is a prompt for an
+explicit review of the product's structural gate, not an instruction to remove
+it. This section is amended by that review, not deleted by the test failing.
 
 ## Tests
 

@@ -154,8 +154,10 @@ describe.skipIf(!enabled || !docker)('the real clamd image', () => {
       // Upstream, in 1.4.6 and 1.5.4 alike; no configuration reaches it. The
       // plain archive beside it IS inspected, so the engine and the marker are
       // fine and only that entry form is skipped. If this starts finding the
-      // marker, ClamAV fixed it: delete this test and the paragraph in
-      // docs/CLAMD_SERVICE.md that names it.
+      // marker, ClamAV fixed it. That is NOT a licence to delete this test:
+      // it forces an explicit review of Docoris's structural-safety gate
+      // (owner decision D1, 2026-10-03) before that gate or the paragraph in
+      // docs/CLAMD_SERVICE.md is changed. Scanner OK is a candidate-clean only.
       expect(a('control_plain_zip')).toContain('Koras.Test.Marker')
       expect(a('known_gap_zip64_streamed')).toBe('stream: OK')
     })
