@@ -55,10 +55,24 @@ def test_every_service_is_startable_by_make_dev() -> None:
 
     A Python service with no package.json is skipped in silence while the
     command reports success.
+
+    A service with NEITHER a pyproject.toml nor a package.json is neither of
+    those: it is a container around somebody else's daemon (the optional
+    `clamd` scanner), has no local process for `make dev` to start, and is
+    deployed from its Dockerfile alone. The rule exists to catch a service
+    that has a runtime and was left out of the workspace, which that is not --
+    so it is exempt, and only on exactly that evidence.
     """
     import json
 
     for service in _makefile_list("SERVICES"):
+        directory = REPO_ROOT / "services" / service
+        if (
+            not (directory / "pyproject.toml").is_file()
+            and not (directory / "package.json").is_file()
+            and (directory / "Dockerfile").is_file()
+        ):
+            continue
         manifest = REPO_ROOT / "services" / service / "package.json"
         assert manifest.is_file(), f"services/{service} has no package.json; turbo cannot run it"
         scripts = json.loads(manifest.read_text(encoding="utf-8")).get("scripts", {})

@@ -250,3 +250,20 @@ describe.skipIf(!tools)('service secret policy', () => {
     })
   })
 })
+
+describe('the scripts call each other through bash', () => {
+  // A script checked out on Linux, or written by the generator, need not carry
+  // the execute bit; calling a sibling directly then fails with status 126. That
+  // is exactly how these failed in CI on their first run -- invisible on the
+  // Windows machine they were written on, which has no execute bit to miss.
+  it.each(['service-secrets.sh', 'verify-private-service.sh', 'register-with-control-plane.sh'])(
+    '%s never executes a sibling script directly',
+    (name) => {
+      const lines = readFileSync(templatePath('_shared', 'local', 'scripts', name), 'utf8')
+        .split('\n')
+        .filter((l) => !l.trim().startsWith('#'))
+      const direct = lines.filter((l) => /\$\(\s*"?\$(here|descriptor)\b|^\s*"?\$(here|descriptor)\b/.test(l))
+      expect(direct, 'invoke siblings as `bash "$here/..."`').toEqual([])
+    },
+  )
+})

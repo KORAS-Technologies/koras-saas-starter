@@ -30,6 +30,9 @@ set -eu
 set +x
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Called as `bash "$descriptor"`, never directly: a script checked out on Linux, or
+# written by the generator, need not carry the execute bit, and a direct call then
+# fails with 126 -- which is exactly how this failed in CI on its first run.
 descriptor="$here/service-descriptor.sh"
 
 fail() { echo "service-secrets: $*" >&2; exit 1; }
@@ -64,7 +67,7 @@ case "$mode" in
   apply)
     svc="${1:?service}"; app="${2:?app}"; project="${3:?doppler project}"; config="${4:?doppler config}"
     root="${5:-services}"
-    pol=$("$descriptor" policy "$svc" "$root") || exit 1
+    pol=$(bash "$descriptor" policy "$svc" "$root") || exit 1
     policy=$(printf '%s' "$pol" | jq -r .policy | tr -d '\r')
 
     case "$policy" in
@@ -116,7 +119,7 @@ case "$mode" in
 
   verify)
     svc="${1:?service}"; app="${2:?app}"; root="${3:-services}"
-    pol=$("$descriptor" policy "$svc" "$root") || exit 1
+    pol=$(bash "$descriptor" policy "$svc" "$root") || exit 1
     policy=$(printf '%s' "$pol" | jq -r .policy | tr -d '\r')
     case "$policy" in
       inherit) echo "Policy inherit for $svc: nothing to verify." ;;

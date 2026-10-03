@@ -22,7 +22,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 svc="${1:?service}"; app="${2:?app}"; root="${3:-services}"
 timeout_s="${VERIFY_PRIVATE_TIMEOUT:-300}"
 
-network=$("$here/service-descriptor.sh" network "$svc" "$root")
+network=$(bash "$here/service-descriptor.sh" network "$svc" "$root")
 if [ "$network" != "private" ]; then
   echo "$svc is $network; no private-service checks apply."
   exit 0
