@@ -260,6 +260,9 @@ module "fly" {
   org_slug     = var.fly_org_slug
   services     = local.fly_services
   regions      = var.fly_regions
+  # The generated project's own services/ directory, two levels up from the
+  # root module (infrastructure/terraform). Read for service.yaml descriptors.
+  services_dir = "${path.root}/../../services"
 }
 
 module "cloudflare" {

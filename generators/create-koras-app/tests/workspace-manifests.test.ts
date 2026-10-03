@@ -67,7 +67,17 @@ function workspaceSources(profile: string): string[] {
 }
 
 describe.each(PROFILES)('%s: service images carry the workspace members', (profile) => {
+  // A service with no pyproject is not a uv workspace member, and its image is
+  // not built with uv -- `services/clamd` is a container around somebody else's
+  // daemon, and the root manifest EXCLUDES it from the workspace by name (see
+  // `tests/product-clamd.test.ts`). The rule below exists because uv reads every
+  // `workspace = true` entry when it builds a member; an image that does not run
+  // uv has nothing to satisfy. This used to be every directory with a Dockerfile,
+  // which was the same set only while every service was Python.
+  const isMember = (s: string): boolean => declaredName(profile, 'services', s) !== undefined
+
   const services = memberDirs(profile, 'services').filter((s) => {
+    if (!isMember(s)) return false
     try {
       templatePath(profile, 'services', s, 'Dockerfile')
       return true

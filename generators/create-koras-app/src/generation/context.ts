@@ -1,5 +1,6 @@
 import type { ProfileManifest, ProfileDefaults, ComponentSelections } from '../profiles/types.js'
 import type { ProfileName } from '../profiles/loader.js'
+import { declaredEnvironments } from './service-descriptor.js'
 
 export interface GenerationContext {
   projectName: string
@@ -96,8 +97,15 @@ export function environmentNaming(ctx: GenerationContext): EnvironmentNaming[] {
 /** Fly app names: <slug>-<service>-<env>, service key hyphenated. */
 export function flyAppNames(ctx: GenerationContext): string[] {
   const services = enabledInfra(ctx.manifest.infrastructure.fly.services, ctx.selections.services)
+  // A service's own descriptor may limit it to some environments (clamd: dev
+  // only). A service with none runs in all of them, as it always did.
   return ctx.manifest.environments.flatMap((env) =>
-    services.map((svc) => `${ctx.projectSlug}-${svc.replace(/_/g, '-')}-${env}`),
+    services
+      .filter((svc) => {
+        const only = declaredEnvironments(ctx.profile, svc)
+        return only === null || only.includes(env)
+      })
+      .map((svc) => `${ctx.projectSlug}-${svc.replace(/_/g, '-')}-${env}`),
   )
 }
 

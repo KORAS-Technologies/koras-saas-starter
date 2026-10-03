@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 // ── Shared ─────────────────────────────────────────────────────────────────
 
-const FrameworkSchema = z.enum(['nextjs', 'fastapi', 'arq', 'apscheduler', 'litellm'])
+const FrameworkSchema = z.enum(['nextjs', 'fastapi', 'arq', 'apscheduler', 'litellm', 'clamav'])
 
 const ApplicationSchema = z.object({
   required: z.boolean(),

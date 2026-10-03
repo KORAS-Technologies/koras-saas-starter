@@ -1,0 +1,46 @@
+# Fly configuration for the malware scanner (clamd). PRIVATE.
+#
+# The app name is supplied per environment on the command line, not written
+# here -- the same rule as every other service.
+#
+# There is deliberately no [http_service] and no [[services]] block. Either one
+# is what makes Fly allocate a public address and route the internet to a
+# port. With neither, the app has no public IP, and the only way to reach
+# 3310 is over Fly's private network at <app>.internal.
+#
+# That network is organisation-wide, NOT environment-wide: any app in the Fly
+# organisation can connect to this one. It is a private network, not an
+# isolation boundary, and nothing here claims otherwise.
+
+primary_region = "{{flyRegion}}"
+
+[build]
+
+[env]
+  # Read by entrypoint.sh. Longest a signature database may go without an
+  # update before the scanner stops serving.
+  CLAMD_MAX_DB_AGE_DAYS = "7"
+
+# A machine-level check, not a service check: [[services.tcp_checks]] would need
+# a [[services]] block, which is the thing this file must not contain. clamd
+# binds the port only after loading its signatures, so passing means loaded.
+[checks.clamd_tcp]
+  type = "tcp"
+  port = 3310
+  interval = "15s"
+  timeout = "5s"
+  # Loading a signature database takes the better part of a minute on two
+  # shared CPUs, and the first start also runs freshclam.
+  grace_period = "180s"
+
+# Restart on failure, and stop retrying after a while: a scanner that cannot
+# start for a reason a restart will not fix should be visible as stopped,
+# not as a machine burning cycles.
+[[restart]]
+  policy = "on-failure"
+  retries = 10
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 2
+  memory_mb = 2048

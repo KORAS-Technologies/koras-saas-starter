@@ -9,6 +9,13 @@ members = [
   "python-packages/*",
   "services/*",
 ]
+{{#if service.clamd}}
+# The scanner is a container image around somebody else's daemon, not a Python
+# package, and has no pyproject.toml. uv refuses a glob match with no manifest
+# ("Workspace member ... is missing a `pyproject.toml`"), which breaks every
+# `uv sync` and every service image build -- so it is named here.
+exclude = ["services/clamd"]
+{{/if}}
 
 [dependency-groups]
 dev = [

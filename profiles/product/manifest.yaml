@@ -33,6 +33,14 @@ services:
     required: false
     framework: litellm
     description: "AI model proxy and routing"
+  # A private malware scanner (ClamAV's clamd). Off by default and in no
+  # existing product: it is selected with --with clamd. Dev only, no public
+  # address, holds no secret -- all declared in its own service.yaml, which is
+  # what the deploy workflow and Terraform both read. See docs/CLAMD_SERVICE.md.
+  clamd:
+    required: false
+    framework: clamav
+    description: "Private malware scanner (clamd), dev only"
 
 capabilities:
   tenancy: true
@@ -97,7 +105,7 @@ infrastructure:
   vercel:
     applications: ["web", "admin", "marketing"]
   fly:
-    services: ["api", "worker", "scheduler", "ai_gateway"]
+    services: ["api", "worker", "scheduler", "ai_gateway", "clamd"]
   cloudflare: true
 
 environments:
@@ -118,6 +126,7 @@ template_map:
     worker: services/worker
     scheduler: services/scheduler
     ai_gateway: services/ai-gateway
+    clamd: services/clamd
   capabilities:
     billing: packages/billing
     custom_domains: packages/domains

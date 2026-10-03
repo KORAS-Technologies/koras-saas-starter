@@ -1,0 +1,18 @@
+# Deployment descriptor. Read by the deploy workflow (what to deploy, where,
+# with which secrets) and by the Terraform Fly module (which apps to create).
+# Both read this one file, so they cannot disagree about it. See
+# docs/SERVICE_DESCRIPTORS.md.
+schema_version: 1
+
+# Development only. The scanner is built and proven in dev first; a longer list
+# is a deliberate edit here, in a commit.
+environments:
+  - dev
+
+# The scanner holds no product secret and has no use for one. Nothing is
+# imported into its app, and a deploy fails if the app is found holding any.
+secrets:
+  policy: none
+
+# No public address, no public URL. Reached over Fly's private network only.
+network: private

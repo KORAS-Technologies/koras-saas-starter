@@ -59,6 +59,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The service-descriptor tests run the deploy workflow's discovery script
+      # AND the real Terraform module over one corpus, and require the same
+      # answer from both. They need Terraform, which the runner image does not
+      # carry (jq and yq it does). With CI set they fail rather than skip when
+      # a tool is missing: a skipped parity test is a green check that proves
+      # nothing. The module declares no provider, so this needs no credentials.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
       - name: Test
         run: pnpm turbo run test
 
