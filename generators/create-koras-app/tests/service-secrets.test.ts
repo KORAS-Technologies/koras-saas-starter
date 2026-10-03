@@ -119,10 +119,15 @@ describe.skipIf(!tools)('service secret policy', () => {
       const r = run('apply')
       expect(r.status).toBe(0)
       // Exactly the two commands the workflow ran before descriptors existed.
-      expect(r.calls).toEqual([
-        'doppler secrets download --no-file --format env-no-quotes --project proj --config dev',
-        'flyctl secrets import --stage --app p-svc-dev',
-      ])
+      // Compared as a set: they are stages of one pipeline and start together,
+      // so the order their log lines reach the file is not defined -- stable on
+      // the machine this was written on and not on a Linux runner.
+      expect([...r.calls].sort()).toEqual(
+        [
+          'doppler secrets download --no-file --format env-no-quotes --project proj --config dev',
+          'flyctl secrets import --stage --app p-svc-dev',
+        ].sort(),
+      )
       // DOPPLER_* is the CLI's own context and was always dropped; nothing else.
       expect(importedNames(r.imported)).toEqual(['API_KEY', 'DB', 'DB_URL', 'OTHER_TOKEN'])
     })

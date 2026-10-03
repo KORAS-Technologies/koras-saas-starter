@@ -131,7 +131,12 @@ locals {
 
   eligible_in = {
     for env in var.environments :
-    env => [for s in var.services : s if local.env_list[s] == null || contains(local.env_list[s], env)]
+    # A conditional, not `== null || contains(...)`: HCL's `||` does not
+    # short-circuit on older Terraform, so `contains(null, env)` was evaluated
+    # for every service with no environment list and failed the plan. Newer
+    # versions tolerate it, which is why it passed on the author's machine and
+    # failed on the CI runner's.
+    env => [for s in var.services : s if local.env_list[s] == null ? true : contains(local.env_list[s], env)]
   }
 }
 
