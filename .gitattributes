@@ -32,3 +32,10 @@ Makefile    text eol=lf
 *.pdf       binary
 *.woff      binary
 *.woff2     binary
+
+# The scanner service's files run inside a Linux container. A CRLF in the
+# entrypoint is "/bin/sh^M: bad interpreter", and in clamd.conf an unknown
+# option, and either one fails after the image is built rather than before.
+profiles/product/template/services/clamd/*.conf text eol=lf
+profiles/product/template/services/clamd/*.yaml text eol=lf
+profiles/product/template/services/clamd/fly.toml.hbs text eol=lf

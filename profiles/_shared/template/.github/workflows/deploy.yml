@@ -95,15 +95,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - id: read
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
-          # A service is a directory that can actually be deployed. Requiring
-          # both files means a half-scaffolded directory is skipped here
-          # rather than failing three jobs later.
+          # A service is a directory that can actually be deployed (a Dockerfile
+          # and a fly.toml -- a half-scaffolded directory is skipped here rather
+          # than failing three jobs later) AND is eligible for this environment.
+          #
+          # Eligibility is the service's own business: services/<name>/service.yaml
+          # may limit it to some environments, and a service with no descriptor
+          # runs everywhere, as it always did. The rule lives in the script and
+          # nowhere in this file -- the Terraform that creates the Fly apps reads
+          # the same descriptors by the same rule, so the two cannot disagree
+          # about whether an app exists. An invalid descriptor fails this job.
           services='[]'
           if [ -d services ]; then
-            services=$(find services -mindepth 1 -maxdepth 1 -type d \
-              -exec test -f '{}/Dockerfile' -a -f '{}/fly.toml' ';' -print \
-              | xargs -rn1 basename | sort | jq -R . | jq -sc .)
+            services=$(bash local/scripts/service-descriptor.sh eligible "$ENVIRONMENT" services)
           fi
 
           # Applications are keyed by directory, which is also what the
@@ -388,20 +395,14 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           curl -sSfL https://cli.doppler.com/install.sh | sudo sh >/dev/null
-          # --no-file keeps the values on the pipe. Writing them to disk on a
-          # shared runner leaves them for anything that reads the workspace.
-          # DOPPLER_* are the CLI's own context, meaningless to the service and
-          # permanent once set. Dropped rather than shipped.
-          # env-no-quotes, not env. `env` renders a JSON value as
-          # KEY="[\"a\"]"; flyctl strips the outer quotes and leaves the
-          # backslashes, so the service receives text no JSON parser accepts and
-          # dies on startup with "Expecting value: line 1 column 2".
-          doppler secrets download --no-file --format env-no-quotes \
-            --project "${{ github.event.repository.name }}" \
-            --config "${{ inputs.environment }}" \
-            | grep -v "^DOPPLER_" \
-            | flyctl secrets import --stage \
-                --app "${{ github.event.repository.name }}-${{ matrix.service }}-${{ inputs.environment }}"
+          # What is imported is the service's own policy, read from
+          # services/<name>/service.yaml: the whole environment config
+          # (`inherit`, which is also what a service with no descriptor gets),
+          # nothing (`none`), or exactly the named secrets (`allowlist`). The
+          # mechanics -- values kept on the pipe, DOPPLER_* dropped, the
+          # env-no-quotes format and why -- are in the script, which is also
+          # what is tested. This workflow names no service.
+          bash local/scripts/service-secrets.sh apply             "${{ matrix.service }}"             "${{ github.event.repository.name }}-${{ matrix.service }}-${{ inputs.environment }}"             "${{ github.event.repository.name }}"             "${{ inputs.environment }}"
 
       - name: Deploy to Fly
         env:
@@ -518,6 +519,24 @@ jobs:
 
           echo "All machines running and staying up for $app."
           flyctl machines list --app "$app"
+
+      - name: The app holds the secrets its policy allows, and no others
+        # After the deploy, because that is when a secret set by hand or by an
+        # earlier version of this pipeline would still be there. Fails rather
+        # than removing: see local/scripts/service-secrets.sh. A service with
+        # policy `inherit` has nothing to check.
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          bash local/scripts/service-secrets.sh verify             "${{ matrix.service }}"             "${{ github.event.repository.name }}-${{ matrix.service }}-${{ inputs.environment }}"
+
+      - name: A private service has no public address and is healthy
+        # Skips itself for any service that is not declared `network: private`,
+        # so it is here for every service and names none.
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          bash local/scripts/verify-private-service.sh             "${{ matrix.service }}"             "${{ github.event.repository.name }}-${{ matrix.service }}-${{ inputs.environment }}"
   applications:
     name: Deploy ${{ matrix.app }} (${{ inputs.environment }})
     needs: [discover, services]

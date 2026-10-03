@@ -13,6 +13,9 @@ services:
   worker: true
   scheduler: false
   ai_gateway: false
+  # Off, and not implied by anything. A product that wants a scanner asks for
+  # one: --with clamd.
+  clamd: false
 
 capabilities:
   billing: true

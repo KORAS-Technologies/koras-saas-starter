@@ -76,6 +76,8 @@ All planning and reference documents live in `docs/`, matching
 | `docs/ENGINEERING_FRAMEWORK.md` | The product's multi-agent framework: one vocabulary, risk by boundary, gate reuse, bounded loops |
 | `docs/adr/0010-koras-engineering-framework-v2-1.md` | The decision record for V2.1 of that framework |
 | `docs/adr/0008-koras-platform-job-and-notification-contracts.md` | Why the job contract is built first, and why notification gets a dispatch point rather than a bus |
+| `docs/SERVICE_DESCRIPTORS.md` | `services/<service>/service.yaml`: environments, secret policy and network, read by the deploy workflow and by Terraform from one file |
+| `docs/CLAMD_SERVICE.md` | The optional private ClamAV scanner: pinned image, limits derived from a 100 MiB ceiling, what was measured, and the gap no configuration closes |
 
 ## Repository layout (target state)
 

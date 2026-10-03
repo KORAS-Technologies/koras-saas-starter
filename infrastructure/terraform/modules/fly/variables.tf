@@ -13,6 +13,12 @@ variable "services" {
   description = "Services to create Fly apps for"
 }
 
+variable "services_dir" {
+  type        = string
+  default     = null
+  description = "Directory holding services/<dir>/service.yaml. Null means no descriptors are read."
+}
+
 variable "environments" {
   type    = list(string)
   default = ["dev", "test", "stg", "prod"]

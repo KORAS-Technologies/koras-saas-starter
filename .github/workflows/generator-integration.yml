@@ -105,7 +105,13 @@ jobs:
           - profile: product
             slug: integration-product-full
             rls_flags: ""
-            components: "--with marketing,ai_gateway,scheduler,ai,data_import"
+            # `clamd` joined on 2026-10-03. It is a container around a daemon
+            # and has no package to build, so what this row proves is the
+            # other half: that a workspace with a service directory that is
+            # NOT a Python package still resolves (`uv lock` refused it until
+            # the root pyproject excluded it), and that the shared scripts the
+            # deploy workflow calls are generated alongside it.
+            components: "--with marketing,ai_gateway,scheduler,ai,data_import,clamd"
             # Also owns it: the optional components change the shell the round
             # trip signs in to, and this is the only row that generates them.
             roundtrip: true

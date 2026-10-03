@@ -5,6 +5,7 @@ import {
 } from '../generation/project-manifest.js'
 import { primaryDomain } from '../generation/context.js'
 import type { ProvisionOutputs } from '../terraform/outputs.js'
+import { declaredEnvironments } from '../generation/service-descriptor.js'
 
 /**
  * The registration payload, as the Control Plane defines it.
@@ -163,6 +164,15 @@ export function buildRegistration(
   for (const environment of ctx.manifest.environments) {
     const flyApps = flyAppsFor(environment, ctx.projectSlug, outputs.flyApps)
 
+    // A service that declares itself limited to some environments (clamd: dev
+    // only) is registered in those and not the others. The registry prunes by
+    // this list, and one naming a service that is not deployed there would
+    // have reconciliation report drift nobody caused.
+    const here = services.filter((name) => {
+      const only = declaredEnvironments(ctx.profile, name)
+      return only === null || only.includes(environment)
+    })
+
     environments[environment] = {
       infrastructure: present({
         github_repository: outputs.githubRepository || undefined,
@@ -181,7 +191,7 @@ export function buildRegistration(
         platform_api_base_url: platformApiBaseUrl(flyApps),
         application_base_url: outputs.appUrls[environment],
       }),
-      services,
+      services: here,
     }
   }
 

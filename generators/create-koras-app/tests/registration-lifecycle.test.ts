@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -124,7 +124,7 @@ describe('register-with-control-plane.sh', () => {
    * case in point -- so a helper that reads stdout alone on success cannot see
    * the thing worth asserting.
    */
-  function run(): Promise<{ status: number; output: string }> {
+  function run(environment = 'prod'): Promise<{ status: number; output: string }> {
     // Awaited rather than spawnSync: the script takes tens of seconds, and a
     // worker blocked that long cannot answer vitest's reporter (R-031).
     return new Promise((resolve, reject) => {
@@ -133,7 +133,7 @@ describe('register-with-control-plane.sh', () => {
           ...process.env,
           PATH: `${BIN}:${process.env.PATH ?? ''}`,
           GITHUB_REPOSITORY: 'KORAS-Technologies/shop',
-          ENVIRONMENT: 'prod',
+          ENVIRONMENT: environment,
         },
       })
       let output = ''
@@ -157,6 +157,14 @@ describe('register-with-control-plane.sh', () => {
     write(
       join(PROJECT, SCRIPT),
       readFileSync(templatePath('product', ...SCRIPT.split('/')), 'utf8'),
+    )
+    // Its sibling, which it calls to decide what is deployed here. The script
+    // stopped carrying its own copy of that rule on 2026-10-03 (the copy would
+    // have registered a service in environments it is not deployed to), so a
+    // project that has the one has the other: both are `local/scripts`.
+    write(
+      join(PROJECT, 'local', 'scripts', 'service-descriptor.sh'),
+      readFileSync(templatePath('product', 'local', 'scripts', 'service-descriptor.sh'), 'utf8'),
     )
     write(
       join(PROJECT, 'infrastructure', 'terraform', 'terraform.tfvars'),
@@ -316,6 +324,43 @@ describe('register-with-control-plane.sh', () => {
     // Terraform output is marked sensitive, and un-marking it would be the
     // trade the contract exists to refuse.
     expect(spec.infrastructure.zitadel_client_id).toBe('client-abc')
+  })
+
+  it('registers a service only in the environments its descriptor allows', async () => {
+    if (!runnable) return
+    const yq = spawnSync('yq', ['--version'], { encoding: 'utf8' })
+    if (!(yq.status === 0 && /mikefarah/.test(yq.stdout))) return
+    setProfile('product')
+    stubDoppler({
+      KORAS_CONTROL_PLANE_URL: 'https://cp.example.com',
+      KORAS_CONTROL_PLANE_TOKEN: 'tok',
+      ZITADEL_PROJECT_ID: '123456789',
+      ZITADEL_CLIENT_ID: 'client-abc',
+    })
+    // The scanner: a deployable service whose descriptor limits it to dev.
+    write(join(PROJECT, 'services', 'clamd', 'Dockerfile'), 'FROM scratch\n')
+    write(join(PROJECT, 'services', 'clamd', 'fly.toml'), 'app = "x"\n')
+    write(
+      join(PROJECT, 'services', 'clamd', 'service.yaml'),
+      'schema_version: 1\nenvironments:\n  - dev\nsecrets:\n  policy: none\nnetwork: private\n',
+    )
+    try {
+      rmSync(PAYLOAD, { force: true })
+      expect((await run('dev')).status).toBe(0)
+      expect(JSON.parse(readFileSync(PAYLOAD, 'utf8')).environments.dev.services).toEqual([
+        'api',
+        'clamd',
+        'worker',
+      ])
+
+      // The registry prunes by this list. clamd is not deployed to prod, so
+      // naming it there would have reconciliation report drift nobody caused.
+      rmSync(PAYLOAD, { force: true })
+      expect((await run('prod')).status).toBe(0)
+      expect(JSON.parse(readFileSync(PAYLOAD, 'utf8')).environments.prod.services).toEqual(['api', 'worker'])
+    } finally {
+      rmSync(join(PROJECT, 'services', 'clamd'), { recursive: true, force: true })
+    }
   })
 
   it('carries the three columns a missing value would blank', () => {

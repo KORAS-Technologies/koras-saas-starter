@@ -201,17 +201,20 @@ if [ -n "$missing" ]; then
 fi
 
 # -- What is deployed here ----------------------------------------------------
-# The same rule deploy.yml's `discover` job uses, and deliberately so: the
-# registry should describe what this pipeline actually deploys rather than what
-# the project was generated with. Requiring both files means a half-scaffolded
-# directory is not registered as a running service.
+# The same rule deploy.yml's `discover` job uses -- and now literally the same
+# code: both call service-descriptor.sh, so a service limited by its descriptor to
+# some environments is registered in those and no others. This was a second copy
+# of the discovery pipeline, and a copy is how this list would have named a
+# service that is not deployed here. Terraform reads the same descriptors.
 #
 # This list is *pruned* by the Control Plane, so getting it wrong deletes rows.
 services='[]'
 if [ -d "${ROOT}/services" ]; then
-  services=$(cd "$ROOT" && find services -mindepth 1 -maxdepth 1 -type d \
-    -exec test -f '{}/Dockerfile' -a -f '{}/fly.toml' ';' -print \
-    | xargs -rn1 basename | sort | jq -R . | jq -sc .)
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  services=$(bash "$here/service-descriptor.sh" eligible "$ENVIRONMENT" "${ROOT}/services") || {
+    echo "Refusing to register: a service descriptor under services/ is invalid." >&2
+    exit 1
+  }
 fi
 
 if [ "$services" = '[]' ]; then
