@@ -74,11 +74,22 @@ describe.skipIf(!enabled || !docker)('the real clamd image', () => {
     expect(out.indexOf('Limits: ')).toBeLessThan(out.indexOf('ready:'))
   }, 700_000)
 
-  it('runs as an unprivileged user and listens on TCP 3310 on IPv6 only', () => {
+  it('runs as an unprivileged user and listens on TCP 3310 on IPv4 and IPv6, and nothing else', () => {
     expect(d(['exec', NAME, 'id', '-un']).stdout.trim()).toBe('clamav')
     const net = d(['exec', NAME, 'sh', '-c', 'netstat -tln']).stdout
+    // IPv6 for Fly's private network; IPv4 because Fly's host-side machine
+    // check connects to the machine's internal IPv4, not to loopback or 6PN.
     expect(net).toMatch(/:::3310\s.*LISTEN/)
-    expect(net.match(/:3310\s/g)).toHaveLength(1)
+    expect(net).toMatch(/0\.0\.0\.0:3310\s.*LISTEN/)
+    expect(net.match(/:3310\s/g)).toHaveLength(2)
+  })
+
+  it('answers PING on loopback IPv4, the container IPv4 and IPv6', () => {
+    const ping = (host: string) =>
+      d(['exec', NAME, 'sh', '-c', `printf 'PING\n' | nc -w 2 ${host} 3310`]).stdout.trim()
+    expect(ping('127.0.0.1')).toBe('PONG')
+    expect(ping('$(hostname -i | cut -d" " -f1)')).toBe('PONG')
+    expect(ping('::1')).toBe('PONG')
   })
 
   it('reports the limits it was configured with', () => {
