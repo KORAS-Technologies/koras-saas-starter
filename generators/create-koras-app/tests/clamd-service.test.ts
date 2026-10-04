@@ -96,6 +96,37 @@ describe('the clamd image', () => {
   })
 })
 
+describe('the clamd listener', () => {
+  // conf() keeps one value per key, which would hide a second TCPAddr, so this
+  // reads every declaration.
+  const addrs = code(read('clamd.conf'))
+    .map((l) => l.trim().split(/\s+/))
+    .filter(([k]) => k === 'TCPAddr')
+    .map(([, v]) => v)
+
+  it('binds IPv6 for 6PN and IPv4 for the host-side Fly machine check, and nothing else', () => {
+    // ClamAV sets IPV6_V6ONLY, so `::` does not answer on IPv4. Fly's
+    // clamd_tcp check connects to the machine's internal IPv4, not loopback.
+    // Observed on docoris-clamd-dev, 2026-10-03: `::` only, check refused.
+    expect([...addrs].sort()).toEqual(['0.0.0.0', '::'])
+  })
+
+  it('does not bind loopback alone, which a host-side checker cannot reach', () => {
+    expect(addrs).not.toContain('127.0.0.1')
+  })
+
+  it('serves exactly one TCP port, and no Unix socket', () => {
+    const c = code(read('clamd.conf'))
+    expect(c.filter((l) => /^TCPSocket\b/.test(l.trim()))).toEqual(['TCPSocket 3310'])
+    expect(c.filter((l) => /^LocalSocket\b/.test(l.trim()))).toEqual([])
+  })
+
+  it('is checked by the fly.toml machine check on the same port', () => {
+    const toml = read('fly.toml.hbs')
+    expect(toml).toMatch(/\[checks\.clamd_tcp\][\s\S]*?type = "tcp"[\s\S]*?port = 3310/)
+  })
+})
+
 describe('the clamd limits, derived from a 100 MiB ceiling', () => {
   const c = conf()
   const get = (k: string) => c.get(k) ?? expect.fail(`${k} is not set`)

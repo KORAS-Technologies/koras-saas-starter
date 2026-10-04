@@ -26,10 +26,10 @@ USER clamav
 
 EXPOSE 3310
 
-# The base image ships a check that pings 127.0.0.1, where this clamd does not
-# listen (it binds IPv6 only, which is what Fly's private network uses). Fly
-# ignores Docker health checks, so this is about plain `docker run`: the same
-# check, on the address that is actually bound.
+# Fly ignores Docker health checks (it runs checks.clamd_tcp from fly.toml), so
+# this is about plain `docker run`. It pings over IPv6, one of the two families
+# clamd binds; the IPv4 one is exercised by the entrypoint's own readiness
+# probe and by Fly's machine check.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
   CMD [ "$(printf 'PING\n' | nc -w 2 ::1 3310)" = "PONG" ] || exit 1
 

@@ -58,9 +58,19 @@ way in is TCP 3310 over Fly's private network at `<app>.internal`. Terraform
 publishes no URL for it, and the deploy verifies the claim afterwards: no public
 address, machine started, health check passing.
 
-clamd listens on `::`, which is what Fly's private network uses. **It does not
-answer on IPv4**, which was found by running it: the first readiness probe
-pinged `127.0.0.1` and waited forever.
+clamd binds **two** addresses, `TCPAddr 0.0.0.0` and `TCPAddr ::`, and both are
+needed. `::` is Fly's private network (6PN), which is how product services
+connect. `0.0.0.0` is the machine's internal IPv4, which is what Fly's
+host-side `clamd_tcp` machine check connects to: not loopback and not 6PN.
+clamd sets `IPV6_V6ONLY`, so `::` alone does not answer on IPv4.
+
+This was found twice, from opposite sides. Binding only `::` left the first
+readiness probe pinging `127.0.0.1` forever. Fixing the probe and keeping `::`
+only then passed every scan on the first deployment to `docoris-clamd-dev` on
+2026-10-03 while Fly's own check reported `connect: connection refused` and the
+deploy timed out waiting for health, because nothing a test ran was the thing
+Fly connects to. Neither address is public: the IPv4 is eth0's internal one, and
+with no `[[services]]` block Fly routes nothing from the internet to the port.
 
 Fly's private network spans the **organisation**, not an environment. Any app in
 the organisation can connect. That is a private network and not an isolation
