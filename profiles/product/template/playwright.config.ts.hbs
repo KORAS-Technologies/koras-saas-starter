@@ -274,7 +274,11 @@ export default defineConfig({
               // different from production.
               ZITADEL_DOMAIN: IDENTITY_URL,
               ZITADEL_PROJECT_ID: PROJECT_ID,
-              // No platform, no Redis, no bucket. Each is absent rather than
+{{#if capability.data_import}}              // Imports are off in every environment unless explicitly switched on (ADR 0013
+              // section 7). This disposable API runs the import round trip, so it says so
+              // itself; nothing else -- no `.env`, no declaration -- turns it on for a test.
+              IMPORTS_ENABLED: 'true',
+{{/if}}              // No platform, no Redis, no bucket. Each is absent rather than
               // faked, and each has a documented answer for being absent —
               // which is itself worth exercising: this is the shape a product
               // runs in before its first deployment.

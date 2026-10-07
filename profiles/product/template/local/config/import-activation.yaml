@@ -1,0 +1,54 @@
+# Whether data import is deliberately switched on, per environment (ADR 0013 section 7).
+#
+# Every environment starts DISABLED. Generating a product with data import does
+# not activate it anywhere: imports write a customer's records in bulk, so each
+# environment is switched on by a reviewed commit to this file, never by default.
+#
+# This file is the DECLARATION. The runtime reads the setting IMPORTS_ENABLED
+# (see local/config/secrets.manifest), in two separate processes -- the API
+# refuses every import route and the worker refuses every import task unless it
+# is an explicit "true", "1", "yes" or "on". Absent, blank and malformed values
+# are off. The declaration says which environments are meant to have it; the
+# setting is what makes it so; local/scripts/import-activation-drift.sh refuses
+# a deploy when a service holds the setting on its own without the secret store
+# holding it too.
+#
+# Schema (nothing else is valid):
+#
+#   environments:                 # exactly dev, test, stg and prod
+#     <environment>:
+#       import_activation: enabled | disabled
+#
+# Anything other than `enabled` or `disabled`, a missing or extra environment,
+# or a missing file is treated as disabled: there is no path from a malformed
+# declaration to "on".
+#
+# `disabled` means ABSENT, not `false`: a disabled environment holds no
+# IMPORTS_ENABLED at all (not in the secret store, not set directly on a
+# service). Absent == off is the single declaration of off.
+#
+# Runbook.
+#   Enabling:  commit `enabled` for the environment here, then set IMPORTS_ENABLED
+#              to `true` in that environment's secret-store config (Doppler is
+#              the estate's convention). Set it BEFORE the merge that deploys.
+#   Disabling: commit `disabled` here, REMOVE the key from the secret store, and
+#              unset it on any service that holds it directly
+#              (`flyctl secrets unset IMPORTS_ENABLED -a <app>`). A deploy never
+#              removes a secret, and the drift check fails deploys until it is clean.
+#   Locally:   `make dev` reads .env.local; set IMPORTS_ENABLED to true there to
+#              try imports on your own machine. Nothing else turns it on.
+#   Tests:     the generated suites that exercise imports switch the setting on
+#              themselves, in their own disposable process; they never read this file.
+#
+# Who may change this: only a reviewed commit. A job that was enqueued while an
+# environment was enabled does not run after it is disabled: the worker checks
+# the setting when the job starts, and the API checks it on every request.
+environments:
+  dev:
+    import_activation: disabled
+  test:
+    import_activation: disabled
+  stg:
+    import_activation: disabled
+  prod:
+    import_activation: disabled

@@ -225,6 +225,15 @@ template_map:
       # generated without is skipped inside them.
       - tests/integration/test_worker_image.py
       - tests/integration/worker_image_probe.py
+      # ADR 0013 section 7: the activation gate. OFF in every environment until
+      # declared. The runtime half is in the files above (`routers/imports.py`,
+      # `tasks/imports.py`, `core/settings.py`, `koras_import/activation.py`); this
+      # is the declaration, the drift script the deploy runs, and the suites that
+      # hold the gate to "every route, every task, absent means off".
+      - local/config/import-activation.yaml
+      - local/scripts/import-activation-drift.sh
+      - tests/unit/test_import_activation_gate.py
+      - tests/unit/test_import_activation_declaration.py
       - apps/web/src/app/dashboard/imports
       # The template download: a route handler, because a download is a body
       # and a server action returns a value. The menu it is reached from is a
