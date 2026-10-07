@@ -282,6 +282,9 @@ describe('a product generated WITH secure_files', () => {
       'tests/unit/test_scan_task.py',
       // The round-trip harness names the settings a secure API refuses to start without.
       'playwright.config.ts',
+      // Layer 6b: pytest's path gains `tooling` (the promotion tooling), only with the capability;
+      // `product-secure-files-promotion.test.ts` asserts each half.
+      'pyproject.toml',
     ])
     // The recorded component list is written into several generated files.
     const unlisted = (text: string) =>

@@ -756,10 +756,11 @@ set by hand on an app would outlive every deploy; the script fails the deploy wh
 `IMPORTS_ENABLED` and the secret store does not. It reads names only, changes nothing, and treats
 anything it cannot read as a failure.
 
-**Not in this layer:** the validation engine that compares the declaration to the secret store and
-the promotion-gate evidence (code-owned list of activatable environments) is layer 6b. Until it
-lands the declaration is checked for shape (`test_import_activation_declaration.py`) and by review;
-the drift script is the only deploy-time refusal.
+**Layer 6b** adds the validation engine that compares the declaration to the secret store and the
+apps, and the code-owned-by-configuration list of activatable environments
+(`activation.activatable_environments`, shipped empty): see "Promotion tooling" below. The drift
+script remains the deploy-time refusal; the engine is what the promotion gate and
+`python -m promotion activation <env>` run.
 
 ### Test environments
 
@@ -776,6 +777,178 @@ No `.env`, compose file or committed config ships a default of on (a test scans 
 and `tests/unit/test_import_activation_declaration.py` need nothing; the generator-integration
 workflow runs them by name and fails on any skip. The image test needs Docker, a PostgreSQL and a
 Redis like the rest of `test_worker_image.py`.
+
+## Promotion tooling (layer 6b)
+
+ADR 0013 sections 7 and 9: the Starter owns the **generic** half of the tooling that decides
+whether an environment may be asked to rely on the secure-files chain and, where the product has
+it, to activate data import. It is generated with `secure_files` and is **read-only**: nothing in
+it enables an environment, writes to a database or a secret store, or prints a secret, an object
+key or a file name. A check that cannot establish its answer FAILS; unknown is never a pass.
+
+    PYTHONPATH=tooling uv run python -m promotion gate --env <dev|test|stg|prod> [--commit <sha>] [--out f.json]
+    PYTHONPATH=tooling uv run python -m promotion activation <env> [--skip-fly]
+    PYTHONPATH=tooling uv run python -m promotion f1 --env <env>
+    bash local/scripts/qualify-storage-provider.sh <env>
+
+### What is generic, and what is the product's
+
+| Generic: `tooling/promotion`, owned by the Starter | The product's: configuration, never Starter code |
+|---|---|
+| the gate and its checks, the strict parsers (configuration, register, declaration, junit, dispositions), the fail-closed rules | `local/config/promotion.yaml`: secret-store project and each environment's config, the deployed apps, the scanner setting, the required CI jobs, the register path and id pattern, the qualification directory and freshness |
+| the F1 detector: one read-only transaction, the classes of evidence, the dispositions *format* | `local/config/f1-dispositions.yaml`: the dispositions themselves (ships **empty**; honoured for `dev` only) |
+| the provider-qualification harness: the attack matrix, the evidence record and how it is bound | the qualification record for each environment (`local/.qualification/<env>.json`, git-ignored) |
+| the security-register parser | `docs/security/SECURITY-REGISTER.md`: the findings (ships empty, with the explicit marker) |
+| activation: the comparison of a declaration with what an environment will run | `local/config/import-activation.yaml` (6a) and `activation.activatable_environments`: which environments may ever be enabled (ships **empty**) |
+| the two adapters (below) | which adapter, and the names they are called with |
+
+**The adapter boundary.** The engine never calls a vendor CLI. Everything it needs from outside is
+one of three reads: a setting's value in an environment's secret store (`SecretStore.get`), the
+secret names and machines of a deployed app (`DeployTarget.secrets`, `.machines`), and the check
+runs of a commit (`gh api`, in `gate.py`). The Starter ships the two adapters it uses product-wide,
+Doppler and Fly, in `adapters.py`; they issue only `doppler secrets get`, `flyctl secrets list` and
+`flyctl machines list`, as argument lists with no shell, from names validated against a strict
+pattern first (so a value from the configuration can never become an option). A product on another
+store or host adds an adapter class and a name to `SECRET_STORES` / `DEPLOY_TARGETS` (and
+`config.SUPPORTED_*`); nothing else changes. This is the only place a vendor is named. No Docoris
+Fly app, Doppler project or config, finding or F1 disposition exists in the Starter.
+
+### `promotion.yaml`
+
+Strict: an unknown key, a missing key, a wrong type, an app or setting name that could be read as
+an option, a path that leaves the repository, a pattern that does not compile and an
+`environments` block that is not exactly `dev`, `test`, `stg` and `prod` are all a FAIL of the
+`promotion_config` check. There is no default that stands in for a missing declaration. The
+`activation` section is rendered only with `data_import`.
+
+### The gate's checks
+
+| Check | Passes when |
+|---|---|
+| `promotion_config` | the configuration is present and valid |
+| `activation_*`, `imports_off` | (`data_import` only) the declaration is exact; every environment declared `disabled` holds **no** `IMPORTS_ENABLED` in the secret store (not even `false`) and on neither the api nor the worker app; an `enabled` environment is listed in `activation.activatable_environments`, resolves to on in the store and has no hand-set copy; api and worker agree. Without `data_import`: `activation_not_applicable`. A checkout that has the declaration or the engine package but whose configuration has no `activation` section is a FAIL, not a skip |
+| `scanner_configured`, `scanner_healthy` | the environment's store names the required backend (never `none`, unset or a lookalike) and its scanner app has every machine started with every health check passing |
+| `immutable_finalization` | the finalizer, the finalize-first hand-off to the scanner, the incoming-key ticket, the release rule and the generated `SECURE_FILES = True` are present |
+| `provider_qualification` | a fresh record for **this** environment's **own** store and **this** code (below) |
+| `f1_unverified_releasable` | `F1_UNVERIFIED_RELEASABLE_COUNT = 0` against the environment's own database |
+| `ci_suites` | every job in `ci.required_jobs` completed successfully on the commit, reported by GitHub Actions (a check run from another app under a required name is ignored; the latest run of a job wins; one still running fails) |
+| `import_gate_installed` | (`data_import` only) the 6a gate is in the router, the worker task and its tests |
+| `security_findings` | no unresolved Critical or High finding of type `SECURITY` or `SECURITY-GAP` in the register |
+
+Every collector runs behind a guard, so an unexpected exception is a FAIL that names only the
+exception class. The command exits non-zero unless every check passed; `--out` writes the evidence
+record, after first replacing any previous one with a FAIL placeholder so a run that does not
+finish cannot leave a stale PASS. Gate evidence is a record of one commit on one date; this page
+makes no statement about whether any commit currently passes.
+
+The gate is not wired into the product's deploy workflow, because the deploy is the same file with
+and without the capability (ADR 0013 section 2). It is its own workflow,
+`.github/workflows/promotion-gate.yml` (`workflow_dispatch`, and `workflow_call` so an
+environment's deploy workflow can `needs:` it), with `contents: read` and `checks: read` only. It
+cannot run the provider qualification (which needs a disposable local database and writes into the
+target bucket), so in CI the `provider_qualification` check reports the absence of a record.
+
+### The F1 detector
+
+A *releasable* row is whatever `RELEASABLE_SQL` selects, asked again of the Python `releasable()`;
+a disagreement raises. Each one must carry **verified-digest evidence**:
+`checksum_verified_at` is set (its only writers are the upload finalizer's swap, after it hashed
+the incoming and the final bytes to the claim, and a restore replacement, which hashed what it
+wrote), the claim is 64 lower-case hex, the key is this tenant's *and this file's* final key, and
+the verdict (`scan_attempted_at`) is not older than the verification beyond 60 s of clock skew.
+Everything else is counted in a failing class (`final_key_no_verified_digest`,
+`verdict_predates_verification`, `missing_claim`, `legacy_key_releasable`,
+`incoming_key_releasable`, `unrecognised_key_shape`). Read-only by construction: `begin transaction
+read only`, a check that the server says it is, `select` statements only (a unit test scans them),
+`rollback`. It refuses a role that does not bypass row-level security (every count would read zero
+and prove nothing). Run standalone it reads the admin URL from the process environment and refuses
+one that the secret store's own runner did not bind to `--env` (`doppler run --config <env> -- ...`;
+`--allow-unbound` is the explicit override); inside the gate it reads that environment's own admin
+URL from the secret store, so it cannot be pointed at another environment's database. Output names
+tenant ids, file ids and a class, never a key or a name. Pending,
+infected, skipped and identity-failing rows are reported apart and never counted. A disposition
+silences one `tenant:file` for one recorded class and is honoured only for `dev`; the raw and the
+net count are always both printed. The remediation classes of the product this was proven in (a
+legacy re-trust and an overwrite-restore key shape) are not in the Starter: it has neither.
+
+### Provider qualification, and what its record is bound to
+
+`qualify-storage-provider.sh <env>` runs the upload attack matrix (`test_upload_checksum_provider`,
+`test_upload_finalization_provider` and `test_provider_qualification_extra`) against the
+environment's **own** store, with disposable objects under random tenant prefixes, and writes a
+record only for a run that is clean in the junit file **and** in pytest's exit status (any earlier
+record is removed when a run starts). It writes to the target bucket with the target's real
+credentials, and needs a disposable local Postgres (`E2E_DATABASE_URL`, loopback only: the shell
+script and the Python module both refuse anything else). A required case that is missing, skipped,
+errored or failed is a FAIL; an environment with no storage credentials is a FAIL, not a skip.
+
+The record vouches for exactly:
+
+| Bound to | How | A change makes the record stale because |
+|---|---|---|
+| the store | `storage_fingerprint`: SHA-256 of `endpoint\|bucket\|region` of the environment's *current* secret-store configuration | another environment's record, or the same environment pointed at another bucket, never verifies |
+| the code | `guard_hash`: SHA-256 over the line-ending-normalised contents of `GUARD_FILES` (the upload controls, the finalizer and its job, the release rule, the files router, this module and the three suites) | any edit to any of them |
+| the harness | `harness_version` (an integer, bumped when a case is added, removed or changes what it asserts) and the exact set of required cases | a record with another version, or whose cases are not exactly the required ones, fails |
+| the date | `created_at`, fresh for `qualification.max_age_days` (14 by default), not future-dated, with a timezone | age |
+
+The record holds no secret, key or file name. `--credentials process` runs the matrix against a
+disposable local S3-compatible store whose settings are in the process environment (this is how the
+suites are run against MinIO); the record then names that store's fingerprint and verifies for no
+environment whose configured store differs.
+
+### The forged-provenance regression (ADR 0013 section 9)
+
+**What already existed.** The Layer 2 suites cover provenance that is *absent*: `test_D_...` D2 and
+D3 copy from a victim object that carries no provenance metadata, so what lands carries none (D2
+asserts only `!=` the ticket's id); and `INJECTED["forged-provenance"]` sends a forged header on a
+*guarded* ticket, where the provider refuses and nothing lands. Neither puts a forged,
+**non-empty** provenance on an object that *landed*.
+
+**What the harness adds**, as required case `m12_forged_nonempty_provenance` (matrix row 12), in
+`tests/integration/test_provider_qualification_extra.py::test_Q13_...`. With test-only mechanics and
+disposable fixtures, and no production guard weakened and no production path created
+(`Run.ticket(guarded=False)`, `metadata_only_ticket` and `forged_signed_ticket` exist only in the
+suites, and a test asserts that `guarded=False` appears in no production file):
+
+- a victim object carrying its own, non-empty upload id as provenance;
+- an intentionally **unguarded** copy-source ticket: the provider copies the victim's bytes *and its
+  metadata*, so the object lands with a forged non-empty provenance that is not the ticket's
+  identity, and **its bytes hash to the claim**, so the digest checks would pass;
+- the same through a ticket that signs the provenance but not the copy preconditions;
+- the metadata REPLACEd with a forged string or a sibling ticket's upload id (a provider that
+  insists every `x-amz-*` header be signed refuses these and leaves nothing behind, which also
+  passes; at least one scenario must land, or the case fails as vacuous);
+- the attacker's own bytes, an honest digest and a forged provenance signed into the ticket;
+- forged provenance together with a claim the landed bytes do not match (the digest requirement
+  still applies independently);
+- a positive control: an honest guarded upload is finalized by the same finalizer.
+
+The real `UploadFinalizer` must refuse each one that landed (`held`, `integrity_mismatch`; the row
+stays on its incoming key, `pending`, unverified, with no final object), and the victim object is
+untouched.
+
+**Mutation check.** With the finalizer's provenance comparison changed from `stored_upload !=
+upload_id` to `not stored_upload` (accept any non-empty provenance), applied to a scratch copy of a
+generated product and reverted, `test_Q13_...` fails at its first scenario
+(`copied_victim_provenance: a forged provenance must be refused`, the finalizer returning
+`FINALIZED`), while the Layer 2 provider suites alone (`test_upload_checksum_provider.py` and
+`test_upload_finalization_provider.py`, 25 tests) all pass against the same mutant: they could not
+have caught it.
+
+**Why earlier records are stale.** The case changes `HARNESS_VERSION` (1 to 2), the three suite
+files and `provider_qualification.py` (so `guard_hash`), and the set of required cases. A record
+issued before it fails verification on each of those three counts independently
+(`test_a_record_issued_before_the_forged_provenance_case_is_stale_on_three_counts`), which is how
+Docoris binds its records (`guard_hash` over the same kind of file list) with the version added.
+
+### Running the promotion suites
+
+`tests/unit/test_promotion_*.py` need nothing (and `test_promotion_activation.py` exists only with
+`data_import`). `tests/integration/test_f1_detector_real.py` needs a migrated PostgreSQL as a role
+that bypasses row-level security (`E2E_ADMIN_DATABASE_URL`) and the restricted application role
+(`E2E_DATABASE_URL`). `tests/integration/test_provider_qualification_extra.py` needs the same
+database and an S3-compatible store (`STORAGE_*`). The generator-integration workflow runs the unit
+suites by name and the real ones in the secure-files row, and fails on any skip.
 
 ## Artefact map
 
@@ -881,6 +1054,19 @@ listed under `template_map.capabilities.secure_files` unless marked "always".
 | 6a | existing import suites (`test_import_inspection.py`, `test_import_templates_api.py`, `test_import_worker_envelope.py`, `test_worker_heavy_sections.py`, `test_import_commit_*`, `test_worker_image.py` + probe) | `data_import` | open the gate for themselves; the image probe also runs both tasks with it off |
 | 6a | `apps/web/src/lib/api-errors.ts`, `packages/i18n` (en, de, es) | always | `errors.importNotEnabled` |
 | 6a | generator: `tests/product-import-activation.test.ts` | Starter only | declaration, gate and manifest present with `data_import`, absent without; every environment ships `disabled` |
+| 6b | `tooling/promotion/{__init__,__main__,result,config,adapters,register,activation,f1,provider_qualification,gate}.py` | capability | the generic, read-only promotion tooling: strict configuration, the two adapters (Doppler, Fly), the strict register parser, activation validation, the F1 detector, the provider-qualification harness and the promotion gate |
+| 6b | `local/config/promotion.yaml` | rendered by the capability (`activation` section with `data_import`) | the product's declaration: secret-store project and configs, deployed apps, scanner setting, CI jobs, register, qualification directory and freshness, activatable environments (empty) |
+| 6b | `local/config/f1-dispositions.yaml` | capability | the dispositions format; ships empty (honoured for `dev` only) |
+| 6b | `docs/security/SECURITY-REGISTER.md` | capability | the register the gate reads; ships with the header and the explicit empty marker |
+| 6b | `local/scripts/qualify-storage-provider.sh`, `local/.qualification/.gitignore` | capability | the qualification entry point (loopback database only) and the git-ignored record directory |
+| 6b | `.github/workflows/promotion-gate.yml` | capability | the gate as its own `workflow_dispatch` / `workflow_call` workflow, read-only; the deploy workflow is not changed |
+| 6b | `tests/integration/test_provider_qualification_extra.py` | capability | matrix rows 4 and the download-URL invariant stated on their own, and **row 12, the forged-provenance regression** (ADR 0013 section 9), against a real S3-compatible store and the real finalizer |
+| 6b | `tests/unit/promotion_support.py`, `test_promotion_{config,adapters,register,f1,gate,provider_qualification}.py` | capability | the configuration, the adapters (read-only allowlist), the register parser (negative cases and a seeded fuzz), the F1 classes and dispositions, the gate decided from a table (every missing, invalid or stale piece of evidence in every environment), the qualification evidence binding |
+| 6b | `tests/unit/test_promotion_activation.py` | capability + `data_import` | absent means off, drift, api/worker agreement, the declaration alone never activates, the declaration's schema |
+| 6b | `tests/integration/test_f1_detector_real.py` | capability | the detector against a real PostgreSQL as a BYPASSRLS role: every class, both tenants, the application role refused, read-only, nothing changed |
+| 6b | `pyproject.toml` | always, rendered | `pythonpath` gains `tooling`, only with the capability |
+| 6b | `.github/workflows/generator-integration.yml` | Starter only | steps that run the promotion suites in the secure-files row and fail on any skip |
+| 6b | generator: `tests/product-secure-files-promotion.test.ts` | Starter only | files in which mode, the rendered configuration agrees with the generated CI and secrets manifest, nothing of another product, the deploy workflow unchanged, the guard list and the required tests exist |
 
 **EICAR.** No generated file contains the literal test string (every antivirus that reads a
 repository may quarantine it): `tests/unit/eicar_support.py` holds it base64-encoded and

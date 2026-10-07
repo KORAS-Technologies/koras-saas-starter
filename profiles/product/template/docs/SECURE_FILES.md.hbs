@@ -114,7 +114,37 @@ its own, because it is on a final key.
 If a restored file stays `pending`, look at it as any other pending file (above). The old object
 stays in the bucket until somebody removes it: nothing here deletes it.
 
-{{/if}}## Changing the mode
+{{/if}}## Before an environment relies on it
+
+`tooling/promotion` is read-only and decides nothing by itself: it answers PASS or FAIL, with
+evidence, and never enables anything. What it needs to know about this product is in
+`local/config/promotion.yaml` (the secret-store project, each environment's config and apps, the
+CI jobs, the register, how long a qualification stays fresh).
+
+    PYTHONPATH=tooling uv run python -m promotion gate --env <dev|test|stg|prod>
+
+It reads, for that environment alone: the scanner (the setting and the machines), the provider
+qualification record for **its own** object store, the count of releasable files with no verified
+digest (`F1_UNVERIFIED_RELEASABLE_COUNT`, from its own database, as the privileged admin role), CI
+on the commit, and `docs/security/SECURITY-REGISTER.md`. Any of them it cannot read is a FAIL.
+
+- **Qualify the store** with `bash local/scripts/qualify-storage-provider.sh <env>`. It writes
+  disposable objects into that environment's bucket (for `prod`, a real write to the production
+  bucket) and needs a disposable local Postgres in `E2E_DATABASE_URL`. A record is bound to the
+  store, to the upload-control code, to the harness version and to a date; change any of them and
+  it is stale.
+- **F1 dispositions** (`local/config/f1-dispositions.yaml`) are a reviewed list of files the
+  detector is told not to count, honoured for `dev` only. Do not add one to make a promotion pass.
+{{#if capability.data_import}}- **Import activation** is declared in `local/config/import-activation.yaml` and is *also* limited by
+  `activation.activatable_environments` in `promotion.yaml`, which ships empty: enabling an
+  environment is two reviewed edits, and neither enables anything on its own. A disabled
+  environment holds no `IMPORTS_ENABLED` at all; `python -m promotion activation <env>` checks the
+  secret store and the apps.
+{{/if}}
+`.github/workflows/promotion-gate.yml` runs the gate by hand or from another workflow. The deploy
+workflow does not call it unless you make it.
+
+## Changing the mode
 
 `secure_files` is a generation-time choice. It is not a runtime toggle and is not
 retrofitted by upgrading the Starter. Do not hand-edit it in or out: regenerate,

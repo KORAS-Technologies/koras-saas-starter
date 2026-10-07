@@ -808,6 +808,46 @@ jobs:
             grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/$report.txt"
           done
 
+      # The promotion tooling (ADR 0013 sections 7 and 9), asked for by name and not allowed to
+      # skip. It is read-only and fail-closed, and its whole value is that "unknown" is a FAIL:
+      # a suite that went missing, or that skipped because its database or store was not there,
+      # would leave a gate that cannot say no while every other step here is green.
+      #
+      #   - the unit suites: the strict configuration, the adapters' read-only allowlist, the
+      #     register parser (negative cases and a seeded fuzz), the F1 classes, the gate decided
+      #     from a table in every environment, the evidence binding, import activation;
+      #   - `test_f1_detector_real.py`: the detector against this row's PostgreSQL as a role that
+      #     bypasses row-level security (it must refuse the application role);
+      #   - `test_provider_qualification_extra.py`: matrix row 12, the forged-provenance
+      #     regression (a forged, non-empty provenance on an intentionally unguarded copy-source
+      #     ticket must still be refused by the real finalizer), against MinIO. MinIO honours an
+      #     unsigned copy-source, which is what makes the case non-vacuous; the test fails if no
+      #     scenario lands a forged provenance.
+      - name: The promotion tooling ran against a database and an object store, and did not skip
+        if: matrix.roundtrip && contains(matrix.components, 'secure_files')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        env:
+          E2E_DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+          E2E_ADMIN_DATABASE_URL: postgresql://postgres:rlstest@localhost:5432/koras_e2e
+          STORAGE_ENDPOINT: http://localhost:9000
+          STORAGE_BUCKET: koras-files
+          STORAGE_ACCESS_KEY: minioadmin
+          STORAGE_SECRET_KEY: minioadmin123
+        run: |
+          set -euo pipefail
+          uv run pytest tests/unit/test_promotion_*.py --no-cov -q -rs | tee "$RUNNER_TEMP/promotion-unit.txt"
+          uv run pytest \
+            tests/integration/test_f1_detector_real.py \
+            tests/integration/test_provider_qualification_extra.py \
+            --no-cov -q -rs | tee "$RUNNER_TEMP/promotion-integration.txt"
+          for report in promotion-unit promotion-integration; do
+            if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/$report.txt"; then
+              echo "::error::a promotion-tooling test was skipped; this row has a database and an object store and every one of them must run"
+              exit 1
+            fi
+            grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/$report.txt"
+          done
+
       # What may be heavy in a worker at once, asked of the product's own
       # jobs, and not allowed to skip.
       #
