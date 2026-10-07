@@ -1,0 +1,50 @@
+/**
+ * The browser-side plumbing a direct-to-bucket upload needs in a product generated with
+ * `secure_files` (ADR 0013): the content claim, and the PUT.
+ *
+ * Shared by every client component that drives an upload against this product's ticket
+ * contract (the Files page and the import panel today), so a second upload surface reuses
+ * this file rather than carrying a second copy of either half.
+ *
+ * `digestOf` is required here and not optional: the API refuses a ticket without the
+ * SHA-256 of the bytes, binds it to the file, and the worker promotes an object only if its
+ * bytes hash to it. A file whose digest cannot be taken is therefore not uploaded, and the
+ * thrown `ChecksumUnavailableError` carries a sentence the page can show. The function and
+ * its tests live in `@{{projectSlug}}/api-client`.
+ */
+
+export {
+  ChecksumUnavailableError,
+  digestOf,
+} from '@{{projectSlug}}/api-client/src/upload-claim'
+
+/**
+ * Puts a file to a signed URL, reporting progress. `XMLHttpRequest` rather than `fetch`,
+ * because only the former reports upload progress, and an upload with no progress indicator
+ * is one a person cancels wondering if it is still happening.
+ *
+ * The headers are the ticket's, and exactly the ticket's: they are part of the signature,
+ * and the copy-source guard among them is what stops this PUT being turned into a copy from
+ * another object. Adding, removing or rewriting one makes the provider refuse the request.
+ */
+export function putWithProgress(
+  url: string,
+  headers: Record<string, string>,
+  file: File,
+  onProgress: (fraction: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', url)
+    for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value)
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total)
+    }
+    xhr.onload = () =>
+      xhr.status >= 200 && xhr.status < 300
+        ? resolve()
+        : reject(new Error(`the bucket answered ${xhr.status}`))
+    xhr.onerror = () => reject(new Error('the upload could not reach the bucket'))
+    xhr.send(file)
+  })
+}

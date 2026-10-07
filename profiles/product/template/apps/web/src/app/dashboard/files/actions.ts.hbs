@@ -69,7 +69,11 @@ export async function requestUpload(input: {
   name: string
   sizeBytes: number
   contentType: string
+{{#if capability.secure_files}}
+  checksumSha256: string
+{{else}}
   checksumSha256?: string | null
+{{/if}}
 }): Promise<ActionResult<UploadTicket>> {
   const auth = await session('files.upload')
   if (auth === null) return { status: 'error', message: (await translator())('files.error.forbidden') }
@@ -89,11 +93,18 @@ export async function requestUpload(input: {
   }
 }
 
+{{#if capability.secure_files}}
+/**
+ * Confirm an upload. The digest, if sent, must be the one the ticket was issued for;
+ * it is never recorded here.
+ */
+{{else}}
 /**
  * Confirm an upload, carrying the digest the browser computed over the bytes
  * it sent. The digest is the client's claim and is recorded as one; the API
  * marks it corroborated only where the provider offers a digest that agrees.
  */
+{{/if}}
 export async function completeUpload(
   fileId: string,
   checksumSha256?: string | null,

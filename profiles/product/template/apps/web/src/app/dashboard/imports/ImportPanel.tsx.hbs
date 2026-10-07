@@ -22,6 +22,9 @@ import {
   validateRun,
 } from './actions'
 import type { ImportLabels } from './labels'
+{{#if capability.secure_files}}
+import { digestOf } from '../../../lib/browser-upload'
+{{/if}}
 
 /**
  * Download a template, upload, map, check -- and, since Phase 2, confirm.
@@ -70,6 +73,7 @@ import type { ImportLabels } from './labels'
  * promised and never happens leaves somebody watching a spinner forever.
  */
 
+{{#unless capability.secure_files}}
 /** A digest of what is about to be sent, where the browser can take one. */
 async function digestOf(file: File): Promise<string | null> {
   try {
@@ -82,6 +86,7 @@ async function digestOf(file: File): Promise<string | null> {
     return null
   }
 }
+{{/unless}}
 
 async function put(url: string, headers: Record<string, string>, file: File): Promise<void> {
   const response = await fetch(url, { method: 'PUT', headers, body: file })

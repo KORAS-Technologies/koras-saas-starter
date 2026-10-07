@@ -5,6 +5,9 @@ import type { ActionResult } from './actions'
 import type { FileList } from '@{{projectSlug}}/api-client'
 import type { Locale } from '@{{projectSlug}}/i18n'
 import { Button, Card } from '@{{projectSlug}}/ui'
+{{#if capability.secure_files}}
+import { digestOf, putWithProgress } from '../../../lib/browser-upload'
+{{/if}}
 import { completeUpload, deleteFile, downloadUrl, listFiles, requestUpload } from './actions'
 
 /**
@@ -66,6 +69,7 @@ function formatBytes(bytes: number, locale: Locale): string {
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(value)} ${units[unit]}`
 }
 
+{{#unless capability.secure_files}}
 /**
  * The SHA-256 of what is about to be sent, computed in the browser.
  *
@@ -109,6 +113,7 @@ function putWithProgress(
     xhr.send(file)
   })
 }
+{{/unless}}
 
 export function FilesPanel({
   initial,
@@ -176,11 +181,17 @@ export function FilesPanel({
       setError(null)
       setProgress(0)
       try {
+{{#if capability.secure_files}}
+        // Before the ticket: the digest is the content claim this upload is authorized
+        // for, bound to the file when the ticket is issued. A file whose digest cannot
+        // be taken throws here and is not uploaded.
+{{else}}
         // Before the ticket, not merely before the PUT: the digest is signed
         // into the upload URL, so the provider stores it and can be asked for
         // it afterwards. Hashing after the ticket was issued -- which is what
         // this did until 2026-09-16 -- left the provider with nothing to
         // corroborate, and `checksum_verified` false for every file forever.
+{{/if}}
         const checksum = await digestOf(file)
         const ticket = await requestUpload({
           name: file.name,
