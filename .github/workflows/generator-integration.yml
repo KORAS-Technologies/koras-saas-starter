@@ -635,6 +635,94 @@ jobs:
           fi
           grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/upload-foundation.txt"
 
+      # The scanner, against a database, an object store and a real clamd, and not
+      # allowed to skip.
+      #
+      # ADR 0013, layer 3. The unit suites prove the client against a scripted clamd
+      # and the runtime against an in-memory table; they cannot show that the answers
+      # the parser was written for are the answers the engine gives, that the
+      # transitions are valid SQL under forced row-level security as the restricted
+      # role, that the sweep's expression is the one its indexes carry and that the
+      # planner uses them, or that an upload survives finalization, the hand-off and a
+      # scan and ends as the right verdict. Those need a database (with the admin
+      # connection the plan checks use), Redis (the job identity), MinIO and the clamd
+      # image built from the generated `services/clamd`, which is the service a
+      # product deploys. The engine downloads its signatures at start, so this step
+      # waits for the image's own "ready" line, which is logged only after a detection
+      # self-test has passed.
+      - name: The scanner ran against a database, an object store and clamd, and did not skip
+        if: matrix.roundtrip && contains(matrix.components, 'secure_files')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        env:
+          E2E_DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+          MIGRATE_DATABASE_URL: postgresql://postgres:rlstest@localhost:5432/koras_e2e
+          E2E_REDIS_URL: redis://localhost:6379/5
+          WORKER_IMAGE: koras-scanner-worker-image:${{ github.sha }}
+          WORKER_IMAGE_REDIS_URL: redis://localhost:6379/0
+          WORKER_IMAGE_NETWORK: host
+          E2E_CLAMD_HOST: 127.0.0.1
+          E2E_CLAMD_PORT: "3310"
+          STORAGE_ENDPOINT: http://localhost:9000
+          STORAGE_BUCKET: koras-files
+          STORAGE_ACCESS_KEY: minioadmin
+          STORAGE_SECRET_KEY: minioadmin123
+        run: |
+          set -euo pipefail
+          docker run -d --name scanner-minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin123 \
+            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          docker run -d --name scanner-redis -p 6379:6379 redis:7-alpine
+          docker build -f services/clamd/Dockerfile -t scanner-clamd .
+          docker build -f services/worker/Dockerfile -t "$WORKER_IMAGE" .
+          docker run -d --name scanner-clamd -p 3310:3310 --memory 2g --cpus 2 scanner-clamd
+          trap 'docker rm -f scanner-minio scanner-redis scanner-clamd >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://localhost:9000/minio/health/ready >/dev/null; then break; fi
+            sleep 1
+          done
+          uv run python - <<'PY'
+          import boto3
+          boto3.client(
+              "s3",
+              endpoint_url="http://localhost:9000",
+              aws_access_key_id="minioadmin",
+              aws_secret_access_key="minioadmin123",
+              region_name="us-east-1",
+          ).create_bucket(Bucket="koras-files")
+          PY
+          for attempt in $(seq 1 120); do
+            if docker logs scanner-clamd 2>&1 | grep -q "ready: detection self-test passed"; then break; fi
+            if docker logs scanner-clamd 2>&1 | grep -q "FATAL"; then docker logs scanner-clamd; exit 1; fi
+            sleep 5
+          done
+          docker logs scanner-clamd 2>&1 | grep -q "ready: detection self-test passed"
+          uv run pytest \
+            tests/unit/test_scanner_foundation.py \
+            tests/unit/test_scanner_object_reader.py \
+            tests/unit/test_scanner_structural_gate.py \
+            tests/unit/test_scanner_transition.py \
+            tests/unit/test_scan_runtime.py \
+            tests/unit/test_scan_task.py \
+            tests/unit/test_scan_sweep.py \
+            tests/unit/test_scan_sweep_fairness.py \
+            tests/unit/test_scan_interrupted.py \
+            tests/unit/test_scan_enqueue.py \
+            tests/unit/test_scan_handoff.py \
+            tests/unit/test_file_scan_fixtures.py \
+            tests/unit/test_secure_files_config.py \
+            tests/integration/test_scan_transition_real.py \
+            tests/integration/test_scan_runtime_real.py \
+            tests/integration/test_scan_sweep_real.py \
+            tests/integration/test_scanner_clamd_live.py \
+            tests/integration/test_scan_orchestration_real.py \
+            tests/integration/test_worker_image_scanner.py \
+            --no-cov -q -rs | tee "$RUNNER_TEMP/scanner.txt"
+          if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/scanner.txt"; then
+            echo "::error::a scanner test was skipped; this row has a database, Redis, an object store and clamd and every one of them must run"
+            exit 1
+          fi
+          grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/scanner.txt"
+
       # What may be heavy in a worker at once, asked of the product's own
       # jobs, and not allowed to skip.
       #

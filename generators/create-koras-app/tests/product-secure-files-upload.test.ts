@@ -314,7 +314,10 @@ describe('the migration is the one Docoris proved', () => {
       .map((p) => /^supabase\/migrations\/(\d{5})_/.exec(p)?.[1])
       .filter((n): n is string => n !== undefined)
       .map(Number)
-    expect(Math.max(...numbers)).toBe(39)
+    // The first the capability adds follows the last one the starter had (00038); the scanner's
+    // two follow it (`product-secure-files-scanner.test.ts`).
+    expect(Math.min(...numbers.filter((n) => n >= 39))).toBe(39)
+    expect(numbers).toContain(38)
     expect(migration).toContain('add column if not exists scan_attempts smallint not null default 0')
     expect(migration).toContain('drop constraint if exists files_scan_failure_check')
     expect(migration).toContain('drop constraint if exists files_scan_attempts_check')
