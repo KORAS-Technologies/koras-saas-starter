@@ -439,6 +439,9 @@ Provisioning the existing project in ${projectSlug}/ — nothing regenerated.`)
 
   console.log(`\n✓ Generated ${result.filesWritten} files in ${projectSlug}/`)
 
+  const recommendation = secureFilesRecommendation(ctx.selections)
+  if (recommendation) console.log(recommendation)
+
   if (!ctx.provision) {
     console.log(`\nNext steps:`)
     console.log(`  cd ${projectSlug}`)
@@ -1001,4 +1004,21 @@ export function provisionedNextSteps(projectSlug: string): string[] {
     'make bootstrap starts the local Docker stack and is unrelated to the four',
     'steps above. See PROVISIONING_RUNBOOK.md section 1 in the starter.',
   ]
+}
+
+/**
+ * One line, printed when a product stores files and was generated without
+ * `secure_files` (ADR 0013). A recommendation and nothing more: the default
+ * stays off so existing output is unchanged, and nothing is implied.
+ */
+export function secureFilesRecommendation(selections: {
+  capabilities: Record<string, boolean>
+}): string | null {
+  const caps = selections.capabilities
+  if (caps.storage !== true || !('secure_files' in caps) || caps.secure_files === true) return null
+  return (
+    '\n  Recommended: this product stores files and was generated without secure_files ' +
+    '(scan-then-release for customer documents). Add --with secure_files,clamd,worker ' +
+    "to enable it; see the starter's docs/SECURE_FILES.md."
+  )
 }

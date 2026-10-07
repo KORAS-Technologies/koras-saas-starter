@@ -93,6 +93,14 @@ capabilities:
   # is separately off until its own setting asks for it, because two of them
   # delete and the third bills a second destination.
   storage_governance: true
+  # Trusted file bytes (ADR 0013): the chain by which a stored file is exposed
+  # only after it was hashed, scanned and assessed, and released clean-only.
+  # Declared `true` like the others and off by default in defaults.yaml, so a
+  # product generated without it is byte-identical to before. Enabled, it
+  # requires everything the chain stands on (below) and a product that is
+  # missing a mandatory setting refuses to start rather than falling back to
+  # the legacy release. The artefact map is docs/SECURE_FILES.md.
+  secure_files: true
 
 registration:
   registers_as_product: true
@@ -226,6 +234,16 @@ template_map:
       # the template rather than the workflow because a product that
       # declares targets of its own should inherit it.
       - e2e/roundtrip/imports.spec.ts
+    # Secure files (ADR 0013). Later layers append their files here. The
+    # first entry is the operator's page for a product that has the capability;
+    # a list cannot be empty, and that page is true only when it is on. What is
+    # not listed is generated always and harmless without it: the two
+    # `secure_files.py` modules, which carry the generated `SECURE_FILES`
+    # constant (False without the capability) and are no-ops when it is False,
+    # and `tests/unit/test_secure_files_config.py`, which exercises both modes.
+    secure_files:
+      - docs/SECURE_FILES.md
+
     # In-app notifications: the table, the emitter, the routes, the page and
     # the browser test.
     #
@@ -349,6 +367,11 @@ requires:
   # confirmed it has closed the page, so an import framework whose completion
   # notice silently does nothing is one whose runs appear to hang.
   data_import: [notifications]
+  # The chain stands on object storage (storage), on rows scoped per tenant
+  # (tenancy, rls), and on a worker that finalizes and scans and a scanner to
+  # scan with (worker, clamd). Refused rather than implied: clamd is a Fly app
+  # and a set of secrets the operator has to decide to have.
+  secure_files: [storage, tenancy, rls, worker, clamd]
 
 # Directories copied verbatim from the starter into the generated project.
 # Terraform modules stay single-sourced here rather than being duplicated
