@@ -108,7 +108,19 @@ describe('declared like every other capability', () => {
   it('gates a real set of files, and every gated path exists in the template', () => {
     expect(gated().length).toBeGreaterThan(0)
     for (const path of gated()) {
-      expect(() => templatePath('product', path + (path.endsWith('.md') ? '.hbs' : ''))).not.toThrow()
+      // A listed path is an *output* path: the template may carry it as is, with `.hbs`, or (a
+      // directory) as a tree. At least one has to exist.
+      const found = [path, `${path}.hbs`].some((candidate) => {
+        try {
+          templatePath('product', candidate)
+          return true
+        } catch {
+          return false
+        }
+      })
+      expect(found, `${path} is listed under secure_files and exists nowhere in the template`).toBe(
+        true,
+      )
     }
   })
 
@@ -232,6 +244,19 @@ describe('a product generated WITH secure_files', () => {
       WORKER_MODULE,
       PY_TEST,
       '.koras/project.yaml',
+      // Layer 2: what is rendered by the capability rather than gated by it. Each of these is
+      // asserted, both ways, in `product-secure-files-upload.test.ts`.
+      'services/api/koras_api/routers/files.py',
+      'services/api/koras_api/core/errors.py',
+      'services/worker/Dockerfile',
+      'services/worker/pyproject.toml',
+      'apps/web/src/app/dashboard/files/FilesPanel.tsx',
+      'apps/web/src/app/dashboard/files/actions.ts',
+      'apps/web/src/app/dashboard/imports/ImportPanel.tsx',
+      'apps/web/src/app/dashboard/imports/actions.ts',
+      'tests/unit/test_upload_ticket_contract.py',
+      // The round-trip harness names the settings a secure API refuses to start without.
+      'playwright.config.ts',
     ])
     // The recorded component list is written into several generated files.
     const unlisted = (text: string) =>
@@ -241,7 +266,13 @@ describe('a product generated WITH secure_files', () => {
       expect(unlisted(files.get(path) ?? ''), path).toBe(unlisted(content))
     }
     const added = paths.filter((p) => !base.has(p)).sort()
-    expect(added).toEqual(expect.arrayContaining(gated()))
+    // Each gated path is a file or a directory, and every one of them is among what was added.
+    for (const path of gated()) {
+      expect(
+        added.some((p) => p === path || p.startsWith(`${path}/`)),
+        `${path} is gated but was not added by the capability`,
+      ).toBe(true)
+    }
   })
 })
 

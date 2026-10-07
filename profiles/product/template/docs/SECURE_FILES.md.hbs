@@ -20,9 +20,27 @@ all of these are present and valid. There is no fallback to unscanned release.
 | `STORAGE_BUCKET` | set |
 | `STORAGE_ACCESS_KEY` | set |
 | `STORAGE_SECRET_KEY` | set |
+| `REDIS_URL` | set: a confirmed upload is finalized by a job |
+| `DATABASE_URL` | set: the finalizer works on the file's row, as its tenant |
 
 Later releases of the capability add rows; the list lives in
 `services/api/koras_api/core/secure_files.py` (`SECURE_FILES_CHECKS`).
+
+## Uploads
+
+A ticket is issued only for a SHA-256 claim (`checksum_sha256`, 64 lowercase hex
+characters, required), and it lets the browser write one *incoming* key and nothing
+else. The worker's `file.finalize` job copies the object to a *final* key only it can
+write, after checking the object's provenance and the digest of both the incoming and
+the final bytes against the claim. Until that has happened the file is on a key a client
+could still write, is not downloadable, and is not handed to anything.
+
+If a file stays unavailable: check the worker is running and can reach `REDIS_URL`,
+`DATABASE_URL` and the bucket; the sweep (`sweep_finalize`, every five minutes) picks up
+anything a lost job left. A file the finalizer refused carries a `scan_failure` word and a
+`storage.upload.held` audit event; `integrity_mismatch` means the bytes were not the ones
+claimed and is never retried. The bucket's CORS rule must allow the signed upload headers
+(see the Starter's `docs/SECURE_FILES.md`).
 
 ## Changing the mode
 

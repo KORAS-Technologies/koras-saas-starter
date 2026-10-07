@@ -51,7 +51,7 @@ describe('the names the two sides share', () => {
   const branding = read('packages', 'branding', 'src', 'index.ts.hbs')
   const permissions = read('packages', 'permissions', 'src', 'index.ts')
   const storage = read('services', 'api', 'koras_api', 'core', 'storage.py')
-  const router = read('services', 'api', 'koras_api', 'routers', 'files.py')
+  const router = read('services', 'api', 'koras_api', 'routers', 'files.py.hbs')
 
   it('gates the module on the same entitlement the API enforces', () => {
     expect(storage).toContain('STORAGE_ENTITLEMENT = "storage.files"')
@@ -83,7 +83,7 @@ describe('the names the two sides share', () => {
 describe('no byte passes through the product', () => {
   const panel = read('apps', 'web', 'src', 'app', 'dashboard', 'files', 'FilesPanel.tsx.hbs')
   const actions = read('apps', 'web', 'src', 'app', 'dashboard', 'files', 'actions.ts.hbs')
-  const router = read('services', 'api', 'koras_api', 'routers', 'files.py')
+  const router = read('services', 'api', 'koras_api', 'routers', 'files.py.hbs')
 
   it('uploads and downloads on signed URLs the API mints', () => {
     expect(panel).toContain("xhr.open('PUT', url)")

@@ -241,8 +241,35 @@ template_map:
     # `secure_files.py` modules, which carry the generated `SECURE_FILES`
     # constant (False without the capability) and are no-ops when it is False,
     # and `tests/unit/test_secure_files_config.py`, which exercises both modes.
+    #
+    # Layer 2, the upload foundation: the SHA-256 claim, the incoming key a ticket
+    # writes, and the immutable finalization that promotes it to a key only the
+    # server writes. What is not listed and differs by mode is *rendered* by the
+    # capability rather than gated by it -- `routers/files.py`, `core/errors.py`,
+    # the worker's `worker.py` and `Dockerfile`, the web Files and import panels
+    # -- and what is not listed and does not differ is shared: `koras-storage`'s
+    # signed copy-source guard, `provenance()` and `sha256()` are additions a
+    # product without the capability never calls.
     secure_files:
       - docs/SECURE_FILES.md
+      - services/api/koras_api/core/upload_window.py
+      - services/api/koras_api/core/finalize_jobs.py
+      - services/api/koras_api/core/finalize_enqueue.py
+      - services/api/koras_api/core/upload_audit.py
+      - services/worker/koras_worker/uploads
+      - services/worker/koras_worker/tasks/finalize.py
+      - supabase/migrations/00039_file_scan_attempts.sql
+      - supabase/tests/340_upload_finalization_isolation.sql
+      - packages/api-client/src/upload-claim.ts
+      - packages/api-client/src/upload-claim.test.ts
+      - apps/web/src/lib/browser-upload.ts
+      - tests/unit/upload_store_support.py
+      - tests/unit/test_upload_finalization.py
+      - tests/unit/test_upload_finalize_task.py
+      - tests/integration/test_upload_finalization_real.py
+      - tests/integration/test_upload_checksum_provenance_real.py
+      - tests/integration/test_upload_finalization_provider.py
+      - tests/integration/test_upload_checksum_provider.py
 
     # In-app notifications: the table, the emitter, the routes, the page and
     # the browser test.

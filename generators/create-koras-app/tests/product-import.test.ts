@@ -1065,7 +1065,7 @@ describe('data import', () => {
     // The source inherits retention, legal hold, reconciliation, scanning and
     // the quota because it is an ordinary file. What the category buys is that
     // the two are separable later — by a sweep, a rule or a report.
-    const files = read('services/api/koras_api/routers/files.py')
+    const files = read('services/api/koras_api/routers/files.py.hbs')
     expect(files).toContain("category: Literal[\"documents\", \"imports\"] = \"documents\"")
 
     // The category is decided by the server action, never accepted from the
@@ -1080,7 +1080,7 @@ describe('data import', () => {
     const storage = read('services/api/koras_api/core/storage.py')
     expect(storage).toContain('files.maxUploadSizeMb')
     expect(storage).toContain('files.allowedExtensions')
-    const files = read('services/api/koras_api/routers/files.py')
+    const files = read('services/api/koras_api/routers/files.py.hbs')
     expect(files).toContain('upload_limits')
     expect(files).toContain('UPLOAD_REFUSED_BY_POLICY')
   })
@@ -1132,7 +1132,7 @@ describe('data import', () => {
   })
 
   it('gives every import error code a sentence and a mapping', () => {
-    const errors = read('services/api/koras_api/core/errors.py')
+    const errors = read('services/api/koras_api/core/errors.py.hbs')
     const codes = [...errors.matchAll(/^\s+IMPORT_\w+ = "([a-z_]+)"$/gm)].map((match) => match[1]!)
     // Ten since the commit: `import_not_committable` is what a target with
     // no writer answers, and it is a sentence rather than a 500 because a

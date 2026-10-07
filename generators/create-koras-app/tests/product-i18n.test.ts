@@ -396,7 +396,7 @@ describe('the catalogues', () => {
    * contract is exempt -- its callers are machines, never a person.
    */
   it('gives every person-facing API error code a sentence in the catalogue', () => {
-    const errors = read(PRODUCT, 'services', 'api', 'koras_api', 'core', 'errors.py')
+    const errors = read(PRODUCT, 'services', 'api', 'koras_api', 'core', 'errors.py.hbs')
     const machineOnly = new Set([
       'environment_mismatch',
       'slug_taken',
@@ -404,6 +404,12 @@ describe('the catalogues', () => {
       'machine_identity_required',
       'platform_caller_required',
       'platform_caller_unconfigured',
+      // `secure_files` only (ADR 0013), and rendered only there. Adding its sentence to the
+      // catalogue would change every product generated without the capability, so the web
+      // tier answers it with the status-based fallback `apiErrorMessage` documents. The first-
+      // party client always sends the claim, so only a ticket from before the claim was
+      // required can provoke it.
+      'upload_checksum_claim_invalid',
     ])
     const codes = [...errors.matchAll(/^\s+[A-Z_]+ = "([a-z_]+)"$/gm)]
       .map((match) => match[1]!)
