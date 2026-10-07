@@ -1300,10 +1300,10 @@ completed successfully:
 | Secure Files Proof | 37655290274 | `secure-files-migration-matrix` (cases A to D, D being the assistant enabled later), `live-proof-secure`, `live-proof-compat` |
 | Security | 37655290376 | `CodeQL (javascript-typescript)`, `CodeQL (python)`, `Secret scan (gitleaks)` |
 
-The commits after it change documentation only (this section); the two workflows whose triggers are
-path-filtered (Generator Integration, Secure Files Proof) were dispatched by hand on the branch head
-that carries this text, and the runs are recorded in the pull request. No security step was skipped or
-disabled to get there.
+The commits after it change this section and add one cleanup step to the proof workflow (it stops the
+background services before `setup-uv` prunes its cache, because a hand-dispatched run of the proof failed
+in that post step after every real step had passed). The checks of the head that carries this text are
+those of pull request 39. No security step was skipped or disabled to get there.
 
 **2026-10-07, earlier commit `6181c449ab4c066155bf98b65b3a18abd2b64938`** (branch
 `feat/secure-files-capability`, pull request 39). Every check on that commit completed
