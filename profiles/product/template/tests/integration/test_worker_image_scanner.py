@@ -193,6 +193,55 @@ def test_the_release_rule_loads_in_the_image_and_is_strict_without_the_api_only_
         }
 
 
+#: A restore in the image (layer 5): where the product has restore (`storage_governance`) the
+#: worker image carries it with the scanner's pieces it reaches, and a replacement key it makes is
+#: a final key by the one rule in the image.
+RESTORE_PROBE = '''
+import importlib, importlib.util, json
+if importlib.util.find_spec("koras_worker.tasks.restore_scan") is None:
+    print(json.dumps({"present": False}))
+    raise SystemExit(0)
+restore_scan = importlib.import_module("koras_worker.tasks.restore_scan")
+restore = importlib.import_module("koras_worker.tasks.storage_restore")
+window = importlib.import_module("koras_api.core.upload_window")
+from koras_storage import Category
+tenant = "00000000-0000-0000-0000-00000000000a"
+file_id = "11111111-1111-1111-1111-111111111111"
+key = restore.replacement_key(tenant, file_id, "a b.pdf", Category.DOCUMENTS)
+print(json.dumps({
+    "present": True,
+    "final": window.is_final_key(key),
+    "incoming": window.is_incoming_key(key),
+    "window": restore_scan._window_seconds() == window.SCAN_READ_DELAY_SECONDS,
+    "horizon": restore_scan.in_flight_horizon_seconds() > 660,
+    "enqueue": callable(restore_scan._enqueue_module().enqueue_scan),
+}))
+'''
+
+
+def test_a_restore_loads_in_the_image_and_writes_the_shape_the_scanner_reads() -> None:
+    import json
+    from pathlib import Path
+
+    has_restore = (
+        Path(__file__).resolve().parents[2]
+        / "services/worker/koras_worker/tasks/restore_scan.py"
+    ).exists()
+    done = _run("run", "--rm", "-i", *_environment(), IMAGE, "python", "-", stdin=RESTORE_PROBE)
+    assert done.returncode == 0, done.stdout + done.stderr
+    report = json.loads(done.stdout.strip().splitlines()[-1])
+    assert report["present"] is has_restore
+    if has_restore:
+        assert report == {
+            "present": True,
+            "final": True,
+            "incoming": False,
+            "window": True,
+            "horizon": True,
+            "enqueue": True,
+        }
+
+
 @pytest.mark.parametrize(
     ("overrides", "named"),
     [

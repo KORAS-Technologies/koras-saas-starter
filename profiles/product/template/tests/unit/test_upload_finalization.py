@@ -50,8 +50,10 @@ from koras_api.core.upload_window import (  # noqa: E402
     FINAL,
     FINALIZE_DELAY_SECONDS,
     INCOMING,
+    final_key,
     final_key_for,
     incoming_key,
+    is_final_key,
     is_incoming_key,
 )
 from koras_api.main import app  # noqa: E402
@@ -85,6 +87,38 @@ def test_the_final_key_for_an_incoming_one_is_the_documented_shape() -> None:
     final = final_key_for(key, GENERATION)
     assert final == f"tenants/{TENANT_A}/documents/{FILE_A}/{FINAL}/{GENERATION}/a.pdf"
     assert not is_incoming_key(final)
+
+
+def test_a_server_side_writer_other_than_the_finalizer_makes_the_same_final_shape() -> None:
+    """A restore has no ticket and no incoming object, so it writes a final key directly. It is
+    the one shape `is_final_key` accepts, and it is what the finalizer's copy would have made."""
+    made = final_key(TENANT_A, "documents", FILE_A, GENERATION, "a.pdf")
+    incoming = incoming_key(TENANT_A, "documents", FILE_A, UPLOAD, "a.pdf")
+    via_copy = final_key_for(incoming, GENERATION)
+    assert made == via_copy and is_final_key(made) and not is_incoming_key(made)
+
+
+def test_a_directly_made_final_key_has_no_space_and_refuses_what_is_not_a_segment() -> None:
+    assert " " not in final_key(TENANT_A, "documents", FILE_A, GENERATION, "My Report.pdf")
+    for kwargs in (
+        {"tenant_id": "x"},
+        {"file_id": GENERATION.upper()},
+        {"generation": "../x"},
+        {"category": "a/b"},
+        {"category": ""},
+        {"safe_name": "a/b"},
+        {"safe_name": ".."},
+        {"safe_name": ""},
+    ):
+        arguments = {
+            "tenant_id": TENANT_A,
+            "category": "documents",
+            "file_id": FILE_A,
+            "generation": GENERATION,
+            "safe_name": "a.pdf",
+        } | kwargs
+        with pytest.raises(ValueError):
+            final_key(**arguments)
 
 
 @pytest.mark.parametrize(

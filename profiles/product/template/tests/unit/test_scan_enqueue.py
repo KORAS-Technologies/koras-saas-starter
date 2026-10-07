@@ -117,6 +117,25 @@ def test_the_finalization_delay_is_the_window_plus_the_measured_in_flight_bound_
     assert FINALIZE_DELAY_SECONDS > SCAN_READ_DELAY_SECONDS
 
 
+async def test_a_caller_that_knows_the_gate_is_closed_can_defer_the_job() -> None:
+    """A restore's new row is created now, so the scanner's read gate opens a window from now;
+    the job is asked for after it. Nothing else about the job changes."""
+    seen: dict[str, object] = {}
+
+    class Capturing(RecordingJobQueue):
+        async def enqueue(self, task, **kwargs):
+            seen.update(kwargs)
+            return await super().enqueue(task, **kwargs)
+
+    queue = Capturing()
+    await enqueue_scan(queue, tenant_id=TENANT, file_id=FILE, delay_seconds=SCAN_READ_DELAY_SECONDS + 1)
+    assert seen["delay_seconds"] == SCAN_READ_DELAY_SECONDS + 1
+    assert seen["idempotency_key"] == f"scan:{FILE}"
+    assert seen["payload"] == {"file_id": FILE}
+    (job,) = queue.jobs
+    assert dict(job.payload) == {"file_id": FILE}
+
+
 async def test_a_finalized_file_is_enqueued_for_now_and_not_deferred() -> None:
     queue = RecordingJobQueue()
     await enqueue_scan(queue, tenant_id=TENANT, file_id=FILE)
