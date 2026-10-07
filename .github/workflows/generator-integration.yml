@@ -122,11 +122,14 @@ jobs:
           # PostgreSQL with row-level security forced and a real S3-compatible store,
           # and that none of those suites skipped (see the step of that name below).
           # `data_import` is named because its panel is the second upload surface the
-          # first-party client has to send the claim from.
+          # first-party client has to send the claim from. Layer 4 adds `ai` (and the
+          # gateway it embeds through): the release layer's consumers are the download, the
+          # assistant's indexer and retrieval, and the import source, and a row without the
+          # assistant would leave two thirds of them as generated text nobody ran.
           - profile: product
             slug: integration-product-secure
             rls_flags: ""
-            components: "--with secure_files,clamd,worker,data_import"
+            components: "--with secure_files,clamd,worker,data_import,ai,ai_gateway"
             roundtrip: true
           # The other direction. Removing a component must leave a project that
           # still builds -- a workspace reference to something no longer
@@ -323,6 +326,11 @@ jobs:
           # a banner, which would be a suite reporting success for a surface it
           # never drew.
           E2E_IMPORT_FIXTURE: ${{ (matrix.roundtrip && contains(matrix.components, 'data_import')) && '1' || '' }}
+          # The superuser connection `e2e/roundtrip/files-release-state.spec.ts` writes the
+          # verdicts a scanner would leave with. Present only for a row generated with
+          # `secure_files` (the spec exists only there), and local by construction: the spec
+          # refuses any host that is not.
+          E2E_ADMIN_DATABASE_URL: ${{ (matrix.roundtrip && contains(matrix.components, 'secure_files')) && 'postgresql://postgres:rlstest@localhost:5432/koras_e2e' || '' }}
         run: pnpm e2e
 
       # The trace that explains a failure, which is the half `koras-control-plane`'s
@@ -715,6 +723,7 @@ jobs:
             tests/integration/test_scan_sweep_real.py \
             tests/integration/test_scanner_clamd_live.py \
             tests/integration/test_scan_orchestration_real.py \
+            tests/integration/test_release_orchestration_real.py \
             tests/integration/test_worker_image_scanner.py \
             --no-cov -q -rs | tee "$RUNNER_TEMP/scanner.txt"
           if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/scanner.txt"; then
@@ -722,6 +731,52 @@ jobs:
             exit 1
           fi
           grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/scanner.txt"
+
+      # The release layer, against a database, and not allowed to skip.
+      #
+      # ADR 0013, layer 4. The unit suites prove the one rule in both modes, every route's
+      # answer per stored state, and (statically) that no consumer reads bytes, signs a URL
+      # or retrieves derived content except through the rule. They cannot show that the rule's
+      # two spellings -- the predicate and the statement -- agree for every state and identity
+      # the table can hold, that another tenant's object can never become releasable, that the
+      # derived-content trigger and the scanner's own transitions together leave no chunk of a
+      # file that stopped being releasable, or that an index write racing a verdict cannot
+      # outlive it. Those need a database, as the restricted role, with row-level security
+      # forced; the withdrawal trigger's own suite (`supabase/tests/360_*`) runs in the
+      # row-level security step above.
+      #
+      # The unit modules and the integration modules are two invocations: the integration
+      # modules point the API's own engine at `E2E_DATABASE_URL`, and an earlier unit module's
+      # import of the API has already fixed the engine's URL for the process.
+      - name: The release layer ran against a database, and did not skip
+        if: matrix.roundtrip && contains(matrix.components, 'secure_files')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        env:
+          E2E_DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+        run: |
+          set -euo pipefail
+          uv run pytest \
+            tests/unit/test_file_release.py \
+            tests/unit/test_files_release_api.py \
+            tests/unit/test_release_bypass_guards.py \
+            tests/unit/test_file_hooks.py \
+            tests/unit/test_files_lazy_indexing_api.py \
+            tests/unit/test_ai_indexing_gate.py \
+            tests/unit/test_derived_content_withdrawal_static.py \
+            tests/unit/test_imports.py \
+            tests/unit/test_upload_finalization.py \
+            --no-cov -q -rs | tee "$RUNNER_TEMP/release-unit.txt"
+          uv run pytest \
+            tests/integration/test_file_release_real.py \
+            tests/integration/test_file_derived_content_real.py \
+            --no-cov -q -rs | tee "$RUNNER_TEMP/release-integration.txt"
+          for report in release-unit release-integration; do
+            if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/$report.txt"; then
+              echo "::error::a release-layer test was skipped; this row has a database and the assistant and every one of them must run"
+              exit 1
+            fi
+            grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/$report.txt"
+          done
 
       # What may be heavy in a worker at once, asked of the product's own
       # jobs, and not allowed to skip.

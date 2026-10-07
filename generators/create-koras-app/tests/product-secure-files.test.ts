@@ -252,6 +252,12 @@ describe('a product generated WITH secure_files', () => {
       'services/worker/pyproject.toml',
       'apps/web/src/app/dashboard/files/FilesPanel.tsx',
       'apps/web/src/app/dashboard/files/actions.ts',
+      // Layer 4: the release layer renders these by the capability, and asserts each half in
+      // `product-secure-files-release.test.ts`.
+      'apps/web/src/app/dashboard/files/page.tsx',
+      'services/api/koras_api/core/file_hooks.py',
+      'tests/unit/test_files_release_api.py',
+      'tests/unit/test_file_hooks.py',
       'apps/web/src/app/dashboard/imports/ImportPanel.tsx',
       'apps/web/src/app/dashboard/imports/actions.ts',
       'tests/unit/test_upload_ticket_contract.py',

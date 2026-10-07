@@ -23,6 +23,12 @@ export function templatePath(profile: string, ...segments: string[]): string {
   const shared = join(PROFILES, '_shared', 'template', ...segments)
   if (existsSync(shared)) return shared
 
+  // A file the capability renders is carried as `<path>.hbs`. A test that names the output path
+  // reads the template text, which holds both branches of each conditional; the assertions that
+  // are about one mode render the product instead.
+  const rendered = [own, shared].find((candidate) => existsSync(`${candidate}.hbs`))
+  if (rendered !== undefined) return `${rendered}.hbs`
+
   throw new Error(
     `No template at ${segments.join('/')} for profile "${profile}".\n` +
       `  Looked in profiles/${profile}/template/ and profiles/_shared/template/.`,

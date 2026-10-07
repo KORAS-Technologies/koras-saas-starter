@@ -72,6 +72,27 @@ not something a retry can change, `inspection_incomplete` is a container the sca
 inspected, `over_ceiling` is an object larger than the scanner takes). Nothing is released while
 it is held.
 
+## What is released, and to whom
+
+One rule (`services/api/koras_api/core/file_release.py`) decides whether a file's bytes may be
+handed on, and everything that does so asks it: the download, the assistant's indexer and
+retrieval, a stored conversation's cited passages, and an import's source file. Only a file that is
+`ready`, `clean`, on a final key of **its own tenant** and stamped by the scanner is released; a
+`pending`, `skipped`, `infected`, unrecognised or unstamped file is not, and nothing configurable
+changes that. A refusal is recorded once (`storage.object.release_refused`, or
+`storage.object.quarantined` for an infected file) with a closed reason and never a file name, a key
+or anything the scanner said, and the page shows one neutral sentence.
+
+A file that was clean and stops being so (a late `infected` verdict, an archive, a restore's
+replacement) stops being released at once, and in the same database statement what the assistant
+derived from it -- its chunks and its index state -- is deleted. `files.indexed_at` is therefore not
+a record that a file *was* indexed; it is a statement about now.
+
+If a file the person can see will not download: look at `scan_status` (`pending` means the scanner
+has not decided; see the section above) and at `scan_object_etag` (a `clean` file without one was
+not marked by the scanner and is not released). Do not edit either by hand: the scanner's
+transitions are the only writer of a verdict, and a test fails if anything else gains the ability.
+
 ## Changing the mode
 
 `secure_files` is a generation-time choice. It is not a runtime toggle and is not

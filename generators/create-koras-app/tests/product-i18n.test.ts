@@ -410,6 +410,11 @@ describe('the catalogues', () => {
       // party client always sends the claim, so only a ticket from before the claim was
       // required can provoke it.
       'upload_checksum_claim_invalid',
+      // `secure_files` only, and never shown as an error: the Files page's download action
+      // answers it (with `file_quarantined`) as one neutral sentence, `files.notAvailable`,
+      // before the catalogue's per-code lookup is reached. Anything else that sees it falls
+      // back to the status, as for the claim above.
+      'file_scan_pending',
     ])
     const codes = [...errors.matchAll(/^\s+[A-Z_]+ = "([a-z_]+)"$/gm)]
       .map((match) => match[1]!)

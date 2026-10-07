@@ -310,6 +310,27 @@ template_map:
       - tests/integration/test_scan_orchestration_real.py
       - tests/integration/test_scanner_clamd_live.py
       - tests/integration/test_worker_image_scanner.py
+      # Layer 4, the release layer: the canonical clean-only predicate is `core/file_release.py`,
+      # which is generated always (it dispatches on `SECURE_FILES`), so it is not listed. What is
+      # listed is what only the capability has: the HTTP gate and the audit action it records, the
+      # derived-content withdrawal (migration and its row-level-security suite) and the tests. What
+      # is *rendered* by the capability rather than gated by it: `routers/files.py`, `core/file_hooks.py`,
+      # `core/file_indexing.py`, `core/ai.py`, `core/knowledge.py`, `core/imports.py`, `ai/tools.py`,
+      # the worker's `Dockerfile` and the web Files panel.
+      - services/api/koras_api/core/file_release_gate.py
+      - services/api/koras_api/core/release_audit.py
+      - supabase/migrations/00042_file_derived_content_withdrawal.sql
+      - supabase/tests/360_file_derived_content_withdrawal.sql
+      - tests/unit/test_files_lazy_indexing_api.py
+      - tests/unit/test_ai_indexing_gate.py
+      - tests/unit/test_derived_content_withdrawal_static.py
+      - tests/integration/test_file_release_real.py
+      - tests/integration/test_file_derived_content_real.py
+      - tests/integration/test_release_orchestration_real.py
+      # The Files page's reading of what the server released, and the browser round trip over it.
+      - packages/api-client/src/file-state.ts
+      - packages/api-client/src/file-state.test.ts
+      - e2e/roundtrip/files-release-state.spec.ts
 
     # In-app notifications: the table, the emitter, the routes, the page and
     # the browser test.

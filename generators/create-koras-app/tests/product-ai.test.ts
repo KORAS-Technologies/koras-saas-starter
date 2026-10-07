@@ -20,12 +20,21 @@ import { templatePath } from './template-path'
 const PRODUCT = join(templatePath('product', 'package.json.hbs'), '..')
 const STARTER = join(PRODUCT, '..', '..', '..')
 
+/**
+ * A file the capability renders is carried as `<path>.hbs` (the rest of the file is the same text
+ * with both branches of each conditional), so a path named by its output is found either way.
+ */
+function located(...segments: string[]): string {
+  const plain = join(PRODUCT, ...segments)
+  return existsSync(plain) || !existsSync(`${plain}.hbs`) ? plain : `${plain}.hbs`
+}
+
 function read(...segments: string[]): string {
-  return readFileSync(join(PRODUCT, ...segments), 'utf8').split(String.fromCharCode(13)).join('')
+  return readFileSync(located(...segments), 'utf8').split(String.fromCharCode(13)).join('')
 }
 
 function has(...segments: string[]): boolean {
-  return existsSync(join(PRODUCT, ...segments))
+  return existsSync(located(...segments))
 }
 
 // ── the tables ────────────────────────────────────────────────────────────────

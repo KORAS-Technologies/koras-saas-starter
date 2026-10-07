@@ -22,8 +22,10 @@ switches, the generated constant and the fail-closed configuration check.
 **Layer 2** is the upload foundation: the SHA-256 claim, the incoming key, the
 immutable finalization and its digest and provenance checks. **Layer 3** is the
 scanner: its schema, its runtime, the finalization-to-scanner hand-off and the sweep that
-recovers whatever the hand-off lost. The clean-only release primitive that every
-consumer goes through is the next layer; the artefact map below says exactly what exists.
+recovers whatever the hand-off lost. **Layer 4** is the release layer: the one clean-only
+primitive that every consumer goes through, the consumers wired to it, and the withdrawal of
+derived content when a file stops being releasable. Restore and replacement are layer 5; the
+artefact map below says exactly what exists.
 
 ## The two modes
 
@@ -31,7 +33,7 @@ consumer goes through is the next layer; the artefact map below says exactly wha
 |---|---|---|
 | Generate with | nothing | `--with secure_files,clamd,worker` |
 | `SECURE_FILES` | `False` | `True` |
-| Release of a stored file | legacy `withheld()` | clean-only (as layers land); a verdict exists from layer 3 |
+| Release of a stored file | legacy `withheld()`, reached through the one rule | clean-only, for this tenant's own final object, for **every** consumer (layer 4) |
 | Upload ticket | today's contract | `checksum_sha256` required (as layers land) |
 | Scanner, finalizer, scanner schema, sweeps | absent | generated and active as one unit |
 | Missing mandatory setting | not checked | the API and the worker refuse to start |
@@ -48,12 +50,28 @@ a one-line recommendation.
 
 ## The compatibility promise
 
-A product generated without `secure_files` is byte-for-byte what it was before the
-capability existed, in every file that existed before. The only additions to its
-tree are the two inert `secure_files.py` modules (constant `False`, every function
-a no-op) and `tests/unit/test_secure_files_config.py`. A generator test asserts
-this. Nothing is retrofitted into an existing product, and nothing about an
-existing product's downloads changes because the Starter was upgraded.
+A product generated without `secure_files` behaves as it did before the capability existed, and
+every file that existed before is byte-for-byte what it was **except** these, each of which is a
+no-op without the capability:
+
+* layers 1-3: the two inert `secure_files.py` modules (constant `False`, every function a no-op) and
+  `tests/unit/test_secure_files_config.py`;
+* layer 4: `core/file_release.py` (the one rule, which answers exactly as the platform seam does
+  when the constant is `False`), and four tests of it (`test_file_release.py`,
+  `test_files_release_api.py`, `test_release_bypass_guards.py`, `release_support.py`); in
+  `routers/files.py`, the download asks that rule instead of calling `withheld()` directly (two
+  lines, the same answer for every stored state, asserted by a test over all of them); and twelve
+  sentences added to each of the three message catalogues (`en`, `de`, `es`), which nothing renders
+  without the capability; and, in a product with `data_import`, `tests/integration/test_worker_image.py`
+  recognises a product with the capability (by the upload window module) and gives the image's worker
+  the settings that product refuses to start without -- an `if` that is never taken here.
+
+The rest of what the capability changes in a shared module is rendered by the capability, so a
+product without it carries the original text. Without `ai`, `data_import` or `worker` the modules
+that belong to them are not generated at all. A generator test asserts this, and
+`docs/SECURE_FILES.md` lists every file the capability renders (the artefact map). Nothing is
+retrofitted into an existing product, and nothing about an existing product's downloads changes
+because the Starter was upgraded.
 
 ## Invariants (ADR 0013 section 6)
 
@@ -259,10 +277,10 @@ the preflight, which is the safe direction.
 | `00039_file_scan_attempts.sql` (layer 2) | `01016_file_scan_attempts` | four additive columns on `public.files`: `scan_attempts`, `scan_attempted_at`, `scan_failure` with its twelve-word check, `scan_object_etag` |
 | `00040_file_scan_interrupted.sql` (layer 3) | `01017_file_scan_interrupted` | the thirteenth word, `scan_interrupted`, and the first sweep index (retired by 00041) |
 | `00041_file_scan_due_indexes.sql` (layer 3) | `01018_file_scan_due_indexes` | the two due-time partial indexes the tenant-fair sweep reads; drops 00040's index |
-| *the release layer* | `01019_file_derived_content_withdrawal` | not here: it is the release layer's, and takes the next number |
+| `00042_file_derived_content_withdrawal.sql` (layer 4) | `01019_file_derived_content_withdrawal` | a trigger on `public.files`: when a `ready` + `clean` file stops being so, its chunks are deleted and its index state cleared in the same statement. One difference, stated in the file: the delete is skipped where the product has no `ai_knowledge_chunks` (`to_regclass`), because a product may have `secure_files` without the assistant |
 
 Each is semantically identical to its Docoris original (the SQL bodies are the same; only the
-header comments name the Starter), so a later sync of a product that carries 01016-01018 must
+header comments name the Starter, and 00042's one guard is described above), so a later sync of a product that carries 01016-01019 must
 find the schemas equivalent. The claim and digest columns (`checksum_sha256`,
 `checksum_verified_at`) were already the Starter's, from 00018; the upload id is not a column, it
 is the third segment after `incoming/` in the key and the provenance the object carries.
@@ -414,12 +432,135 @@ none of them.
   `storage.object.scan_exhausted` (registered by `core/scan_audit.py`) and `storage.object.quarantined`.
 * `core/file_scan.py` is the legacy seam (`record_scan`, `withheld`) and is unchanged. The worker
   never calls `record_scan`; in a product with the capability the transitions are the only writer of
-  a verdict. `withheld()` still refuses only `infected`; making `pending` withheld everywhere is the
-  release primitive's job, and until it lands the download route's incoming-key refusal is what keeps
-  an unfinalized file from being served.
-* A server-side writer of a key that is not a final key (restore's replacement object, a generated
-  export) must either write a final-shaped key or give the scanner a rule of its own for it; the
-  scanner reads only a key it can show no ticket was ever signed for.
+  a verdict. `withheld()` still refuses only `infected`, and stays the legacy rule; with the
+  capability nothing consults it (layer 4: see "The release layer" below).
+* A server-side writer of a key that is not a final key (restore's replacement object) must either
+  write a final-shaped key or give the scanner a rule of its own for it; the scanner reads only a
+  key it can show no ticket was ever signed for. The release layer settles which side each writer
+  is on ("Server-side writers" below).
+
+## The release layer (layer 4)
+
+`koras_api/core/file_release.py` is **the** rule, and it is generated in both modes. Every consumer
+that hands out, reads or derives from a file's bytes asks it, and nothing else; a static guard
+(`tests/unit/test_release_bypass_guards.py`) fails when one does not.
+
+### The rule, per mode
+
+The branch is the generated constant `SECURE_FILES` and nothing at run time. There is no setting, no
+environment variable and no fallback that moves a secure product onto the legacy rule.
+
+| Same stored row | `secure_files` off | `secure_files` on |
+|---|---|---|
+| `clean`, on a finalized key, stamped by the scanner | released | released |
+| `pending`, `skipped`, no value, an unrecognised value | released to a download (`withheld()` refuses only `infected`); refused to an import source | **refused** |
+| `infected` / `quarantined` | refused | refused |
+| `clean` but on another tenant's key, a ticket's incoming key, or with no scanner stamp | released (no identity is consulted: a product that never had the scanner has neither) | **refused** |
+
+Without the capability the answers are the platform seam's own: a download is withheld by
+`core/file_scan.WITHHELD`, and an import source by its own narrower deny-list; the rule reproduces
+both (a test holds them to the originals), so a product's behaviour is what it was.
+
+With the capability the rule is strict equality on `status = 'ready'` and `scan_status = 'clean'`
+(so `None`, `"CLEAN"`, `"clean "`, a number or a list refuses) **and** an identity:
+
+1. the row's tenant is the tenant the caller is acting for;
+2. `storage_key` is a *final* key (`tenants/<tenant>/<category>/<file>/final/<generation>/<name>`,
+   the one shape only a worker writes after finalization) whose tenant segment is that same tenant,
+   so a row cannot be pointed at another tenant's object;
+3. `scan_object_etag` is present: the scanner's `clean` transition writes it and nothing else does.
+
+A consumer that cannot supply the identity gets `False`. The same sentence is spelled once for a
+statement (`RELEASABLE_SQL`) and a test runs both spellings over every `status`, every `scan_status`
+and every way an identity can be wrong, against a real PostgreSQL. Layer 3's scanner already refuses
+to read any key that is not final, so a clean row on any other key could only have been written by
+something other than the scanner; layer 4 holds the consumers to the same line.
+
+### The release path
+
+```
+ upload ticket ──▶ incoming key ──▶ finalize (hash, provenance, copy) ──▶ final key ──▶ scanner
+   (claim)          a PUT can             worker only                       no ticket     clamd + gates
+                    still write it                                          was signed
+                                                                                │
+                              pending ──────────────────────────────────────────┤ commit_clean
+                                 │   (every consumer refuses)                   ▼
+                                 │                                  ready + clean + stamp  ◀── the ONLY
+                                 │                                          │                    releasable state
+        ┌────────────────────────┴───────────────┬───────────────┬──────────┴──────┬─────────────────────┐
+        ▼                                        ▼               ▼                 ▼                     ▼
+  GET /files/{id}/download                  GET /files       the assistant      retrieval and      import source
+  require_releasable                        content_available  index_clean_file  conversation       check_source
+  signs only on a yes                       + hook offers      read_releasable    replay             releasable(...)
+                                                                reads only on     RELEASABLE_SQL     before one byte
+                                                                a yes             in the statement   is parsed
+
+  clean ──▶ infected | not ready | archived | deleted    =  the trigger in 00042 deletes the file's
+                                                            chunks and clears its index state in the
+                                                            SAME statement, and every consumer above
+                                                            reads the verdict again at the moment it reads
+```
+
+### Consumers
+
+Every row names how the consumer asks. "Gate" is `core/file_release_gate.py` (API only, generated
+with the capability): `require_releasable` for a person's request, `read_releasable` for a process
+that reads the object itself.
+
+| Consumer | File | With `secure_files` | Without |
+|---|---|---|---|
+| Download | `routers/files.py` | `require_releasable(..., consumer="download")` before anything is signed; one denied event per refusal (`storage.object.release_refused`, or `storage.object.quarantined` for infected), closed reason and consumer only | `releasable()` (the platform deny-list) |
+| Files list | `routers/files.py` | `content_available` per file, from the same row check; a file is offered to a hook only when releasable | as it was (no field) |
+| Upload completion | `routers/files.py` | signs nothing, offers nothing to a hook; the answer says `content_available: false` | signs one URL for the interested hooks |
+| File hooks | `core/file_hooks.py` | `after_clean` + `due`; there is no `after_upload` and no URL, a hook that tried to register one does not construct | `after_upload` |
+| Assistant indexing | `core/file_indexing.py`, `core/ai.py` | `index_clean_file`: `read_releasable(consumer="indexing")`, then the write is bound to the object that was read (storage key and stamp) | `index_uploaded_file` (fetches a URL) |
+| Chunk writes | `core/knowledge.py` | `index_file_document`: a share lock on the file's row, the rule asked inside the transaction, the object compared again | `index_document` |
+| Retrieval | `core/knowledge.py` | the search statement carries `RELEASABLE_SQL`: a chunk of a file that is not releasable is never returned, nor one whose file row is gone | ungated |
+| Conversation replay | `core/ai.py` | a stored search result is re-filtered at read time; a passage survives only if its file is releasable now | as it was |
+| Assistant file tool | `ai/tools.py` | `content_available` from the row check, so a file still being checked is not described as readable | name and size only |
+| Import source | `core/imports.py` (and the worker's `tasks/imports.py`, which calls it) | `releasable(consumer="import")` in `check_source`, before the object is fetched; the session's own tenant is the one the row is held to | `UNPARSEABLE_SCANS` |
+| Backup, reconcile, lifecycle | `tasks/storage_backup.py`, `storage_reconcile.py`, `storage_lifecycle.py` | custody, not release: they copy, list or delete objects and hand nobody their bytes; the backup never selects an incoming key (layer 2) | the same |
+| Restore | `tasks/storage_restore.py` | layer 5 | |
+| Exports and generated artefacts | `routers/audit_exports.py`, `reporting_schedules.py` | not files: they live in their own tables with their own expiry and are served from their own routes, so no `public.files` row is ever created for one and nothing can release them through this rule | the same |
+
+### Server-side writers of a key that is not final
+
+Two kinds, and neither can ever become releasable through this layer:
+
+* **Exports and generated artefacts** write to the bucket but create no `public.files` row. There is
+  nothing for the rule to decide, and `test_release_bypass_guards.py` lists each read of one by file
+  and reason, so a new one is a failing test until it is accounted for.
+* **A restore's replacement** (layer 5) is a `public.files` row. It is written `pending`, and the
+  scanner reads only a final key, so it stays withheld until a fresh scan decision is made about the
+  object it now names; the layer-5 work either writes a final-shaped key or gives the scanner an
+  explicit rule for it. Until then nothing in this layer treats such a row as anything but withheld.
+
+### What is withdrawn, and when
+
+Migration `00042_file_derived_content_withdrawal.sql` (Docoris 01019) is a `BEFORE UPDATE` row trigger
+whose `WHEN` clause fires for nothing but `ready` + `clean` -> anything else, and a `BEFORE DELETE`
+trigger for the row going. In the same statement it deletes the file's chunks (the tenant is named,
+so it can only remove its own tenant's) and clears `indexed_at` and `index_note`. A late `clean ->
+infected` verdict, a restore's `clean -> pending`, and an archive all do this whichever module writes
+them; the scanner does not know the assistant exists. The function is `SECURITY DEFINER` with a
+pinned `search_path`, takes no argument, and is callable by nobody. The indexer's share lock on the
+file's row serialises with the scanner's `select ... for update`, so an index write racing a verdict
+ends with no usable chunk in either order.
+
+### Settings
+
+None. `SECURE_FILES_CHECKS` needs nothing new: the rule reads no setting, and the scanner, storage,
+queue and database settings it stands on were already mandatory.
+
+### Running the release suites
+
+`tests/unit/test_file_release.py`, `test_files_release_api.py` and `test_release_bypass_guards.py` run in
+both modes and need nothing. `tests/integration/test_file_release_real.py`,
+`test_file_derived_content_real.py` and `supabase/tests/360_file_derived_content_withdrawal.sql` need
+a database: the first two skip without `E2E_DATABASE_URL` (the restricted role, as for the scanner
+suites) and in a product with the capability a skip is a failure. Run the unit and the integration
+modules in separate `pytest` invocations: the integration modules point the API's own engine at the
+database named by the variable, which an earlier unit module's import has already fixed.
 
 ## Artefact map
 
@@ -475,12 +616,34 @@ listed under `template_map.capabilities.secure_files` unless marked "always".
 | 3 | `tests/integration/test_worker_image_scanner.py` | capability | the worker image, run with nothing mounted: every scanner module imports, `file.scan` is bound, the sweep is scheduled, and a worker with no valid scanner configuration exits non-zero naming the setting |
 | 3 | `.github/workflows/generator-integration.yml` | Starter only | one step on the round-trip row generated with the capability: PostgreSQL, Redis, MinIO and the clamd image built from the generated `services/clamd`; fails on any skip |
 | 3 | generator: `tests/product-secure-files-scanner.test.ts` | Starter only | both modes rendered; the scanner halves asserted from the generated text |
+| 4 | `services/api/koras_api/core/file_release.py` | always | the one rule: `releasable`, `RELEASABLE_SQL`, `refusal_reason`; dispatches on `SECURE_FILES`; standard library plus `secure_files` only, so the worker image carries it |
+| 4 | `services/api/koras_api/core/file_release_gate.py` | capability | the API-only gate: `require_releasable` (a request), `read_releasable` (a process that reads the object), `row_releasable` (one place a row's columns become the rule's arguments) |
+| 4 | `services/api/koras_api/core/release_audit.py` | capability | the `storage.object.release_refused` action the gate records |
+| 4 | `services/api/koras_api/core/errors.py` | rendered by the capability | `FILE_SCAN_PENDING` (409): no clean verdict for this exact object |
+| 4 | `services/api/koras_api/routers/files.py` | rendered by the capability | download through the gate; the list's `content_available` and the hook offer; completion signs nothing (the legacy half asks the same rule) |
+| 4 | `services/api/koras_api/core/file_hooks.py`, `core/file_indexing.py` | rendered by the capability | `after_clean`/`due` in place of `after_upload`; the assistant's hook |
+| 4 | `services/api/koras_api/core/ai.py`, `core/knowledge.py`, `ai/tools.py` | rendered by the capability (`ai`) | `index_clean_file`, the guarded chunk writer and its read identity, the gated retrieval statement, the conversation replay filter, `content_available` in the file tool |
+| 4 | `services/api/koras_api/core/imports.py` | rendered by the capability (`data_import`) | the import source asks the rule; no deny-list |
+| 4 | `services/worker/Dockerfile` | rendered by the capability | copies `file_release.py` and `secure_files.py` (the import gate in the worker's copy of `core/imports.py` asks the rule); the audit sink and rebind are copied once, not twice, when `data_import` is on |
+| 4 | `supabase/migrations/00042_file_derived_content_withdrawal.sql` | capability | the withdrawal triggers; Docoris 01019 |
+| 4 | `supabase/tests/360_file_derived_content_withdrawal.sql` | capability | the triggers, the read gate's predicate (including an incoming key and an unstamped row) and tenant isolation under forced row-level security, as the restricted role; without the assistant it proves what remains |
+| 4 | `packages/api-client/src/file-state.ts` (+ `.test.ts`) | capability | the Files page's closed reading of what the server released: `available`, `scanning`, `unavailable`, the refresh delays and the deadline |
+| 4 | `apps/web/src/app/dashboard/files/{FilesPanel,page,actions}` | rendered by the capability | the status column, the disabled Download, the bounded refresh and the neutral notice on a stale page; the sentences are in the three catalogues of every product |
+| 4 | `tests/unit/test_file_release.py`, `test_files_release_api.py`, `test_release_bypass_guards.py`, `release_support.py` | always, per mode | the rule in both modes (the same row decided both ways), the routes in whichever mode was generated, the static guard of every consumer |
+| 4 | `tests/unit/test_files_lazy_indexing_api.py`, `test_ai_indexing_gate.py`, `test_derived_content_withdrawal_static.py` | capability | the list's offer, the indexer's gate, the migration's shape |
+| 4 | `tests/integration/test_file_release_real.py`, `test_file_derived_content_real.py` | capability | the rule's two spellings over every state, identity and tenant isolation, the withdrawal against a real PostgreSQL with the scanner's own transitions and a racing index write |
+| 4 | `tests/integration/test_release_orchestration_real.py` | capability | release end to end against a real PostgreSQL, store and clamd: refused until clean, then the signed URL serves the uploaded bytes; EICAR is quarantined; a late infected verdict stops release; another tenant's real clean object never releases through a row of this tenant; run in the scanner step with those three |
+| 4 | `tests/integration/test_worker_image_scanner.py` | capability | gains one test: the image carries the release rule exactly where the import gate asks for it (with `data_import`), never the API-only gate |
+| 4 | `tests/integration/test_import_commit_atomic.py`, `test_import_commit_rls.py`, `worker_image_probe.py` | rendered by the capability (`data_import`) | the fixture file is a releasable one (a clean verdict on a final key of its tenant, stamped), as the import gate now requires; without the capability it is what it was |
+| 4 | `tests/integration/test_worker_image.py` | always (`data_import`) | a product with the capability gives the image's worker the scanner and store settings it refuses to start without (an import reads neither) |
+| 4 | `e2e/roundtrip/files-release-state.spec.ts` | capability | the Files page in a browser against the real API, the real rule and row-level security |
+| 4 | generator: `tests/product-secure-files-release.test.ts` | Starter only | both modes rendered; each half asserted from the generated text |
 
 **EICAR.** No generated file contains the literal test string (every antivirus that reads a
 repository may quarantine it): `tests/unit/eicar_support.py` holds it base64-encoded and
 `materialize()` decodes it, checked against its recorded SHA-256, on every call.
 
-Migrations: 00039 (layer 2), 00040 and 00041 (layer 3). New ones take the next numbers and
+Migrations: 00039 (layer 2), 00040 and 00041 (layer 3), 00042 (layer 4). New ones take the next numbers and
 stay semantically identical to Docoris 01016-01019; the mapping is recorded above.
 
 ## Upgrading an existing product

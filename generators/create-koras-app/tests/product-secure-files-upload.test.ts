@@ -191,14 +191,21 @@ describe('with secure_files the claim is required and the upload is confined', (
     // No digest is read back from the provider, and no hook is handed an unverified URL.
     expect(router).not.toContain('storage.store.checksum(')
     expect(router).not.toContain('run_after_upload')
-    expect(router).not.toContain('credentials: CredentialsDep')
+    // The bearer credentials are the list's alone (it offers a releasable file to a hook under the
+    // caller's own token); completion never reads them.
+    const completion = router.slice(
+      router.indexOf('async def complete_upload('), router.indexOf('@router.get("/files/{file_id}/download"'),
+    )
+    expect(completion).not.toContain('credentials')
   })
 
   it('hands the confirmed upload to the finalizer after the response, and refuses an incoming key', () => {
     expect(router).toContain('enqueue_finalize,')
     expect(router).toContain('jobs: JobsDep')
-    expect(router).toContain('if is_incoming_key(row.storage_key):')
-    expect(router.indexOf('if is_incoming_key(row.storage_key):')).toBeLessThan(
+    // A key a ticket could write is never final, so the release gate refuses it before
+    // anything is signed (layer 4); there is no special case left in the route.
+    expect(router).not.toContain('is_incoming_key')
+    expect(router.indexOf('await require_releasable(')).toBeLessThan(
       router.indexOf('presign_download('),
     )
   })
