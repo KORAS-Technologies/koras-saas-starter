@@ -893,7 +893,9 @@ describe('data import', () => {
     // One `_require` call per route. A read route without one would expose a
     // customer's own column headings to any member.
     const checks = [...router.matchAll(/^\s+_require\(claims, /gm)]
-    expect(checks.length).toBe(routes.length)
+    // Plus one in the router-level activation gate: a caller without `imports.manage` gets the
+    // ordinary refusal rather than learning whether imports are switched on.
+    expect(checks.length).toBe(routes.length + 1)
 
     // And a target's own declared permission is enforced rather than decorative.
     expect(router).toContain('_require_target(claims, target)')
@@ -1149,7 +1151,9 @@ describe('data import', () => {
     // Eleven since the templates: `import_format_refused` is a 406 for a
     // template in a format the target does not accept, and a 422 for a
     // source file in one.
-    expect(codes.length).toBe(11)
+    // Twelve since the activation gate (ADR 0013 section 7): `import_not_enabled` is the one
+    // refusal every route answers while data import is not switched on.
+    expect(codes.length).toBe(12)
 
     const mapping = read('apps/web/src/lib/api-errors.ts.hbs')
     const english = read('packages/i18n/src/messages/en.ts')

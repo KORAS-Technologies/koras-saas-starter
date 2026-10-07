@@ -688,6 +688,95 @@ two are independent switches and the decision is explicit:
 (`E2E_CLAMD_HOST`), and runs the real finalizer, restore, scan job and release gate. In a product
 with the capability a skip is a failure (the generator-integration step fails on any).
 
+## Import activation (layer 6a)
+
+ADR 0013 section 7 makes the import activation gate (proven in Docoris) a generic Starter
+facility. It is **not secure_files-specific**: it ships with the `data_import` capability, in
+both file modes, because an import writes a customer's records in bulk and the source file is a
+second upload surface.
+
+### Default and compatibility
+
+**OFF in every environment.** Absent, blank, `false`, a typo, a number: all off. Only
+`true`, `1`, `yes` or `on` (any case, surrounding spaces ignored) switches it on, parsed by the one
+function `koras_import.parse_import_activation` that the API and the worker both call, so the two
+cannot disagree. There is no path from an unparseable value to "on".
+
+A product generated with `data_import` therefore starts with imports **off** until its
+deployment declares and sets the switch. Existing products are not retrofitted: generated code
+changes only on regeneration or an explicit sync, exactly as for `secure_files` (see "Upgrading an
+existing product"). A product that already has `data_import` and imports today gets the gate when
+it regenerates, and must activate each environment it uses; the sync is the moment to do so.
+
+### What enforces it
+
+| Where | How | Refusal |
+|---|---|---|
+| API, every route of `routers/imports.py` | one router-level dependency, `require_import_activation`, so a route added later inherits it. Runs after authentication, tenant resolution and the `imports.manage` check; an anonymous caller still gets 401 and a caller without the permission the ordinary 403, and neither learns the switch's state | `403 import_not_enabled`, the same words on every route; the file is never opened. A mutating request writes one `import.refused` audit row (route template and reason only); reads write none |
+| Worker, both tasks (`imports.validate`, `imports.commit`) | `_refuse_while_disabled` is the first statement after `del ctx`, before the heavy gate, the registry or the object store. Checked **when the job starts**, so a job enqueued while ON that runs after the switch is turned OFF is refused, and a job enqueued directly (not through the API) cannot bypass the API's check | answers `{"status": "refused", "reason": "activation_disabled"}`; a run stranded in `validating` / `commit_requested` / `committing` is moved to `failed` through the same guarded `abandon` a cancelled job uses, and an `import.refused` audit row is written. A recording failure is logged and the job is still refused |
+| Web | `api-errors` maps `import_not_enabled` to a sentence; the page shows its error banner. The UI never enforces | |
+
+Guards in `tests/unit/test_import_activation_gate.py`: the router's eleven routes are listed and
+driven, with a body that would be a 422 if the gate ever ran after validation; the gate is on the
+router; only the router and the task module may name the two job definitions, the run store's
+source and commit entry points, the task bodies or the task names as strings; every public task
+function that takes an envelope starts with the gate. Both processes are tested with absent,
+blank, malformed and explicit values.
+
+### Declaring it per environment
+
+`local/config/import-activation.yaml` is rendered for `data_import` products with the four
+environments `disabled`:
+
+```yaml
+environments:
+  dev:
+    import_activation: disabled   # enabled | disabled, nothing else
+  test:
+    import_activation: disabled
+  stg:
+    import_activation: disabled
+  prod:
+    import_activation: disabled
+```
+
+`disabled` means **absent**: the environment holds no `IMPORTS_ENABLED` at all. The setting is
+declared `IMPORTS_ENABLED optional - bool` in `local/config/secrets.manifest` (never `supplied`;
+absent must mean off) and is read from the process environment like every other setting, so the
+secret store the estate uses (Doppler) is where an environment's value lives. To activate
+an environment: commit `enabled` for it, set `IMPORTS_ENABLED` to `true` in that environment's
+secret-store config before the merge that deploys it. To deactivate: commit `disabled`, remove the
+key, and unset it on any service that holds it directly. Locally, set it in `.env.local`; nothing
+else turns it on, and `make dev` does not.
+
+`local/scripts/import-activation-drift.sh <app> <secret-store-project> <config>` is run by the
+generated `deploy.yml` before each service deploys (a no-op in a product without the
+declaration). The deploy imports the secret store into the app and never removes a secret, so a value
+set by hand on an app would outlive every deploy; the script fails the deploy when an app holds
+`IMPORTS_ENABLED` and the secret store does not. It reads names only, changes nothing, and treats
+anything it cannot read as a failure.
+
+**Not in this layer:** the validation engine that compares the declaration to the secret store and
+the promotion-gate evidence (code-owned list of activatable environments) is layer 6b. Until it
+lands the declaration is checked for shape (`test_import_activation_declaration.py`) and by review;
+the drift script is the only deploy-time refusal.
+
+### Test environments
+
+Nothing generated reads the declaration at runtime. The suites that exercise imports switch the
+setting on themselves, in their own disposable process: the unit and integration suites set
+`imports_enabled` on the API settings or the worker's `imports` object, the worker-image test passes
+`IMPORTS_ENABLED=true` to its container (and also drives the image's tasks with it off), and the
+Playwright round trip sets it in the env of the disposable API it starts (`playwright.config.ts`).
+No `.env`, compose file or committed config ships a default of on (a test scans for it).
+
+### Running the activation suites
+
+`python-packages/koras-import/tests/test_activation.py`, `tests/unit/test_import_activation_gate.py`
+and `tests/unit/test_import_activation_declaration.py` need nothing; the generator-integration
+workflow runs them by name and fails on any skip. The image test needs Docker, a PostgreSQL and a
+Redis like the rest of `test_worker_image.py`.
+
 ## Artefact map
 
 Capability to generated files. Later layers append rows; every path below is
@@ -779,6 +868,19 @@ listed under `template_map.capabilities.secure_files` unless marked "always".
 | 5 | `tests/integration/test_worker_image_scanner.py` | capability | gains one test: the restore modules load in the image and a replacement key it makes is a final key |
 | 5 | `docs/SECURE_FILES.md` (product) | capability | the operator's "Restoring a file" section, with `storage_governance` |
 | 5 | generator: `tests/product-secure-files-restore.test.ts` | Starter only | both modes rendered; the legacy rendering equals the previous one; with and without `storage_governance` |
+| 6a | `python-packages/koras-import/src/koras_import/activation.py`, `tests/test_activation.py` | `data_import` | `parse_import_activation`, `ACTIVATION_ON`, `IMPORTS_ENABLED_SETTING`: the one parse rule for both processes |
+| 6a | `services/api/koras_api/core/settings.py` | always, rendered | `imports_enabled: bool = False` with a before-validator, only with `data_import` |
+| 6a | `services/api/koras_api/routers/imports.py`, `core/errors.py` | `data_import` / always | `require_import_activation` on the router; `ApiErrorCode.IMPORT_NOT_ENABLED` |
+| 6a | `services/worker/koras_worker/tasks/imports.py` | `data_import` | `ImportSettings.imports_enabled` and `_refuse_while_disabled`, first in both tasks |
+| 6a | `local/config/import-activation.yaml` | `data_import` | the per-environment declaration, every environment `disabled` |
+| 6a | `local/scripts/import-activation-drift.sh` | `data_import` | the deploy-time drift refusal (app holds the setting, secret store does not) |
+| 6a | `local/config/secrets.manifest` | always, rendered | `IMPORTS_ENABLED optional - bool`, only with `data_import` |
+| 6a | `.github/workflows/deploy.yml` | always | a step that runs the drift script when the declaration exists |
+| 6a | `playwright.config.ts` | always, rendered | `IMPORTS_ENABLED: 'true'` in the round-trip API's env, only with `data_import` |
+| 6a | `tests/unit/test_import_activation_gate.py`, `test_import_activation_declaration.py` | `data_import` | both gate states in the API and the worker, enqueue-bypass guards, declaration schema |
+| 6a | existing import suites (`test_import_inspection.py`, `test_import_templates_api.py`, `test_import_worker_envelope.py`, `test_worker_heavy_sections.py`, `test_import_commit_*`, `test_worker_image.py` + probe) | `data_import` | open the gate for themselves; the image probe also runs both tasks with it off |
+| 6a | `apps/web/src/lib/api-errors.ts`, `packages/i18n` (en, de, es) | always | `errors.importNotEnabled` |
+| 6a | generator: `tests/product-import-activation.test.ts` | Starter only | declaration, gate and manifest present with `data_import`, absent without; every environment ships `disabled` |
 
 **EICAR.** No generated file contains the literal test string (every antivirus that reads a
 repository may quarantine it): `tests/unit/eicar_support.py` holds it base64-encoded and

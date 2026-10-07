@@ -564,6 +564,23 @@ jobs:
           fi
           grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/import-memory.txt"
 
+      # The import activation gate (ADR 0013 section 7), asked for by name and not
+      # allowed to skip: imports are OFF in every environment unless explicitly on,
+      # refused by the API on every route and by the worker on every task, and the
+      # per-environment declaration ships with every environment disabled. A suite
+      # that went missing would leave the gate unmeasured while every other step
+      # here is green.
+      - name: The import activation gate ran, and none of it skipped
+        if: contains(matrix.components, 'data_import')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: |
+          uv run pytest             python-packages/koras-import/tests/test_activation.py             tests/unit/test_import_activation_gate.py             tests/unit/test_import_activation_declaration.py             --no-cov -q -rs | tee "$RUNNER_TEMP/import-activation.txt"
+          if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/import-activation.txt"; then
+            echo "::error::an import activation test was skipped; every one of them must run"
+            exit 1
+          fi
+          grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/import-activation.txt"
+
       # The commit's all-or-nothing, counted in rows, and not allowed to skip.
       #
       # GR-352C changed how the worker reads a file -- rows as a stream, on a
