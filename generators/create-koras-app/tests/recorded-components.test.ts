@@ -114,6 +114,35 @@ describe('a project’s recorded components win over today’s defaults', () => 
     }
   })
 
+  it('re-enables secure_files for a project generated with it, and leaves one generated before it alone', () => {
+    // ADR 0013: a read-only command on a secure product must see it as secure,
+    // and a product that predates the capability must never be reported as
+    // drifted towards it. Both come from the record, not from today's default.
+    const enabled = defaultSelections()
+    expect(enabled.capabilities.secure_files, 'off by default').toBe(false)
+    const secure = projectWith({
+      applications: ['web'],
+      services: ['api', 'worker', 'clamd'],
+      capabilities: ['storage', 'tenancy', 'rls', 'secure_files'],
+    })
+    const older = projectWith({
+      applications: ['web'],
+      services: ['api', 'worker'],
+      capabilities: ['storage', 'tenancy', 'rls'],
+    })
+    try {
+      applyRecordedComponents(enabled, secure, { overridden: [] })
+      expect(enabled.capabilities.secure_files).toBe(true)
+
+      const legacy = defaultSelections()
+      applyRecordedComponents(legacy, older, { overridden: [] })
+      expect(legacy.capabilities.secure_files).toBe(false)
+    } finally {
+      rmSync(secure, { recursive: true, force: true })
+      rmSync(older, { recursive: true, force: true })
+    }
+  })
+
   it('changes nothing when the project records no components', () => {
     // A manifest written before the field existed. The old behaviour was
     // correct for those projects and must survive.
