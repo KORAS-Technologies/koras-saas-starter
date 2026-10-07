@@ -30,7 +30,18 @@ import { apiBaseUrl, providerToken } from '../../../lib/session'
  * that arrived through it would be a file the API never checked.
  */
 
+{{#if capability.secure_files}}
+/**
+ * `code` is the API's own refusal code when there was one. Only the download
+ * action sets it: the page decides how to *behave* on a release refusal (say
+ * so neutrally and re-read the list), which a sentence alone cannot carry.
+ */
+export type ActionResult<T> =
+  | { status: 'ok'; value: T }
+  | { status: 'error'; message: string; code?: string }
+{{else}}
 export type ActionResult<T> = { status: 'ok'; value: T } | { status: 'error'; message: string }
+{{/if}}
 
 async function session(permission: 'files.read' | 'files.upload' | 'files.manage') {
   const context = await signedInContext()
@@ -45,6 +56,13 @@ async function session(permission: 'files.read' | 'files.upload' | 'files.manage
 async function explain(error: unknown): Promise<string> {
   const t = await translator()
   if (error instanceof ApiError) {
+{{#if capability.secure_files}}
+    // A file that is not released is one neutral sentence, whatever the reason: nothing a
+    // scanner said, and nothing about why, reaches a person who cannot act on it.
+    if (error.code === 'file_scan_pending' || error.code === 'file_quarantined') {
+      return t('files.notAvailable')
+    }
+{{/if}}
     const coded = apiErrorMessage(t, error.code)
     if (coded !== null) return coded
     if (error.status === 402) return t('files.error.plan')
@@ -69,7 +87,12 @@ export async function requestUpload(input: {
   name: string
   sizeBytes: number
   contentType: string
+{{#if capability.secure_files}}
+  checksumSha256: string
+{{/if}}
+{{#unless capability.secure_files}}
   checksumSha256?: string | null
+{{/unless}}
 }): Promise<ActionResult<UploadTicket>> {
   const auth = await session('files.upload')
   if (auth === null) return { status: 'error', message: (await translator())('files.error.forbidden') }
@@ -89,11 +112,19 @@ export async function requestUpload(input: {
   }
 }
 
+{{#if capability.secure_files}}
+/**
+ * Confirm an upload. The digest, if sent, must be the one the ticket was issued for;
+ * it is never recorded here.
+ */
+{{/if}}
+{{#unless capability.secure_files}}
 /**
  * Confirm an upload, carrying the digest the browser computed over the bytes
  * it sent. The digest is the client's claim and is recorded as one; the API
  * marks it corroborated only where the provider offers a digest that agrees.
  */
+{{/unless}}
 export async function completeUpload(
   fileId: string,
   checksumSha256?: string | null,
@@ -116,7 +147,15 @@ export async function downloadUrl(fileId: string): Promise<ActionResult<string>>
     const ticket = await fetchDownloadUrl({ ...auth, fileId })
     return { status: 'ok', value: ticket.url }
   } catch (error) {
+{{#if capability.secure_files}}
+    return {
+      status: 'error',
+      message: await explain(error),
+      code: error instanceof ApiError && error.code ? error.code : undefined,
+    }
+{{else}}
     return { status: 'error', message: await explain(error) }
+{{/if}}
   }
 }
 

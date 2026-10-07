@@ -1,0 +1,327 @@
+"""The Files routes honour the release rule, in the mode this product was generated in.
+
+Over a scripted session and a recording store: nothing here reads a database or a bucket.
+What is asserted is the boundary the router owns.
+
+* **With `secure_files`** (ADR 0013): no readable URL is signed for a file that is not
+  `clean` for its own, final object; each refusal is the right product-safe answer and
+  records exactly one denied event with a closed reason; another tenant's file is a 404; a
+  `clean` row whose identity does not hold (another tenant's key, a key a ticket could write,
+  no scanner stamp) is withheld like any other; and the list's `content_available` is the
+  server's answer.
+* **Without it**: exactly what the product always did -- only `infected` is refused, and a
+  row's identity is not consulted.
+
+The same row is decided by *both* rules in `test_the_same_row_is_decided_by_the_mode`, which
+states what each mode answers. The rule against a real PostgreSQL with row-level security is
+`tests/integration/test_file_release_real.py`.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from typing import Any
+
+import pytest
+from koras_api.core.secure_files import SECURE_FILES
+from release_support import (
+    OTHER_TENANT,
+{{#if capability.secure_files}}
+    SIGNATURE,
+{{/if}}
+    TENANT,
+    Session,
+    Store,
+    clear_overrides,
+    client,
+    code,
+    file_row,
+{{#if capability.secure_files}}
+    final_key,
+{{/if}}
+)
+
+FILE_ID = "11111111-1111-1111-1111-111111111111"
+
+
+@pytest.fixture(autouse=True)
+def _clean() -> Iterator[None]:
+    yield
+    clear_overrides()
+
+
+def _download(session: Session, store: Store, mp: pytest.MonkeyPatch) -> Any:  # noqa: ANN401
+    return client(session, store, mp).get(f"/api/v1/files/{FILE_ID}/download")
+
+
+#: What the two modes answer for the same stored row, by `scan_status`: (legacy, secure).
+#: The legacy answers are `core/file_scan.withheld` (only `infected`, and a missing value reads
+#: as `pending`); the secure ones are the clean-only rule. 200 releases, 403 quarantines, 409
+#: says the file has no clean verdict.
+DECISIONS: dict[Any, tuple[int, int]] = {
+    "clean": (200, 200),
+    "pending": (200, 409),
+    "skipped": (200, 409),
+    "infected": (403, 403),
+    "": (200, 409),
+    "weird": (200, 409),
+    "CLEAN": (200, 409),
+    None: (200, 409),
+}
+
+
+@pytest.mark.parametrize("scan_status", list(DECISIONS))
+def test_the_same_row_is_decided_by_the_mode(
+    scan_status: Any,  # noqa: ANN401
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = DECISIONS[scan_status][1 if SECURE_FILES else 0]
+    session, store = Session([file_row(scan_status)]), Store()
+    answer = _download(session, store, monkeypatch)
+    assert answer.status_code == expected, answer.text
+    assert bool(store.signed) is (expected == 200), "a URL is signed exactly when it is released"
+
+
+{{#if capability.secure_files}}
+def test_a_clean_file_is_released_with_a_ticket_and_an_ok_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, store = Session([file_row("clean")]), Store()
+    answer = _download(session, store, monkeypatch)
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["url"].startswith("https://bucket.invalid/")
+    assert store.signed == [final_key()]
+    assert [e["action"] for e in session.audit] == ["storage.object.downloaded"]
+    assert session.audit[0]["outcome"] == "ok"
+
+
+@pytest.mark.parametrize("scan_status", ["pending", "skipped"])
+def test_a_file_without_a_clean_verdict_is_a_409_and_signs_nothing(
+    scan_status: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session, store = Session([file_row(scan_status)]), Store()
+    answer = _download(session, store, monkeypatch)
+    assert answer.status_code == 409
+    assert code(answer) == "file_scan_pending"
+    assert store.signed == []
+    assert [(e["action"], e["outcome"]) for e in session.audit] == [
+        ("storage.object.release_refused", "denied")
+    ]
+    assert '"reason": "' + scan_status + '"' in session.audit[0]["details"]
+    assert '"consumer": "download"' in session.audit[0]["details"]
+
+
+def test_pending_says_still_being_checked_and_skipped_says_not_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pending = _download(Session([file_row("pending")]), Store(), monkeypatch)
+    skipped = _download(Session([file_row("skipped")]), Store(), monkeypatch)
+    assert "still being checked" in pending.json()["detail"]["message"]
+    assert "still being checked" not in skipped.json()["detail"]["message"]
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        file_row("infected"),
+        file_row("infected", status="quarantined"),
+        file_row("clean", status="quarantined"),
+    ],
+)
+def test_an_infected_or_quarantined_file_is_a_403_and_signs_nothing(
+    row: Any,  # noqa: ANN401
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, store = Session([row]), Store()
+    answer = _download(session, store, monkeypatch)
+    assert answer.status_code == 403
+    assert code(answer) == "file_quarantined"
+    assert store.signed == []
+    assert [(e["action"], e["outcome"]) for e in session.audit] == [
+        ("storage.object.quarantined", "denied")
+    ]
+
+
+@pytest.mark.parametrize("scan_status", [None, "", "weird", "CLEAN", 3])
+def test_a_missing_or_unknown_state_withholds_like_pending(
+    scan_status: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session, store = Session([file_row(scan_status)]), Store()
+    answer = _download(session, store, monkeypatch)
+    assert answer.status_code == 409
+    assert code(answer) == "file_scan_pending"
+    assert store.signed == []
+    assert '"reason": "unknown"' in session.audit[0]["details"]
+
+
+def test_no_refusal_carries_a_signature_a_note_a_name_or_a_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for scan_status in ("pending", "skipped", "infected"):
+        row = file_row(scan_status)
+        row.scan_note = SIGNATURE
+        session = Session([row])
+        answer = _download(session, Store(), monkeypatch)
+        body = answer.text
+        assert SIGNATURE not in body
+        assert "a.pdf" not in body
+        assert "tenants/" not in body
+        recorded = " ".join(str(v) for e in session.audit for v in e.values())
+        assert SIGNATURE not in recorded
+        assert "a.pdf" not in recorded
+        assert "tenants/" not in recorded
+
+
+def test_another_tenants_file_is_not_found_and_not_audited_as_a_refusal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, store = Session([file_row("clean", tenant=OTHER_TENANT)]), Store()
+    answer = _download(session, store, monkeypatch)
+    assert answer.status_code == 404
+    assert code(answer) == "file_not_found"
+    assert store.signed == []
+    assert session.audit == []
+
+
+def test_a_malformed_id_is_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    session, store = Session([file_row("clean")]), Store()
+    answer = client(session, store, monkeypatch).get("/api/v1/files/not-a-uuid/download")
+    assert answer.status_code == 404
+    assert store.signed == []
+
+
+def test_an_upload_not_yet_confirmed_is_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    session, store = Session([file_row("pending", status="pending")]), Store()
+    answer = _download(session, store, monkeypatch)
+    assert answer.status_code == 404
+    assert store.signed == []
+
+
+# -- identity: a clean verdict is about one object of one tenant ---------------------
+
+
+#: Rows that say `clean` and are not releasable, by what is wrong with them.
+_IDENTITY_FAILURES = {
+    # The row's own tenant column is not the tenant that asked: a forged or misrouted row.
+    "row tenant is another tenant": file_row("clean", row_tenant=OTHER_TENANT),
+    # The key is another tenant's object, though the row is this tenant's.
+    "key belongs to another tenant": file_row("clean", key=final_key(OTHER_TENANT)),
+    # A key a signed PUT could write, or one from before finalization.
+    "key is an incoming key": file_row(
+        "clean",
+        key=f"tenants/{TENANT}/documents/{FILE_ID}/incoming/{FILE_ID}/a.pdf",
+    ),
+    "key has no final segment": file_row(
+        "clean", key=f"tenants/{TENANT}/documents/{FILE_ID}/a.pdf"
+    ),
+    "key generation is not canonical": file_row(
+        "clean", key=f"tenants/{TENANT}/documents/{FILE_ID}/final/not-a-uuid/a.pdf"
+    ),
+    # The scanner stamps the object its verdict is about; a clean row with none was not scanned.
+    "no scanner stamp": file_row("clean", etag=None),
+    "blank scanner stamp": file_row("clean", etag=""),
+}
+
+
+@pytest.mark.parametrize("label", list(_IDENTITY_FAILURES))
+def test_a_clean_row_whose_identity_does_not_hold_is_withheld_and_signs_nothing(
+    label: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    row = _IDENTITY_FAILURES[label]
+    session, store = Session([row]), Store()
+    answer = _download(session, store, monkeypatch)
+    assert answer.status_code in (403, 409), (label, answer.text)
+    assert store.signed == [] and store.read == []
+
+
+def test_a_clean_row_of_this_tenant_with_a_final_key_and_a_stamp_is_the_only_release(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for label, row in _IDENTITY_FAILURES.items():
+        assert _download(Session([row]), Store(), monkeypatch).status_code != 200, label
+    assert _download(Session([file_row("clean")]), Store(), monkeypatch).status_code == 200
+
+
+# -- the list tells the truth ---------------------------------------------------
+
+
+def test_the_list_returns_the_stored_scan_status_and_a_server_computed_availability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = []
+    for index, scan_status in enumerate(["clean", "pending", "skipped"]):
+        row = file_row(scan_status)
+        row.id = f"11111111-1111-1111-1111-11111111111{index}"
+        rows.append(row)
+    answer = client(Session(rows), Store(), monkeypatch).get("/api/v1/files")
+    assert answer.status_code == 200, answer.text
+    listed = {f["scan_status"]: f["content_available"] for f in answer.json()["files"]}
+    assert listed == {"clean": True, "pending": False, "skipped": False}
+
+
+def test_the_list_does_not_invent_pending_for_a_clean_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    answer = client(Session([file_row("clean")]), Store(), monkeypatch).get("/api/v1/files")
+    only = answer.json()["files"][0]
+    assert only["scan_status"] == "clean"
+    assert only["content_available"] is True
+
+
+@pytest.mark.parametrize("label", list(_IDENTITY_FAILURES))
+def test_the_list_says_unavailable_for_a_clean_row_whose_identity_does_not_hold(
+    label: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The page and the download route are one answer, not two."""
+    session = Session([_IDENTITY_FAILURES[label]])
+    answer = client(session, Store(), monkeypatch).get("/api/v1/files")
+    only = answer.json()["files"]
+    # A row whose own tenant column is not the caller's is still the caller's by the query.
+    assert [f["content_available"] for f in only] == [False], label
+{{else}}
+def test_a_clean_file_is_released_with_a_ticket_and_an_ok_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, store = Session([file_row("clean")]), Store()
+    answer = _download(session, store, monkeypatch)
+    assert answer.status_code == 200, answer.text
+    assert [e["action"] for e in session.audit] == ["storage.object.downloaded"]
+
+
+def test_only_an_infected_file_is_refused_and_it_is_a_quarantine_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, store = Session([file_row("infected")]), Store()
+    answer = _download(session, store, monkeypatch)
+    assert answer.status_code == 403
+    assert code(answer) == "file_quarantined"
+    assert store.signed == []
+    assert [(e["action"], e["outcome"]) for e in session.audit] == [
+        ("storage.object.quarantined", "denied")
+    ]
+    assert '"reason": "scan"' in session.audit[0]["details"]
+
+
+@pytest.mark.parametrize("scan_status", ["pending", "skipped", None, "", "weird"])
+def test_a_file_that_is_not_infected_is_still_released_as_it_always_was(
+    scan_status: Any,  # noqa: ANN401
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, store = Session([file_row(scan_status)]), Store()
+    assert _download(session, store, monkeypatch).status_code == 200
+    assert len(store.signed) == 1
+
+
+def test_a_rows_identity_is_not_consulted_without_the_capability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No stamp, no final key: a legacy file has neither, and is released all the same."""
+    row = file_row("clean", etag=None, key=f"tenants/{TENANT}/documents/{FILE_ID}/a.pdf")
+    session, store = Session([row]), Store()
+    assert _download(session, store, monkeypatch).status_code == 200
+
+
+def test_another_tenants_file_is_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    session, store = Session([file_row("clean", tenant=OTHER_TENANT)]), Store()
+    answer = _download(session, store, monkeypatch)
+    assert answer.status_code == 404
+    assert store.signed == []
+{{/if}}

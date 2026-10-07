@@ -56,6 +56,13 @@ capabilities:
   # a second destination. The capability decides whether the code is there; the
   # settings decide whether it runs.
   storage_governance: true
+  # Off, so a product generated before this existed -- and one that never
+  # asks -- is exactly what it was. It is the RECOMMENDED configuration for
+  # any product that stores customer documents and is not being retrofitted:
+  # `--with secure_files,clamd,worker`. Enabled, it requires storage, tenancy,
+  # rls, the worker and clamd, and the product refuses to start without a
+  # scanner (ADR 0013, docs/SECURE_FILES.md).
+  secure_files: false
 
 infrastructure:
   supabase_region: "us-east-1"

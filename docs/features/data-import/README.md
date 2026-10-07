@@ -77,6 +77,19 @@ By the rule in `profiles/product/manifest.yaml`, gating the migration is
 allowed here because no foundation code and no foundation migration reaches
 either table. That is the test `audit_events` failed until 2026-09-16.
 
+## Import activation
+
+Imports are **off in every environment** of a generated product until the product declares
+and sets `IMPORTS_ENABLED` (ADR 0013 section 7; proven in Docoris). The API refuses every
+import route with `403 import_not_enabled` and the worker refuses both import tasks when the
+job starts, so a job enqueued while the switch was on does not run after it is turned off and a
+job enqueued directly cannot bypass the API. Absent, blank and malformed values are off. The
+per-environment declaration is `local/config/import-activation.yaml` (every environment
+`disabled` as generated), the setting is `IMPORTS_ENABLED optional` in the secrets manifest, and
+the generated deploy refuses a service that holds the setting without the secret store holding it.
+The mechanism, the activation runbook and the test arrangements are in
+[`docs/SECURE_FILES.md`](../../SECURE_FILES.md#import-activation-layer-6a).
+
 ## What is deliberately not here
 
 - **Delete, merge and replace** are absent from the operation set. The brief

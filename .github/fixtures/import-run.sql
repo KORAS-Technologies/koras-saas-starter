@@ -16,12 +16,16 @@
 -- which paging on the wrong one truncates. IMP2-05 shipped because the browser
 -- sent the file's line number to a route that pages on the table's own key; a
 -- run numbered from 1 would pass either way and prove nothing.
+-- `ready_at` is set because the API sets it whenever it marks a file ready, and the Files
+-- listing orders by it and reports it as the upload time. A ready row without one is a state
+-- the product never writes; seeding it made the listing fail for every other row beside it
+-- (found by the `secure_files` row, whose Files page spec shares this database).
 insert into public.files (id, tenant_id, category, name, storage_key, size_bytes,
-                          content_type, status, scan_status, uploaded_by)
+                          content_type, status, scan_status, uploaded_by, ready_at)
 values ('44444444-4444-4444-8444-444444444440',
         '00000000-0000-4e2e-8000-000000000001',
         'imports', 'contacts.csv', 'imports/contacts.csv', 100, 'text/csv',
-        'ready', 'clean', 'e2e-subject')
+        'ready', 'clean', 'e2e-subject', now())
 on conflict (id) do nothing;
 
 insert into public.import_runs (id, tenant_id, target, status, format, source_file_id,

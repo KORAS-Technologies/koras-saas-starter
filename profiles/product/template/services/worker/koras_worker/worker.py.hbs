@@ -7,16 +7,21 @@ from koras_database import assert_rls_enforced
 from koras_queue import worker_functions
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from .settings import settings
+{{#if capability.secure_files}}from .secure_files import enforce_secure_files_at_startup
+{{/if}}from .settings import settings
 from .tasks import example_task
 {{#if capability.ai}}from .tasks.ai_retention import purge_ai_history
 {{/if}}from .tasks.audit_retention import purge_audit_history
-{{#if capability.audit_governance}}from .tasks.governance_expiry import expire_audit_exports, expire_legal_holds
+{{#if capability.secure_files}}from .tasks.finalize import bound as finalize_tasks
+from .tasks.finalize import sweep_finalize
+{{/if}}{{#if capability.audit_governance}}from .tasks.governance_expiry import expire_audit_exports, expire_legal_holds
 {{/if}}{{#if capability.data_import}}from .tasks.imports import bound as import_tasks
 {{/if}}{{#if capability.notifications}}from .tasks.notifications import purge_notifications
 from .tasks.outbox import send_owed_notifications
 {{/if}}from .tasks.product import PRODUCT_CRON_JOBS, PRODUCT_TASKS
 {{#if capability.reporting}}from .tasks.reporting import deliver_scheduled_reports
+{{/if}}{{#if capability.secure_files}}from .tasks.scan import bound as scan_tasks
+from .tasks.scan_sweep import SWEEP_INTERVAL_MINUTES, sweep_pending_scans
 {{/if}}{{#if capability.storage_governance}}from .tasks.storage_backup import back_up_storage
 from .tasks.storage_lifecycle import sweep_storage_lifecycle
 from .tasks.storage_reconcile import reconcile_storage
@@ -48,7 +53,11 @@ async def verify_isolation(ctx: dict[str, Any]) -> None:
     skips and says so. Nothing else is exempt.
     """
     del ctx
-    if not settings.database_url:
+{{#if capability.secure_files}}    # Before the database is even consulted: a `secure_files` worker without a
+    # scanner or object storage refuses to start, and never falls back to the
+    # legacy release (ADR 0013 section 6).
+    enforce_secure_files_at_startup()
+{{/if}}    if not settings.database_url:
         return
     engine = create_async_engine(
         settings.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
@@ -75,6 +84,16 @@ class WorkerSettings(WorkerSettingsBase):
 {{#if capability.data_import}}        # The dry run a person is waiting on. The first enqueued work in this
         # product, and the reason the seam above exists.
         *worker_functions(import_tasks()),
+{{/if}}{{#if capability.secure_files}}        # The upload finalizer: copy a confirmed upload to a key no ticket was signed
+        # for and verify it against the SHA-256 it was authorized for (ADR 0013). Bound
+        # by name and loudly, so a worker that cannot run it fails at start rather than
+        # accepting a job it would never run.
+        *worker_functions(finalize_tasks()),
+        # The scanner: read the finalized object once, through the bounded reader, ask
+        # clamd, judge the result with the structural and integrity gates, and write the
+        # verdict through the guarded transitions only. Enqueued by the finalizer and by
+        # the sweep below, never by a request. Bound by name and loudly, like the finalizer.
+        *worker_functions(scan_tasks()),
 {{/if}}        *worker_functions(PRODUCT_TASKS),
     ]
     # Before the first cron fires, not after. A sweep that deleted across
@@ -137,7 +156,18 @@ class WorkerSettings(WorkerSettingsBase):
         # that evaporated.
         cron(run_restores, minute={0, 10, 20, 30, 40, 50}),
 {{/if}}
-{{#if capability.reporting}}        # The seam for scheduled delivery. Hourly, and it says nothing is
+{{#if capability.secure_files}}        # Every five minutes, half a minute past: the scan sweep. Whatever the finalizer
+        # hand-off did not enqueue, and every scan that was interrupted, hung or failed for
+        # a reason that can pass, goes back on the queue under the same identity, tenant by
+        # tenant and with a back-off that caps at an hour and never stops. It writes no scan
+        # state and decides no verdict. Always on: a product with the capability has a scanner.
+        cron(sweep_pending_scans, minute=set(range(0, 60, SWEEP_INTERVAL_MINUTES)), second=30),
+        # Every five minutes: whatever the queue did not finalize -- a lost enqueue, a
+        # worker that was down, a failure that has passed. It selects ids and nothing
+        # else, finalizes each file as its own tenant, and releases nothing. The long
+        # timeout is the finalizer's: it hashes the object twice and copies it once.
+        cron(sweep_finalize, minute={2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57}, timeout=1800),
+{{/if}}{{#if capability.reporting}}        # The seam for scheduled delivery. Hourly, and it says nothing is
         # scheduled until a product gives it something to deliver.
         cron(deliver_scheduled_reports, minute=41),
 {{/if}}        # This product's own, from `tasks/product.py`. Last, so the

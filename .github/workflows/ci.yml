@@ -11,9 +11,14 @@ on:
   # could distinguish. Worth keeping either way.
   workflow_dispatch:
 
+# Read-only by default. No job here writes to the repository, a package registry or a check;
+# a job that needs more declares it itself.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint-typecheck:
@@ -114,3 +119,23 @@ jobs:
 
       - name: Build
         run: pnpm turbo run build
+
+  # docs/framework-baseline.yaml must keep naming a commit that exists and is
+  # in this branch's history, so the accepted baseline cannot rot silently.
+  # Needs the full history; a shallow checkout cannot answer an ancestry question.
+  framework-baseline:
+    name: Framework baseline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # Node is pinned like every other job. `package-manager-cache: false` because
+      # setup-node@v5 otherwise tries to cache pnpm (named by package.json's packageManager),
+      # which this job neither installs nor needs.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          package-manager-cache: false
+      - name: Accepted baseline resolves and is an ancestor of HEAD
+        run: node scripts/check-framework-baseline.mjs

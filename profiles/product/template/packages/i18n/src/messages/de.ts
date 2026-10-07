@@ -450,6 +450,7 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'files.notIncluded.notRecorded': 'nicht erfasst',
   'files.upload': 'Datei hochladen',
   'files.uploading': 'Wird hochgeladen…',
+  'files.preparing': 'Wird vorbereitet…',
   'files.choose': 'Datei zum Hochladen auswählen',
   'files.download': 'Herunterladen',
   'files.remove': 'Löschen',
@@ -464,6 +465,18 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'files.searchable.pending': 'Wird indexiert…',
   'files.searchable.no': 'Nicht durchsuchbar',
   'files.searchable.unknown': 'Nicht indiziert',
+  'files.column.status': 'Status',
+  'files.status.available': 'Verfügbar',
+  'files.status.scanning': 'Wird geprüft',
+  'files.status.scanningHint': 'Verfügbar, sobald die Prüfung abgeschlossen ist.',
+  'files.status.unavailable': 'Nicht verfügbar',
+  'files.status.unavailableHint': 'Diese Datei kann nicht heruntergeladen werden.',
+  'files.searchable.notYet': 'Noch nicht indiziert',
+  'files.searchable.afterAvailable': 'Sobald die Datei verfügbar ist',
+  'files.scanning.notice': 'Einige Dateien werden noch geprüft. Diese Liste aktualisiert sich selbst.',
+  'files.scanning.stopped': 'Einige Dateien werden noch geprüft. Diese Liste aktualisiert sich nicht mehr selbst.',
+  'files.refresh': 'Aktualisieren',
+  'files.notAvailable': 'Diese Datei ist nicht verfügbar.',
   'files.usage': '{used} von {limit} belegt',
   'files.usageUnlimited': '{used} belegt',
   'files.usageUnknown': 'Speicherlimit gerade nicht verfügbar',
@@ -769,6 +782,7 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Datei prüfen',
   'imports.checking':
     'Wird geprüft…',
+  'imports.preparing': 'Wird vorbereitet…',
   'imports.discard':
     'Import verwerfen',
   'imports.tooManyRows':
@@ -1182,6 +1196,8 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Dieser Import kann geprüft, aber nicht geschrieben werden. In diesem Produkt nimmt noch nichts diese Datensätze entgegen.',
   'errors.importFileTooLarge':
     'Diese Datei ist größer, als ein Import einlesen kann. Teilen Sie sie und importieren Sie die Teile einzeln.',
+  'errors.importNotEnabled':
+    'Der Datenimport ist für dieses Produkt noch nicht aktiviert. Eine Administratorin oder ein Administrator muss ihn aktivieren.',
   'errors.importFormatRefused':
     'Diese Art von Datei kann hier nicht importiert werden. Laden Sie eine Vorlage herunter, um die akzeptierten Formate zu sehen.',
   'errors.uploadRefusedByPolicy':

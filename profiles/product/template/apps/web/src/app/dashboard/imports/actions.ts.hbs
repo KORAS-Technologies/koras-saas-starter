@@ -100,7 +100,12 @@ export async function requestSourceUpload(input: {
   name: string
   sizeBytes: number
   contentType: string
+{{#if capability.secure_files}}
+  checksumSha256: string
+{{/if}}
+{{#unless capability.secure_files}}
   checksumSha256?: string | null
+{{/unless}}
 }): Promise<ActionResult<UploadTicket>> {
   const auth = await session()
   if (auth === null) return denied()

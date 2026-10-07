@@ -441,6 +441,7 @@ export const en = {
   'files.notIncluded.notRecorded': 'not recorded',
   'files.upload': 'Upload a file',
   'files.uploading': 'Uploading…',
+  'files.preparing': 'Preparing…',
   'files.choose': 'Choose a file to upload',
   'files.download': 'Download',
   'files.remove': 'Delete',
@@ -455,6 +456,18 @@ export const en = {
   'files.searchable.pending': 'Indexing…',
   'files.searchable.no': 'Not searchable',
   'files.searchable.unknown': 'Not indexed',
+  'files.column.status': 'Status',
+  'files.status.available': 'Available',
+  'files.status.scanning': 'Being checked',
+  'files.status.scanningHint': 'Available when the check completes.',
+  'files.status.unavailable': 'Not available',
+  'files.status.unavailableHint': 'This file cannot be downloaded.',
+  'files.searchable.notYet': 'Not indexed yet',
+  'files.searchable.afterAvailable': 'After the file is available',
+  'files.scanning.notice': 'Some files are still being checked. This list updates by itself.',
+  'files.scanning.stopped': 'Some files are still being checked. This list has stopped updating by itself.',
+  'files.refresh': 'Refresh',
+  'files.notAvailable': 'This file is not available.',
   'files.usage': '{used} of {limit} used',
   'files.usageUnlimited': '{used} used',
   'files.usageUnknown': 'Usage limit not available right now',
@@ -760,6 +773,7 @@ export const en = {
     'Check the file',
   'imports.checking':
     'Checking…',
+  'imports.preparing': 'Preparing…',
   'imports.discard':
     'Discard this import',
   'imports.tooManyRows':
@@ -1171,6 +1185,8 @@ export const en = {
     'This import can be checked but not written. Nothing in this product accepts these records yet.',
   'errors.importFileTooLarge':
     'This file is larger than one import reads. Split it and import the parts separately.',
+  'errors.importNotEnabled':
+    'Data import is not switched on for this product yet. An administrator has to activate it.',
   'errors.importFormatRefused':
     'This kind of file cannot be imported here. Download a template to see which formats are accepted.',
   'errors.uploadRefusedByPolicy':

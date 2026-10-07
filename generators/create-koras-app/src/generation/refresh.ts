@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { GenerationContext } from './context.js'
 import { collectSharedAssets, renderTemplate } from './engine.js'
 import { writeFiles } from './writer.js'
+import { PROJECT_MANIFEST_PATH } from './project-manifest.js'
 
 export interface RefreshResult {
   /** Files whose bytes differ from the starter's copy, or that do not exist yet. */
@@ -109,6 +110,36 @@ export function formatRefreshResult(result: RefreshResult): string {
   return lines.join(String.fromCharCode(10))
 }
 
+/**
+ * Carries a hand-maintained top-level `framework:` block, comments and all,
+ * from the manifest on disk into a freshly rendered one.
+ *
+ * `.koras/project.yaml` is rendered by the generator, which knows nothing of the
+ * `framework:` block a product adds by hand to record the engineering framework
+ * it runs and its `source_baseline` (read by `koras framework:baseline`). A
+ * refresh of that one file would otherwise drop it silently. The block is copied
+ * as text, not re-serialised, so its explanatory comments survive; it lands
+ * before `components:` where products keep it, or at the end when there is none.
+ */
+export function preserveFrameworkBlock(existing: string, incoming: string): string {
+  const lines = existing.split(/\r?\n/)
+  const at = lines.findIndex((line) => /^framework:/.test(line))
+  if (at < 0) return incoming
+
+  let start = at
+  while (start > 0 && lines[start - 1].startsWith('#')) start -= 1
+  let end = at + 1
+  while (end < lines.length && !/^[A-Za-z_]/.test(lines[end])) end += 1
+  while (end > at + 1 && (lines[end - 1].trim() === '' || lines[end - 1].startsWith('#'))) end -= 1
+  const block = lines.slice(start, end).join('\n')
+
+  const out = incoming.split('\n')
+  if (out.some((line) => /^framework:/.test(line))) return incoming
+  const before = out.findIndex((line) => /^components:/.test(line))
+  if (before < 0) return incoming.replace(/\n*$/, '\n') + block + '\n'
+  out.splice(before, 0, block, '')
+  return out.join('\n')
+}
 export interface RefreshPathResult {
   updated: string[]
   unchanged: string[]
@@ -154,7 +185,11 @@ export async function refreshRenderedPaths(
     }
 
     const target = join(projectRoot, path)
-    const incoming = Buffer.isBuffer(file.content) ? file.content : Buffer.from(file.content)
+    let incoming = Buffer.isBuffer(file.content) ? file.content : Buffer.from(file.content)
+    if (path === PROJECT_MANIFEST_PATH && existsSync(target)) {
+      incoming = Buffer.from(preserveFrameworkBlock(readFileSync(target, 'utf8'), incoming.toString('utf8')))
+      file.content = incoming
+    }
     if (existsSync(target) && readFileSync(target).equals(incoming)) {
       unchanged.push(path)
       continue

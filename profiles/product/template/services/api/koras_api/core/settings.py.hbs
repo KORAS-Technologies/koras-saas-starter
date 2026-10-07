@@ -1,4 +1,5 @@
-from koras_platform import Environment
+{{#if capability.data_import}}from koras_import import parse_import_activation
+{{/if}}from koras_platform import Environment
 from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -56,6 +57,14 @@ class Settings(BaseSettings):
     # where a CDN or load balancer is guaranteed to be in front.
     trust_forwarded_for: bool = False
 
+{{#if capability.data_import}}
+    # Whether data import may start or advance at all (ADR 0013 section 7). OFF in
+    # every environment unless `IMPORTS_ENABLED` is an explicit "true"/"1"/"yes"/"on":
+    # blank, absent and malformed values are off. One switch per deployment -- not
+    # tenant-aware, and not a feature-flag system. Declared per environment in
+    # `local/config/import-activation.yaml`; the worker reads the same name.
+    imports_enabled: bool = False
+{{/if}}
     doppler_token: str = ""
 {{#if capability.reporting}}
     # Days a background report export is kept in the tenant's bucket before the
@@ -92,7 +101,26 @@ class Settings(BaseSettings):
     #: "grpc" for the local collector, "http/protobuf" for a hosted gateway
     #: such as Grafana Cloud. Chosen in code; see core/observability.py.
     otel_exporter_otlp_protocol: str = "grpc"
-{{#if capability.ai}}
+{{#if capability.secure_files}}
+    # `secure_files`: the scanner every uploaded object must pass (ADR 0013).
+    # Mandatory when the capability is on, and checked by
+    # `core/secure_files.py` before the API starts -- the defaults here are the
+    # failing values, so an unset one is refused rather than guessed.
+    file_scan_backend: str = "none"
+    file_scan_clamd_host: str = ""
+    file_scan_clamd_port: int = 3310
+    # The scanner client's limits: each has a default that passes and a bounded range,
+    # which `core/secure_files.py` checks too. The worker is what reads them; the API
+    # states them so that the two services cannot disagree about what is acceptable.
+    file_scan_connect_timeout_seconds: float = 5.0
+    file_scan_timeout_seconds: float = 120.0
+    file_scan_max_bytes: int = 100 * 1024 * 1024
+    file_scan_max_attempts: int = 12
+
+    @property
+    def file_scan_timeouts_consistent(self) -> bool:
+        return self.file_scan_connect_timeout_seconds <= self.file_scan_timeout_seconds
+{{/if}}{{#if capability.ai}}
     # The AI gateway: the LiteLLM proxy that holds the provider keys, deployed
     # as its own Fly app per environment. The URL is derived from Terraform and
     # the master key is supplied per environment; both are declared under the
@@ -118,6 +146,14 @@ class Settings(BaseSettings):
     # The abuse ceiling between the request limiter and the plan's monthly
     # allowance. Zero switches it off.
     ai_requests_per_minute: int = 30
+{{/if}}
+{{#if capability.data_import}}
+
+    @field_validator("imports_enabled", mode="before")
+    @classmethod
+    def _imports_off_unless_explicitly_on(cls, value: object) -> bool:
+        """Never raises and never guesses toward on: a bad value must not stop the API booting."""
+        return parse_import_activation(value)
 {{/if}}
 
     @field_validator("database_url", mode="after")

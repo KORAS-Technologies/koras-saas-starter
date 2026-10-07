@@ -199,6 +199,7 @@ def worker(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[..., _Store]]:
         monkeypatch.setattr(task, "_run_store", lambda: store)
         return store
 
+    monkeypatch.setattr(task.imports, "imports_enabled", True)  # activation gate open
     monkeypatch.setattr(task, "settings", SimpleNamespace(database_url="postgresql://x/y"))
     monkeypatch.setattr(task, "_engine", _Engine)
     monkeypatch.setattr(task, "async_sessionmaker", lambda *_, **__: _Session)

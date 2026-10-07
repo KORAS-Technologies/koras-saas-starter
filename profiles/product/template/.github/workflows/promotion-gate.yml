@@ -1,0 +1,108 @@
+# The promotion gate for one environment: read-only, PASS or FAIL with evidence.
+#
+# Generated with `secure_files` (ADR 0013). It reads, and never enables: the declaration against
+# the secret store and the apps (data import, when the product has it), the scanner's health, the
+# environment's own provider-qualification record, the F1 detector against its own database, CI on
+# the commit and the security register. See docs/SECURE_FILES.md, "Promotion tooling".
+#
+# It is a separate workflow, and the product's deploy workflow is untouched, so that a deploy is
+# not made to depend on a gate nobody asked for. To make activation a precondition of a deploy,
+# call this workflow from the environment's own deploy workflow and make the deploy `needs:` it:
+#
+#   jobs:
+#     promotion-gate:
+#       uses: ./.github/workflows/promotion-gate.yml
+#       with: { environment: test }
+#       secrets: inherit
+#     deploy:
+#       needs: promotion-gate
+#       ...
+#
+# Production: the job declares `environment:`, so for `prod` the repository's environment
+# protection (required reviewers, restricted branches) is what stops an unreviewed run from
+# receiving that environment's DOPPLER_TOKEN and FLY_API_TOKEN. Configure that protection on the
+# `prod` (and preferably `stg`) environment before relying on this gate. The workflow has no
+# pull_request trigger, so a fork's change can never reach these secrets through it, and the
+# CLIs it installs are pinned by version and SHA-256 rather than fetched from an installer script.
+#
+# The provider qualification is NOT run here: it writes disposable objects into the target bucket
+# and needs a disposable local database, so it is run by a person with
+# local/scripts/qualify-storage-provider.sh, and this gate only verifies the record. In CI no
+# record exists, and that is a FAIL of the `provider_qualification` check by design; upload the
+# record as an artifact from the machine that produced it, or run the gate where it is.
+
+name: Promotion gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: The environment to evaluate
+        required: true
+        type: choice
+        options: [dev, test, stg, prod]
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+    secrets:
+      DOPPLER_TOKEN:
+        required: false
+      FLY_API_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+  checks: read
+
+concurrency:
+  group: promotion-gate-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Promotion gate (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      # Pinned versions, each verified against a SHA-256 recorded here (taken from the vendor's
+      # published checksums for the release). No installer script is piped to a shell. A new
+      # version is a reviewed change to this block, not something a runner picks up on its own.
+      - name: Install the secret-store and deploy CLIs (pinned, checksum-verified)
+        env:
+          DOPPLER_VERSION: 3.77.0
+          DOPPLER_SHA256: 92587cb89c2ff82fc2ddec2b2a9f275ff320994a44e16cd9310b55a429a82084
+          FLYCTL_VERSION: 0.4.113
+          FLYCTL_SHA256: 8b0a0056857f4f42ba35e4aa7fa8ed715f925fdf2e710a84676210fe7e0d9859
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/cli-bin"
+          mkdir -p "$bin" "$RUNNER_TEMP/cli-dl"
+          cd "$RUNNER_TEMP/cli-dl"
+          curl -sSfL -o doppler.tar.gz             "https://github.com/DopplerHQ/cli/releases/download/${DOPPLER_VERSION}/doppler_${DOPPLER_VERSION}_linux_amd64.tar.gz"
+          echo "${DOPPLER_SHA256}  doppler.tar.gz" | sha256sum -c -
+          tar -xzf doppler.tar.gz -C "$bin" doppler
+          curl -sSfL -o flyctl.tar.gz             "https://github.com/superfly/flyctl/releases/download/v${FLYCTL_VERSION}/flyctl_${FLYCTL_VERSION}_Linux_x86_64.tar.gz"
+          echo "${FLYCTL_SHA256}  flyctl.tar.gz" | sha256sum -c -
+          tar -xzf flyctl.tar.gz -C "$bin" flyctl
+          echo "$bin" >> "$GITHUB_PATH"
+      - run: uv sync --all-packages
+      - name: Evaluate the gate
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -o pipefail
+          PYTHONPATH=tooling uv run python -m promotion gate --env "$ENVIRONMENT" \
+            --commit "$GITHUB_SHA" --out "$RUNNER_TEMP/promotion-gate.json" | tee "$RUNNER_TEMP/promotion-gate.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: promotion-gate-${{ inputs.environment }}
+          path: ${{ runner.temp }}/promotion-gate.*
+          retention-days: 30

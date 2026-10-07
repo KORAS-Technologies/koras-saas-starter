@@ -1,0 +1,87 @@
+# Promotion readiness: what the generic tooling in tooling/promotion needs to know about THIS
+# product (ADR 0013 sections 7 and 9). Read-only: nothing here, and nothing the tooling does with
+# it, enables an environment. Validated strictly -- an unknown or missing key, a wrong type or a
+# path that leaves the repository fails the gate rather than being guessed at.
+#
+#   PYTHONPATH=tooling uv run python -m promotion gate --env <dev|test|stg|prod>
+#
+# docs/SECURE_FILES.md ("Promotion tooling") says what each key is for and what is generic.
+version: 1
+
+# Where an environment's settings live. `doppler` is the adapter the Starter ships; the project is
+# the one the deploy workflow reads (the repository name) and each environment's config is
+# named after the environment unless it says otherwise below.
+secret_store:
+  provider: doppler
+  project: {{projectSlug}}
+
+# Where the services run. `fly` is the adapter the Starter ships.
+deploy:
+  provider: fly
+
+# One entry per environment, no more and no fewer: the secret-store config that environment reads
+# and the deployed app of each service the gate looks at.
+environments:
+  dev:
+    secret_store_config: dev
+    apps: { api: {{projectSlug}}-api-dev, worker: {{projectSlug}}-worker-dev, clamd: {{projectSlug}}-clamd-dev }
+  test:
+    secret_store_config: test
+    apps: { api: {{projectSlug}}-api-test, worker: {{projectSlug}}-worker-test, clamd: {{projectSlug}}-clamd-test }
+  stg:
+    secret_store_config: stg
+    apps: { api: {{projectSlug}}-api-stg, worker: {{projectSlug}}-worker-stg, clamd: {{projectSlug}}-clamd-stg }
+  prod:
+    secret_store_config: prod
+    apps: { api: {{projectSlug}}-api-prod, worker: {{projectSlug}}-worker-prod, clamd: {{projectSlug}}-clamd-prod }
+
+# The scanner is mandatory once secure_files is on. The gate reads this setting from the secret
+# store and requires exactly this backend (`none` is never accepted).
+scanner:
+  backend_setting: FILE_SCAN_BACKEND
+  required_backend: clamd
+
+# The privileged connection the F1 detector reads every tenant's files through (a role that
+# bypasses row-level security). Never the application's DATABASE_URL.
+database:
+  admin_url_setting: DATABASE_ADMIN_URL
+
+# The CI jobs that must have succeeded on the commit being promoted, by the name `ci.yml` gives
+# them. Add the product's own security and integration jobs here.
+ci:
+  provider: github
+  required_jobs:
+    - Secret scan
+    - Lint & Typecheck
+    - Test (Node)
+    - Test (Python)
+    - End-to-end (browser)
+    - Build
+
+# The product's security register: a Markdown table (header row naming id, type, severity and
+# status). `id_pattern` is a regular expression a row's first cell must match in full;
+# `chain_ids` optionally labels findings that sit on the upload -> release chain in the report.
+register:
+  path: docs/security/SECURITY-REGISTER.md
+  id_pattern: '[A-Z]+-[0-9]+'
+  chain_ids: []
+
+# F1 dispositions: an explicit, committed list of releasable files the detector is told not to
+# count. Honoured for `dev` only. Ships empty.
+f1:
+  dispositions: local/config/f1-dispositions.yaml
+
+# Provider qualification records (git-ignored). A record is fresh for max_age_days.
+qualification:
+  directory: local/.qualification
+  max_age_days: 14
+{{#if capability.data_import}}
+
+# Data import activation (ADR 0013 section 7). `declaration` is the per-environment file; an
+# environment may be declared `enabled` there ONLY if it is also listed here -- a second, separate
+# edit, made after the promotion gate passes for that environment. Ships empty: the declaration
+# alone can never activate an environment.
+activation:
+  declaration: local/config/import-activation.yaml
+  activatable_environments: []
+{{/if}}

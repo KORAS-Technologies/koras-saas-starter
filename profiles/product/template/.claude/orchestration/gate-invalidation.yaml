@@ -243,6 +243,10 @@ change_classes:
     paths:
       - services/**
       - python-packages/**
+      # The promotion tooling (`secure_files`, ADR 0013 section 7): server-side Python that
+      # decides whether an environment may be promoted. Named by its own directory rather
+      # than all of `tooling/**`, because the other tooling there is generator output.
+      - tooling/promotion/**
     means: Server-side production code.
 
 # What is written down when a gate passes, so that reuse is a claim about

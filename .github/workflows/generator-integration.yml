@@ -37,9 +37,14 @@ on:
       - ".github/workflows/generator-integration.yml"
   workflow_dispatch:
 
+# Read-only by default. No job here writes to the repository, a package registry or a check;
+# a job that needs more declares it itself.
+permissions:
+  contents: read
+
 concurrency:
   group: generator-integration-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   generate-and-build:
@@ -114,6 +119,22 @@ jobs:
             components: "--with marketing,ai_gateway,scheduler,ai,data_import,clamd"
             # Also owns it: the optional components change the shell the round
             # trip signs in to, and this is the only row that generates them.
+            roundtrip: true
+          # `secure_files` (ADR 0013), layer 2. Off in every row above, so what this
+          # row proves is the other half: that a product generated WITH the upload
+          # foundation builds, typechecks and lints, that its unit tests pass, and --
+          # because it owns the round trip -- that the finalizer runs against a real
+          # PostgreSQL with row-level security forced and a real S3-compatible store,
+          # and that none of those suites skipped (see the step of that name below).
+          # `data_import` is named because its panel is the second upload surface the
+          # first-party client has to send the claim from. Layer 4 adds `ai` (and the
+          # gateway it embeds through): the release layer's consumers are the download, the
+          # assistant's indexer and retrieval, and the import source, and a row without the
+          # assistant would leave two thirds of them as generated text nobody ran.
+          - profile: product
+            slug: integration-product-secure
+            rls_flags: ""
+            components: "--with secure_files,clamd,worker,data_import,ai,ai_gateway"
             roundtrip: true
           # The other direction. Removing a component must leave a project that
           # still builds -- a workspace reference to something no longer
@@ -310,6 +331,11 @@ jobs:
           # a banner, which would be a suite reporting success for a surface it
           # never drew.
           E2E_IMPORT_FIXTURE: ${{ (matrix.roundtrip && contains(matrix.components, 'data_import')) && '1' || '' }}
+          # The superuser connection `e2e/roundtrip/files-release-state.spec.ts` writes the
+          # verdicts a scanner would leave with. Present only for a row generated with
+          # `secure_files` (the spec exists only there), and local by construction: the spec
+          # refuses any host that is not.
+          E2E_ADMIN_DATABASE_URL: ${{ (matrix.roundtrip && contains(matrix.components, 'secure_files')) && 'postgresql://postgres:rlstest@localhost:5432/koras_e2e' || '' }}
         run: pnpm e2e
 
       # The trace that explains a failure, which is the half `koras-control-plane`'s
@@ -543,6 +569,23 @@ jobs:
           fi
           grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/import-memory.txt"
 
+      # The import activation gate (ADR 0013 section 7), asked for by name and not
+      # allowed to skip: imports are OFF in every environment unless explicitly on,
+      # refused by the API on every route and by the worker on every task, and the
+      # per-environment declaration ships with every environment disabled. A suite
+      # that went missing would leave the gate unmeasured while every other step
+      # here is green.
+      - name: The import activation gate ran, and none of it skipped
+        if: contains(matrix.components, 'data_import')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: |
+          uv run pytest             python-packages/koras-import/tests/test_activation.py             tests/unit/test_import_activation_gate.py             tests/unit/test_import_activation_declaration.py             --no-cov -q -rs | tee "$RUNNER_TEMP/import-activation.txt"
+          if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/import-activation.txt"; then
+            echo "::error::an import activation test was skipped; every one of them must run"
+            exit 1
+          fi
+          grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/import-activation.txt"
+
       # The commit's all-or-nothing, counted in rows, and not allowed to skip.
       #
       # GR-352C changed how the worker reads a file -- rows as a stream, on a
@@ -566,6 +609,261 @@ jobs:
             exit 1
           fi
           grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/import-commit.txt"
+
+      # The upload foundation, against a real database and a real object store, and
+      # not allowed to skip.
+      #
+      # ADR 0013, layer 2. `tests/integration/` skips without a database, and the
+      # `Test (Python)` step above reports that as a pass, so the row that owns the
+      # round trip and was generated with `secure_files` asks for these by name. The
+      # store is MinIO: it executes an unsigned `x-amz-copy-source` as a server-side
+      # copy exactly as the provider this was proven against does, which is what the
+      # provider matrix needs a store to do (case C2 below is the attack the signed
+      # guard exists to stop, and the test asserts it *works* against an unguarded
+      # ticket before asserting the guarded one is refused).
+      #
+      # A skip is a failure here: this row has a database and a store, so every one of
+      # them must run.
+      # One object store for the three secure_files steps below, started once and left running.
+      #
+      # MinIO stopped publishing images and binaries in late 2025 (quay.io/minio/minio refuses
+      # an anonymous pull, dl.min.io answers 410), so the tag these suites were written against
+      # is built from its source by `.github/actions/start-minio`. Before that the promotion
+      # step below had no store at all: each earlier step started its own container and removed
+      # it on exit.
+      - name: Start an object store for the secure_files suites
+        if: matrix.roundtrip && contains(matrix.components, 'secure_files')
+        uses: ./.github/actions/start-minio
+
+      - name: Create the bucket the secure_files suites use
+        if: matrix.roundtrip && contains(matrix.components, 'secure_files')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: |
+          set -euo pipefail
+          uv run python - <<'PY'
+          import boto3
+          boto3.client(
+              "s3",
+              endpoint_url="http://localhost:9000",
+              aws_access_key_id="minioadmin",
+              aws_secret_access_key="minioadmin123",
+              region_name="us-east-1",
+          ).create_bucket(Bucket="koras-files")
+          PY
+
+      - name: The upload foundation ran against a database and an object store, and did not skip
+        if: matrix.roundtrip && contains(matrix.components, 'secure_files')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        env:
+          E2E_DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+          # The worker reads its own database from `DATABASE_URL`, as it does deployed, and
+          # `file.scan` / `file.finalize` skip with "the worker has no DATABASE_URL" without
+          # it. An earlier module in the same pytest process imports the worker's settings
+          # before a suite can export the variable itself.
+          DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+          STORAGE_ENDPOINT: http://localhost:9000
+          STORAGE_BUCKET: koras-files
+          STORAGE_ACCESS_KEY: minioadmin
+          STORAGE_SECRET_KEY: minioadmin123
+        run: |
+          set -euo pipefail
+          uv run pytest \
+            tests/integration/test_upload_finalization_real.py \
+            tests/integration/test_upload_checksum_provenance_real.py \
+            tests/integration/test_upload_finalization_provider.py \
+            tests/integration/test_upload_checksum_provider.py \
+            --no-cov -q -rs | tee "$RUNNER_TEMP/upload-foundation.txt"
+          if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/upload-foundation.txt"; then
+            echo "::error::an upload-foundation test was skipped; this row has a database and an object store and every one of them must run"
+            exit 1
+          fi
+          grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/upload-foundation.txt"
+
+      # The scanner, against a database, an object store and a real clamd, and not
+      # allowed to skip.
+      #
+      # ADR 0013, layer 3. The unit suites prove the client against a scripted clamd
+      # and the runtime against an in-memory table; they cannot show that the answers
+      # the parser was written for are the answers the engine gives, that the
+      # transitions are valid SQL under forced row-level security as the restricted
+      # role, that the sweep's expression is the one its indexes carry and that the
+      # planner uses them, or that an upload survives finalization, the hand-off and a
+      # scan and ends as the right verdict. Those need a database (with the admin
+      # connection the plan checks use), Redis (the job identity), MinIO and the clamd
+      # image built from the generated `services/clamd`, which is the service a
+      # product deploys. The engine downloads its signatures at start, so this step
+      # waits for the image's own "ready" line, which is logged only after a detection
+      # self-test has passed.
+      #
+      # Layer 5 (restore and replacement) is run here because it needs the same four things: the
+      # replacement against a real PostgreSQL with row-level security forced and, end to end, a
+      # real store and a real scanner (`test_restore_orchestration_real.py`: a replacement is refused
+      # until its own scan says clean, a stale URL reads the old bytes only, infected restored bytes
+      # are quarantined). The row has `ai` and `storage_governance`, so every restore module is
+      # generated and none may skip.
+      - name: The scanner ran against a database, an object store and clamd, and did not skip
+        if: matrix.roundtrip && contains(matrix.components, 'secure_files')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        env:
+          E2E_DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+          # The worker reads its own database from `DATABASE_URL`, as it does deployed, and
+          # `file.scan` / `file.finalize` skip with "the worker has no DATABASE_URL" without
+          # it. An earlier module in the same pytest process imports the worker's settings
+          # before a suite can export the variable itself.
+          DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+          MIGRATE_DATABASE_URL: postgresql://postgres:rlstest@localhost:5432/koras_e2e
+          E2E_REDIS_URL: redis://localhost:6379/5
+          WORKER_IMAGE: koras-scanner-worker-image:${{ github.sha }}
+          WORKER_IMAGE_REDIS_URL: redis://localhost:6379/0
+          WORKER_IMAGE_NETWORK: host
+          E2E_CLAMD_HOST: 127.0.0.1
+          E2E_CLAMD_PORT: "3310"
+          STORAGE_ENDPOINT: http://localhost:9000
+          STORAGE_BUCKET: koras-files
+          STORAGE_ACCESS_KEY: minioadmin
+          STORAGE_SECRET_KEY: minioadmin123
+        run: |
+          set -euo pipefail
+          docker run -d --name scanner-redis -p 6379:6379 redis:7-alpine
+          docker build -f services/clamd/Dockerfile -t scanner-clamd .
+          docker build -f services/worker/Dockerfile -t "$WORKER_IMAGE" .
+          docker run -d --name scanner-clamd -p 3310:3310 --memory 2g --cpus 2 scanner-clamd
+          trap 'docker rm -f scanner-redis scanner-clamd >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 120); do
+            if docker logs scanner-clamd 2>&1 | grep -q "ready: detection self-test passed"; then break; fi
+            if docker logs scanner-clamd 2>&1 | grep -q "FATAL"; then docker logs scanner-clamd; exit 1; fi
+            sleep 5
+          done
+          docker logs scanner-clamd 2>&1 | grep -q "ready: detection self-test passed"
+          uv run pytest \
+            tests/unit/test_scanner_foundation.py \
+            tests/unit/test_scanner_object_reader.py \
+            tests/unit/test_scanner_structural_gate.py \
+            tests/unit/test_scanner_transition.py \
+            tests/unit/test_scan_runtime.py \
+            tests/unit/test_scan_task.py \
+            tests/unit/test_scan_sweep.py \
+            tests/unit/test_scan_sweep_fairness.py \
+            tests/unit/test_scan_interrupted.py \
+            tests/unit/test_scan_enqueue.py \
+            tests/unit/test_scan_handoff.py \
+            tests/unit/test_file_scan_fixtures.py \
+            tests/unit/test_secure_files_config.py \
+            tests/unit/test_storage_restore.py \
+            tests/unit/test_storage_restore_replacement.py \
+            tests/unit/test_restore_scan.py \
+            tests/integration/test_scan_transition_real.py \
+            tests/integration/test_scan_runtime_real.py \
+            tests/integration/test_scan_sweep_real.py \
+            tests/integration/test_scanner_clamd_live.py \
+            tests/integration/test_scan_orchestration_real.py \
+            tests/integration/test_release_orchestration_real.py \
+            tests/integration/test_restore_replacement_real.py \
+            tests/integration/test_restore_derived_content_real.py \
+            tests/integration/test_restore_orchestration_real.py \
+            tests/integration/test_worker_image_scanner.py \
+            --no-cov -q -rs | tee "$RUNNER_TEMP/scanner.txt"
+          if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/scanner.txt"; then
+            echo "::error::a scanner test was skipped; this row has a database, Redis, an object store and clamd and every one of them must run"
+            exit 1
+          fi
+          grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/scanner.txt"
+
+      # The release layer, against a database, and not allowed to skip.
+      #
+      # ADR 0013, layer 4. The unit suites prove the one rule in both modes, every route's
+      # answer per stored state, and (statically) that no consumer reads bytes, signs a URL
+      # or retrieves derived content except through the rule. They cannot show that the rule's
+      # two spellings -- the predicate and the statement -- agree for every state and identity
+      # the table can hold, that another tenant's object can never become releasable, that the
+      # derived-content trigger and the scanner's own transitions together leave no chunk of a
+      # file that stopped being releasable, or that an index write racing a verdict cannot
+      # outlive it. Those need a database, as the restricted role, with row-level security
+      # forced; the withdrawal trigger's own suite (`supabase/tests/360_*`) runs in the
+      # row-level security step above.
+      #
+      # The unit modules and the integration modules are two invocations: the integration
+      # modules point the API's own engine at `E2E_DATABASE_URL`, and an earlier unit module's
+      # import of the API has already fixed the engine's URL for the process.
+      - name: The release layer ran against a database, and did not skip
+        if: matrix.roundtrip && contains(matrix.components, 'secure_files')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        env:
+          E2E_DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+          # The worker reads its own database from `DATABASE_URL`, as it does deployed, and
+          # `file.scan` / `file.finalize` skip with "the worker has no DATABASE_URL" without
+          # it. An earlier module in the same pytest process imports the worker's settings
+          # before a suite can export the variable itself.
+          DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+        run: |
+          set -euo pipefail
+          uv run pytest \
+            tests/unit/test_file_release.py \
+            tests/unit/test_files_release_api.py \
+            tests/unit/test_release_bypass_guards.py \
+            tests/unit/test_file_hooks.py \
+            tests/unit/test_files_lazy_indexing_api.py \
+            tests/unit/test_ai_indexing_gate.py \
+            tests/unit/test_derived_content_withdrawal_static.py \
+            tests/unit/test_imports.py \
+            tests/unit/test_upload_finalization.py \
+            --no-cov -q -rs | tee "$RUNNER_TEMP/release-unit.txt"
+          uv run pytest \
+            tests/integration/test_file_release_real.py \
+            tests/integration/test_file_derived_content_real.py \
+            --no-cov -q -rs | tee "$RUNNER_TEMP/release-integration.txt"
+          for report in release-unit release-integration; do
+            if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/$report.txt"; then
+              echo "::error::a release-layer test was skipped; this row has a database and the assistant and every one of them must run"
+              exit 1
+            fi
+            grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/$report.txt"
+          done
+
+      # The promotion tooling (ADR 0013 sections 7 and 9), asked for by name and not allowed to
+      # skip. It is read-only and fail-closed, and its whole value is that "unknown" is a FAIL:
+      # a suite that went missing, or that skipped because its database or store was not there,
+      # would leave a gate that cannot say no while every other step here is green.
+      #
+      #   - the unit suites: the strict configuration, the adapters' read-only allowlist, the
+      #     register parser (negative cases and a seeded fuzz), the F1 classes, the gate decided
+      #     from a table in every environment, the evidence binding, import activation;
+      #   - `test_f1_detector_real.py`: the detector against this row's PostgreSQL as a role that
+      #     bypasses row-level security (it must refuse the application role);
+      #   - `test_provider_qualification_extra.py`: matrix row 12, the forged-provenance
+      #     regression (a forged, non-empty provenance on an intentionally unguarded copy-source
+      #     ticket must still be refused by the real finalizer), against MinIO. MinIO honours an
+      #     unsigned copy-source, which is what makes the case non-vacuous; the test fails if no
+      #     scenario lands a forged provenance.
+      - name: The promotion tooling ran against a database and an object store, and did not skip
+        if: matrix.roundtrip && contains(matrix.components, 'secure_files')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        env:
+          E2E_DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+          # The worker reads its own database from `DATABASE_URL`, as it does deployed, and
+          # `file.scan` / `file.finalize` skip with "the worker has no DATABASE_URL" without
+          # it. An earlier module in the same pytest process imports the worker's settings
+          # before a suite can export the variable itself.
+          DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+          E2E_ADMIN_DATABASE_URL: postgresql://postgres:rlstest@localhost:5432/koras_e2e
+          STORAGE_ENDPOINT: http://localhost:9000
+          STORAGE_BUCKET: koras-files
+          STORAGE_ACCESS_KEY: minioadmin
+          STORAGE_SECRET_KEY: minioadmin123
+        run: |
+          set -euo pipefail
+          uv run pytest tests/unit/test_promotion_*.py --no-cov -q -rs | tee "$RUNNER_TEMP/promotion-unit.txt"
+          uv run pytest \
+            tests/integration/test_f1_detector_real.py \
+            tests/integration/test_provider_qualification_extra.py \
+            --no-cov -q -rs | tee "$RUNNER_TEMP/promotion-integration.txt"
+          for report in promotion-unit promotion-integration; do
+            if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/$report.txt"; then
+              echo "::error::a promotion-tooling test was skipped; this row has a database and an object store and every one of them must run"
+              exit 1
+            fi
+            grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/$report.txt"
+          done
 
       # What may be heavy in a worker at once, asked of the product's own
       # jobs, and not allowed to skip.

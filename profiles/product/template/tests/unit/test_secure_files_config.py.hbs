@@ -1,0 +1,383 @@
+"""`secure_files` fails closed, and is inert when it is off.
+
+Both modes are exercised in whichever product this is generated into, by
+switching the module constant. That is a faithful stand-in for the other
+generation: the constant is the only thing the generator renders differently,
+and nothing else at deploy time can change it (ADR 0013).
+
+What is asserted, and why each is a thing someone could plausibly undo:
+
+* Every missing or invalid setting is named in one refusal, not the first.
+* A value never appears in the message, only the variable and the rule.
+* `none`, unset, blank and unrecognised scanner backends are all refused.
+* Off means off: no refusal, whatever the settings hold.
+* The API and the worker agree on the mode and on the checks.
+"""
+
+from __future__ import annotations
+
+import os
+from types import ModuleType, SimpleNamespace
+from typing import Any
+
+import pytest
+
+# Constructed at import time with no defaults, on purpose; see the other worker
+# and API tests here.
+os.environ.setdefault("ENVIRONMENT", "dev")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/db")
+os.environ.setdefault("ZITADEL_DOMAIN", "https://example.invalid")
+os.environ.setdefault("ZITADEL_PROJECT_ID", "0")
+
+from koras_api.core import secure_files as api_sf  # noqa: E402
+
+pytest.importorskip("koras_worker")
+from koras_worker import secure_files as worker_sf  # noqa: E402
+
+MODULES = [api_sf, worker_sf]
+IDS = ["api", "worker"]
+
+VALID: dict[str, Any] = {
+    "file_scan_backend": "clamd",
+    "file_scan_clamd_host": "scanner.internal",
+    "file_scan_clamd_port": 3310,
+    "storage_endpoint": "https://storage.example.invalid/s3",
+    "storage_bucket": "files",
+    "storage_access_key": "access-value",
+    "storage_secret_key": "secret-value",
+    "redis_url": "redis://queue.internal:6379/0",
+    "database_url": "postgresql+asyncpg://app:db-value@db.internal/app",
+}
+
+ENV_NAMES = {
+    "file_scan_backend": "FILE_SCAN_BACKEND",
+    "file_scan_clamd_host": "FILE_SCAN_CLAMD_HOST",
+    "file_scan_clamd_port": "FILE_SCAN_CLAMD_PORT",
+    "storage_endpoint": "STORAGE_ENDPOINT",
+    "storage_bucket": "STORAGE_BUCKET",
+    "storage_access_key": "STORAGE_ACCESS_KEY",
+    "storage_secret_key": "STORAGE_SECRET_KEY",
+    "redis_url": "REDIS_URL",
+    "database_url": "DATABASE_URL",
+}
+
+{{#if capability.secure_files}}
+#: Settings that have a default which passes, so an unset one is not a problem.
+HAS_DEFAULT = {"file_scan_clamd_port"}
+#: Settings that are derived from others and are not an environment variable of their own.
+DERIVED: set[str] = set()
+
+# The scanner client's limits (layer 3): each has a default that passes and a bounded range.
+VALID.update(
+    {
+        "file_scan_connect_timeout_seconds": 5.0,
+        "file_scan_timeout_seconds": 120.0,
+        "file_scan_timeouts_consistent": True,
+        "file_scan_max_bytes": 100 * 1024 * 1024,
+        "file_scan_max_attempts": 12,
+    }
+)
+ENV_NAMES.update(
+    {
+        # Derived, and so listed before the setting it is derived from: a loop that sets every
+        # variable in this order ends with that setting's own value.
+        "file_scan_timeouts_consistent": "FILE_SCAN_CONNECT_TIMEOUT_SECONDS",
+        "file_scan_connect_timeout_seconds": "FILE_SCAN_CONNECT_TIMEOUT_SECONDS",
+        "file_scan_timeout_seconds": "FILE_SCAN_TIMEOUT_SECONDS",
+        "file_scan_max_bytes": "FILE_SCAN_MAX_BYTES",
+        "file_scan_max_attempts": "FILE_SCAN_MAX_ATTEMPTS",
+    }
+)
+HAS_DEFAULT |= {
+    "file_scan_connect_timeout_seconds",
+    "file_scan_timeout_seconds",
+    "file_scan_timeouts_consistent",
+    "file_scan_max_bytes",
+    "file_scan_max_attempts",
+}
+DERIVED |= {"file_scan_timeouts_consistent"}
+
+{{/if}}
+
+def settings_with(**overrides: object) -> SimpleNamespace:
+    return SimpleNamespace(**{**VALID, **overrides})
+
+
+@pytest.fixture(params=MODULES, ids=IDS)
+def sf(request: pytest.FixtureRequest) -> ModuleType:
+    return request.param
+
+
+@pytest.fixture
+def on(sf: ModuleType, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    monkeypatch.setattr(sf, "SECURE_FILES", True)
+    return sf
+
+
+@pytest.fixture
+def off(sf: ModuleType, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    monkeypatch.setattr(sf, "SECURE_FILES", False)
+    return sf
+
+
+def test_the_constant_is_a_bool_and_both_copies_agree() -> None:
+    assert isinstance(api_sf.SECURE_FILES, bool)
+    assert api_sf.SECURE_FILES is worker_sf.SECURE_FILES
+
+
+def test_the_two_copies_declare_the_same_checks() -> None:
+    def shape(module: ModuleType) -> list[tuple[str, str, str]]:
+        return [(c.attribute, c.env, c.requirement) for c in module.SECURE_FILES_CHECKS]
+
+    assert shape(api_sf) == shape(worker_sf)
+    assert {attr: env for attr, env, _ in shape(api_sf)} == ENV_NAMES
+
+
+def test_enabled_is_true_when_on(on: ModuleType) -> None:
+    assert on.secure_files_enabled() is True
+
+
+def test_enabled_is_false_when_off(off: ModuleType) -> None:
+    assert off.secure_files_enabled() is False
+
+
+def test_a_full_valid_set_passes(on: ModuleType) -> None:
+    on.validate_secure_files_settings(settings_with())
+
+
+@pytest.mark.parametrize("attribute", sorted(ENV_NAMES))
+def test_each_missing_setting_is_refused_by_name(on: ModuleType, attribute: str) -> None:
+    broken = settings_with(**{attribute: None})
+    with pytest.raises(on.SecureFilesConfigurationError) as raised:
+        on.validate_secure_files_settings(broken)
+    assert ENV_NAMES[attribute] in str(raised.value)
+    assert len(raised.value.problems) == 1
+
+
+@pytest.mark.parametrize(
+    "backend",
+    # `CLAMD`, ` clamd` and `clamd ` are real scanners spelled non-canonically: the worker's
+    # scanner settings accept only the lowercase literal, so they are refused here as well,
+    # at start, rather than passing this check and failing the worker's settings.
+    ["none", "", "  ", "NONE", "unknown", None, "CLAMD", "Clamd", " clamd", "clamd ", "clamd\n"],
+)
+def test_no_scanner_is_never_a_scanner(on: ModuleType, backend: object) -> None:
+    with pytest.raises(on.SecureFilesConfigurationError, match="FILE_SCAN_BACKEND"):
+        on.validate_secure_files_settings(settings_with(file_scan_backend=backend))
+
+
+@pytest.mark.parametrize("port", [0, -1, 65536, "3310", True, None])
+def test_the_scanner_port_must_be_a_port(on: ModuleType, port: object) -> None:
+    with pytest.raises(on.SecureFilesConfigurationError, match="FILE_SCAN_CLAMD_PORT"):
+        on.validate_secure_files_settings(settings_with(file_scan_clamd_port=port))
+
+
+def test_every_problem_is_listed_not_just_the_first(on: ModuleType) -> None:
+    with pytest.raises(on.SecureFilesConfigurationError) as raised:
+        on.validate_secure_files_settings(SimpleNamespace())
+    assert len(raised.value.problems) == len(ENV_NAMES)
+    for env in ENV_NAMES.values():
+        assert env in str(raised.value)
+
+
+def test_a_value_is_never_in_the_message(on: ModuleType) -> None:
+    broken = settings_with(file_scan_backend="none", storage_secret_key="")
+    with pytest.raises(on.SecureFilesConfigurationError) as raised:
+        on.validate_secure_files_settings(broken)
+    for value in ("access-value", "secret-value", "scanner.internal", "db-value"):
+        assert value not in str(raised.value)
+
+
+def test_a_later_layer_appends_a_check_as_data(on: ModuleType) -> None:
+    extra = on.SettingCheck("future", "FUTURE_SETTING", on._nonblank, "must be set")
+    checks = (*on.SECURE_FILES_CHECKS, extra)
+    on.validate_secure_files_settings(settings_with(future="x"), checks)
+    with pytest.raises(on.SecureFilesConfigurationError, match="FUTURE_SETTING"):
+        on.validate_secure_files_settings(settings_with(), checks)
+
+
+def test_off_is_a_no_op_whatever_the_settings_hold(off: ModuleType) -> None:
+    off.validate_secure_files_settings(SimpleNamespace())
+    off.validate_secure_files_settings(settings_with(file_scan_backend="none"))
+
+
+def test_the_worker_reads_blank_as_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(worker_sf, "SECURE_FILES", True)
+    for attribute, env in ENV_NAMES.items():
+        monkeypatch.setenv(env, str(VALID[attribute]))
+    worker_sf.enforce_secure_files_at_startup()
+
+    monkeypatch.setenv("STORAGE_BUCKET", "   ")
+    with pytest.raises(worker_sf.SecureFilesConfigurationError, match="STORAGE_BUCKET"):
+        worker_sf.enforce_secure_files_at_startup()
+
+
+def test_the_worker_hook_is_a_no_op_when_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(worker_sf, "SECURE_FILES", False)
+    for env in ENV_NAMES.values():
+        monkeypatch.delenv(env, raising=False)
+    worker_sf.enforce_secure_files_at_startup()
+{{#if capability.secure_files}}
+
+
+# What follows exists only in a product generated WITH the capability: the
+# wiring that makes the refusal happen at start, which is generated only there.
+
+
+@pytest.mark.asyncio
+async def test_the_api_refuses_to_start_without_a_scanner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from koras_api import main
+
+    monkeypatch.setattr(api_sf, "SECURE_FILES", True)
+    monkeypatch.setattr(main, "settings", settings_with(file_scan_backend="none"))
+    with pytest.raises(api_sf.SecureFilesConfigurationError, match="FILE_SCAN_BACKEND"):
+        async with main.lifespan(main.app):
+            pytest.fail("the API started without a scanner")
+
+
+@pytest.mark.asyncio
+async def test_the_worker_refuses_to_start_without_a_scanner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from koras_worker import worker
+
+    monkeypatch.setattr(worker_sf, "SECURE_FILES", True)
+    for env in ENV_NAMES.values():
+        monkeypatch.delenv(env, raising=False)
+    with pytest.raises(worker_sf.SecureFilesConfigurationError) as raised:
+        await worker.verify_isolation({})
+    # Every unset mandatory setting, in one refusal. The port and the scanner's limits have
+    # valid defaults, so they are the ones that are not a problem.
+    assert len(raised.value.problems) == len(ENV_NAMES) - len(HAS_DEFAULT)
+
+
+def test_the_generated_constant_is_true() -> None:
+    assert api_sf.SECURE_FILES is True
+    assert worker_sf.SECURE_FILES is True
+
+
+# ---- the scanner's limits (layer 3) ------------------------------------------------------
+
+LIMITS_OUTSIDE_THEIR_RANGE = [
+    ("file_scan_connect_timeout_seconds", 0, "FILE_SCAN_CONNECT_TIMEOUT_SECONDS"),
+    ("file_scan_connect_timeout_seconds", -1, "FILE_SCAN_CONNECT_TIMEOUT_SECONDS"),
+    ("file_scan_connect_timeout_seconds", 61, "FILE_SCAN_CONNECT_TIMEOUT_SECONDS"),
+    ("file_scan_connect_timeout_seconds", True, "FILE_SCAN_CONNECT_TIMEOUT_SECONDS"),
+    ("file_scan_connect_timeout_seconds", "5", "FILE_SCAN_CONNECT_TIMEOUT_SECONDS"),
+    ("file_scan_timeout_seconds", 0, "FILE_SCAN_TIMEOUT_SECONDS"),
+    ("file_scan_timeout_seconds", 601, "FILE_SCAN_TIMEOUT_SECONDS"),
+    ("file_scan_max_bytes", 0, "FILE_SCAN_MAX_BYTES"),
+    ("file_scan_max_bytes", 100 * 1024 * 1024 + 1, "FILE_SCAN_MAX_BYTES"),
+    ("file_scan_max_bytes", 1.5, "FILE_SCAN_MAX_BYTES"),
+    ("file_scan_max_attempts", 0, "FILE_SCAN_MAX_ATTEMPTS"),
+    ("file_scan_max_attempts", 32768, "FILE_SCAN_MAX_ATTEMPTS"),
+    ("file_scan_max_attempts", False, "FILE_SCAN_MAX_ATTEMPTS"),
+    ("file_scan_timeouts_consistent", False, "FILE_SCAN_CONNECT_TIMEOUT_SECONDS"),
+]
+
+
+@pytest.mark.parametrize(("attribute", "value", "env"), LIMITS_OUTSIDE_THEIR_RANGE)
+def test_a_scanner_limit_outside_its_range_is_refused_by_name(
+    on: ModuleType, attribute: str, value: object, env: str
+) -> None:
+    with pytest.raises(on.SecureFilesConfigurationError, match=env):
+        on.validate_secure_files_settings(settings_with(**{attribute: value}))
+
+
+@pytest.mark.parametrize(
+    ("attribute", "value"),
+    [
+        ("file_scan_connect_timeout_seconds", 60),
+        ("file_scan_timeout_seconds", 600),
+        ("file_scan_max_bytes", 1),
+        ("file_scan_max_bytes", 100 * 1024 * 1024),
+        ("file_scan_max_attempts", 1),
+        ("file_scan_max_attempts", 32767),
+    ],
+)
+def test_the_edges_of_every_range_are_accepted(
+    on: ModuleType, attribute: str, value: object
+) -> None:
+    on.validate_secure_files_settings(settings_with(**{attribute: value}))
+
+
+def test_the_ranges_are_the_ones_the_scanner_package_enforces() -> None:
+    from koras_worker.scanning.config import (
+        MAX_CONNECT_TIMEOUT_SECONDS,
+        MAX_RECORDED_ATTEMPTS,
+        MAX_SCAN_BYTES,
+        MAX_SCAN_TIMEOUT_SECONDS,
+        ScannerSettings,
+    )
+    from pydantic import ValidationError
+
+    assert api_sf.SCAN_CEILING_BYTES == worker_sf.SCAN_CEILING_BYTES == MAX_SCAN_BYTES
+    # The package's own validators and this module's checks accept the same edges.
+    for name, high in (
+        ("file_scan_connect_timeout_seconds", MAX_CONNECT_TIMEOUT_SECONDS),
+        ("file_scan_timeout_seconds", MAX_SCAN_TIMEOUT_SECONDS),
+        ("file_scan_max_bytes", MAX_SCAN_BYTES),
+        ("file_scan_max_attempts", MAX_RECORDED_ATTEMPTS),
+    ):
+        ScannerSettings(**{name: high})
+        with pytest.raises(ValidationError):
+            ScannerSettings(**{name: high + 1})
+        for module in (api_sf, worker_sf):
+            check = next(c for c in module.SECURE_FILES_CHECKS if c.attribute == name)
+            assert check.accepts(high) and not check.accepts(high + 1)
+
+
+@pytest.mark.parametrize(
+    "variable",
+    [
+        "FILE_SCAN_CONNECT_TIMEOUT_SECONDS",
+        "FILE_SCAN_TIMEOUT_SECONDS",
+        "FILE_SCAN_MAX_BYTES",
+        "FILE_SCAN_MAX_ATTEMPTS",
+    ],
+)
+def test_a_value_that_is_not_a_number_stops_the_worker_naming_the_variable_only(
+    monkeypatch: pytest.MonkeyPatch, variable: str
+) -> None:
+    monkeypatch.setattr(worker_sf, "SECURE_FILES", True)
+    for attribute, env in ENV_NAMES.items():
+        if attribute not in DERIVED:
+            monkeypatch.setenv(env, str(VALID[attribute]))
+    monkeypatch.setenv(variable, "not-a-number-ZZZ")
+    with pytest.raises(worker_sf.SecureFilesConfigurationError, match=variable) as raised:
+        worker_sf.enforce_secure_files_at_startup()
+    assert "ZZZ" not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "variable",
+    [
+        "FILE_SCAN_ALLOW_NONE",
+        "FILE_SCAN_DISABLED",
+        "FILE_SCAN_SKIP",
+        "SECURE_FILES",
+        "FILE_SCAN_OPTIONAL",
+    ],
+)
+def test_no_environment_variable_relaxes_the_scanner_requirement(
+    monkeypatch: pytest.MonkeyPatch, variable: str
+) -> None:
+    monkeypatch.setattr(worker_sf, "SECURE_FILES", True)
+    for attribute, env in ENV_NAMES.items():
+        if attribute not in DERIVED:
+            monkeypatch.setenv(env, str(VALID[attribute]))
+    monkeypatch.setenv("FILE_SCAN_BACKEND", "none")
+    for value in ("1", "true", "yes", "on", "none"):
+        monkeypatch.setenv(variable, value)
+        with pytest.raises(worker_sf.SecureFilesConfigurationError, match="FILE_SCAN_BACKEND"):
+            worker_sf.enforce_secure_files_at_startup()
+{{else}}
+
+
+def test_the_generated_constant_is_false() -> None:
+    assert api_sf.SECURE_FILES is False
+    assert worker_sf.SECURE_FILES is False
+{{/if}}

@@ -1125,6 +1125,46 @@ Everything else — the issuer and algorithm pinning, the narrowed
 `ignore_missing_imports`, the two-language local checks, the API surface tests —
 applies unchanged.
 
+### D7 — a product cannot tell that its framework baseline is behind
+
+- [x] A Starter-owned record of the accepted framework baseline
+- [x] A read-only command that compares a product against it
+- [x] A CI check that the record cannot rot
+
+**Applies to:** `docs/framework-baseline.yaml`, `tooling/koras-cli`, `scripts/check-framework-baseline.mjs`
+
+D3 made the generator's `template_digest` comparable, but a product that adopts
+the engineering framework in place (Docoris, 2026-09-20) records the Starter
+commit it is level with by hand, in a `framework:` block of `.koras/project.yaml`
+(`framework.source_baseline`). Nothing said whether that commit was behind.
+
+- **The accepted baseline** is `accepted_baseline` in `docs/framework-baseline.yaml`.
+  A maintainer moves it in the change that deliberately accepts a framework
+  change into develop; optional Starter work does not move it. It names a commit
+  already on develop, never the commit that edits the file, so there is no
+  chicken-and-egg. `scripts/check-framework-baseline.mjs`, run by the CI job
+  "Framework baseline" on a full-history checkout, requires that it resolves and
+  is an ancestor of, or equal to, HEAD.
+- **The command** is `koras framework:baseline --product-path <dir>
+  --starter-path <checkout> [--strict] [--json]`. Offline: it asks the Starter
+  checkout's git. It reports `current`, `behind` (commit count and the changed
+  paths under `profiles/` and the profile's declared shared assets), `ahead`,
+  `diverged`, or `unknown` (no baseline recorded, or the commit is not in the
+  checkout). Exit 0 whatever the status, unless `--strict` (exit 1 unless
+  current or ahead). Exit 2 means the check could not run (bad paths, an
+  unreadable accepted baseline). It never upgrades or edits anything and nothing
+  in ordinary development calls it.
+- **The `framework:` block.** The generator's manifest schema does not declare
+  it, so the project manifest is rendered without it. `--refresh-modules` and
+  `--check-drift` never write `.koras/project.yaml`. `--refresh
+  .koras/project.yaml`, named explicitly, now copies an existing `framework:`
+  block (comments included) into the rendering instead of dropping it. A fresh
+  generation into a new directory has no block to keep, so it still starts
+  without one; moving the block into the generator remains open. Quote the SHA
+  in YAML if it is all digits.
+
+To adopt, sync the framework files deliberately, then set `source_baseline` to
+the accepted SHA the command printed.
 ---
 
 ## Tier E — record-keeping

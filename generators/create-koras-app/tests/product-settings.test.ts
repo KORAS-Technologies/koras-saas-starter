@@ -275,7 +275,7 @@ describe('the settings API', () => {
   })
 
   it('answers each refusal with a code the web tier can translate', () => {
-    const errors = read('services', 'api', 'koras_api', 'core', 'errors.py')
+    const errors = read('services', 'api', 'koras_api', 'core', 'errors.py.hbs')
     for (const code of ['setting_not_found', 'setting_value_invalid', 'setting_scope_refused']) {
       expect(errors, `${code} is not declared`).toContain(code)
     }
@@ -977,7 +977,7 @@ describe('the settings catalogue speaks every language', () => {
     // `storage.py` names the key in a comment saying why it is not read, and a
     // substring search cannot tell an explanation from an enforcement.
     const limits = read('services', 'api', 'koras_api', 'core', 'storage.py')
-    const presign = read('services', 'api', 'koras_api', 'routers', 'files.py')
+    const presign = read('services', 'api', 'koras_api', 'routers', 'files.py.hbs')
     const resolved = new Set(
       [limits, presign]
         .flatMap((file) => [...file.matchAll(/catalogue\.require\("([\w.]+)"\)/g)])

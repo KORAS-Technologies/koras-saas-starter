@@ -71,6 +71,8 @@ export function apiErrorMessage(t: Translator, code: string | null | undefined):
       return t('errors.restoreOverwriteUnconfirmed')
     case 'upload_refused_by_policy':
       return t('errors.uploadRefusedByPolicy')
+    case 'import_not_enabled':
+      return t('errors.importNotEnabled')
     case 'import_target_not_found':
       return t('errors.importTargetNotFound')
     case 'import_run_not_found':

@@ -4,8 +4,15 @@ import { join } from 'node:path'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 
 import { loadProfile } from '../src/profiles/index.js'
-import { resolveSelections } from '../src/profiles/validator.js'
-import { applyRecordedComponents } from '../src/cli/index.js'
+import { resolveSelections, applyComponentOverrides, validateSelections } from '../src/profiles/validator.js'
+import {
+  applyExistingProjectSelections,
+  applyRecordedComponents,
+  recordedSecureFilesViolation,
+  secureFilesNotice,
+  secureFilesRecommendation,
+  CLAMD_DEV_ONLY_SENTENCE,
+} from '../src/cli/index.js'
 import { PROJECT_MANIFEST_PATH } from '../src/generation/project-manifest.js'
 
 /**
@@ -114,6 +121,35 @@ describe('a project’s recorded components win over today’s defaults', () => 
     }
   })
 
+  it('re-enables secure_files for a project generated with it, and leaves one generated before it alone', () => {
+    // ADR 0013: a read-only command on a secure product must see it as secure,
+    // and a product that predates the capability must never be reported as
+    // drifted towards it. Both come from the record, not from today's default.
+    const enabled = defaultSelections()
+    expect(enabled.capabilities.secure_files, 'off by default').toBe(false)
+    const secure = projectWith({
+      applications: ['web'],
+      services: ['api', 'worker', 'clamd'],
+      capabilities: ['storage', 'tenancy', 'rls', 'secure_files'],
+    })
+    const older = projectWith({
+      applications: ['web'],
+      services: ['api', 'worker'],
+      capabilities: ['storage', 'tenancy', 'rls'],
+    })
+    try {
+      applyRecordedComponents(enabled, secure, { overridden: [] })
+      expect(enabled.capabilities.secure_files).toBe(true)
+
+      const legacy = defaultSelections()
+      applyRecordedComponents(legacy, older, { overridden: [] })
+      expect(legacy.capabilities.secure_files).toBe(false)
+    } finally {
+      rmSync(secure, { recursive: true, force: true })
+      rmSync(older, { recursive: true, force: true })
+    }
+  })
+
   it('changes nothing when the project records no components', () => {
     // A manifest written before the field existed. The old behaviour was
     // correct for those projects and must survive.
@@ -167,5 +203,133 @@ describe('a project’s recorded components win over today’s defaults', () => 
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+})
+
+/**
+ * ADR 0013 section 6 on an existing project: `--refresh`, `--check-drift` and `--refresh-modules`
+ * may not relax or switch `secure_files`, and the recorded set has to satisfy `requires` too.
+ */
+describe('secure_files cannot be relaxed by a flag on an existing project', () => {
+  const SECURE = {
+    applications: ['web'],
+    services: ['api', 'worker', 'clamd'],
+    capabilities: ['storage', 'tenancy', 'rls', 'secure_files'],
+  }
+  const PLAIN = {
+    applications: ['web'],
+    services: ['api', 'worker'],
+    capabilities: ['storage', 'tenancy', 'rls'],
+  }
+
+  /** What the CLI does, in the order it does it, for a project already on disk. */
+  function run(root: string, flags: { with?: string[]; without?: string[] }, acts = true) {
+    const { manifest, defaults } = loadProfile('product')
+    const selections = resolveSelections(manifest, defaults)
+    applyComponentOverrides(manifest, selections, flags)
+    validateSelections(manifest, selections)
+    applyExistingProjectSelections(manifest, selections, root, {
+      with: flags.with ?? [],
+      without: flags.without ?? [],
+      actsOnRecordedComponents: acts,
+      actsOnExistingProject: true,
+    })
+    return selections
+  }
+
+  it.each([
+    [['secure_files'], 'downgrade'],
+    [['secure_files', 'clamd'], 'downgrade'],
+  ])('refuses --without %s on a secure project (%s)', (without) => {
+    const root = projectWith(SECURE)
+    try {
+      expect(() => run(root, { without })).toThrow(/downgrade|unsupported and unsafe/)
+      expect(recordedSecureFilesViolation(root, { with: [], without })).toMatch(
+        /unsupported and unsafe/,
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.each(['clamd', 'worker'])('refuses --without %s while secure_files is recorded on', (service) => {
+    const root = projectWith(SECURE)
+    try {
+      expect(() => run(root, { without: [service] })).toThrow(new RegExp(`--without ${service}`))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses --with secure_files on a project generated without it', () => {
+    const root = projectWith(PLAIN)
+    try {
+      expect(() => run(root, { with: ['secure_files', 'clamd'] })).toThrow(
+        /cannot be applied to a project generated without it/,
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('also refuses under --refresh-modules, which does not read the recorded set', () => {
+    const root = projectWith(SECURE)
+    try {
+      expect(() => run(root, { without: ['secure_files'] }, false)).toThrow(/downgrade/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('re-validates `requires` against the recorded set: a dependency flag cannot hollow it out', () => {
+    // `--without storage` is fine against today's defaults (secure_files is off there), so the
+    // first validation passes. Once the recorded set turns secure_files on, the requirement for
+    // storage is violated, and the selection has to be refused rather than rendered.
+    const root = projectWith(SECURE)
+    try {
+      expect(() => run(root, { without: ['storage'] })).toThrow(/"secure_files" requires "storage"/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves every other flag, and the unchanged capability, alone', () => {
+    const secure = projectWith(SECURE)
+    const plain = projectWith(PLAIN)
+    try {
+      expect(run(secure, { with: ['scheduler'] }).capabilities.secure_files).toBe(true)
+      // Naming what is already recorded is not a change.
+      expect(run(secure, { with: ['secure_files', 'clamd', 'worker'] }).capabilities.secure_files).toBe(true)
+      expect(run(plain, { without: ['secure_files'] }).capabilities.secure_files).toBe(false)
+      expect(run(plain, { with: ['scheduler'] }).capabilities.secure_files).toBe(false)
+      expect(recordedSecureFilesViolation(plain, { with: [], without: ['worker'] })).toBeNull()
+    } finally {
+      rmSync(secure, { recursive: true, force: true })
+      rmSync(plain, { recursive: true, force: true })
+    }
+  })
+
+  it('judges nothing for a project that records no components or no project at all', () => {
+    expect(
+      recordedSecureFilesViolation(join(tmpdir(), 'koras-rc-absent-2'), { with: [], without: ['secure_files'] }),
+    ).toBeNull()
+  })
+})
+
+describe('the clamd descriptor is dev-only, and the generator says so', () => {
+  const on = { capabilities: { storage: true, secure_files: true } }
+  const off = { capabilities: { storage: true, secure_files: false } }
+
+  it('prints the notice for a secure product, and nothing for one without', () => {
+    const notice = secureFilesNotice(on)
+    expect(notice).toContain(CLAMD_DEV_ONLY_SENTENCE)
+    expect(notice).toContain('services/clamd/service.yaml')
+    expect(notice).toMatch(/test, stg and prod/)
+    expect(secureFilesNotice(off)).toBeNull()
+  })
+
+  it('carries the same sentence in the recommendation to enable the capability', () => {
+    expect(secureFilesRecommendation(off)).toContain(CLAMD_DEV_ONLY_SENTENCE)
+    expect(secureFilesRecommendation(on)).toBeNull()
   })
 })

@@ -88,9 +88,29 @@ def _docker(*arguments: str, stdin: str | None = None, timeout: int = 300) -> st
     return done.stdout
 
 
+#: A product generated with `secure_files` (ADR 0013) carries the upload window module, and its
+#: worker refuses to start without a scanner and an object store.
+SECURE_FILES = (
+    Path(__file__).resolve().parents[2] / "services/api/koras_api/core/upload_window.py"
+).exists()
+
+#: What that worker is given. An import reads neither the scanner nor the store -- its source is a
+#: stand-in object store inside the probe -- so none of these is reached, and each is checked for
+#: being *set*, which is all start-up asks.
+SECURE_FILES_SETTINGS = {
+    "FILE_SCAN_BACKEND": "clamd",
+    "FILE_SCAN_CLAMD_HOST": "127.0.0.1",
+    "STORAGE_ENDPOINT": "http://127.0.0.1:9",
+    "STORAGE_BUCKET": "image-test",
+    "STORAGE_ACCESS_KEY": "image-test",
+    "STORAGE_SECRET_KEY": "image-test",
+}
+
+
 def _environment() -> list[str]:
     """What a deployed worker is given, and nothing that would stand in for a file."""
-    return [
+    settings = {"OTEL_SDK_DISABLED": "true", **(SECURE_FILES_SETTINGS if SECURE_FILES else {})}
+    out = [
         "--network",
         NETWORK,
         "-e",
@@ -99,9 +119,14 @@ def _environment() -> list[str]:
         f"DATABASE_URL={IN_IMAGE_DATABASE_URL}",
         "-e",
         f"REDIS_URL={REDIS_URL}",
+        # The image runs imports, so the test says so: they are off in every environment
+        # unless explicitly on (ADR 0013 section 7). Disposable stack only.
         "-e",
-        "OTEL_SDK_DISABLED=true",
+        "IMPORTS_ENABLED=true",
     ]
+    for name, value in settings.items():
+        out += ["-e", f"{name}={value}"]
+    return out
 
 
 @pytest.fixture(scope="module")
@@ -191,6 +216,18 @@ def test_a_dry_run_that_fails_says_so_on_its_run(probe: dict[str, Any]) -> None:
     assert refused["answer"]["status"] == "failed"
     assert refused["run"]["status"] == "failed" and refused["run"]["error"]
     assert refused["run"]["audit"] == []
+
+
+def test_a_job_refuses_in_the_image_once_imports_are_off(probe: dict[str, Any]) -> None:
+    """A job that arrives while the switch is off reads no file and writes no row."""
+    for name in ("gate_off_validate", "gate_off_commit"):
+        refused = probe[name]
+        assert refused["raised"] is None, refused["raised"]
+        assert refused["answer"] == {"status": "refused", "reason": "activation_disabled"}
+        assert refused["run"]["status"] == "failed"
+        assert "not enabled" in refused["run"]["error"]
+        assert refused["run"]["written"] == 0
+        assert refused["run"]["audit"] == [["import.refused", "denied"]], refused["complaints"]
 
 
 def test_a_dry_run_that_raises_leaves_no_run_that_says_it_succeeded(

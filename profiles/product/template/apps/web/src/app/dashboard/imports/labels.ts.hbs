@@ -57,6 +57,10 @@ export interface ImportLabels {
   ignore: string
   check: string
   checking: string
+{{#if capability.secure_files}}
+  /** Polite status while the browser reads the file to take its checksum. */
+  preparing: string
+{{/if}}
   discard: string
   tooManyRows: string
   replaced: string
@@ -186,6 +190,9 @@ export function importLabels(t: Translator): ImportLabels {
     ignore: t('imports.ignore'),
     check: t('imports.check'),
     checking: t('imports.checking'),
+{{#if capability.secure_files}}
+    preparing: t('imports.preparing'),
+{{/if}}
     discard: t('imports.discard'),
     tooManyRows: t('imports.tooManyRows'),
     replaced: t('imports.replaced'),

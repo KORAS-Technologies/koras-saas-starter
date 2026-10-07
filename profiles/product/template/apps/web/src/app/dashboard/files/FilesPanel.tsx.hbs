@@ -5,7 +5,19 @@ import type { ActionResult } from './actions'
 import type { FileList } from '@{{projectSlug}}/api-client'
 import type { Locale } from '@{{projectSlug}}/i18n'
 import { Button, Card } from '@{{projectSlug}}/ui'
+{{#if capability.secure_files}}
+import { digestOf, putWithProgress } from '../../../lib/browser-upload'
+{{/if}}
 import { completeUpload, deleteFile, downloadUrl, listFiles, requestUpload } from './actions'
+{{#if capability.secure_files}}
+import {
+  POLL_DEADLINE_MS,
+  RELEASE_REFUSALS,
+  anyScanning,
+  availabilityOf,
+  pollDelay,
+} from '@{{projectSlug}}/api-client/src/file-state'
+{{/if}}
 
 /**
  * The list, the upload control and the two per-file actions.
@@ -39,7 +51,23 @@ export interface FilesLabels {
   searchableYes: string
   searchablePending: string
   searchableNo: string
+{{#if capability.secure_files}}
+  /** Shown while the file's content is not available: nothing is indexed from it yet. */
+  searchableAfterAvailable: string
+  /** Polite status while the browser reads the file to take its checksum. */
+  preparing: string
+  status: string
+  statusAvailable: string
+  statusScanning: string
+  statusScanningHint: string
+  statusUnavailable: string
+  statusUnavailableHint: string
+  scanningNotice: string
+  scanningStopped: string
+  refresh: string
+{{else}}
   searchableUnknown: string
+{{/if}}
   /** `{used}` and `{limit}` */
   usage: string
   /** `{used}` */
@@ -66,6 +94,7 @@ function formatBytes(bytes: number, locale: Locale): string {
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(value)} ${units[unit]}`
 }
 
+{{#unless capability.secure_files}}
 /**
  * The SHA-256 of what is about to be sent, computed in the browser.
  *
@@ -109,6 +138,7 @@ function putWithProgress(
     xhr.send(file)
   })
 }
+{{/unless}}
 
 export function FilesPanel({
   initial,
@@ -138,6 +168,7 @@ export function FilesPanel({
   // agree by construction, and the zone becomes the customer's once mounted.
   // The alternative, `suppressHydrationWarning`, silences the message and keeps
   // the server's text, which means showing every customer UTC forever.
+{{#unless capability.secure_files}}
   // **How long "Indexing…" can honestly mean "in progress".**
   //
   // Reading an upload back and embedding it takes seconds -- a text file on the
@@ -152,6 +183,16 @@ export function FilesPanel({
   // watches a false sentence for a working day. Past it, with no record either
   // way, the honest reading is that nothing indexed this file.
   const INDEXING_GRACE_MS = 60 * 60 * 1000
+{{/unless}}
+{{#if capability.secure_files}}
+  // **Why the "Assistant" column does not say "Indexing…".** Nothing is read, and
+  // nothing is indexed, until the file's check has said it is clean, and the index is
+  // then taken lazily by a listing. So "waiting to be checked" and "waiting to be
+  // indexed" are different states, and the column only speaks of the second for a file
+  // the server says is available. A file that is not available says what it is waiting
+  // for in the Status column and nothing here. There is no timer: this page cannot see
+  // an indexing run, so it says what the record shows -- indexed, could not be, or not yet.
+{{/if}}
 
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
@@ -159,9 +200,33 @@ export function FilesPanel({
 
   const [busy, setBusy] = useState(false)
   const input = useRef<HTMLInputElement>(null)
+{{#if capability.secure_files}}
+  // A refusal that is not a fault: the file was not available, and the list
+  // has been re-read to show what it is now. A status, not an alert.
+  const [notice, setNotice] = useState<string | null>(null)
+  // The browser is hashing the chosen file, before any ticket is asked for.
+  const [preparing, setPreparing] = useState(false)
+  const [pollStopped, setPollStopped] = useState(false)
+  const [pollRound, setPollRound] = useState(0)
+  // A refused Download disables the very button that had focus, and a browser
+  // drops focus to the page when that happens. The notice takes it instead.
+  const noticeRef = useRef<HTMLParagraphElement>(null)
+  useEffect(() => {
+    if (notice !== null) noticeRef.current?.focus()
+  }, [notice])
+  // Only the newest read is applied. A background read that was slow must not
+  // land after an upload's or a delete's and put the list back as it was.
+  const latestRead = useRef(0)
+{{/if}}
 
   const refresh = useCallback(async () => {
+{{#if capability.secure_files}}
+    const mine = (latestRead.current += 1)
+{{/if}}
     const answer = await listFiles()
+{{#if capability.secure_files}}
+    if (mine !== latestRead.current) return
+{{/if}}
     if (answer.status === 'ok') {
       setList(answer.value)
       setError(null)
@@ -169,19 +234,81 @@ export function FilesPanel({
       setError(answer.message)
     }
   }, [])
+{{#if capability.secure_files}}
+
+  const scanning = list !== null && anyScanning(list.files)
+
+  // **Bounded refresh while a file is being checked.** The page's own list
+  // read, repeated -- not a row-by-row poll and not a second mechanism -- on a
+  // delay that grows from ten seconds to a minute, paused while the tab is
+  // hidden, and ended at a fixed deadline or the moment nothing is being
+  // checked. Keyed on the *fact* that something is, not on the list, so a
+  // refresh that changes the list does not restart the wait. After the
+  // deadline the page says it has stopped and offers one explicit refresh,
+  // which starts a new round. The delays and the deadline are `file-state.ts`.
+  useEffect(() => {
+    setPollStopped(false)
+    if (!scanning) return
+    const started = Date.now()
+    let attempt = 0
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const wait = () => {
+      timer = setTimeout(() => void tick(), pollDelay(attempt))
+      attempt += 1
+    }
+    const tick = async () => {
+      if (cancelled) return
+      if (Date.now() - started >= POLL_DEADLINE_MS) {
+        setPollStopped(true)
+        return
+      }
+      if (typeof document === 'undefined' || !document.hidden) await refresh()
+      if (!cancelled) wait()
+    }
+    wait()
+    return () => {
+      cancelled = true
+      if (timer !== undefined) clearTimeout(timer)
+    }
+  }, [scanning, pollRound, refresh])
+{{/if}}
 
   const upload = useCallback(
     async (file: File) => {
       setBusy(true)
       setError(null)
+{{#if capability.secure_files}}
+      setNotice(null)
+{{/if}}
       setProgress(0)
       try {
+{{#if capability.secure_files}}
+        // Before the ticket: the digest is the content claim this upload is authorized
+        // for, bound to the file when the ticket is issued. A file whose digest cannot
+        // be taken throws here and is not uploaded.
+{{/if}}
+{{#unless capability.secure_files}}
         // Before the ticket, not merely before the PUT: the digest is signed
         // into the upload URL, so the provider stores it and can be asked for
         // it afterwards. Hashing after the ticket was issued -- which is what
         // this did until 2026-09-16 -- left the provider with nothing to
         // corroborate, and `checksum_verified` false for every file forever.
+{{/unless}}
+{{#if capability.secure_files}}
+        // The hashing phase is visible: reading a large file into memory takes a moment in which
+        // nothing else moves, and a person who sees nothing clicks again. A file above the
+        // browser's ceiling throws here, with the sentence to show, before anything is read.
+        setPreparing(true)
+        let checksum: string
+        try {
+          checksum = await digestOf(file)
+        } finally {
+          setPreparing(false)
+        }
+{{else}}
         const checksum = await digestOf(file)
+{{/if}}
         const ticket = await requestUpload({
           name: file.name,
           sizeBytes: file.size,
@@ -210,6 +337,32 @@ export function FilesPanel({
     [refresh],
   )
 
+{{#if capability.secure_files}}
+  const download = useCallback(
+    async (id: string) => {
+      setNotice(null)
+      const answer = await downloadUrl(id)
+      if (answer.status === 'error') {
+        // The server refused because the file is not available, which means
+        // this page's row was stale. Re-read first -- the row then shows what
+        // it is -- and only then say so, because a re-read clears the error.
+        if (answer.code !== undefined && RELEASE_REFUSALS.has(answer.code)) {
+          await refresh()
+          setNotice(answer.message)
+          return
+        }
+        if (answer.code === 'file_not_found') await refresh()
+        setError(answer.message)
+        return
+      }
+      // A signed URL with an attachment disposition: the browser saves it and
+      // the tab stays here. Opened directly rather than through an anchor so
+      // nothing in the DOM carries a URL that expires.
+      window.location.assign(answer.value)
+    },
+    [refresh],
+  )
+{{else}}
   const download = useCallback(async (id: string) => {
     const answer = await downloadUrl(id)
     if (answer.status === 'error') {
@@ -221,10 +374,14 @@ export function FilesPanel({
     // nothing in the DOM carries a URL that expires.
     window.location.assign(answer.value)
   }, [])
+{{/if}}
 
   const remove = useCallback(
     async (id: string, name: string) => {
       if (!window.confirm(fill(labels.confirmRemove, { name }))) return
+{{#if capability.secure_files}}
+      setNotice(null)
+{{/if}}
       setBusy(true)
       const answer = await deleteFile(id)
       setBusy(false)
@@ -275,7 +432,20 @@ export function FilesPanel({
                 {busy && progress !== null ? labels.uploading : labels.upload}
               </Button>
             </label>
+{{#if capability.secure_files}}
+            {/* Present from the start and announced politely: a live region that is added to
+                the page together with its text is often not announced at all. */}
+            <p
+              role="status"
+              className={preparing ? 'text-sm text-ink-muted' : 'sr-only'}
+              data-testid="files-preparing"
+            >
+              {preparing ? labels.preparing : ''}
+            </p>
+            {progress !== null && !preparing && (
+{{else}}
             {progress !== null && (
+{{/if}}
               <progress
                 className="h-2 w-48 overflow-hidden rounded-brand"
                 value={Math.round(progress * 100)}
@@ -293,11 +463,62 @@ export function FilesPanel({
           <p className="text-sm text-ink" role="alert">
             {error}
           </p>
+{{#if capability.secure_files}}
+          <Button
+            type="button"
+            variant="secondary"
+            className="mt-3"
+            onClick={() => {
+              setNotice(null)
+              void refresh()
+            }}
+          >
+            {labels.retry}
+          </Button>
+        </Card>
+      )}
+
+      {notice !== null && (
+        <Card className="max-w-3xl">
+          <p
+            ref={noticeRef}
+            tabIndex={-1}
+            className="text-sm text-ink outline-none"
+            role="status"
+            data-testid="files-notice"
+          >
+            {notice}
+          </p>
+        </Card>
+      )}
+
+      {scanning && (
+        <div className="flex max-w-3xl flex-wrap items-center gap-3">
+          <p className="text-sm text-ink-muted" role="status" data-testid="files-scanning">
+            {pollStopped ? labels.scanningStopped : labels.scanningNotice}
+          </p>
+          {pollStopped && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setNotice(null)
+                setPollRound((round) => round + 1)
+                void refresh()
+              }}
+            >
+              {labels.refresh}
+            </Button>
+          )}
+        </div>
+      )}
+{{else}}
           <Button type="button" variant="secondary" className="mt-3" onClick={() => void refresh()}>
             {labels.retry}
           </Button>
         </Card>
       )}
+{{/if}}
 
       {list !== null && list.files.length === 0 ? (
         <Card className="max-w-3xl">
@@ -305,13 +526,23 @@ export function FilesPanel({
           <p className="mt-2 text-sm leading-6 text-ink-muted">{labels.emptyHint}</p>
         </Card>
       ) : list !== null ? (
+{{#if capability.secure_files}}
+        /* `relative`: the table's `sr-only` header cell is absolutely
+            positioned, and without a positioned ancestor inside the scroll
+            container it escapes it and widens the whole page on a phone. */
+        <div className="relative overflow-x-auto rounded-brand border border-line bg-surface">
+{{else}}
         <div className="overflow-x-auto rounded-brand border border-line bg-surface">
+{{/if}}
           <table className="w-full text-sm">
             <thead className="bg-surface-muted text-left text-ink-muted">
               <tr>
                 <th scope="col" className="px-4 py-3 font-medium">{labels.name}</th>
                 <th scope="col" className="px-4 py-3 font-medium">{labels.size}</th>
                 <th scope="col" className="px-4 py-3 font-medium">{labels.uploadedAt}</th>
+{{#if capability.secure_files}}
+                <th scope="col" className="px-4 py-3 font-medium">{labels.status}</th>
+{{/if}}
                 <th scope="col" className="px-4 py-3 font-medium">{labels.searchable}</th>
                 <th scope="col" className="px-4 py-3">
                   <span className="sr-only">{labels.download}</span>
@@ -319,8 +550,21 @@ export function FilesPanel({
               </tr>
             </thead>
             <tbody>
+{{#if capability.secure_files}}
+              {list.files.map((file) => {
+                const state = availabilityOf(file)
+                const statusId = `file-status-${file.id}`
+                return (
+                <tr
+                  key={file.id}
+                  className="border-t border-line"
+                  data-testid="file-row"
+                  data-state={state}
+                >
+{{else}}
               {list.files.map((file) => (
                 <tr key={file.id} className="border-t border-line">
+{{/if}}
                   <td className="px-4 py-3 text-ink">{file.name}</td>
                   <td className="px-4 py-3 text-ink-muted">{formatBytes(file.size_bytes, locale)}</td>
                   <td className="px-4 py-3 text-ink-muted">
@@ -332,22 +576,69 @@ export function FilesPanel({
                       }).format(new Date(file.uploaded_at))}
                     </time>
                   </td>
+{{#if capability.secure_files}}
+                  <td className="px-4 py-3 text-ink-muted" data-testid="file-status">
+                    <span id={statusId}>
+                      <span className={state === 'available' ? 'text-ink' : undefined}>
+                        {state === 'available'
+                          ? labels.statusAvailable
+                          : state === 'scanning'
+                            ? labels.statusScanning
+                            : labels.statusUnavailable}
+                      </span>
+                      {state !== 'available' && (
+                        <span className="block text-xs">
+                          {state === 'scanning'
+                            ? labels.statusScanningHint
+                            : labels.statusUnavailableHint}
+                        </span>
+                      )}
+                    </span>
+                  </td>
+{{/if}}
                   <td className="px-4 py-3 text-ink-muted" data-testid="file-searchable">
+{{#if capability.secure_files}}
+                    {state !== 'available' ? (
+                      <span>{labels.searchableAfterAvailable}</span>
+                    ) : file.indexed_at ? (
+{{else}}
                     {file.indexed_at ? (
+{{/if}}
                       <span className="text-ink">{labels.searchableYes}</span>
                     ) : file.index_note ? (
                       <span title={file.index_note}>{labels.searchableNo}</span>
+{{#if capability.secure_files}}
+                    ) : (
+                      <span>{labels.searchablePending}</span>
+                    )}
+{{else}}
                     ) : Date.now() - new Date(file.uploaded_at).getTime() > INDEXING_GRACE_MS ? (
                       <span>{labels.searchableUnknown}</span>
                     ) : (
                       <span>{labels.searchablePending}</span>
                     )}
+{{/if}}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
+{{#if capability.secure_files}}
+                      {/* Native `disabled`: not focusable, not clickable, and the
+                          server refuses the request regardless. The reason is the
+                          Status cell, which the button points at. */}
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={state !== 'available'}
+                        aria-describedby={statusId}
+                        onClick={() => void download(file.id)}
+                      >
+                        {labels.download}
+                      </Button>
+{{else}}
                       <Button type="button" variant="secondary" onClick={() => void download(file.id)}>
                         {labels.download}
                       </Button>
+{{/if}}
                       {canManage && (
                         <Button
                           type="button"
@@ -360,8 +651,14 @@ export function FilesPanel({
                       )}
                     </div>
                   </td>
+{{#if capability.secure_files}}
+                </tr>
+                )
+              })}
+{{else}}
                 </tr>
               ))}
+{{/if}}
             </tbody>
           </table>
           {list.provider && (

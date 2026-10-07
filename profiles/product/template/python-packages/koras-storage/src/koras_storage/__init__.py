@@ -23,7 +23,9 @@ writing the customer's files to the platform default they asked to leave.
 from __future__ import annotations
 
 import base64
+import hashlib
 import re
+import threading
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol
@@ -49,11 +51,58 @@ __all__ = [
     "S3ObjectStore",
     "StoragePolicy",
     "StorageSettings",
+    "UPLOAD_PROVENANCE_META",
     "Unsupported",
+    "upload_guard_headers",
     "object_key",
     "resolve_destination",
     "safe_filename",
 ]
+
+
+#: The user-metadata name (`x-amz-meta-<name>`) a ticket signs and a finalizer reads back
+#: (ADR 0013, `secure_files`). The value is the ticket's own upload id.
+UPLOAD_PROVENANCE_META = "koras-upload"
+
+#: An entity tag no object has. Only ever sent as a signed *condition* that must fail.
+_NO_SUCH_ETAG = '"00000000000000000000000000000000"'
+
+_EPOCH = "Thu, 01 Jan 1970 00:00:00 GMT"
+
+
+def upload_guard_headers(provenance: str) -> dict[str, str]:
+    """The headers a presigned upload signs so that it can only ever be a plain PUT.
+
+    Part of `secure_files` (ADR 0013); a product without it never calls this.
+
+    A presigned PUT authorizes one key, but the S3 gateway also honours an **unsigned**
+    `x-amz-copy-source` request header and turns the PUT into a server-side copy from any
+    key in the bucket, another tenant's final object included (measured against a real
+    provider store while this was proven in Docoris, 2026-10-06). A client
+    cannot be stopped from sending a header the signature does not cover, so these are
+    signed instead, and the browser must send exactly them:
+
+    * `x-amz-copy-source-if-match` with an entity tag nothing has, and
+      `x-amz-copy-source-if-unmodified-since` with the epoch. Each is a precondition that
+      is *false for every possible source*, and it is read only when a copy source is also
+      present: a plain PUT ignores both, a copy attempt is answered 412 and writes nothing.
+      Two independent preconditions, because the S3 rules let a *true* `if-match`
+      override a false `if-unmodified-since`; signing both leaves a client no condition
+      header it may add (a repeated signed header is a signature mismatch).
+    * `x-amz-metadata-directive: COPY` and `x-amz-meta-koras-upload: <upload id>`: if a
+      provider ever performed the copy anyway, the object would carry the *source's*
+      metadata and not this ticket's id, which finalization checks. A plain PUT stores the
+      id.
+
+    Both are provider behaviour. Neither is the control finalization relies on alone, which
+    is the SHA-256 it computes over the bytes against the digest bound at ticket issuance.
+    """
+    return {
+        "x-amz-copy-source-if-match": _NO_SUCH_ETAG,
+        "x-amz-copy-source-if-unmodified-since": _EPOCH,
+        "x-amz-metadata-directive": "COPY",
+        f"x-amz-meta-{UPLOAD_PROVENANCE_META}": provenance,
+    }
 
 
 class Provider(StrEnum):
@@ -303,6 +352,8 @@ class ObjectStore(Protocol):
         size: int,
         expires_in: int,
         checksum_sha256: str | None = None,
+        *,
+        provenance: str | None = None,
     ) -> str: ...
 
     def presign_download(self, key: str, filename: str, expires_in: int) -> str: ...
@@ -407,6 +458,8 @@ class S3ObjectStore:
             aws_secret_access_key=destination.secret_key,
             config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
         )
+        self._signing = threading.local()
+        self._client.meta.events.register("before-sign.s3.PutObject", self._add_signed_headers)
 
     def presign_upload(
         self,
@@ -415,7 +468,12 @@ class S3ObjectStore:
         size: int,
         expires_in: int,
         checksum_sha256: str | None = None,
+        *,
+        provenance: str | None = None,
     ) -> str:
+        # `None` issues the unguarded ticket every product issued before `secure_files`, and is
+        # the default so a product without the capability is unchanged. A `secure_files` caller
+        # always passes the ticket's upload id, and a test holds the router to that.
         # The content type is part of the signature, so the browser must send
         # exactly what the API recorded -- which is what stops a client
         # uploading an HTML file under the name it registered as a PDF.
@@ -435,14 +493,25 @@ class S3ObjectStore:
         }
         if checksum_sha256:
             params["ChecksumSHA256"] = _b64_digest(checksum_sha256)
-        return str(
-            self._client.generate_presigned_url(
-                "put_object",
-                Params=params,
-                ExpiresIn=expires_in,
-                HttpMethod="PUT",
+        # The guard headers are signed with the rest, so the browser must send them and a
+        # copy-source request is refused (`upload_guard_headers`). The client is shared
+        # between threads, so they travel in a thread-local read by the one signing hook.
+        self._signing.extra = upload_guard_headers(provenance) if provenance else {}
+        try:
+            return str(
+                self._client.generate_presigned_url(
+                    "put_object",
+                    Params=params,
+                    ExpiresIn=expires_in,
+                    HttpMethod="PUT",
+                )
             )
-        )
+        finally:
+            self._signing.extra = {}
+
+    def _add_signed_headers(self, request: Any, **_: Any) -> None:  # noqa: ANN401 - botocore hook
+        for name, value in getattr(self._signing, "extra", {}).items():
+            request.headers.add_header(name, value)
 
     def presign_download(self, key: str, filename: str, expires_in: int) -> str:
         # Downloaded, never rendered in the tab: a file a customer uploaded is
@@ -576,6 +645,47 @@ class S3ObjectStore:
             client.copy_object(**arguments)
         except ClientError as second:
             raise CopyRefused(str(first)) from second
+
+    def provenance(self, key: str) -> str | None:
+        """The upload id a plain PUT stored on this object, or None (ADR 0013, `secure_files`).
+
+        None for a missing object and for one without it, which is what a provider copy
+        of another object would be (`upload_guard_headers`).
+        """
+        try:
+            answer = self._client.head_object(Bucket=self.destination.bucket, Key=key)
+        except ClientError as error:
+            code = error.response.get("Error", {}).get("Code", "")
+            if code in {"404", "NoSuchKey", "NotFound"}:
+                return None
+            raise
+        value = (answer.get("Metadata") or {}).get(UPLOAD_PROVENANCE_META)
+        return value if isinstance(value, str) and value else None
+
+    def sha256(self, key: str) -> str | None:
+        """The SHA-256, as hex, this process computes over the object's stored bytes.
+
+        Streamed in chunks, so an object of any size is hashed in constant memory. It is
+        the digest of the bytes read, never anything the provider says about them: not an
+        ETag, not a checksum header, not a stored checksum attribute (a provider that
+        executes a copy keeps the digest a caller *claimed*). None where the object is not
+        there.
+        """
+        try:
+            answer = self._client.get_object(Bucket=self.destination.bucket, Key=key)
+        except ClientError as error:
+            code = error.response.get("Error", {}).get("Code", "")
+            if code in {"404", "NoSuchKey", "NotFound"}:
+                return None
+            raise
+        body = answer["Body"]
+        digest = hashlib.sha256()
+        try:
+            for chunk in body.iter_chunks(1024 * 1024):
+                digest.update(chunk)
+        finally:
+            body.close()
+        return digest.hexdigest()
 
     def checksum(self, key: str) -> str | None:
         try:

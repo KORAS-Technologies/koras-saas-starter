@@ -90,6 +90,32 @@ COPY services/api/koras_api/core/notifications.py ./services/api/koras_api/core/
 COPY services/api/koras_api/core/recipients.py ./services/api/koras_api/core/recipients.py
 COPY services/api/koras_api/core/settings_store.py ./services/api/koras_api/core/settings_store.py
 COPY services/api/koras_api/settings_catalogue/ ./services/api/koras_api/settings_catalogue/
+{{#if capability.secure_files}}
+# The release rule (ADR 0013): the import source gate in `core/imports.py` asks it, so the
+# worker's copy of that module needs it and the one constant it dispatches on. Both are
+# standard library only; the HTTP gate that records a refusal is the API's alone.
+COPY services/api/koras_api/core/file_release.py ./services/api/koras_api/core/file_release.py
+COPY services/api/koras_api/core/secure_files.py ./services/api/koras_api/core/secure_files.py
+{{/if}}
+{{/if}}{{#if capability.secure_files}}# The upload finalizer's pieces of the API (ADR 0013): the shared window and key
+# shapes, the `file.finalize` declaration the API enqueues and the worker binds, the
+# audit sink and the actions the finalizer records. None reaches the API's settings,
+# routers or session; `tests/unit/test_worker_image_contents.py` walks every import
+# the worker reaches and fails on one this file does not copy. The audit sink and its rebinding
+# are copied once: by the import block above when `data_import` is on, here otherwise.
+COPY services/api/koras_api/core/upload_window.py ./services/api/koras_api/core/upload_window.py
+COPY services/api/koras_api/core/finalize_jobs.py ./services/api/koras_api/core/finalize_jobs.py
+COPY services/api/koras_api/core/upload_audit.py ./services/api/koras_api/core/upload_audit.py
+{{#unless capability.data_import}}
+COPY services/api/koras_api/core/audit.py ./services/api/koras_api/core/audit.py
+COPY services/api/koras_api/core/rebind.py ./services/api/koras_api/core/rebind.py
+{{/unless}}
+# The scanner's: the `file.scan` declaration the worker binds and the finalizer and the sweep
+# enqueue, the enqueue function they share, and the audit actions the verdicts record. The
+# same arrangement and the same reason: stdlib, `koras_queue` and `koras_audit` only.
+COPY services/api/koras_api/core/scan_jobs.py ./services/api/koras_api/core/scan_jobs.py
+COPY services/api/koras_api/core/scan_enqueue.py ./services/api/koras_api/core/scan_enqueue.py
+COPY services/api/koras_api/core/scan_audit.py ./services/api/koras_api/core/scan_audit.py
 {{/if}}
 # Unconditional: two capabilities put a namespace package here and a third
 # would be a third place to remember. An empty directory on the path costs

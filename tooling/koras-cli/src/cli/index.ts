@@ -1,4 +1,10 @@
 import { doctor } from '../doctor/run.js'
+import {
+  BaselineUsageError,
+  checkBaseline,
+  exitCodeFor,
+  formatBaselineReport,
+} from '../baseline/check.js'
 import { teardown, credentialsFromEnv } from '../teardown/run.js'
 import { probeResources, type ProbeResult } from '../teardown/providers/index.js'
 import { probe } from '../teardown/http.js'
@@ -56,7 +62,18 @@ COMMANDS:
                              consumes stdin, so the confirmation prompt has
                              nothing to read the answer from.
 
+  framework:baseline --product-path <dir> --starter-path <dir> [--strict] [--json]
+                             Compare the product's framework.source_baseline
+                             (.koras/project.yaml) with the Starter's accepted
+                             baseline (docs/framework-baseline.yaml). Reports
+                             current, behind, ahead, diverged or unknown.
+                             Read-only and offline; needs a Starter checkout with
+                             full history. Exits 0 by default; with --strict, 1
+                             unless current or ahead. Exit 2: the check itself
+                             could not run.
+
 EXAMPLES:
+  pnpm koras framework:baseline --product-path ../docoris --starter-path .
   pnpm koras bootstrap:doctor
   pnpm koras teardown koras-e2e-shop --product-path ../output/koras-e2e-shop
 
@@ -75,6 +92,11 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   if (!command || command === '--help' || command === '-h' || command === 'help') {
     console.log(HELP_TEXT)
     process.exit(command ? 0 : 1)
+  }
+
+  if (command === 'framework:baseline') {
+    process.exitCode = runFrameworkBaseline(args.slice(1))
+    return
   }
 
   if (command === 'teardown') {
@@ -522,5 +544,29 @@ async function workspaceIsGone(backend: {
     return status === 404
   } catch {
     return false
+  }
+}
+
+function runFrameworkBaseline(args: string[]): number {
+  const value = (flag: string): string | undefined => {
+    const i = args.indexOf(flag)
+    return i >= 0 ? args[i + 1] : undefined
+  }
+  const productPath = value('--product-path')
+  const starterPath = value('--starter-path')
+  if (!productPath || !starterPath) {
+    console.error('\nERROR: framework:baseline needs --product-path and --starter-path.\n')
+    return 2
+  }
+  try {
+    const report = checkBaseline(starterPath, productPath)
+    console.log(args.includes('--json') ? JSON.stringify(report, null, 2) : formatBaselineReport(report))
+    return exitCodeFor(report, args.includes('--strict'))
+  } catch (err) {
+    if (err instanceof BaselineUsageError) {
+      console.error(`\nERROR: ${err.message}`)
+      return 2
+    }
+    throw err
   }
 }

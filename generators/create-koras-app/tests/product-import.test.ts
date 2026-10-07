@@ -45,12 +45,21 @@ const PROFILE = join(PRODUCT, '..')
  */
 const BARE_RAISE = /^\s+raise\b/m
 
+/**
+ * A file the capability renders is carried as `<path>.hbs` (the rest of the file is the same text
+ * with both branches of each conditional), so a path named by its output is found either way.
+ */
+function located(...segments: string[]): string {
+  const plain = join(PRODUCT, ...segments)
+  return existsSync(plain) || !existsSync(`${plain}.hbs`) ? plain : `${plain}.hbs`
+}
+
 function read(...segments: string[]): string {
-  return readFileSync(join(PRODUCT, ...segments), 'utf8').split(String.fromCharCode(13)).join('')
+  return readFileSync(located(...segments), 'utf8').split(String.fromCharCode(13)).join('')
 }
 
 function has(...segments: string[]): boolean {
-  return existsSync(join(PRODUCT, ...segments))
+  return existsSync(located(...segments))
 }
 
 type Manifest = {
@@ -873,7 +882,7 @@ describe('data import', () => {
     for (const state of ['"pending"', '"skipped"', '"infected"']) {
       expect(store).toContain(state)
     }
-    const scan = read('services/api/koras_api/core/file_scan.py')
+    const scan = read('services/api/koras_api/core/file_scan.py.hbs')
     expect(scan, 'a download still allows a pending file').not.toContain('UNPARSEABLE_SCANS')
   })
 
@@ -884,7 +893,9 @@ describe('data import', () => {
     // One `_require` call per route. A read route without one would expose a
     // customer's own column headings to any member.
     const checks = [...router.matchAll(/^\s+_require\(claims, /gm)]
-    expect(checks.length).toBe(routes.length)
+    // Plus one in the router-level activation gate: a caller without `imports.manage` gets the
+    // ordinary refusal rather than learning whether imports are switched on.
+    expect(checks.length).toBe(routes.length + 1)
 
     // And a target's own declared permission is enforced rather than decorative.
     expect(router).toContain('_require_target(claims, target)')
@@ -1065,7 +1076,7 @@ describe('data import', () => {
     // The source inherits retention, legal hold, reconciliation, scanning and
     // the quota because it is an ordinary file. What the category buys is that
     // the two are separable later — by a sweep, a rule or a report.
-    const files = read('services/api/koras_api/routers/files.py')
+    const files = read('services/api/koras_api/routers/files.py.hbs')
     expect(files).toContain("category: Literal[\"documents\", \"imports\"] = \"documents\"")
 
     // The category is decided by the server action, never accepted from the
@@ -1080,7 +1091,7 @@ describe('data import', () => {
     const storage = read('services/api/koras_api/core/storage.py')
     expect(storage).toContain('files.maxUploadSizeMb')
     expect(storage).toContain('files.allowedExtensions')
-    const files = read('services/api/koras_api/routers/files.py')
+    const files = read('services/api/koras_api/routers/files.py.hbs')
     expect(files).toContain('upload_limits')
     expect(files).toContain('UPLOAD_REFUSED_BY_POLICY')
   })
@@ -1132,7 +1143,7 @@ describe('data import', () => {
   })
 
   it('gives every import error code a sentence and a mapping', () => {
-    const errors = read('services/api/koras_api/core/errors.py')
+    const errors = read('services/api/koras_api/core/errors.py.hbs')
     const codes = [...errors.matchAll(/^\s+IMPORT_\w+ = "([a-z_]+)"$/gm)].map((match) => match[1]!)
     // Ten since the commit: `import_not_committable` is what a target with
     // no writer answers, and it is a sentence rather than a 500 because a
@@ -1140,7 +1151,9 @@ describe('data import', () => {
     // Eleven since the templates: `import_format_refused` is a 406 for a
     // template in a format the target does not accept, and a 422 for a
     // source file in one.
-    expect(codes.length).toBe(11)
+    // Twelve since the activation gate (ADR 0013 section 7): `import_not_enabled` is the one
+    // refusal every route answers while data import is not switched on.
+    expect(codes.length).toBe(12)
 
     const mapping = read('apps/web/src/lib/api-errors.ts.hbs')
     const english = read('packages/i18n/src/messages/en.ts')

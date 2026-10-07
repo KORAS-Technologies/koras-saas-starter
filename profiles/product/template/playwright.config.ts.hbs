@@ -274,7 +274,11 @@ export default defineConfig({
               // different from production.
               ZITADEL_DOMAIN: IDENTITY_URL,
               ZITADEL_PROJECT_ID: PROJECT_ID,
-              // No platform, no Redis, no bucket. Each is absent rather than
+{{#if capability.data_import}}              // Imports are off in every environment unless explicitly switched on (ADR 0013
+              // section 7). This disposable API runs the import round trip, so it says so
+              // itself; nothing else -- no `.env`, no declaration -- turns it on for a test.
+              IMPORTS_ENABLED: 'true',
+{{/if}}              // No platform, no Redis, no bucket. Each is absent rather than
               // faked, and each has a documented answer for being absent —
               // which is itself worth exercising: this is the shape a product
               // runs in before its first deployment.
@@ -283,6 +287,21 @@ export default defineConfig({
               // the address the API puts in anything it addresses back to the
               // product, and the round trip is the only project talking to it.
               NEXT_PUBLIC_APP_URL: ROUNDTRIP_URL,
+{{#if capability.secure_files}}
+              // `secure_files` refuses to start without a scanner, an object store, a
+              // queue and a database (`core/secure_files.py`), and "absent rather than
+              // faked" is exactly what it refuses. So the harness names them, and none is
+              // reachable: nothing in this suite uploads, and a value that points nowhere
+              // is checked for being *set*, which is all start-up asks. An upload test
+              // needs a real store and belongs to `tests/integration/`.
+              FILE_SCAN_BACKEND: 'clamd',
+              FILE_SCAN_CLAMD_HOST: '127.0.0.1',
+              STORAGE_ENDPOINT: 'http://127.0.0.1:9',
+              STORAGE_BUCKET: 'e2e-files',
+              STORAGE_ACCESS_KEY: 'e2e-access',
+              STORAGE_SECRET_KEY: 'e2e-secret',
+              REDIS_URL: 'redis://127.0.0.1:6390/0',
+{{/if}}
             },
           },
           {

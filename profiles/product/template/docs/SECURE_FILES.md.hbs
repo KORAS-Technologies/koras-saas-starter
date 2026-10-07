@@ -1,0 +1,160 @@
+# Secure files
+
+{{projectName}} was generated with the `secure_files` capability. A stored
+file's bytes are exposed only after they were hashed, scanned and released
+clean; nothing here can be switched off by a setting. The Starter's
+`docs/SECURE_FILES.md` is the full reference; this page is what an operator of
+this product needs.
+
+## It refuses to start without
+
+The API and the worker both refuse to start, naming every missing setting, unless
+all of these are present and valid. There is no fallback to unscanned release.
+
+| Setting | Requirement |
+|---------|-------------|
+| `FILE_SCAN_BACKEND` | a real scanner (`clamd`), never `none` |
+| `FILE_SCAN_CLAMD_HOST` | set |
+| `FILE_SCAN_CLAMD_PORT` | a port, 1-65535 |
+| `STORAGE_ENDPOINT` | set |
+| `STORAGE_BUCKET` | set |
+| `STORAGE_ACCESS_KEY` | set |
+| `STORAGE_SECRET_KEY` | set |
+| `REDIS_URL` | set: a confirmed upload is finalized by a job |
+| `DATABASE_URL` | set: the finalizer works on the file's row, as its tenant |
+
+These have a default that passes, and the worker (and the API) refuse a value outside its range
+rather than scan with a limit nobody chose:
+
+| Setting | Default | Range |
+|---------|---------|-------|
+| `FILE_SCAN_CONNECT_TIMEOUT_SECONDS` | 5 | above 0, at most 60, not above the next |
+| `FILE_SCAN_TIMEOUT_SECONDS` | 120 | above 0, at most 600 |
+| `FILE_SCAN_MAX_BYTES` | 104857600 (100 MiB) | 1 to 104857600: lowered here, never raised, because that is what the clamd service is built for |
+| `FILE_SCAN_MAX_ATTEMPTS` | 12 | 1 to 32767 |
+
+Later releases of the capability add rows; the list lives in
+`services/api/koras_api/core/secure_files.py` (`SECURE_FILES_CHECKS`). There is no setting, in
+any environment, that makes `FILE_SCAN_BACKEND=none` acceptable.
+
+## Uploads
+
+A ticket is issued only for a SHA-256 claim (`checksum_sha256`, 64 lowercase hex
+characters, required), and it lets the browser write one *incoming* key and nothing
+else. The worker's `file.finalize` job copies the object to a *final* key only it can
+write, after checking the object's provenance and the digest of both the incoming and
+the final bytes against the claim. Until that has happened the file is on a key a client
+could still write, is not downloadable, and is not handed to anything.
+
+The browser reads a file into memory to compute that claim, so it checks files only up to 100 MiB (the
+scanner's own ceiling); a larger file is refused before anything is requested, with a message saying so.
+While it hashes, the page shows a "Preparing…" status.
+
+If a file stays unavailable: check the worker is running and can reach `REDIS_URL`,
+`DATABASE_URL` and the bucket; the sweep (`sweep_finalize`, every five minutes) picks up
+anything a lost job left. A file the finalizer refused carries a `scan_failure` word and a
+`storage.upload.held` audit event; `integrity_mismatch` means the bytes were not the ones
+claimed and is never retried. The bucket's CORS rule must allow the signed upload headers
+(see the Starter's `docs/SECURE_FILES.md`).
+
+## The scanner
+
+Once a file is on its final key the worker queues one `file.scan` job for it. The job reads the
+object once, asks the clamd service (`FILE_SCAN_CLAMD_HOST`:`FILE_SCAN_CLAMD_PORT`, the private
+address of `services/clamd`) and writes a verdict through the guarded transitions: `clean`,
+`infected` (the file is quarantined, one security event) or held, which leaves it `pending` with
+a closed `scan_failure` word. A scanner's `OK` is only a candidate: the digest, the object's
+identity and, for a ZIP-family file, a structural check must all pass before a file is `clean`.
+A held file is retried by `sweep_pending_scans` every five minutes with a back-off that caps at
+an hour and never stops; at `FILE_SCAN_MAX_ATTEMPTS` attempts one `storage.object.scan_exhausted`
+security event tells a person to look, and the file stays held.
+
+**The generated `services/clamd/service.yaml` lists the dev environment only.** The clamd service
+descriptor lists the dev environment only, so test, stg and prod each need clamd added to the
+descriptor's `environments` list, in a commit, before anything is deployed there; without it the
+worker has no scanner to reach and holds every file.
+
+If files stay `pending`: check the clamd service is deployed **in this environment** and its
+host and port are what the worker has; check the worker's logs for the word on the file
+(`scanner_unavailable` is the service, `integrity_mismatch` is bytes that are not the claim and is
+not something a retry can change, `inspection_incomplete` is a container the scanner cannot be trusted to have
+inspected, `over_ceiling` is an object larger than the scanner takes). Nothing is released while
+it is held.
+
+## What is released, and to whom
+
+One rule (`services/api/koras_api/core/file_release.py`) decides whether a file's bytes may be
+handed on, and everything that does so asks it: the download, the assistant's indexer and
+retrieval, a stored conversation's cited passages, and an import's source file. Only a file that is
+`ready`, `clean`, on a final key of **its own tenant** and stamped by the scanner is released; a
+`pending`, `skipped`, `infected`, unrecognised or unstamped file is not, and nothing configurable
+changes that. A refusal is recorded once (`storage.object.release_refused`, or
+`storage.object.quarantined` for an infected file) with a closed reason and never a file name, a key
+or anything the scanner said, and the page shows one neutral sentence.
+
+A file that was clean and stops being so (a late `infected` verdict, an archive, a restore's
+replacement) stops being released at once, and in the same database statement what the assistant
+derived from it -- its chunks and its index state -- is deleted. `files.indexed_at` is therefore not
+a record that a file *was* indexed; it is a statement about now.
+
+If a file the person can see will not download: look at `scan_status` (`pending` means the scanner
+has not decided; see the section above) and at `scan_object_etag` (a `clean` file without one was
+not marked by the scanner and is not released). Do not edit either by hand: the scanner's
+transitions are the only writer of a verdict, and a test fails if anything else gains the ability.
+
+{{#if capability.storage_governance}}
+## Restoring a file
+
+A restore never makes a file releasable by itself. An approved restore writes the backup's bytes
+to a **new** object, on a final key (`.../final/<generation>/<name>`) nothing ever signed an upload
+for, after hashing them against the digest the backup recorded and reading what it wrote back; then
+the file's row is pointed at the new object and reset to `pending` with none of the old verdict,
+scan evidence or derived content, in one statement. The old object is neither overwritten nor
+deleted, so a download link issued before the restore still reads the old bytes and nothing else.
+The restored file is released only when the scanner has said `clean` about the new object.
+
+A file that was found infected is not replaced in place: restore it as a new file, which is
+scanned on its own. A file that has no verdict yet, or was scanned within the last quarter of an
+hour, is refused with a closed reason (see the request's error); ask again once the scan has
+finished. Restores run from the worker every ten minutes and a request the worker could not ask
+the scanner about is followed up by the same worker; the scan sweep also finds a restored file on
+its own, because it is on a final key.
+
+If a restored file stays `pending`, look at it as any other pending file (above). The old object
+stays in the bucket until somebody removes it: nothing here deletes it.
+
+{{/if}}## Before an environment relies on it
+
+`tooling/promotion` is read-only and decides nothing by itself: it answers PASS or FAIL, with
+evidence, and never enables anything. What it needs to know about this product is in
+`local/config/promotion.yaml` (the secret-store project, each environment's config and apps, the
+CI jobs, the register, how long a qualification stays fresh).
+
+    PYTHONPATH=tooling uv run python -m promotion gate --env <dev|test|stg|prod>
+
+It reads, for that environment alone: the scanner (the setting and the machines), the provider
+qualification record for **its own** object store, the count of releasable files with no verified
+digest (`F1_UNVERIFIED_RELEASABLE_COUNT`, from its own database, as the privileged admin role), CI
+on the commit, and `docs/security/SECURITY-REGISTER.md`. Any of them it cannot read is a FAIL.
+
+- **Qualify the store** with `bash local/scripts/qualify-storage-provider.sh <env>`. It writes
+  disposable objects into that environment's bucket (for `prod`, a real write to the production
+  bucket) and needs a disposable local Postgres in `E2E_DATABASE_URL`. A record is bound to the
+  store, to the upload-control code, to the harness version and to a date; change any of them and
+  it is stale.
+- **F1 dispositions** (`local/config/f1-dispositions.yaml`) are a reviewed list of files the
+  detector is told not to count, honoured for `dev` only. Do not add one to make a promotion pass.
+{{#if capability.data_import}}- **Import activation** is declared in `local/config/import-activation.yaml` and is *also* limited by
+  `activation.activatable_environments` in `promotion.yaml`, which ships empty: enabling an
+  environment is two reviewed edits, and neither enables anything on its own. A disabled
+  environment holds no `IMPORTS_ENABLED` at all; `python -m promotion activation <env>` checks the
+  secret store and the apps.
+{{/if}}
+`.github/workflows/promotion-gate.yml` runs the gate by hand or from another workflow. The deploy
+workflow does not call it unless you make it.
+
+## Changing the mode
+
+`secure_files` is a generation-time choice. It is not a runtime toggle and is not
+retrofitted by upgrading the Starter. Do not hand-edit it in or out: regenerate,
+or extend the profile manifest in `koras-saas-starter`.

@@ -1,0 +1,116 @@
+{{#if capability.secure_files}}
+"""The assistant's half of the files routes: index once clean, forget on delete.
+
+Installed from `main.py` when the capability is generated. Nothing is
+installed without a gateway to embed through: the Files page then says
+*pending* for nothing, because nothing was ever going to be read.
+
+**Indexing is lazy and starts from a releasable file (ADR 0013, `secure_files`).**
+Upload completion reads nothing and signs nothing for the assistant. The files list,
+which already runs under a caller's own token, offers each releasable file that has not
+been indexed, and this module reads it then -- on the request's authority, from this
+process's memory, with no queue, no table and no new identity behind it. A file that is
+still `pending` is not offered, so until the scanner's verdict the assistant answers
+about it from its name alone.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from . import knowledge
+from .ai import index_clean_file
+from .file_hooks import FileHook, hooks
+from .settings import settings
+
+#: Files being indexed by this process, so two listings made while one is still
+#: reading do not read it twice and pay for the vision calls twice. Per process:
+#: a second API machine can still repeat the work, which is wasteful and not
+#: unsafe -- the write is an upsert guarded by the file's verdict.
+_in_flight: set[tuple[str, str]] = set()
+
+
+def is_due(indexed_at: datetime | None, index_note: str | None) -> bool:
+    """Not yet indexed, and not yet tried: the two columns the outcome is written to."""
+    return indexed_at is None and index_note is None
+
+
+async def _index_once(*, tenant_id: str, file_id: str, **arguments: object) -> int:
+    key = (tenant_id, file_id)
+    if key in _in_flight:
+        return 0
+    _in_flight.add(key)
+    try:
+        return await index_clean_file(tenant_id=tenant_id, file_id=file_id, **arguments)  # type: ignore[arg-type]
+    finally:
+        _in_flight.discard(key)
+
+
+async def _remove(session: AsyncSession, tenant_id: str, file_id: str) -> None:
+    await knowledge.delete_resource(
+        session, tenant_id=tenant_id, resource_type="file", resource_id=file_id
+    )
+
+
+def install() -> None:
+    """Register the assistant as one interested party, not as the only one.
+
+    Named `knowledge`, so a second registration of the same name -- two
+    `install()` calls in one process, say -- is refused loudly instead of
+    quietly replacing this one.
+    """
+    if not settings.ai_gateway_url:
+        return
+    hooks.add(
+        FileHook(
+            name="knowledge",
+            interested=knowledge.is_indexable,
+            due=is_due,
+            after_clean=_index_once,
+            before_delete=_remove,
+        )
+    )
+{{else}}
+"""The assistant's half of the files routes: index on upload, forget on delete.
+
+Installed from `main.py` when the capability is generated. Nothing is
+installed without a gateway to embed through: the Files page then says
+*pending* for nothing, because nothing was ever going to be read.
+"""
+
+from __future__ import annotations
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from . import knowledge
+from .ai import index_uploaded_file
+from .file_hooks import FileHook, hooks
+from .settings import settings
+
+
+async def _remove(session: AsyncSession, tenant_id: str, file_id: str) -> None:
+    await knowledge.delete_resource(
+        session, tenant_id=tenant_id, resource_type="file", resource_id=file_id
+    )
+
+
+def install() -> None:
+    """Register the assistant as one interested party, not as the only one.
+
+    Named `knowledge`, so a second registration of the same name -- two
+    `install()` calls in one process, say -- is refused loudly instead of
+    quietly replacing this one.
+    """
+    if not settings.ai_gateway_url:
+        return
+    hooks.add(
+        FileHook(
+            name="knowledge",
+            interested=knowledge.is_indexable,
+            after_upload=index_uploaded_file,
+            before_delete=_remove,
+        )
+    )
+{{/if}}

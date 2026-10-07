@@ -22,6 +22,7 @@ os.environ.setdefault("KORAS_DATABASE_URL", "postgresql://x:y@localhost/z")
 from fastapi.testclient import TestClient  # noqa: E402
 from koras_api.core.auth import require_auth  # noqa: E402
 from koras_api.core.database import get_db  # noqa: E402
+from koras_api.core.settings import settings as api_settings  # noqa: E402
 from koras_api.core.tenant import require_tenant  # noqa: E402
 from koras_api.imports import registry  # noqa: E402
 from koras_api.main import app  # noqa: E402
@@ -106,7 +107,9 @@ def _install(session: _Session, roles: frozenset[OrganizationRole]) -> TestClien
 
 
 @pytest.fixture(autouse=True)
-def _targets() -> Iterator[None]:
+def _targets(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    # Activation gate open: these tests are about templates, not about the switch.
+    monkeypatch.setattr(api_settings, "imports_enabled", True)
     registry.clear()
     registry.extend([ACCOUNTS, GUARDED])
     yield

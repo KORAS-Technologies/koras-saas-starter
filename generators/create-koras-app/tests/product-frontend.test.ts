@@ -103,6 +103,8 @@ describe('Handlebars and TSX coexist', () => {
       const offending = [...source.matchAll(/\{\{[^{#/]/g)]
         .map((match) => source.slice(match.index, (match.index ?? 0) + 40))
         .filter((snippet) => !/\{\{\s*(projectName|projectSlug|primaryDomain|ports)/.test(snippet))
+        // `{{else}}` is the other half of a `{{#if}}`: a capability's conditional, not an expression.
+        .filter((snippet) => !snippet.startsWith('{{else}}'))
       expect(offending, `${path} contains braces Handlebars will read as an expression`).toEqual([])
     }
   })

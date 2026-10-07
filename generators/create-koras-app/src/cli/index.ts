@@ -321,10 +321,15 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   // is knowable without the operator remembering which flags they used a year
   // ago. Explicit flags still win, for the case where the answer is being
   // changed rather than read.
-  if (args.checkDrift || args.refresh.length > 0) {
-    applyRecordedComponents(selections, projectRoot, {
-      overridden: [...args.with, ...args.without],
+  try {
+    applyExistingProjectSelections(manifest, selections, projectRoot, {
+      with: args.with,
+      without: args.without,
+      actsOnRecordedComponents: args.checkDrift || args.refresh.length > 0,
+      actsOnExistingProject: args.refreshModules || args.checkDrift || args.refresh.length > 0,
     })
+  } catch (err) {
+    fail(err instanceof Error ? err.message : String(err))
   }
 
   // ── Build context ──────────────────────────────────────────────────────────
@@ -438,6 +443,11 @@ Provisioning the existing project in ${projectSlug}/ — nothing regenerated.`)
   }
 
   console.log(`\n✓ Generated ${result.filesWritten} files in ${projectSlug}/`)
+
+  const recommendation = secureFilesRecommendation(ctx.selections)
+  if (recommendation) console.log(recommendation)
+  const notice = secureFilesNotice(ctx.selections)
+  if (notice) console.log(notice)
 
   if (!ctx.provision) {
     console.log(`\nNext steps:`)
@@ -912,6 +922,127 @@ function printRegistrationReport(
 }
 
 /**
+ * The selections for a command that acts on a project already on disk (`--check-drift`,
+ * `--refresh`, `--refresh-modules`), in the order that keeps ADR 0013 section 6 intact:
+ *
+ *   1. a flag that would relax or switch `secure_files` is refused before anything is read;
+ *   2. the project's recorded components replace the defaults (check-drift and refresh);
+ *   3. the selection is validated AGAIN -- the one made when the flags were applied was made
+ *      against today's defaults, and `requires` has to hold for the recorded set too.
+ *
+ * Throws an Error whose message is the refusal.
+ */
+export function applyExistingProjectSelections(
+  manifest: import('../profiles/types.js').ProfileManifest,
+  selections: import('../profiles/types.js').ComponentSelections,
+  projectRoot: string,
+  options: {
+    with: string[]
+    without: string[]
+    actsOnRecordedComponents: boolean
+    actsOnExistingProject: boolean
+  },
+): void {
+  if (options.actsOnExistingProject) {
+    const relaxation = recordedSecureFilesViolation(projectRoot, {
+      with: options.with,
+      without: options.without,
+    })
+    if (relaxation) throw new Error(relaxation)
+  }
+  if (options.actsOnRecordedComponents) {
+    applyRecordedComponents(selections, projectRoot, {
+      overridden: [...options.with, ...options.without],
+    })
+    validateSelections(manifest, selections)
+  }
+}
+
+/**
+ * Why `--with` / `--without` may not be used on an existing project to change `secure_files`.
+ *
+ * `--check-drift`, `--refresh` and `--refresh-modules` act on a project that was generated
+ * with a component set, and `.koras/project.yaml` records it. For `secure_files` that record
+ * is a promise (ADR 0013 section 6: no flag relaxes the invariants), so a flag that would
+ * switch the capability, or take away a service it requires while it is recorded on, is
+ * refused rather than rendered:
+ *
+ *   - `--without secure_files` on a project recorded with it (a downgrade, which is unsafe and
+ *     unsupported: the legacy rule releases pending and incoming rows);
+ *   - `--with secure_files` on a project recorded without it (an upgrade is a regeneration or
+ *     a profile change, never a refresh of an old tree);
+ *   - `--without clamd` or `--without worker` while `secure_files` is recorded on.
+ *
+ * Returns the message, or null when there is nothing to refuse. A project whose manifest
+ * records no components, or cannot be read, is not judged here.
+ */
+export function recordedSecureFilesViolation(
+  projectRoot: string,
+  flags: { with: string[]; without: string[] },
+): string | null {
+  const manifestPath = join(projectRoot, PROJECT_MANIFEST_PATH)
+  if (!existsSync(manifestPath)) return null
+  let recorded: { services: string[]; capabilities: string[] }
+  try {
+    const manifest = parseProjectManifest(readFileSync(manifestPath, 'utf8'), manifestPath)
+    if (!manifest.components) return null
+    recorded = manifest.components
+  } catch {
+    return null
+  }
+
+  const recordedOn = recorded.capabilities.includes('secure_files')
+  const refuse = (reason: string): string =>
+    `${reason}\n` +
+    '  This project records its components in .koras/project.yaml, and secure_files cannot be\n' +
+    '  relaxed or switched by a flag on an existing project (ADR 0013 section 6).\n' +
+    "  See docs/SECURE_FILES.md, 'Upgrading an existing product'."
+
+  if (recordedOn && flags.without.includes('secure_files')) {
+    return refuse(
+      '--without secure_files would downgrade a project generated with it. A downgrade is ' +
+        'unsupported and unsafe: the legacy release rule would release rows that are still pending ' +
+        'or incoming.',
+    )
+  }
+  if (!recordedOn && flags.with.includes('secure_files')) {
+    return refuse(
+      '--with secure_files cannot be applied to a project generated without it; the schema, ' +
+        'the finalizer and the scanner it needs are not in that tree.',
+    )
+  }
+  if (recordedOn) {
+    for (const service of ['clamd', 'worker']) {
+      if (flags.without.includes(service)) {
+        return refuse(`--without ${service} is refused: secure_files is recorded on and requires it.`)
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * Printed after generating a product with `secure_files`: what the generated service
+ * descriptor does NOT do. `services/clamd/service.yaml` lists `dev` only, because the scanner
+ * is proven in dev first; a product that deploys test, stg or prod without declaring clamd
+ * there has a worker that cannot reach a scanner and releases nothing.
+ */
+export const CLAMD_DEV_ONLY_SENTENCE =
+  'The clamd service descriptor (services/clamd/service.yaml) lists the dev environment only, ' +
+  'so test, stg and prod each need clamd added to its environments list, in a commit, ' +
+  'before anything is deployed there.'
+
+export function secureFilesNotice(selections: {
+  capabilities: Record<string, boolean>
+}): string | null {
+  if (selections.capabilities.secure_files !== true) return null
+  return (
+    '\n  secure_files: ' + CLAMD_DEV_ONLY_SENTENCE + '\n' +
+    "  See the starter's docs/SECURE_FILES.md, 'Deploying beyond dev'."
+  )
+}
+
+/**
  * Applies the components a project records to the selections used to render it.
  *
  * A read-only command acts on what is already on disk, so what matters is the
@@ -1001,4 +1132,21 @@ export function provisionedNextSteps(projectSlug: string): string[] {
     'make bootstrap starts the local Docker stack and is unrelated to the four',
     'steps above. See PROVISIONING_RUNBOOK.md section 1 in the starter.',
   ]
+}
+
+/**
+ * One line, printed when a product stores files and was generated without
+ * `secure_files` (ADR 0013). A recommendation and nothing more: the default
+ * stays off so existing output is unchanged, and nothing is implied.
+ */
+export function secureFilesRecommendation(selections: {
+  capabilities: Record<string, boolean>
+}): string | null {
+  const caps = selections.capabilities
+  if (caps.storage !== true || !('secure_files' in caps) || caps.secure_files === true) return null
+  return (
+    '\n  Recommended: this product stores files and was generated without secure_files ' +
+    '(scan-then-release for customer documents). Add --with secure_files,clamd,worker ' +
+    `to enable it; see the starter's docs/SECURE_FILES.md. ${CLAMD_DEV_ONLY_SENTENCE}`
+  )
 }

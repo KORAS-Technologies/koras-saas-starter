@@ -404,6 +404,24 @@ jobs:
           # what is tested. This workflow names no service.
           bash local/scripts/service-secrets.sh apply             "${{ matrix.service }}"             "${{ github.event.repository.name }}-${{ matrix.service }}-${{ inputs.environment }}"             "${{ github.event.repository.name }}"             "${{ inputs.environment }}"
 
+      - name: No hand-set import activation on the app
+        # Present only in a product generated with data import (the declaration
+        # and the script are generated with it); a no-op otherwise. The step
+        # above imports the secret store into Fly and never removes a secret, so
+        # IMPORTS_ENABLED set directly on the app (fly secrets set) would
+        # outlive every deploy and the secret store would stop being the
+        # authority on whether imports are on. Fail before deploying if the app
+        # holds it and the secret store does not. Names only; nothing is changed.
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -f local/config/import-activation.yaml ]; then
+            bash local/scripts/import-activation-drift.sh "${{ github.event.repository.name }}-${{ matrix.service }}-${{ inputs.environment }}" "${{ github.event.repository.name }}" "${{ inputs.environment }}"
+          else
+            echo "No import activation declaration in this product; nothing to check."
+          fi
+
       - name: Deploy to Fly
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

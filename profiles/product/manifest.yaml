@@ -93,6 +93,14 @@ capabilities:
   # is separately off until its own setting asks for it, because two of them
   # delete and the third bills a second destination.
   storage_governance: true
+  # Trusted file bytes (ADR 0013): the chain by which a stored file is exposed
+  # only after it was hashed, scanned and assessed, and released clean-only.
+  # Declared `true` like the others and off by default in defaults.yaml, so a
+  # product generated without it is byte-identical to before. Enabled, it
+  # requires everything the chain stands on (below) and a product that is
+  # missing a mandatory setting refuses to start rather than falling back to
+  # the legacy release. The artefact map is docs/SECURE_FILES.md.
+  secure_files: true
 
 registration:
   registers_as_product: true
@@ -168,6 +176,9 @@ template_map:
       - services/worker/koras_worker/tasks/ai_retention.py
       - apps/web/src/app/dashboard/assistant
       - e2e/assistant.spec.ts
+      # Layer 5: what a restore withdraws of the assistant's. Also listed under `secure_files` and
+      # `storage_governance`; generated only when all three are on.
+      - tests/integration/test_restore_derived_content_real.py
     # Data import. The whole of it is gated, including the engine package: an
     # import target names a table the *product* owns, so a product that
     # imports nothing has no use for a parser, a state machine or a run.
@@ -214,6 +225,18 @@ template_map:
       # generated without is skipped inside them.
       - tests/integration/test_worker_image.py
       - tests/integration/worker_image_probe.py
+      # ADR 0013 section 7: the activation gate. OFF in every environment until
+      # declared. The runtime half is in the files above (`routers/imports.py`,
+      # `tasks/imports.py`, `core/settings.py`, `koras_import/activation.py`); this
+      # is the declaration, the drift script the deploy runs, and the suites that
+      # hold the gate to "every route, every task, absent means off".
+      - local/config/import-activation.yaml
+      - local/scripts/import-activation-drift.sh
+      - tests/unit/test_import_activation_gate.py
+      - tests/unit/test_import_activation_declaration.py
+      # Layer 6b: the promotion tooling's activation checks. Also listed under `secure_files`;
+      # generated only when both are on, because the tooling itself is the capability's.
+      - tests/unit/test_promotion_activation.py
       - apps/web/src/app/dashboard/imports
       # The template download: a route handler, because a download is a body
       # and a server action returns a value. The menu it is reached from is a
@@ -226,6 +249,143 @@ template_map:
       # the template rather than the workflow because a product that
       # declares targets of its own should inherit it.
       - e2e/roundtrip/imports.spec.ts
+    # Secure files (ADR 0013). Later layers append their files here. The
+    # first entry is the operator's page for a product that has the capability;
+    # a list cannot be empty, and that page is true only when it is on. What is
+    # not listed is generated always and harmless without it: the two
+    # `secure_files.py` modules, which carry the generated `SECURE_FILES`
+    # constant (False without the capability) and are no-ops when it is False,
+    # and `tests/unit/test_secure_files_config.py`, which exercises both modes.
+    #
+    # Layer 2, the upload foundation: the SHA-256 claim, the incoming key a ticket
+    # writes, and the immutable finalization that promotes it to a key only the
+    # server writes. What is not listed and differs by mode is *rendered* by the
+    # capability rather than gated by it -- `routers/files.py`, `core/errors.py`,
+    # the worker's `worker.py` and `Dockerfile`, the web Files and import panels
+    # -- and what is not listed and does not differ is shared: `koras-storage`'s
+    # signed copy-source guard, `provenance()` and `sha256()` are additions a
+    # product without the capability never calls.
+    secure_files:
+      - docs/SECURE_FILES.md
+      - services/api/koras_api/core/upload_window.py
+      - services/api/koras_api/core/finalize_jobs.py
+      - services/api/koras_api/core/finalize_enqueue.py
+      - services/api/koras_api/core/upload_audit.py
+      - services/worker/koras_worker/uploads
+      - services/worker/koras_worker/tasks/finalize.py
+      - supabase/migrations/00039_file_scan_attempts.sql
+      - supabase/tests/340_upload_finalization_isolation.sql
+      - packages/api-client/src/upload-claim.ts
+      - packages/api-client/src/upload-claim.test.ts
+      - apps/web/src/lib/browser-upload.ts
+      - tests/unit/upload_store_support.py
+      - tests/unit/test_upload_finalization.py
+      - tests/unit/test_upload_finalize_task.py
+      - tests/integration/test_upload_finalization_real.py
+      - tests/integration/test_upload_checksum_provenance_real.py
+      - tests/integration/test_upload_finalization_provider.py
+      - tests/integration/test_upload_checksum_provider.py
+      # Layer 3, the scanner: the clamd client, the bounded object reader, the structural and
+      # integrity gates, the release assessment and the guarded transitions out of `pending`
+      # (`scanning/`), the `file.scan` job and the reconciliation sweep, the API-side
+      # declaration and enqueue the worker image carries, the audit actions, the two
+      # migrations (the thirteenth failure word and the sweep's due-time indexes) and their
+      # row-level-security suites. `finalize.py` (listed above) hands a finalized file to
+      # `file.scan`; `worker.py` and `Dockerfile` are rendered by the capability.
+      - services/worker/koras_worker/scanning
+      - services/worker/koras_worker/tasks/scan.py
+      - services/worker/koras_worker/tasks/scan_sweep.py
+      - services/api/koras_api/core/scan_jobs.py
+      - services/api/koras_api/core/scan_enqueue.py
+      - services/api/koras_api/core/scan_audit.py
+      - supabase/migrations/00040_file_scan_interrupted.sql
+      - supabase/migrations/00041_file_scan_due_indexes.sql
+      - supabase/tests/350_file_scan_columns_isolation.sql
+      - supabase/tests/351_file_scan_sweep_selection.sql
+      - tests/unit/eicar_support.py
+      - tests/unit/object_support.py
+      - tests/unit/scan_transition_support.py
+      - tests/unit/scanner_support.py
+      - tests/unit/zip_support.py
+      - tests/unit/test_file_scan_fixtures.py
+      - tests/unit/test_scan_enqueue.py
+      - tests/unit/test_scan_handoff.py
+      - tests/unit/test_scan_interrupted.py
+      - tests/unit/test_scan_runtime.py
+      - tests/unit/test_scan_sweep.py
+      - tests/unit/test_scan_sweep_fairness.py
+      - tests/unit/test_scan_task.py
+      - tests/unit/test_scanner_foundation.py
+      - tests/unit/test_scanner_object_reader.py
+      - tests/unit/test_scanner_structural_gate.py
+      - tests/unit/test_scanner_transition.py
+      - tests/integration/test_scan_runtime_real.py
+      - tests/integration/test_scan_sweep_real.py
+      - tests/integration/test_scan_transition_real.py
+      - tests/integration/test_scan_orchestration_real.py
+      - tests/integration/test_scanner_clamd_live.py
+      - tests/integration/test_worker_image_scanner.py
+      # Layer 4, the release layer: the canonical clean-only predicate is `core/file_release.py`,
+      # which is generated always (it dispatches on `SECURE_FILES`), so it is not listed. What is
+      # listed is what only the capability has: the HTTP gate and the audit action it records, the
+      # derived-content withdrawal (migration and its row-level-security suite) and the tests. What
+      # is *rendered* by the capability rather than gated by it: `routers/files.py`, `core/file_hooks.py`,
+      # `core/file_indexing.py`, `core/ai.py`, `core/knowledge.py`, `core/imports.py`, `ai/tools.py`,
+      # the worker's `Dockerfile` and the web Files panel.
+      - services/api/koras_api/core/file_release_gate.py
+      - services/api/koras_api/core/release_audit.py
+      - supabase/migrations/00042_file_derived_content_withdrawal.sql
+      - supabase/tests/360_file_derived_content_withdrawal.sql
+      - tests/unit/test_files_lazy_indexing_api.py
+      - tests/unit/test_ai_indexing_gate.py
+      - tests/unit/test_derived_content_withdrawal_static.py
+      - tests/integration/test_file_release_real.py
+      - tests/integration/test_file_derived_content_real.py
+      - tests/integration/test_release_orchestration_real.py
+      # The Files page's reading of what the server released, and the browser round trip over it.
+      - packages/api-client/src/file-state.ts
+      - packages/api-client/src/file-state.test.ts
+      - e2e/roundtrip/files-release-state.spec.ts
+      # Layer 5, restore and replacement. Restore itself is `storage_governance`'s (the request
+      # machine, its routes, the page, migration 00026, and the worker task, which is *rendered*
+      # by `secure_files`: the non-overwriting legacy behaviour is untouched without it). What only
+      # exists with both capabilities is listed here and ALSO under `storage_governance` above, so a
+      # file is generated only when both are on: the follow-up that asks the scanner about what a
+      # restore wrote, and the suites for the replacement. `secure_files` without
+      # `storage_governance` has no restore at all, so there is nothing to bring under the rule.
+      - services/worker/koras_worker/tasks/restore_scan.py
+      - tests/unit/test_storage_restore_replacement.py
+      - tests/unit/test_restore_scan.py
+      - tests/unit/restore_support.py
+      - tests/integration/test_restore_replacement_real.py
+      - tests/integration/test_restore_orchestration_real.py
+      - tests/integration/test_restore_derived_content_real.py
+      # Layer 6b, promotion tooling (ADR 0013 sections 7 and 9). The engine is generic and read-only
+      # (`tooling/promotion`); what is the product's is configuration, never code:
+      # `local/config/promotion.yaml` (rendered), the F1 dispositions (shipped empty) and the
+      # security register (shipped empty, with the explicit marker). The activation checks inside
+      # the engine apply only with `data_import` (an `activation` section of the configuration is
+      # rendered with it), and their suite, `test_promotion_activation.py`, is listed under
+      # `data_import` as well so it exists only when both are on. The workflow is a separate file,
+      # so the product's deploy workflow is the same with and without the capability.
+      - tooling/promotion
+      - local/config/promotion.yaml
+      - local/config/f1-dispositions.yaml
+      - local/scripts/qualify-storage-provider.sh
+      - local/.qualification/.gitignore
+      - docs/security/SECURITY-REGISTER.md
+      - .github/workflows/promotion-gate.yml
+      - tests/unit/promotion_support.py
+      - tests/unit/test_promotion_config.py
+      - tests/unit/test_promotion_adapters.py
+      - tests/unit/test_promotion_register.py
+      - tests/unit/test_promotion_f1.py
+      - tests/unit/test_promotion_gate.py
+      - tests/unit/test_promotion_provider_qualification.py
+      - tests/unit/test_promotion_activation.py
+      - tests/integration/test_provider_qualification_extra.py
+      - tests/integration/test_f1_detector_real.py
+
     # In-app notifications: the table, the emitter, the routes, the page and
     # the browser test.
     #
@@ -338,6 +498,15 @@ template_map:
       - tests/unit/test_storage_restore.py
       - tests/unit/test_storage_lifecycle.py
       - tests/unit/test_storage_reconcile.py
+      # Imports the three sweeps' settings classes above, so it exists only with them.
+      - tests/unit/test_blank_settings.py
+      - services/worker/koras_worker/tasks/restore_scan.py
+      - tests/unit/test_storage_restore_replacement.py
+      - tests/unit/test_restore_scan.py
+      - tests/unit/restore_support.py
+      - tests/integration/test_restore_replacement_real.py
+      - tests/integration/test_restore_orchestration_real.py
+      - tests/integration/test_restore_derived_content_real.py
 
 # Components that need another enabled beside them. See the generator's
 # manifest schema for why this is refused rather than switched on silently.
@@ -349,6 +518,11 @@ requires:
   # confirmed it has closed the page, so an import framework whose completion
   # notice silently does nothing is one whose runs appear to hang.
   data_import: [notifications]
+  # The chain stands on object storage (storage), on rows scoped per tenant
+  # (tenancy, rls), and on a worker that finalizes and scans and a scanner to
+  # scan with (worker, clamd). Refused rather than implied: clamd is a Fly app
+  # and a set of secrets the operator has to decide to have.
+  secure_files: [storage, tenancy, rls, worker, clamd]
 
 # Directories copied verbatim from the starter into the generated project.
 # Terraform modules stay single-sourced here rather than being duplicated
