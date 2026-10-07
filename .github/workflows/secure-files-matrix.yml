@@ -1,0 +1,487 @@
+name: Secure Files Proof
+
+# `secure_files` (ADR 0013), proven where it can be: on real services, from generated products.
+#
+#   secure-files-migration-matrix   fresh secure, fresh default, and an upgrade from the commit
+#                                   before this branch, on a real PostgreSQL
+#   live-proof-secure               a generated secure product's API driven over HTTP, with the
+#                                   real worker, PostgreSQL, MinIO, Redis and clamd
+#   live-proof-compat               a generated default product's API over HTTP, on a fresh
+#                                   schema and again after 00039-00042 are applied to it
+#
+# Nothing here installs the Node workspace of a generated product: the matrix and the proof
+# need the Python environment only, which keeps them quick. The browser suite and the full
+# build are `generator-integration.yml`'s.
+
+on:
+  push:
+    branches: [develop, test, staging, main]
+    paths:
+      - "generators/**"
+      - "profiles/**"
+      - "tests/secure_files/**"
+      - ".github/workflows/secure-files-matrix.yml"
+  pull_request:
+    paths:
+      - "generators/**"
+      - "profiles/**"
+      - "tests/secure_files/**"
+      - ".github/workflows/secure-files-matrix.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: secure-files-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secure-files-migration-matrix:
+    name: secure-files-migration-matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: rlstest
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install starter dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the generator
+        run: pnpm turbo run build --filter=create-koras-app
+
+      - name: Generate the secure and the default product from this commit
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gen"
+          pnpm create-koras-app matrix-secure --profile product \
+            --with secure_files,clamd,worker --no-interactive --output-dir "$RUNNER_TEMP/gen"
+          pnpm create-koras-app matrix-default --profile product \
+            --no-interactive --output-dir "$RUNNER_TEMP/gen"
+
+      # The commit before this branch: the merge base with develop. On a push to develop that
+      # is the commit itself, so the first parent stands in for it. Its own generator builds
+      # its own default product, so the baseline is what a product generated before the
+      # capability existed really looked like.
+      - name: Generate a default product from the merge base
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin develop:refs/remotes/origin/develop || true
+          base="$(git merge-base origin/develop HEAD)"
+          if [ "$base" = "$(git rev-parse HEAD)" ]; then base="$(git rev-parse HEAD^1)"; fi
+          echo "baseline commit: $base"
+          git worktree add "$RUNNER_TEMP/baseline-src" "$base"
+          cd "$RUNNER_TEMP/baseline-src"
+          pnpm install --frozen-lockfile
+          pnpm turbo run build --filter=create-koras-app
+          pnpm create-koras-app matrix-baseline --profile product \
+            --no-interactive --output-dir "$RUNNER_TEMP/gen"
+          if [ -e "$RUNNER_TEMP/gen/matrix-baseline/supabase/migrations/00039_file_scan_attempts.sql" ]; then
+            echo "::error::the baseline already carries 00039; it is not from before this branch"
+            exit 1
+          fi
+
+      - name: Run the migration matrix
+        env:
+          SECURE_DIR: ${{ runner.temp }}/gen/matrix-secure
+          DEFAULT_DIR: ${{ runner.temp }}/gen/matrix-default
+          BASELINE_DIR: ${{ runner.temp }}/gen/matrix-baseline
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: rlstest
+        run: bash tests/secure_files/migration_matrix.sh
+
+  live-proof-secure:
+    name: live-proof-secure
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: rlstest
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: rlstest
+      PGDATABASE: koras_live
+      E2E_PROJECT_ID: e2e-project
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install starter dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the generator
+        run: pnpm turbo run build --filter=create-koras-app
+
+      - name: Generate a secure product
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gen"
+          pnpm create-koras-app live-secure --profile product \
+            --with secure_files,clamd,worker,data_import --no-interactive \
+            --output-dir "$RUNNER_TEMP/gen"
+
+      - name: Install the Python environment
+        working-directory: ${{ runner.temp }}/gen/live-secure
+        run: uv sync --all-packages
+
+      - name: Start the stores and the scanner
+        working-directory: ${{ runner.temp }}/gen/live-secure
+        run: |
+          set -euo pipefail
+          docker run -d --name live-minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin123 \
+            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          docker run -d --name live-redis -p 6379:6379 redis:7-alpine
+          docker build -f services/clamd/Dockerfile -t live-clamd .
+          docker run -d --name live-clamd -p 3310:3310 --memory 2g --cpus 2 live-clamd
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://localhost:9000/minio/health/ready >/dev/null; then break; fi
+            sleep 1
+          done
+          uv run python - <<'PY'
+          import boto3
+          boto3.client(
+              "s3",
+              endpoint_url="http://localhost:9000",
+              aws_access_key_id="minioadmin",
+              aws_secret_access_key="minioadmin123",
+              region_name="us-east-1",
+          ).create_bucket(Bucket="koras-files")
+          PY
+          for attempt in $(seq 1 120); do
+            if docker logs live-clamd 2>&1 | grep -q "ready: detection self-test passed"; then break; fi
+            if docker logs live-clamd 2>&1 | grep -q "FATAL"; then docker logs live-clamd; exit 1; fi
+            sleep 5
+          done
+          docker logs live-clamd 2>&1 | grep -q "ready: detection self-test passed"
+
+      - name: Prepare the database
+        working-directory: ${{ runner.temp }}/gen/live-secure
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 -q -d postgres \
+            -c "drop database if exists koras_live" -c "create database koras_live"
+          MIGRATE_DATABASE_URL="postgresql://postgres@localhost:5432/koras_live" \
+            bash local/scripts/migrate.sh
+          psql -X -v ON_ERROR_STOP=1 -q -f e2e/support/seed.sql
+          psql -X -v ON_ERROR_STOP=1 -q <<'SQL'
+          insert into public.tenants (id, slug, name, zitadel_org_id, status, owner_email)
+          values ('00000000-0000-4e2e-8000-000000000002', 'e2e-other', 'Another organisation',
+                  'e2e-other-organization', 'active', 'other@example.com')
+          on conflict (zitadel_org_id) do nothing;
+          insert into public.tenant_members (tenant_id, user_id, role)
+          values ('00000000-0000-4e2e-8000-000000000002', 'e2e-other-subject', 'organization_admin')
+          on conflict (tenant_id, user_id) do nothing;
+          SQL
+
+      - name: Start the identity provider, the API and the worker
+        working-directory: ${{ runner.temp }}/gen/live-secure
+        env:
+          APP_ROLE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_live
+        run: |
+          set -euo pipefail
+          export E2E_IDENTITY_PORT=3212 E2E_IDENTITY_URL=http://127.0.0.1:3212
+          nohup node e2e/support/identity.mjs > "$RUNNER_TEMP/identity.log" 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3212/.well-known/openid-configuration >/dev/null; then break; fi
+            sleep 1
+          done
+          cat > "$RUNNER_TEMP/stack.env" <<EOF
+          ENVIRONMENT=dev
+          DATABASE_URL=$APP_ROLE_URL
+          ZITADEL_DOMAIN=http://127.0.0.1:3212
+          ZITADEL_PROJECT_ID=e2e-project
+          NEXT_PUBLIC_APP_URL=http://localhost:3214
+          FILE_SCAN_BACKEND=clamd
+          FILE_SCAN_CLAMD_HOST=127.0.0.1
+          FILE_SCAN_CLAMD_PORT=3310
+          STORAGE_ENDPOINT=http://localhost:9000
+          STORAGE_BUCKET=koras-files
+          STORAGE_ACCESS_KEY=minioadmin
+          STORAGE_SECRET_KEY=minioadmin123
+          REDIS_URL=redis://localhost:6379/0
+          EOF
+          sed -i 's/^ *//' "$RUNNER_TEMP/stack.env"
+          set -a; . "$RUNNER_TEMP/stack.env"; set +a
+          nohup uv run --directory services/api uvicorn koras_api.main:app \
+            --host 127.0.0.1 --port 3213 --log-level info > "$RUNNER_TEMP/api.log" 2>&1 &
+          nohup uv run --directory services/worker arq koras_worker.worker.WorkerSettings \
+            > "$RUNNER_TEMP/worker.log" 2>&1 &
+          for attempt in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:3213/api/v1/health >/dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:3213/api/v1/health
+          sleep 5
+          if ! pgrep -f "arq koras_worker.worker.WorkerSettings" >/dev/null; then
+            cat "$RUNNER_TEMP/worker.log"; echo "::error::the worker did not stay up"; exit 1
+          fi
+
+      - name: Drive the API over HTTP
+        working-directory: ${{ runner.temp }}/gen/live-secure
+        env:
+          STORAGE_ENDPOINT: http://localhost:9000
+          STORAGE_BUCKET: koras-files
+          STORAGE_ACCESS_KEY: minioadmin
+          STORAGE_SECRET_KEY: minioadmin123
+          REDIS_URL: redis://localhost:6379/0
+          ENVIRONMENT: dev
+          DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_live
+          ZITADEL_DOMAIN: http://127.0.0.1:3212
+          ZITADEL_PROJECT_ID: e2e-project
+          FILE_SCAN_BACKEND: clamd
+          FILE_SCAN_CLAMD_HOST: 127.0.0.1
+        run: |
+          set -euo pipefail
+          uv run python "$GITHUB_WORKSPACE/tests/secure_files/live_proof.py" --mode secure \
+            --identity .e2e/identity.json
+
+      - name: Start-up refuses a scanner backend of none (API and worker)
+        working-directory: ${{ runner.temp }}/gen/live-secure
+        run: |
+          set -uo pipefail
+          set -a; . "$RUNNER_TEMP/stack.env"; set +a
+          export FILE_SCAN_BACKEND=none
+          for service in api worker; do
+            if [ "$service" = api ]; then
+              cmd=(uv run --directory services/api uvicorn koras_api.main:app --host 127.0.0.1 --port 3299)
+            else
+              cmd=(uv run --directory services/worker arq koras_worker.worker.WorkerSettings)
+            fi
+            timeout 60 "${cmd[@]}" > "$RUNNER_TEMP/refuse-$service.log" 2>&1
+            status=$?
+            cat "$RUNNER_TEMP/refuse-$service.log" | tail -20
+            if [ "$status" -eq 0 ] || [ "$status" -eq 124 ]; then
+              echo "::error::the $service started (or hung) with FILE_SCAN_BACKEND=none (exit $status)"; exit 1
+            fi
+            if ! grep -q "secure_files is enabled and the product refuses to start" "$RUNNER_TEMP/refuse-$service.log"; then
+              echo "::error::the $service exited ($status) but not with the secure_files refusal"; exit 1
+            fi
+            grep -q "FILE_SCAN_BACKEND" "$RUNNER_TEMP/refuse-$service.log" \
+              || { echo "::error::the refusal does not name FILE_SCAN_BACKEND"; exit 1; }
+            echo "the $service refused to start with FILE_SCAN_BACKEND=none (exit $status)"
+          done
+
+      - name: Logs
+        if: always()
+        run: |
+          for f in api worker identity; do echo "=== $f"; tail -60 "$RUNNER_TEMP/$f.log" 2>/dev/null || true; done
+          docker logs live-clamd 2>&1 | tail -5 || true
+
+  live-proof-compat:
+    name: live-proof-compat
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: rlstest
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: rlstest
+      PGDATABASE: koras_compat
+      E2E_PROJECT_ID: e2e-project
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install starter dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the generator
+        run: pnpm turbo run build --filter=create-koras-app
+
+      # The default product is the one under test; the secure product is generated only for
+      # its migrations, which are applied to the default product's database for the second pass.
+      - name: Generate a default product, and a secure one for its migrations
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gen"
+          pnpm create-koras-app live-default --profile product --no-interactive \
+            --output-dir "$RUNNER_TEMP/gen"
+          pnpm create-koras-app live-secure-migrations --profile product \
+            --with secure_files,clamd,worker --no-interactive --output-dir "$RUNNER_TEMP/gen"
+
+      - name: Install the Python environment
+        working-directory: ${{ runner.temp }}/gen/live-default
+        run: uv sync --all-packages
+
+      - name: Start the store
+        working-directory: ${{ runner.temp }}/gen/live-default
+        run: |
+          set -euo pipefail
+          docker run -d --name compat-minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin123 \
+            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://localhost:9000/minio/health/ready >/dev/null; then break; fi
+            sleep 1
+          done
+          uv run python - <<'PY'
+          import boto3
+          boto3.client(
+              "s3",
+              endpoint_url="http://localhost:9000",
+              aws_access_key_id="minioadmin",
+              aws_secret_access_key="minioadmin123",
+              region_name="us-east-1",
+          ).create_bucket(Bucket="koras-files")
+          PY
+
+      - name: Prepare the database
+        working-directory: ${{ runner.temp }}/gen/live-default
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 -q -d postgres \
+            -c "drop database if exists koras_compat" -c "create database koras_compat"
+          MIGRATE_DATABASE_URL="postgresql://postgres@localhost:5432/koras_compat" \
+            bash local/scripts/migrate.sh
+          psql -X -v ON_ERROR_STOP=1 -q -f e2e/support/seed.sql
+          psql -X -v ON_ERROR_STOP=1 -q <<'SQL'
+          insert into public.tenants (id, slug, name, zitadel_org_id, status, owner_email)
+          values ('00000000-0000-4e2e-8000-000000000002', 'e2e-other', 'Another organisation',
+                  'e2e-other-organization', 'active', 'other@example.com')
+          on conflict (zitadel_org_id) do nothing;
+          insert into public.tenant_members (tenant_id, user_id, role)
+          values ('00000000-0000-4e2e-8000-000000000002', 'e2e-other-subject', 'organization_admin')
+          on conflict (tenant_id, user_id) do nothing;
+          SQL
+
+      - name: Start the identity provider and the API
+        working-directory: ${{ runner.temp }}/gen/live-default
+        env:
+          APP_ROLE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_compat
+        run: |
+          set -euo pipefail
+          export E2E_IDENTITY_PORT=3212 E2E_IDENTITY_URL=http://127.0.0.1:3212
+          nohup node e2e/support/identity.mjs > "$RUNNER_TEMP/identity.log" 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3212/.well-known/openid-configuration >/dev/null; then break; fi
+            sleep 1
+          done
+          cat > "$RUNNER_TEMP/stack.env" <<EOF
+          ENVIRONMENT=dev
+          DATABASE_URL=$APP_ROLE_URL
+          ZITADEL_DOMAIN=http://127.0.0.1:3212
+          ZITADEL_PROJECT_ID=e2e-project
+          NEXT_PUBLIC_APP_URL=http://localhost:3214
+          STORAGE_ENDPOINT=http://localhost:9000
+          STORAGE_BUCKET=koras-files
+          STORAGE_ACCESS_KEY=minioadmin
+          STORAGE_SECRET_KEY=minioadmin123
+          EOF
+          sed -i 's/^ *//' "$RUNNER_TEMP/stack.env"
+          set -a; . "$RUNNER_TEMP/stack.env"; set +a
+          nohup uv run --directory services/api uvicorn koras_api.main:app \
+            --host 127.0.0.1 --port 3213 --log-level info > "$RUNNER_TEMP/api.log" 2>&1 &
+          for attempt in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:3213/api/v1/health >/dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:3213/api/v1/health
+
+      - name: Drive the default product's API over HTTP (fresh schema)
+        working-directory: ${{ runner.temp }}/gen/live-default
+        env:
+          STORAGE_ENDPOINT: http://localhost:9000
+          STORAGE_BUCKET: koras-files
+          STORAGE_ACCESS_KEY: minioadmin
+          STORAGE_SECRET_KEY: minioadmin123
+        run: |
+          set -euo pipefail
+          uv run python "$GITHUB_WORKSPACE/tests/secure_files/live_proof.py" --mode compat \
+            --schema fresh --identity .e2e/identity.json
+
+      # The upgrade: the secure product's own migrate script applies exactly 00039-00042 to
+      # the database the default product has been running on, the API is restarted (a deploy),
+      # and the same proof runs again. The default product's code is unchanged and must not
+      # notice.
+      - name: Upgrade the schema with the secure migrations
+        working-directory: ${{ runner.temp }}/gen/live-secure-migrations
+        run: |
+          set -euo pipefail
+          MIGRATE_DATABASE_URL="postgresql://postgres@localhost:5432/koras_compat" \
+            bash local/scripts/migrate.sh | tee "$RUNNER_TEMP/upgrade.out"
+          applied="$(grep -E '^ +apply ' "$RUNNER_TEMP/upgrade.out" | wc -l)"
+          [ "$applied" = 4 ] || { echo "::error::expected 4 migrations applied, got $applied"; exit 1; }
+
+      - name: Restart the default product's API
+        working-directory: ${{ runner.temp }}/gen/live-default
+        run: |
+          set -euo pipefail
+          pkill -f "uvicorn koras_api.main:app" || true
+          sleep 2
+          set -a; . "$RUNNER_TEMP/stack.env"; set +a
+          nohup uv run --directory services/api uvicorn koras_api.main:app \
+            --host 127.0.0.1 --port 3213 --log-level info > "$RUNNER_TEMP/api2.log" 2>&1 &
+          for attempt in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:3213/api/v1/health >/dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:3213/api/v1/health
+
+      - name: Drive the default product's API over HTTP (upgraded schema)
+        working-directory: ${{ runner.temp }}/gen/live-default
+        env:
+          STORAGE_ENDPOINT: http://localhost:9000
+          STORAGE_BUCKET: koras-files
+          STORAGE_ACCESS_KEY: minioadmin
+          STORAGE_SECRET_KEY: minioadmin123
+        run: |
+          set -euo pipefail
+          uv run python "$GITHUB_WORKSPACE/tests/secure_files/live_proof.py" --mode compat \
+            --schema upgraded --identity .e2e/identity.json
+
+      - name: Logs
+        if: always()
+        run: |
+          for f in api api2 identity; do echo "=== $f"; tail -60 "$RUNNER_TEMP/$f.log" 2>/dev/null || true; done

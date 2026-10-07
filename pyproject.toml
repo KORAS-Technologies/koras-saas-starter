@@ -57,6 +57,11 @@ ignore = []
 # trees rather than disabled globally, so an assert in a service still fails.
 "**/tests/**" = ["S101"]
 "**/test_*.py" = ["S101"]
+# The CI proof scripts under tests/secure_files drive a generated product from outside it, so
+# they shell out to psql, assert with prose messages and hold long diagnostic lines. They are
+# linted and type-checked like everything else; only these rules are relaxed, for this
+# directory only.
+"tests/secure_files/**" = ["E501", "S101", "S603", "S607", "S608", "ANN401"]
 
 [tool.mypy]
 python_version = "3.12"
