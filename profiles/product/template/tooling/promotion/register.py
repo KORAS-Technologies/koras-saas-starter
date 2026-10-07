@@ -40,7 +40,9 @@ GATED_SEVERITY_PREFIXES: Final = ("critical", "high")
 REQUIRED_COLUMNS: Final = ("id", "type", "severity", "status")
 
 _RESOLVED_WORD = re.compile(r"\b(?:RESOLVED|CLOSED|WITHDRAWN|SUPERSEDED)\b")
-_NEGATING = re.compile(r"(?<![A-Za-z])(?:NOT|UN|PART(?:IAL)LY|TO BE|UNTIL|BLOCKED)(?![A-Za-z])", re.I)
+_NEGATING = re.compile(
+    r"(?<![A-Za-z])(?:NOT|UN|PART(?:IAL)LY|TO BE|UNTIL|BLOCKED)(?![A-Za-z])", re.I
+)
 _NEGATION_WINDOW = 12
 _SENSITIVE_MENTION = re.compile(r"security|critical|high", re.I)
 _TYPE_TOKEN = re.compile(r"[A-Z][A-Z-]*")
