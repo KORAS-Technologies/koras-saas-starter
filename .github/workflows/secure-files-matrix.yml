@@ -312,6 +312,19 @@ jobs:
           for f in api worker identity; do echo "=== $f"; tail -60 "$RUNNER_TEMP/$f.log" 2>/dev/null || true; done
           docker logs live-clamd 2>&1 | tail -5 || true
 
+      # The services above were started in the background and outlive their steps. `setup-uv`'s
+      # post step prunes the uv cache under a lock, and a still-running `uv run` holds it: the job
+      # then fails after every real step passed ("Timeout (300s) when waiting for lock"). Stopping
+      # them first is cleanup, not a skipped check.
+      - name: Stop the background services
+        if: always()
+        run: |
+          pkill -f "uvicorn koras_api.main:app" || true
+          pkill -f "arq koras_worker.worker.WorkerSettings" || true
+          pkill -f "e2e/support/identity.mjs" || true
+          docker rm -f live-clamd live-redis >/dev/null 2>&1 || true
+          sleep 3
+
   live-proof-compat:
     name: live-proof-compat
     runs-on: ubuntu-latest
@@ -491,3 +504,16 @@ jobs:
         if: always()
         run: |
           for f in api api2 identity; do echo "=== $f"; tail -60 "$RUNNER_TEMP/$f.log" 2>/dev/null || true; done
+
+      # The services above were started in the background and outlive their steps. `setup-uv`'s
+      # post step prunes the uv cache under a lock, and a still-running `uv run` holds it: the job
+      # then fails after every real step passed ("Timeout (300s) when waiting for lock"). Stopping
+      # them first is cleanup, not a skipped check.
+      - name: Stop the background services
+        if: always()
+        run: |
+          pkill -f "uvicorn koras_api.main:app" || true
+          pkill -f "arq koras_worker.worker.WorkerSettings" || true
+          pkill -f "e2e/support/identity.mjs" || true
+          docker rm -f live-clamd live-redis >/dev/null 2>&1 || true
+          sleep 3
