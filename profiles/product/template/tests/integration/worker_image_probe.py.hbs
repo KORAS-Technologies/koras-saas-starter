@@ -40,6 +40,9 @@ from typing import Any
 
 #: The organisation `e2e/support/seed.sql` creates.
 TENANT = "00000000-0000-4e2e-8000-000000000001"
+{{#if capability.secure_files}}
+GENERATION = "00000000-0000-4000-8000-000000000001"
+{{/if}}
 SUBJECT = "e2e-owner"
 ROWS = 25
 
@@ -180,7 +183,11 @@ async def _probe() -> dict[str, Any]:
     async def seed(status: str, *, stored: bool = True, target_key: str = target.key) -> str:
         run_id, file_id = str(uuid.uuid4()), str(uuid.uuid4())
         raw = _csv()
+{{#if capability.secure_files}}
+        key = f"tenants/{TENANT}/imports/{file_id}/final/{GENERATION}/probe.csv"
+{{else}}
         key = f"imports/{file_id}.csv"
+{{/if}}
         if stored:
             bucket.objects[key] = raw
         async with async_sessionmaker(engine, expire_on_commit=False)() as session:
@@ -188,9 +195,15 @@ async def _probe() -> dict[str, Any]:
             await session.execute(
                 text(
                     "insert into public.files (id, tenant_id, category, name, storage_key,"
+{{#if capability.secure_files}}
+                    " size_bytes, content_type, status, scan_status, scan_object_etag, uploaded_by)"
+                    " values (cast(:id as uuid), cast(:t as uuid), 'imports', 'probe.csv',"
+                    " :key, :size, 'text/csv', 'ready', 'clean', 'etag-1', :by)"
+{{else}}
                     " size_bytes, content_type, status, scan_status, uploaded_by)"
                     " values (cast(:id as uuid), cast(:t as uuid), 'imports', 'probe.csv',"
                     " :key, :size, 'text/csv', 'ready', 'clean', :by)"
+{{/if}}
                 ),
                 {"id": file_id, "t": TENANT, "key": key, "size": len(raw), "by": SUBJECT},
             )

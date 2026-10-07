@@ -88,9 +88,29 @@ def _docker(*arguments: str, stdin: str | None = None, timeout: int = 300) -> st
     return done.stdout
 
 
+#: A product generated with `secure_files` (ADR 0013) carries the upload window module, and its
+#: worker refuses to start without a scanner and an object store.
+SECURE_FILES = (
+    Path(__file__).resolve().parents[2] / "services/api/koras_api/core/upload_window.py"
+).exists()
+
+#: What that worker is given. An import reads neither the scanner nor the store -- its source is a
+#: stand-in object store inside the probe -- so none of these is reached, and each is checked for
+#: being *set*, which is all start-up asks.
+SECURE_FILES_SETTINGS = {
+    "FILE_SCAN_BACKEND": "clamd",
+    "FILE_SCAN_CLAMD_HOST": "127.0.0.1",
+    "STORAGE_ENDPOINT": "http://127.0.0.1:9",
+    "STORAGE_BUCKET": "image-test",
+    "STORAGE_ACCESS_KEY": "image-test",
+    "STORAGE_SECRET_KEY": "image-test",
+}
+
+
 def _environment() -> list[str]:
     """What a deployed worker is given, and nothing that would stand in for a file."""
-    return [
+    settings = {"OTEL_SDK_DISABLED": "true", **(SECURE_FILES_SETTINGS if SECURE_FILES else {})}
+    out = [
         "--network",
         NETWORK,
         "-e",
@@ -99,9 +119,10 @@ def _environment() -> list[str]:
         f"DATABASE_URL={IN_IMAGE_DATABASE_URL}",
         "-e",
         f"REDIS_URL={REDIS_URL}",
-        "-e",
-        "OTEL_SDK_DISABLED=true",
     ]
+    for name, value in settings.items():
+        out += ["-e", f"{name}={value}"]
+    return out
 
 
 @pytest.fixture(scope="module")

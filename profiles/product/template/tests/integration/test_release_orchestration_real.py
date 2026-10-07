@@ -53,8 +53,10 @@ pytest.importorskip("koras_worker")
 from eicar_support import materialize  # noqa: E402
 from koras_api.core.file_release_gate import require_releasable  # noqa: E402
 from koras_worker.scanning import commit_infected  # noqa: E402
-from test_scan_orchestration_real import CSV, Chain, chain, queue  # noqa: E402, F401
-from test_scan_runtime_real import AS_TENANT, engine  # noqa: E402, F401
+from test_scan_orchestration_real import CSV, Chain, chain, queue  # noqa: E402
+from test_scan_runtime_real import AS_TENANT, engine  # noqa: E402
+
+assert chain and engine and queue  # re-exported fixtures
 
 
 async def _ask(chain: Chain, file_id: str, *, as_tenant: str | None = None):
@@ -137,7 +139,8 @@ async def test_a_row_pointed_at_another_tenants_clean_object_releases_nothing(
     chain: Chain, engine, queue
 ) -> None:
     """The row is this tenant's and says `clean`; the object it names is another tenant's, real,
-    clean and final. Nothing about the verdict makes it this tenant's to read."""
+    clean and final (its own row gone, because a key is unique). Nothing about the verdict makes
+    it this tenant's to read."""
     mine, _ = await chain.upload(CSV)
     await chain.finalize(mine)
     assert (await chain.run_job(mine))["status"] == "clean"
@@ -150,18 +153,27 @@ async def test_a_row_pointed_at_another_tenants_clean_object_releases_nothing(
         their_key = (await theirs.row(their_file))["storage_key"]
         assert f"tenants/{theirs.tenant}/" in their_key
 
+        # A key is unique across the table, so this tenant's row can only be pointed at an object
+        # whose own row is gone: their row is deleted (the object stays in the store), and then
+        # this tenant's clean row is pointed at it.
         async with async_sessionmaker(chain.engine, expire_on_commit=False)() as session:
+            await session.execute(AS_TENANT, {"tenant_id": theirs.tenant})
+            await session.execute(
+                text("delete from public.files where id = cast(:f as uuid)"), {"f": their_file}
+            )
+            await session.commit()
             await session.execute(AS_TENANT, {"tenant_id": chain.tenant})
             await session.execute(
                 text("update public.files set storage_key = :k where id = cast(:f as uuid)"),
                 {"k": their_key, "f": mine},
             )
             await session.commit()
+        assert their_key in theirs.keys(), "their object is still there, real, final and scanned"
 
         refused = await _refused(chain, mine)
         assert (refused.status_code, refused.detail["code"]) == (409, "file_scan_pending")
-        # Their own file is untouched by any of it.
-        assert str((await _ask(theirs, their_file)).id) == their_file
+        # Nothing was served: the signed URL for it was never made.
+        assert (await chain.row(mine))["scan_status"] == "clean", "the row still says so"
     finally:
         theirs.clean_up()
 

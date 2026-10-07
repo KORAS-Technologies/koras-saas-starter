@@ -60,6 +60,9 @@ pytestmark = pytest.mark.skipif(
 
 #: The organisation `e2e/support/seed.sql` creates.
 TENANT = "00000000-0000-4e2e-8000-000000000001"
+{{#if capability.secure_files}}
+GENERATION = "00000000-0000-4000-8000-000000000001"
+{{/if}}
 #: An organisation nothing created. Its context sees nothing, which is the point.
 STRANGER = "00000000-0000-4e2e-8000-00000000ffff"
 SUBJECT = "e2e-owner"
@@ -178,14 +181,26 @@ async def _seed(engine: AsyncEngine, raw: bytes, *, status: str, fmt: str = "csv
         await session.execute(
             text(
                 "insert into public.files (id, tenant_id, category, name, storage_key,"
+{{#if capability.secure_files}}
+                " size_bytes, content_type, status, scan_status, scan_object_etag, uploaded_by)"
+                " values (cast(:id as uuid), cast(:t as uuid), 'imports', 'probe.csv',"
+                " :key, :size, 'text/csv', 'ready', 'clean', 'etag-1', :by)"
+{{else}}
                 " size_bytes, content_type, status, scan_status, uploaded_by)"
                 " values (cast(:id as uuid), cast(:t as uuid), 'imports', 'probe.csv',"
                 " :key, :size, 'text/csv', 'ready', 'clean', :by)"
+{{/if}}
             ),
             {
                 "id": file_id,
                 "t": TENANT,
+{{#if capability.secure_files}}
+                # A releasable file of a product with `secure_files`: a clean verdict on a final
+                # key of its own tenant, stamped by the scanner (core/file_release.py).
+                "key": f"tenants/{TENANT}/imports/{file_id}/final/{GENERATION}/probe.csv",
+{{else}}
                 "key": f"imports/{file_id}.csv",
+{{/if}}
                 "size": len(raw),
                 "by": SUBJECT,
             },

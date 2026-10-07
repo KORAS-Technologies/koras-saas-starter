@@ -65,6 +65,9 @@ pytestmark = pytest.mark.skipif(
 #: here: the seed is the fixture, and a test that wrote its own tenant would be
 #: asserting against data no policy had ever been applied to.
 TENANT = "00000000-0000-4e2e-8000-000000000001"
+{{#if capability.secure_files}}
+GENERATION = "00000000-0000-4000-8000-000000000001"
+{{/if}}
 SUBJECT = "e2e-owner"
 
 CSV = b"Email,Name\nann@example.test,Ann\nbo@example.test,Bo\n"
@@ -138,14 +141,26 @@ async def _seed(engine: AsyncEngine, *, status: str) -> tuple[str, str]:
         await session.execute(
             text(
                 "insert into public.files (id, tenant_id, category, name, storage_key,"
+{{#if capability.secure_files}}
+                " size_bytes, content_type, status, scan_status, scan_object_etag, uploaded_by)"
+                " values (cast(:id as uuid), cast(:t as uuid), 'imports', 'probe.csv',"
+                " :key, :size, 'text/csv', 'ready', 'clean', 'etag-1', :by)"
+{{else}}
                 " size_bytes, content_type, status, scan_status, uploaded_by)"
                 " values (cast(:id as uuid), cast(:t as uuid), 'imports', 'probe.csv',"
                 " :key, :size, 'text/csv', 'ready', 'clean', :by)"
+{{/if}}
             ),
             {
                 "id": file_id,
                 "t": TENANT,
+{{#if capability.secure_files}}
+                # A releasable file of a product with `secure_files`: a clean verdict on a final
+                # key of its own tenant, stamped by the scanner (core/file_release.py).
+                "key": f"tenants/{TENANT}/imports/{file_id}/final/{GENERATION}/probe.csv",
+{{else}}
                 "key": f"imports/{file_id}.csv",
+{{/if}}
                 "size": len(CSV),
                 "by": SUBJECT,
             },

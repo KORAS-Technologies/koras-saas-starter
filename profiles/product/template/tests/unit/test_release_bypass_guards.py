@@ -223,6 +223,37 @@ def test_the_platforms_unconditional_scan_writer_is_called_by_nothing() -> None:
     assert callers == [], f"record_scan can set `clean` without a scan; callers: {callers}"
 
 
+#: Who may create a `public.files` row at all. A row is the only thing the rule can release, so
+#: a writer of a key that is not a final key is acceptable only if what it writes is `pending` and
+#: cannot become releasable (the scanner reads only a final key). Exports and generated artefacts
+#: are in this list by being absent from it: they live in their own tables, are served from their
+#: own routes, and a new one that tried to register itself as a file would fail here.
+_FILE_ROW_WRITERS: dict[str, str] = {
+    "services/api/koras_api/routers/files.py": "upload tickets: a pending row on an incoming key",
+    "services/worker/koras_worker/tasks/storage_restore.py": (
+        "restore: a restored copy is written pending and needs a fresh scan decision"
+    ),
+}
+
+
+def _creates_file_rows(path: Path) -> bool:
+    for node in ast.walk(_tree(path)):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if "insert into public.files" in " ".join(node.value.split()).lower():
+                return True
+    return False
+
+
+def test_only_the_upload_route_and_restore_create_a_file_row() -> None:
+    found = {_rel(path) for path in _python_files() if _creates_file_rows(path)}
+    expected = {name for name in _FILE_ROW_WRITERS if (REPO / name).exists()}
+    assert found == expected, (
+        "a module began (or stopped) creating `public.files` rows; a writer of a key that is not "
+        "final must be accounted for here with the reason it cannot be released. "
+        f"Difference: {sorted(found ^ expected)}"
+    )
+
+
 # -- 2. every object read or signed URL is accounted for -------------------------------------------
 
 #: By mode: every call that signs a URL for, or reads, an object -- by file, with the number of
