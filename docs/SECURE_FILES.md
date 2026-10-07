@@ -24,8 +24,9 @@ immutable finalization and its digest and provenance checks. **Layer 3** is the
 scanner: its schema, its runtime, the finalization-to-scanner hand-off and the sweep that
 recovers whatever the hand-off lost. **Layer 4** is the release layer: the one clean-only
 primitive that every consumer goes through, the consumers wired to it, and the withdrawal of
-derived content when a file stops being releasable. Restore and replacement are layer 5; the
-artefact map below says exactly what exists.
+derived content when a file stops being releasable. **Layer 5** is restore and replacement: a
+restored object is a new final-shaped object that begins non-releasable and gets a fresh scan
+decision. The artefact map below says exactly what exists.
 
 ## The two modes
 
@@ -65,6 +66,11 @@ no-op without the capability:
   without the capability; and, in a product with `data_import`, `tests/integration/test_worker_image.py`
   recognises a product with the capability (by the upload window module) and gives the image's worker
   the settings that product refuses to start without -- an `if` that is never taken here.
+* layer 5: `tasks/storage_restore.py` and `tests/unit/test_storage_restore.py` become templates whose
+  rendering **without** the capability is the previous text, byte for byte (a generator test
+  generates the default product at the previous commit and now and compares); `tests/unit/test_release_bypass_guards.py`
+  and `test_scan_task.py` register the restore writer and enqueuer, which a product without the
+  capability does not have; and `upload_window.py` and `scan_enqueue.py` are the capability's own.
 
 The rest of what the capability changes in a shared module is rendered by the capability, so a
 product without it carries the original text. Without `ai`, `data_import` or `worker` the modules
@@ -255,8 +261,8 @@ evidence of the bytes: the digests are computed over the bytes this process read
 * **Decides nothing about the content.** A finalized file is handed to the scanner (below) and is
   exactly as unreleasable as a pending one until the scanner has written a verdict. The clean-only
   primitive that every consumer goes through, and the routing of the consumers other than the
-  download route (the assistant's tools, the import engine, restore) through it, is the next
-  layer.
+  download route (the assistant's tools, the import engine) through it, is layer 4; what a
+  restore writes is layer 5 ("Restore and replacement" below).
 
 The upload window is not a setting: `UPLOAD_URL_SECONDS` (15 min), the 60 s margin and the
 measured 180 s in-flight bound are constants in `core/upload_window.py`, and
@@ -343,8 +349,9 @@ Release is the next layer's primitive, which reads what the scanner wrote.
   security event commit together or not at all; with no audit sink nothing is quarantined.
 * **Only a final key is scanned.** An incoming key is one a signed PUT could still write; any key
   that is not exactly the shape the finalizer writes is held with no read. A server-side writer
-  that produces a key of another shape (restore, replacement) is the release layer's to bring
-  under a scan decision; until then such a file stays `pending`, which is withheld.
+  that produces a key of another shape is the release layer's to bring under a scan decision; the
+  one that exists (a restore's object) writes the final shape itself (layer 5), so the scanner
+  needs no rule of its own for it.
 * **No scanner text is stored.** Notes are fixed sentences; a signature name is classified and
   dropped by the client and never reaches a column, a log line or an audit detail.
 
@@ -434,10 +441,10 @@ none of them.
   never calls `record_scan`; in a product with the capability the transitions are the only writer of
   a verdict. `withheld()` still refuses only `infected`, and stays the legacy rule; with the
   capability nothing consults it (layer 4: see "The release layer" below).
-* A server-side writer of a key that is not a final key (restore's replacement object) must either
-  write a final-shaped key or give the scanner a rule of its own for it; the scanner reads only a
-  key it can show no ticket was ever signed for. The release layer settles which side each writer
-  is on ("Server-side writers" below).
+* A server-side writer of a key that is not a final key must either write a final-shaped key or
+  give the scanner a rule of its own for it; the scanner reads only a key it can show no ticket was
+  ever signed for. Restore is the one such writer and it writes a final-shaped key
+  ("Restore and replacement" below).
 
 ## The release layer (layer 4)
 
@@ -520,20 +527,20 @@ that reads the object itself.
 | Assistant file tool | `ai/tools.py` | `content_available` from the row check, so a file still being checked is not described as readable | name and size only |
 | Import source | `core/imports.py` (and the worker's `tasks/imports.py`, which calls it) | `releasable(consumer="import")` in `check_source`, before the object is fetched; the session's own tenant is the one the row is held to | `UNPARSEABLE_SCANS` |
 | Backup, reconcile, lifecycle | `tasks/storage_backup.py`, `storage_reconcile.py`, `storage_lifecycle.py` | custody, not release: they copy, list or delete objects and hand nobody their bytes; the backup never selects an incoming key (layer 2) | the same |
-| Restore | `tasks/storage_restore.py` | layer 5 | |
+| Restore | `tasks/storage_restore.py` | custody, not release, and a *writer*: the object it writes is a new final-shaped one and its row is reset to `pending`, so nothing releases it until a fresh scan decision (layer 5, below) | the legacy restore, unchanged |
 | Exports and generated artefacts | `routers/audit_exports.py`, `reporting_schedules.py` | not files: they live in their own tables with their own expiry and are served from their own routes, so no `public.files` row is ever created for one and nothing can release them through this rule | the same |
 
 ### Server-side writers of a key that is not final
 
-Two kinds, and neither can ever become releasable through this layer:
+Two kinds, and neither can ever become releasable through the release rule on the strength of
+anything but the scanner:
 
 * **Exports and generated artefacts** write to the bucket but create no `public.files` row. There is
   nothing for the rule to decide, and `test_release_bypass_guards.py` lists each read of one by file
   and reason, so a new one is a failing test until it is accounted for.
-* **A restore's replacement** (layer 5) is a `public.files` row. It is written `pending`, and the
-  scanner reads only a final key, so it stays withheld until a fresh scan decision is made about the
-  object it now names; the layer-5 work either writes a final-shaped key or gives the scanner an
-  explicit rule for it. Until then nothing in this layer treats such a row as anything but withheld.
+* **A restore's object** (layer 5) is a `public.files` row. It is written `pending` on a
+  final-shaped key, and stays withheld until the scanner has made a fresh decision about the object
+  it now names ("Restore and replacement" below).
 
 ### What is withdrawn, and when
 
@@ -561,6 +568,125 @@ a database: the first two skip without `E2E_DATABASE_URL` (the restricted role, 
 suites) and in a product with the capability a skip is a failure. Run the unit and the integration
 modules in separate `pytest` invocations: the integration modules point the API's own engine at the
 database named by the variable, which an earlier unit module's import has already fixed.
+
+## Restore and replacement (layer 5)
+
+`tasks/storage_restore.py` (rendered by `secure_files`) is the one worker task that writes bytes
+back into the bucket and changes which object a `public.files` row names. The legacy restore reused
+the original key and set the row `ready`: for a file that had been released as `clean` that changes
+the bytes under a standing verdict, and a signed URL issued for the old bytes would read the new
+ones. With `secure_files` it does neither. It was proven in Docoris (OD-10 S3, with the scanner
+follow-up) and is generalized here; ADR 0013 section 6 item 7 is the invariant ("restore/replacement
+begins non-releasable and needs a fresh scan decision").
+
+### The two modes, and the dependency
+
+| | `secure_files` off | `secure_files` on |
+|---|---|---|
+| Overwrite of an existing file | writes the **original key**, updates size, checksum and `status = 'ready'` (as before; byte for byte the same text) | **never** writes the original key: a new final key, the row switched in one statement |
+| A restored copy (no overwrite) | `tenants/<t>/<category>/<new id>/<name>`, row `ready`, scan columns at their defaults | `tenants/<t>/<category>/<new id>/final/<generation>/<name>`, the same defaults, and a scan is asked for |
+| What the row carries afterwards | the old scan columns, untouched | `pending`, with no verdict, note, attempts, failure, **`scan_object_etag`**, index state or chunks; backup and archive state reset |
+| Asking the scanner | n/a (a scanner is optional) | `restore_scan.py`: one job under the scan's own identity, plus a follow-up for a lost request |
+
+`secure_files` **requires** `storage` and the worker; **restore** is `storage_governance`'s. The
+two are independent switches and the decision is explicit:
+
+* `secure_files` on, `storage_governance` on (the default product has it): the restore described
+  here, and `restore_scan.py` with its suites, are generated.
+* `secure_files` on, `storage_governance` **off**: the product has *no restore at all* (no route,
+  no table, no worker task), so there is nothing to bring under the rule and nothing is generated for
+  it. A product that later adds `storage_governance` must be regenerated, and gets the secure
+  restore, because the capability's rendering is decided by the generated constant and not by which
+  other capabilities are present.
+* `secure_files` off, `storage_governance` on: exactly the Starter's existing restore (the
+  generator tests compare the rendering with the previous commit's).
+
+### The replacement, step by step
+
+```
+ approved request ──▶ read the backup copy, hash it, compare with the digest the backup recorded
+        │                (no match: the object stays gone, nothing is written)
+        ▼
+ lock the file's row as its tenant, decide on the row as it is now (`replacement_refusal`)
+        │   infected / quarantined ............... refused: "restore as a new object"
+        │   pending or skipped, any status ....... refused: a scan may be running on the old bytes
+        │   a scan attempt inside the horizon .... refused: it may still be finishing
+        │   not ready/archived/deleted/purged .... refused
+        ▼
+ write the bytes to a NEW key, `.../<file>/final/<fresh generation>/<name>`, asking the provider
+ to check the SHA-256, then READ IT BACK and hash it again (`_write_verified`)
+        │   mismatch: delete the new object, change nothing
+        ▼
+ in ONE statement, only if the row is still as it was read (storage key, status, scan status):
+   storage_key = new key, size, checksum = the digest this worker computed, checksum_verified_at = now
+   scan_status = 'pending', scan_note / attempts / attempted_at / failure / scan_object_etag cleared
+   indexed_at / index_note cleared, backup_status = 'none', backed_up_at / archived_at cleared
+ and, with the assistant, the file's chunks are deleted in the same transaction
+        │   anything fails: the transaction rolls back and the new object is removed
+        ▼
+ commit ──▶ `restore_scan`: enqueue the scan for this file (after the commit; never raises)
+```
+
+* **No unsafe overwrite.** The old key is never an argument to the write; a test inspects the module
+  for it, and the old object is neither overwritten nor deleted. A URL signed for it keeps reading
+  the old bytes and nothing else. Nothing reclaims the old object: reconciliation reports an
+  unreferenced object and removes none, so it stays until an operator removes it.
+* **Identity binding.** The release rule needs a final key of the row's own tenant and a
+  `scan_object_etag`, which only the scanner's `clean` transition writes and which the replacement
+  clears. The old (key, etag) pair therefore cannot release the new bytes, and the new bytes cannot
+  be released on the old verdict: the scanner's `commit_clean` binds the verdict to the key it read
+  and writes only while the row still references it.
+* **A fresh scan decision.** The key is exactly the shape of a finalized upload
+  (`upload_window.final_key`), so the scanner reads it without a rule of its own. The scanner's
+  read gate (the upload window, from the row's `created_at`) applies to a new row, so its job is
+  enqueued after the window; a replaced file is old and is asked for at once.
+* **Integrity.** The digest compared is the backup run's recorded one where there is one (a copy that
+  does not match is a failure and the object stays gone). Where none was recorded the restore still
+  runs, because refusing would refuse the only copy of an object whose provider never computed one,
+  and the audit row says plainly that nothing was compared (`verified: false`). Beyond Docoris's
+  proven behaviour, the written object is read back and hashed before any row names it, and the
+  row's `checksum_verified_at` is set from that, so the scanner also compares the digest of the bytes
+  it streams with the row's.
+* **A lost request is not a lost file.** The file is `pending` on a final key, which the scan sweep
+  selects by itself; `reconcile_restored_scans` also looks at the restores of the last seven days for
+  a file still `ready` and `pending` and owed an attempt, because the sweep can be narrowed by
+  `FILE_SCAN_SWEEP_NOT_BEFORE` and a replaced file is an old file. Nothing is written by it and no
+  verdict is decided: `restore_scan.py` is an enqueuer and a reader (a static test holds it to that),
+  and the scanner's guard on who may name the scan task lists it by name.
+* **An ambiguous commit never deletes the live object.** If the commit raises, the outcome is read
+  back from the database (`commit_outcome`), under the request's own row lock; the object is removed
+  only on proof that nothing committed.
+* **Closed refusals.** A refusal's code goes into the audit row and its sentence into the request's
+  `error`; neither carries a name, a key or a digest.
+
+### What differs from Docoris, and what was left out
+
+* The key shape: Docoris's scanner also scans a legacy-shaped key when a completed restore names the
+  file; the Starter's scanner reads only a final key, so the restore writes one. A restored *copy*
+  is final-shaped too.
+* No scanner-activation check in `restore_scan`: with `secure_files` the scanner is mandatory and the
+  product does not start without it.
+* The write is verified, and read back (above).
+* `file_backups` is joined on the request's own tenant and file in `_APPROVED` (the sweep reads on the
+  provisioning context, which sees every tenant) in the secure rendering.
+* Docoris's **legacy remediation** (GR-370: re-trusting historical rows, restore-provenance retrust,
+  `restore_provenance_support.py`, the `_RESTORED` scanner path) is Docoris-only history and is not
+  ported.
+* **Migrations.** Docoris's `00026_restore_requests.sql` and `250_restore_isolation.sql` are identical
+  to the Starter's own; no migration is added. The replacement relies on layers 2-4's columns
+  (`scan_attempts`, `scan_attempted_at`, `scan_failure`, `scan_object_etag`) and 00042's withdrawal
+  trigger.
+* The legacy rendering still has the legacy `_APPROVED` join and a `_TOUCH_FILE` overwrite; they are
+  not changed here (byte-identical rendering was the requirement), and are listed as follow-ups.
+
+### Running the restore suites
+
+`tests/unit/test_storage_restore_replacement.py`, `test_restore_scan.py` and the rendered
+`test_storage_restore.py` need nothing. `tests/integration/test_restore_replacement_real.py` (and
+`test_restore_derived_content_real.py` with the assistant) need `E2E_DATABASE_URL`;
+`test_restore_orchestration_real.py` also needs the store (`STORAGE_*`) and a scanner
+(`E2E_CLAMD_HOST`), and runs the real finalizer, restore, scan job and release gate. In a product
+with the capability a skip is a failure (the generator-integration step fails on any).
 
 ## Artefact map
 
@@ -638,12 +764,28 @@ listed under `template_map.capabilities.secure_files` unless marked "always".
 | 4 | `tests/integration/test_worker_image.py` | always (`data_import`) | a product with the capability gives the image's worker the scanner and store settings it refuses to start without (an import reads neither) |
 | 4 | `e2e/roundtrip/files-release-state.spec.ts` | capability | the Files page in a browser against the real API, the real rule and row-level security |
 | 4 | generator: `tests/product-secure-files-release.test.ts` | Starter only | both modes rendered; each half asserted from the generated text |
+| 5 | `services/worker/koras_worker/tasks/storage_restore.py` | always, rendered by the capability (`storage_governance`) | the restore worker: the replacement as a new final-shaped object, verified and read back, the row switched and reset in one statement; the legacy text is what it was without the capability |
+| 5 | `services/worker/koras_worker/tasks/restore_scan.py` | capability + `storage_governance` | asking the scanner about what a restore wrote, and the follow-up for a lost request; an enqueuer and a reader only |
+| 5 | `services/api/koras_api/core/upload_window.py` | capability | `final_key(...)`: the key a server-side writer other than the finalizer makes, in the one shape `is_final_key` accepts |
+| 5 | `services/api/koras_api/core/scan_enqueue.py` | capability | `enqueue_scan(..., delay_seconds=None)`: the one enqueue function, deferrable for a new row |
+| 5 | `tests/unit/test_release_bypass_guards.py` | always, per mode | the bypass guard's writer registry holds the restore writer (`'pending'` only); `scan_status` is found in the restore in a secure product and not in a legacy one |
+| 5 | `tests/unit/test_scan_task.py` | capability | the guard on who may name the scan task lists `restore_scan.py` where it exists |
+| 5 | `tests/unit/test_storage_restore.py` | always (`storage_governance`), rendered | the legacy assertions, and the secure rendering's `Ran` result |
+| 5 | `tests/unit/restore_support.py`, `test_storage_restore_replacement.py`, `test_restore_scan.py` | capability + `storage_governance` | the decision, the key shape, the verified write, the statements' text, the request arithmetic and the enqueuer-only guards |
+| 5 | `tests/unit/test_upload_finalization.py`, `test_scan_enqueue.py` | capability | `final_key` and the deferrable enqueue |
+| 5 | `tests/integration/test_restore_replacement_real.py` | capability + `storage_governance` | the replacement against a real PostgreSQL with RLS forced: new key, reset evidence, refusals write nothing, races with the scanner's own transitions, ambiguous commits, tenants |
+| 5 | `tests/integration/test_restore_derived_content_real.py` | capability + `storage_governance` + `ai` | the chunks withdrawn with the replacement, and an index write racing a restore |
+| 5 | `tests/integration/test_restore_orchestration_real.py` | capability + `storage_governance` | the restore end to end against a real database, store and clamd: refused until a fresh clean verdict, a stale URL reads old bytes only, infected restored bytes are quarantined, a quarantined file returns only as a new scanned file |
+| 5 | `tests/integration/test_worker_image_scanner.py` | capability | gains one test: the restore modules load in the image and a replacement key it makes is a final key |
+| 5 | `docs/SECURE_FILES.md` (product) | capability | the operator's "Restoring a file" section, with `storage_governance` |
+| 5 | generator: `tests/product-secure-files-restore.test.ts` | Starter only | both modes rendered; the legacy rendering equals the previous one; with and without `storage_governance` |
 
 **EICAR.** No generated file contains the literal test string (every antivirus that reads a
 repository may quarantine it): `tests/unit/eicar_support.py` holds it base64-encoded and
 `materialize()` decodes it, checked against its recorded SHA-256, on every call.
 
-Migrations: 00039 (layer 2), 00040 and 00041 (layer 3), 00042 (layer 4). New ones take the next numbers and
+Migrations: 00039 (layer 2), 00040 and 00041 (layer 3), 00042 (layer 4); layer 5 adds none (Docoris's
+restore migration and RLS suite are the Starter's own, byte for byte). New ones take the next numbers and
 stay semantically identical to Docoris 01016-01019; the mapping is recorded above.
 
 ## Upgrading an existing product

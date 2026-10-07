@@ -658,6 +658,13 @@ jobs:
       # product deploys. The engine downloads its signatures at start, so this step
       # waits for the image's own "ready" line, which is logged only after a detection
       # self-test has passed.
+      #
+      # Layer 5 (restore and replacement) is run here because it needs the same four things: the
+      # replacement against a real PostgreSQL with row-level security forced and, end to end, a
+      # real store and a real scanner (`test_restore_orchestration_real.py`: a replacement is refused
+      # until its own scan says clean, a stale URL reads the old bytes only, infected restored bytes
+      # are quarantined). The row has `ai` and `storage_governance`, so every restore module is
+      # generated and none may skip.
       - name: The scanner ran against a database, an object store and clamd, and did not skip
         if: matrix.roundtrip && contains(matrix.components, 'secure_files')
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
@@ -718,12 +725,18 @@ jobs:
             tests/unit/test_scan_handoff.py \
             tests/unit/test_file_scan_fixtures.py \
             tests/unit/test_secure_files_config.py \
+            tests/unit/test_storage_restore.py \
+            tests/unit/test_storage_restore_replacement.py \
+            tests/unit/test_restore_scan.py \
             tests/integration/test_scan_transition_real.py \
             tests/integration/test_scan_runtime_real.py \
             tests/integration/test_scan_sweep_real.py \
             tests/integration/test_scanner_clamd_live.py \
             tests/integration/test_scan_orchestration_real.py \
             tests/integration/test_release_orchestration_real.py \
+            tests/integration/test_restore_replacement_real.py \
+            tests/integration/test_restore_derived_content_real.py \
+            tests/integration/test_restore_orchestration_real.py \
             tests/integration/test_worker_image_scanner.py \
             --no-cov -q -rs | tee "$RUNNER_TEMP/scanner.txt"
           if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/scanner.txt"; then

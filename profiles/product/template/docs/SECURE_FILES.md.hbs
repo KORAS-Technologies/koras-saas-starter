@@ -93,7 +93,28 @@ has not decided; see the section above) and at `scan_object_etag` (a `clean` fil
 not marked by the scanner and is not released). Do not edit either by hand: the scanner's
 transitions are the only writer of a verdict, and a test fails if anything else gains the ability.
 
-## Changing the mode
+{{#if capability.storage_governance}}
+## Restoring a file
+
+A restore never makes a file releasable by itself. An approved restore writes the backup's bytes
+to a **new** object, on a final key (`.../final/<generation>/<name>`) nothing ever signed an upload
+for, after hashing them against the digest the backup recorded and reading what it wrote back; then
+the file's row is pointed at the new object and reset to `pending` with none of the old verdict,
+scan evidence or derived content, in one statement. The old object is neither overwritten nor
+deleted, so a download link issued before the restore still reads the old bytes and nothing else.
+The restored file is released only when the scanner has said `clean` about the new object.
+
+A file that was found infected is not replaced in place: restore it as a new file, which is
+scanned on its own. A file that has no verdict yet, or was scanned within the last quarter of an
+hour, is refused with a closed reason (see the request's error); ask again once the scan has
+finished. Restores run from the worker every ten minutes and a request the worker could not ask
+the scanner about is followed up by the same worker; the scan sweep also finds a restored file on
+its own, because it is on a final key.
+
+If a restored file stays `pending`, look at it as any other pending file (above). The old object
+stays in the bucket until somebody removes it: nothing here deletes it.
+
+{{/if}}## Changing the mode
 
 `secure_files` is a generation-time choice. It is not a runtime toggle and is not
 retrofitted by upgrading the Starter. Do not hand-edit it in or out: regenerate,
