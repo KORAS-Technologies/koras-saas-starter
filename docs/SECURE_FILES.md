@@ -26,7 +26,8 @@ recovers whatever the hand-off lost. **Layer 4** is the release layer: the one c
 primitive that every consumer goes through, the consumers wired to it, and the withdrawal of
 derived content when a file stops being releasable. **Layer 5** is restore and replacement: a
 restored object is a new final-shaped object that begins non-releasable and gets a fresh scan
-decision. The artefact map below says exactly what exists.
+decision. **Layer 7** is the verification the layers rest on: a migration matrix and a live API
+proof, run in CI. The artefact map below says exactly what exists.
 
 ## The two modes
 
@@ -1067,6 +1068,10 @@ listed under `template_map.capabilities.secure_files` unless marked "always".
 | 6b | `pyproject.toml` | always, rendered | `pythonpath` gains `tooling`, only with the capability |
 | 6b | `.github/workflows/generator-integration.yml` | Starter only | steps that run the promotion suites in the secure-files row and fail on any skip |
 | 6b | generator: `tests/product-secure-files-promotion.test.ts` | Starter only | files in which mode, the rendered configuration agrees with the generated CI and secrets manifest, nothing of another product, the deploy workflow unchanged, the guard list and the required tests exist |
+| 7 | `tests/secure_files/migration_matrix.sh`, `tests/secure_files/release_rule.py` | Starter only | the migration matrix: a fresh secure product, a fresh default product, and an upgrade of a default product generated from the merge base with develop, on a real PostgreSQL through each product's own `local/scripts/migrate.sh` |
+| 7 | `tests/secure_files/live_proof.py` | Starter only | the live API proof: a generated product's API driven over HTTP, in `secure` and `compat` modes |
+| 7 | `.github/workflows/secure-files-matrix.yml` | Starter only | the workflow that generates the products and runs the matrix and both live proofs: jobs `secure-files-migration-matrix`, `live-proof-secure`, `live-proof-compat` |
+| 7 | `.github/actions/start-minio/action.yml` | Starter only | an S3-compatible store for the suites, built from MinIO's tagged source (its images and binaries are no longer published) and shared by the secure-files steps |
 
 **EICAR.** No generated file contains the literal test string (every antivirus that reads a
 repository may quarantine it): `tests/unit/eicar_support.py` holds it base64-encoded and
@@ -1075,6 +1080,87 @@ repository may quarantine it): `tests/unit/eicar_support.py` holds it base64-enc
 Migrations: 00039 (layer 2), 00040 and 00041 (layer 3), 00042 (layer 4); layer 5 adds none (Docoris's
 restore migration and RLS suite are the Starter's own, byte for byte). New ones take the next numbers and
 stay semantically identical to Docoris 01016-01019; the mapping is recorded above.
+
+## Verification (layer 7)
+
+What proves the capability beyond the product's own suites, and where it runs. Both run on
+GitHub Actions, in `.github/workflows/secure-files-matrix.yml`, from products the generator
+writes; nothing in them installs a generated product's Node workspace.
+
+### The migration matrix
+
+`tests/secure_files/migration_matrix.sh`, job `secure-files-migration-matrix`, against a
+pgvector PostgreSQL. Every database is migrated by the product's own `local/scripts/migrate.sh`
+(the ledger path), and each row-level security suite of the product in question is run.
+
+| Case | What it asserts |
+|---|---|
+| A. fresh, generated `--with secure_files,clamd,worker` | all four migrations are in the ledger; the four scan columns, the two checks, the two partial due-time indexes (and not 00040's), the security-definer withdrawal function and both triggers exist; row-level security is forced on `files`; a second `migrate.sh` skips everything; the four files applied directly a second time change nothing; the product's suites pass |
+| B. fresh, default product | none of those objects exists; the ledger names none of 00039-00042; the files that carry the capability are not generated; the generated constant is `False`; the product's suites pass |
+| C. upgrade: a default product (with the assistant on) generated from the merge base with develop, migrated, given legacy rows, then moved by the secure product's own `migrate.sh` | exactly 00039-00042 are applied; no row or chunk is lost and every baseline column of every row is unchanged; the new columns hold their defaults; applying the four files again is idempotent; `RELEASABLE_SQL` and `releasable()` for every consumer release none of the upgraded rows (clean legacy rows stay `clean` and need a scan); the default product's rule answers as before; row-level security is forced everywhere it is enabled; a verdict leaving `clean` on a legacy indexed file withdraws its chunks; the suites pass |
+
+The legacy rows carry every stored verdict (`pending`, `clean`, `skipped`, `infected`), the key
+shapes a default product wrote (with and without a category segment), a claimed digest, a file
+never confirmed, and a second tenant's file. The merge base is `git merge-base origin/develop HEAD`
+(the first parent when that is the commit itself); its own generator writes the baseline product.
+
+### The live API proof
+
+`tests/secure_files/live_proof.py`, run from a generated product's Python environment against its
+API under uvicorn, the local identity provider the browser suite uses, PostgreSQL as the restricted
+role, an S3-compatible store and Redis.
+
+* **`live-proof-secure`** (`--with secure_files,clamd,worker,data_import`, with the product's worker
+  and a real clamd): a ticket without a checksum, or with an uppercase, short, long or non-hex one,
+  is refused (422); a valid ticket targets an incoming key and signs the digest header; a PUT
+  without the signed headers, with bytes that do not hash to the signed digest, or to a final key
+  is refused by the store; completion with a different digest is refused (422
+  `upload_checksum_claim_invalid`); a completed file is not available and its download signs
+  nothing; after the real finalizer and scanner a clean file is served byte for byte, EICAR is
+  quarantined and refused (403 `file_quarantined`), and bytes that are not the claim are held
+  `integrity_mismatch`, never releasable under `RELEASABLE_SQL`; another tenant gets 404; imports
+  answer 403 `import_not_enabled` by default. Two things are operated, and the script says so where
+  they happen: the clock (an upload is finalized only after its sixteen-minute window, so the row's
+  `created_at` is moved back by an administrator and the deferred job is replaced by the same
+  function the API calls) and a store that accepts bytes the claim does not describe (written with
+  the store's own credentials). A final step starts the API and the worker with
+  `FILE_SCAN_BACKEND=none` and requires each to exit non-zero with the `secure_files` refusal
+  naming the variable.
+* **`live-proof-compat`** (a default product): a ticket needs no checksum and signs `Content-Type`
+  only; the key has no incoming segment; completion queues no finalizer and signs nothing; an
+  optional checksum is recorded as a claim, marked unverified when the provider does not agree, and
+  does not gate the download; downloads behave as before for `pending`, `skipped`, `clean` and
+  `infected`; another tenant gets 404; the generated constant is `False` and neither the upload
+  window nor the finalize job exists. The whole proof then runs a second time after the secure
+  product's migrations are applied to the same database and the API is restarted, with the scan
+  columns present.
+
+### Verification evidence
+
+**2026-10-07, commit `6181c449ab4c066155bf98b65b3a18abd2b64938`** (branch
+`feat/secure-files-capability`, pull request 39). Every check on that commit completed
+successfully:
+
+| Workflow | Run | Jobs |
+|---|---|---|
+| Generator Integration | 37631908312 | `integration-product`, `integration-product-full`, `integration-product-secure`, `integration-product-minimal`, `integration-control-plane` |
+| CI | 37631908422 | `Lint & Typecheck`, `Test (Node)`, `Test (Python)`, `Build` |
+| Secure Files Proof | 37631908597 | `secure-files-migration-matrix`, `live-proof-secure`, `live-proof-compat` |
+| Security | 37631909234 | `CodeQL (javascript-typescript)`, `CodeQL (python)`, `Secret scan (gitleaks)` |
+
+The browser suite's imports "template control" download test (a cancelled xlsx stream seen once on an
+earlier run) passed in `integration-product-full` of that run, and the same job passed on the merge
+base `e5d82cd1fbc9867521f7f6d28c6d887eedc02049` (Generator Integration run 37626725336, dispatched on
+a branch pointing at that commit). It did not reproduce on either; it is not recorded as fixed.
+
+What the first CI run of this branch exposed, and the fix for each: the docs checks named four
+identifiers and three hedges the layer's own page and code introduced; the object store image
+`quay.io/minio/minio` can no longer be pulled, so the steps that started it never could (a composite
+action now builds the tagged source and one store serves the three steps); the promotion step had no
+store at all; the gate-invalidation contract did not classify `tooling/promotion`; the import
+fixture seeded a ready file without `ready_at`, which made the Files listing fail for the secure row;
+and the scanner steps lacked the worker's `DATABASE_URL`, so `file.scan` skipped. No security step
+was skipped or disabled to get there.
 
 ## Upgrading an existing product
 
