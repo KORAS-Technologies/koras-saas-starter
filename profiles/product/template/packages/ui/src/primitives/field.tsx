@@ -24,30 +24,50 @@ function describedBy(id: string, error?: string, hint?: string): string | undefi
   return ids.length > 0 ? ids.join(' ') : undefined
 }
 
+/**
+ * Where a field's hint sits relative to its control.
+ *
+ * `above` (the default) is the long-standing shape: label, hint, control. It
+ * suits a hint that has to be read before answering, such as a format rule.
+ * `below` is label, control, hint, and exists so two fields side by side in a
+ * grid row keep their controls level when only one of them carries a hint: a
+ * hint above the control pushes that control down by the height of the hint.
+ * Either way the control's `aria-describedby` names the hint.
+ */
+export type HintPlacement = 'above' | 'below'
+
 function Frame({
   id,
   label,
   hint,
+  hintPlacement = 'above',
   error,
   children,
 }: {
   id: string
   label: string
   hint?: string
+  hintPlacement?: HintPlacement
   error?: string
   children: ReactNode
 }) {
+  const hintBelow = hint && hintPlacement === 'below'
   return (
     <div>
       <label htmlFor={id} className="block text-sm font-semibold text-ink">
         {label}
       </label>
-      {hint && (
+      {hint && !hintBelow && (
         <p id={`${id}-hint`} className="mt-1 text-sm text-ink-muted">
           {hint}
         </p>
       )}
       <div className="mt-2">{children}</div>
+      {hintBelow && (
+        <p id={`${id}-hint`} className="mt-2 text-sm text-ink-muted">
+          {hint}
+        </p>
+      )}
       {error && (
         // Announced when it appears, and only then. A live region wrapping the
         // whole form would re-read every field on each keystroke.
@@ -90,6 +110,7 @@ export function SelectField({
   id,
   label,
   hint,
+  hintPlacement,
   error,
   className,
   children,
@@ -98,12 +119,13 @@ export function SelectField({
   id: string
   label: string
   hint?: string
+  hintPlacement?: HintPlacement
   error?: string
   className?: string
   children: ReactNode
 } & Omit<SelectHTMLAttributes<HTMLSelectElement>, 'id' | 'className' | 'children'>) {
   return (
-    <Frame id={id} label={label} hint={hint} error={error}>
+    <Frame id={id} label={label} hint={hint} hintPlacement={hintPlacement} error={error}>
       <select
         id={id}
         className={controlClasses(Boolean(error), className)}
