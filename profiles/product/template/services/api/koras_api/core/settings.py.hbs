@@ -92,7 +92,15 @@ class Settings(BaseSettings):
     #: "grpc" for the local collector, "http/protobuf" for a hosted gateway
     #: such as Grafana Cloud. Chosen in code; see core/observability.py.
     otel_exporter_otlp_protocol: str = "grpc"
-{{#if capability.ai}}
+{{#if capability.secure_files}}
+    # `secure_files`: the scanner every uploaded object must pass (ADR 0013).
+    # Mandatory when the capability is on, and checked by
+    # `core/secure_files.py` before the API starts -- the defaults here are the
+    # failing values, so an unset one is refused rather than guessed.
+    file_scan_backend: str = "none"
+    file_scan_clamd_host: str = ""
+    file_scan_clamd_port: int = 3310
+{{/if}}{{#if capability.ai}}
     # The AI gateway: the LiteLLM proxy that holds the provider keys, deployed
     # as its own Fly app per environment. The URL is derived from Terraform and
     # the master key is supplied per environment; both are declared under the

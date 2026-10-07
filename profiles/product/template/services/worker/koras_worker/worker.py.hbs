@@ -7,7 +7,8 @@ from koras_database import assert_rls_enforced
 from koras_queue import worker_functions
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from .settings import settings
+{{#if capability.secure_files}}from .secure_files import enforce_secure_files_at_startup
+{{/if}}from .settings import settings
 from .tasks import example_task
 {{#if capability.ai}}from .tasks.ai_retention import purge_ai_history
 {{/if}}from .tasks.audit_retention import purge_audit_history
@@ -48,7 +49,11 @@ async def verify_isolation(ctx: dict[str, Any]) -> None:
     skips and says so. Nothing else is exempt.
     """
     del ctx
-    if not settings.database_url:
+{{#if capability.secure_files}}    # Before the database is even consulted: a `secure_files` worker without a
+    # scanner or object storage refuses to start, and never falls back to the
+    # legacy release (ADR 0013 section 6).
+    enforce_secure_files_at_startup()
+{{/if}}    if not settings.database_url:
         return
     engine = create_async_engine(
         settings.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)

@@ -10,7 +10,8 @@ from .core.database import verify_rls_enforcement
 from .core.observability import setup_telemetry
 from .core.ratelimit import limit_anonymous, limit_authenticated
 from .core.security import SecurityHeadersMiddleware
-from .core.settings import settings
+{{#if capability.secure_files}}from .core.secure_files import validate_secure_files_settings
+{{/if}}from .core.settings import settings
 
 # Wrapped whatever the capabilities render, and exempt from the import
 # formatting rules in pyproject for that reason: a one-line form is too long
@@ -53,7 +54,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     records, warns on every call, and answers `simulated` -- and the route that
     enqueued is expected to read that rather than answer 202 regardless.
     """
-    # Before anything is served. A connection that bypasses RLS makes every
+{{#if capability.secure_files}}    # First, and before anything else is opened: with `secure_files` a missing
+    # scanner or object-storage setting is a refusal to start, never a fallback
+    # to serving unscanned bytes (ADR 0013 section 6).
+    validate_secure_files_settings(settings)
+
+{{/if}}    # Before anything is served. A connection that bypasses RLS makes every
     # tenant policy inert, and that has no symptom until a tenant sees another
     # tenant's rows.
     await verify_rls_enforcement()
