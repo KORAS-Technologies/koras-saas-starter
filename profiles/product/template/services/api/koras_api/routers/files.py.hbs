@@ -24,13 +24,27 @@ from __future__ import annotations
 import base64
 import uuid
 from datetime import UTC, datetime
+{{#if capability.secure_files}}
+from typing import Any, Literal
+{{else}}
 from typing import Annotated, Any, Literal
+{{/if}}
 
+{{#if capability.secure_files}}
+from fastapi import APIRouter, BackgroundTasks, status
+{{else}}
 from fastapi import APIRouter, BackgroundTasks, Depends, status
+{{/if}}
+{{#unless capability.secure_files}}
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+{{/unless}}
 from koras_audit import Outcome
 from koras_platform import OrganizationRole
+{{#if capability.secure_files}}
+from koras_storage import Category, safe_filename, upload_guard_headers
+{{else}}
 from koras_storage import Category, object_key, safe_filename
+{{/if}}
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.engine import Row
@@ -39,8 +53,16 @@ from ..core.audit import record
 from ..core.auth import AuthDep
 from ..core.database import DbSession
 from ..core.errors import ApiErrorCode, api_error
+{{#if capability.secure_files}}
+from ..core.file_hooks import hooks
+{{else}}
 from ..core.file_hooks import hooks, run_after_upload
+{{/if}}
 from ..core.file_scan import withheld
+{{#if capability.secure_files}}
+from ..core.finalize_enqueue import enqueue_finalize
+from ..core.jobs import JobsDep
+{{/if}}
 from ..core.storage import (
     MAX_OBJECT_BYTES,
     STORAGE_ENTITLEMENT,
@@ -48,19 +70,29 @@ from ..core.storage import (
     upload_limits,
 )
 from ..core.tenant import TenantDep
+{{#if capability.secure_files}}
+from ..core.upload_window import UPLOAD_URL_SECONDS, incoming_key, is_incoming_key
+{{/if}}
 
 router = APIRouter(tags=["files"])
 
+{{#unless capability.secure_files}}
 _bearer = HTTPBearer(auto_error=False)
 CredentialsDep = Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)]
+{{/unless}}
 
 #: Retrieval indexes uploads only where the product has an AI gateway; a
 #: product generated without the capability has neither the setting nor the
 #: tables, and this reads as False there.
 
+{{#if capability.secure_files}}
+#: Signed upload URLs live `UPLOAD_URL_SECONDS` (imported above), a constant the
+#: finalizer's window also reads; see `core/upload_window.py`.
+{{else}}
 #: Signed URLs live this long. Long enough for a slow connection to finish
 #: a large upload, short enough that a leaked URL is worth little.
 UPLOAD_URL_SECONDS = 15 * 60
+{{/if}}
 DOWNLOAD_URL_SECONDS = 5 * 60
 
 
@@ -102,6 +134,18 @@ class UploadRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     size_bytes: int = Field(ge=0, le=MAX_OBJECT_BYTES)
     content_type: str = Field(default="application/octet-stream", max_length=255)
+{{#if capability.secure_files}}
+    #: The SHA-256 of the bytes about to be sent: exactly 64 lowercase hex characters,
+    #: and required (ADR 0013). It is the content claim this one upload is authorized
+    #: for. It is recorded on the file's row now, never changed by the client afterwards,
+    #: signed into the URL, and finalization refuses to promote an object whose bytes do
+    #: not hash to it. The server never invents one: a digest taken from the object after
+    #: the upload would vouch for whatever was written.
+    checksum_sha256: str = Field(
+        pattern=r"^[0-9a-f]{64}$",
+        description="SHA-256 of the file's bytes, 64 lowercase hex characters",
+    )
+{{else}}
     #: The digest of the bytes about to be sent, where the browser could take
     #: one. Signed into the upload URL, so the provider stores it and can be
     #: asked for it afterwards -- which is the only way corroboration is
@@ -109,6 +153,7 @@ class UploadRequest(BaseModel):
     #: match, so a corrupted transfer fails at the bucket rather than arriving
     #: as a file whose claim nobody can check.
     checksum_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+{{/if}}
     #: Which shelf the object goes on. Two of the eight are offered to a
     #: caller: a document, which is what a person uploads on the Files page,
     #: and an import source. The rest -- exports, generated, archives, temp --
@@ -120,12 +165,19 @@ class UploadRequest(BaseModel):
 class CompleteRequest(BaseModel):
     """What the browser says about the upload it has just finished.
 
+{{#if capability.secure_files}}
+    The digest is optional and is never recorded: the claim was bound to the file when
+    the ticket was issued and nothing the client says afterwards can change it (ADR
+    0013). If it is sent it must be the one the ticket was issued for, which only
+    catches a client that has lost track of which file it is completing.
+{{else}}
     The digest is optional and is the client's claim about the bytes it sent.
     It is recorded as a claim -- see `checksum_verified_at`, which this route
     does not set -- because a client asserting a hash of its own upload proves
     only that the client is consistent with itself. It is still worth having:
     it detects a file that changed on disk between two uploads, and it gives a
     later verification something to compare against.
+{{/if}}
     """
 
     checksum_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
@@ -308,6 +360,60 @@ async def request_upload(
                 "this upload would exceed the storage included in the plan",
             )
 
+{{#if capability.secure_files}}
+    file_id = str(uuid.uuid4())
+    upload_id = str(uuid.uuid4())
+    # Never the key that is scanned or released: the ticket writes an incoming key, and
+    # the worker copies the object to a final key once the ticket and any request it
+    # began are certainly dead. See `core/upload_window.py`.
+    key = incoming_key(
+        tenant.id,
+        Category(body.category).value,
+        file_id,
+        upload_id,
+        safe_filename(body.name),
+    )
+    content_type = body.content_type or "application/octet-stream"
+    await session.execute(
+        text(
+            "insert into public.files "
+            "(id, tenant_id, storage_key, name, size_bytes, content_type, category, "
+            "status, uploaded_by, checksum_sha256) "
+            "values (:id, :tenant_id, :key, :name, :size, :content_type, :category, "
+            "'pending', :who, :checksum)"
+        ),
+        {
+            "id": file_id,
+            "tenant_id": tenant.id,
+            "key": key,
+            "name": safe_filename(body.name),
+            "size": body.size_bytes,
+            "content_type": content_type,
+            "category": body.category,
+            "who": claims.sub,
+            # The content claim this upload is authorized for, bound here and nowhere
+            # else: `complete` does not write it and finalization compares against it.
+            "checksum": body.checksum_sha256,
+        },
+    )
+    await session.commit()
+
+    url = storage.store.presign_upload(
+        key,
+        content_type,
+        body.size_bytes,
+        UPLOAD_URL_SECONDS,
+        body.checksum_sha256,
+        provenance=upload_id,
+    )
+    # All part of the signature, so the browser must send exactly these. The guard headers
+    # make the PUT refuse to be turned into a copy from another key.
+    headers = {
+        "Content-Type": content_type,
+        "x-amz-checksum-sha256": _b64(body.checksum_sha256),
+        **upload_guard_headers(upload_id),
+    }
+{{else}}
     file_id = str(uuid.uuid4())
     key = object_key(tenant.id, file_id, body.name, category=Category(body.category))
     content_type = body.content_type or "application/octet-stream"
@@ -339,6 +445,7 @@ async def request_upload(
     if body.checksum_sha256:
         # Part of the signature, so the browser must send exactly this.
         headers["x-amz-checksum-sha256"] = _b64(body.checksum_sha256)
+{{/if}}
     return UploadTicket(
         file_id=file_id,
         upload_url=url,
@@ -356,7 +463,11 @@ async def complete_upload(
     storage: StorageDep,
     session: DbSession,
     background: BackgroundTasks,
+{{#if capability.secure_files}}
+    jobs: JobsDep,
+{{else}}
     credentials: CredentialsDep,
+{{/if}}
 ) -> FileRow:
     """The browser says it finished; the API checks the bucket agrees.
 
@@ -373,6 +484,28 @@ async def complete_upload(
     size mismatch's does.
     """
     row = await _pending(session, tenant.id, file_id)
+{{#if capability.secure_files}}
+    # The claim is the one bound when the ticket was issued. A row with none is a ticket
+    # from before the claim was required: it cannot be finalized, so it is refused here
+    # rather than left to be held after the window.
+    bound = (row.checksum_sha256 or "").lower()
+    if not bound or (body.checksum_sha256 is not None and body.checksum_sha256.lower() != bound):
+        await _record(
+            session,
+            tenant_id=tenant.id,
+            actor_id=claims.sub,
+            action="storage.upload.failed",
+            target_id=file_id,
+            outcome="failed",
+            details={"reason": "checksum_claim_missing" if not bound else "checksum_claim_changed"},
+        )
+        raise api_error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            ApiErrorCode.UPLOAD_CHECKSUM_CLAIM_INVALID,
+            "this upload has no checksum bound to it, or the one sent is not the one it was "
+            "authorized for; start the upload again",
+        )
+{{/if}}
     actual = storage.store.head(row.storage_key)
     if actual is None:
         await _record(
@@ -428,6 +561,22 @@ async def complete_upload(
                 "this upload would exceed the storage included in the plan",
             )
 
+{{#if capability.secure_files}}
+    # No digest is corroborated here. This object is the incoming one, which a signed PUT
+    # can still replace, so a digest read from it would vouch for bytes that are not the
+    # ones that will be scanned. The claim is the one bound at issuance and is not written
+    # again; the worker computes the SHA-256 of the bytes and compares it with that claim
+    # before it promotes the object to a final key.
+    now = datetime.now(UTC)
+    claimed = bound
+    verified_at = None
+
+    await session.execute(
+        text("update public.files set status = 'ready', ready_at = :now where id = :id"),
+        {"now": now, "id": file_id},
+    )
+    await session.commit()
+{{else}}
     # The provider's own digest, where it will give one. A multipart object's
     # entity tag is a digest of digests and `checksum()` answers None for it,
     # so corroboration is attempted and never assumed.
@@ -448,6 +597,7 @@ async def complete_upload(
         {"now": now, "id": file_id, "checksum": claimed, "verified": verified_at},
     )
     await session.commit()
+{{/if}}
     await _record(
         session,
         tenant_id=tenant.id,
@@ -466,6 +616,24 @@ async def complete_upload(
             ),
         },
     )
+{{#if capability.secure_files}}
+    # Handed to the finalizer after the response, so a queue fault is never the upload's.
+    # Until it has copied the object to a final key and verified it against the claim the
+    # file is on a key a client can write, and nothing releases it. A failed enqueue leaves
+    # it exactly there and the worker's sweep recovers it.
+    #
+    # Nothing is signed and nothing is handed to a hook here: a file that has just been
+    # confirmed has no verified bytes, and a signed URL is a read capability.
+    background.add_task(
+        enqueue_finalize,
+        jobs,
+        tenant_id=tenant.id,
+        file_id=str(row.id),
+        created_at=row.created_at,
+        now=now,
+        actor_id=claims.sub,
+    )
+{{else}}
     interested = hooks.for_upload(row.content_type) if credentials is not None else ()
     if interested and credentials is not None:
         # A type something registered an interest in -- text a model can read,
@@ -487,6 +655,7 @@ async def complete_upload(
                 url=url,
                 user_id=claims.sub,
             )
+{{/if}}
     return FileRow(
         id=file_id,
         name=row.name,
@@ -514,6 +683,25 @@ async def download(
     issued is the last thing this side can honestly claim to know.
     """
     row = await _ready(session, tenant.id, file_id)
+{{#if capability.secure_files}}
+    if is_incoming_key(row.storage_key):
+        # Fail closed: a key a ticket could write is never signed for reading, whatever
+        # `scan_status` says. It becomes readable only by being finalized.
+        await _record(
+            session,
+            tenant_id=tenant.id,
+            actor_id=claims.sub,
+            action="storage.object.quarantined",
+            target_id=file_id,
+            outcome="denied",
+            details={"reason": "not_finalized"},
+        )
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            ApiErrorCode.FILE_QUARANTINED,
+            "this file is not available: its upload has not been verified yet",
+        )
+{{/if}}
     if withheld(row.scan_status):
         # Server-side, before the URL is signed. A scan result the page
         # consults and the API does not is a suggestion, not a control.
@@ -638,7 +826,11 @@ async def _one(session: DbSession, tenant_id: str, file_id: str, state: str) -> 
     result = await session.execute(
         text(
             "select id, storage_key, name, size_bytes, content_type, uploaded_by, scan_status, "
+{{#if capability.secure_files}}
+            " legal_hold, created_at, checksum_sha256 "
+{{else}}
             " legal_hold "
+{{/if}}
             "from public.files where id = :id and tenant_id = :tenant_id and status = :state"
         ),
         {"id": file_id, "tenant_id": tenant_id, "state": state},
