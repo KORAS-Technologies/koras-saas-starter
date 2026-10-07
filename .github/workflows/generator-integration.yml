@@ -651,6 +651,11 @@ jobs:
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
         env:
           E2E_DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+          # The worker reads its own database from `DATABASE_URL`, as it does deployed, and
+          # `file.scan` / `file.finalize` skip with "the worker has no DATABASE_URL" without
+          # it. An earlier module in the same pytest process imports the worker's settings
+          # before a suite can export the variable itself.
+          DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
           STORAGE_ENDPOINT: http://localhost:9000
           STORAGE_BUCKET: koras-files
           STORAGE_ACCESS_KEY: minioadmin
@@ -696,6 +701,11 @@ jobs:
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
         env:
           E2E_DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+          # The worker reads its own database from `DATABASE_URL`, as it does deployed, and
+          # `file.scan` / `file.finalize` skip with "the worker has no DATABASE_URL" without
+          # it. An earlier module in the same pytest process imports the worker's settings
+          # before a suite can export the variable itself.
+          DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
           MIGRATE_DATABASE_URL: postgresql://postgres:rlstest@localhost:5432/koras_e2e
           E2E_REDIS_URL: redis://localhost:6379/5
           WORKER_IMAGE: koras-scanner-worker-image:${{ github.sha }}
@@ -775,6 +785,11 @@ jobs:
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
         env:
           E2E_DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+          # The worker reads its own database from `DATABASE_URL`, as it does deployed, and
+          # `file.scan` / `file.finalize` skip with "the worker has no DATABASE_URL" without
+          # it. An earlier module in the same pytest process imports the worker's settings
+          # before a suite can export the variable itself.
+          DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
         run: |
           set -euo pipefail
           uv run pytest \
@@ -820,6 +835,11 @@ jobs:
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
         env:
           E2E_DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+          # The worker reads its own database from `DATABASE_URL`, as it does deployed, and
+          # `file.scan` / `file.finalize` skip with "the worker has no DATABASE_URL" without
+          # it. An earlier module in the same pytest process imports the worker's settings
+          # before a suite can export the variable itself.
+          DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
           E2E_ADMIN_DATABASE_URL: postgresql://postgres:rlstest@localhost:5432/koras_e2e
           STORAGE_ENDPOINT: http://localhost:9000
           STORAGE_BUCKET: koras-files

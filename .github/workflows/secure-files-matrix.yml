@@ -275,7 +275,9 @@ jobs:
       - name: Start-up refuses a scanner backend of none (API and worker)
         working-directory: ${{ runner.temp }}/gen/live-secure
         run: |
-          set -uo pipefail
+          # No -e: a service that refuses to start exits non-zero, which is the result under test.
+          set +e
+          set -u
           set -a; . "$RUNNER_TEMP/stack.env"; set +a
           export FILE_SCAN_BACKEND=none
           for service in api worker; do
