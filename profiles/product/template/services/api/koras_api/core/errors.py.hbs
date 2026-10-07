@@ -50,6 +50,9 @@ class ApiErrorCode(StrEnum):
     # ticket was issued for. 422. Only a ticket from before the claim was required, or a
     # client that lost track of which file it is completing, can provoke it.
     UPLOAD_CHECKSUM_CLAIM_INVALID = "upload_checksum_claim_invalid"
+    # A file with no clean verdict for its own object: still being checked, skipped, or not
+    # recognised. 409; infected and quarantined files are `FILE_QUARANTINED`, 403.
+    FILE_SCAN_PENDING = "file_scan_pending"
 {{/if}}
     FILE_QUARANTINED = "file_quarantined"
     FILE_UNDER_HOLD = "file_under_hold"
