@@ -1,3 +1,128 @@
+{{#if capability.secure_files}}
+"""What the files routes do beside storing a file, when something asks.
+
+The files module is generated always; the things that want a file's content are
+not. The router cannot import what may not exist, so it calls through here and
+each interested module registers itself at startup.
+
+**A hook is offered a file only once its content is releasable (ADR 0013,
+`secure_files`).** Not at upload: an uploaded file has no verdict, and a hook that
+reads bytes then reads unscanned bytes. The files list offers a releasable file to
+every hook whose `due` says it has work, under the caller's own request, and the hook
+reads the object through `core/file_release_gate.py`, which asks the release rule
+again at the moment it reads. There is no `after_upload` and no URL: a hook is
+never handed a way to read the object that does not go through the gate, and a hook
+that tried to register one would not construct.
+
+This was one mutable record with three fields until 2026-09-15, which admitted
+exactly one consumer: the assistant's indexer took the slot at startup, and a
+malware scanner arriving second would have replaced it rather than joined it,
+silently and at import order. It is a registry now, in the shape
+`koras_reporting` uses -- a duplicate name is refused where it is a traceback
+rather than a mystery at request time, and iteration is ordered by name so two
+runs of the same build do the same thing in the same order.
+
+Nothing registered is the normal case, and then every list here is empty.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Awaitable, Callable, Iterator
+from dataclasses import dataclass
+from datetime import datetime
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class FileHook:
+    """One module's interest in what a file holds.
+
+    `name` identifies the registration and is what a duplicate is refused on.
+    Both callbacks are optional: a cache may want deletions and nothing else.
+    """
+
+    name: str
+    #: Whether a file of this content type concerns this hook.
+    interested: Callable[[str], bool]
+    #: Undo what this hook did for a file, on the request's session, before
+    #: the row goes. None when there is nothing to undo.
+    before_delete: Callable[[AsyncSession, str, str], Awaitable[None]] | None = None
+    #: Whether this hook still has work for a file, from the two columns the
+    #: hook records its outcome in: `indexed_at` and `index_note`. Required with
+    #: `after_clean`: a hook with no way to say it is finished would be offered
+    #: every file on every listing.
+    due: Callable[[datetime | None, str | None], bool] | None = None
+    #: Handle one releasable file, after the response, on the request's own
+    #: authority. Keyword arguments: tenant_id, organization_id, token, file_id,
+    #: user_id, store. No URL and no key: the hook reads bytes only through the
+    #: release gate. None when this hook does not read content.
+    after_clean: Callable[..., Awaitable[int]] | None = None
+
+
+class FileHookRegistry:
+    """Named hooks, refused on duplicate, iterated in one order."""
+
+    def __init__(self) -> None:
+        self._hooks: dict[str, FileHook] = {}
+
+    def add(self, hook: FileHook) -> None:
+        if hook.name in self._hooks:
+            raise ValueError(f"a file hook named {hook.name!r} is already registered")
+        if hook.after_clean is not None and hook.due is None:
+            raise ValueError(
+                f"the file hook {hook.name!r} reads content and must say when it is due"
+            )
+        self._hooks[hook.name] = hook
+
+    def clear(self) -> None:
+        """For tests, and for a second `install()` in one process."""
+        self._hooks.clear()
+
+    def __iter__(self) -> Iterator[FileHook]:
+        return iter(sorted(self._hooks.values(), key=lambda hook: hook.name))
+
+    def __len__(self) -> int:
+        return len(self._hooks)
+
+    def for_clean(
+        self, content_type: str, *, indexed_at: datetime | None, index_note: str | None
+    ) -> tuple[FileHook, ...]:
+        """The hooks with work to do for one releasable file of this type."""
+        return tuple(
+            hook
+            for hook in self
+            if hook.after_clean is not None
+            and hook.due is not None
+            and hook.interested(content_type)
+            and hook.due(indexed_at, index_note)
+        )
+
+    def for_delete(self) -> tuple[FileHook, ...]:
+        return tuple(hook for hook in self if hook.before_delete is not None)
+
+
+hooks = FileHookRegistry()
+
+
+async def run_after_clean(hook: FileHook, /, **arguments: object) -> None:
+    """Run one hook for a releasable file, and never let it become the response's problem.
+
+    The response has already been sent by the time this runs, so raising here
+    reaches nobody who could act on it, and one hook throwing must not stop
+    the next hook from running. The file's own row records the outcome where
+    the hook writes one.
+    """
+    if hook.after_clean is None:
+        return
+    try:
+        await hook.after_clean(**arguments)
+    except Exception:
+        logger.exception("the file hook %s failed", hook.name)
+{{else}}
 """What the files routes do beside storing a file, when something asks.
 
 The files module is generated always; the things that want to hear about an
@@ -94,3 +219,4 @@ async def run_after_upload(hook: FileHook, /, **arguments: object) -> None:
         await hook.after_upload(**arguments)
     except Exception:
         logger.exception("the file hook %s failed after an upload", hook.name)
+{{/if}}

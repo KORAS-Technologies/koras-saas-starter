@@ -54,6 +54,10 @@ from koras_import import (
 )
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+{{#if capability.secure_files}}
+
+from .file_release import releasable
+{{/if}}
 
 logger = logging.getLogger(__name__)
 
@@ -920,6 +924,7 @@ class SourceRefused(RuntimeError):
     """The file behind a run cannot be read, and the reason is not the data."""
 
 
+{{#unless capability.secure_files}}
 #: Scan states an import will not parse.
 #:
 #: **Narrower than a download, deliberately.** `core/file_scan.py` withholds
@@ -936,12 +941,26 @@ class SourceRefused(RuntimeError):
 #: so a product without one cannot import at all, which is the honest position:
 #: an import is the one surface where a product parses a stranger's file.
 UNPARSEABLE_SCANS: frozenset[str] = frozenset({"pending", "skipped", "infected"})
+{{/unless}}
 
+{{#if capability.secure_files}}
+#: What the release rule needs besides the verdict: the row's own tenant and key and the
+#: scanner's identity for the object. `session_tenant_id` is the tenant this transaction is
+#: bound to (`app.tenant_id`, set by whoever opened the session), which is what the rule holds
+#: the row to; it reads `null` when nothing bound the session, and the rule then refuses.
+_SOURCE = text(
+    "select storage_key, size_bytes, status, scan_status, name, content_type, category, "
+    "checksum_sha256, checksum_verified_at, tenant_id::text as tenant_id, scan_object_etag, "
+    "nullif(current_setting('app.tenant_id', true), '') as session_tenant_id "
+    "from public.files where id = cast(:id as uuid)"
+)
+{{else}}
 _SOURCE = text(
     "select storage_key, size_bytes, status, scan_status, name, content_type, category, "
     "checksum_sha256, checksum_verified_at "
     "from public.files where id = cast(:id as uuid)"
 )
+{{/if}}
 
 
 async def check_source(session: AsyncSession, file_id: str | None) -> Any:  # noqa: ANN401
@@ -962,8 +981,24 @@ async def check_source(session: AsyncSession, file_id: str | None) -> Any:  # no
         raise SourceRefused("import.source.missing")
     if row.status != "ready":
         raise SourceRefused("import.source.not_ready")
+{{#if capability.secure_files}}
+    # An allow-list, and the product's one release rule: the product reads the bytes itself
+    # and writes rows from them, unattended, so only a clean verdict for this tenant's own
+    # final object qualifies. A value this code does not know is refused, not passed.
+    if not releasable(
+        status=row.status,
+        scan_status=row.scan_status,
+        consumer="import",
+        tenant_id=row.session_tenant_id,
+        row_tenant_id=row.tenant_id,
+        storage_key=row.storage_key,
+        scan_object_etag=row.scan_object_etag,
+    ):
+        raise SourceRefused("import.source.unscanned")
+{{else}}
     if (row.scan_status or "pending") in UNPARSEABLE_SCANS:
         raise SourceRefused("import.source.unscanned")
+{{/if}}
     if int(row.size_bytes or 0) > MAX_SOURCE_BYTES:
         raise SourceRefused("import.source.too_large")
     return row
@@ -1085,7 +1120,9 @@ __all__ = [
     "Reported",
     "Run",
     "SourceRefused",
+{{#unless capability.secure_files}}
     "UNPARSEABLE_SCANS",
+{{/unless}}
     "abandon",
     "analyse",
     "analysed",

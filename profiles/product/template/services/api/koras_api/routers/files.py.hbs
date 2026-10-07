@@ -24,20 +24,10 @@ from __future__ import annotations
 import base64
 import uuid
 from datetime import UTC, datetime
-{{#if capability.secure_files}}
-from typing import Any, Literal
-{{else}}
 from typing import Annotated, Any, Literal
-{{/if}}
 
-{{#if capability.secure_files}}
-from fastapi import APIRouter, BackgroundTasks, status
-{{else}}
 from fastapi import APIRouter, BackgroundTasks, Depends, status
-{{/if}}
-{{#unless capability.secure_files}}
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-{{/unless}}
 from koras_audit import Outcome
 from koras_platform import OrganizationRole
 {{#if capability.secure_files}}
@@ -54,14 +44,13 @@ from ..core.auth import AuthDep
 from ..core.database import DbSession
 from ..core.errors import ApiErrorCode, api_error
 {{#if capability.secure_files}}
-from ..core.file_hooks import hooks
-{{else}}
-from ..core.file_hooks import hooks, run_after_upload
-{{/if}}
-from ..core.file_scan import withheld
-{{#if capability.secure_files}}
+from ..core.file_hooks import hooks, run_after_clean
+from ..core.file_release_gate import require_releasable, row_releasable
 from ..core.finalize_enqueue import enqueue_finalize
 from ..core.jobs import JobsDep
+{{else}}
+from ..core.file_hooks import hooks, run_after_upload
+from ..core.file_release import releasable
 {{/if}}
 from ..core.storage import (
     MAX_OBJECT_BYTES,
@@ -71,15 +60,13 @@ from ..core.storage import (
 )
 from ..core.tenant import TenantDep
 {{#if capability.secure_files}}
-from ..core.upload_window import UPLOAD_URL_SECONDS, incoming_key, is_incoming_key
+from ..core.upload_window import UPLOAD_URL_SECONDS, incoming_key
 {{/if}}
 
 router = APIRouter(tags=["files"])
 
-{{#unless capability.secure_files}}
 _bearer = HTTPBearer(auto_error=False)
 CredentialsDep = Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)]
-{{/unless}}
 
 #: Retrieval indexes uploads only where the product has an AI gateway; a
 #: product generated without the capability has neither the setting nor the
@@ -94,6 +81,12 @@ CredentialsDep = Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)
 UPLOAD_URL_SECONDS = 15 * 60
 {{/if}}
 DOWNLOAD_URL_SECONDS = 5 * 60
+{{#if capability.secure_files}}
+
+#: How many files one listing may offer to the hooks. Each is a model call or
+#: more, paid per tenant, and a listing is a read the browser repeats.
+LAZY_HOOKS_PER_LIST = 3
+{{/if}}
 
 
 _MANAGERS = (OrganizationRole.OWNER, OrganizationRole.ADMIN)
@@ -111,9 +104,19 @@ class FileRow(BaseModel):
     #: hash was measured or merely claimed.
     checksum_sha256: str | None = None
     checksum_verified: bool = False
+{{#if capability.secure_files}}
+    #: What is stored: pending, clean, infected or skipped. Never defaulted -- a
+    #: default here would make every row read `pending`.
+    scan_status: str
+    #: Whether this file's content may be downloaded, computed on the server by the one
+    #: release rule (`core/file_release.py`). The page reads it and never works it out from
+    #: `scan_status`.
+    content_available: bool
+{{else}}
     #: pending, clean, infected or skipped. `pending` where no scanner is
     #: installed, which is the starter's own state.
     scan_status: str = "pending"
+{{/if}}
     #: When the assistant's index took the file's text, or why it did not.
     indexed_at: datetime | None = None
     index_note: str | None = None
@@ -250,6 +253,84 @@ async def _used_bytes(session: DbSession, tenant_id: str) -> int:
     return int(result.scalar_one())
 
 
+{{#if capability.secure_files}}
+@router.get("/files", response_model=FileList)
+async def list_files(
+    tenant: TenantDep,
+    claims: AuthDep,
+    storage: StorageDep,
+    session: DbSession,
+    background: BackgroundTasks,
+    credentials: CredentialsDep,
+) -> FileList:
+    """Every ready file this tenant holds, newest first, with the usage beside it.
+
+    Listed even when the plan lacks the capability: a customer whose trial
+    ended should see what they have and be told why they cannot add to it,
+    not a blank page. Only new uploads are refused.
+
+    This is also where a hook is offered a file (ADR 0013): each file whose content is
+    releasable *now* and that a hook says it still has work for, at most
+    `LAZY_HOOKS_PER_LIST` of them, newest first, under the caller's own token and after
+    the response. Nothing about it is queued or stored; a file that is not releasable is
+    never offered, and the hook reads the object through the release gate, which asks the
+    rule again at the moment it reads.
+    """
+    rows = await session.execute(
+        text(
+            "select id, name, size_bytes, content_type, uploaded_by, ready_at, "
+            " indexed_at, index_note, scan_status, status, "
+            " tenant_id::text as tenant_id, storage_key, scan_object_etag "
+            "from public.files where tenant_id = :tenant_id and status = 'ready' "
+            "order by ready_at desc"
+        ),
+        {"tenant_id": tenant.id},
+    )
+    listed = rows.fetchall()
+    available = {str(row.id): row_releasable(row, tenant.id, "listing") for row in listed}
+    if credentials is not None:
+        offered = 0
+        for row in listed:
+            if offered >= LAZY_HOOKS_PER_LIST:
+                break
+            if not available[str(row.id)]:
+                continue
+            for hook in hooks.for_clean(
+                row.content_type, indexed_at=row.indexed_at, index_note=row.index_note
+            ):
+                background.add_task(
+                    run_after_clean,
+                    hook,
+                    tenant_id=tenant.id,
+                    organization_id=tenant.organization_id,
+                    token=credentials.credentials,
+                    file_id=str(row.id),
+                    user_id=claims.sub,
+                    store=storage.store,
+                )
+                offered += 1
+    return FileList(
+        files=[
+            FileRow(
+                id=str(row.id),
+                name=row.name,
+                size_bytes=row.size_bytes,
+                content_type=row.content_type,
+                uploaded_by=row.uploaded_by,
+                uploaded_at=row.ready_at,
+                indexed_at=row.indexed_at,
+                index_note=row.index_note,
+                scan_status=row.scan_status,
+                content_available=available[str(row.id)],
+            )
+            for row in listed
+        ],
+        used_bytes=await _used_bytes(session, tenant.id),
+        limit_bytes=storage.grant.limit_bytes,
+        provider=storage.provider.value,
+        resolved=storage.grant.resolved,
+    )
+{{else}}
 @router.get("/files", response_model=FileList)
 async def list_files(tenant: TenantDep, storage: StorageDep, session: DbSession) -> FileList:
     """Every ready file this tenant holds, newest first, with the usage beside it.
@@ -286,6 +367,7 @@ async def list_files(tenant: TenantDep, storage: StorageDep, session: DbSession)
         provider=storage.provider.value,
         resolved=storage.grant.resolved,
     )
+{{/if}}
 
 
 @router.post("/files/uploads", response_model=UploadTicket, status_code=status.HTTP_201_CREATED)
@@ -665,6 +747,11 @@ async def complete_upload(
         uploaded_at=now,
         checksum_sha256=claimed,
         checksum_verified=verified_at is not None,
+{{#if capability.secure_files}}
+        # Just confirmed: still on its incoming key, with no verdict. Said as stored, withheld.
+        scan_status=row.scan_status,
+        content_available=False,
+{{/if}}
     )
 
 
@@ -682,27 +769,19 @@ async def download(
     object from the bucket, so the product never sees the transfer. A ticket
     issued is the last thing this side can honestly claim to know.
     """
-    row = await _ready(session, tenant.id, file_id)
 {{#if capability.secure_files}}
-    if is_incoming_key(row.storage_key):
-        # Fail closed: a key a ticket could write is never signed for reading, whatever
-        # `scan_status` says. It becomes readable only by being finalized.
-        await _record(
-            session,
-            tenant_id=tenant.id,
-            actor_id=claims.sub,
-            action="storage.object.quarantined",
-            target_id=file_id,
-            outcome="denied",
-            details={"reason": "not_finalized"},
-        )
-        raise api_error(
-            status.HTTP_403_FORBIDDEN,
-            ApiErrorCode.FILE_QUARANTINED,
-            "this file is not available: its upload has not been verified yet",
-        )
-{{/if}}
-    if withheld(row.scan_status):
+    # The release gate runs before anything is signed, on the row as it is now: a clean
+    # verdict for this tenant's own final object, or a refusal that signs nothing. A key a
+    # ticket could write is never final, so an upload that has not been finalized is refused
+    # here whatever its row says. A scan result the page consults and the API does not is a
+    # suggestion, not a control.
+    row = await require_releasable(
+        session, tenant.id, file_id, actor_id=claims.sub, consumer="download"
+    )
+{{else}}
+    row = await _ready(session, tenant.id, file_id)
+    # `_ready` selected only `ready` rows, so the rule is asked of one.
+    if not releasable(status="ready", scan_status=row.scan_status):
         # Server-side, before the URL is signed. A scan result the page
         # consults and the API does not is a suggestion, not a control.
         await _record(
@@ -719,6 +798,7 @@ async def download(
             ApiErrorCode.FILE_QUARANTINED,
             "this file is withheld: a scan did not find it clean",
         )
+{{/if}}
     await _record(
         session,
         tenant_id=tenant.id,

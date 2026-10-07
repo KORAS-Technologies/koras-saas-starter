@@ -174,7 +174,11 @@ class _Session:
             self.inserted.append(parameters)
         if sql.startswith("update public.files"):
             self.updates.append((sql, parameters))
-        if "from public.files" in sql and self.pending is not None and "id = :id" in sql:
+        if (
+            "from public.files" in sql
+            and self.pending is not None
+            and ("id = :id" in sql or "id = cast(:id as uuid)" in sql)
+        ):
             rows = _Rows()
             rows.first = lambda: self.pending  # type: ignore[method-assign]
             return rows
@@ -332,6 +336,7 @@ def _pending(checksum: str | None, *, key: str | None = None) -> SimpleNamespace
         indexed_at=None,
         index_note=None,
         checksum_sha256=checksum,
+        scan_object_etag=None,
     )
 
 
@@ -499,17 +504,49 @@ def test_a_download_of_an_incoming_key_is_refused_before_anything_is_signed(
     ready.status = "ready"
     store = _Store()
     answer = _client(_Session(ready), store, monkeypatch).get(f"/api/v1/files/{FILE_A}/download")
-    assert answer.status_code == 403, answer.text
-    assert answer.json()["detail"]["code"] == "file_quarantined"
+    # The release gate refuses it: an incoming key is never a final key, and there is no verdict.
+    assert answer.status_code == 409, answer.text
+    assert answer.json()["detail"]["code"] == "file_scan_pending"
     assert store.downloads == []
 
 
-def test_a_download_of_a_finalized_key_is_not_refused_for_being_finalized(
+def test_a_clean_verdict_on_an_incoming_key_is_still_not_released(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Whatever a row says about itself, a key a ticket could write is never signed for."""
+    forged = _pending(DIGEST)
+    forged.status = "ready"
+    forged.scan_status = "clean"
+    forged.scan_object_etag = "etag-1"
+    assert is_incoming_key(forged.storage_key)
+    store = _Store()
+    answer = _client(_Session(forged), store, monkeypatch).get(f"/api/v1/files/{FILE_A}/download")
+    assert answer.status_code == 409, answer.text
+    assert store.downloads == []
+
+
+def test_a_download_of_a_finalized_key_is_refused_until_the_scanner_has_said_clean(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Finalizing makes a key readable *by the scanner*; only a verdict makes it releasable."""
+    final = final_key_for(incoming_key(TENANT_A, "documents", FILE_A, UPLOAD, "a.pdf"), GENERATION)
+    ready = _pending(DIGEST, key=final)
+    ready.status = "ready"
+    store = _Store()
+    answer = _client(_Session(ready), store, monkeypatch).get(f"/api/v1/files/{FILE_A}/download")
+    assert answer.status_code == 409, answer.text
+    assert answer.json()["detail"]["code"] == "file_scan_pending"
+    assert store.downloads == []
+
+
+def test_a_download_of_a_finalized_key_the_scanner_found_clean_is_released(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     final = final_key_for(incoming_key(TENANT_A, "documents", FILE_A, UPLOAD, "a.pdf"), GENERATION)
     ready = _pending(DIGEST, key=final)
     ready.status = "ready"
+    ready.scan_status = "clean"
+    ready.scan_object_etag = "etag-1"
     store = _Store()
     answer = _client(_Session(ready), store, monkeypatch).get(f"/api/v1/files/{FILE_A}/download")
     assert answer.status_code == 200, answer.text

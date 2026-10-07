@@ -340,13 +340,14 @@ def test_the_api_never_enqueues_a_scan_and_the_finalizer_hands_off_after_the_swa
     assert "hand_off_to_scanner" in finalize and "on_final=_hand_off(ctx)" in finalize
 
 
-def test_the_scanner_migrations_follow_the_finalizers_and_nothing_follows_them() -> None:
+def test_the_scanner_migrations_follow_the_finalizers_and_the_release_layer_follows_them() -> None:
     names = sorted(p.name for p in (REPO / "supabase" / "migrations").glob("*.sql"))
-    assert names[-3:] == [
+    assert names[-4:] == [
         "00039_file_scan_attempts.sql",
         "00040_file_scan_interrupted.sql",
         "00041_file_scan_due_indexes.sql",
-    ], names[-3:]
+        "00042_file_derived_content_withdrawal.sql",
+    ], names[-4:]
 
 
 def test_the_persisted_failure_vocabulary_is_the_thirteen_names_of_00040() -> None:

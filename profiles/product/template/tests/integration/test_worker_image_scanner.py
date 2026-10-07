@@ -132,6 +132,67 @@ def test_every_scanner_module_loads_in_the_image_and_the_task_is_bound() -> None
     ]
 
 
+#: The release rule in the image (layer 4): importable beside `secure_files.py` alone, answering as
+#: the capability says, and without the API-only gate, which the image must never carry.
+RELEASE_PROBE = '''
+import importlib, importlib.util, json
+present = importlib.util.find_spec("koras_api.core.file_release") is not None
+if not present:
+    print(json.dumps({"present": False, "gate_in_image": importlib.util.find_spec("koras_api.core.file_release_gate") is not None}))
+    raise SystemExit(0)
+rule = importlib.import_module("koras_api.core.file_release")
+constants = importlib.import_module("koras_api.core.secure_files")
+tenant = "00000000-0000-0000-0000-00000000000a"
+key = f"tenants/{tenant}/documents/11111111-1111-1111-1111-111111111111/final/22222222-2222-4222-8222-222222222222/a.pdf"
+
+def ask(scan, **changes):
+    arguments = dict(tenant_id=tenant, row_tenant_id=tenant, storage_key=key, scan_object_etag="etag-1")
+    arguments.update(changes)
+    return rule.releasable(status="ready", scan_status=scan, **arguments)
+
+print(json.dumps({
+    "present": True,
+    "secure": constants.SECURE_FILES,
+    "clean": ask("clean"),
+    "pending": ask("pending"),
+    "skipped": ask("skipped"),
+    "infected": ask("infected"),
+    "unstamped": ask("clean", scan_object_etag=None),
+    "another_tenants_row": ask("clean", row_tenant_id="00000000-0000-0000-0000-00000000000b"),
+    "incoming_key": ask("clean", storage_key=key.replace("/final/", "/incoming/")),
+    "gate_in_image": importlib.util.find_spec("koras_api.core.file_release_gate") is not None,
+}))
+'''
+
+
+def test_the_release_rule_loads_in_the_image_and_is_strict_without_the_api_only_gate() -> None:
+    """The image carries the rule where something in it asks (the import source) and never the gate."""
+    import json
+    from pathlib import Path
+
+    has_imports = (
+        Path(__file__).resolve().parents[2] / "services/api/koras_api/core/imports.py"
+    ).exists()
+    done = _run("run", "--rm", "-i", *_environment(), IMAGE, "python", "-", stdin=RELEASE_PROBE)
+    assert done.returncode == 0, done.stdout + done.stderr
+    report = json.loads(done.stdout.strip().splitlines()[-1])
+    assert report["gate_in_image"] is False
+    assert report["present"] is has_imports
+    if has_imports:
+        assert report == {
+            "present": True,
+            "secure": True,
+            "clean": True,
+            "pending": False,
+            "skipped": False,
+            "infected": False,
+            "unstamped": False,
+            "another_tenants_row": False,
+            "incoming_key": False,
+            "gate_in_image": False,
+        }
+
+
 @pytest.mark.parametrize(
     ("overrides", "named"),
     [
