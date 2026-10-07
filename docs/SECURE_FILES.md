@@ -362,7 +362,7 @@ Release is the next layer's primitive, which reads what the scanner wrote.
 | `CLEAN` | `clean` / `ready` | cleared | a verdict; the release layer reads it |
 | `INFECTED` | `infected` / `quarantined` | cleared | final; the object is kept |
 | `HELD` | `pending` / `ready` | one closed word | the sweep retries, with back-off, for ever |
-| `DEFERRED` | unchanged | unchanged | nothing was read, counted or written; the window had not elapsed |
+| `POSTPONED` | unchanged | unchanged | nothing was read, counted or written; the window had not elapsed |
 | `NOT_ELIGIBLE` | unchanged | unchanged | not this tenant's, not pending, not a final key, or it left `pending` during the run |
 
 The words (`files_scan_failure_check`, migrations 00039 and 00040) are a closed vocabulary of
@@ -391,7 +391,7 @@ stays `pending` and stays in the sweep; exhaustion is a signal for a person, not
   back-off caps at an hour and never stops.
 * **Tenant fairness.** One tenant's backlog cannot use every slot of a run: the tenant owning the
   oldest due file goes first, tenants follow in id order wrapping round, a page is shared evenly
-  over the tenants still open, and spare capacity goes to whoever still has work. The reads are
+  over the tenants with work left, and spare capacity goes to whoever has work left. The reads are
   index range reads of a few rows on the two partial indexes of migration 00041 (the expression in
   the indexes and in the query is one text, and a test compares them and asks the planner).
 * A retained result for the same job id would make the queue refuse a re-enqueue, so the sweep and
@@ -417,7 +417,7 @@ and in a product with the capability a skip is a failure (the workflow step abov
 | Variable | For |
 |---|---|
 | `E2E_DATABASE_URL` | PostgreSQL as the restricted application role (never a superuser: the suites refuse it) |
-| `MIGRATE_DATABASE_URL` | the admin connection the planner checks use (`EXPLAIN` of the sweep's reads) |
+| `MIGRATE_DATABASE_URL` | the admin connection the planner checks use (the planner's plan for the sweep's reads) |
 | `E2E_REDIS_URL` | a Redis, for the queue identity test (default `redis://localhost:6379/5`) |
 | `E2E_CLAMD_HOST`, `E2E_CLAMD_PORT` | a running clamd: build `services/clamd` and wait for its `ready: detection self-test passed` line |
 | `STORAGE_ENDPOINT`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` | an S3-compatible store (MinIO) |
@@ -434,7 +434,7 @@ none of them.
   was bound to), `files.storage_key` (the final key the verdict is about; `commit_clean` writes only
   while the row still references it), `files.scan_failure` and `files.scan_attempts`.
 * A `clean` row may still become `infected` later (`clean -> infected`); a consumer must read the
-  verdict at the moment of release, not cache it.
+  verdict when it releases, and never cache it.
 * The audit actions `storage.object.scanned`, `storage.object.scan_failed`,
   `storage.object.scan_exhausted` (registered by `core/scan_audit.py`) and `storage.object.quarantined`.
 * `core/file_scan.py` is the legacy seam (`record_scan`, `withheld`) and is unchanged. The worker
@@ -839,7 +839,7 @@ Every collector runs behind a guard, so an unexpected exception is a FAIL that n
 exception class. The command exits non-zero unless every check passed; `--out` writes the evidence
 record, after first replacing any previous one with a FAIL placeholder so a run that does not
 finish cannot leave a stale PASS. Gate evidence is a record of one commit on one date; this page
-makes no statement about whether any commit currently passes.
+makes no statement about whether any commit passes.
 
 The gate is not wired into the product's deploy workflow, because the deploy is the same file with
 and without the capability (ADR 0013 section 2). It is its own workflow,

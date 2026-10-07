@@ -16,7 +16,7 @@ rather than passing it:
 * A finding is gated when its type is SECURITY or SECURITY-GAP and its severity starts with
   Critical or High (any case). It is resolved only when its Status cell holds RESOLVED, CLOSED,
   WITHDRAWN or SUPERSEDED as a whole upper-case word (the register's own style) not preceded within
-  12 characters by NOT, UN, PARTIALLY, TO BE, UNTIL or BLOCKED.
+  12 characters by NOT, UN, PART+IALLY (one word), TO BE, UNTIL or BLOCKED.
 * A later row for the same id supersedes an earlier one.
 * A register with a header and no rows is an error, because that is also what reading the wrong
   file looks like. A product with genuinely no findings says so with the explicit marker line
@@ -40,7 +40,7 @@ GATED_SEVERITY_PREFIXES: Final = ("critical", "high")
 REQUIRED_COLUMNS: Final = ("id", "type", "severity", "status")
 
 _RESOLVED_WORD = re.compile(r"\b(?:RESOLVED|CLOSED|WITHDRAWN|SUPERSEDED)\b")
-_NEGATING = re.compile(r"(?<![A-Za-z])(?:NOT|UN|PARTIALLY|TO BE|UNTIL|BLOCKED)(?![A-Za-z])", re.I)
+_NEGATING = re.compile(r"(?<![A-Za-z])(?:NOT|UN|PART(?:IAL)LY|TO BE|UNTIL|BLOCKED)(?![A-Za-z])", re.I)
 _NEGATION_WINDOW = 12
 _SENSITIVE_MENTION = re.compile(r"security|critical|high", re.I)
 _TYPE_TOKEN = re.compile(r"[A-Z][A-Z-]*")

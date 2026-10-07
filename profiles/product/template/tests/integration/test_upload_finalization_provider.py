@@ -484,5 +484,5 @@ async def test_a_run_before_the_horizon_touches_nothing_in_the_store(engine, run
         created_at=NOW - timedelta(seconds=FINALIZE_DELAY_SECONDS - 30),
     )
     outcome = await _finalize(engine, run, file_id)
-    assert outcome.kind is FinalizeKind.DEFERRED
+    assert outcome.kind is FinalizeKind.POSTPONED
     assert run.keys() == [key] and run.get(key) == A

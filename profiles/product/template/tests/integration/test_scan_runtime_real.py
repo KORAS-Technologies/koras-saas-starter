@@ -342,7 +342,7 @@ async def test_the_window_defers_for_real_and_writes_nothing(engine, session) ->
         FakeScanner.candidate_clean(),
         at=ISSUED + timedelta(minutes=5),
     )
-    assert result.disposition is ScanDisposition.DEFERRED
+    assert result.disposition is ScanDisposition.POSTPONED
     row = await _row(engine, tenant, file_id)
     assert (row["scan_attempts"], row["scan_attempted_at"], row["scan_failure"]) == (0, None, None)
     assert await _audit(engine, tenant, file_id) == []

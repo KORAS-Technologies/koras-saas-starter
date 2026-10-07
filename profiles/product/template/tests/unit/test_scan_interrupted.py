@@ -51,7 +51,7 @@ async def interrupt(session, scanner=None, *, max_attempts: int = 12) -> None:
         await task
 
 
-async def test_a_cancelled_attempt_records_scan_interrupted_and_stays_pending() -> None:
+async def test_an_interrupted_attempt_records_scan_interrupted_and_stays_pending() -> None:
     session = session_for()
     await interrupt(session)
     stored = session.get()
@@ -175,7 +175,7 @@ async def test_a_cancellation_before_the_attempt_is_counted_records_nothing() ->
 
     session = session_for()
     result = await run(session, source_for(), Blocking(), at=ISSUED + timedelta(minutes=10))
-    assert result.disposition is ScanDisposition.DEFERRED
+    assert result.disposition is ScanDisposition.POSTPONED
     assert session.get()["scan_attempts"] == 0 and session.get()["scan_failure"] is None
 
 

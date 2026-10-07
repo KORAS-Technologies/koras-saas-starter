@@ -408,7 +408,7 @@ async def test_a_file_inside_the_upload_window_is_deferred_and_nothing_is_touche
     session, source = session_for(), source_for()
     result = await run(session, source, FakeScanner.candidate_clean(), at=BEFORE_WINDOW)
 
-    assert result.disposition is ScanDisposition.DEFERRED
+    assert result.disposition is ScanDisposition.POSTPONED
     assert result.opens_at == ISSUED + timedelta(minutes=16)
     assert source.calls == []  # not even metadata
     assert session.writes == 0
@@ -421,7 +421,7 @@ async def test_the_window_is_the_issue_time_plus_sixteen_minutes_to_the_second()
     exactly = ISSUED + timedelta(minutes=16)
     assert (
         await run(session_for(), source_for(), FakeScanner.candidate_clean(), at=just_before)
-    ).disposition is ScanDisposition.DEFERRED
+    ).disposition is ScanDisposition.POSTPONED
     assert (
         await run(session_for(), source_for(), FakeScanner.candidate_clean(), at=exactly)
     ).disposition is ScanDisposition.CLEAN

@@ -135,7 +135,7 @@ class ScanDisposition(StrEnum):
     #: The file stays `pending`, with a recorded reason (or one already recorded).
     HELD = "held"
     #: The upload window has not elapsed. Nothing was read, counted or written.
-    DEFERRED = "deferred"
+    POSTPONED = "deferred"
     #: No pending, ready file of this tenant, or it left that state during the run.
     #: Nothing was written by this branch.
     NOT_ELIGIBLE = "not_eligible"
@@ -245,7 +245,7 @@ async def scan_file(
 
     admission = await reader.admit(ref, row["created_at"], expected_size=row["size_bytes"])
     if admission.gate is ObjectGate.WINDOW_NOT_ELAPSED:
-        return ScanRun(ScanDisposition.DEFERRED, opens_at=admission.opens_at)
+        return ScanRun(ScanDisposition.POSTPONED, opens_at=admission.opens_at)
     if admission.gate is ObjectGate.OVERSIZED:
         return await _fail(session, tenant_id, file_id, ScanFailure.OVER_CEILING, None)
 

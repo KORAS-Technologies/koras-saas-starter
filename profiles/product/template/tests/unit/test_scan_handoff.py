@@ -124,7 +124,7 @@ async def test_a_file_that_is_final_is_handed_to_the_scanner_after_its_hold_is_c
     [
         Finalization(FinalizeKind.HELD, failure=FinalizeFailure.INTEGRITY_MISMATCH),
         Finalization(FinalizeKind.HELD, failure=FinalizeFailure.OBJECT_UNREACHABLE),
-        Finalization(FinalizeKind.DEFERRED, opens_at=NOW),
+        Finalization(FinalizeKind.POSTPONED, opens_at=NOW),
         Finalization(FinalizeKind.NOT_ELIGIBLE),
     ],
     ids=["integrity", "unreachable", "deferred", "not-eligible"],

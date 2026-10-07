@@ -297,7 +297,7 @@ async def _blocked_sessions(engine) -> int:
                 await probe.execute(
                     text(
                         "select count(*) from pg_stat_activity where datname = current_database() "
-                        "and wait_event_type = 'Lock' and query like '%public.files%'"
+                        "and cardinality(pg_blocking_pids(pid)) > 0 and query like '%public.files%'"
                     )
                 )
             ).scalar_one()

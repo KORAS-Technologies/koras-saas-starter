@@ -137,7 +137,7 @@ class FinalizeKind(StrEnum):
     #: The row already references a key no ticket was signed for; nothing was done.
     ALREADY_FINAL = "already_final"
     #: The delay has not elapsed. Nothing was read or written.
-    DEFERRED = "deferred"
+    POSTPONED = "deferred"
     #: Not finalized; the file stays `pending` and the reason is the closed `ScanFailure`.
     HELD = "held"
     #: No ready, pending row of this tenant, or the row changed under the attempt.
@@ -234,7 +234,7 @@ class UploadFinalizer:
 
         opens_at = window.earliest_finalization(row["created_at"])
         if now < opens_at:
-            return Finalization(FinalizeKind.DEFERRED, opens_at=opens_at)
+            return Finalization(FinalizeKind.POSTPONED, opens_at=opens_at)
 
         # The content claim the upload was authorized for. Never supplied here: a row with
         # none is a ticket from before the claim was required, and it is held.

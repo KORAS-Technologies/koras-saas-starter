@@ -388,7 +388,7 @@ async def finalize_one(
         return {"status": FinalizeKind.NOT_ELIGIBLE.value}
     opens_at = _window().earliest_finalization(issued)
     if now < opens_at:
-        return {"status": FinalizeKind.DEFERRED.value, "opens_at": opens_at.isoformat()}
+        return {"status": FinalizeKind.POSTPONED.value, "opens_at": opens_at.isoformat()}
     attempts = await _count_attempt(session, tenant_id, file_id, now)
     if attempts is None:
         return {"status": FinalizeKind.NOT_ELIGIBLE.value}
@@ -415,7 +415,7 @@ async def finalize_one(
                     file_id,
                     type(error).__name__,
                 )
-    elif outcome.kind is FinalizeKind.DEFERRED and outcome.opens_at is not None:
+    elif outcome.kind is FinalizeKind.POSTPONED and outcome.opens_at is not None:
         summary["opens_at"] = outcome.opens_at.isoformat()
     return summary
 

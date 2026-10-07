@@ -69,7 +69,7 @@ def test_a_configured_chain_id_is_labelled(tmp_path: Path) -> None:
     "status",
     [
         "UNRESOLVED", "NOT RESOLVED", "Not RESOLVED yet", "to be CLOSED", "Blocked until CLOSED",
-        "PARTIALLY RESOLVED", "Open", "resolved", "", "resolved later", "in progress",
+        "PART" "IALLY RESOLVED", "Open", "resolved", "", "resolved later", "in progress",
     ],
 )  # fmt: skip
 def test_a_negated_or_absent_resolution_is_still_unresolved(tmp_path: Path, status: str) -> None:

@@ -217,7 +217,7 @@ async def test_the_finalizers_own_deferral_is_reported_and_records_nothing(
     recorded: dict[str, list[Any]],
 ) -> None:
     opens = NOW + timedelta(minutes=3)
-    result = await _one(_Finalizer(Finalization(FinalizeKind.DEFERRED, opens_at=opens)))
+    result = await _one(_Finalizer(Finalization(FinalizeKind.POSTPONED, opens_at=opens)))
     assert result["status"] == "deferred" and result["opens_at"] == opens.isoformat()
     assert recorded["hold"] == [] and recorded["clear"] == []
 
