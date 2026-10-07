@@ -270,6 +270,23 @@ template_map:
       - tests/integration/test_upload_checksum_provenance_real.py
       - tests/integration/test_upload_finalization_provider.py
       - tests/integration/test_upload_checksum_provider.py
+      # Layer 3, the scanner: the clamd client, the bounded object reader, the structural and
+      # integrity gates, the release assessment and the guarded transitions out of `pending`
+      # (`scanning/`), the `file.scan` job and the reconciliation sweep, the API-side
+      # declaration and enqueue the worker image carries, the audit actions, the two
+      # migrations (the thirteenth failure word and the sweep's due-time indexes) and their
+      # row-level-security suites. `finalize.py` (listed above) hands a finalized file to
+      # `file.scan`; `worker.py` and `Dockerfile` are rendered by the capability.
+      - services/worker/koras_worker/scanning
+      - services/worker/koras_worker/tasks/scan.py
+      - services/worker/koras_worker/tasks/scan_sweep.py
+      - services/api/koras_api/core/scan_jobs.py
+      - services/api/koras_api/core/scan_enqueue.py
+      - services/api/koras_api/core/scan_audit.py
+      - supabase/migrations/00040_file_scan_interrupted.sql
+      - supabase/migrations/00041_file_scan_due_indexes.sql
+      - supabase/tests/350_file_scan_columns_isolation.sql
+      - supabase/tests/351_file_scan_sweep_selection.sql
 
     # In-app notifications: the table, the emitter, the routes, the page and
     # the browser test.

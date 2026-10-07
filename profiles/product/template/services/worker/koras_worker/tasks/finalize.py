@@ -28,6 +28,12 @@ client can write and nothing may serve, and it still carries `scan_status = 'pen
 That is the fail-closed state: the absence of a worker is an upload that never becomes
 available, never an unverified one that does.
 
+**The hand-off to the scanner.** A file that is final -- finalized by this run, or found
+already final -- is put on the scan queue (`tasks/scan.py::hand_off_to_scanner`), after the
+swap has committed and never before. It is best effort and changes nothing about the file:
+a lost hand-off leaves the file `pending` on a final key, which is exactly what the scan
+sweep selects. The finalizer still decides nothing about the content.
+
 **Holds.** A finalization the finalizer refuses is recorded on the file as a closed
 `scan_failure` word (migration 00039) with one `storage.upload.held` audit event when the
 word is new or changed, so an outage is one event however many attempts it spans. The file
@@ -49,6 +55,7 @@ import importlib
 import logging
 import threading
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -366,8 +373,16 @@ async def finalize_one(
     file_id: str,
     now: datetime,
     max_attempts: int,
+    on_final: Callable[[str, str], Awaitable[object]] | None = None,
 ) -> dict[str, Any]:
-    """Run one finalization attempt for one file and return a closed-vocabulary summary."""
+    """Run one finalization attempt for one file and return a closed-vocabulary summary.
+
+    `on_final(tenant_id, file_id)` is called once the file is on its final key (finalized now,
+    or found already final): it is the hand-off to the scanner. It is awaited and its answer
+    is ignored, and an exception from it is logged and swallowed, because a lost hand-off
+    leaves the file `pending` and the scan sweep recovers it. It runs after the swap and the
+    hold's clearing have committed, never before.
+    """
     issued = await _peek(session, tenant_id, file_id)
     if issued is None:
         return {"status": FinalizeKind.NOT_ELIGIBLE.value}
@@ -391,6 +406,15 @@ async def finalize_one(
         summary["failure"] = failure.value
     elif outcome.kind in (FinalizeKind.FINALIZED, FinalizeKind.ALREADY_FINAL):
         await _clear_hold(session, tenant_id, file_id)
+        if on_final is not None:
+            try:
+                await on_final(tenant_id, file_id)
+            except Exception as error:  # noqa: BLE001 - never turns a finalized file into a failure
+                logger.error(
+                    "finalize: the scanner hand-off for file %s raised %s; the sweep recovers it",
+                    file_id,
+                    type(error).__name__,
+                )
     elif outcome.kind is FinalizeKind.DEFERRED and outcome.opens_at is not None:
         summary["opens_at"] = outcome.opens_at.isoformat()
     return summary
@@ -398,7 +422,6 @@ async def finalize_one(
 
 async def finalize_file_task(ctx: dict[str, Any], envelope: JobEnvelope) -> dict[str, Any]:
     """Finalize one file. Returns a small closed-vocabulary summary and no file content."""
-    del ctx
     contract = declaration()
     tenant_id = _canonical(envelope.tenant_id)
     if tenant_id is None:
@@ -428,9 +451,21 @@ async def finalize_file_task(ctx: dict[str, Any], envelope: JobEnvelope) -> dict
                 file_id=file_id,
                 now=datetime.now(UTC),
                 max_attempts=config.file_finalize_max_attempts,
+                on_final=_hand_off(ctx),
             )
     finally:
         await engine.dispose()
+
+
+def _hand_off(ctx: dict[str, Any]) -> Callable[[str, str], Awaitable[object]]:
+    """The scanner hand-off, bound to this worker's context. Imported when first needed."""
+
+    async def hand_off(tenant_id: str, file_id: str) -> object:
+        from .scan import hand_off_to_scanner
+
+        return await hand_off_to_scanner(ctx, tenant_id, file_id)
+
+    return hand_off
 
 
 async def sweep_finalize(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -440,7 +475,6 @@ async def sweep_finalize(ctx: dict[str, Any]) -> dict[str, Any]:
     tenant. A file the finalizer refuses is recorded and left; nothing here ever releases
     anything. Skips, and says so, with no database.
     """
-    del ctx
     if not settings.database_url:
         logger.info("file.finalize sweep skipped: the worker has no DATABASE_URL")
         return {"status": "skipped", "reason": "no database"}
@@ -485,6 +519,7 @@ async def sweep_finalize(ctx: dict[str, Any]) -> dict[str, Any]:
                         file_id=str(row["id"]),
                         now=datetime.now(UTC),
                         max_attempts=config.file_finalize_max_attempts,
+                        on_final=_hand_off(ctx),
                     )
                 except Exception as error:  # noqa: BLE001 - one file never stops the others
                     await session.rollback()

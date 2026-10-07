@@ -20,6 +20,8 @@ from .tasks.finalize import sweep_finalize
 from .tasks.outbox import send_owed_notifications
 {{/if}}from .tasks.product import PRODUCT_CRON_JOBS, PRODUCT_TASKS
 {{#if capability.reporting}}from .tasks.reporting import deliver_scheduled_reports
+{{/if}}{{#if capability.secure_files}}from .tasks.scan import bound as scan_tasks
+from .tasks.scan_sweep import SWEEP_INTERVAL_MINUTES, sweep_pending_scans
 {{/if}}{{#if capability.storage_governance}}from .tasks.storage_backup import back_up_storage
 from .tasks.storage_lifecycle import sweep_storage_lifecycle
 from .tasks.storage_reconcile import reconcile_storage
@@ -87,6 +89,11 @@ class WorkerSettings(WorkerSettingsBase):
         # by name and loudly, so a worker that cannot run it fails at start rather than
         # accepting a job it would never run.
         *worker_functions(finalize_tasks()),
+        # The scanner: read the finalized object once, through the bounded reader, ask
+        # clamd, judge the result with the structural and integrity gates, and write the
+        # verdict through the guarded transitions only. Enqueued by the finalizer and by
+        # the sweep below, never by a request. Bound by name and loudly, like the finalizer.
+        *worker_functions(scan_tasks()),
 {{/if}}        *worker_functions(PRODUCT_TASKS),
     ]
     # Before the first cron fires, not after. A sweep that deleted across
@@ -149,7 +156,13 @@ class WorkerSettings(WorkerSettingsBase):
         # that evaporated.
         cron(run_restores, minute={0, 10, 20, 30, 40, 50}),
 {{/if}}
-{{#if capability.secure_files}}        # Every five minutes: whatever the queue did not finalize -- a lost enqueue, a
+{{#if capability.secure_files}}        # Every five minutes, half a minute past: the scan sweep. Whatever the finalizer
+        # hand-off did not enqueue, and every scan that was interrupted, hung or failed for
+        # a reason that can pass, goes back on the queue under the same identity, tenant by
+        # tenant and with a back-off that caps at an hour and never stops. It writes no scan
+        # state and decides no verdict. Always on: a product with the capability has a scanner.
+        cron(sweep_pending_scans, minute=set(range(0, 60, SWEEP_INTERVAL_MINUTES)), second=30),
+        # Every five minutes: whatever the queue did not finalize -- a lost enqueue, a
         # worker that was down, a failure that has passed. It selects ids and nothing
         # else, finalizes each file as its own tenant, and releases nothing. The long
         # timeout is the finalizer's: it hashes the object twice and copies it once.

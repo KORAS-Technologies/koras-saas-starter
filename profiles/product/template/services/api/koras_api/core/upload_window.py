@@ -128,6 +128,23 @@ def is_incoming_key(key: str) -> bool:
     return INCOMING in key.split("/")[2:-1]
 
 
+def is_final_key(key: str) -> bool:
+    """Whether this is exactly the shape `final_key_for` writes. Fails closed.
+
+    The scanner reads and releases only a key of this shape: one a worker wrote after
+    finalization, which no ticket was ever signed for. A key of any other shape -- an
+    incoming one, or the pre-finalization shape -- is not scanned, whatever else is true
+    of it (ADR 0013 section 6).
+    """
+    parts = key.split("/")
+    if len(parts) != 7 or parts[0] != "tenants" or parts[4] != FINAL:
+        return False
+    try:
+        return str(uuid.UUID(parts[5])) == parts[5] and all(parts[1:4]) and bool(parts[6])
+    except ValueError:
+        return False
+
+
 def final_key_for(incoming: str, generation: str) -> str:
     """The key an incoming object is copied to. One per attempt; see the worker.
 
