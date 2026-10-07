@@ -1289,7 +1289,23 @@ role, an S3-compatible store and Redis.
 
 ### Verification evidence
 
-**2026-10-07, commit `6181c449ab4c066155bf98b65b3a18abd2b64938`** (branch
+**2026-10-07, commit `7df7f7d778d7cbc8a4a0955ef03e61f4fa7285c2`** (branch
+`feat/secure-files-capability`, pull request 39), the review's bounded fixes. Every check on that commit
+completed successfully:
+
+| Workflow | Run | Jobs |
+|---|---|---|
+| Generator Integration | 37655290251 | `integration-product`, `integration-product-full`, `integration-product-secure`, `integration-product-minimal`, `integration-control-plane` |
+| CI | 37655290424 | `Lint & Typecheck`, `Test (Node)`, `Test (Python)`, `Build`, `Framework baseline` |
+| Secure Files Proof | 37655290274 | `secure-files-migration-matrix` (cases A to D, D being the assistant enabled later), `live-proof-secure`, `live-proof-compat` |
+| Security | 37655290376 | `CodeQL (javascript-typescript)`, `CodeQL (python)`, `Secret scan (gitleaks)` |
+
+The commits after it change documentation only (this section); the two workflows whose triggers are
+path-filtered (Generator Integration, Secure Files Proof) were dispatched by hand on the branch head
+that carries this text, and the runs are recorded in the pull request. No security step was skipped or
+disabled to get there.
+
+**2026-10-07, earlier commit `6181c449ab4c066155bf98b65b3a18abd2b64938`** (branch
 `feat/secure-files-capability`, pull request 39). Every check on that commit completed
 successfully:
 
