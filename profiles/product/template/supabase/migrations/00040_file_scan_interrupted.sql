@@ -25,6 +25,24 @@
 -- No existing row changes. No policy or grant changes: RLS is inherited from `files`, and
 -- the sweep reads through `files_select_provisioning` (00021).
 --
+--
+-- Operating notes (secure_files migrations 00039-00042 share them):
+--   * Forward-only. There is no down migration; the "Reversal" notes are for a person to decide
+--     on, not for a tool to run.
+--   * Deploy order is MIGRATE THEN DEPLOY: a secure_files release assumes these columns,
+--     indexes and the trigger exist, and a schema that is ahead of the code is harmless to
+--     the code that does not know about it.
+--   * `lock_timeout` is set for the transaction: if `files` is held by a long transaction the
+--     migration gives up with an error instead of queuing behind it and stalling every writer.
+--     The ledger row is written only after a migration succeeds and the statements are
+--     idempotent, so the next `migrate` simply retries.
+--   * This migration re-adds the THIRTEEN-value `scan_failure` constraint (00039's twelve plus
+--     `scan_interrupted`). A product that has widened that constraint with reasons of its own
+--     must reconcile before applying it: `drop constraint` then `add constraint` here replaces
+--     the whole list, so a product-added word would make the new constraint fail on existing
+--     rows, or be silently refused afterwards. Add the product's words in a later migration,
+--     and carry them in the sync record.
+--
 -- Reversal (forward-only): drop the index; restore the twelve-value constraint -- which
 -- fails while a row holds `scan_interrupted`, so that is a decision once the scanner has
 -- run, not a routine:
@@ -37,6 +55,10 @@
 --     'identity_insufficient'));
 
 begin;
+
+-- The constraint swap takes ACCESS EXCLUSIVE and validates every row; the index build takes a
+-- SHARE lock. Give up rather than queue behind a long transaction.
+set local lock_timeout = '5s';
 
 alter table public.files drop constraint if exists files_scan_failure_check;
 alter table public.files add constraint files_scan_failure_check

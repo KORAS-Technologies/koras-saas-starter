@@ -1,0 +1,45 @@
+# Machine-readable map from the Starter's secure_files migrations to the Docoris migrations they
+# were generalised from (ADR 0013; docs/SECURE_FILES.md, "Migration mapping").
+#
+# Why it exists: Docoris carries 01016-01019 as product history. A later sync of Docoris onto a
+# Starter that has 00039-00042 must be able to prove the two schemas are equivalent rather than
+# assert it. The Docoris repository is not available to CI, so the comparison is made against a
+# CHECKSUM of the normalised Docoris text recorded here, not against Docoris itself.
+#
+# What is compared (generators/create-koras-app/tests/migration-map.test.ts, rules in
+# tests/migration-map-support.ts): each Starter file, with comments and whitespace removed and
+# the listed `differences` rules applied, hashes to `docoris_normalised_sha256`. A difference that
+# is not listed here therefore fails the test. Constraints, columns, indexes, policies and
+# function bodies are all inside the compared text.
+#
+# Documented differences (the only ones):
+#   transaction-wrapper   The Starter wraps in `begin; ... commit;` what Docoris ran bare (01019),
+#                         so that the lock timeout has a transaction to be local to.
+#   lock-timeout          `set local lock_timeout = '5s'` (the Starter's 00041 style).
+#   function-comment      The `comment on function` text names its origin ("OD-10 S2" vs
+#                         "secure_files"). Documentation only.
+#   to-regclass-wrapper   00042 skips the chunk DELETE when `public.ai_knowledge_chunks` does not
+#                         exist (a product with secure_files and without `ai`). Docoris only ever
+#                         ran it where the table exists, so the delete is unconditional there.
+#
+# To check `docoris_normalised_sha256` against the real files after a deliberate change on both
+# sides, run the test with DOCORIS_REPO=<path to a Docoris checkout>.
+schema_version: 1
+docoris_read_at: "develop 9010c98"
+migrations:
+  - starter: profiles/product/template/supabase/migrations/00039_file_scan_attempts.sql
+    docoris: supabase/migrations/01016_file_scan_attempts.sql
+    differences: [transaction-wrapper, lock-timeout]
+    docoris_normalised_sha256: 825a7e0460255fd7822c8b66f1c6fd98bb9dfcaa6faf96bfbcd840efc4a7ce1b
+  - starter: profiles/product/template/supabase/migrations/00040_file_scan_interrupted.sql
+    docoris: supabase/migrations/01017_file_scan_interrupted.sql
+    differences: [transaction-wrapper, lock-timeout]
+    docoris_normalised_sha256: d4f23860322f879b181e9a5ecdf9cf353ee197e0cabae20024766707dd442d68
+  - starter: profiles/product/template/supabase/migrations/00041_file_scan_due_indexes.sql
+    docoris: supabase/migrations/01018_file_scan_due_indexes.sql
+    differences: [transaction-wrapper, lock-timeout]
+    docoris_normalised_sha256: 69277e7788e7b84448fe3fdaecc9edd2e664ffa31821f08607dea404ee219eb1
+  - starter: profiles/product/template/supabase/migrations/00042_file_derived_content_withdrawal.sql
+    docoris: supabase/migrations/01019_file_derived_content_withdrawal.sql
+    differences: [transaction-wrapper, lock-timeout, function-comment, to-regclass-wrapper]
+    docoris_normalised_sha256: e5adf7a2690c7e2fbb0c5862ab11a2cb8d118ac4617ed338aa4ef47f571b526c

@@ -11,6 +11,10 @@
 #      migrate script applies exactly 00039-00042. Nothing is lost, the re-run is
 #      idempotent, no legacy row is releasable under the secure rule, row-level security
 #      is still forced and the suites still pass.
+#   D  a secure product generated WITHOUT the assistant, which later enables `ai`: the
+#      assistant's own migrations (00006-00012, numbered BEFORE 00042) are applied AFTER 00042
+#      has been in force, and the withdrawal trigger -- which skipped the chunk delete while
+#      `ai_knowledge_chunks` did not exist -- must start deleting the moment the table does.
 #
 # Inputs (environment):
 #   SECURE_DIR    a product generated with `--with secure_files,clamd,worker`
@@ -274,5 +278,79 @@ fi
 
 rls_suites koras_matrix_c "$UPGRADE_DIR"
 
+echo "=== D. a secure product enables the assistant LATER (00010 applied after 00042)"
+newdb koras_matrix_d
+migrate koras_matrix_d "$SECURE_DIR"
+check koras_matrix_d "D: before: the product has 00042 and no assistant tables" \
+  "select to_regclass('public.ai_knowledge_chunks') is null and exists (select 1 from public.schema_migrations where version = '00042_file_derived_content_withdrawal') and not exists (select 1 from public.schema_migrations where version = '00010_ai_knowledge')"
+
+T3=00000000-0000-4c0d-8000-000000000001
+F3=00000000-0000-4c0d-8000-0000000000a1
+sql koras_matrix_d <<SQL
+insert into public.tenants (id, slug, name, zitadel_org_id, status, owner_email)
+values ('$T3', 'later-ai', 'Later ai', 'later-ai-org', 'active', 'later@example.com');
+insert into public.files (id, tenant_id, storage_key, name, size_bytes, content_type, category,
+                          status, uploaded_by, scan_status, scan_object_etag, indexed_at, index_note, ready_at)
+values ('$F3', '$T3', 'tenants/$T3/documents/$F3/final/00000000-0000-4000-8000-000000000001/clean.pdf',
+        'clean.pdf', 100, 'application/pdf', 'documents', 'ready', 'u3', 'clean', 'etag-d', now(), '1 chunk(s)', now());
+SQL
+
+echo "  --> with no chunk table the trigger still clears the index state and does not fail"
+RESULT="$(sql koras_matrix_d <<SQL | grep -E '^[tf]$' | head -1
+begin;
+update public.files set scan_status = 'infected', status = 'quarantined' where id = '$F3';
+select indexed_at is null and index_note is null and scan_status = 'infected' from public.files where id = '$F3';
+rollback;
+SQL
+)"
+if [ "$RESULT" = "t" ]; then echo "  ok    D: a verdict leaving clean cleared the index state with no chunk table"; else
+  echo "::error::D: the withdrawal trigger failed or did nothing before the assistant existed"; FAILED=1; fi
+
+echo "  --> enabling the assistant: the assistant product's own migrate.sh applies what is missing"
+migrate koras_matrix_d "$UPGRADE_DIR" | tee "$WORK/later-ai.out"
+check koras_matrix_d "D: 00010 was applied after 00042 and the chunk table now exists" \
+  "select to_regclass('public.ai_knowledge_chunks') is not null and exists (select 1 from public.schema_migrations where version = '00010_ai_knowledge') and (select applied_at from public.schema_migrations where version = '00010_ai_knowledge') > (select applied_at from public.schema_migrations where version = '00042_file_derived_content_withdrawal')"
+check koras_matrix_d "D: none of 00039-00042 was applied a second time" \
+  "select count(*) = 4 from public.schema_migrations where version in ('${SECURE_MIGRATIONS[0]}','${SECURE_MIGRATIONS[1]}','${SECURE_MIGRATIONS[2]}','${SECURE_MIGRATIONS[3]}')"
+secure_objects_present koras_matrix_d "D (after the assistant was enabled)"
+
+echo "  --> the same trigger now deletes the file's chunks, on a verdict and on a row delete"
+CHUNK_INSERT="insert into public.ai_knowledge_chunks (tenant_id, document_id, resource_type, resource_id, title, chunk_index, content, embedding)
+select '$T3', 'file:$F3', 'file', '$F3', 'clean.pdf', i, 'late chunk ' || i, array_fill(0::real, array[1536])::vector from generate_series(0, 1) i;"
+RESULT="$(sql koras_matrix_d <<SQL | grep -E '^[tf]$' | head -1
+begin;
+$CHUNK_INSERT
+update public.files set scan_status = 'infected', status = 'quarantined' where id = '$F3';
+select (select count(*) from public.ai_knowledge_chunks where resource_id = '$F3') = 0
+   and (select indexed_at is null and index_note is null from public.files where id = '$F3');
+rollback;
+SQL
+)"
+if [ "$RESULT" = "t" ]; then echo "  ok    D: the verdict withdrew the chunks and the index state"; else
+  echo "::error::D: the trigger did not delete chunks of a table created after it"; FAILED=1; fi
+RESULT="$(sql koras_matrix_d <<SQL | grep -E '^[tf]$' | head -1
+begin;
+$CHUNK_INSERT
+delete from public.files where id = '$F3';
+select (select count(*) from public.ai_knowledge_chunks where resource_id = '$F3') = 0;
+rollback;
+SQL
+)"
+if [ "$RESULT" = "t" ]; then echo "  ok    D: deleting the row removed its chunks"; else
+  echo "::error::D: the delete trigger did not remove chunks of a table created after it"; FAILED=1; fi
+RESULT="$(sql koras_matrix_d <<SQL | grep -E '^[tf]$' | head -1
+begin;
+$CHUNK_INSERT
+update public.files set name = 'renamed.pdf' where id = '$F3';
+select (select count(*) from public.ai_knowledge_chunks where resource_id = '$F3') = 2
+   and (select indexed_at is not null from public.files where id = '$F3');
+rollback;
+SQL
+)"
+if [ "$RESULT" = "t" ]; then echo "  ok    D: an unrelated write kept the chunks and the index state"; else
+  echo "::error::D: an unrelated write to a clean file withdrew its chunks"; FAILED=1; fi
+
+rls_suites koras_matrix_d "$UPGRADE_DIR"
+
 if [ "$FAILED" -ne 0 ]; then echo "::error::the migration matrix has failures"; exit 1; fi
-echo "The migration matrix passed: A fresh secure, B fresh default, C upgrade."
+echo "The migration matrix passed: A fresh secure, B fresh default, C upgrade, D assistant enabled later."

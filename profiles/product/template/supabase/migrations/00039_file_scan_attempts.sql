@@ -48,6 +48,18 @@
 --
 -- Idempotent: `add column if not exists`, and each constraint is dropped before it is added.
 --
+--
+-- Operating notes (secure_files migrations 00039-00042 share them):
+--   * Forward-only. There is no down migration; the "Reversal" notes are for a person to decide
+--     on, not for a tool to run.
+--   * Deploy order is MIGRATE THEN DEPLOY: a secure_files release assumes these columns,
+--     indexes and the trigger exist, and a schema that is ahead of the code is harmless to
+--     the code that does not know about it.
+--   * `lock_timeout` is set for the transaction: if `files` is held by a long transaction the
+--     migration gives up with an error instead of queuing behind it and stalling every writer.
+--     The ledger row is written only after a migration succeeds and the statements are
+--     idempotent, so the next `migrate` simply retries.
+--
 -- Reversal (this repository's migrations are forward-only): while nothing writes these
 -- columns it is lossless --
 --   alter table public.files
@@ -56,6 +68,10 @@
 -- Once the finalizer writes them the values are lost, so that is a decision, not a routine.
 
 begin;
+
+-- ALTER TABLE takes ACCESS EXCLUSIVE on `files` (the additions are metadata-only: constant
+-- defaults, so no rewrite). Give up rather than queue behind a long transaction.
+set local lock_timeout = '5s';
 
 alter table public.files
   add column if not exists scan_attempts smallint not null default 0,

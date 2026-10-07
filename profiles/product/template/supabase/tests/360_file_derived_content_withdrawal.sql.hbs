@@ -32,6 +32,26 @@
 
 begin;
 
+-- 0. The trigger function is SECURITY DEFINER, so it runs as its owner, and `files` and
+--    `ai_knowledge_chunks` have row-level security forced: an owner that does not bypass it
+--    would delete nothing and every assertion below about withdrawal would be a lie of
+--    omission. Fail loudly, and first, if the owner is not a superuser or BYPASSRLS role.
+do $$
+declare
+  owner_name text;
+  bypasses boolean;
+begin
+  select r.rolname, (r.rolsuper or r.rolbypassrls)
+    into owner_name, bypasses
+    from pg_proc p
+    join pg_roles r on r.oid = p.proowner
+   where p.oid = 'public.withdraw_file_derived_content()'::regprocedure;
+  if bypasses is distinct from true then
+    raise exception
+      'withdraw_file_derived_content() is owned by %, which neither is a superuser nor has BYPASSRLS: the trigger would purge nothing under forced row-level security. Re-create it as the migration owner (superuser / Supabase postgres).', owner_name;
+  end if;
+end $$;
+
 insert into public.tenants (id, slug, name)
 values
   ('00000000-0000-0000-0000-0000000003a1', 'rls-withdraw-alpha', 'Alpha'),

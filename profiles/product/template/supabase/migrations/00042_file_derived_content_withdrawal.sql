@@ -31,9 +31,34 @@
 -- still clears the two index columns, which exist on `files` in every product. That is
 -- the one difference from 01019, which only ever ran where the table exists.
 --
+-- The function's OWNER must bypass row-level security (a superuser, or a role with
+-- BYPASSRLS such as Supabase's `postgres`). `files` and `ai_knowledge_chunks` have RLS
+-- forced, and a SECURITY DEFINER function runs as its owner: an owner that does not bypass
+-- RLS would delete only the rows the *writer's* tenant binding allows, i.e. nothing, and the
+-- withdrawal would silently do nothing. The migrate role creates the function, so it is the
+-- owner; `supabase/tests/360_file_derived_content_withdrawal.sql` fails loudly if the owner
+-- cannot bypass RLS.
+--
+-- Operating notes (secure_files migrations 00039-00042 share them):
+--   * Forward-only. There is no down migration; the "Reversal" notes are for a person to decide
+--     on, not for a tool to run.
+--   * Deploy order is MIGRATE THEN DEPLOY: a secure_files release assumes these columns,
+--     indexes and the trigger exist, and a schema that is ahead of the code is harmless to
+--     the code that does not know about it.
+--   * `lock_timeout` is set for the transaction: if `files` is held by a long transaction the
+--     migration gives up with an error instead of queuing behind it and stalling every writer.
+--     The ledger row is written only after a migration succeeds and the statements are
+--     idempotent, so the next `migrate` simply retries.
+--
 -- What it does not do: it does not write `scan_status`; it adds no column, no index and
 -- no policy. A file that is deleted still has its chunks removed by the Files route
 -- (`before_delete`).
+
+begin;
+
+-- Replacing the function is instant; the two triggers below take a SHARE ROW EXCLUSIVE lock on
+-- `files`. Give up rather than queue behind a long transaction.
+set local lock_timeout = '5s';
 
 create or replace function public.withdraw_file_derived_content()
 returns trigger
@@ -98,3 +123,5 @@ create trigger files_withdraw_derived_content_on_delete
   before delete on public.files
   for each row
   execute function public.withdraw_file_derived_content();
+
+commit;
