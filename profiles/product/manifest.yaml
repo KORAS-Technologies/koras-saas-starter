@@ -372,6 +372,8 @@ template_map:
       - local/.qualification/.gitignore
       - docs/security/SECURITY-REGISTER.md
       - .github/workflows/promotion-gate.yml
+      - tests/integration/test_provider_qualification_extra.py
+      - tests/integration/test_f1_detector_real.py
 
     # In-app notifications: the table, the emitter, the routes, the page and
     # the browser test.
