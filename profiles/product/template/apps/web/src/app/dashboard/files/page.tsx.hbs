@@ -64,9 +64,26 @@ export default async function FilesPage() {
     uploadedAt: t('files.column.uploadedAt'),
     searchable: t('files.column.searchable'),
     searchableYes: t('files.searchable.yes'),
+{{#if capability.secure_files}}
+    searchablePending: t('files.searchable.notYet'),
+{{else}}
     searchablePending: t('files.searchable.pending'),
+{{/if}}
     searchableNo: t('files.searchable.no'),
+{{#if capability.secure_files}}
+    searchableAfterAvailable: t('files.searchable.afterAvailable'),
+    status: t('files.column.status'),
+    statusAvailable: t('files.status.available'),
+    statusScanning: t('files.status.scanning'),
+    statusScanningHint: t('files.status.scanningHint'),
+    statusUnavailable: t('files.status.unavailable'),
+    statusUnavailableHint: t('files.status.unavailableHint'),
+    scanningNotice: t('files.scanning.notice'),
+    scanningStopped: t('files.scanning.stopped'),
+    refresh: t('files.refresh'),
+{{else}}
     searchableUnknown: t('files.searchable.unknown'),
+{{/if}}
     usage: t('files.usage'),
     usageUnlimited: t('files.usageUnlimited'),
     usageUnknown: t('files.usageUnknown'),
