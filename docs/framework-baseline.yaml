@@ -1,0 +1,22 @@
+# The Starter's ACCEPTED framework baseline.
+#
+# A generated product records the Starter commit its framework content is level
+# with in `.koras/project.yaml` -> `framework.source_baseline`. The command
+# `koras framework:baseline` compares that against `accepted_baseline` below and
+# says whether the product is current, behind, ahead, diverged or unknown. It is
+# informational and never blocks development.
+#
+# Who moves it, and when: a maintainer, in the pull request (or a follow-up
+# commit) that deliberately ACCEPTS a framework change into develop -- a change
+# to the shared Claude Code configuration, the orchestration contract, shared
+# Terraform modules or the profile templates that products are expected to
+# adopt. Optional or experimental Starter changes do not move it, so a product
+# is not reported as behind merely because the Starter has newer optional work.
+#
+# What it names: a commit that is ALREADY on develop (never the commit that
+# edits this file, whose SHA cannot be known beforehand). The CI check
+# scripts/check-framework-baseline.mjs only requires that it resolves and is an
+# ancestor of, or equal to, HEAD, so it cannot rot silently and creates no
+# chicken-and-egg. See docs/SYNC_BACKLOG.md, entry D7.
+schema_version: 1
+accepted_baseline: e5d82cd1fbc9867521f7f6d28c6d887eedc02049
