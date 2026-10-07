@@ -53,6 +53,7 @@ from httpx import ASGITransport, AsyncClient  # noqa: E402
 from koras_api.core import imports as store  # noqa: E402
 from koras_api.core.auth import require_auth  # noqa: E402
 from koras_api.core.database import get_db  # noqa: E402
+from koras_api.core.settings import settings as api_settings  # noqa: E402
 from koras_api.core.storage import tenant_storage  # noqa: E402
 from koras_api.core.tenant import require_tenant  # noqa: E402
 from koras_api.imports import registry  # noqa: E402
@@ -402,6 +403,9 @@ class Routed:
 
 @pytest.fixture
 def routed(monkeypatch: pytest.MonkeyPatch) -> Iterator[Routed]:
+    # Activation gate open: these tests are about what a route does, and imports are off by
+    # default (see `test_import_activation_gate.py` for the gate itself).
+    monkeypatch.setattr(api_settings, "imports_enabled", True)
     registry.clear()
     registry.extend([ACCOUNTS, CONTACTS, SMALL])
     yield Routed(monkeypatch)

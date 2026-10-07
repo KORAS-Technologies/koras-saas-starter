@@ -81,7 +81,8 @@ class _Complaints(logging.Handler):
         self.lines: list[str] = []
 
     def emit(self, record: logging.LogRecord) -> None:
-        self.lines.append(f"{record.name}: {record.getMessage()}")
+        detail = f" | {record.exc_info[1]!r}" if record.exc_info and record.exc_info[1] else ""
+        self.lines.append(f"{record.name}: {record.getMessage()}{detail}")
 
 
 class _Bucket:
@@ -317,6 +318,21 @@ async def _probe() -> dict[str, Any]:
             )
         finally:
             task._record = record  # type: ignore[assignment]
+
+        # ── imports switched off: the image's own task refuses and fails the run ──
+        # The container was given IMPORTS_ENABLED=true; this turns it off in the
+        # probe's own process, which is the state a job enqueued while it was on
+        # meets after the switch is cleared.
+        task.imports.imports_enabled = False
+        try:
+            report["gate_off_validate"] = await run_job(
+                task.validate_run, VALIDATE_RUN.name, await seed("validating")
+            )
+            report["gate_off_commit"] = await run_job(
+                task.commit_run, COMMIT_RUN.name, await seed("commit_requested")
+            )
+        finally:
+            task.imports.imports_enabled = True
 
         # ── through the worker this image starts, when there is one ─────────
         if os.environ.get("PROBE_QUEUE") == "1":

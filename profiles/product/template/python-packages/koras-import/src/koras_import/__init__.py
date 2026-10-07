@@ -68,6 +68,7 @@ it be tested without a database, and what would let it be promoted to another
 repository without a rewrite.
 """
 
+from .activation import ACTIVATION_ON, IMPORTS_ENABLED_SETTING, parse_import_activation
 from .budget import BudgetExceeded, WorkBudget
 from .compatibility import (
     FINGERPRINT_LENGTH,
@@ -196,6 +197,9 @@ from .writing import (
 )
 
 __all__ = [
+    "ACTIVATION_ON",
+    "IMPORTS_ENABLED_SETTING",
+    "parse_import_activation",
     "ALREADY_EXISTS",
     "BudgetExceeded",
     "Candidate",

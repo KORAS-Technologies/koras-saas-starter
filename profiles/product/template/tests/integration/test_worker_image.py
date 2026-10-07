@@ -119,6 +119,10 @@ def _environment() -> list[str]:
         f"DATABASE_URL={IN_IMAGE_DATABASE_URL}",
         "-e",
         f"REDIS_URL={REDIS_URL}",
+        # The image runs imports, so the test says so: they are off in every environment
+        # unless explicitly on (ADR 0013 section 7). Disposable stack only.
+        "-e",
+        "IMPORTS_ENABLED=true",
     ]
     for name, value in settings.items():
         out += ["-e", f"{name}={value}"]
@@ -212,6 +216,18 @@ def test_a_dry_run_that_fails_says_so_on_its_run(probe: dict[str, Any]) -> None:
     assert refused["answer"]["status"] == "failed"
     assert refused["run"]["status"] == "failed" and refused["run"]["error"]
     assert refused["run"]["audit"] == []
+
+
+def test_a_job_refuses_in_the_image_once_imports_are_off(probe: dict[str, Any]) -> None:
+    """A job that arrives while the switch is off reads no file and writes no row."""
+    for name in ("gate_off_validate", "gate_off_commit"):
+        refused = probe[name]
+        assert refused["raised"] is None, refused["raised"]
+        assert refused["answer"] == {"status": "refused", "reason": "activation_disabled"}
+        assert refused["run"]["status"] == "failed"
+        assert "not enabled" in refused["run"]["error"]
+        assert refused["run"]["written"] == 0
+        assert refused["run"]["audit"] == [["import.refused", "denied"]], refused["complaints"]
 
 
 def test_a_dry_run_that_raises_leaves_no_run_that_says_it_succeeded(

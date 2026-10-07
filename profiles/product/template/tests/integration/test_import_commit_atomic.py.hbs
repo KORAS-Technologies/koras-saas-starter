@@ -287,6 +287,8 @@ def _install(monkeypatch: pytest.MonkeyPatch, raw: bytes, target: Any) -> Any:  
     # named the database. Set here so the order of collection cannot decide
     # whether the job finds one.
     monkeypatch.setattr(task.settings, "database_url", DATABASE_URL, raising=False)
+    # Activation gate open: these tests are about the commit, and imports are off by default.
+    monkeypatch.setattr(task.imports, "imports_enabled", True)
     monkeypatch.setattr(task, "_object_store", lambda: _Bucket(raw))
     monkeypatch.setattr(task, "_registry", lambda: build_registry([target]))
     return task

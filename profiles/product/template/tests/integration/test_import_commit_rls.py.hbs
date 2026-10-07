@@ -214,6 +214,8 @@ async def _commit(
     from koras_import import build_registry
     from koras_queue import JobEnvelope
 
+    # Activation gate open: these tests are about the commit, and imports are off by default.
+    monkeypatch.setattr(task.imports, "imports_enabled", True)
     monkeypatch.setattr(task, "_object_store", lambda: _Bucket())
     monkeypatch.setattr(
         task, "_registry", lambda: build_registry([_target(writer)])

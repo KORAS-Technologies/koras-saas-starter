@@ -1194,6 +1194,8 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Dieser Import kann geprüft, aber nicht geschrieben werden. In diesem Produkt nimmt noch nichts diese Datensätze entgegen.',
   'errors.importFileTooLarge':
     'Diese Datei ist größer, als ein Import einlesen kann. Teilen Sie sie und importieren Sie die Teile einzeln.',
+  'errors.importNotEnabled':
+    'Der Datenimport ist für dieses Produkt noch nicht aktiviert. Eine Administratorin oder ein Administrator muss ihn aktivieren.',
   'errors.importFormatRefused':
     'Diese Art von Datei kann hier nicht importiert werden. Laden Sie eine Vorlage herunter, um die akzeptierten Formate zu sehen.',
   'errors.uploadRefusedByPolicy':

@@ -105,6 +105,15 @@ IMPORT_ACTIONS = (
         classification=Classification.SECURITY,
         summary="A commit was refused: the target accepts no writer, or the run could not move.",
     ),
+    AuditAction(
+        key="import.refused",
+        classification=Classification.SECURITY,
+        summary=(
+            "An import request or job was refused because data import is not "
+            "activated on this deployment. Names a reason and a route or job, "
+            "never a file."
+        ),
+    ),
     # The three below arrived with the templates on 2026-09-29. Two of them are
     # written by the worker, which reverses the Phase 2 position that the run
     # row is the only record of an outcome: it still is the *state*, and these

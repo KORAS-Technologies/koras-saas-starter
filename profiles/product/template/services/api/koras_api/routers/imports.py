@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from koras_auth import JWTClaims
 from koras_auth.permissions import permissions_for
 from koras_import import (
@@ -54,13 +54,67 @@ from ..core.auth import AuthDep
 from ..core.database import DbSession
 from ..core.errors import ApiErrorCode, api_error
 from ..core.jobs import JobsDep
+from ..core.settings import settings
 from ..core.storage import StorageDep
 from ..core.tenant import TenantDep, require_subject
 from ..imports import registry
 
-router = APIRouter(tags=["imports"])
-
 MANAGE_PERMISSION = "imports.manage"
+
+
+async def require_import_activation(
+    request: Request, claims: AuthDep, tenant: TenantDep, session: DbSession
+) -> None:
+    """Refuse every import route unless this deployment has activated imports.
+
+    **Registered once, on the router, so no route can be added without it.**
+    `tests/unit/test_import_activation_gate.py` fails if this dependency is
+    removed or if a route is mounted outside the router. It runs after the
+    caller is authenticated and tenant-resolved (an anonymous caller still gets
+    401 and learns nothing about the switch) and after the permission check
+    (a caller without `imports.manage` gets the ordinary 403 and neither learns
+    the switch's state nor writes an audit row).
+
+    The refusal is the same 403 and the same words on every route: no target,
+    run, file or field is named, and the file is never opened. The audit row
+    carries the route template and a reason, nothing the caller supplied.
+
+    Why every route and not only the ones that read a file: the history and the
+    run views carry a customer's own column headings, the targets and template
+    routes describe record shapes, and a switch that is half off is a switch
+    nobody can state the meaning of. Cancel is gated too; a run stranded by
+    switching imports off is failed by the worker (which is gated as well), not
+    by a person.
+
+    Proven in Docoris; ADR 0013 section 7. The switch is
+    `IMPORTS_ENABLED`, off unless explicitly on -- see `koras_import.activation`.
+    """
+    if settings.imports_enabled:
+        return
+    _require(claims, "using imports")
+    # Only a request that would have changed something is recorded: a page that polls its
+    # read routes while imports are off must not write a security row per refresh.
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        route = request.scope.get("route")
+        await record(
+            session,
+            tenant_id=tenant.id,
+            actor_id=require_subject(tenant),
+            action="import.refused",
+            target_type="import_route",
+            target_id=str(getattr(route, "path", "") or "imports"),
+            outcome="denied",
+            details={"reason": "activation_disabled"},
+        )
+        await session.commit()
+    raise api_error(
+        status.HTTP_403_FORBIDDEN,
+        ApiErrorCode.IMPORT_NOT_ENABLED,
+        "data import is not enabled",
+    )
+
+
+router = APIRouter(tags=["imports"], dependencies=[Depends(require_import_activation)])
 
 
 def _require(claims: JWTClaims, doing: str) -> None:

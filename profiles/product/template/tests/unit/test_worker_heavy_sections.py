@@ -196,6 +196,7 @@ def _import(
         return None
 
     store = Store()
+    monkeypatch.setattr(task.imports, "imports_enabled", True)  # activation gate open
     monkeypatch.setattr(task, "settings", SimpleNamespace(database_url="postgresql://x/y"))
     monkeypatch.setattr(task, "_engine", Engine)
     monkeypatch.setattr(task, "async_sessionmaker", lambda *_, **__: Session)

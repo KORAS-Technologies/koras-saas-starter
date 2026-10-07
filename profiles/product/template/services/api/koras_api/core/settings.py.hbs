@@ -1,4 +1,5 @@
-from koras_platform import Environment
+{{#if capability.data_import}}from koras_import import parse_import_activation
+{{/if}}from koras_platform import Environment
 from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -56,6 +57,14 @@ class Settings(BaseSettings):
     # where a CDN or load balancer is guaranteed to be in front.
     trust_forwarded_for: bool = False
 
+{{#if capability.data_import}}
+    # Whether data import may start or advance at all (ADR 0013 section 7). OFF in
+    # every environment unless `IMPORTS_ENABLED` is an explicit "true"/"1"/"yes"/"on":
+    # blank, absent and malformed values are off. One switch per deployment -- not
+    # tenant-aware, and not a feature-flag system. Declared per environment in
+    # `local/config/import-activation.yaml`; the worker reads the same name.
+    imports_enabled: bool = False
+{{/if}}
     doppler_token: str = ""
 {{#if capability.reporting}}
     # Days a background report export is kept in the tenant's bucket before the
@@ -137,6 +146,14 @@ class Settings(BaseSettings):
     # The abuse ceiling between the request limiter and the plan's monthly
     # allowance. Zero switches it off.
     ai_requests_per_minute: int = 30
+{{/if}}
+{{#if capability.data_import}}
+
+    @field_validator("imports_enabled", mode="before")
+    @classmethod
+    def _imports_off_unless_explicitly_on(cls, value: object) -> bool:
+        """Never raises and never guesses toward on: a bad value must not stop the API booting."""
+        return parse_import_activation(value)
 {{/if}}
 
     @field_validator("database_url", mode="after")

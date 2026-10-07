@@ -1183,6 +1183,8 @@ export const en = {
     'This import can be checked but not written. Nothing in this product accepts these records yet.',
   'errors.importFileTooLarge':
     'This file is larger than one import reads. Split it and import the parts separately.',
+  'errors.importNotEnabled':
+    'Data import is not switched on for this product yet. An administrator has to activate it.',
   'errors.importFormatRefused':
     'This kind of file cannot be imported here. Download a template to see which formats are accepted.',
   'errors.uploadRefusedByPolicy':

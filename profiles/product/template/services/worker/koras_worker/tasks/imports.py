@@ -67,10 +67,12 @@ from koras_import import (
     WriteRefused,
     WriteRequest,
     check_total,
+    parse_import_activation,
     rows_from,
 )
 from koras_queue import BoundTask, JobEnvelope
 from koras_storage import ObjectStore, S3ObjectStore, StorageSettings, resolve_destination
+from pydantic import field_validator
 from pydantic_settings import SettingsConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
@@ -93,6 +95,21 @@ class ImportSettings(SweepSettings):
     storage_region: str = "us-east-1"
     storage_access_key: str = ""
     storage_secret_key: str = ""
+
+    #: Data import is off unless `IMPORTS_ENABLED` is an explicit "true" on *this*
+    #: process (ADR 0013 section 7). The API holds the same switch and refuses to
+    #: start or advance a run; this one stops a job that was enqueued before the
+    #: switch went off, or by anything other than the API, from touching a file.
+    imports_enabled: bool = False
+
+    @field_validator("imports_enabled", mode="before")
+    @classmethod
+    def _off_unless_explicitly_on(cls, value: object) -> bool:
+        """Blank, absent, malformed: off. Never raises, never guesses toward on.
+
+        The same rule as the API's, from the one function in `koras_import`.
+        """
+        return parse_import_activation(value)
 
 
 imports = ImportSettings()
@@ -229,9 +246,64 @@ def _run_store() -> Any | None:  # noqa: ANN401 - a module, reached by name
         return None
 
 
+_NOT_ENABLED = "data import is not enabled; the job was refused before its file was read"
+
+
+async def _refuse_while_disabled(envelope: JobEnvelope, job: str) -> dict[str, Any] | None:
+    """`None` when imports are on; otherwise the refusal this job answers with.
+
+    Called first in both tasks, before the heavy gate, the registry or the
+    object store are reached, so a refused job opens no connection to the
+    source and reads no byte of it. Fails closed: any error in recording the
+    refusal is logged and the job is still refused.
+
+    The run, if it can be found, is moved to `failed` through the same guarded
+    `abandon` a cancelled job uses, so a run enqueued before the switch went
+    off does not sit in `validating` for ever; it is never advanced toward a
+    write. Proven in Docoris; ADR 0013 section 7.
+    """
+    if imports.imports_enabled:
+        return None
+    run_id = str(envelope.payload.get("run_id") or "")
+    logger.warning("import %s refused: data import is not enabled (activation_disabled)", job)
+    if run_id and envelope.tenant_id and settings.database_url:
+        try:
+            store = _run_store()
+            async with asyncio.timeout(_STOP_GRACE_SECONDS):
+                engine = _engine()
+                try:
+                    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+                        await session.execute(_AS_TENANT, {"tenant_id": envelope.tenant_id})
+                        run = await store.get(session, run_id) if store else None
+                        if run is not None and store is not None and run.status in _UNFINISHED:
+                            await store.abandon(session, run, _NOT_ENABLED)
+                            await session.commit()
+                        # The tenant is transaction-local and the commit above ended its
+                        # transaction, so it is said again: without it the audit insert is
+                        # refused by row-level security and the refusal leaves no evidence.
+                        await session.execute(_AS_TENANT, {"tenant_id": envelope.tenant_id})
+                        # The run's own id is the target; no file, name or content.
+                        await _record(
+                            session,
+                            tenant_id=envelope.tenant_id,
+                            actor_id="system",
+                            action="import.refused",
+                            run_id=run_id,
+                            outcome="denied",
+                            details={"reason": "activation_disabled", "job": job},
+                        )
+                finally:
+                    await engine.dispose()
+        except Exception:
+            logger.exception("import %s refused, and the refusal could not be recorded", job)
+    return {"status": "refused", "reason": "activation_disabled"}
+
+
 async def validate_run(ctx: dict[str, Any], envelope: JobEnvelope) -> dict[str, Any]:
     """Check one run's file, and record what was wrong with it."""
     del ctx
+    if (refused := await _refuse_while_disabled(envelope, "validate")) is not None:
+        return refused
     try:
         # From before the source is fetched. What the run freed is handed
         # back by the gate before it is let go.
@@ -417,6 +489,8 @@ async def commit_run(ctx: dict[str, Any], envelope: JobEnvelope) -> dict[str, An
     that way while somebody else's code runs.
     """
     del ctx
+    if (refused := await _refuse_while_disabled(envelope, "commit")) is not None:
+        return refused
     try:
         async with heavy(IMPORT, limit=IMPORT_SLOTS):
             return await _commit_run(envelope, WorkBudget(WORK_BUDGET_SECONDS))
