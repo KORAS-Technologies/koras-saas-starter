@@ -1,0 +1,1105 @@
+{{#if capability.secure_files}}
+"""Running an approved restore: read the copy, check it, then write it.
+
+**The route approves; this runs.** A person approving a restore does not wait
+for a bucket, and a request that was approved and then lost to a crashed process
+is a row somebody can find rather than an approval that evaporated. The sweep
+picks up anything `approved`, which makes the approval durable and the execution
+retryable without either being a special case.
+
+**It verifies before it writes, and that is the whole reason this is safe.** The
+bytes are hashed here, and compared with the digest the backup run recorded. A
+copy that does not match is a failure -- the object stays gone, which is
+recoverable, rather than being replaced by something that is not it, which is
+not. Where no digest was ever recorded the restore still runs, because refusing
+would mean refusing the only copy of an object whose provider never computed
+one, and the audit row says plainly that nothing was compared. What is written is
+then read back and hashed again before any row names it (`_write_verified`).
+
+**Non-overwriting by default.** A restore writes a new object under a new file
+id and destroys nothing. Overwriting is a separate decision taken twice, at the
+request and at the approval, and only then does it replace the bytes of an
+existing file.
+
+**A replacement is a new object, never the old key written over (ADR 0013,
+`secure_files`; proven in Docoris as OD-10 S3).** The bytes of a file that was
+released as `clean` must not be changed under that verdict, and a signed GET issued
+for the old bytes must never read the new ones. So the replacement is written to a
+*new* key, and in one statement the row is pointed at it and reset to `pending` with
+none of the old scan evidence, index state or chunks (`_REPLACE_FILE`). The key has
+exactly the shape of a finalized upload (`core/upload_window.final_key`): the one
+shape the scanner reads and the release rule accepts, written only by the server and
+never signed for by any ticket. The old object is neither overwritten nor deleted: a
+URL already issued for it keeps reading the old bytes and nothing else, and nothing
+here reclaims it (reconciliation reports an unreferenced object and removes none). A
+file whose bytes were condemned (`infected`/`quarantined`) is not replaced in place,
+and neither is one a scan may still be about to give a verdict on; both are refused
+before anything is written (`replacement_refusal`). Whatever is restored --
+replacement or new copy -- is then handed to the scanner explicitly (`restore_scan`),
+because the sweep's watermark may exclude an old file.
+
+**One object in hand at a time, and never beside an import.** Each request is run
+inside the worker's heavy gate -- `koras_worker/heavy.py` -- and the gate is taken
+*before the request is claimed*. A restore that is waiting for an import to finish
+is therefore still `approved`: if the queue cancels the sweep while it waits, or the
+worker is replaced, the request is exactly where the next pass looks for it.
+"""
+{{else}}
+"""Running an approved restore: read the copy, check it, then write it.
+
+**The route approves; this runs.** A person approving a restore does not wait
+for a bucket, and a request that was approved and then lost to a crashed process
+is a row somebody can find rather than an approval that evaporated. The sweep
+picks up anything `approved`, which makes the approval durable and the execution
+retryable without either being a special case.
+
+**It verifies before it writes, and that is the whole reason this is safe.** The
+bytes are hashed here, and compared with the digest the backup run recorded. A
+copy that does not match is a failure -- the object stays gone, which is
+recoverable, rather than being replaced by something that is not it, which is
+not. Where no digest was ever recorded the restore still runs, because refusing
+would mean refusing the only copy of an object whose provider never computed
+one, and the audit row says plainly that nothing was compared.
+
+**Non-overwriting by default.** A restore writes a new object under a new file
+id and destroys nothing. Overwriting is a separate decision taken twice, at the
+request and at the approval, and only then does this reuse the original key.
+
+**One object in hand at a time, and never beside an import.** Since GR-352E
+each request is run inside the worker's heavy gate -- `koras_worker/heavy.py`
+-- and the gate is taken *before the request is claimed*. A restore that is
+waiting for an import to finish is therefore still `approved`: if the queue
+cancels the sweep while it waits, or the worker is replaced, the request is
+exactly where the next pass looks for it.
+"""
+{{/if}}
+
+from __future__ import annotations
+
+{{#if capability.secure_files}}
+import hashlib
+import importlib
+import json
+import logging
+import uuid
+from datetime import datetime
+from typing import Any, NamedTuple, Protocol
+
+from koras_storage import Category, ObjectStore, S3ObjectStore, object_key
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+
+from ..heavy import RESTORE, heavy
+from ..settings import settings
+from .restore_scan import (
+    in_flight_horizon_seconds,
+    reconcile_restored_scans,
+    request_scans_for_restored,
+)
+from .storage_backup import backup as backup_settings
+from .storage_backup import destination_from
+{{else}}
+import hashlib
+import json
+import logging
+import uuid
+from typing import Any, Protocol
+
+from koras_storage import Category, ObjectStore, S3ObjectStore, object_key
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+
+from ..heavy import RESTORE, heavy
+from ..settings import settings
+from .storage_backup import backup as backup_settings
+from .storage_backup import destination_from
+{{/if}}
+
+logger = logging.getLogger(__name__)
+
+
+class ApprovedRestore(Protocol):
+    """One row of the approved-and-joined query.
+
+    A protocol rather than `Any`, so that renaming a column in the statement
+    above and not here is a type error rather than an attribute error at three
+    in the morning on the one night somebody needed their file back.
+    """
+
+    id: str
+    tenant_id: str
+    file_id: str
+    overwrite: bool
+    backup_key: str
+    backup_digest: str | None
+    size_bytes: int | None
+
+#: The largest object this process will read into memory. The same ceiling the
+#: cross-provider backup uses, for the same reason: a worker holding a gigabyte
+#: to move it is a worker that falls over on the night it mattered.
+RESTORE_CEILING = 64 * 1024 * 1024
+
+#: How many approved requests one pass runs. A ceiling rather than a target.
+RESTORE_LIMIT = 50
+
+_PROVISIONING = text("select set_config('app.provisioning', 'on', true)")
+_AS_TENANT = text(
+    "select set_config('app.provisioning', '', true), set_config('app.tenant_id', :tenant_id, true)"
+)
+
+{{#if capability.secure_files}}
+#: The backup is joined on the request's own tenant and file, not only on its id: this runs on
+#: the provisioning context, which sees every tenant, so a row that named another tenant's
+#: backup must find nothing here rather than that tenant's object.
+_APPROVED = text(
+    "select r.id::text as id, r.tenant_id::text as tenant_id, r.file_id::text as file_id, "
+    " r.overwrite, b.backup_key, b.backup_digest, b.size_bytes, b.source_key "
+    "from public.restore_requests r "
+    "join public.file_backups b on b.id = r.backup_id "
+    " and b.tenant_id = r.tenant_id and b.file_id = r.file_id "
+    "where r.status = 'approved' order by r.approved_at limit :limit"
+)
+{{else}}
+_APPROVED = text(
+    "select r.id::text as id, r.tenant_id::text as tenant_id, r.file_id::text as file_id, "
+    " r.overwrite, b.backup_key, b.backup_digest, b.size_bytes, b.source_key "
+    "from public.restore_requests r "
+    "join public.file_backups b on b.id = r.backup_id "
+    "where r.status = 'approved' order by r.approved_at limit :limit"
+)
+{{/if}}
+
+_CLAIM = text(
+    "update public.restore_requests set status = 'restoring' "
+    "where id = cast(:id as uuid) and status = 'approved' returning id"
+)
+_FINISH = text(
+    "update public.restore_requests set status = :status, error = :error, "
+    " restored_file_id = cast(:restored as uuid), finished_at = now() "
+    "where id = cast(:id as uuid)"
+)
+
+#: The object being restored, where it still exists. An overwrite needs its key
+#: and its metadata; a new object needs the metadata alone.
+#:
+#: Tenant-scoped, and it was not. The request that reaches here cannot name
+#: another tenant's file today -- `routers/restore.py` resolves the backup
+#: through `available_backup(tenant_id=...)` -- but that made a Python check the
+#: only thing between a crafted row and this statement reading another tenant's
+#: metadata under a context that sees every tenant. A predicate here costs
+#: nothing and does not depend on the route staying correct.
+_ORIGINAL = text(
+    "select name, content_type, size_bytes, classification, category, uploaded_by, storage_key "
+    "from public.files "
+    "where id = cast(:file_id as uuid) and tenant_id = cast(:tenant_id as uuid)"
+)
+{{#if capability.secure_files}}
+_INSERT_FILE = text(
+    "insert into public.files "
+    " (id, tenant_id, name, storage_key, content_type, size_bytes, status, uploaded_by, "
+    "  category, classification, checksum_sha256, checksum_verified_at) "
+    "values (cast(:id as uuid), cast(:tenant_id as uuid), :name, :storage_key, :content_type, "
+    " :size_bytes, 'ready', :uploaded_by, :category, :classification, :checksum, now()) "
+    "returning created_at"
+)
+
+#: The row of the file about to be replaced, locked, as the tenant. Its state is read here
+#: and not from `_ORIGINAL`: the decision to replace is made on the row as it is while this
+#: transaction holds it, so a verdict, a delete or another restore cannot move it between the
+#: read and the write. `scan_recent` is asked of the database's own clock.
+_LOCK_ORIGINAL = text(
+    "select storage_key, status, scan_status, "
+    " (scan_attempted_at is not null "
+    "  and scan_attempted_at > now() - make_interval(secs => :horizon)) as scan_recent "
+    "from public.files "
+    "where id = cast(:file_id as uuid) and tenant_id = cast(:tenant_id as uuid) "
+    "for update"
+)
+
+#: The replacement, in one statement: the new object's identity, and every piece of evidence
+#: that was about the old bytes cleared with it. Not copied, not "reset to the column
+#: default" by omission -- each is named, so a column added later that is evidence about bytes
+#: has to be decided here and a test (`tests/integration/test_restore_replacement_real.py`) fails
+#: until it is.
+#:
+#: * `scan_status = 'pending'`, `scan_note`, `scan_attempts`, `scan_attempted_at`,
+#:   `scan_failure`, `scan_object_etag`: the verdict, its evidence and its attempt history
+#:   belong to the old object. `scan_object_etag` is the identity a `clean` was bound to; with
+#:   it gone the release rule refuses the row until the scanner stamps the new object.
+#: * `checksum_sha256` is the digest this worker computed over the bytes it wrote, and read
+#:   back, so `checksum_verified_at` is set to now: it is the same claim the upload finalizer
+#:   makes about a final object it hashed itself, and it is what makes the scanner compare the
+#:   digest of the bytes it streams with this one.
+#: * `indexed_at`, `index_note`: the index state of the old content. (Whatever the assistant derived
+#:   from it is removed in the same transaction where the assistant is generated, and by the
+#:   withdrawal trigger as well where the file was clean.)
+#: * `backup_status`, `backed_up_at`, `archived_at`: a "verified" backup and an archive copy are of
+#:   the old bytes. Left set, the backup selection (`backup_status in ('none', 'failed')`) would
+#:   never copy the replacement while the row claimed a verified backup. `retain_until` is
+#:   deliberately not touched: re-resolving a restored file's retention is a policy decision.
+#: * The `where` repeats the three facts the decision was made on, so a row that is not as it
+#:   was read updates nothing and the caller fails the request instead of switching it.
+_REPLACE_FILE = text(
+    "update public.files set storage_key = :new_key, size_bytes = :size_bytes, "
+    " checksum_sha256 = :checksum, checksum_verified_at = now(), status = 'ready', "
+    " scan_status = 'pending', scan_note = null, scan_attempts = 0, scan_attempted_at = null, "
+    " scan_failure = null, scan_object_etag = null, indexed_at = null, index_note = null, "
+    " backup_status = 'none', backed_up_at = null, archived_at = null "
+    "where id = cast(:file_id as uuid) and tenant_id = cast(:tenant_id as uuid) "
+    " and storage_key = :old_key and status = :seen_status and scan_status = :seen_scan "
+    "returning created_at"
+)
+{{#if capability.ai}}
+
+#: Whatever the assistant derived from the old bytes. The withdrawal trigger does this for a file
+#: that was `ready` + `clean`; a purged or archived file's chunks are hidden by the read gate only
+#: while it is not releasable, and would come back the moment the replacement is cleaned. So it
+#: is stated here, for every old state, in the same transaction.
+_WITHDRAW_CHUNKS = text(
+    "delete from public.ai_knowledge_chunks "
+    "where tenant_id = cast(:tenant_id as uuid) and resource_type = 'file' "
+    " and resource_id = :file_id"
+)
+{{/if}}
+
+#: What a commit that raised left behind, asked of the database afterwards. The request row, the
+#: index row and the audit row are one transaction, so the request being `completed` is proof the
+#: whole of it committed; the request still `restoring` is proof none of it did (nothing else
+#: finishes a claimed request). The file row naming the key is a second, independent proof of the
+#: commit. Provisioning context, identifiers only.
+_REQUEST_STATE = text("select status from public.restore_requests where id = cast(:id as uuid)")
+#: Taken only when the request still reads `restoring`: the claim holds a row lock for as long as
+#: the transaction that may still be committing is alive, so waiting for it (briefly) turns "I did
+#: not see the commit" into "there is no commit left to see". Times out into `unknown`.
+_REQUEST_LOCK = text(
+    "select status from public.restore_requests where id = cast(:id as uuid) for update"
+)
+_LOCK_WAIT = text("select set_config('lock_timeout', '3s', true)")
+_KEY_REFERENCED = text(
+    "select exists(select 1 from public.files where storage_key = :key "
+    " and tenant_id = cast(:tenant_id as uuid))"
+)
+{{else}}
+_INSERT_FILE = text(
+    "insert into public.files "
+    " (id, tenant_id, name, storage_key, content_type, size_bytes, status, uploaded_by, "
+    "  category, classification, checksum_sha256) "
+    "values (cast(:id as uuid), cast(:tenant_id as uuid), :name, :storage_key, :content_type, "
+    " :size_bytes, 'ready', :uploaded_by, :category, :classification, :checksum)"
+)
+_TOUCH_FILE = text(
+    "update public.files set size_bytes = :size_bytes, checksum_sha256 = :checksum, "
+    " status = 'ready' "
+    "where id = cast(:file_id as uuid) and tenant_id = cast(:tenant_id as uuid)"
+)
+{{/if}}
+
+_AUDIT_INSERT = text(
+    "insert into public.audit_events "
+    " (tenant_id, actor_id, action, target_type, target_id, outcome, details, classification) "
+    "values (cast(:tenant_id as uuid), 'system', :action, 'file', :target_id, :outcome, "
+    " cast(:details as jsonb), 'administrative')"
+)
+
+
+{{#if capability.secure_files}}
+def _engine() -> AsyncEngine:
+    return create_async_engine(
+        settings.database_url.replace("postgresql://", "postgresql+asyncpg://", 1),
+        # A failed statement's log line must not carry its parameters: the key names the file
+        # and the checksum identifies the bytes.
+        hide_parameters=True,
+    )
+{{else}}
+def _engine() -> AsyncEngine:
+    return create_async_engine(
+        settings.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    )
+{{/if}}
+
+
+def _primary() -> ObjectStore:
+    """The bucket objects live in. Where a restore puts them back."""
+    from .storage_backup import _store
+
+    return _store(backup_settings)
+
+
+async def _record(
+    session: AsyncSession,
+    tenant_id: str,
+    *,
+    action: str,
+    target_id: str,
+    outcome: str,
+    details: dict[str, Any],
+) -> None:
+    await session.execute(_AS_TENANT, {"tenant_id": tenant_id})
+    await session.execute(
+        _AUDIT_INSERT,
+        {
+            "tenant_id": tenant_id,
+            "action": action,
+            "target_id": target_id,
+            "outcome": outcome,
+            "details": json.dumps(details),
+        },
+    )
+
+
+def read_and_check(
+    store: ObjectStore, key: str, expected: str | None, size_bytes: int | None
+) -> tuple[bytes | None, str, str | None]:
+    """Fetch the copy and decide whether it is the object it claims to be.
+
+    Returns the bytes, the digest of what was read, and a refusal where there
+    is one. A mismatch returns no bytes: the object stays gone, which is
+    recoverable, rather than being replaced by something that is not it.
+    """
+    if size_bytes is not None and size_bytes > RESTORE_CEILING:
+        return None, "", "the object is larger than this process will read in one piece"
+    content = store.get(key)
+    if content is None:
+        return None, "", "the backup copy is no longer at the destination"
+    digest = hashlib.sha256(content).hexdigest()
+    if expected and digest != expected:
+        return None, digest, "the backup copy does not match the digest recorded for it"
+    return content, digest, None
+
+
+{{#if capability.secure_files}}
+class Ran(NamedTuple):
+    """What one request did. `file_id` and `created_at` are of the file now needing a scan."""
+
+    outcome: str
+    file_id: str | None
+    error: str | None
+    #: Of the restored row, for the scanner's read gate. None unless something was restored.
+    created_at: datetime | None = None
+    #: The closed reason a replacement was refused, for the audit row. Never a free sentence.
+    refusal: str | None = None
+    #: The object this request wrote, so that a failure after `run_one` returns can remove it.
+    new_key: str | None = None
+
+
+#: The states a replacement may start from. `ready` is a file in use; `archived`, `deleted` and
+#: `purged` are what restore is for. A `quarantined` or still-`pending` upload is not.
+REPLACEABLE_STATUSES = frozenset({"ready", "archived", "deleted", "purged"})  # and `clean`
+
+#: Why a replacement was refused, and what the person who asked is told. Closed: the code goes
+#: in the audit row and the sentence in the request's `error`; neither carries a name, a key or
+#: a digest.
+REFUSALS = {
+    "condemned": (
+        "that file was found to be infected; it is not replaced in place. "
+        "Restore it as a new object instead, which is scanned before anything can read it"
+    ),
+    "scan_unresolved": (
+        "that file has no scan verdict yet, so a scan may be running on the bytes it has. "
+        "Restore it as a new object instead, or ask again once it has a verdict"
+    ),
+    "scan_recent": (
+        "that file was scanned a moment ago and a scan may still be finishing. "
+        "Ask again in a quarter of an hour"
+    ),
+    "not_replaceable": "that file is not in a state a replacement can start from",
+}
+
+#: What a request is told when the object that was written did not read back as the bytes that
+#: were sent. Closed, like the others, and carrying no key or digest.
+UNVERIFIED = (
+    "the restored object did not read back as the bytes that were verified; nothing was changed"
+)
+
+
+def replacement_refusal(*, status: str, scan_status: str, scan_recent: bool) -> str | None:
+    """The reason a replacement of this file must not happen, or None where it may.
+
+    **Why these, and not a wider or narrower set.** A replacement changes which object the row
+    names, and a scan that read the *old* object before the change commits its verdict to the
+    row, not to the object (`transition._CLEAN` is guarded by status and `scan_status`, and by
+    the key it read). So the restore may only change the key when no scan can be in flight:
+
+    - `infected`/`quarantined`: never replaced in place. The bytes were condemned, and writing
+      anything under that row would turn a refusal into a rescan. A new object is the explicit
+      path.
+    - `pending` in **any** status (and `skipped`, which no verdict path writes): a scan of the
+      old object may be running or about to read the row. A scan reads the row while
+      `ready` + `pending`, then makes a HEAD call, and only then counts its attempt, so for a
+      moment it has written nothing; if the file is deleted in that moment and restored, the
+      scan's later attempt count and clean commit could be aimed at the replacement. No
+      timestamp closes that window, so a pending file is never replaced in place.
+    - any state with a scan attempt inside the in-flight horizon: the attempt was counted before
+      the object was read, so a run that began then may not have finished.
+
+    A `clean` row is read by no scan (`scanning.runtime._ROW` selects `pending`), so the only
+    replaceable files are `clean` ones (`ready`, `archived`, `deleted` or `purged`) with no
+    recent attempt.
+    """
+    if scan_status == "infected" or status == "quarantined":
+        return "condemned"
+    if status not in REPLACEABLE_STATUSES:
+        return "not_replaceable"
+    if scan_status in {"pending", "skipped"}:
+        return "scan_unresolved"
+    if scan_recent:
+        return "scan_recent"
+    return None
+
+
+def _window() -> Any:  # noqa: ANN401 - a module, reached by name
+    """The API's upload window, by name: the one module that says what a final key is."""
+    try:
+        return importlib.import_module("koras_api.core.upload_window")
+    except ImportError as error:
+        raise RuntimeError("the upload window is not on this worker's path") from error
+
+
+def replacement_key(tenant_id: str, file_id: str, name: str, category: Category) -> str:
+    """A final key no earlier object of this file has: `.../<file id>/final/<generation>/<name>`.
+
+    Exactly the shape a finalized upload has (`upload_window.final_key`), so the one rule that
+    says which key the scanner reads and the release primitive accepts covers a restore without
+    a second one. The tenant, category and file segments and the name's sanitising are the upload
+    route's (`object_key`); the generation is random, so two replacements, or a replacement and a
+    retry, never meet, and no ticket was ever signed for it.
+    """
+    leaf = object_key(tenant_id, file_id, name, category=category).rpartition("/")[2]
+    key: str = _window().final_key(tenant_id, str(category), file_id, str(uuid.uuid4()), leaf)
+    return key
+
+
+def _discard(target: ObjectStore, key: str) -> None:
+    try:
+        target.delete(key)
+    except Exception:  # noqa: BLE001 - reconciliation reports what this could not remove
+        logger.exception("a restore's object could not be removed")
+
+
+def _write_verified(
+    target: ObjectStore, key: str, content: bytes, content_type: str, digest: str
+) -> bool:
+    """Write the object, and read it back before anything points at it. True only if it matches.
+
+    The write is made with the digest as the provider's own integrity check where the provider
+    has one; the read-back is the check that does not depend on that. A mismatch removes the
+    object (nothing references a key this call just made up) and reports False, so no row is ever
+    pointed at bytes that were not the ones verified. A write that raised may have left an object
+    behind; it is removed on the way out, best effort, and the error goes on.
+    """
+    try:
+        target.put(key, content, content_type, checksum_sha256=digest)
+        written = target.get(key)
+    except BaseException:
+        _discard(target, key)
+        raise
+    if (
+        written is not None
+        and len(written) == len(content)
+        and hashlib.sha256(written).hexdigest() == digest
+    ):
+        return True
+    _discard(target, key)
+    return False
+
+
+async def run_one(
+    session: AsyncSession, source: ObjectStore, target: ObjectStore, row: ApprovedRestore
+) -> Ran:
+    """One approved request. Returns its outcome, the file id and any error."""
+    content, digest, refusal = read_and_check(
+        source, row.backup_key, row.backup_digest, row.size_bytes
+    )
+    if refusal is not None:
+        return Ran("failed", None, refusal)
+
+    original = (
+        await session.execute(_ORIGINAL, {"file_id": row.file_id, "tenant_id": row.tenant_id})
+    ).first()
+
+    # The index row is written as the tenant, never as the platform, and this
+    # is the whole correctness of the function.
+    #
+    # `files` has no provisioning insert policy and `00021` says the omission
+    # is deliberate; `files_update_provisioning` additionally refuses a row
+    # whose status is `purged`. So a worker on the provisioning context could
+    # write the bytes and then fail to write the row -- leaving an object with
+    # no index entry at all, which is outside retention, outside every hold,
+    # outside the purge sweep, and which reconciliation reports without ever
+    # removing. Restored content, usually content the tenant had purged,
+    # resurrected into live storage permanently and invisibly.
+    #
+    # A restored object belongs to the tenant exactly as an uploaded one does,
+    # so it is written under the tenant's own policies. That is also what the
+    # audit inserts in every other sweep already do.
+    await session.execute(_AS_TENANT, {"tenant_id": row.tenant_id})
+
+    if row.overwrite:
+        if original is None:
+            # Approved as an overwrite and there is nothing to overwrite. Not a
+            # silent downgrade to a new object: the approval was for a
+            # different act than the one now available.
+            return Ran("failed", None, "the object to overwrite no longer exists")
+        return await _replace(session, target, row, original, content or b"", digest)
+
+    # A new object, which destroys nothing. Its own id and its own key, so the
+    # restored copy and anything still at the original key are distinguishable.
+    new_id = str(uuid.uuid4())
+    name = original.name if original is not None else f"restored-{row.file_id}"
+    content_type = original.content_type if original is not None else "application/octet-stream"
+    category = Category(original.category) if original is not None else Category.DOCUMENTS
+    key = replacement_key(row.tenant_id, new_id, name, category)
+    body = content or b""
+    if not _write_verified(target, key, body, content_type, digest):
+        return Ran("failed", None, UNVERIFIED)
+    # A new row takes `scan_status` and every other scan column from the table's defaults:
+    # `pending`, no attempts, no evidence. They are not named here, so there is nothing to copy.
+    try:
+        created = (
+            await session.execute(
+                _INSERT_FILE,
+                {
+                    "id": new_id,
+                    "tenant_id": row.tenant_id,
+                    "name": name,
+                    "storage_key": key,
+                    "content_type": content_type,
+                    "size_bytes": len(body),
+                    "uploaded_by": original.uploaded_by if original is not None else "system",
+                    "category": str(category),
+                    "classification": (
+                        original.classification if original is not None else "standard"
+                    ),
+                    "checksum": digest,
+                },
+            )
+        ).scalar_one()
+    except BaseException:
+        # The transaction is the caller's to roll back; the object is ours to remove.
+        _discard(target, key)
+        raise
+    return Ran("completed", new_id, None, created, new_key=key)
+
+
+async def _replace(
+    session: AsyncSession,
+    target: ObjectStore,
+    row: ApprovedRestore,
+    original: Any,  # noqa: ANN401 - a row of `_ORIGINAL`
+    content: bytes,
+    digest: str,
+) -> Ran:
+    """Replace a file's bytes with a new object and a clean slate (ADR 0013, `secure_files`).
+
+    Order, and why: lock and decide first (nothing is written for a refusal); write the new
+    object and read it back (a failure here leaves the row and the old object exactly as they
+    were); switch the row and withdraw the derived content in this transaction (a failure here
+    deletes the new object again, best effort, and the row is untouched because the transaction
+    rolls back). The old object is never written and never deleted.
+    """
+    locked = (
+        await session.execute(
+            _LOCK_ORIGINAL,
+            {
+                "file_id": row.file_id,
+                "tenant_id": row.tenant_id,
+                "horizon": in_flight_horizon_seconds(),
+            },
+        )
+    ).first()
+    if locked is None:
+        return Ran("failed", None, "the object to overwrite no longer exists")
+    why = replacement_refusal(
+        status=locked.status, scan_status=locked.scan_status, scan_recent=bool(locked.scan_recent)
+    )
+    if why is not None:
+        return Ran("failed", None, REFUSALS[why], refusal=why)
+
+    category = Category(original.category)
+    new_key = replacement_key(row.tenant_id, row.file_id, original.name, category)
+    if not _write_verified(target, new_key, content, original.content_type, digest):
+        return Ran("failed", None, UNVERIFIED)
+    try:
+        switched = (
+            await session.execute(
+                _REPLACE_FILE,
+                {
+                    "file_id": row.file_id,
+                    "tenant_id": row.tenant_id,
+                    "new_key": new_key,
+                    "old_key": locked.storage_key,
+                    "seen_status": locked.status,
+                    "seen_scan": locked.scan_status,
+                    "size_bytes": len(content),
+                    "checksum": digest,
+                },
+            )
+        ).first()
+        if switched is None:
+            # Not as it was read: the statement updated nothing. Reported `completed` while
+            # the row still names the old object is the worst shape a restore can take.
+            _discard(target, new_key)
+            return Ran(
+                "failed",
+                None,
+                "the object could not be brought back into the index; nothing was changed",
+            )
+{{#if capability.ai}}
+        await session.execute(
+            _WITHDRAW_CHUNKS, {"tenant_id": row.tenant_id, "file_id": row.file_id}
+        )
+{{/if}}
+    except BaseException:
+        # The transaction is the caller's to roll back; the object is ours to remove, so a
+        # failed switch does not leave bytes at a key nothing points to.
+        _discard(target, new_key)
+        raise
+    return Ran("completed", row.file_id, None, switched.created_at, new_key=new_key)
+
+
+async def run_restores(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Every approved request, read and checked before anything is written."""
+    if not settings.database_url:
+        logger.warning("restore skipped: the worker has no DATABASE_URL")
+        return {"status": "skipped", "reason": "no database"}
+    if not backup_settings.storage_bucket or not backup_settings.storage_access_key:
+        logger.warning("restore skipped: the worker has no storage credentials")
+        return {"status": "skipped", "reason": "no storage"}
+    try:
+        backup_destination = destination_from(backup_settings)
+    except ValueError as problem:
+        # Enabled approvals with nowhere to read from. Loud, and not a skip: a
+        # restore reported as nothing-to-do is a restore nobody chases.
+        logger.error("restore cannot run: %s", problem)
+        return {"status": "failed", "reason": str(problem)}
+
+    source = S3ObjectStore(backup_destination)
+    target = _primary()
+    engine = _engine()
+    restored: list[tuple[str, str, datetime]] = []
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+            done, failed = await restore_approved(session, source, target, restored=restored)
+            # After every row is committed, so the scan finds what it was asked about. Asking
+            # never fails the restore: the rows are committed, the files are `pending` and
+            # withheld, and the follow-up below and the scan sweep both pick them up.
+            await request_scans_for_restored(ctx, restored)
+            # And the ones an earlier pass could not ask for: the scan sweep's watermark can
+            # exclude an old file, so a restored one is followed up here.
+            try:
+                await reconcile_restored_scans(ctx, session)
+            except Exception:  # noqa: BLE001 - the restore has completed; the next pass asks again
+                logger.exception("the follow-up for restored files' scans could not run")
+    finally:
+        await engine.dispose()
+
+    logger.info("restore: %d completed, %d failed", done, failed)
+    return {"status": "ok", "completed": done, "failed": failed}
+
+
+async def commit_outcome(session: AsyncSession, row: ApprovedRestore, new_key: str | None) -> str:
+    """What became of a transaction whose COMMIT raised: `committed`, `not_committed`, `unknown`.
+
+    A commit that raises is not a commit that failed: the connection can drop after the server
+    has made the transaction durable. So the answer is read from the database, on a fresh
+    transaction, and never assumed. `not_committed` is returned only on proof -- the request is
+    still `restoring` and no file row names the key. Anything that cannot be read, or reads
+    ambiguously, is `unknown`, and the caller must not delete the object.
+    """
+    try:
+        await session.rollback()
+    except Exception:  # noqa: BLE001 - a dead connection; the next statement opens a new one
+        logger.warning("a restore's connection could not be rolled back after a failed commit")
+    try:
+        await session.execute(_PROVISIONING)
+        state = (await session.execute(_REQUEST_STATE, {"id": row.id})).scalar_one_or_none()
+        if state == "restoring":
+            # Not seen committed is not proof of not committed: the COMMIT may still be in
+            # flight on the old backend. Its row lock is held until it ends, so take it.
+            await session.execute(_LOCK_WAIT)
+            locked = (await session.execute(_REQUEST_LOCK, {"id": row.id})).scalar_one_or_none()
+            if locked is None:
+                # The row left the set a lock can be taken on: it was finished meanwhile.
+                state = (await session.execute(_REQUEST_STATE, {"id": row.id})).scalar_one_or_none()
+            else:
+                state = locked
+        referenced = False
+        if new_key is not None:
+            referenced = bool(
+                (
+                    await session.execute(
+                        _KEY_REFERENCED, {"key": new_key, "tenant_id": row.tenant_id}
+                    )
+                ).scalar_one()
+            )
+        await session.rollback()
+    except Exception:  # noqa: BLE001 - unreadable is unknown, and unknown keeps the object
+        logger.exception("the outcome of a restore's commit could not be read")
+        try:
+            await session.rollback()
+        except Exception:  # noqa: BLE001
+            logger.warning("a restore's verification could not be rolled back")
+        return "unknown"
+    if referenced or state in {"completed", "failed"}:
+        return "committed"
+    if state == "restoring":
+        return "not_committed"
+    return "unknown"
+
+
+async def restore_approved(
+    session: AsyncSession,
+    source: ObjectStore,
+    target: ObjectStore,
+    *,
+    restored: list[tuple[str, str, datetime]] | None = None,
+) -> tuple[int, int]:
+    """Every approved request on this session. Returns how many completed and failed.
+
+    `restored` collects `(tenant_id, file_id, created_at)` of each file a request brought
+    back, appended only once that request's rows are committed.
+    """
+    done = 0
+    failed = 0
+    await session.execute(_PROVISIONING)
+    approved = (await session.execute(_APPROVED, {"limit": RESTORE_LIMIT})).all()
+    # Ended here, so that a wait for the gate is not a transaction held open.
+    await session.commit()
+    for row in approved:
+        # The gate first, then the claim. A request that waits here for an
+        # import to finish has not been claimed, so a sweep the queue cancels
+        # while it waits leaves an `approved` row for the next pass rather
+        # than a `restoring` one nothing will ever pick up.
+        async with heavy(RESTORE):
+            await session.execute(_PROVISIONING)
+            # Claimed before anything is read, so two workers cannot run the
+            # same request.
+            claimed = (await session.execute(_CLAIM, {"id": row.id})).first()
+            await session.commit()
+            await session.execute(_PROVISIONING)
+            if claimed is None:
+                await session.commit()
+                continue
+
+            try:
+                ran = await run_one(session, source, target, row)
+            except Exception:
+                logger.exception("a restore failed")
+                await session.rollback()
+                await session.execute(_PROVISIONING)
+                ran = Ran("failed", None, "the restore could not be completed")
+            outcome, restored_id, error = ran.outcome, ran.file_id, ran.error
+
+        # Outside the gate: the object has been written and is no longer in
+        # hand, and what is left is two rows.
+        #
+        # Back to the platform's context before touching the request
+        # row. `run_one` ends on the tenant's, because the index row it
+        # writes belongs to the tenant -- and `_FINISH` is written
+        # against `restore_requests_run_provisioning`, which is the
+        # policy that admits `restoring` -> `completed`. Leaving the
+        # tenant context set would have it permitted by the tenant's
+        # own policy instead: the same outcome today, by a rule nobody
+        # chose, and a silent failure the day either policy changes.
+        commit_issued = False
+        try:
+            await session.execute(_PROVISIONING)
+            await session.execute(
+                _FINISH,
+                {
+                    "id": row.id,
+                    "status": outcome,
+                    "error": error,
+                    "restored": restored_id,
+                },
+            )
+            await _record(
+                session,
+                row.tenant_id,
+                action=f"storage.restore.{outcome}",
+                target_id=row.file_id,
+                outcome="ok" if outcome == "completed" else "failed",
+                details={
+                    "overwrite": bool(row.overwrite),
+                    # Whether anything was compared, and never the digest
+                    # itself: it identifies the bytes.
+                    "verified": bool(row.backup_digest),
+                    # Why a replacement was refused, as a closed code. Absent otherwise.
+                    **({"refusal": ran.refusal} if ran.refusal else {}),
+                },
+            )
+            # The last statement of a request: nothing is left open for the next
+            # one's wait.
+            commit_issued = True
+            await session.commit()
+        except Exception:
+            logger.exception("a restore could not be finished")
+            # Three different situations, and only one of them permits removing the object.
+            #
+            # A. An exception before COMMIT was issued: the transaction definitely did not
+            #    commit, the row names the old object, the new one is nothing's.
+            # B. COMMIT returned: handled below this block, where nothing deletes anything.
+            # C. COMMIT itself raised: the server may or may not have made it durable. The
+            #    object may by now be the live one, so it is removed only on proof, read from
+            #    the database, that nothing committed.
+            settled = "not_committed"
+            if commit_issued:
+                settled = await commit_outcome(session, row, ran.new_key)
+            if settled == "committed":
+                logger.error(
+                    "a restore's commit raised but the database holds it; the object is kept"
+                )
+            elif settled == "unknown":
+                logger.error(
+                    "a restore's commit outcome could not be established; the object is kept "
+                    "and the request is left for the operator (request %s)",
+                    row.id,
+                )
+                outcome, restored_id, error = "failed", None, "the restore outcome is unresolved"
+                ran = Ran("failed", None, error)
+            else:
+                # Nothing was committed, so the index row, the request and the audit row did not
+                # happen. What did happen is an object at a key nothing names: removed here, and
+                # the request is marked failed so that it is neither stuck `restoring` nor
+                # retried blind.
+                await session.rollback()
+                if ran.new_key is not None:
+                    _discard(target, ran.new_key)
+                outcome, restored_id, error = "failed", None, "the restore could not be completed"
+                ran = Ran("failed", None, error)
+                await session.execute(_PROVISIONING)
+                await session.execute(
+                    _FINISH, {"id": row.id, "status": outcome, "error": error, "restored": None}
+                )
+                await _record(
+                    session,
+                    row.tenant_id,
+                    action="storage.restore.failed",
+                    target_id=row.file_id,
+                    outcome="failed",
+                    details={"overwrite": bool(row.overwrite), "verified": bool(row.backup_digest)},
+                )
+                try:
+                    await session.commit()
+                except Exception:
+                    # The object is already gone, correctly. The request stays `restoring`;
+                    # the pass goes on rather than abandoning the rest.
+                    logger.exception("a failed restore could not be recorded as failed")
+                    await session.rollback()
+        if outcome == "completed" and restored_id is not None and ran.created_at is not None:
+            if restored is not None:
+                restored.append((row.tenant_id, restored_id, ran.created_at))
+        done += outcome == "completed"
+        failed += outcome == "failed"
+    return done, failed
+{{else}}
+async def run_one(
+    session: AsyncSession, source: ObjectStore, target: ObjectStore, row: ApprovedRestore
+) -> tuple[str, str | None, str | None]:
+    """One approved request. Returns its outcome, the new file id and any error."""
+    content, digest, refusal = read_and_check(
+        source, row.backup_key, row.backup_digest, row.size_bytes
+    )
+    if refusal is not None:
+        return "failed", None, refusal
+
+    original = (
+        await session.execute(
+            _ORIGINAL, {"file_id": row.file_id, "tenant_id": row.tenant_id}
+        )
+    ).first()
+
+    # The index row is written as the tenant, never as the platform, and this
+    # is the whole correctness of the function.
+    #
+    # `files` has no provisioning insert policy and `00021` says the omission
+    # is deliberate; `files_update_provisioning` additionally refuses a row
+    # whose status is `purged`. So a worker on the provisioning context could
+    # write the bytes and then fail to write the row -- leaving an object with
+    # no index entry at all, which is outside retention, outside every hold,
+    # outside the purge sweep, and which reconciliation reports without ever
+    # removing. Restored content, usually content the tenant had purged,
+    # resurrected into live storage permanently and invisibly.
+    #
+    # A restored object belongs to the tenant exactly as an uploaded one does,
+    # so it is written under the tenant's own policies. That is also what the
+    # audit inserts in every other sweep already do.
+    await session.execute(_AS_TENANT, {"tenant_id": row.tenant_id})
+
+    if row.overwrite:
+        if original is None:
+            # Approved as an overwrite and there is nothing to overwrite. Not a
+            # silent downgrade to a new object: the approval was for a
+            # different act than the one now available.
+            return "failed", None, "the object to overwrite no longer exists"
+        target.put(original.storage_key, content or b"", original.content_type)
+        touched = await session.execute(
+            _TOUCH_FILE,
+            {
+                "file_id": row.file_id,
+                "tenant_id": row.tenant_id,
+                "size_bytes": len(content or b""),
+                "checksum": digest,
+            },
+        )
+        # `rowcount` is on the cursor result rather than the typed `Result`
+        # facade, which is why this reads it dynamically. Zero is the case that
+        # matters: `files_update_provisioning` refuses a row whose status is
+        # `purged`, so an approved overwrite of a stranded object would
+        # otherwise write the bytes back, update nothing, and report success.
+        if getattr(touched, "rowcount", 0) != 1:
+            # Reported `completed` while updating nothing, which is the worst
+            # shape a destructive operation can take: the bytes are back in the
+            # bucket, the index still says what it said, and the next sweep
+            # removes them again. A row that could not be updated is a failure
+            # and the request says so.
+            return (
+                "failed",
+                None,
+                "the object could not be brought back into the index; nothing was changed",
+            )
+        return "completed", row.file_id, None
+
+    # A new object, which destroys nothing. Its own id and its own key, so the
+    # restored copy and anything still at the original key are distinguishable.
+    new_id = str(uuid.uuid4())
+    name = original.name if original is not None else f"restored-{row.file_id}"
+    content_type = original.content_type if original is not None else "application/octet-stream"
+    category = Category(original.category) if original is not None else Category.DOCUMENTS
+    key = object_key(row.tenant_id, new_id, name, category=category)
+    target.put(key, content or b"", content_type)
+    await session.execute(
+        _INSERT_FILE,
+        {
+            "id": new_id,
+            "tenant_id": row.tenant_id,
+            "name": name,
+            "storage_key": key,
+            "content_type": content_type,
+            "size_bytes": len(content or b""),
+            "uploaded_by": original.uploaded_by if original is not None else "system",
+            "category": str(category),
+            "classification": (
+                original.classification if original is not None else "standard"
+            ),
+            "checksum": digest,
+        },
+    )
+    return "completed", new_id, None
+
+
+async def run_restores(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Every approved request, read and checked before anything is written."""
+    del ctx
+    if not settings.database_url:
+        logger.warning("restore skipped: the worker has no DATABASE_URL")
+        return {"status": "skipped", "reason": "no database"}
+    if not backup_settings.storage_bucket or not backup_settings.storage_access_key:
+        logger.warning("restore skipped: the worker has no storage credentials")
+        return {"status": "skipped", "reason": "no storage"}
+    try:
+        backup_destination = destination_from(backup_settings)
+    except ValueError as problem:
+        # Enabled approvals with nowhere to read from. Loud, and not a skip: a
+        # restore reported as nothing-to-do is a restore nobody chases.
+        logger.error("restore cannot run: %s", problem)
+        return {"status": "failed", "reason": str(problem)}
+
+    source = S3ObjectStore(backup_destination)
+    target = _primary()
+    engine = _engine()
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+            done, failed = await restore_approved(session, source, target)
+    finally:
+        await engine.dispose()
+
+    logger.info("restore: %d completed, %d failed", done, failed)
+    return {"status": "ok", "completed": done, "failed": failed}
+
+
+async def restore_approved(
+    session: AsyncSession, source: ObjectStore, target: ObjectStore
+) -> tuple[int, int]:
+    """Every approved request on this session. Returns how many completed and failed."""
+    done = 0
+    failed = 0
+    await session.execute(_PROVISIONING)
+    approved = (await session.execute(_APPROVED, {"limit": RESTORE_LIMIT})).all()
+    # Ended here, so that a wait for the gate is not a transaction held open.
+    await session.commit()
+    for row in approved:
+        # The gate first, then the claim. A request that waits here for an
+        # import to finish has not been claimed, so a sweep the queue cancels
+        # while it waits leaves an `approved` row for the next pass rather
+        # than a `restoring` one nothing will ever pick up. GR-352E.
+        async with heavy(RESTORE):
+            await session.execute(_PROVISIONING)
+            # Claimed before anything is read, so two workers cannot run the
+            # same request.
+            claimed = (await session.execute(_CLAIM, {"id": row.id})).first()
+            await session.commit()
+            await session.execute(_PROVISIONING)
+            if claimed is None:
+                await session.commit()
+                continue
+
+            try:
+                outcome, restored, error = await run_one(session, source, target, row)
+            except Exception:
+                logger.exception("a restore failed")
+                await session.rollback()
+                await session.execute(_PROVISIONING)
+                outcome, restored, error = "failed", None, "the restore could not be completed"
+
+        # Outside the gate: the object has been written and is no longer in
+        # hand, and what is left is two rows.
+        #
+        # Back to the platform's context before touching the request
+        # row. `run_one` ends on the tenant's, because the index row it
+        # writes belongs to the tenant -- and `_FINISH` is written
+        # against `restore_requests_run_provisioning`, which is the
+        # policy that admits `restoring` -> `completed`. Leaving the
+        # tenant context set would have it permitted by the tenant's
+        # own policy instead: the same outcome today, by a rule nobody
+        # chose, and a silent failure the day either policy changes.
+        await session.execute(_PROVISIONING)
+        await session.execute(
+            _FINISH,
+            {
+                "id": row.id,
+                "status": outcome,
+                "error": error,
+                "restored": restored,
+            },
+        )
+        await _record(
+            session,
+            row.tenant_id,
+            action=f"storage.restore.{outcome}",
+            target_id=row.file_id,
+            outcome="ok" if outcome == "completed" else "failed",
+            details={
+                "overwrite": bool(row.overwrite),
+                # Whether anything was compared, and never the digest
+                # itself: it identifies the bytes.
+                "verified": bool(row.backup_digest),
+            },
+        )
+        # The last statement of a request: nothing is left open for the next
+        # one's wait.
+        await session.commit()
+        done += outcome == "completed"
+        failed += outcome == "failed"
+    return done, failed
+{{/if}}

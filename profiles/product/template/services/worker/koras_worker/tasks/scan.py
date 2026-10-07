@@ -5,9 +5,11 @@ builds the three things a run needs from this worker's own configuration -- a
 database session, the platform default bucket and the configured scanner -- and
 hands them over. **No security rule is decided here.**
 
-**Two enqueuers and nothing else.** The upload finalizer (`tasks/finalize.py`, the moment a
-file is on its final key) and the reconciliation sweep (`tasks/scan_sweep.py`) put a job on
-the queue; there is no admin trigger, no API route and no other caller. A worker with the
+**Three enqueuers and nothing else.** The upload finalizer (`tasks/finalize.py`, the moment a
+file is on its final key), the reconciliation sweep (`tasks/scan_sweep.py`) and, in a product
+with restore, the restore's own follow-up (`tasks/restore_scan.py`, for a file a restore has just
+written) put a job on the queue, all through `core/scan_enqueue.py`; there is no admin trigger,
+no API route and no other caller. A worker with the
 backend `none` does not start in a product with the capability; and a job that somehow ran
 with no scanner resolves one that answers `MISCONFIGURED` and records a hold: it cannot
 release a file.

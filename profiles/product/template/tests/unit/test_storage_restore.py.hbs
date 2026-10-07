@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import hashlib
 import os
+{{#if capability.secure_files}}
+from datetime import UTC, datetime
+{{/if}}
 
 import pytest
 
@@ -169,6 +172,12 @@ class _Answer:
 
     def first(self) -> object | None:
         return self._original
+{{#if capability.secure_files}}
+
+    def scalar_one(self) -> object:
+        # `returning created_at` on the insert of a restored copy.
+        return datetime(2026, 10, 5, tzinfo=UTC)
+{{/if}}
 
 
 class _Original:
@@ -196,13 +205,21 @@ async def test_the_restored_row_is_written_on_the_tenant_context() -> None:
     from koras_worker.tasks.storage_restore import run_one
 
     session = _Recorder()
+{{#if capability.secure_files}}
+    ran = await run_one(
+{{else}}
     outcome, _, _ = await run_one(
+{{/if}}
         session,  # type: ignore[arg-type]
         _Store(),  # type: ignore[arg-type]
         _Store(),  # type: ignore[arg-type]
         _Row(),  # type: ignore[arg-type]
     )
+{{#if capability.secure_files}}
+    assert ran.outcome == "completed"
+{{else}}
     assert outcome == "completed"
+{{/if}}
 
     tenant_at = next(i for i, t in enumerate(session.statements) if "app.tenant_id" in t)
     insert_at = next(i for i, t in enumerate(session.statements) if "insert into public.files" in t)

@@ -158,3 +158,23 @@ def final_key_for(incoming: str, generation: str) -> str:
     if len(parts) != 7 or parts[0] != "tenants" or parts[4] != INCOMING:
         raise ValueError("not an incoming key")
     return "/".join([*parts[:4], FINAL, generation, parts[6]])
+
+
+def final_key(
+    tenant_id: str, category: str, file_id: str, generation: str, safe_name: str
+) -> str:
+    """A final key a *server-side writer other than the finalizer* puts an object at.
+
+    The finalizer reaches a final key by copying an incoming one (`final_key_for`). A restore has
+    no ticket and no incoming object: it writes a new object straight to a key of exactly the same
+    shape, so the one rule that says which key the scanner reads and the release primitive accepts
+    (`is_final_key`) is also the shape a restore writes. `generation` is a fresh UUID per object, so
+    a replacement can never be written to a key an earlier object, or a retry, already used.
+    """
+    for label, value in (("tenant", tenant_id), ("file", file_id), ("generation", generation)):
+        if str(uuid.UUID(value)) != value:
+            raise ValueError(f"the {label} id is not canonical")
+    if "/" in category or not category:
+        raise ValueError("the category is not a key segment")
+    name = _name_segment(safe_name)
+    return f"tenants/{tenant_id}/{category}/{file_id}/{FINAL}/{generation}/{name}"

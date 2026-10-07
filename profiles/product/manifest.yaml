@@ -176,6 +176,9 @@ template_map:
       - services/worker/koras_worker/tasks/ai_retention.py
       - apps/web/src/app/dashboard/assistant
       - e2e/assistant.spec.ts
+      # Layer 5: what a restore withdraws of the assistant's. Also listed under `secure_files` and
+      # `storage_governance`; generated only when all three are on.
+      - tests/integration/test_restore_derived_content_real.py
     # Data import. The whole of it is gated, including the engine package: an
     # import target names a table the *product* owns, so a product that
     # imports nothing has no use for a parser, a state machine or a run.
@@ -331,6 +334,20 @@ template_map:
       - packages/api-client/src/file-state.ts
       - packages/api-client/src/file-state.test.ts
       - e2e/roundtrip/files-release-state.spec.ts
+      # Layer 5, restore and replacement. Restore itself is `storage_governance`'s (the request
+      # machine, its routes, the page, migration 00026, and the worker task, which is *rendered*
+      # by `secure_files`: the non-overwriting legacy behaviour is untouched without it). What only
+      # exists with both capabilities is listed here and ALSO under `storage_governance` above, so a
+      # file is generated only when both are on: the follow-up that asks the scanner about what a
+      # restore wrote, and the suites for the replacement. `secure_files` without
+      # `storage_governance` has no restore at all, so there is nothing to bring under the rule.
+      - services/worker/koras_worker/tasks/restore_scan.py
+      - tests/unit/test_storage_restore_replacement.py
+      - tests/unit/test_restore_scan.py
+      - tests/unit/restore_support.py
+      - tests/integration/test_restore_replacement_real.py
+      - tests/integration/test_restore_orchestration_real.py
+      - tests/integration/test_restore_derived_content_real.py
 
     # In-app notifications: the table, the emitter, the routes, the page and
     # the browser test.
@@ -444,6 +461,13 @@ template_map:
       - tests/unit/test_storage_restore.py
       - tests/unit/test_storage_lifecycle.py
       - tests/unit/test_storage_reconcile.py
+      - services/worker/koras_worker/tasks/restore_scan.py
+      - tests/unit/test_storage_restore_replacement.py
+      - tests/unit/test_restore_scan.py
+      - tests/unit/restore_support.py
+      - tests/integration/test_restore_replacement_real.py
+      - tests/integration/test_restore_orchestration_real.py
+      - tests/integration/test_restore_derived_content_real.py
 
 # Components that need another enabled beside them. See the generator's
 # manifest schema for why this is refused rather than switched on silently.

@@ -297,19 +297,23 @@ def _sources(*roots: str) -> list[Path]:
 
 def test_only_the_handoff_the_enqueue_helper_and_the_sweep_name_the_task() -> None:
     """The worker that runs the job, the helper that enqueues it, the finalizer's hand-off
-    (which is in `tasks/scan.py`) and the sweep. No hook, no route, no admin trigger, no script:
-    a fourth importer is a failing test."""
+    (which is in `tasks/scan.py`) and the sweep -- and, in a product with restore
+    (`storage_governance`), the restore's own follow-up (`tasks/restore_scan.py`), which asks for
+    the scan of what a restore wrote and enqueues through the same helper. No hook, no route, no
+    admin trigger, no script: another importer is a failing test."""
     importers = sorted(
         p.relative_to(REPO).as_posix()
         for p in _sources("services", "python-packages")
         if re.search(r"scan_jobs|\bFILE_SCAN\b", p.read_text(encoding="utf-8"))
         and p.name not in {"scan_jobs.py"}
     )
-    assert importers == [
+    expected = [
         "services/api/koras_api/core/scan_enqueue.py",
+        "services/worker/koras_worker/tasks/restore_scan.py",
         "services/worker/koras_worker/tasks/scan.py",
         "services/worker/koras_worker/tasks/scan_sweep.py",
     ]
+    assert importers == [name for name in expected if (REPO / name).exists()]
 
 
 def test_the_task_name_is_spelled_once_outside_documentation() -> None:

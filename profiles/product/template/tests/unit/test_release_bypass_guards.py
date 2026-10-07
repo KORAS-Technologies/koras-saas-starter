@@ -84,9 +84,15 @@ def test_the_mode_is_the_generated_constant_and_the_capabilitys_files_agree_with
 #: The statements that may assign `files.scan_status`, and the values each may assign. The scanner's
 #: transitions write the verdicts; the platform's `record_scan` is dead code that writes a caller's
 #: value, so it is allowed only while nothing calls it (the next test). A module that returns a
-#: file to `pending` -- a restore's replacement -- is added here with the layer that introduces it.
+#: file to `pending` is registered with exactly that value: the restore's replacement
+#: (`tasks/storage_restore.py`) points a row at a new object and resets it to `pending` with none of
+#: the old evidence, in one statement. It can only ever make a file LESS releasable -- it cannot
+#: assign `clean` or `infected`, because a verdict is the scanner's -- and a product without
+#: `storage_governance` (no restore) or without `secure_files` (the legacy restore never names
+#: `scan_status`) simply has no such statement for the guard to find.
 _SCAN_STATUS_WRITERS: dict[str, frozenset[str]] = {
     "services/worker/koras_worker/scanning/transition.py": frozenset({"'infected'", "'clean'"}),
+    "services/worker/koras_worker/tasks/storage_restore.py": frozenset({"'pending'"}),
     "services/api/koras_api/core/file_scan.py": frozenset({":status"}),
 }
 
@@ -148,6 +154,14 @@ def test_only_the_scanner_assigns_a_scan_status() -> None:
     assert (scanner in found) is SECURE_FILES
     if SECURE_FILES:
         assert found[scanner] == {"'clean'", "'infected'"}
+    # The restore's replacement may only ever return a file to `pending`; it is found where it
+    # exists in its secure shape, and where it exists in its legacy shape it names no status.
+    restore = "services/worker/koras_worker/tasks/storage_restore.py"
+    if (REPO / restore).exists():
+        assert (restore in found) is SECURE_FILES
+        if SECURE_FILES:
+            assert found[restore] == {"'pending'"}
+    assert _SCAN_STATUS_WRITERS[restore] == frozenset({"'pending'"})
 
 
 def test_the_guard_rejects_unauthorized_scan_status_writers(tmp_path: Path) -> None:
@@ -425,6 +439,10 @@ def test_the_modules_that_can_reach_an_object_store_are_the_ones_accounted_for()
     if SECURE_FILES:
         accounted.update(_STORE_REACHING_SECURE)
     expected = {name for name in accounted if (REPO / name).exists()}
+    # The worker's entry module reaches a store only through the governance sweeps it registers;
+    # a product generated with `secure_files` and without `storage_governance` has none of them.
+    if not (REPO / "services/worker/koras_worker/tasks/storage_backup.py").exists():
+        expected.discard("services/worker/koras_worker/worker.py")
     assert found == expected, (
         "a module that can hold an object store appeared or disappeared. A read or a signed URL "
         "must go through core/file_release.py (see the reads table above); add the module here "
