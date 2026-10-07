@@ -60,7 +60,7 @@ from koras_storage import (
     resolve_destination,
 )
 from pydantic_settings import SettingsConfigDict
-from sqlalchemy import text
+from sqlalchemy import TextClause, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -69,6 +69,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from ..heavy import BACKUP, heavy
+from ..secure_files import SECURE_FILES
 from ..settings import SweepSettings, settings
 
 
@@ -131,14 +132,25 @@ _AS_TENANT = text(
 
 #: Ready objects with no good copy. `failed` is included deliberately: a
 #: mismatch on one night is a reason to try again on the next, not a verdict.
-_DUE = text(
-    "select id::text as id, tenant_id::text as tenant_id, storage_key, size_bytes, "
-    " checksum_sha256 "
-    "from public.files "
-    "where status in ('ready', 'archived') and backup_status in ('none', 'failed') "
-    "  and storage_key is not null "
-    "order by created_at limit :limit"
-)
+#:
+#: **With `secure_files` (ADR 0013), never an *incoming* key**: that is the object a signed
+#: PUT can still replace, and a backup of it would be a copy of bytes nobody has pinned. The
+#: upload is finalized to a key no ticket was signed for first, the swap resets
+#: `backup_status`, and it is the final object that is backed up. Without the capability no
+#: key has an incoming segment and the query is exactly what it always was.
+def _due_query(secure_files: bool) -> TextClause:
+    return text(
+        "select id::text as id, tenant_id::text as tenant_id, storage_key, size_bytes, "
+        " checksum_sha256 "
+        "from public.files "
+        "where status in ('ready', 'archived') and backup_status in ('none', 'failed') "
+        "  and storage_key is not null"
+        + (" and storage_key not like '%/incoming/%' " if secure_files else " ")
+        + "order by created_at limit :limit"
+    )
+
+
+_DUE = _due_query(SECURE_FILES)
 
 _CATALOGUE = text(
     "insert into public.file_backups "

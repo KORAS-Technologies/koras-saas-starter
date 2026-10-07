@@ -69,6 +69,11 @@ def _port(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 65535
 
 
+def _present(value: object) -> bool:
+    # A DSN may be a string or a parsed URL object; either way it has to say something.
+    return value is not None and str(value).strip() != ""
+
+
 #: The scanner backends that are real scanners. Deliberately not `none`.
 REAL_SCANNER_BACKENDS: frozenset[str] = frozenset({"clamd"})
 
@@ -93,6 +98,26 @@ SECURE_FILES_CHECKS: tuple[SettingCheck, ...] = (
     SettingCheck("storage_bucket", "STORAGE_BUCKET", _nonblank, "must be set"),
     SettingCheck("storage_access_key", "STORAGE_ACCESS_KEY", _nonblank, "must be set"),
     SettingCheck("storage_secret_key", "STORAGE_SECRET_KEY", _nonblank, "must be set"),
+    # The finalizer (layer 2). An upload is confirmed by the API, which hands the file to
+    # the worker through the queue, and the worker finalizes it against the database as the
+    # file's tenant. Without the queue no upload is ever finalized, and without a database
+    # the worker would skip the sweep that recovers a lost job: either way a file would sit
+    # on its incoming key for ever. That is safe -- nothing releases an incoming key -- but
+    # it is a product that cannot store a file, so it is refused at start rather than found
+    # by the first customer. The upload window itself is not a setting: it is the constants
+    # in `core/upload_window.py`, and no deploy-time value may shorten it (ADR 0013 s6).
+    SettingCheck(
+        "redis_url",
+        "REDIS_URL",
+        _present,
+        "must be set: confirmed uploads are finalized by a job",
+    ),
+    SettingCheck(
+        "database_url",
+        "DATABASE_URL",
+        _present,
+        "must be set: the finalizer works on the file's row",
+    ),
 )
 
 
@@ -145,6 +170,8 @@ class SecureFilesWorkerSettings(SweepSettings):
     storage_bucket: str = ""
     storage_access_key: str = ""
     storage_secret_key: str = ""
+    redis_url: str = ""
+    database_url: str = ""
 
 
 def enforce_secure_files_at_startup() -> None:

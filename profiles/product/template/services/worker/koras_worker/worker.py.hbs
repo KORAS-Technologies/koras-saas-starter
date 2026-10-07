@@ -12,7 +12,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from .tasks import example_task
 {{#if capability.ai}}from .tasks.ai_retention import purge_ai_history
 {{/if}}from .tasks.audit_retention import purge_audit_history
-{{#if capability.audit_governance}}from .tasks.governance_expiry import expire_audit_exports, expire_legal_holds
+{{#if capability.secure_files}}from .tasks.finalize import bound as finalize_tasks
+from .tasks.finalize import sweep_finalize
+{{/if}}{{#if capability.audit_governance}}from .tasks.governance_expiry import expire_audit_exports, expire_legal_holds
 {{/if}}{{#if capability.data_import}}from .tasks.imports import bound as import_tasks
 {{/if}}{{#if capability.notifications}}from .tasks.notifications import purge_notifications
 from .tasks.outbox import send_owed_notifications
@@ -80,6 +82,11 @@ class WorkerSettings(WorkerSettingsBase):
 {{#if capability.data_import}}        # The dry run a person is waiting on. The first enqueued work in this
         # product, and the reason the seam above exists.
         *worker_functions(import_tasks()),
+{{/if}}{{#if capability.secure_files}}        # The upload finalizer: copy a confirmed upload to a key no ticket was signed
+        # for and verify it against the SHA-256 it was authorized for (ADR 0013). Bound
+        # by name and loudly, so a worker that cannot run it fails at start rather than
+        # accepting a job it would never run.
+        *worker_functions(finalize_tasks()),
 {{/if}}        *worker_functions(PRODUCT_TASKS),
     ]
     # Before the first cron fires, not after. A sweep that deleted across
@@ -142,7 +149,12 @@ class WorkerSettings(WorkerSettingsBase):
         # that evaporated.
         cron(run_restores, minute={0, 10, 20, 30, 40, 50}),
 {{/if}}
-{{#if capability.reporting}}        # The seam for scheduled delivery. Hourly, and it says nothing is
+{{#if capability.secure_files}}        # Every five minutes: whatever the queue did not finalize -- a lost enqueue, a
+        # worker that was down, a failure that has passed. It selects ids and nothing
+        # else, finalizes each file as its own tenant, and releases nothing. The long
+        # timeout is the finalizer's: it hashes the object twice and copies it once.
+        cron(sweep_finalize, minute={2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57}, timeout=1800),
+{{/if}}{{#if capability.reporting}}        # The seam for scheduled delivery. Hourly, and it says nothing is
         # scheduled until a product gives it something to deliver.
         cron(deliver_scheduled_reports, minute=41),
 {{/if}}        # This product's own, from `tasks/product.py`. Last, so the

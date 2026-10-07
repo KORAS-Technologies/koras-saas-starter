@@ -20,7 +20,12 @@ dependencies = [
   "koras-logging",
   "koras-observability",
   "koras-queue",
-{{#if capability.data_import}}  # The validation job reads a file through the same engine the API does.
+{{#if capability.secure_files}}{{#unless capability.data_import}}  # The finalizer records what it did through the audit sink, and imports the
+  # envelope's `AuditEvent` itself. Declared here rather than left to arrive
+  # through the API's dependencies (the capability that brings it in with
+  # `data_import` declares it in the block below).
+  "koras-audit",
+{{/unless}}{{/if}}{{#if capability.data_import}}  # The validation job reads a file through the same engine the API does.
   "koras-import",
   # The commit reaches `koras_api.core.imports`, which registers this
   # capability's audit actions at import, and the completion notice reaches the
@@ -50,7 +55,8 @@ koras-platform = { workspace = true }
 koras-logging = { workspace = true }
 koras-observability = { workspace = true }
 koras-queue = { workspace = true }
-{{#if capability.data_import}}koras-import = { workspace = true }
+{{#if capability.secure_files}}{{#unless capability.data_import}}koras-audit = { workspace = true }
+{{/unless}}{{/if}}{{#if capability.data_import}}koras-import = { workspace = true }
 koras-audit = { workspace = true }
 koras-settings = { workspace = true }
 koras-auth = { workspace = true }

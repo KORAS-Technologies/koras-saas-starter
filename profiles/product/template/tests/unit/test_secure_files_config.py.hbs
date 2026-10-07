@@ -46,6 +46,8 @@ VALID: dict[str, Any] = {
     "storage_bucket": "files",
     "storage_access_key": "access-value",
     "storage_secret_key": "secret-value",
+    "redis_url": "redis://queue.internal:6379/0",
+    "database_url": "postgresql+asyncpg://app:db-value@db.internal/app",
 }
 
 ENV_NAMES = {
@@ -56,6 +58,8 @@ ENV_NAMES = {
     "storage_bucket": "STORAGE_BUCKET",
     "storage_access_key": "STORAGE_ACCESS_KEY",
     "storage_secret_key": "STORAGE_SECRET_KEY",
+    "redis_url": "REDIS_URL",
+    "database_url": "DATABASE_URL",
 }
 
 
@@ -138,7 +142,7 @@ def test_a_value_is_never_in_the_message(on: ModuleType) -> None:
     broken = settings_with(file_scan_backend="none", storage_secret_key="")
     with pytest.raises(on.SecureFilesConfigurationError) as raised:
         on.validate_secure_files_settings(broken)
-    for value in ("access-value", "secret-value", "scanner.internal"):
+    for value in ("access-value", "secret-value", "scanner.internal", "db-value"):
         assert value not in str(raised.value)
 
 
