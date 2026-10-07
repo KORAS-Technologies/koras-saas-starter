@@ -54,6 +54,8 @@ export interface FilesLabels {
 {{#if capability.secure_files}}
   /** Shown while the file's content is not available: nothing is indexed from it yet. */
   searchableAfterAvailable: string
+  /** Polite status while the browser reads the file to take its checksum. */
+  preparing: string
   status: string
   statusAvailable: string
   statusScanning: string
@@ -202,6 +204,8 @@ export function FilesPanel({
   // A refusal that is not a fault: the file was not available, and the list
   // has been re-read to show what it is now. A status, not an alert.
   const [notice, setNotice] = useState<string | null>(null)
+  // The browser is hashing the chosen file, before any ticket is asked for.
+  const [preparing, setPreparing] = useState(false)
   const [pollStopped, setPollStopped] = useState(false)
   const [pollRound, setPollRound] = useState(0)
   // A refused Download disables the very button that had focus, and a browser
@@ -291,7 +295,20 @@ export function FilesPanel({
         // this did until 2026-09-16 -- left the provider with nothing to
         // corroborate, and `checksum_verified` false for every file forever.
 {{/unless}}
+{{#if capability.secure_files}}
+        // The hashing phase is visible: reading a large file into memory takes a moment in which
+        // nothing else moves, and a person who sees nothing clicks again. A file above the
+        // browser's ceiling throws here, with the sentence to show, before anything is read.
+        setPreparing(true)
+        let checksum: string
+        try {
+          checksum = await digestOf(file)
+        } finally {
+          setPreparing(false)
+        }
+{{else}}
         const checksum = await digestOf(file)
+{{/if}}
         const ticket = await requestUpload({
           name: file.name,
           sizeBytes: file.size,
@@ -415,7 +432,20 @@ export function FilesPanel({
                 {busy && progress !== null ? labels.uploading : labels.upload}
               </Button>
             </label>
+{{#if capability.secure_files}}
+            {/* Present from the start and announced politely: a live region that is added to
+                the page together with its text is often not announced at all. */}
+            <p
+              role="status"
+              className={preparing ? 'text-sm text-ink-muted' : 'sr-only'}
+              data-testid="files-preparing"
+            >
+              {preparing ? labels.preparing : ''}
+            </p>
+            {progress !== null && !preparing && (
+{{else}}
             {progress !== null && (
+{{/if}}
               <progress
                 className="h-2 w-48 overflow-hidden rounded-brand"
                 value={Math.round(progress * 100)}

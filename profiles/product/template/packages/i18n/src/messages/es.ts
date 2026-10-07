@@ -440,6 +440,7 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'files.notIncluded.notRecorded': 'no registrado',
   'files.upload': 'Subir un archivo',
   'files.uploading': 'Subiendo…',
+  'files.preparing': 'Preparando…',
   'files.choose': 'Elegir un archivo para subir',
   'files.download': 'Descargar',
   'files.remove': 'Eliminar',
@@ -770,6 +771,7 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'Comprobar el archivo',
   'imports.checking':
     'Comprobando…',
+  'imports.preparing': 'Preparando…',
   'imports.discard':
     'Descartar esta importación',
   'imports.tooManyRows':

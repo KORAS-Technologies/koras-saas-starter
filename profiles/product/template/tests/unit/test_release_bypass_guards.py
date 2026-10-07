@@ -97,20 +97,101 @@ _SCAN_STATUS_WRITERS: dict[str, frozenset[str]] = {
 }
 
 _SET_CLAUSE = re.compile(r"\bset\b(.*?)(?:\bwhere\b|\breturning\b|$)", re.S | re.I)
-_ASSIGNS_SCAN_STATUS = re.compile(r"\bscan_status\s*=\s*('[a-z]+'|:\w+)", re.I)
+#: A literal (`'clean'`), a bind parameter (`:status`), or a value built at run time: an f-string
+#: field, a `%s` or `{}` placeholder, or a concatenation. The last is reported as `<dynamic>`,
+#: which no registry entry allows -- a verdict that is computed into SQL text cannot be audited.
+_ASSIGNS_SCAN_STATUS = re.compile(
+    r"\bscan_status\s*=\s*('[a-z]+'|:\w+|'?(?:<expr>|%s|\{\w*\})'?)", re.I
+)
+
+
+def _sql_text(node: ast.AST) -> str | None:
+    """The text of a string expression, with every part only known at run time as `<expr>`.
+
+    Covers a plain literal, an f-string, `"a" + x + "b"`, `"...%s" % x` and `"...{}".format(x)`;
+    anything else is not a string this guard can read and yields None.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        return "".join(
+            part.value
+            if isinstance(part, ast.Constant) and isinstance(part.value, str)
+            else "<expr>"
+            for part in node.values
+        )
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _sql_text(node.left), _sql_text(node.right)
+        if left is None and right is None:
+            return None
+        return (left if left is not None else "<expr>") + (
+            right if right is not None else "<expr>"
+        )
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
+        return _sql_text(node.left)
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "format"
+    ):
+        return _sql_text(node.func.value)
+    return None
+
+
+def _writes_scan_status_without_sql(node: ast.AST) -> str | None:
+    """`.values(scan_status=...)`, `.values({"scan_status": ...})`, `obj.scan_status = ...` and
+    `setattr(obj, "scan_status", ...)`: writers that never spell SQL. Reported as `<values>` or
+    `<attribute>`; none is registered."""
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in {"values", "update"}
+    ):
+        if any(keyword.arg == "scan_status" for keyword in node.keywords):
+            return "<values>"
+        for argument in [*node.args, *(keyword.value for keyword in node.keywords)]:
+            if isinstance(argument, ast.Dict) and any(
+                isinstance(key, ast.Constant) and key.value == "scan_status"
+                for key in argument.keys
+            ):
+                return "<values>"
+    if isinstance(node, ast.Assign | ast.AugAssign | ast.AnnAssign):
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        if any(isinstance(t, ast.Attribute) and t.attr == "scan_status" for t in targets):
+            return "<attribute>"
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "setattr"
+        and len(node.args) >= 2
+        and isinstance(node.args[1], ast.Constant)
+        and node.args[1].value == "scan_status"
+    ):
+        return "<attribute>"
+    return None
 
 
 def _scan_status_assignments(path: Path) -> set[str]:
-    """Values assigned to `scan_status` in an UPDATE of `public.files` or named in its INSERT."""
+    """Values assigned to `scan_status` in an UPDATE of `public.files` or named in its INSERT.
+
+    Reads literals, f-strings, concatenations, `%` and `.format` templates, and the writers that
+    never spell SQL (`.values(...)`, an attribute assignment, `setattr`).
+    """
     found: set[str] = set()
     for node in ast.walk(_tree(path)):
-        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+        indirect = _writes_scan_status_without_sql(node)
+        if indirect is not None:
+            found.add(indirect)
+        text = _sql_text(node)
+        if text is None:
             continue
-        sql = " ".join(node.value.split())
+        sql = " ".join(text.split())
         lowered = sql.lower()
         if "update public.files" in lowered:
             for clause in _SET_CLAUSE.findall(sql):
-                found.update(match.lower() for match in _ASSIGNS_SCAN_STATUS.findall(clause))
+                for match in _ASSIGNS_SCAN_STATUS.findall(clause):
+                    value = match.lower()
+                    found.add("<dynamic>" if re.search(r"<expr>|%s|\{", value) else value)
         elif "insert into public.files" in lowered and "scan_status" in lowered:
             found.add("<insert>")
     return found
@@ -189,6 +270,39 @@ def test_the_guard_rejects_unauthorized_scan_status_writers(tmp_path: Path) -> N
         'SQL = "insert into public.files (id, scan_status) values (:id, \'clean\')"\n',
         encoding="utf-8",
     )
+    # The writers that do not spell a quoted literal: an f-string, a concatenation, a `%`
+    # template, a `.format`, a Core `.values(...)` and an attribute assignment. Each is a way a
+    # later change could write `clean` without the guard seeing a quoted word.
+    update_sql = "update public.files set scan_status = {} where id = 1"
+    sources = {
+        "fstring.py": "verdict = 'clean'\n"
+        + "SQL = f"
+        + repr(update_sql.format("'{verdict}'"))
+        + "\n",
+        "concat.py": "v = 'clean'\n"
+        + "SQL = "
+        + repr(update_sql.split("{}")[0] + "'")
+        + " + v + "
+        + repr("' where id = 1")
+        + "\n",
+        "percent.py": "SQL = " + repr(update_sql.format("'%s'")) + " % 'clean'\n",
+        "formatted.py": f"SQL = \"{update_sql}\".format('clean')\n",
+        "core_values.py": "stmt = update(files).values(scan_status='clean')\n",
+        "core_dict.py": "stmt = update(files).values({'scan_status': 'clean'})\n",
+        "attribute.py": "row.scan_status = 'clean'\n",
+        "setter.py": "setattr(row, 'scan_status', 'clean')\n",
+    }
+    indirect: dict[str, Path] = {}
+    for name, source in sources.items():
+        module = tmp_path / name
+        module.write_text(source, encoding="utf-8")
+        indirect[name] = module
+    indirect_violations = scan_status_violations(indirect, {})
+    assert len(indirect_violations) == len(sources), indirect_violations
+    # A registered module is still held to its values: a run-time one is beyond a list of literals.
+    assert scan_status_violations(
+        {"fstring.py": indirect["fstring.py"]}, {"fstring.py": frozenset({"'pending'"})}
+    ), "a computed verdict must not pass a registry that lists literals"
     registry = {
         "registered_clean.py": frozenset({"'pending'"}),
         "registered_ok.py": frozenset({"'pending'"}),
@@ -309,6 +423,12 @@ _READS_SECURE: dict[str, tuple[int, str]] = {
         "import source read, after check_source applies the release rule",
     ),
     "services/worker/koras_worker/scanning/s3.py": (1, "the scanner is the gate"),
+    "services/worker/koras_worker/tasks/storage_restore.py": (
+        2,
+        "custody: reads the backup copy for restore, and reads back what the replacement wrote "
+        "(`target.get`) to verify its length and digest before the row is pointed at it -- the "
+        "product's own copy checked by the product, neither a release nor a read for a person",
+    ),
 }
 _READS_LEGACY: dict[str, tuple[int, str]] = {
     **_READS_COMMON,
@@ -325,15 +445,22 @@ _READS_LEGACY: dict[str, tuple[int, str]] = {
 }
 
 
-def _is_store_get(node: ast.AST) -> bool:
-    return (
-        isinstance(node, ast.Attribute)
-        and node.attr == "get"
-        and (
-            (isinstance(node.value, ast.Name) and node.value.id == "store")
-            or (isinstance(node.value, ast.Attribute) and node.value.attr == "store")
-        )
+#: The names an object store is held under in this product's code. `store` is the platform's
+#: spelling; `target` and `source` are the restore's two buckets, and the others are the custody
+#: copies'. A read through any of them is a read of an object.
+_STORE_RECEIVERS = frozenset(
+    {"store", "target", "source", "backup", "backup_store", "target_store", "source_store"}
+)
+
+
+def _is_store_receiver(node: ast.AST) -> bool:
+    return (isinstance(node, ast.Name) and node.id in _STORE_RECEIVERS) or (
+        isinstance(node, ast.Attribute) and node.attr in _STORE_RECEIVERS
     )
+
+
+def _is_store_get(node: ast.AST) -> bool:
+    return isinstance(node, ast.Attribute) and node.attr == "get" and _is_store_receiver(node.value)
 
 
 def _reads(path: Path) -> int:
@@ -358,10 +485,7 @@ def _reads(path: Path) -> int:
             count += 1
         elif (
             node.func.attr == "get"
-            and (
-                (isinstance(node.func.value, ast.Name) and node.func.value.id == "store")
-                or (isinstance(node.func.value, ast.Attribute) and node.func.value.attr == "store")
-            )
+            and _is_store_receiver(node.func.value)
             and not (
                 node.args and isinstance(node.args[0], ast.Name) and node.args[0].id == "session"
             )
@@ -371,9 +495,7 @@ def _reads(path: Path) -> int:
 
 
 def test_every_object_read_or_signed_url_is_one_the_release_rule_has_accounted_for() -> None:
-    found = {
-        _rel(path): count for path in _python_files() if (count := _reads(path))
-    }
+    found = {_rel(path): count for path in _python_files() if (count := _reads(path))}
     table = _READS_SECURE if SECURE_FILES else _READS_LEGACY
     expected = {name: count for name, (count, _why) in table.items() if (REPO / name).exists()}
     assert found == expected, (

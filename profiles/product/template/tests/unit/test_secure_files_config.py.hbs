@@ -155,7 +155,13 @@ def test_each_missing_setting_is_refused_by_name(on: ModuleType, attribute: str)
     assert len(raised.value.problems) == 1
 
 
-@pytest.mark.parametrize("backend", ["none", "", "  ", "NONE", "unknown", None])
+@pytest.mark.parametrize(
+    "backend",
+    # `CLAMD`, ` clamd` and `clamd ` are real scanners spelled non-canonically: the worker's
+    # scanner settings accept only the lowercase literal, so they are refused here as well,
+    # at start, rather than passing this check and failing the worker's settings.
+    ["none", "", "  ", "NONE", "unknown", None, "CLAMD", "Clamd", " clamd", "clamd ", "clamd\n"],
+)
 def test_no_scanner_is_never_a_scanner(on: ModuleType, backend: object) -> None:
     with pytest.raises(on.SecureFilesConfigurationError, match="FILE_SCAN_BACKEND"):
         on.validate_secure_files_settings(settings_with(file_scan_backend=backend))

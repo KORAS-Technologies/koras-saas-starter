@@ -280,6 +280,11 @@ describe('a product generated WITH secure_files', () => {
       'tests/unit/test_storage_restore.py',
       'tests/unit/test_release_bypass_guards.py',
       'tests/unit/test_scan_task.py',
+      // The hardening review: the legacy seam is a template whose render with the capability makes
+      // `record_scan` raise (its render without is held by digest in
+      // `product-secure-files-scanner.test.ts`), and its test is mode-aware.
+      'services/api/koras_api/core/file_scan.py',
+      'tests/unit/test_file_scan_fixtures.py',
       // The round-trip harness names the settings a secure API refuses to start without.
       'playwright.config.ts',
       // Layer 6b: pytest's path gains `tooling` (the promotion tooling), only with the capability;

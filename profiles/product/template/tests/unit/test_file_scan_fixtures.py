@@ -2,11 +2,11 @@
 
 `core/file_scan.py` is the seam a scanner plugs into in a product without the capability:
 `record_scan` writes what a scan found, and `withheld` is the one function every download and
-list path consults. A product with the capability keeps both (the files router still asks
-`withheld`) and adds the worker's guarded transitions, which are the only writer of a clean
-verdict; `record_scan` is not used by the worker. This keeps the seam itself honest with the
-EICAR sample standing in for the file a real scanner would flag. The sample is assembled at
-run time (`eicar_support`), never stored.
+list path consults. A product with the capability keeps `withheld` (the files router still asks
+it) and adds the worker's guarded transitions, which are the only writer of a clean verdict;
+there `record_scan` raises, so the unconditional writer cannot be called by accident. This keeps
+the seam itself honest with the EICAR sample standing in for the file a real scanner would
+flag. The sample is assembled at run time (`eicar_support`), never stored.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ os.environ.setdefault("ZITADEL_PROJECT_ID", "0")
 import pytest
 from eicar_support import EICAR_SHA256, materialize  # noqa: E402
 from koras_api.core.file_scan import record_scan, withheld  # noqa: E402
+from koras_api.core.secure_files import SECURE_FILES  # noqa: E402
 
 
 class _Rows:
@@ -67,6 +68,22 @@ async def test_a_scanner_finding_the_eicar_fixture_infected_withholds_it(
     download route and the file listing both consult -- must say yes."""
     raw = materialize()
     assert len(raw) == 68  # the scanner read a real, complete file
+
+    if SECURE_FILES:
+        # With the capability this seam is closed: a verdict has exactly one writer, the
+        # worker's guarded transitions, and a call here raises before it touches the session.
+        refused = _Session()
+        for status in ("infected", "clean", "skipped", "pending"):
+            with pytest.raises(RuntimeError, match="record_scan is disabled"):
+                await record_scan(
+                    refused,  # type: ignore[arg-type]
+                    tenant_id="tenant-1",
+                    file_id="file-1",
+                    status=status,  # type: ignore[arg-type]
+                    note="x",
+                )
+        assert refused.calls == []
+        return
 
     session = _Session()
 

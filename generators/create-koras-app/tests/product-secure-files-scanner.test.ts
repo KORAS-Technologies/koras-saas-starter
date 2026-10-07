@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -130,13 +131,20 @@ describe('without secure_files there is no scanner and nothing about it', () => 
     expect(text(off, 'local/config/secrets.manifest')).not.toMatch(/FILE_SCAN|FILE_FINALIZE/)
   })
 
-  it('keeps the legacy seam byte for byte', () => {
-    expect(text(off, 'services/api/koras_api/core/file_scan.py')).toBe(
-      read('services/api/koras_api/core/file_scan.py'),
+  it('keeps the legacy seam byte for byte, and makes it raise only with the capability', () => {
+    // The pre-existing legacy file, by digest: the default render IS that file, whatever the
+    // template now carries for the other mode.
+    const sha = (v: string) => createHash('sha256').update(v).digest('hex')
+    expect(sha(text(off, 'services/api/koras_api/core/file_scan.py'))).toBe(
+      '6e0427feeb75234f0cee6cfe7fcd890aa56c6e25524d0e355eee5699ca8c05d0',
     )
-    expect(text(on, 'services/api/koras_api/core/file_scan.py')).toBe(
-      text(off, 'services/api/koras_api/core/file_scan.py'),
-    )
+    const onSeam = text(on, 'services/api/koras_api/core/file_scan.py')
+    expect(onSeam).toContain('if SECURE_FILES:')
+    expect(onSeam).toContain('record_scan is disabled when secure_files is enabled')
+    // The raise precedes every statement that writes, and the query text is the legacy one.
+    expect(onSeam.indexOf('raise RuntimeError')).toBeLessThan(onSeam.indexOf('await session.execute'))
+    expect(onSeam).toContain('def withheld(')
+    expect(text(off, 'services/api/koras_api/core/file_scan.py')).not.toContain('SECURE_FILES')
   })
 
   it('generates no scanner migration, so the schema stops where it did', () => {

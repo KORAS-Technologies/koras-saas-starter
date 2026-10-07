@@ -56,8 +56,12 @@ def _nonblank(value: object) -> bool:
 
 def _real_scanner(value: object) -> bool:
     # ADR 0013 section 6: the scanner is mandatory. `none`, unset and anything
-    # unrecognised are all "no scanner", and none of them is a way to run.
-    return isinstance(value, str) and value.strip().lower() in REAL_SCANNER_BACKENDS
+    # unrecognised are all "no scanner", and none of them is a way to run. The name is
+    # matched EXACTLY, with no stripping and no case folding: the worker's scanner settings
+    # (`scanning/config.py`, `tasks/scan_sweep.py`) accept only the canonical lowercase
+    # literal, so a spelling this check tolerated and they rejected would be a deploy that
+    # passes one gate and fails the other. A non-canonical spelling is refused here, at start.
+    return isinstance(value, str) and value in REAL_SCANNER_BACKENDS
 
 
 def _port(value: object) -> bool:

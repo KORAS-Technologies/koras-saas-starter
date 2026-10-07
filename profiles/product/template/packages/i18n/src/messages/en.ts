@@ -441,6 +441,7 @@ export const en = {
   'files.notIncluded.notRecorded': 'not recorded',
   'files.upload': 'Upload a file',
   'files.uploading': 'Uploading…',
+  'files.preparing': 'Preparing…',
   'files.choose': 'Choose a file to upload',
   'files.download': 'Download',
   'files.remove': 'Delete',
@@ -772,6 +773,7 @@ export const en = {
     'Check the file',
   'imports.checking':
     'Checking…',
+  'imports.preparing': 'Preparing…',
   'imports.discard':
     'Discard this import',
   'imports.tooManyRows':

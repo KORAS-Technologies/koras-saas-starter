@@ -3,6 +3,8 @@ import { test } from 'node:test'
 
 import {
   ChecksumUnavailableError,
+  FileTooLargeToCheckError,
+  MAX_HASHABLE_BYTES,
   digestOf,
   isCanonicalSha256,
   SHA256_HEX,
@@ -87,4 +89,49 @@ test('the canonical form is what the API accepts: lowercase, 64, hex, no padding
   assert.equal(isCanonicalSha256(' ' + ABC), false)
   assert.equal(isCanonicalSha256(ABC.replace('b', 'g')), false)
   assert.equal(isCanonicalSha256(''), false)
+})
+
+test('the in-memory ceiling is the 100 MiB scan ceiling, and says so', () => {
+  assert.equal(MAX_HASHABLE_BYTES, 100 * 1024 * 1024)
+})
+
+test('a file at the ceiling is hashed; one byte above it fails closed before it is read', async () => {
+  let read = 0
+  const sized = (size: number): Blob =>
+    ({
+      size,
+      arrayBuffer: async () => {
+        read += 1
+        return new ArrayBuffer(0)
+      },
+    }) as unknown as Blob
+  const subtle: DigestProvider = { digest: async () => new Uint8Array(32).buffer }
+  assert.match(await digestOf(sized(MAX_HASHABLE_BYTES), subtle), SHA256_HEX)
+  assert.equal(read, 1)
+
+  read = 0
+  await assert.rejects(
+    () => digestOf(sized(MAX_HASHABLE_BYTES + 1), subtle),
+    (error: unknown) => {
+      assert.ok(error instanceof FileTooLargeToCheckError)
+      // Every caller that already stops on a missing checksum stops on this too.
+      assert.ok(error instanceof ChecksumUnavailableError)
+      assert.match((error as Error).message, /larger than 100 MB/)
+      assert.match((error as Error).message, /not uploaded/)
+      return true
+    },
+  )
+  assert.equal(read, 0, 'an oversized file must never be read into memory')
+})
+
+test('the ceiling is checked before the secure context, so the message is the actionable one', async () => {
+  const huge = { size: MAX_HASHABLE_BYTES + 1 } as unknown as Blob
+  await assert.rejects(() => digestOf(huge, null), FileTooLargeToCheckError)
+})
+
+test('a lower limit can be passed and is reported in the message', async () => {
+  await assert.rejects(
+    () => digestOf(new Blob([new Uint8Array(3 * 1024 * 1024)]), undefined, 2 * 1024 * 1024),
+    (error: unknown) => /larger than 2 MB/.test((error as Error).message),
+  )
 })

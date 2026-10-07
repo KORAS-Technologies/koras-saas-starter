@@ -1,9 +1,9 @@
+import { createHash } from 'node:crypto'
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { mkdirSync, rmSync, existsSync } from 'node:fs'
 import { loadProfile } from '../src/profiles/index.js'
-import type { ProfileName } from '../src/profiles/loader.js'
 import {
   resolveSelections,
   applyComponentOverrides,
@@ -11,7 +11,6 @@ import {
 } from '../src/profiles/validator.js'
 import { buildContext } from '../src/generation/context.js'
 import { renderTemplate } from '../src/generation/engine.js'
-import { templatePath } from './template-path.js'
 
 /**
  * `secure_files` (ADR 0013), layer 4: the release layer, in both modes.
@@ -69,8 +68,6 @@ const text = (files: Map<string, string>, path: string): string => {
   expect(found, `${path} was not generated`).toBeDefined()
   return found!.split(CR).join('')
 }
-const read = (path: string): string =>
-  readFileSync(templatePath('product' as ProfileName, path), 'utf8').split(CR).join('')
 
 const API = 'services/api/koras_api'
 const GATED = [
@@ -156,7 +153,10 @@ describe('without secure_files the release layer is the rule and nothing else', 
     expect(migrations.some((m) => /00042/.test(m))).toBe(false)
     expect(text(off, 'services/worker/Dockerfile')).not.toMatch(/file_release|secure_files/)
     expect(text(off, `${API}/core/errors.py`)).not.toContain('FILE_SCAN_PENDING')
-    expect(text(off, `${API}/core/file_scan.py`)).toBe(read(`${API}/core/file_scan.py`))
+    // Byte-identical to the pre-existing legacy file (digest of it), not merely to the template.
+    expect(createHash('sha256').update(text(off, `${API}/core/file_scan.py`)).digest('hex')).toBe(
+      '6e0427feeb75234f0cee6cfe7fcd890aa56c6e25524d0e355eee5699ca8c05d0',
+    )
   })
 
   it('shows the files list as it was: no availability column, no polling', () => {

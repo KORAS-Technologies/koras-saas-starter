@@ -882,7 +882,7 @@ describe('data import', () => {
     for (const state of ['"pending"', '"skipped"', '"infected"']) {
       expect(store).toContain(state)
     }
-    const scan = read('services/api/koras_api/core/file_scan.py')
+    const scan = read('services/api/koras_api/core/file_scan.py.hbs')
     expect(scan, 'a download still allows a pending file').not.toContain('UNPARSEABLE_SCANS')
   })
 

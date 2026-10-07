@@ -167,6 +167,10 @@ export function ImportPanel({
   const [runs, setRuns] = useState<ImportRunView[]>(initialRuns)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+{{#if capability.secure_files}}
+  // The browser is hashing the chosen file, before any ticket is asked for.
+  const [preparing, setPreparing] = useState(false)
+{{/if}}
 
   const [targetKey, setTargetKey] = useState<string>(targets[0]?.key ?? '')
   const [operation, setOperation] = useState<string>(targets[0]?.operations[0] ?? '')
@@ -234,7 +238,20 @@ export function ImportPanel({
       setAnalysis(null)
       setChosen({ name: file.name, size: file.size })
       try {
+{{#if capability.secure_files}}
+        // The hashing phase is visible: reading a large file into memory takes a moment in which
+        // nothing else moves, and a person who sees nothing clicks again. A file above the
+        // browser's ceiling throws here, with the sentence to show, before anything is read.
+        setPreparing(true)
+        let checksum: string
+        try {
+          checksum = await digestOf(file)
+        } finally {
+          setPreparing(false)
+        }
+{{else}}
         const checksum = await digestOf(file)
+{{/if}}
         const ticket = await requestSourceUpload({
           name: file.name,
           sizeBytes: file.size,
@@ -516,6 +533,16 @@ export function ImportPanel({
               {fill(labels.chosenFile, { name: chosen.name, size: sizeOf(chosen.size) })}
             </p>
           )}
+{{#if capability.secure_files}}
+          {/* Present from the start and announced politely, like the Files page's. */}
+          <p
+            role="status"
+            className={preparing ? 'mt-2 text-sm text-ink-muted' : 'sr-only'}
+            data-testid="imports-preparing"
+          >
+            {preparing ? labels.preparing : ''}
+          </p>
+{{/if}}
         </div>
       </Card>
 

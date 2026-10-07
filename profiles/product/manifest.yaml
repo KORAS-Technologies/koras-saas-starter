@@ -498,6 +498,8 @@ template_map:
       - tests/unit/test_storage_restore.py
       - tests/unit/test_storage_lifecycle.py
       - tests/unit/test_storage_reconcile.py
+      # Imports the three sweeps' settings classes above, so it exists only with them.
+      - tests/unit/test_blank_settings.py
       - services/worker/koras_worker/tasks/restore_scan.py
       - tests/unit/test_storage_restore_replacement.py
       - tests/unit/test_restore_scan.py
