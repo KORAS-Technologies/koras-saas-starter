@@ -1,0 +1,253 @@
+-- Derived content is withdrawn with the verdict, and the read gate hides it (secure_files,
+-- migration 00042; Docoris 01019).
+--
+-- As the restricted application role under row-level security, this proves:
+--   1. a clean file's chunks and index state are removed in the same statement
+--      that makes it infected/quarantined, and the row ends up exactly as the
+--      writer wrote it (the trigger adds only the two index columns);
+--   2. the same for `clean -> pending` (a restore's replacement) and for a
+--      `ready -> archived` change;
+--   3. a write that keeps a file clean, or touches a file that was never clean,
+--      removes nothing;
+--   4. tenant isolation: tenant A's verdict never removes tenant B's chunks, even
+--      for a file id that tenant B reuses as a resource id (the predicate names
+--      the tenant), and the function is not callable as a function;
+--   5. the retrieval statement's gate: a chunk of a file that is not releasable
+--      is not returned -- not for a verdict that is not clean, not for a clean row
+--      whose key is not a final key of its own tenant, not for a clean row the scanner
+--      did not stamp -- one whose file row is gone is not returned, and a chunk of a
+--      releasable file is;
+--   6. a rolled-back verdict removes nothing (the purge and the verdict are one
+--      transaction).
+--
+-- Everything happens in a transaction that rolls back.
+{{#unless capability.ai}}
+--
+-- This product has no `ai` capability and therefore no `ai_knowledge_chunks`. What is proved
+-- here is what remains true without it: the trigger fires, the delete is skipped rather than
+-- failing, the index columns are cleared, and a verdict is written exactly as the writer wrote it.
+{{/unless}}
+
+\set ON_ERROR_STOP on
+
+begin;
+
+insert into public.tenants (id, slug, name)
+values
+  ('00000000-0000-0000-0000-0000000003a1', 'rls-withdraw-alpha', 'Alpha'),
+  ('00000000-0000-0000-0000-0000000003b1', 'rls-withdraw-beta', 'Beta');
+
+insert into public.files
+  (id, tenant_id, storage_key, name, size_bytes, content_type, category, status, uploaded_by,
+   scan_status, scan_object_etag, indexed_at, index_note)
+values
+  -- Alpha: clean and indexed (f1, f2, f3), pending with historical chunks (f4), indexed and
+  -- clean to be left alone (f5), clean on an incoming key (f6), clean with no etag (f7).
+  ('00000000-0000-0000-0000-0000000003f1', '00000000-0000-0000-0000-0000000003a1',
+   'tenants/00000000-0000-0000-0000-0000000003a1/documents/00000000-0000-0000-0000-0000000003f1/final/00000000-0000-4000-8000-000000000001/a.txt',
+   'a.txt', 10, 'text/plain', 'documents', 'ready', 'u', 'clean', 'etag-1', now(), '1 chunk(s)'),
+  ('00000000-0000-0000-0000-0000000003f2', '00000000-0000-0000-0000-0000000003a1',
+   'tenants/00000000-0000-0000-0000-0000000003a1/documents/00000000-0000-0000-0000-0000000003f2/final/00000000-0000-4000-8000-000000000002/b.txt',
+   'b.txt', 10, 'text/plain', 'documents', 'ready', 'u', 'clean', 'etag-2', now(), '1 chunk(s)'),
+  ('00000000-0000-0000-0000-0000000003f3', '00000000-0000-0000-0000-0000000003a1',
+   'tenants/00000000-0000-0000-0000-0000000003a1/documents/00000000-0000-0000-0000-0000000003f3/final/00000000-0000-4000-8000-000000000003/c.txt',
+   'c.txt', 10, 'text/plain', 'documents', 'ready', 'u', 'clean', 'etag-3', now(), '1 chunk(s)'),
+  ('00000000-0000-0000-0000-0000000003f4', '00000000-0000-0000-0000-0000000003a1',
+   'tenants/00000000-0000-0000-0000-0000000003a1/documents/00000000-0000-0000-0000-0000000003f4/final/00000000-0000-4000-8000-000000000004/p.txt',
+   'p.txt', 10, 'text/plain', 'documents', 'ready', 'u', 'pending', null, now(), '1 chunk(s)'),
+  ('00000000-0000-0000-0000-0000000003f5', '00000000-0000-0000-0000-0000000003a1',
+   'tenants/00000000-0000-0000-0000-0000000003a1/documents/00000000-0000-0000-0000-0000000003f5/final/00000000-0000-4000-8000-000000000005/k.txt',
+   'k.txt', 10, 'text/plain', 'documents', 'ready', 'u', 'clean', 'etag-5', now(), '1 chunk(s)'),
+  ('00000000-0000-0000-0000-0000000003f6', '00000000-0000-0000-0000-0000000003a1',
+   'tenants/00000000-0000-0000-0000-0000000003a1/documents/00000000-0000-0000-0000-0000000003f6/incoming/00000000-0000-4000-8000-000000000006/i.txt',
+   'i.txt', 10, 'text/plain', 'documents', 'ready', 'u', 'clean', 'etag-6', now(), '1 chunk(s)'),
+  ('00000000-0000-0000-0000-0000000003f7', '00000000-0000-0000-0000-0000000003a1',
+   'tenants/00000000-0000-0000-0000-0000000003a1/documents/00000000-0000-0000-0000-0000000003f7/final/00000000-0000-4000-8000-000000000007/n.txt',
+   'n.txt', 10, 'text/plain', 'documents', 'ready', 'u', 'clean', null, now(), '1 chunk(s)'),
+  -- Beta: a clean file whose id equals nothing of Alpha's.
+  ('00000000-0000-0000-0000-0000000003e1', '00000000-0000-0000-0000-0000000003b1',
+   'tenants/00000000-0000-0000-0000-0000000003b1/documents/00000000-0000-0000-0000-0000000003e1/final/00000000-0000-4000-8000-0000000000e1/e.txt',
+   'e.txt', 10, 'text/plain', 'documents', 'ready', 'u', 'clean', 'etag-e1', now(), '1 chunk(s)');
+{{#if capability.ai}}
+
+-- Chunks, including Beta's, which carry Alpha's f1 id as their resource id (a hostile or
+-- accidental collision).
+insert into public.ai_knowledge_chunks
+  (tenant_id, document_id, resource_type, resource_id, title, chunk_index, content, embedding)
+select t, 'file:' || r, 'file', r, 'x', 0, 'content of ' || r,
+       ('[' || array_to_string(array_fill(0.1::float4, array[1536]), ',') || ']')::vector
+from (values
+  ('00000000-0000-0000-0000-0000000003a1'::uuid, '00000000-0000-0000-0000-0000000003f1'),
+  ('00000000-0000-0000-0000-0000000003a1'::uuid, '00000000-0000-0000-0000-0000000003f2'),
+  ('00000000-0000-0000-0000-0000000003a1'::uuid, '00000000-0000-0000-0000-0000000003f3'),
+  ('00000000-0000-0000-0000-0000000003a1'::uuid, '00000000-0000-0000-0000-0000000003f4'),
+  ('00000000-0000-0000-0000-0000000003a1'::uuid, '00000000-0000-0000-0000-0000000003f5'),
+  ('00000000-0000-0000-0000-0000000003a1'::uuid, '00000000-0000-0000-0000-0000000003f6'),
+  ('00000000-0000-0000-0000-0000000003a1'::uuid, '00000000-0000-0000-0000-0000000003f7'),
+  ('00000000-0000-0000-0000-0000000003a1'::uuid, '00000000-0000-0000-0000-0000000003ff'),
+  ('00000000-0000-0000-0000-0000000003b1'::uuid, '00000000-0000-0000-0000-0000000003e1'),
+  ('00000000-0000-0000-0000-0000000003b1'::uuid, '00000000-0000-0000-0000-0000000003f1')
+) as v(t, r);
+{{/if}}
+
+set local role koras_rls_test;
+set local app.tenant_id = '00000000-0000-0000-0000-0000000003a1';
+
+do $$
+declare
+  r public.files%rowtype;
+  n integer;
+begin
+{{#if capability.ai}}
+  -- 5. The read gate, as the retrieval statement states it (core/knowledge.py _QUERY, whose
+  -- predicate is core/file_release.py RELEASABLE_SQL): a releasable file's chunk is returned; a
+  -- pending file's, an incoming-key file's and an unstamped file's are not; a chunk whose file
+  -- row does not exist is not.
+  select count(*) into n from public.ai_knowledge_chunks c
+  where c.tenant_id = '00000000-0000-0000-0000-0000000003a1'
+    and (c.resource_type <> 'file' or exists (
+      select 1 from public.files f
+      where f.tenant_id = c.tenant_id and f.id::text = c.resource_id
+        and (f.status = 'ready' and f.scan_status = 'clean'
+             and f.scan_object_etag is not null and f.scan_object_etag <> ''
+             and f.storage_key ~ ('^tenants/' || f.tenant_id::text || '/[^/]+/[^/]+/final/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[^/]+$'))));
+  -- f1, f2, f3, f5 are releasable; f4 is pending; f6 is on an incoming key; f7 has no etag;
+  -- ...03ff has no row.
+  if n <> 4 then
+    raise exception 'withdrawal: the read gate returned % chunks, expected 4', n;
+  end if;
+
+{{/if}}
+  -- 1. clean -> infected + quarantined, the scanner's own statement shape.
+  update public.files
+  set scan_status = 'infected', status = 'quarantined', scan_note = 'withheld',
+      scan_failure = null, scan_object_etag = null
+  where id = '00000000-0000-0000-0000-0000000003f1' and tenant_id = '00000000-0000-0000-0000-0000000003a1'
+    and status = 'ready' and scan_status in ('pending', 'clean');
+  select * into r from public.files where id = '00000000-0000-0000-0000-0000000003f1';
+  if r.scan_status <> 'infected' or r.status <> 'quarantined' or r.scan_note <> 'withheld' then
+    raise exception 'withdrawal: the verdict was not written as the writer wrote it';
+  end if;
+  if r.indexed_at is not null or r.index_note is not null then
+    raise exception 'withdrawal: the index state survived the verdict';
+  end if;
+{{#if capability.ai}}
+  select count(*) into n from public.ai_knowledge_chunks
+  where tenant_id = '00000000-0000-0000-0000-0000000003a1'
+    and resource_id = '00000000-0000-0000-0000-0000000003f1';
+  if n <> 0 then
+    raise exception 'withdrawal: % chunk(s) of an infected file survived', n;
+  end if;
+{{/if}}
+
+  -- 2. clean -> pending (bytes replaced), and ready -> archived.
+  update public.files set scan_status = 'pending' where id = '00000000-0000-0000-0000-0000000003f2';
+  select * into r from public.files where id = '00000000-0000-0000-0000-0000000003f2';
+  if r.indexed_at is not null or r.index_note is not null then
+    raise exception 'withdrawal: clean -> pending left the index state';
+  end if;
+{{#if capability.ai}}
+  select count(*) into n from public.ai_knowledge_chunks
+  where tenant_id = '00000000-0000-0000-0000-0000000003a1'
+    and resource_id = '00000000-0000-0000-0000-0000000003f2';
+  if n <> 0 then
+    raise exception 'withdrawal: clean -> pending left % chunk(s)', n;
+  end if;
+{{/if}}
+  update public.files set status = 'archived' where id = '00000000-0000-0000-0000-0000000003f3';
+  select * into r from public.files where id = '00000000-0000-0000-0000-0000000003f3';
+  if r.indexed_at is not null or r.index_note is not null then
+    raise exception 'withdrawal: ready -> archived left the index state';
+  end if;
+{{#if capability.ai}}
+  select count(*) into n from public.ai_knowledge_chunks
+  where tenant_id = '00000000-0000-0000-0000-0000000003a1'
+    and resource_id = '00000000-0000-0000-0000-0000000003f3';
+  if n <> 0 then
+    raise exception 'withdrawal: ready -> archived left % chunk(s)', n;
+  end if;
+{{/if}}
+
+  -- 3. A write that keeps the file clean removes nothing; neither does a write to a
+  -- file that was never clean (its historical chunks are the read gate's to hide).
+  update public.files set name = 'renamed.txt' where id = '00000000-0000-0000-0000-0000000003f5';
+  select * into r from public.files where id = '00000000-0000-0000-0000-0000000003f5';
+  if r.indexed_at is null or r.index_note is null then
+    raise exception 'withdrawal: a write that kept the file clean cleared its index state';
+  end if;
+{{#if capability.ai}}
+  select count(*) into n from public.ai_knowledge_chunks
+  where tenant_id = '00000000-0000-0000-0000-0000000003a1'
+    and resource_id = '00000000-0000-0000-0000-0000000003f5';
+  if n <> 1 then
+    raise exception 'withdrawal: a write that kept the file clean removed its chunk';
+  end if;
+{{/if}}
+  update public.files set scan_status = 'infected', status = 'quarantined'
+  where id = '00000000-0000-0000-0000-0000000003f4';
+  select * into r from public.files where id = '00000000-0000-0000-0000-0000000003f4';
+  if r.indexed_at is null then
+    raise exception 'withdrawal: a file that was never clean had its index state touched';
+  end if;
+{{#if capability.ai}}
+  select count(*) into n from public.ai_knowledge_chunks
+  where tenant_id = '00000000-0000-0000-0000-0000000003a1'
+    and resource_id = '00000000-0000-0000-0000-0000000003f4';
+  if n <> 1 then
+    raise exception 'withdrawal: a file that was never clean had its chunk removed by the trigger';
+  end if;
+{{/if}}
+
+  -- 4. The function is not callable by the application role.
+  begin
+    perform public.withdraw_file_derived_content();
+    raise exception 'withdrawal: the trigger function was callable';
+  exception when insufficient_privilege then null;
+  end;
+
+  raise notice 'withdrawal: verdict, state changes, untouched cases{{#if capability.ai}} and read gate{{/if}}: ok';
+end
+$$;
+
+-- 4. From the other side: Beta's rows are exactly what the owner wrote.
+reset role;
+do $$
+declare
+  n integer;
+begin
+{{#if capability.ai}}
+  select count(*) into n from public.ai_knowledge_chunks
+  where tenant_id = '00000000-0000-0000-0000-0000000003b1';
+  if n <> 2 then
+    raise exception 'withdrawal: tenant A''s verdict removed tenant B''s chunks (% left of 2)', n;
+  end if;
+{{/if}}
+  if (select indexed_at from public.files where id = '00000000-0000-0000-0000-0000000003e1') is null then
+    raise exception 'withdrawal: tenant B''s index state was cleared';
+  end if;
+end
+$$;
+
+-- 6. One transaction with the verdict: a rolled-back statement removes nothing.
+savepoint before_verdict;
+set local role koras_rls_test;
+set local app.tenant_id = '00000000-0000-0000-0000-0000000003a1';
+update public.files set scan_status = 'infected', status = 'quarantined'
+where id = '00000000-0000-0000-0000-0000000003f5';
+rollback to savepoint before_verdict;
+reset role;
+do $$
+begin
+  if (select indexed_at from public.files where id = '00000000-0000-0000-0000-0000000003f5') is null
+{{#if capability.ai}}
+     or (select count(*) from public.ai_knowledge_chunks
+         where resource_id = '00000000-0000-0000-0000-0000000003f5') <> 1
+{{/if}}
+  then
+    raise exception 'withdrawal: a rolled-back verdict still removed derived content';
+  end if;
+  raise notice 'withdrawal: tenant isolation and atomicity: ok';
+end
+$$;
+
+rollback;
