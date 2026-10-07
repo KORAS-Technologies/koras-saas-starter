@@ -22,6 +22,9 @@
 set -euo pipefail
 
 : "${SECURE_DIR:?}" "${DEFAULT_DIR:?}" "${BASELINE_DIR:?}"
+# The product the upgrade moves to. It is generated with the same components as the baseline
+# plus secure_files, so the only migrations it adds are 00039-00042.
+UPGRADE_DIR="${UPGRADE_DIR:-$SECURE_DIR}"
 export PGHOST="${PGHOST:-localhost}" PGUSER="${PGUSER:-postgres}" PGPORT="${PGPORT:-5432}"
 WORK="${RUNNER_TEMP:-/tmp}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -195,11 +198,18 @@ fingerprint() {
 }
 BEFORE="$(fingerprint)"
 ROWS_BEFORE="$(sql koras_matrix_c -c "select count(*) from public.files")"
-CHUNKS_BEFORE="$(sql koras_matrix_c -c "select case when to_regclass('public.ai_knowledge_chunks') is null then 0 else (select count(*) from public.ai_knowledge_chunks) end")"
+chunk_count() {
+  if [ "$HAS_CHUNKS" = "t" ]; then
+    sql koras_matrix_c -c "select count(*) from public.ai_knowledge_chunks"
+  else
+    echo 0
+  fi
+}
+CHUNKS_BEFORE="$(chunk_count)"
 echo "  seeded $ROWS_BEFORE legacy files and $CHUNKS_BEFORE chunks"
 
 echo "  --> the secure product's own migrate.sh upgrades the baseline schema"
-migrate koras_matrix_c "$SECURE_DIR" | tee "$WORK/upgrade.out"
+migrate koras_matrix_c "$UPGRADE_DIR" | tee "$WORK/upgrade.out"
 APPLIED="$(grep -E '^ +apply ' "$WORK/upgrade.out" | awk '{print $2}' | tr '\n' ' ')"
 if [ "$APPLIED" = "${SECURE_MIGRATIONS[*]} " ]; then
   echo "  ok    C: exactly 00039-00042 were applied ($APPLIED)"
@@ -214,13 +224,16 @@ if [ "$(fingerprint)" = "$BEFORE" ]; then
 else
   echo "::error::C: a legacy row changed in the upgrade"; FAILED=1
 fi
-check koras_matrix_c "C: no chunk was lost" \
-  "select case when to_regclass('public.ai_knowledge_chunks') is null then 0 else (select count(*) from public.ai_knowledge_chunks) end = $CHUNKS_BEFORE"
+if [ "$(chunk_count)" = "$CHUNKS_BEFORE" ]; then
+  echo "  ok    C: no chunk was lost ($CHUNKS_BEFORE before and after)"
+else
+  echo "::error::C: the chunk count changed in the upgrade"; FAILED=1
+fi
 check koras_matrix_c "C: the new columns took their defaults (attempts 0, no failure, no etag)" \
   "select bool_and(scan_attempts = 0 and scan_failure is null and scan_object_etag is null and scan_attempted_at is null) from public.files"
 
 echo "  --> idempotent: the four files applied again leave the data and the fingerprint alone"
-for m in "${SECURE_MIGRATIONS[@]}"; do sql koras_matrix_c -f "$SECURE_DIR/supabase/migrations/$m.sql" >/dev/null; done
+for m in "${SECURE_MIGRATIONS[@]}"; do sql koras_matrix_c -f "$UPGRADE_DIR/supabase/migrations/$m.sql" >/dev/null; done
 if [ "$(fingerprint)" = "$BEFORE" ]; then
   echo "  ok    C: re-applied, fingerprint unchanged"
 else
@@ -259,7 +272,7 @@ SQL
   fi
 fi
 
-rls_suites koras_matrix_c "$SECURE_DIR"
+rls_suites koras_matrix_c "$UPGRADE_DIR"
 
 if [ "$FAILED" -ne 0 ]; then echo "::error::the migration matrix has failures"; exit 1; fi
 echo "The migration matrix passed: A fresh secure, B fresh default, C upgrade."

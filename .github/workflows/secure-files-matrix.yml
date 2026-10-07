@@ -75,6 +75,11 @@ jobs:
             --with secure_files,clamd,worker --no-interactive --output-dir "$RUNNER_TEMP/gen"
           pnpm create-koras-app matrix-default --profile product \
             --no-interactive --output-dir "$RUNNER_TEMP/gen"
+          # The upgrade runs with the assistant on, because that is the only configuration
+          # with derived content (`ai_knowledge_chunks`) for the upgrade to put at risk.
+          pnpm create-koras-app matrix-secure-ai --profile product \
+            --with secure_files,clamd,worker,ai,ai_gateway --no-interactive \
+            --output-dir "$RUNNER_TEMP/gen"
 
       # The commit before this branch: the merge base with develop. On a push to develop that
       # is the commit itself, so the first parent stands in for it. Its own generator builds
@@ -92,7 +97,7 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm turbo run build --filter=create-koras-app
           pnpm create-koras-app matrix-baseline --profile product \
-            --no-interactive --output-dir "$RUNNER_TEMP/gen"
+            --with ai,ai_gateway --no-interactive --output-dir "$RUNNER_TEMP/gen"
           if [ -e "$RUNNER_TEMP/gen/matrix-baseline/supabase/migrations/00039_file_scan_attempts.sql" ]; then
             echo "::error::the baseline already carries 00039; it is not from before this branch"
             exit 1
@@ -101,6 +106,7 @@ jobs:
       - name: Run the migration matrix
         env:
           SECURE_DIR: ${{ runner.temp }}/gen/matrix-secure
+          UPGRADE_DIR: ${{ runner.temp }}/gen/matrix-secure-ai
           DEFAULT_DIR: ${{ runner.temp }}/gen/matrix-default
           BASELINE_DIR: ${{ runner.temp }}/gen/matrix-baseline
           PGHOST: localhost
@@ -158,20 +164,16 @@ jobs:
         working-directory: ${{ runner.temp }}/gen/live-secure
         run: uv sync --all-packages
 
-      - name: Start the stores and the scanner
+      - name: Start an object store
+        uses: ./.github/actions/start-minio
+
+      - name: Start the queue and the scanner
         working-directory: ${{ runner.temp }}/gen/live-secure
         run: |
           set -euo pipefail
-          docker run -d --name live-minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin123 \
-            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
           docker run -d --name live-redis -p 6379:6379 redis:7-alpine
           docker build -f services/clamd/Dockerfile -t live-clamd .
           docker run -d --name live-clamd -p 3310:3310 --memory 2g --cpus 2 live-clamd
-          for attempt in $(seq 1 30); do
-            if curl -fsS http://localhost:9000/minio/health/ready >/dev/null; then break; fi
-            sleep 1
-          done
           uv run python - <<'PY'
           import boto3
           boto3.client(
@@ -355,17 +357,13 @@ jobs:
         working-directory: ${{ runner.temp }}/gen/live-default
         run: uv sync --all-packages
 
-      - name: Start the store
+      - name: Start an object store
+        uses: ./.github/actions/start-minio
+
+      - name: Create the bucket
         working-directory: ${{ runner.temp }}/gen/live-default
         run: |
           set -euo pipefail
-          docker run -d --name compat-minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin123 \
-            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
-          for attempt in $(seq 1 30); do
-            if curl -fsS http://localhost:9000/minio/health/ready >/dev/null; then break; fi
-            sleep 1
-          done
           uv run python - <<'PY'
           import boto3
           boto3.client(

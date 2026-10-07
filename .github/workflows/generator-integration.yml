@@ -619,6 +619,33 @@ jobs:
       #
       # A skip is a failure here: this row has a database and a store, so every one of
       # them must run.
+      # One object store for the three secure_files steps below, started once and left running.
+      #
+      # MinIO stopped publishing images and binaries in late 2025 (quay.io/minio/minio refuses
+      # an anonymous pull, dl.min.io answers 410), so the tag these suites were written against
+      # is built from its source by `.github/actions/start-minio`. Before that the promotion
+      # step below had no store at all: each earlier step started its own container and removed
+      # it on exit.
+      - name: Start an object store for the secure_files suites
+        if: matrix.roundtrip && contains(matrix.components, 'secure_files')
+        uses: ./.github/actions/start-minio
+
+      - name: Create the bucket the secure_files suites use
+        if: matrix.roundtrip && contains(matrix.components, 'secure_files')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        run: |
+          set -euo pipefail
+          uv run python - <<'PY'
+          import boto3
+          boto3.client(
+              "s3",
+              endpoint_url="http://localhost:9000",
+              aws_access_key_id="minioadmin",
+              aws_secret_access_key="minioadmin123",
+              region_name="us-east-1",
+          ).create_bucket(Bucket="koras-files")
+          PY
+
       - name: The upload foundation ran against a database and an object store, and did not skip
         if: matrix.roundtrip && contains(matrix.components, 'secure_files')
         working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
@@ -630,24 +657,6 @@ jobs:
           STORAGE_SECRET_KEY: minioadmin123
         run: |
           set -euo pipefail
-          docker run -d --name upload-foundation-minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin123 \
-            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
-          trap 'docker rm -f upload-foundation-minio >/dev/null 2>&1 || true' EXIT
-          for attempt in $(seq 1 30); do
-            if curl -fsS http://localhost:9000/minio/health/ready >/dev/null; then break; fi
-            sleep 1
-          done
-          uv run python - <<'PY'
-          import boto3
-          boto3.client(
-              "s3",
-              endpoint_url="http://localhost:9000",
-              aws_access_key_id="minioadmin",
-              aws_secret_access_key="minioadmin123",
-              region_name="us-east-1",
-          ).create_bucket(Bucket="koras-files")
-          PY
           uv run pytest \
             tests/integration/test_upload_finalization_real.py \
             tests/integration/test_upload_checksum_provenance_real.py \
@@ -700,28 +709,11 @@ jobs:
           STORAGE_SECRET_KEY: minioadmin123
         run: |
           set -euo pipefail
-          docker run -d --name scanner-minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin123 \
-            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
           docker run -d --name scanner-redis -p 6379:6379 redis:7-alpine
           docker build -f services/clamd/Dockerfile -t scanner-clamd .
           docker build -f services/worker/Dockerfile -t "$WORKER_IMAGE" .
           docker run -d --name scanner-clamd -p 3310:3310 --memory 2g --cpus 2 scanner-clamd
-          trap 'docker rm -f scanner-minio scanner-redis scanner-clamd >/dev/null 2>&1 || true' EXIT
-          for attempt in $(seq 1 30); do
-            if curl -fsS http://localhost:9000/minio/health/ready >/dev/null; then break; fi
-            sleep 1
-          done
-          uv run python - <<'PY'
-          import boto3
-          boto3.client(
-              "s3",
-              endpoint_url="http://localhost:9000",
-              aws_access_key_id="minioadmin",
-              aws_secret_access_key="minioadmin123",
-              region_name="us-east-1",
-          ).create_bucket(Bucket="koras-files")
-          PY
+          trap 'docker rm -f scanner-redis scanner-clamd >/dev/null 2>&1 || true' EXIT
           for attempt in $(seq 1 120); do
             if docker logs scanner-clamd 2>&1 | grep -q "ready: detection self-test passed"; then break; fi
             if docker logs scanner-clamd 2>&1 | grep -q "FATAL"; then docker logs scanner-clamd; exit 1; fi

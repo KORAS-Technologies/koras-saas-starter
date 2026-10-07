@@ -1,0 +1,57 @@
+name: Start MinIO
+description: >-
+  An S3-compatible store on localhost:9000 with the credentials the secure_files suites use,
+  built from MinIO's tagged source.
+
+  Why from source: MinIO stopped publishing images (quay.io/minio/minio refuses an anonymous
+  pull) and binaries (dl.min.io answers 410) in late 2025, and the repository is archived.
+  The suites need MinIO specifically -- it executes an unsigned `x-amz-copy-source` as a
+  server-side copy, which is the attack the signed copy-source guard exists to stop -- so the
+  tag the suites were written against is built, once, and the binary cached by tag.
+
+runs:
+  using: composite
+  steps:
+    - id: cache
+      uses: actions/cache@v4
+      with:
+        path: ~/minio-bin
+        key: minio-RELEASE.2025-09-07T16-13-09Z-${{ runner.os }}-${{ runner.arch }}-go1.24
+
+    - if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/setup-go@v5
+      with:
+        go-version: "1.24"
+        cache: false
+
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        git clone --depth 1 --branch RELEASE.2025-09-07T16-13-09Z \
+          https://github.com/minio/minio "$RUNNER_TEMP/minio-src"
+        cd "$RUNNER_TEMP/minio-src"
+        mkdir -p "$HOME/minio-bin"
+        CGO_ENABLED=0 go build -trimpath -o "$HOME/minio-bin/minio" .
+        "$HOME/minio-bin/minio" --version
+
+    - shell: bash
+      env:
+        MINIO_ROOT_USER: minioadmin
+        MINIO_ROOT_PASSWORD: minioadmin123
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/minio-data"
+        nohup "$HOME/minio-bin/minio" server "$RUNNER_TEMP/minio-data" \
+          --address :9000 --console-address :9001 \
+          > "$RUNNER_TEMP/minio.log" 2>&1 &
+        for attempt in $(seq 1 60); do
+          if curl -fsS http://localhost:9000/minio/health/ready >/dev/null; then
+            echo "MinIO is ready"
+            exit 0
+          fi
+          sleep 1
+        done
+        cat "$RUNNER_TEMP/minio.log"
+        echo "::error::MinIO did not become ready"
+        exit 1

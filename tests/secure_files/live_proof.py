@@ -231,8 +231,18 @@ def secure(api: Api) -> None:
     mismatch_ticket = mismatch.json()
     mismatch_id = str(mismatch_ticket["file_id"])
     key = mismatch_ticket["upload_url"].split("?")[0].split(f"/{os.environ['STORAGE_BUCKET']}/", 1)[1]
-    # A provider that does not enforce the signed digest: written with the store's own credentials.
-    s3_client().put_object(Bucket=os.environ["STORAGE_BUCKET"], Key=key, Body=swapped)
+    # A provider that does not enforce the signed digest: written with the store's own credentials,
+    # carrying the provenance the ticket's own PUT would have (so the only thing wrong with the
+    # object is that its bytes are not the claim).
+    from koras_storage import UPLOAD_PROVENANCE_META
+
+    upload_id = key.split("/")[5]
+    s3_client().put_object(
+        Bucket=os.environ["STORAGE_BUCKET"],
+        Key=key,
+        Body=swapped,
+        Metadata={UPLOAD_PROVENANCE_META: upload_id},
+    )
     check("completion of the swapped upload (size matches, 200)", api.call("POST", f"/files/{mismatch_id}/complete", own, {}).status_code == 200)
 
     print("-- the real finalizer, the real scanner (clock operated, nothing else)")
