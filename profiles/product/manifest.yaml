@@ -357,6 +357,21 @@ template_map:
       - tests/integration/test_restore_replacement_real.py
       - tests/integration/test_restore_orchestration_real.py
       - tests/integration/test_restore_derived_content_real.py
+      # Layer 6b, promotion tooling (ADR 0013 sections 7 and 9). The engine is generic and read-only
+      # (`tooling/promotion`); what is the product's is configuration, never code:
+      # `local/config/promotion.yaml` (rendered), the F1 dispositions (shipped empty) and the
+      # security register (shipped empty, with the explicit marker). The activation checks inside
+      # the engine apply only with `data_import` (an `activation` section of the configuration is
+      # rendered with it), and their suite, `test_promotion_activation.py`, is listed under
+      # `data_import` as well so it exists only when both are on. The workflow is a separate file,
+      # so the product's deploy workflow is the same with and without the capability.
+      - tooling/promotion
+      - local/config/promotion.yaml
+      - local/config/f1-dispositions.yaml
+      - local/scripts/qualify-storage-provider.sh
+      - local/.qualification/.gitignore
+      - docs/security/SECURITY-REGISTER.md
+      - .github/workflows/promotion-gate.yml
 
     # In-app notifications: the table, the emitter, the routes, the page and
     # the browser test.

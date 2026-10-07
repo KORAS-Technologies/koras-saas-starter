@@ -1,0 +1,21 @@
+# F1 dispositions: releasable files the F1 detector (tooling/promotion/f1.py) is told not to count.
+#
+# An explicit, committed, auditable list. HONOURED FOR `dev` ONLY. An entry for any other
+# environment is an error and fails the check closed; a malformed entry does too. Nothing here
+# changes a row: the detector is read-only, and a dispositioned row is still reported (raw and net
+# counts are both printed, class `dispositioned_synthetic`).
+#
+# An entry applies only while the row is still ready + clean AND still has the classification
+# recorded in it. If the row is re-scanned, replaced, quarantined, or its classification changes
+# for any reason, the entry no longer matches and the row counts again.
+#
+# Adding an entry is a reviewed change with an owner decision behind it. Do not add one to make a
+# promotion pass. This file ships empty: dispositions are a product's own decisions.
+#
+#   - env: dev
+#     ref: "<tenant uuid>:<file uuid>"
+#     classification: final_key_no_verified_digest   # one of the failing classes
+#     reason: why this row is known and acceptable
+#     recorded: 2026-01-31
+version: 1
+dispositions: []

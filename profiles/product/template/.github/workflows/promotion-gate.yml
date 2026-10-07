@@ -1,0 +1,85 @@
+# The promotion gate for one environment: read-only, PASS or FAIL with evidence.
+#
+# Generated with `secure_files` (ADR 0013). It reads, and never enables: the declaration against
+# the secret store and the apps (data import, when the product has it), the scanner's health, the
+# environment's own provider-qualification record, the F1 detector against its own database, CI on
+# the commit and the security register. See docs/SECURE_FILES.md, "Promotion tooling".
+#
+# It is a separate workflow, and the product's deploy workflow is untouched, so that a deploy is
+# not made to depend on a gate nobody asked for. To make activation a precondition of a deploy,
+# call this workflow from the environment's own deploy workflow and make the deploy `needs:` it:
+#
+#   jobs:
+#     promotion-gate:
+#       uses: ./.github/workflows/promotion-gate.yml
+#       with: { environment: test }
+#       secrets: inherit
+#     deploy:
+#       needs: promotion-gate
+#       ...
+#
+# The provider qualification is NOT run here: it writes disposable objects into the target bucket
+# and needs a disposable local database, so it is run by a person with
+# local/scripts/qualify-storage-provider.sh, and this gate only verifies the record. In CI no
+# record exists, and that is a FAIL of the `provider_qualification` check by design; upload the
+# record as an artifact from the machine that produced it, or run the gate where it is.
+
+name: Promotion gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: The environment to evaluate
+        required: true
+        type: choice
+        options: [dev, test, stg, prod]
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+    secrets:
+      DOPPLER_TOKEN:
+        required: false
+      FLY_API_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+  checks: read
+
+concurrency:
+  group: promotion-gate-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Promotion gate (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - name: Install the secret-store and deploy CLIs
+        run: |
+          curl -sSfL https://cli.doppler.com/install.sh | sudo sh
+          curl -L https://fly.io/install.sh | sh
+          echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
+      - run: uv sync --all-packages
+      - name: Evaluate the gate
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -o pipefail
+          PYTHONPATH=tooling uv run python -m promotion gate --env "$ENVIRONMENT" \
+            --commit "$GITHUB_SHA" --out "$RUNNER_TEMP/promotion-gate.json" | tee "$RUNNER_TEMP/promotion-gate.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: promotion-gate-${{ inputs.environment }}
+          path: ${{ runner.temp }}/promotion-gate.*
+          retention-days: 30

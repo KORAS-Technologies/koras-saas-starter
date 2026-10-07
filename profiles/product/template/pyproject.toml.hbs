@@ -124,5 +124,5 @@ testpaths = ["tests", "python-packages", "services"]
 # would have to be copied into every image that never runs it. Importing its
 # source by path is enough -- its own dependencies are already present through
 # the API's -- and costs nothing at deploy.
-pythonpath = ["services/worker"]
+pythonpath = ["services/worker"{{#if capability.secure_files}}, "tooling"{{/if}}]
 {{/if}}addopts = "--cov --cov-report=term-missing"
