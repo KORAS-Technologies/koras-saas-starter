@@ -88,6 +88,19 @@ function gated(): string[] {
   return typeof entry === 'string' ? [entry] : (entry ?? [])
 }
 
+/**
+ * What the capability gates **and nothing else gates as well**. A file listed under another
+ * capability too (layer 5: the restore suite that needs the assistant) is generated only where
+ * both are on, so a product generated with `secure_files` alone does not have it.
+ */
+function gatedAlone(): string[] {
+  const { capabilities } = manifestOf().template_map
+  const others = Object.entries(capabilities)
+    .filter(([name]) => name !== 'secure_files' && name !== 'storage_governance')
+    .flatMap(([, entry]) => (typeof entry === 'string' ? [entry] : (entry ?? [])))
+  return gated().filter((path) => !others.includes(path))
+}
+
 describe('declared like every other capability', () => {
   it('is in the manifest and off in the defaults', () => {
     const { manifest, defaults } = loadProfile('product')
@@ -195,7 +208,7 @@ describe('a product generated WITH secure_files', () => {
   })
 
   it('includes everything the capability gates', () => {
-    for (const path of gated()) {
+    for (const path of gatedAlone()) {
       expect(
         paths.some((p) => p === path || p.startsWith(`${path}/`)),
         path,
@@ -261,6 +274,12 @@ describe('a product generated WITH secure_files', () => {
       'apps/web/src/app/dashboard/imports/ImportPanel.tsx',
       'apps/web/src/app/dashboard/imports/actions.ts',
       'tests/unit/test_upload_ticket_contract.py',
+      // Layer 5: the restore worker task and its unit test are rendered by the capability;
+      // `product-secure-files-restore.test.ts` asserts each half.
+      'services/worker/koras_worker/tasks/storage_restore.py',
+      'tests/unit/test_storage_restore.py',
+      'tests/unit/test_release_bypass_guards.py',
+      'tests/unit/test_scan_task.py',
       // The round-trip harness names the settings a secure API refuses to start without.
       'playwright.config.ts',
     ])
@@ -273,7 +292,7 @@ describe('a product generated WITH secure_files', () => {
     }
     const added = paths.filter((p) => !base.has(p)).sort()
     // Each gated path is a file or a directory, and every one of them is among what was added.
-    for (const path of gated()) {
+    for (const path of gatedAlone()) {
       expect(
         added.some((p) => p === path || p.startsWith(`${path}/`)),
         `${path} is gated but was not added by the capability`,
