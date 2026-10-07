@@ -53,6 +53,7 @@ Two profiles exist initially:
 | Reporting (`reporting`)     | Optional (default on) | No; the Control Plane builds its platform analytics on the same shared package |
 | Audit governance (`audit_governance`) | Optional (default on) | No | 
 | Storage governance (`storage_governance`) | Optional (default on) | No |
+| Secure files (`secure_files`) | Optional (default off; needs `storage`, `tenancy`, `rls`, `worker`, `clamd`; [`SECURE_FILES.md`](SECURE_FILES.md)) | No |
 | Custom domains              | Yes       | No              |
 | White labeling              | Yes       | No              |
 | **Control Plane Relationship** |        |                 |
