@@ -11,6 +11,7 @@ the deployed smoke check are for.
 from __future__ import annotations
 
 import base64
+from collections.abc import Iterator
 from urllib.parse import urlparse
 
 import pytest
@@ -344,3 +345,136 @@ def test_any_other_refusal_reaches_the_caller_unchanged() -> None:
     with pytest.raises(ClientError):
         _write_store(client).put("k", b"bytes", "text/plain", checksum_sha256=bytes(32).hex())
     assert len(client.calls) == 1
+
+
+# ── upload provenance and the signed copy-source guard (ADR 0013, secure_files) ──
+
+
+def test_a_presigned_upload_signs_the_guard_headers_and_the_digest() -> None:
+    """The headers are in the signature, so a browser must send exactly them and a client that
+    adds an unsigned `x-amz-copy-source` still cannot remove the preconditions that refuse it."""
+    from urllib.parse import parse_qs
+
+    from koras_storage import UPLOAD_PROVENANCE_META, upload_guard_headers
+
+    store = S3ObjectStore(
+        Destination(Provider.SUPABASE, "http://localhost:9000", "local-dev", "us-east-1", "k", "s")
+    )
+    digest = bytes(range(32)).hex()
+    url = store.presign_upload(
+        "tenants/t/documents/f/incoming/u/a.pdf",
+        "application/pdf",
+        12,
+        300,
+        digest,
+        provenance="u",
+    )
+    signed = parse_qs(urlparse(url).query)["X-Amz-SignedHeaders"][0].split(";")
+    guards = upload_guard_headers("u")
+    assert set(guards) <= set(signed), (sorted(guards), signed)
+    assert "x-amz-checksum-sha256" in signed
+    assert guards[f"x-amz-meta-{UPLOAD_PROVENANCE_META}"] == "u"
+    # Both preconditions are false for any source; the metadata directive keeps a copy's
+    # metadata from being replaced with this ticket's.
+    assert guards["x-amz-metadata-directive"] == "COPY"
+    assert "if-match" in " ".join(guards) and "if-unmodified-since" in " ".join(guards)
+
+
+def test_provenance_is_optional_so_a_product_without_secure_files_is_unchanged() -> None:
+    """The signature every caller used before `secure_files` still works and is unguarded."""
+    from urllib.parse import parse_qs
+
+    store = S3ObjectStore(
+        Destination(Provider.SUPABASE, "http://localhost:9000", "local-dev", "us-east-1", "k", "s")
+    )
+    url = store.presign_upload("tenants/t/documents/f/a.pdf", "application/pdf", 12, 300)
+    signed = parse_qs(urlparse(url).query)["X-Amz-SignedHeaders"][0].split(";")
+    assert not [name for name in signed if name.startswith("x-amz-")]
+
+
+def test_the_guard_is_not_signed_into_an_upload_without_provenance() -> None:
+    from urllib.parse import parse_qs
+
+    store = S3ObjectStore(
+        Destination(Provider.SUPABASE, "http://localhost:9000", "local-dev", "us-east-1", "k", "s")
+    )
+    url = store.presign_upload(
+        "tenants/t/documents/f/a.pdf", "application/pdf", 12, 300, provenance=None
+    )
+    signed = parse_qs(urlparse(url).query)["X-Amz-SignedHeaders"][0].split(";")
+    assert not [name for name in signed if name.startswith("x-amz-")]
+
+
+def test_signing_in_one_thread_never_leaks_headers_into_another_signature() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from urllib.parse import parse_qs
+
+    store = S3ObjectStore(
+        Destination(Provider.SUPABASE, "http://localhost:9000", "local-dev", "us-east-1", "k", "s")
+    )
+
+    def sign(index: int) -> tuple[bool, list[str]]:
+        guarded = index % 2 == 0
+        url = store.presign_upload(
+            f"tenants/t/documents/f/incoming/u{index}/a.pdf",
+            "text/plain",
+            1,
+            300,
+            provenance=f"u{index}" if guarded else None,
+        )
+        return guarded, parse_qs(urlparse(url).query)["X-Amz-SignedHeaders"][0].split(";")
+
+    with ThreadPoolExecutor(8) as pool:
+        for guarded, signed in pool.map(sign, range(64)):
+            assert ("x-amz-metadata-directive" in signed) is guarded
+
+
+class _Body:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+        self.closed = False
+
+    def iter_chunks(self, size: int) -> Iterator[bytes]:
+        for at in range(0, len(self._data), size):
+            yield self._data[at : at + size]
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _ReadClient:
+    def __init__(self, data: bytes | None, metadata: dict[str, str] | None = None) -> None:
+        self.data, self.metadata = data, metadata or {}
+        self.body: _Body | None = None
+
+    def get_object(self, **_: object) -> dict[str, object]:
+        if self.data is None:
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+        self.body = _Body(self.data)
+        return {"Body": self.body}
+
+    def head_object(self, **_: object) -> dict[str, object]:
+        if self.data is None:
+            raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
+        return {"Metadata": self.metadata}
+
+
+def test_sha256_is_computed_over_the_bytes_in_chunks_and_the_body_is_closed() -> None:
+    import hashlib
+
+    data = bytes(range(256)) * 9000  # more than one 1 MiB chunk
+    client = _ReadClient(data)
+    assert _write_store(client).sha256("k") == hashlib.sha256(data).hexdigest()  # type: ignore[arg-type]
+    assert client.body is not None and client.body.closed
+
+
+def test_sha256_of_a_missing_object_is_none() -> None:
+    assert _write_store(_ReadClient(None)).sha256("k") is None  # type: ignore[arg-type]
+
+
+def test_provenance_is_the_stored_upload_id_or_none() -> None:
+    assert _write_store(_ReadClient(b"x", {"koras-upload": "u-1"})).provenance("k") == "u-1"  # type: ignore[arg-type]
+    # A provider copy carries its source's metadata, which has no upload id of this ticket.
+    assert _write_store(_ReadClient(b"x", {})).provenance("k") is None  # type: ignore[arg-type]
+    assert _write_store(_ReadClient(b"x", {"koras-upload": ""})).provenance("k") is None  # type: ignore[arg-type]
+    assert _write_store(_ReadClient(None)).provenance("k") is None  # type: ignore[arg-type]
