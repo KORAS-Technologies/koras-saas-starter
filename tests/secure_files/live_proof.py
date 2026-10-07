@@ -144,7 +144,7 @@ def upload_request(name: str, body: bytes, *, claim: str | None | bool = True) -
     payload: dict[str, Any] = {
         "name": name,
         "size_bytes": len(body),
-        "content_type": "application/octet-stream",
+        "content_type": "text/plain",
     }
     if claim is True:
         payload["checksum_sha256"] = sha256(body)
@@ -164,7 +164,7 @@ def secure(api: Api) -> None:
 
     print("-- the ticket needs a well-formed claim")
     body = b"secure live proof, the honest file\n"
-    refused = api.call("POST", "/files/uploads", own, upload_request("a.bin", body, claim=None))
+    refused = api.call("POST", "/files/uploads", own, upload_request("a.txt", body, claim=None))
     check("a ticket without checksum_sha256 is refused (422)", refused.status_code == 422, refused.text)
     for label, bad in (
         ("uppercase", sha256(body).upper()),
@@ -172,11 +172,11 @@ def secure(api: Api) -> None:
         ("long", sha256(body) + "0"),
         ("non-hex", "z" * 64),
     ):
-        got = api.call("POST", "/files/uploads", own, upload_request("a.bin", body, claim=bad))
+        got = api.call("POST", "/files/uploads", own, upload_request("a.txt", body, claim=bad))
         check(f"a {label} checksum is refused (422)", got.status_code == 422, got.text)
 
     print("-- the signed PUT goes to an incoming key and only the signed request is accepted")
-    issued = api.call("POST", "/files/uploads", own, upload_request("a.bin", body))
+    issued = api.call("POST", "/files/uploads", own, upload_request("a.txt", body))
     check("a valid ticket is issued (201)", issued.status_code == 201, issued.text)
     ticket = issued.json()
     clean_id = str(ticket["file_id"])
@@ -219,7 +219,7 @@ def secure(api: Api) -> None:
 
     print("-- EICAR, and bytes that are not the claim")
     eicar = base64.b64decode(EICAR_BASE64)
-    infected = api.call("POST", "/files/uploads", own, upload_request("eicar.com", eicar))
+    infected = api.call("POST", "/files/uploads", own, upload_request("eicar.txt", eicar))
     infected_id = str(infected.json()["file_id"])
     check("EICAR upload accepted by the store (it is only a signed PUT)", put(infected.json(), eicar).status_code in (200, 204))
     check("EICAR completion (200)", api.call("POST", f"/files/{infected_id}/complete", own, {}).status_code == 200)
@@ -227,7 +227,7 @@ def secure(api: Api) -> None:
     claimed = b"the bytes the ticket was authorized for!"
     swapped = bytes(reversed(claimed))
     check("claim and swapped bytes differ and have equal length", swapped != claimed and len(claimed) == len(swapped))
-    mismatch = api.call("POST", "/files/uploads", own, upload_request("m.bin", claimed))
+    mismatch = api.call("POST", "/files/uploads", own, upload_request("m.txt", claimed))
     mismatch_ticket = mismatch.json()
     mismatch_id = str(mismatch_ticket["file_id"])
     key = mismatch_ticket["upload_url"].split("?")[0].split(f"/{os.environ['STORAGE_BUCKET']}/", 1)[1]
@@ -359,7 +359,7 @@ def compat(api: Api, schema: str) -> None:
 
     print("-- the legacy contract: a ticket needs no checksum")
     body = b"compat live proof\n"
-    legacy = api.call("POST", "/files/uploads", own, upload_request("legacy.bin", body, claim=None))
+    legacy = api.call("POST", "/files/uploads", own, upload_request("legacy.txt", body, claim=None))
     check("a ticket without checksum_sha256 is issued (201)", legacy.status_code == 201, legacy.text)
     ticket = legacy.json()
     file_id = str(ticket["file_id"])
@@ -374,7 +374,7 @@ def compat(api: Api, schema: str) -> None:
     print("-- an optional checksum is a claim and never a trust anchor")
     claimed_for = b"the bytes the client says it sent\n"
     stored = bytes(reversed(claimed_for))
-    lying = api.call("POST", "/files/uploads", own, upload_request("lying.bin", claimed_for))
+    lying = api.call("POST", "/files/uploads", own, upload_request("lying.txt", claimed_for))
     check("a ticket with a (well-formed) checksum is issued (201)", lying.status_code == 201, lying.text)
     lying_ticket = lying.json()
     lying_id = str(lying_ticket["file_id"])
