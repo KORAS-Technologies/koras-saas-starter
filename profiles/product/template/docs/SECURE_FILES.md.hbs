@@ -23,8 +23,19 @@ all of these are present and valid. There is no fallback to unscanned release.
 | `REDIS_URL` | set: a confirmed upload is finalized by a job |
 | `DATABASE_URL` | set: the finalizer works on the file's row, as its tenant |
 
+These have a default that passes, and the worker (and the API) refuse a value outside its range
+rather than scan with a limit nobody chose:
+
+| Setting | Default | Range |
+|---------|---------|-------|
+| `FILE_SCAN_CONNECT_TIMEOUT_SECONDS` | 5 | above 0, at most 60, not above the next |
+| `FILE_SCAN_TIMEOUT_SECONDS` | 120 | above 0, at most 600 |
+| `FILE_SCAN_MAX_BYTES` | 104857600 (100 MiB) | 1 to 104857600: lowered here, never raised, because that is what the clamd service is built for |
+| `FILE_SCAN_MAX_ATTEMPTS` | 12 | 1 to 32767 |
+
 Later releases of the capability add rows; the list lives in
-`services/api/koras_api/core/secure_files.py` (`SECURE_FILES_CHECKS`).
+`services/api/koras_api/core/secure_files.py` (`SECURE_FILES_CHECKS`). There is no setting, in
+any environment, that makes `FILE_SCAN_BACKEND=none` acceptable.
 
 ## Uploads
 
@@ -41,6 +52,25 @@ anything a lost job left. A file the finalizer refused carries a `scan_failure` 
 `storage.upload.held` audit event; `integrity_mismatch` means the bytes were not the ones
 claimed and is never retried. The bucket's CORS rule must allow the signed upload headers
 (see the Starter's `docs/SECURE_FILES.md`).
+
+## The scanner
+
+Once a file is on its final key the worker queues one `file.scan` job for it. The job reads the
+object once, asks the clamd service (`FILE_SCAN_CLAMD_HOST`:`FILE_SCAN_CLAMD_PORT`, the private
+address of `services/clamd`) and writes a verdict through the guarded transitions: `clean`,
+`infected` (the file is quarantined, one security event) or held, which leaves it `pending` with
+a closed `scan_failure` word. A scanner's `OK` is only a candidate: the digest, the object's
+identity and, for a ZIP-family file, a structural check must all pass before a file is `clean`.
+A held file is retried by `sweep_pending_scans` every five minutes with a back-off that caps at
+an hour and never stops; at `FILE_SCAN_MAX_ATTEMPTS` attempts one `storage.object.scan_exhausted`
+security event tells a person to look, and the file stays held.
+
+If files stay `pending`: check the clamd service is deployed **in this environment** and its
+host and port are what the worker has; check the worker's logs for the word on the file
+(`scanner_unavailable` is the service, `integrity_mismatch` is bytes that are not the claim and is
+not something a retry can change, `inspection_incomplete` is a container the scanner cannot be trusted to have
+inspected, `over_ceiling` is an object larger than the scanner takes). Nothing is released while
+it is held.
 
 ## Changing the mode
 

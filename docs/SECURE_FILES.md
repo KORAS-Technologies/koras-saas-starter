@@ -20,9 +20,10 @@ The behaviour was proven in Docoris (OD-10, OD-12, GR-373) and is generalized
 here layer by layer. **Layer 1** is the scaffold: the capability, its generation
 switches, the generated constant and the fail-closed configuration check.
 **Layer 2** is the upload foundation: the SHA-256 claim, the incoming key, the
-immutable finalization and its digest and provenance checks. The scanner, the
-structural gates and the clean-only release are later layers; the artefact map
-below says exactly what exists.
+immutable finalization and its digest and provenance checks. **Layer 3** is the
+scanner: its schema, its runtime, the finalization-to-scanner hand-off and the sweep that
+recovers whatever the hand-off lost. The clean-only release primitive that every
+consumer goes through is the next layer; the artefact map below says exactly what exists.
 
 ## The two modes
 
@@ -30,9 +31,9 @@ below says exactly what exists.
 |---|---|---|
 | Generate with | nothing | `--with secure_files,clamd,worker` |
 | `SECURE_FILES` | `False` | `True` |
-| Release of a stored file | legacy `withheld()` | clean-only (as layers land) |
+| Release of a stored file | legacy `withheld()` | clean-only (as layers land); a verdict exists from layer 3 |
 | Upload ticket | today's contract | `checksum_sha256` required (as layers land) |
-| Scanner, finalizer, scanner schema | absent | generated and active as one unit |
+| Scanner, finalizer, scanner schema, sweeps | absent | generated and active as one unit |
 | Missing mandatory setting | not checked | the API and the worker refuse to start |
 
 The mode is a **generation-time** choice. It is the single constant
@@ -99,10 +100,28 @@ in `koras_api/core/secure_files.py`; later layers append entries to it, and the
 worker's copy is held identical by a generator test. In the worker, a blank value
 reads as absent, like every other sweep setting.
 
+Also mandatory, but with a default that passes, so only a value *outside its range* stops the
+product (layer 3; both services check the range and the worker also refuses a value that is not
+a number, naming the variable and never the value):
+
+| Setting | Default | Range | What it bounds |
+|---|---|---|---|
+| `FILE_SCAN_CONNECT_TIMEOUT_SECONDS` | 5 | > 0, at most 60, and not above the next one | time to reach clamd |
+| `FILE_SCAN_TIMEOUT_SECONDS` | 120 | > 0, at most 600 | one scan's wall clock |
+| `FILE_SCAN_MAX_BYTES` | 104857600 (100 MiB) | 1 to 104857600 | the largest object scanned; lowered here, never raised |
+| `FILE_SCAN_MAX_ATTEMPTS` | 12 | 1 to 32767 | the attempt count at which `scan_exhausted` is recorded, once |
+
+The ceiling is not a preference: it is the `StreamMaxLength` the clamd service is built for
+(`services/clamd/clamd.conf`), and the sweep's partial indexes (migration 00041) carry the same
+number. A larger object cannot be scanned, so it is held `over_ceiling` and stays withheld.
+
 Optional, with bounded defaults, and tuning patience rather than any invariant (none can
-make a file releasable that the finalizer refused): `FILE_FINALIZE_SWEEP_BATCH`
+make a file releasable that the finalizer or the scanner refused): `FILE_FINALIZE_SWEEP_BATCH`
 (default 25, 1-500), `FILE_FINALIZE_RETRY_SECONDS` (default 900, 60-86400) and
-`FILE_FINALIZE_MAX_ATTEMPTS` (default 8, 1-100). The upload window has no setting.
+`FILE_FINALIZE_MAX_ATTEMPTS` (default 8, 1-100); `FILE_SCAN_SWEEP_BATCH_SIZE` (default 50,
+1-500), `FILE_SCAN_SWEEP_MAX_BATCHES` (default 4, 1-20) and `FILE_SCAN_SWEEP_NOT_BEFORE` (an
+RFC 3339 instant that can only *narrow* what the sweep selects; absent means everything). The
+upload window has no setting, and there is no setting that switches the scanner or its sweep off.
 
 `local/config/secrets.manifest` declares `FILE_SCAN_BACKEND` and
 `FILE_SCAN_CLAMD_HOST` as `supplied` and `FILE_SCAN_CLAMD_PORT` as `optional`, in a
@@ -215,11 +234,11 @@ evidence of the bytes: the digests are computed over the bytes this process read
   job is lost, the file is on an incoming key with `scan_status = 'pending'`: the download
   refuses it, no hook is handed it, and backup does not copy it. The worker's sweep
   (`sweep_finalize`, every five minutes) finalizes whatever no job did.
-* **Not yet.** Finalization does not decide anything about the content. Making a file
-  *releasable* (the scanner, the structural gates, the clean-only primitive every consumer goes
-  through) is a later layer. Until it lands, a finalized file is exactly as unreleasable as a
-  pending one, and consumers other than the download route (the assistant's tools, the import
-  engine, restore) are not yet routed through a release rule.
+* **Decides nothing about the content.** A finalized file is handed to the scanner (below) and is
+  exactly as unreleasable as a pending one until the scanner has written a verdict. The clean-only
+  primitive that every consumer goes through, and the routing of the consumers other than the
+  download route (the assistant's tools, the import engine, restore) through it, is the next
+  layer.
 
 The upload window is not a setting: `UPLOAD_URL_SECONDS` (15 min), the 60 s margin and the
 measured 180 s in-flight bound are constants in `core/upload_window.py`, and
@@ -235,15 +254,172 @@ the preflight, which is the safe direction.
 
 ### Migration mapping
 
-`supabase/migrations/00039_file_scan_attempts.sql` is semantically identical to Docoris
-`01016_file_scan_attempts` (four additive columns on `public.files`: `scan_attempts`,
-`scan_attempted_at`, `scan_failure` with its twelve-word check, `scan_object_etag`). The
-claim and digest columns (`checksum_sha256`, `checksum_verified_at`) were already the
-Starter's, from 00018; the upload id is not a column, it is the third segment after
-`incoming/` in the key and the provenance the object carries. Docoris `01017` (the thirteenth
-word `scan_interrupted` and the sweep index), `01018` and `01019` belong to the scanner and
-release layers and are not here yet; when they land they take the next numbers and a later
-sync of a product that carries 01016-01019 must find the schemas equivalent.
+| Starter | Docoris | What it is |
+|---|---|---|
+| `00039_file_scan_attempts.sql` (layer 2) | `01016_file_scan_attempts` | four additive columns on `public.files`: `scan_attempts`, `scan_attempted_at`, `scan_failure` with its twelve-word check, `scan_object_etag` |
+| `00040_file_scan_interrupted.sql` (layer 3) | `01017_file_scan_interrupted` | the thirteenth word, `scan_interrupted`, and the first sweep index (retired by 00041) |
+| `00041_file_scan_due_indexes.sql` (layer 3) | `01018_file_scan_due_indexes` | the two due-time partial indexes the tenant-fair sweep reads; drops 00040's index |
+| *the release layer* | `01019_file_derived_content_withdrawal` | not here: it is the release layer's, and takes the next number |
+
+Each is semantically identical to its Docoris original (the SQL bodies are the same; only the
+header comments name the Starter), so a later sync of a product that carries 01016-01018 must
+find the schemas equivalent. The claim and digest columns (`checksum_sha256`,
+`checksum_verified_at`) were already the Starter's, from 00018; the upload id is not a column, it
+is the third segment after `incoming/` in the key and the provenance the object carries.
+
+## The scanner (layer 3)
+
+The scanner is the worker's `file.scan` job. It reads a **finalized** object once, through a
+bounded and identity-checked reader, asks the clamd service about it, judges the answer with the
+product's own integrity and structural gates, and writes a verdict through guarded transitions
+that are the only writer of `scan_status` from a scan. It decides content; it does not release.
+Release is the next layer's primitive, which reads what the scanner wrote.
+
+### Lifecycle
+
+```
+ file.finalize (worker)                    file.scan (worker)                           clamd
+ ----------------------                    ------------------                           -----
+ incoming key  ──copy, hash x2──▶ final key
+ CAS swap, then on_final ───────────────▶ enqueue  scan:<file_id>   (best effort;
+                                           │                         a lost one is the sweep's)
+                                           ▼
+                                  1. read the row as its tenant: ready + pending
+                                  2. key must be a FINAL key, else NOT_ELIGIBLE (no read,
+                                     no attempt, no write)
+                                  3. object gate: window elapsed? size <= ceiling?
+                                  4. begin_attempt   (counted BEFORE the read; a crash counts)
+                                  5. one bounded stream ──────────────────────────────▶ INSTREAM
+                                     feeds: scanner, SHA-256, structural probe        ◀── OK / FOUND / ERROR
+                                  6. object identity re-read: unchanged?
+                                  7. assess_release = object gate + scanner candidate
+                                                    + integrity gate + structural gate
+                                  8. transition, by the assessment and by nothing else
+                                       INFECTED        -> commit_infected   scan_status infected, status quarantined
+                                       CLEAN_ELIGIBLE  -> commit_clean      scan_status clean (evidence required)
+                                       HELD            -> record_failure    stays pending, one closed word
+
+ every N minutes  sweep_pending_scans ─▶ re-enqueue what is final, pending and due (back-off
+                                          12 m doubling to 1 h, for ever), tenant by tenant
+```
+
+### Candidate-clean, exactly
+
+* A scanner `OK` is a **candidate**. `ScanResult` has no `clean`; only an assessment of
+  `CLEAN_ELIGIBLE` can build the `CleanEvidence` that `commit_clean` demands, and
+  `CleanEvidence` cannot be built unless the object gate passed, the scanner said candidate-clean
+  and the structural gate passed.
+* **The zip64 gap.** ClamAV 1.4.6 and 1.5.4 do not unpack a deflated, streamed ZIP64 entry and
+  can answer `OK` for it (`docs/CLAMD_SERVICE.md`). The structural gate therefore inspects every
+  ZIP-family container (ZIP, DOCX, XLSX) without inflating anything, and **holds** that form:
+  `inspection_incomplete`, never `clean`, never `infected` on structure alone, never skipped.
+  Customer files are not modified or repacked.
+* **Integrity.** The digest of the bytes the scanner streamed must equal the provider's own
+  SHA-256 when it states one, and equal the row's `checksum_sha256` when `checksum_verified_at` is
+  set (the upload finalizer sets it, having hashed the incoming and the final bytes itself). A
+  mismatch is `integrity_mismatch`. An ETag is identity evidence and is never compared with a digest.
+* **Identity.** `commit_clean` binds the verdict to `scan_object_etag` and refuses an object whose
+  size is not the row's, whose key is no longer the one scanned, or that has no ETag to bind to.
+* **Infected dominates clean.** A later authoritative infected verdict is not lost to an earlier
+  clean one (`clean -> infected` is the one transition out of a final state). Quarantine and its
+  security event commit together or not at all; with no audit sink nothing is quarantined.
+* **Only a final key is scanned.** An incoming key is one a signed PUT could still write; any key
+  that is not exactly the shape the finalizer writes is held with no read. A server-side writer
+  that produces a key of another shape (restore, replacement) is the release layer's to bring
+  under a scan decision; until then such a file stays `pending`, which is withheld.
+* **No scanner text is stored.** Notes are fixed sentences; a signature name is classified and
+  dropped by the client and never reaches a column, a log line or an audit detail.
+
+### States and failure words
+
+| Disposition | `scan_status` / `status` | `scan_failure` | Next |
+|---|---|---|---|
+| `CLEAN` | `clean` / `ready` | cleared | a verdict; the release layer reads it |
+| `INFECTED` | `infected` / `quarantined` | cleared | final; the object is kept |
+| `HELD` | `pending` / `ready` | one closed word | the sweep retries, with back-off, for ever |
+| `DEFERRED` | unchanged | unchanged | nothing was read, counted or written; the window had not elapsed |
+| `NOT_ELIGIBLE` | unchanged | unchanged | not this tenant's, not pending, not a final key, or it left `pending` during the run |
+
+The words (`files_scan_failure_check`, migrations 00039 and 00040) are a closed vocabulary of
+thirteen: `scanner_unavailable`, `scan_timeout`, `malformed_response`, `scanner_error`,
+`object_unreachable`, `object_changed`, `integrity_mismatch`, `over_ceiling`, `misconfigured`,
+`scan_limit_exceeded`, `inspection_incomplete`, `identity_insufficient`, `scan_interrupted`.
+`scan_exhausted` is deliberately not one: it is an audit action (`storage.object.scan_exhausted`,
+a security event) written once when `scan_attempts` reaches `FILE_SCAN_MAX_ATTEMPTS`. The file
+stays `pending` and stays in the sweep; exhaustion is a signal for a person, not a limit.
+
+### Attempts, interruption and the sweep
+
+* An attempt is counted **before** the object is read, so a worker killed mid-scan has still counted
+  it. `scan_attempts` saturates at the smallint ceiling and never wraps. The finalizer counts its
+  own attempts in the same column.
+* A cancellation after the attempt is counted (the queue's timeout, a worker stopping) records
+  `scan_interrupted`, shielded and best effort, and only on a file that carries no failure: a more
+  specific word, from this run or an earlier one, is never replaced. A worker killed outright
+  records nothing, and the file is still `pending` for the sweep.
+* `sweep_pending_scans` runs every five minutes in the worker. It selects, on the provisioning
+  context and by identifier only, files that are `ready`, `pending`, on a **final** key, no larger
+  than the ceiling and **due**, and puts the same `file.scan` job back under the same identity. It
+  writes no scan state and decides no verdict. Due is `created_at + 1260 s` for a file never
+  attempted and `scan_attempted_at + min(720 s * 2^(attempts-1), 3600 s)` otherwise: the first retry
+  is longer than the queue's own 660 s job timeout, so a retry never overlaps a run in flight, and the
+  back-off caps at an hour and never stops.
+* **Tenant fairness.** One tenant's backlog cannot use every slot of a run: the tenant owning the
+  oldest due file goes first, tenants follow in id order wrapping round, a page is shared evenly
+  over the tenants still open, and spare capacity goes to whoever still has work. The reads are
+  index range reads of a few rows on the two partial indexes of migration 00041 (the expression in
+  the indexes and in the query is one text, and a test compares them and asks the planner).
+* A retained result for the same job id would make the queue refuse a re-enqueue, so the sweep and
+  the hand-off drop a stale one first; a job still queued is untouched and collapses.
+
+### Reaching clamd
+
+The worker connects to `FILE_SCAN_CLAMD_HOST:FILE_SCAN_CLAMD_PORT`, the private address of the
+`services/clamd` deployment (on Fly, `<app>.internal` over the private network). Nothing a tenant, a
+request or a file can say reaches the address, and clamd has no credential. A blank host resolves
+to an unavailable scanner, never to a default. `FILE_SCAN_BACKEND=none` is a startup error with no
+exception: the API and the worker both refuse to start, and a job that somehow ran with no scanner
+would answer `misconfigured` and hold the file. clamd's service descriptor lists the environments
+it is deployed to; a product with `secure_files` needs it in **every** environment that runs its
+API or worker, because a worker without a reachable scanner holds every file and an API without a
+configured one does not start.
+
+### Running the scanner suites
+
+The unit suites need nothing. The integration suites skip, by design, without what they exercise,
+and in a product with the capability a skip is a failure (the workflow step above fails on any):
+
+| Variable | For |
+|---|---|
+| `E2E_DATABASE_URL` | PostgreSQL as the restricted application role (never a superuser: the suites refuse it) |
+| `MIGRATE_DATABASE_URL` | the admin connection the planner checks use (`EXPLAIN` of the sweep's reads) |
+| `E2E_REDIS_URL` | a Redis, for the queue identity test (default `redis://localhost:6379/5`) |
+| `E2E_CLAMD_HOST`, `E2E_CLAMD_PORT` | a running clamd: build `services/clamd` and wait for its `ready: detection self-test passed` line |
+| `STORAGE_ENDPOINT`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` | an S3-compatible store (MinIO) |
+| `WORKER_IMAGE` (+ `WORKER_IMAGE_REDIS_URL`, `WORKER_IMAGE_DATABASE_URL`, `WORKER_IMAGE_SERVICES_HOST`, `WORKER_IMAGE_NETWORK`) | the worker image built from the generated Dockerfile |
+
+### What the release layer must consume
+
+The verdict columns and transitions are complete; the release layer plugs into them and writes
+none of them.
+
+* `files.scan_status` in `pending | clean | infected | skipped`: only `clean` can ever be releasable,
+  and `skipped` is not written by anything in this layer and is not a release.
+* `files.status` (`quarantined` with `infected`), `files.scan_object_etag` (the identity a `clean`
+  was bound to), `files.storage_key` (the final key the verdict is about; `commit_clean` writes only
+  while the row still references it), `files.scan_failure` and `files.scan_attempts`.
+* A `clean` row may still become `infected` later (`clean -> infected`); a consumer must read the
+  verdict at the moment of release, not cache it.
+* The audit actions `storage.object.scanned`, `storage.object.scan_failed`,
+  `storage.object.scan_exhausted` (registered by `core/scan_audit.py`) and `storage.object.quarantined`.
+* `core/file_scan.py` is the legacy seam (`record_scan`, `withheld`) and is unchanged. The worker
+  never calls `record_scan`; in a product with the capability the transitions are the only writer of
+  a verdict. `withheld()` still refuses only `infected`; making `pending` withheld everywhere is the
+  release primitive's job, and until it lands the download route's incoming-key refusal is what keeps
+  an unfinalized file from being served.
+* A server-side writer of a key that is not a final key (restore's replacement object, a generated
+  export) must either write a final-shaped key or give the scanner a rule of its own for it; the
+  scanner reads only a key it can show no ticket was ever signed for.
 
 ## Artefact map
 
@@ -282,9 +458,30 @@ listed under `template_map.capabilities.secure_files` unless marked "always".
 | 2 | `tests/integration/test_upload_finalization_real.py`, `test_upload_checksum_provenance_real.py` | capability | the finalizer against a real PostgreSQL with RLS forced |
 | 2 | `tests/integration/test_upload_finalization_provider.py`, `test_upload_checksum_provider.py` | capability | the provider attack matrix, including the forged-provenance regression (ADR 0013 section 9), against a real S3-compatible store |
 | 2 | generator: `tests/product-secure-files-upload.test.ts` | Starter only | both modes rendered, each half asserted from the generated text |
+| 3 | `services/worker/koras_worker/scanning/` | capability | the clamd client and protocol (`clamd.py`, `protocol.py`, `result.py`), settings (`config.py`), the bounded identity-checked reader (`objects.py`, `s3.py`), the structural and integrity gates (`structure.py`, `release.py`), the guarded transitions (`transition.py`) and the run that composes them (`runtime.py`) |
+| 3 | `services/worker/koras_worker/tasks/scan.py` | capability | the `file.scan` job, and `hand_off_to_scanner`, which the finalizer calls once a file is final |
+| 3 | `services/worker/koras_worker/tasks/scan_sweep.py` | capability | `sweep_pending_scans`: tenant-fair, back-off, always on |
+| 3 | `services/worker/koras_worker/tasks/finalize.py` | capability | `finalize_one(..., on_final=)`: the hand-off, after the swap and the clearing of the hold |
+| 3 | `services/api/koras_api/core/scan_jobs.py`, `scan_enqueue.py`, `scan_audit.py` | capability | the `file.scan` declaration, the one enqueue function, the scanner's audit actions (stdlib and `koras_queue`/`koras_audit` only: the worker image carries them) |
+| 3 | `services/api/koras_api/core/upload_window.py` | capability | `is_final_key`: the one statement of which key the scanner reads |
+| 3 | `services/api/koras_api/core/secure_files.py`, `services/worker/koras_worker/secure_files.py` | always; checks only with the capability | `SECURE_FILES_CHECKS` gains the scanner's limits; the worker converts a non-number into a refusal that names the variable |
+| 3 | `services/api/koras_api/core/settings.py`, `local/config/secrets.manifest` | always; entries only with the capability | `FILE_SCAN_*` limits and the sweep's settings |
+| 3 | `services/worker/koras_worker/worker.py`, `services/worker/Dockerfile` | rendered by the capability | binds `file.scan`, schedules `sweep_pending_scans` every five minutes, carries the three API files |
+| 3 | `supabase/migrations/00040_file_scan_interrupted.sql`, `00041_file_scan_due_indexes.sql` | capability | see the migration mapping; Docoris 01017 and 01018 |
+| 3 | `supabase/tests/350_file_scan_columns_isolation.sql`, `351_file_scan_sweep_selection.sql` | capability | the scan columns' shape, constraint and tenant isolation; the sweep's cross-tenant read and its indexes |
+| 3 | `tests/unit/test_scanner_*.py`, `test_scan_*.py`, `scan_transition_support.py`, `scanner_support.py`, `object_support.py`, `zip_support.py`, `eicar_support.py`, `test_file_scan_fixtures.py` | capability | the client against a scripted clamd, the reader, the gates, the transitions, the run, the job, the sweep, the hand-off |
+| 3 | `tests/integration/test_scan_transition_real.py`, `test_scan_runtime_real.py`, `test_scan_sweep_real.py` | capability | the transitions, a run and the sweep against PostgreSQL with RLS forced as the restricted role, a real Redis and the planner |
+| 3 | `tests/integration/test_scanner_clamd_live.py`, `test_scan_orchestration_real.py` | capability | the client against a real clamd; upload, finalization, hand-off, scan and verdict against PostgreSQL, an S3-compatible store and clamd, all real |
+| 3 | `tests/integration/test_worker_image_scanner.py` | capability | the worker image, run with nothing mounted: every scanner module imports, `file.scan` is bound, the sweep is scheduled, and a worker with no valid scanner configuration exits non-zero naming the setting |
+| 3 | `.github/workflows/generator-integration.yml` | Starter only | one step on the round-trip row generated with the capability: PostgreSQL, Redis, MinIO and the clamd image built from the generated `services/clamd`; fails on any skip |
+| 3 | generator: `tests/product-secure-files-scanner.test.ts` | Starter only | both modes rendered; the scanner halves asserted from the generated text |
 
-Migrations: 00039 (layer 2, above). New ones take the next numbers and stay
-semantically identical to Docoris 01016-01019; the mapping is recorded above.
+**EICAR.** No generated file contains the literal test string (every antivirus that reads a
+repository may quarantine it): `tests/unit/eicar_support.py` holds it base64-encoded and
+`materialize()` decodes it, checked against its recorded SHA-256, on every call.
+
+Migrations: 00039 (layer 2), 00040 and 00041 (layer 3). New ones take the next numbers and
+stay semantically identical to Docoris 01016-01019; the mapping is recorded above.
 
 ## Upgrading an existing product
 
