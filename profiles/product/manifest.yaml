@@ -234,6 +234,9 @@ template_map:
       - local/scripts/import-activation-drift.sh
       - tests/unit/test_import_activation_gate.py
       - tests/unit/test_import_activation_declaration.py
+      # Layer 6b: the promotion tooling's activation checks. Also listed under `secure_files`;
+      # generated only when both are on, because the tooling itself is the capability's.
+      - tests/unit/test_promotion_activation.py
       - apps/web/src/app/dashboard/imports
       # The template download: a route handler, because a download is a body
       # and a server action returns a value. The menu it is reached from is a
@@ -372,6 +375,14 @@ template_map:
       - local/.qualification/.gitignore
       - docs/security/SECURITY-REGISTER.md
       - .github/workflows/promotion-gate.yml
+      - tests/unit/promotion_support.py
+      - tests/unit/test_promotion_config.py
+      - tests/unit/test_promotion_adapters.py
+      - tests/unit/test_promotion_register.py
+      - tests/unit/test_promotion_f1.py
+      - tests/unit/test_promotion_gate.py
+      - tests/unit/test_promotion_provider_qualification.py
+      - tests/unit/test_promotion_activation.py
       - tests/integration/test_provider_qualification_extra.py
       - tests/integration/test_f1_detector_real.py
 
