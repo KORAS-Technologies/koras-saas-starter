@@ -13,6 +13,7 @@ import {
   formatRefreshResult,
   refreshRenderedPaths,
   formatRefreshPathResult,
+  preserveFrameworkBlock,
 } from '../src/generation/refresh.js'
 import { collectSharedAssets } from '../src/generation/engine.js'
 
@@ -193,5 +194,49 @@ describe('refreshRenderedPaths', () => {
     expect(result.unknown).toEqual(['services/api/nope.txt'])
     expect(result.updated).toEqual([])
     expect(formatRefreshPathResult(result)).toContain('renders no such file')
+  })
+})
+
+describe('refreshing .koras/project.yaml', () => {
+  const MANIFEST = '.koras/project.yaml'
+  const BLOCK = [
+    '# Hand-maintained: the framework this product runs.',
+    'framework:',
+    '  name: koras-engineering-framework',
+    '  source_baseline: 2fe5701edb8f9e6f89e3414f4bddfd9fc4a6e7ed',
+    '  # a comment inside the block',
+    '  agents: 40',
+  ].join('\n')
+
+  it('keeps the hand-maintained framework block, comments included', async () => {
+    const { ctx, projectRoot } = await generate('product', 'keep-framework')
+    const target = join(projectRoot, MANIFEST)
+    const current = readFileSync(target, 'utf8')
+    writeFileSync(target, current.replace('\ncomponents:', `\n${BLOCK}\n\ncomponents:`))
+    // Make the rendered manifest differ so the file is actually rewritten.
+    writeFileSync(target, readFileSync(target, 'utf8').replace(/template_digest: \w+/, 'template_digest: ' + '0'.repeat(64)))
+
+    const result = await refreshRenderedPaths(ctx, projectRoot, [MANIFEST])
+    const after = readFileSync(target, 'utf8')
+
+    expect(result.updated).toEqual([MANIFEST])
+    expect(after).toContain(BLOCK)
+    expect(after).not.toContain('0'.repeat(64))
+    expect(after.indexOf('framework:')).toBeLessThan(after.indexOf('components:'))
+  })
+
+  it('is idempotent once the block is in place', async () => {
+    const { ctx, projectRoot } = await generate('product', 'idem-framework')
+    const target = join(projectRoot, MANIFEST)
+    writeFileSync(target, readFileSync(target, 'utf8').replace('\ncomponents:', `\n${BLOCK}\n\ncomponents:`))
+    await refreshRenderedPaths(ctx, projectRoot, [MANIFEST])
+    const second = await refreshRenderedPaths(ctx, projectRoot, [MANIFEST])
+    expect(second.unchanged).toEqual([MANIFEST])
+  })
+
+  it('changes nothing for a manifest without a framework block', () => {
+    expect(preserveFrameworkBlock('schema_version: 1\n', 'schema_version: 1\ncomponents:\n')).toBe(
+      'schema_version: 1\ncomponents:\n',
+    )
   })
 })
