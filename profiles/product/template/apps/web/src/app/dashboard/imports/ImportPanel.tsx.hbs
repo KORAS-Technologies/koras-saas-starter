@@ -442,7 +442,7 @@ export function ImportPanel({
           {labels.startTitle}
         </h2>
         <p className="mt-1 text-sm text-ink-muted">{labels.startDescription}</p>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className="mt-4 grid items-start gap-4 sm:grid-cols-2" data-testid="imports-start-fields">
           <SelectField
             id="import-target"
             label={labels.target}
@@ -464,6 +464,7 @@ export function ImportPanel({
             id="import-operation"
             label={labels.operation}
             hint={labels.operationHint}
+            hintPlacement="below"
             value={operation}
             onChange={(event) => setOperation(event.target.value)}
           >

@@ -1313,3 +1313,26 @@ describe('data import', () => {
     expect(suite.toLowerCase()).toContain('update')
   })
 })
+
+describe('import start fields stay level', () => {
+  /**
+   * The shared field frame draws a hint between the label and the control, so
+   * a hint on one of two side-by-side fields pushed its control down. The
+   * Existing records hint is drawn below its control instead, which is opt-in
+   * (`hintPlacement`, default `above`) so no other form moves.
+   */
+  it('the field primitive offers hintPlacement and defaults to the long-standing shape', () => {
+    const field = read('packages/ui/src/primitives/field.tsx')
+    expect(field).toContain("export type HintPlacement = 'above' | 'below'")
+    expect(field).toContain("hintPlacement = 'above'")
+    // Either placement keeps the control described by the hint.
+    expect(field).toContain('aria-describedby={describedBy(id, error, hint)}')
+  })
+
+  it('the import panel draws the Existing records hint below its control, in a top-aligned grid', () => {
+    const panel = read('apps/web/src/app/dashboard/imports/ImportPanel.tsx.hbs')
+    expect(panel).toMatch(/hint=\{labels\.operationHint\}\s+hintPlacement="below"/)
+    expect(panel).toContain('grid items-start gap-4 sm:grid-cols-2')
+    expect(panel).toContain('data-testid="imports-start-fields"')
+  })
+})
