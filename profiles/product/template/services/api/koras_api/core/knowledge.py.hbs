@@ -26,6 +26,10 @@ from typing import Any
 from koras_ai import Chunk, Citation, Document, RetrievalScope, SimpleChunker
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+{{#if capability.secure_files}}
+
+from .file_release import RELEASABLE_SQL
+{{/if}}
 
 logger = logging.getLogger(__name__)
 
@@ -293,6 +297,32 @@ _TRIM = text(
     " and chunk_index >= :count"
 )
 
+{{#if capability.secure_files}}
+_QUERY = text(
+    "select id::text as chunk_id, document_id, title, content, resource_type, resource_id, "  # noqa: S608
+    " 1 - (embedding <=> cast(:embedding as vector)) as score "
+    "from public.ai_knowledge_chunks c "
+    "where tenant_id = :tenant_id "
+    # The read gate (ADR 0013). A chunk of a file is content and its snippet is a
+    # release, so it is returned only while its file is releasable -- whether or not
+    # anything withdrew it, and for a chunk written before the rule existed. A chunk
+    # whose file row is gone is not returned either. Compared as text, so a resource id
+    # that is not a uuid cannot fail the statement. Other resource types are not files
+    # and are not gated here.
+    " and (c.resource_type <> 'file' or exists ("
+    "   select 1 from public.files f "
+    "   where f.tenant_id = c.tenant_id and f.id::text = c.resource_id "
+    f"    and {RELEASABLE_SQL})) "
+    # Cast, because asyncpg cannot type a parameter that is only ever compared
+    # with `is null`: the first real search on dev died on exactly that, with
+    # "could not determine data type of parameter", and the session it left
+    # behind was in an aborted transaction.
+    " and (cast(:resource_type as text) is null or resource_type = cast(:resource_type as text)) "
+    " and (cast(:resource_id as text) is null or resource_id = cast(:resource_id as text)) "
+    "order by embedding <=> cast(:embedding as vector) "
+    "limit :limit"
+)
+{{else}}
 _QUERY = text(
     "select id::text as chunk_id, document_id, title, content, resource_type, resource_id, "
     " 1 - (embedding <=> cast(:embedding as vector)) as score "
@@ -307,6 +337,7 @@ _QUERY = text(
     "order by embedding <=> cast(:embedding as vector) "
     "limit :limit"
 )
+{{/if}}
 
 
 class SqlKnowledgeIndex:
@@ -400,6 +431,95 @@ async def index_document(
     vectors = await embed([chunk.text for chunk in chunks])
     await SqlKnowledgeIndex(session).upsert(scope, chunks, vectors)
     return len(chunks)
+{{#if capability.secure_files}}
+
+#: The write guard. A share lock on the file's row, taken in the transaction that writes
+#: the chunks and held to its commit. The scanner's transitions `select ... for update` the
+#: same row, so a verdict and an index write serialise: either the chunks commit first and
+#: the later quarantine's trigger (migration 00042) removes them, or the verdict commits
+#: first and this returns no row. Under READ COMMITTED a statement that waited on a lock
+#: re-checks its predicate against the row's new version, so "no row" is also what a
+#: verdict that committed while this waited produces.
+_WRITE_GUARD = text(
+    "select f.storage_key, f.scan_object_etag from public.files f "  # noqa: S608
+    "where f.tenant_id = cast(:tenant_id as uuid) and f.id = cast(:file_id as uuid) "
+    f"and {RELEASABLE_SQL} "
+    "for share of f"
+)
+
+
+@dataclass(frozen=True)
+class ReadIdentity:
+    """The object a file's bytes were read from.
+
+    Taken from the row `read_releasable` authorized, before the object is read:
+    `storage_key` is the generation's immutable key (a restore writes a new one) and
+    `scan_object_etag` is the identity the scanner bound its `clean` verdict to. Both are
+    identity evidence, never a content digest.
+    """
+
+    storage_key: str
+    etag: str | None
+
+    def is_current(self, *, storage_key: str, etag: str | None) -> bool:
+        return self.storage_key == storage_key and self.etag == etag
+
+
+#: The row still references the object that was read. Shared by the outcome note,
+#: which must not be written onto a replacement either.
+BOUND_SQL = (
+    "f.storage_key = :read_key and f.scan_object_etag is not distinct from "
+    "cast(:read_etag as text)"
+)
+
+
+class FileNotReleasable(Exception):
+    """The file was not releasable when its chunks were about to be written. Nothing was."""
+
+
+class ObjectChanged(FileNotReleasable):  # noqa: N818 - a refusal, named for what changed
+    """The file is releasable but no longer references the object read. Nothing was written."""
+
+
+async def index_file_document(
+    session: AsyncSession,
+    *,
+    scope: RetrievalScope,
+    document: Document,
+    embed: Embed,
+    read: ReadIdentity,
+) -> int:
+    """Chunk, embed and store one file's document, only while the file is releasable
+    and still references the object it was read from.
+
+    The embedding call runs first and holds no lock; the guard, the writes and the
+    commit are one transaction. Raises `FileNotReleasable`, having written nothing,
+    when the file's row is not releasable at that moment, and `ObjectChanged` (a
+    subclass) when it is, but a restore has since pointed it at another object: chunks of
+    bytes A are never attached to a row now holding B.
+    """
+    chunks = SimpleChunker().chunk(document)
+    vectors = await embed([chunk.text for chunk in chunks]) if chunks else []
+    held = (
+        await session.execute(
+            _WRITE_GUARD, {"tenant_id": scope.tenant_id, "file_id": document.resource_id}
+        )
+    ).first()
+    if held is None:
+        await session.rollback()
+        raise FileNotReleasable
+    # The row is share-locked to this transaction's end, so what is compared here
+    # is what is committed against.
+    if not read.is_current(storage_key=str(held.storage_key), etag=held.scan_object_etag):
+        await session.rollback()
+        raise ObjectChanged
+    index = SqlKnowledgeIndex(session)
+    if not chunks:
+        await index.delete(scope, document.id)
+        return 0
+    await index.upsert(scope, chunks, vectors)
+    return len(chunks)
+{{/if}}
 
 
 def file_document(*, tenant_id: str, file_id: str, name: str, text_content: str) -> Document:

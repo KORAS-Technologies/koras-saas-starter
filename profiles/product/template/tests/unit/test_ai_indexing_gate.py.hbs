@@ -1,0 +1,375 @@
+{{#if capability.ai}}
+"""The indexer reads nothing and calls no model for a file that is not clean (`secure_files`).
+
+Over a scripted session: what is asserted is that `index_clean_file` asks the release rule
+on the file's row before it reads one byte or builds one provider request, for every
+state the rule refuses -- pending, skipped, infected, quarantined, not ready, unknown,
+another tenant's, absent -- and that for a clean file it reads once, extracts, and writes
+through the guarded writer. The caller's token appears in no statement, no audit row and
+no log line. The same rule against a real PostgreSQL, with the verdict racing the write,
+is `tests/integration/test_file_derived_content_real.py`.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+
+os.environ.setdefault("ENVIRONMENT", "dev")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/db")
+os.environ.setdefault("ZITADEL_DOMAIN", "https://example.invalid")
+os.environ.setdefault("ZITADEL_PROJECT_ID", "0")
+
+from koras_api.core import ai  # noqa: E402
+from koras_api.core import knowledge as knowledge_store  # noqa: E402
+
+TENANT = "00000000-0000-0000-0000-00000000000a"
+OTHER = "00000000-0000-0000-0000-00000000000b"
+FILE_ID = "11111111-1111-1111-1111-111111111111"
+TOKEN = "SECRET-CALLER-TOKEN-0123456789"  # noqa: S105 - a marker, not a credential
+GENERATION = "22222222-2222-2222-2222-222222222222"
+KEY = f"tenants/{TENANT}/documents/{FILE_ID}/final/{GENERATION}/secret-key.txt"
+
+
+class _Rows:
+    def __init__(self, rows: list[Any]) -> None:
+        self._rows = rows
+
+    def first(self) -> Any:  # noqa: ANN401
+        return self._rows[0] if self._rows else None
+
+
+class _Session:
+    def __init__(self, row: SimpleNamespace | None) -> None:
+        self.row = row
+        self.sent: list[Any] = []
+        self.audit: list[dict[str, Any]] = []
+        self.index_state: list[dict[str, Any]] = []
+
+    async def execute(self, statement: object, parameters: dict[str, Any] | None = None) -> _Rows:
+        sql = str(statement)
+        self.sent.append(parameters)
+        parameters = parameters or {}
+        if "insert into public.audit_events" in sql:
+            self.audit.append(parameters)
+        elif "update public.files f set indexed_at" in sql:
+            self.index_state.append(parameters)
+        elif "from public.files where id = cast(:id as uuid)" in sql:
+            row = self.row
+            if row is not None and row.tenant_id == parameters.get("tenant_id"):
+                return _Rows([row])
+        return _Rows([])
+
+    async def commit(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
+
+
+class _Store:
+    def __init__(self) -> None:
+        self.reads: list[str] = []
+
+    def get(self, key: str) -> bytes:
+        self.reads.append(key)
+        return b"alpha beta gamma"
+
+
+def _row(  # noqa: PLR0913
+    status: Any,  # noqa: ANN401
+    scan_status: Any,  # noqa: ANN401
+    tenant: str = TENANT,
+    key: str = KEY,
+    etag: str | None = "etag-a",
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=FILE_ID,
+        tenant_id=tenant,
+        storage_key=key,
+        name="private-name.txt",
+        size_bytes=16,
+        content_type="text/plain",
+        uploaded_by="u",
+        scan_status=scan_status,
+        scan_object_etag=etag,
+        status=status,
+        legal_hold=False,
+        created_at=None,
+        indexed_at=None,
+        index_note=None,
+    )
+
+
+class _World:
+    """Everything the indexer could reach, recording whether it was reached."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, row: SimpleNamespace | None) -> None:
+        self.session = _Session(row)
+        self.store = _Store()
+        self.extracted: list[bytes] = []
+        self.written: list[str] = []
+        self.provider_built = 0
+
+        @asynccontextmanager
+        async def tenant_session(tenant_id: str, **_: object):  # noqa: ANN202
+            yield self.session
+
+        async def text_for_index(raw: bytes, *, content_type: str, read: object):  # noqa: ANN202
+            self.extracted.append(raw)
+            return knowledge_store.Extracted(text="alpha beta gamma", method="text")
+
+        async def index_file_document(  # noqa: ANN202
+            session: object, *, scope: Any, document: Any, embed: Any, read: Any  # noqa: ANN401
+        ):
+            self.written.append(document.resource_id)
+            self.read_identity = read
+            return 2
+
+        def gateway() -> object:
+            self.provider_built += 1
+            return object()
+
+        monkeypatch.setattr(ai, "tenant_session", tenant_session)
+        monkeypatch.setattr(ai, "gateway", gateway)
+        monkeypatch.setattr(knowledge_store, "text_for_index", text_for_index)
+        monkeypatch.setattr(knowledge_store, "index_file_document", index_file_document)
+
+    async def run(self, tenant: str = TENANT) -> int:
+        return await ai.index_clean_file(
+            tenant_id=tenant,
+            organization_id="org-a",
+            token=TOKEN,
+            file_id=FILE_ID,
+            user_id="user-1",
+            store=self.store,  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize(
+    ("status", "scan_status", "reason"),
+    [
+        ("ready", "pending", "pending"),
+        ("ready", "skipped", "skipped"),
+        ("ready", "infected", "infected"),
+        ("quarantined", "infected", "infected"),
+        ("quarantined", "clean", "infected"),
+        ("pending", "clean", "unknown"),
+        ("ready", None, "unknown"),
+        ("ready", "weird", "unknown"),
+        ("ready", "CLEAN", "unknown"),
+    ],
+)
+async def test_a_file_that_is_not_clean_is_not_read_extracted_embedded_or_written(
+    status: Any,  # noqa: ANN401
+    scan_status: Any,  # noqa: ANN401
+    reason: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    world = _World(monkeypatch, _row(status, scan_status))
+    assert await world.run() == 0
+    assert world.store.reads == [], "no byte was read from the bucket"
+    assert world.extracted == [], "nothing was extracted, so no page reached a vision model"
+    assert world.written == []
+    assert world.session.index_state == [], "no outcome note was written for a refusal"
+    assert len(world.session.audit) == 1, "one event for the refusal, not one per poll"
+    event = world.session.audit[0]
+    assert event["outcome"] == "denied"
+    assert event["action"] in {"storage.object.release_refused", "storage.object.quarantined"}
+    assert '"consumer": "indexing"' in event["details"]
+    assert f'"reason": "{reason}"' in event["details"]
+    recorded = str(world.session.sent)
+    assert KEY not in recorded and "private-name" not in recorded and TOKEN not in recorded
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        # The key is another tenant's object, though the row is this tenant's.
+        _row("ready", "clean", key=f"tenants/{OTHER}/documents/{FILE_ID}/final/{GENERATION}/a.txt"),
+        # A key a ticket could write.
+        _row(
+            "ready",
+            "clean",
+            key=f"tenants/{TENANT}/documents/{FILE_ID}/incoming/{GENERATION}/a.txt",
+        ),
+        # No scanner stamp.
+        _row("ready", "clean", etag=None),
+        _row("ready", "clean", etag=""),
+    ],
+)
+async def test_a_clean_row_whose_identity_does_not_hold_is_not_read_extracted_or_written(
+    row: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world = _World(monkeypatch, row)
+    assert await world.run() == 0
+    assert world.store.reads == []
+    assert world.extracted == [] and world.written == []
+    assert [e["outcome"] for e in world.session.audit] == ["denied"]
+
+
+async def test_a_clean_file_is_read_once_extracted_and_written_through_the_guarded_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    world = _World(monkeypatch, _row("ready", "clean"))
+    assert await world.run() == 2
+    assert world.store.reads == [KEY]
+    assert world.extracted == [b"alpha beta gamma"]
+    assert world.written == [FILE_ID]
+    assert [s["indexed_at"] is not None for s in world.session.index_state] == [True]
+    assert world.session.audit == []
+    # The write and the outcome note are bound to the object that was authorized and read.
+    assert world.read_identity == knowledge_store.ReadIdentity(storage_key=KEY, etag="etag-a")
+    assert [(s["read_key"], s["read_etag"]) for s in world.session.index_state] == [(KEY, "etag-a")]
+
+
+async def test_another_tenants_clean_file_is_not_read_or_indexed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    world = _World(monkeypatch, _row("ready", "clean", tenant=OTHER))
+    assert await world.run(TENANT) == 0
+    assert world.store.reads == []
+    assert world.extracted == [] and world.written == []
+    assert world.session.audit == [], "another tenant's file is simply not there"
+
+
+async def test_an_absent_file_is_not_read_or_indexed(monkeypatch: pytest.MonkeyPatch) -> None:
+    world = _World(monkeypatch, None)
+    assert await world.run() == 0
+    assert world.store.reads == [] and world.written == []
+
+
+async def test_a_verdict_that_arrives_after_the_read_leaves_no_note_and_no_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    world = _World(monkeypatch, _row("ready", "clean"))
+
+    async def refused(
+        session: object, *, scope: Any, document: Any, embed: Any, read: Any  # noqa: ANN401
+    ) -> int:
+        raise knowledge_store.FileNotReleasable
+
+    monkeypatch.setattr(knowledge_store, "index_file_document", refused)
+    assert await world.run() == 0
+    assert world.session.index_state == [], "the index state is not written for a withdrawn file"
+
+
+async def test_a_row_pointed_at_another_object_after_the_read_leaves_no_note_and_no_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    world = _World(monkeypatch, _row("ready", "clean"))
+
+    async def changed(
+        session: object, *, scope: Any, document: Any, embed: Any, read: Any  # noqa: ANN401
+    ) -> int:
+        raise knowledge_store.ObjectChanged
+
+    monkeypatch.setattr(knowledge_store, "index_file_document", changed)
+    assert await world.run() == 0
+    assert world.session.index_state == [], "no outcome is written for the replacement"
+
+
+async def test_the_callers_token_is_in_no_statement_no_audit_row_and_no_log_line(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    for row in (_row("ready", "clean"), _row("ready", "pending"), _row("ready", "infected")):
+        world = _World(monkeypatch, row)
+        await world.run()
+        assert TOKEN not in str(world.session.sent)
+        assert TOKEN not in str(world.session.audit)
+    assert TOKEN not in caplog.text
+    assert KEY not in caplog.text
+
+
+async def test_an_unexpected_failure_is_logged_without_the_token_and_leaves_no_chunks(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    world = _World(monkeypatch, _row("ready", "clean"))
+
+    async def boom(raw: bytes, *, content_type: str, read: object) -> object:
+        raise RuntimeError("the vision model is down")
+
+    monkeypatch.setattr(knowledge_store, "text_for_index", boom)
+    assert await world.run() == 0
+    assert world.written == []
+    assert TOKEN not in caplog.text
+    assert [s["note"] for s in world.session.index_state] == ["indexing failed unexpectedly"]
+
+
+def test_the_assistants_hook_is_due_only_for_a_file_never_tried() -> None:
+    from koras_api.core.file_indexing import is_due
+
+    assert is_due(None, None) is True
+    assert is_due(None, "no text to index") is False
+    assert is_due(object(), None) is False  # type: ignore[arg-type]
+
+
+async def test_two_offers_of_one_file_in_one_process_read_it_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from koras_api.core import file_indexing
+
+    started = asyncio.Event()
+    finish = asyncio.Event()
+    calls: list[str] = []
+
+    async def slow(**arguments: object) -> int:
+        calls.append(str(arguments["file_id"]))
+        started.set()
+        await finish.wait()
+        return 1
+
+    monkeypatch.setattr(file_indexing, "index_clean_file", slow)
+    first = asyncio.create_task(file_indexing._index_once(tenant_id=TENANT, file_id=FILE_ID))
+    await started.wait()
+    assert await file_indexing._index_once(tenant_id=TENANT, file_id=FILE_ID) == 0
+    finish.set()
+    assert await first == 1
+    assert calls == [FILE_ID]
+    assert file_indexing._in_flight == set()
+
+
+async def test_a_file_another_listing_just_finished_is_not_read_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    row = _row("ready", "clean")
+    row.indexed_at = object()
+    world = _World(monkeypatch, row)
+    assert await world.run() == 0
+    assert world.store.reads == [] and world.written == []
+
+
+async def test_a_provider_that_timed_out_leaves_the_file_due_and_a_real_refusal_does_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from koras_ai import AIError, ErrorCode
+
+    for code, noted in ((ErrorCode.TIMEOUT, False), (ErrorCode.PROVIDER_UNAVAILABLE, False),
+                        (ErrorCode.INVALID_INPUT, True)):
+        world = _World(monkeypatch, _row("ready", "clean"))
+
+        async def failing(
+            raw: bytes, *, content_type: str, read: object, _c: object = code
+        ) -> object:
+            raise AIError(_c, "the provider said no")
+
+        monkeypatch.setattr(knowledge_store, "text_for_index", failing)
+        assert await world.run() == 0
+        assert bool(world.session.index_state) is noted, code
+
+
+def test_the_index_state_write_is_guarded_by_the_release_rule() -> None:
+    from koras_api.core.file_release import RELEASABLE_SQL
+
+    assert RELEASABLE_SQL in str(ai._INDEX_STATE)
+{{else}}
+"""The assistant's indexer gate is tested where the product has an assistant (`ai`)."""
+{{/if}}

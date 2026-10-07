@@ -23,6 +23,9 @@ from sqlalchemy import text
 
 from ..core import knowledge
 from ..core.database import rebind_tenant
+{{#if capability.secure_files}}
+from ..core.file_release_gate import row_releasable
+{{/if}}
 
 
 class ListFilesInput(BaseModel):
@@ -42,7 +45,13 @@ async def list_files(ctx: ToolContext, args: ListFilesInput) -> dict[str, Any]:
         return {"files": [], "note": "no database session is available"}
     rows = await ctx.session.execute(
         text(
+{{#if capability.secure_files}}
+            "select id, name, size_bytes, content_type, ready_at, status, scan_status, "
+            " tenant_id::text as tenant_id, storage_key, scan_object_etag "
+            "from public.files "
+{{else}}
             "select id, name, size_bytes, content_type, ready_at from public.files "
+{{/if}}
             "where tenant_id = :tenant_id and status = 'ready' "
             "order by ready_at desc limit :limit"
         ),
@@ -56,6 +65,11 @@ async def list_files(ctx: ToolContext, args: ListFilesInput) -> dict[str, Any]:
                 "size_bytes": row.size_bytes,
                 "content_type": row.content_type,
                 "uploaded_at": row.ready_at.isoformat() if row.ready_at else None,
+{{#if capability.secure_files}}
+                # Whether the assistant may say it can read this file: the one release rule,
+                # so a file still being checked is not described.
+                "content_available": row_releasable(row, ctx.context.tenant_id, "listing"),
+{{/if}}
             }
             for row in rows.fetchall()
         ]
