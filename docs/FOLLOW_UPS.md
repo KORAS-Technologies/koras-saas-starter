@@ -2962,3 +2962,26 @@ block every change that touches none of those paths.
 
 - [ ] Before requiring it: either an aggregate check that always runs and
       reports for the four jobs, or the path filter removed.
+
+## 2026-10-07 - a database invariant for `clean` (secure_files)
+
+Recorded from the review of pull request 39; deliberately not built there, because it is a new invariant
+and not a port of the proven schema.
+
+**The gap.** Only the worker's guarded transitions write `scan_status = 'clean'`, and a test that reads
+the source (`test_release_bypass_guards.py`) holds that. Nothing in the database stops another writer
+that has `UPDATE` on `public.files` (a later product module, a hand-run statement, a restore of a dump)
+from writing `clean` to a row no scan decided.
+
+**Design sketch.** A `BEFORE INSERT OR UPDATE OF scan_status` trigger on `public.files`, not
+`SECURITY DEFINER`, that accepts `scan_status = 'clean'` only when the writer proves a scan decided it,
+in one of two forms: a transaction-local setting that only the scanner's transition helper sets
+(`set_config('koras.scan_decision', <file id>:<object etag>, true)`), compared in the trigger with the
+row's own id and `scan_object_etag`; or a row in a new table of scan decisions, inserted by the same
+helper in the same transaction. It would refuse (with a named error) any other write to `clean`,
+allow every move away from `clean`, and be applied to the existing rows by a validation query before it
+is enabled (a `clean` row with a null `scan_object_etag` is the legacy case and needs a disposition).
+Needs: a migration, a change to `scanning/transition.py` to set the proof, an RLS-suite case per writer,
+the matrix's upgrade scenario to show legacy `clean` rows are not rewritten, and a decision on whether
+the proof may be forged by the application role (it can, so this is defence in depth against mistakes and
+not against a compromised worker).

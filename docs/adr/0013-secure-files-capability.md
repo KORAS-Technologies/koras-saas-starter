@@ -38,12 +38,34 @@ Files API for products that never asked for it.
    if a mandatory setting is absent or invalid the product **fails closed**: it
    refuses to start (API and worker) or, where startup cannot refuse, releases
    nothing. It never falls back to legacy release.
-4. **One implementation, one API model.** Code that differs by mode branches on a
-   single generated constant (`koras_api.core.secure_files.SECURE_FILES`) rendered
-   from the capability at generation time, never from a deploy-time switch.
-   Shared modules (files router, release, restore, AI, indexing, imports) go
-   through the one canonical release primitive, which dispatches on that
-   constant. There are not two files routers.
+4. **One API model, one generated constant, and two idioms for what differs by mode.** The mode
+   is the single constant `koras_api.core.secure_files.SECURE_FILES` (mirrored by the worker's
+   `koras_worker.secure_files`), rendered from the capability at generation time and never from
+   a deploy-time switch. The routes, the request and response models and the one release
+   primitive (`core/file_release.py`) are the same in both modes: there are not two files
+   routers. What differs is carried by one of two idioms, chosen by one rule.
+
+   * **Render-time per-mode bodies** (`{{#if capability.secure_files}}` in the template): the
+     default. Used wherever the two modes differ in a contract, a signature, an import, a model or
+     the existence of an object: the files router, the restore task, the AI, knowledge and import
+     modules, `core/file_scan.py`, the web Files and import panels. The render **without** the
+     capability is the pre-existing legacy text, byte for byte (generator tests hold it by digest),
+     and a product never carries the other mode's code, so every import in a render resolves in
+     that render.
+   * **The generated constant branched at run time** (`if SECURE_FILES:`): only where both bodies
+     can import and run in both renders and the difference is one decision inside one function
+     (the dispatch in `core/file_release.py`, `secure_files_enabled()`). This is what lets a test
+     switch the constant to exercise both modes in one tree.
+
+   The rule: if the difference changes a signature, an import, a model, a table or whether a file
+   exists, render it; if it is one decision over objects that exist in both renders, branch on the
+   constant. When in doubt, render, because that keeps the default render untouched and the
+   secure code absent from products that did not ask for it.
+
+   A path listed under several capabilities in `template_map` is generated only when **all** of
+   them are selected (the generator excludes every path listed under any component that is off).
+   That is how the restore and promotion files are gated by `secure_files` and the capability they
+   build on together.
 5. **Upload contract.** `checksum_sha256` is **required** at upload-ticket
    issuance when `secure_files` is on: canonical lowercase 64-hex, an immutable
    claim bound to the ticket and upload id; the server never invents it. When

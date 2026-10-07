@@ -45,6 +45,35 @@ The mode is a **generation-time** choice. It is the single constant
 rendered from the capability. It is not a setting, not an environment variable,
 and not a runtime toggle. There is no second feature-flag system.
 
+### How a module differs by mode, and how a file is gated
+
+There is one API and one model contract in both modes (the same routes, the same request and
+response models; `checksum_sha256` optional versus required is the only field-level difference),
+and what differs is carried by one of two idioms:
+
+| Idiom | Used where | Why |
+|---|---|---|
+| **Render-time per-mode bodies**: a `{{#if capability.secure_files}}` block in the template, so a product contains only its own mode's text | the contract, a signature, an import or the existence of an object differs: the files router, `core/file_scan.py`, the restore task, the assistant, knowledge and import modules, the web Files and import panels, the message catalogues | the render without the capability is the pre-existing legacy file, byte for byte, and no render imports a module its mode did not generate |
+| **The generated constant, branched at run time** (`if SECURE_FILES:`) | both bodies import and run in both renders and the difference is one decision inside one function: the dispatch in `core/file_release.py`, `secure_files_enabled()` | a test can switch the constant and exercise both modes in one tree |
+
+The rule for choosing: if the difference changes a signature, an import, a model, a table or
+whether a file exists, render it; if it is one decision over objects that exist in both renders,
+branch on the constant. When in doubt, render: the default render stays untouched and the secure
+code is absent from products that did not ask for it. The render **without** the capability is the
+pre-existing legacy code; generator tests hold that by digest (the legacy `core/file_scan.py`) and by
+comparison with the template.
+
+**A path listed under several capabilities needs all of them.** `template_map.capabilities` lists
+the files each capability generates. The generator excludes every path listed under a component
+that is not selected, so a path named under `secure_files` and under `storage_governance` is
+generated only when both are on (and a path under `secure_files`, `storage_governance` and `ai`
+only when all three are). It is an intersection, never a union. The restore scan task, the restore
+and replacement suites and the assistant's restore test rely on this. A generator test renders
+all sixteen combinations of `secure_files`, `storage_governance`, `data_import` and `ai`, asserts
+that every multiply-listed path is present exactly when all its owners are on, and resolves every
+`koras_api` and `koras_worker` import of every rendered Python file (source and tests) against the
+rendered tree, so a file gated by a capability that is off cannot be imported by one that is on.
+
 `secure_files` is the **recommended** configuration for any product that stores
 customer documents. The default stays off so existing generation output is
 unchanged; when a product has `storage` on and `secure_files` off, the CLI prints
@@ -67,6 +96,12 @@ no-op without the capability:
   without the capability; and, in a product with `data_import`, `tests/integration/test_worker_image.py`
   recognises a product with the capability (by the upload window module) and gives the image's worker
   the settings that product refuses to start without -- an `if` that is never taken here.
+* hardening review (2026-10-07): `core/file_scan.py` is a template whose render without the capability is the
+  previous text byte for byte (a generator test holds its digest), and with the capability its
+  `record_scan` raises (below); the `files.preparing` and `imports.preparing` sentences are added to each of the three message
+  catalogues (as layer 4's were), which nothing renders without the capability; `tests/unit/test_blank_settings.py`
+  is generated only with `storage_governance`, because it imports that capability's sweeps (a product
+  without them failed that test on import);
 * layer 5: `tasks/storage_restore.py` and `tests/unit/test_storage_restore.py` become templates whose
   rendering **without** the capability is the previous text, byte for byte (a generator test
   generates the default product at the previous commit and now and compares); `tests/unit/test_release_bypass_guards.py`
@@ -209,6 +244,26 @@ The response has the same five fields in both modes. The browser must send exact
 headers it was given: they are part of the signature, so adding, removing or rewriting one is
 refused by the provider.
 
+### The browser computes the claim, within a stated limit
+
+The first-party client (`packages/api-client/src/upload-claim.ts`, used by the Files page and the
+import panel) hashes the file before it asks for a ticket. WebCrypto has no incremental hash, so
+the whole file is read into memory once, and that is bounded in the client, not by the API: the
+API accepts objects of several gigabytes, which a browser tab cannot hash.
+
+* **The limit is `MAX_HASHABLE_BYTES`, 100 MiB**, the scan ceiling the clamd service is built for
+  (`SCAN_CEILING_BYTES`; a generator test holds the two numbers together). A larger file could never
+  be scanned and so could never be released, so it is refused before it is read: the person sees
+  "This file is larger than 100 MB, the most that can be checked and uploaded here, so it was not
+  uploaded.", nothing is requested from the API, and nothing is stored. It fails closed: no
+  digest, no ticket. No dependency is added to hash in pieces.
+* A browser with no secure context, or a file that cannot be read or hashed, is refused the same way,
+  with its own sentence. Nothing substitutes a digest.
+* While the file is being read and hashed the Files page and the import panel show a polite
+  `role="status"` line, "Preparing…" (`files.preparing`, `imports.preparing`), and the progress bar
+  starts when the upload does. The status line is rendered only with the capability; its two sentences
+  sit in the message catalogues in both renders, where nothing in a default product reads them.
+
 ### Topology
 
 ```
@@ -277,6 +332,42 @@ The browser PUTs the ticket's headers cross-origin, so the bucket's CORS rule mu
 `x-amz-metadata-directive`, `x-amz-meta-koras-upload`. A rule that does not fails the upload at
 the preflight, which is the safe direction.
 
+A sample rule (replace the origin with the product's own; `PUT` is the only method a browser
+needs, because downloads are navigations to a signed URL):
+
+```json
+[{
+  "AllowedOrigins": ["https://app.example.com"],
+  "AllowedMethods": ["PUT"],
+  "AllowedHeaders": ["Content-Type", "x-amz-checksum-sha256", "x-amz-copy-source-if-match",
+                     "x-amz-copy-source-if-unmodified-since", "x-amz-metadata-directive",
+                     "x-amz-meta-koras-upload"],
+  "MaxAgeSeconds": 3600
+}]
+```
+
+**What the design assumes of the bucket.** These are conditions of the deployment, not things the
+generated code can check:
+
+* **The application's storage credentials never reach a client.** `STORAGE_ACCESS_KEY` and
+  `STORAGE_SECRET_KEY` are read by the API and the worker only, from the secret store. The browser
+  holds per-ticket signed URLs and nothing else; the credential is scoped to this product's bucket.
+* **No anonymous access.** No public read, no public list, no public ACL. Every object is reached
+  through a signed URL or the server's own credential.
+* **The unsigned `x-amz-copy-source` risk is mitigated, not removed.** Some providers execute a PUT
+  that carries an `x-amz-copy-source` header as a server-side copy, and a presigned PUT does not sign
+  headers it was not told about. A client could then try to fill its incoming key with another
+  tenant's object. Three things stop that, together: the ticket signs failing preconditions
+  (`x-amz-copy-source-if-match` of a value no object has, and `x-amz-copy-source-if-unmodified-since`
+  at the epoch), so a copy is refused with 412; finalization requires the object's provenance
+  (`x-amz-meta-koras-upload`) to equal the upload id of the ticket, and a copied object carries its
+  source's metadata, not this ticket's; and finalization hashes the bytes to the claim. The
+  provider-qualification harness (below) proves a provider honours the preconditions, and ADR 0013
+  section 9 is the regression that proves the provenance check holds when the preconditions do not.
+* **One bucket holds incoming and final objects**, told apart by key. The signing credential
+  therefore has to be able to read and write the whole bucket; it is not a per-tenant credential,
+  and tenant separation is the key prefix plus the checks above.
+
 ### Migration mapping
 
 | Starter | Docoris | What it is |
@@ -288,7 +379,32 @@ the preflight, which is the safe direction.
 
 Each is semantically identical to its Docoris original (the SQL bodies are the same; only the
 header comments name the Starter, and 00042's one guard is described above), so a later sync of a product that carries 01016-01019 must
-find the schemas equivalent. The claim and digest columns (`checksum_sha256`,
+find the schemas equivalent. That is machine-checked: `docs/migration-map.yaml` maps each Starter file
+to its Docoris file, lists the only differences (the transaction wrapper, the lock timeout, the
+function's `comment`, and 00042's `to_regclass` guard) and records the SHA-256 of the normalised Docoris
+text; `tests/migration-map.test.ts` in the generator hashes each Starter file the same way (comments and
+whitespace removed, the listed differences applied) and fails on any other difference. The Docoris
+repository is not read in CI. With `DOCORIS_REPO` set on a maintainer's machine the same test also checks
+the recorded hashes against the real files.
+
+Operating notes that the migrations' own headers repeat:
+
+* **Forward-only, and migrate before deploy.** There is no down migration, and a release assumes the
+  columns, indexes and trigger exist; a schema that is ahead of the code is harmless to the code
+  that does not know about it.
+* **`set local lock_timeout = '5s'`** in 00039, 00040, 00041 and 00042, each inside its own transaction
+  (00042 gained `begin`/`commit` for it). A migration that cannot get its lock fails with an error
+  instead of queuing behind a long transaction and stalling every writer to `files`. The ledger row is
+  written only after success and every statement is idempotent, so the next `migrate` retries.
+* **00040 re-adds the thirteen-word `scan_failure` constraint.** A product that widened the twelve-word
+  constraint of 00039 with words of its own must reconcile before applying 00040, which replaces the
+  whole list: add the product's words in a later migration and carry them in the sync record.
+* **The withdrawal function's owner must bypass row-level security.** It is `SECURITY DEFINER`, so it
+  runs as its owner, and `files` and `ai_knowledge_chunks` have RLS forced: an owner without
+  `BYPASSRLS` (and not a superuser) would delete nothing. The migrating role creates it, which on
+  Supabase is `postgres`. `supabase/tests/360_file_derived_content_withdrawal.sql` fails first and
+  loudly if the owner cannot bypass RLS.
+ The claim and digest columns (`checksum_sha256`,
 `checksum_verified_at`) were already the Starter's, from 00018; the upload id is not a column, it
 is the third segment after `incoming/` in the key and the provenance the object carries.
 
@@ -405,10 +521,34 @@ The worker connects to `FILE_SCAN_CLAMD_HOST:FILE_SCAN_CLAMD_PORT`, the private 
 request or a file can say reaches the address, and clamd has no credential. A blank host resolves
 to an unavailable scanner, never to a default. `FILE_SCAN_BACKEND=none` is a startup error with no
 exception: the API and the worker both refuse to start, and a job that somehow ran with no scanner
-would answer `misconfigured` and hold the file. clamd's service descriptor lists the environments
+would answer `misconfigured` and hold the file. The backend name is matched **exactly**: `clamd` and
+nothing else is a scanner, so `CLAMD`, ` clamd` and `clamd ` are refused at start, in the API and the
+worker alike, instead of passing one check and failing another (the worker's own settings accept only
+the lowercase literal). clamd's service descriptor lists the environments
 it is deployed to; a product with `secure_files` needs it in **every** environment that runs its
 API or worker, because a worker without a reachable scanner holds every file and an API without a
 configured one does not start.
+
+### Deploying beyond dev
+
+The generated `services/clamd/service.yaml` lists the `dev` environment only: the scanner is proven in
+dev first, and a longer list is a deliberate edit, in a commit. **A product generated with `secure_files`
+therefore has to add `test`, `stg` and `prod` to that descriptor before anything is deployed to them**,
+or its worker has no scanner to reach in those environments and holds every file. The generator prints
+this when the capability is selected, and the generated product's own `docs/SECURE_FILES.md` says it too.
+Edit the descriptor on purpose; nothing generated does.
+
+### The legacy seam is closed
+
+`core/file_scan.py::record_scan` writes the status it is handed, including `clean`, with no scan behind
+it. In a product generated with `secure_files` it **raises** (`RuntimeError`, before touching the
+session): the worker's guarded transitions are the only writer of a verdict, and a call to the
+unconditional writer is a bypass, so it is refused rather than obeyed. Without the capability the file is the
+pre-existing one and the function behaves as it always did. `tests/unit/test_release_bypass_guards.py`
+also reads the writers it cannot see in a quoted literal: an f-string, a concatenation, a `%` or `.format`
+template, `.values(scan_status=...)` or `.values({"scan_status": ...})`, an attribute assignment and
+`setattr` are all reported as writers outside the registry, and a read through `store`, `target`,
+`source` or the other names an object store is held under is counted as a read.
 
 ### Running the scanner suites
 
@@ -554,6 +694,15 @@ them; the scanner does not know the assistant exists. The function is `SECURITY 
 pinned `search_path`, takes no argument, and is callable by nobody. The indexer's share lock on the
 file's row serialises with the scanner's `select ... for update`, so an index write racing a verdict
 ends with no usable chunk in either order.
+
+### A download URL outlives the verdict that withdraws the file
+
+The release check runs when a URL is issued, not when it is used. A download URL signed while a file was
+`clean` is a bearer signature on the object and stays valid for `DOWNLOAD_URL_SECONDS` (five minutes) after a
+later `clean -> infected` verdict, a quarantine or a delete. Everything that reads through the release
+primitive (a new download, the assistant, retrieval, an import) is refused at once; only a URL already
+in someone's hands lives out its short life. The window is a constant in the router and is deliberately
+short; no setting lengthens it.
 
 ### Settings
 
@@ -1069,6 +1218,8 @@ listed under `template_map.capabilities.secure_files` unless marked "always".
 | 6b | `.github/workflows/generator-integration.yml` | Starter only | steps that run the promotion suites in the secure-files row and fail on any skip |
 | 6b | generator: `tests/product-secure-files-promotion.test.ts` | Starter only | files in which mode, the rendered configuration agrees with the generated CI and secrets manifest, nothing of another product, the deploy workflow unchanged, the guard list and the required tests exist |
 | 7 | `tests/secure_files/migration_matrix.sh`, `tests/secure_files/release_rule.py` | Starter only | the migration matrix: a fresh secure product, a fresh default product, and an upgrade of a default product generated from the merge base with develop, on a real PostgreSQL through each product's own `local/scripts/migrate.sh` |
+| 7 | `docs/migration-map.yaml`, generator `tests/migration-map.test.ts`, `tests/migration-map-support.ts` | Starter only | the machine-readable map from 00039-00042 to Docoris 01016-01019, the documented differences, and the checksum comparison |
+| 7 | generator: `tests/product-secure-files-matrix.test.ts` | Starter only | sixteen combinations of `secure_files`, `storage_governance`, `data_import` and `ai`: every `koras_api` / `koras_worker` import resolves in the rendered tree, and a path listed under several capabilities is generated exactly when all of them are on |
 | 7 | `tests/secure_files/live_proof.py` | Starter only | the live API proof: a generated product's API driven over HTTP, in `secure` and `compat` modes |
 | 7 | `.github/workflows/secure-files-matrix.yml` | Starter only | the workflow that generates the products and runs the matrix and both live proofs: jobs `secure-files-migration-matrix`, `live-proof-secure`, `live-proof-compat` |
 | 7 | `.github/actions/start-minio/action.yml` | Starter only | an S3-compatible store for the suites, built from MinIO's tagged source (its images and binaries are no longer published) and shared by the secure-files steps |
@@ -1098,6 +1249,7 @@ pgvector PostgreSQL. Every database is migrated by the product's own `local/scri
 | A. fresh, generated `--with secure_files,clamd,worker` | all four migrations are in the ledger; the four scan columns, the two checks, the two partial due-time indexes (and not 00040's), the security-definer withdrawal function and both triggers exist; row-level security is forced on `files`; a second `migrate.sh` skips everything; the four files applied directly a second time change nothing; the product's suites pass |
 | B. fresh, default product | none of those objects exists; the ledger names none of 00039-00042; the files that carry the capability are not generated; the generated constant is `False`; the product's suites pass |
 | C. upgrade: a default product (with the assistant on) generated from the merge base with develop, migrated, given legacy rows, then moved by the secure product's own `migrate.sh` | exactly 00039-00042 are applied; no row or chunk is lost and every baseline column of every row is unchanged; the new columns hold their defaults; applying the four files again is idempotent; `RELEASABLE_SQL` and `releasable()` for every consumer release none of the upgraded rows (clean legacy rows stay `clean` and need a scan); the default product's rule answers as before; row-level security is forced everywhere it is enabled; a verdict leaving `clean` on a legacy indexed file withdraws its chunks; the suites pass |
+| D. a secure product generated without the assistant, which later enables `ai` | the assistant's own migrations (00006-00012, numbered before 00042) are applied **after** 00042 has been in force, through the assistant product's own `migrate.sh`; before that the trigger clears a verdict's index state and does not fail without `ai_knowledge_chunks`; afterwards the same trigger deletes the file's chunks on a verdict leaving `clean` and on a row delete, an unrelated write to a clean file keeps its chunks, none of 00039-00042 is applied twice, and the suites pass |
 
 The legacy rows carry every stored verdict (`pending`, `clean`, `skipped`, `infected`), the key
 shapes a default product wrote (with and without a category segment), a claimed digest, a file
@@ -1163,6 +1315,15 @@ and the scanner steps lacked the worker's `DATABASE_URL`, so `file.scan` skipped
 was skipped or disabled to get there.
 
 ## Upgrading an existing product
+
+**Downgrading is unsupported and unsafe.** Regenerating, or setting `SECURE_FILES` to `False`, over a
+product whose schema is already secure is not a way back: the legacy release rule releases rows that are
+`pending` or still on an incoming key, which the secure rule withholds, and nothing reconciles the rows
+the finalizer and scanner were holding. `--refresh`, `--refresh-modules` and `--check-drift` therefore
+refuse `--without secure_files` (and `--without clamd` or `--without worker` while the capability is
+recorded on) on a project whose `.koras/project.yaml` records it, refuse `--with secure_files` on one
+that does not, and validate the recorded component set against `requires` after it is applied, so a
+flag cannot hollow out what the project was generated with (ADR 0013 section 6).
 
 Nothing is retrofitted. Upgrading the Starter, running `--refresh`, or changing
 the Starter's defaults never turns the capability on, and `.koras/project.yaml`

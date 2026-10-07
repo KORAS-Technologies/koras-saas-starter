@@ -46,6 +46,10 @@ write, after checking the object's provenance and the digest of both the incomin
 the final bytes against the claim. Until that has happened the file is on a key a client
 could still write, is not downloadable, and is not handed to anything.
 
+The browser reads a file into memory to compute that claim, so it checks files only up to 100 MiB (the
+scanner's own ceiling); a larger file is refused before anything is requested, with a message saying so.
+While it hashes, the page shows a "Preparing…" status.
+
 If a file stays unavailable: check the worker is running and can reach `REDIS_URL`,
 `DATABASE_URL` and the bucket; the sweep (`sweep_finalize`, every five minutes) picks up
 anything a lost job left. A file the finalizer refused carries a `scan_failure` word and a
@@ -64,6 +68,11 @@ identity and, for a ZIP-family file, a structural check must all pass before a f
 A held file is retried by `sweep_pending_scans` every five minutes with a back-off that caps at
 an hour and never stops; at `FILE_SCAN_MAX_ATTEMPTS` attempts one `storage.object.scan_exhausted`
 security event tells a person to look, and the file stays held.
+
+**The generated `services/clamd/service.yaml` lists the dev environment only.** The clamd service
+descriptor lists the dev environment only, so test, stg and prod each need clamd added to the
+descriptor's `environments` list, in a commit, before anything is deployed there; without it the
+worker has no scanner to reach and holds every file.
 
 If files stay `pending`: check the clamd service is deployed **in this environment** and its
 host and port are what the worker has; check the worker's logs for the word on the file
