@@ -37,9 +37,14 @@ on:
       - ".github/workflows/generator-integration.yml"
   workflow_dispatch:
 
+# Read-only by default. No job here writes to the repository, a package registry or a check;
+# a job that needs more declares it itself.
+permissions:
+  contents: read
+
 concurrency:
   group: generator-integration-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   generate-and-build:

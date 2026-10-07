@@ -9,6 +9,11 @@ description: >-
   server-side copy, which is the attack the signed copy-source guard exists to stop -- so the
   tag the suites were written against is built, once, and the binary cached by tag.
 
+  The tag is not trusted: tags can move, so the source is pinned by the commit it resolved to
+  when this was written (`git ls-remote` peels the annotated tag), the clone is refused unless
+  `git rev-parse HEAD` equals that commit, and the commit is part of the cache key so a changed
+  pin can never be served a binary built from another one.
+
 runs:
   using: composite
   steps:
@@ -16,7 +21,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: ~/minio-bin
-        key: minio-RELEASE.2025-09-07T16-13-09Z-${{ runner.os }}-${{ runner.arch }}-go1.24
+        key: minio-07c3a429bfed433e49018cb0f78a52145d4bedeb-${{ runner.os }}-${{ runner.arch }}-go1.24
 
     - if: steps.cache.outputs.cache-hit != 'true'
       uses: actions/setup-go@v5
@@ -28,9 +33,14 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        git clone --depth 1 --branch RELEASE.2025-09-07T16-13-09Z \
-          https://github.com/minio/minio "$RUNNER_TEMP/minio-src"
+        pin=07c3a429bfed433e49018cb0f78a52145d4bedeb # tag RELEASE.2025-09-07T16-13-09Z
+        git clone --depth 1 --branch RELEASE.2025-09-07T16-13-09Z           https://github.com/minio/minio "$RUNNER_TEMP/minio-src"
         cd "$RUNNER_TEMP/minio-src"
+        actual="$(git rev-parse HEAD)"
+        if [ "$actual" != "$pin" ]; then
+          echo "::error::the MinIO tag resolved to $actual, not the pinned $pin; refusing to build it"
+          exit 1
+        fi
         mkdir -p "$HOME/minio-bin"
         CGO_ENABLED=0 go build -trimpath -o "$HOME/minio-bin/minio" .
         "$HOME/minio-bin/minio" --version

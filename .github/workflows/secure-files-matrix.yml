@@ -2,8 +2,9 @@ name: Secure Files Proof
 
 # `secure_files` (ADR 0013), proven where it can be: on real services, from generated products.
 #
-#   secure-files-migration-matrix   fresh secure, fresh default, and an upgrade from the commit
-#                                   before this branch, on a real PostgreSQL
+#   secure-files-migration-matrix   fresh secure, fresh default, an upgrade from the commit
+#                                   before this branch, and a secure product that enables the
+#                                   assistant later, on a real PostgreSQL
 #   live-proof-secure               a generated secure product's API driven over HTTP, with the
 #                                   real worker, PostgreSQL, MinIO, Redis and clamd
 #   live-proof-compat               a generated default product's API over HTTP, on a fresh
@@ -29,9 +30,14 @@ on:
       - ".github/workflows/secure-files-matrix.yml"
   workflow_dispatch:
 
+# Read-only by default. No job here writes to the repository, a package registry or a check;
+# a job that needs more declares it itself.
+permissions:
+  contents: read
+
 concurrency:
   group: secure-files-matrix-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   secure-files-migration-matrix:
