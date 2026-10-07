@@ -287,6 +287,29 @@ template_map:
       - supabase/migrations/00041_file_scan_due_indexes.sql
       - supabase/tests/350_file_scan_columns_isolation.sql
       - supabase/tests/351_file_scan_sweep_selection.sql
+      - tests/unit/eicar_support.py
+      - tests/unit/object_support.py
+      - tests/unit/scan_transition_support.py
+      - tests/unit/scanner_support.py
+      - tests/unit/zip_support.py
+      - tests/unit/test_file_scan_fixtures.py
+      - tests/unit/test_scan_enqueue.py
+      - tests/unit/test_scan_handoff.py
+      - tests/unit/test_scan_interrupted.py
+      - tests/unit/test_scan_runtime.py
+      - tests/unit/test_scan_sweep.py
+      - tests/unit/test_scan_sweep_fairness.py
+      - tests/unit/test_scan_task.py
+      - tests/unit/test_scanner_foundation.py
+      - tests/unit/test_scanner_object_reader.py
+      - tests/unit/test_scanner_structural_gate.py
+      - tests/unit/test_scanner_transition.py
+      - tests/integration/test_scan_runtime_real.py
+      - tests/integration/test_scan_sweep_real.py
+      - tests/integration/test_scan_transition_real.py
+      - tests/integration/test_scan_orchestration_real.py
+      - tests/integration/test_scanner_clamd_live.py
+      - tests/integration/test_worker_image_scanner.py
 
     # In-app notifications: the table, the emitter, the routes, the page and
     # the browser test.
