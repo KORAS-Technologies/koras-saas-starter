@@ -1376,7 +1376,11 @@ export function ImportPanel({
           >
             {stage === null
               ? (labels.wizard.titles.cancelled ?? labels.resultTitle)
-              : (labels.wizard.titles[stage] ?? labels.resultTitle)}
+              : stage === 'map' && analysis !== null && MAPPABLE.has(run.status)
+                ? // The mapping card above is titled "Match the columns"; a second heading with the
+                  // same words under it read as a repeated card.
+                  labels.wizard.titles.upload
+                : (labels.wizard.titles[stage] ?? labels.resultTitle)}
           </h2>
           {run.source_name ? (
             <p className="mt-1 break-words text-sm text-ink" data-testid="imports-run-file">
