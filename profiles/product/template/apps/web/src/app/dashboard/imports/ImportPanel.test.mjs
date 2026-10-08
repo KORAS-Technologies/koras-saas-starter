@@ -1577,3 +1577,260 @@ test('Continue pressed before the file analysis has arrived still hands focus to
   release()
   await flush(3)
 })
+
+// ---- GR-378: focus and announcements around Check, Download, and a run that ends while the page is open
+
+const flightRun = (overrides) =>
+  run({ id: 'a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1', rows_total: 3, rows_valid: 3, predicted: { create: 3, update: 0, skip: 0 }, mapping: { Name: 'name' }, ...overrides })
+const saidByPage = (container) => container.byTestId('imports-opened')[0].textContent
+
+test('Check keeps focus on its button while it works, ignores a second press, then hands focus to the stage heading', async () => {
+  withLocation()
+  const created = flightRun({ status: 'created', rows_valid: 0, predicted: null })
+  const queued = flightRun({ status: 'validating' })
+  let release
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
+  const log = install({
+    analyseRun: async () => ({ status: 'ok', value: ANALYSIS }),
+    saveMapping: async () => ({ status: 'ok', value: flightRun({ status: 'mapped' }) }),
+    validateRun: async () => (await gate, { status: 'ok', value: queued }),
+    listRuns: async () => ({ status: 'ok', value: [queued] }),
+  })
+  const { container } = await mount({ initialRuns: [created] })
+  await press(container.byTestId('imports-open')[0])
+  await flush(5)
+  const check = buttonNamed(container, 'imports.check')
+  check.focus()
+  assert.equal(focused(container), check)
+  await press(check)
+  assert.equal(check.getAttribute('disabled'), null, 'busy is aria-disabled: a disabled button drops focus to the page')
+  assert.equal(check.getAttribute('aria-disabled'), 'true')
+  assert.equal(focused(container), check, 'focus stays where the person pressed')
+  await press(check)
+  assert.equal(names(log).filter((name) => name === 'validateRun').length, 1, 'a second press asks nothing')
+  release()
+  await flush(6)
+  assert.equal(stageOfPage(container), 'validate')
+  assert.equal(focused(container)?.getAttribute?.('data-testid'), 'imports-wizard-heading', 'the mapping card left; the heading takes focus')
+  assert.equal(saidByPage(container).includes('imports.state.validating'), true)
+})
+
+test('Check that is refused leaves focus on the button and shows the refusal', async () => {
+  withLocation()
+  const created = flightRun({ status: 'created', rows_valid: 0, predicted: null })
+  install({
+    analyseRun: async () => ({ status: 'ok', value: ANALYSIS }),
+    saveMapping: async () => ({ status: 'ok', value: flightRun({ status: 'mapped' }) }),
+    validateRun: async () => ({ status: 'error', message: 'errors.importNotTransitionable' }),
+    listRuns: async () => ({ status: 'ok', value: [created] }),
+  })
+  const { container } = await mount({ initialRuns: [created] })
+  await press(container.byTestId('imports-open')[0])
+  await flush(5)
+  const check = buttonNamed(container, 'imports.check')
+  check.focus()
+  await press(check)
+  await flush(4)
+  assert.equal(focused(container), check)
+  assert.equal(check.getAttribute('aria-disabled'), null)
+  assert.ok(all(container).some((node) => node.textContent === 'errors.importNotTransitionable'))
+})
+
+test('Download every problem keeps focus on its button while it works and says once that it finished', async () => {
+  withLocation()
+  const failed = flightRun({ status: 'validation_failed', errors_total: 2, rows_valid: 1 })
+  let release
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
+  const clicked = []
+  const before = globalThis.document
+  globalThis.document = { createElement: () => ({ click() { clicked.push(true) } }) }
+  mounted.push(async () => {
+    globalThis.document = before
+  })
+  const log = install({
+    analyseRun: async () => ({ status: 'ok', value: ANALYSIS }),
+    listErrors: async () => ({ status: 'ok', value: [] }),
+    allErrors: async () => (await gate, {
+      status: 'ok',
+      value: [{ cursor: 1, row: 3, column: 'Email', field: 'email', code: 'import.error.required', value: '' }],
+    }),
+  })
+  const { container } = await mount({ initialRuns: [failed] })
+  await press(container.byTestId('imports-open')[0])
+  await flush(5)
+  const download = buttonNamed(container, 'imports.downloadReport')
+  download.focus()
+  await press(download)
+  assert.equal(download.getAttribute('disabled'), null)
+  assert.equal(download.getAttribute('aria-disabled'), 'true')
+  assert.equal(focused(container), download)
+  await press(download)
+  assert.equal(names(log).filter((name) => name === 'allErrors').length, 1)
+  release()
+  await flush(6)
+  assert.equal(focused(container), download, 'still on the button after the file was handed over')
+  assert.equal(download.getAttribute('aria-disabled'), null)
+  assert.equal(clicked.length, 1)
+  assert.equal(saidByPage(container), 'imports.reportDownloaded')
+})
+
+async function confirmedPanel() {
+  withLocation()
+  const validated = flightRun({ status: 'validated' })
+  const queued = { ...validated, status: 'commit_requested', committed_by: 'owner' }
+  const done = { ...queued, status: 'committed', written: { created: 3, updated: 0, skipped: 0 }, finished_at: '2026-09-30T10:05:00Z' }
+  let polled = queued
+  const log = install({
+    analyseRun: async () => ({ status: 'ok', value: ANALYSIS }),
+    commitRun: async () => ({ status: 'ok', value: queued }),
+    listRuns: async () => ({ status: 'ok', value: [polled] }),
+  })
+  mock.timers.enable({ apis: ['setInterval'] })
+  const { container } = await mount({ initialRuns: [validated] })
+  await press(container.byTestId('imports-open')[0])
+  await flush(5)
+  await press(buttonNamed(container, 'imports.review.continue'))
+  await press(buttonNamed(container, 'imports.confirm'))
+  await flush(4)
+  return {
+    container,
+    log,
+    land: async () => {
+      polled = done
+      await act(async () => mock.timers.tick(3000))
+      await flush(6)
+    },
+  }
+}
+
+test('a commit that lands from the poll is announced once and takes focus when nothing else holds it', async () => {
+  try {
+    const { container, land } = await confirmedPanel()
+    assert.equal(focused(container)?.getAttribute?.('data-testid'), 'imports-wizard-heading', 'Confirm left; the heading holds focus')
+    await land()
+    assert.equal(stageOfPage(container), 'results')
+    assert.equal(focused(container)?.getAttribute?.('data-testid'), 'imports-wizard-heading')
+    assert.equal(saidByPage(container).startsWith('imports.state.committed. '), true, saidByPage(container))
+    assert.equal(container.byTestId('imports-committed').length, 1)
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+test('a commit that lands while the person is elsewhere is announced and does not take their focus', async () => {
+  try {
+    const { container, land } = await confirmedPanel()
+    const open = container.byTestId('imports-open')[0]
+    open.focus()
+    assert.equal(focused(container), open)
+    await land()
+    assert.equal(container.byTestId('imports-committed').length, 1)
+    assert.equal(saidByPage(container).startsWith('imports.state.committed. '), true)
+    assert.equal(focused(container), open, 'the sentence did not steal focus')
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+test('a commit that lands while focus has fallen to the page hands it to the stage heading', async () => {
+  try {
+    const { container, land } = await confirmedPanel()
+    focused(container)?.blur()
+    assert.equal(focused(container) === null || focused(container).tagName === 'BODY', true)
+    await land()
+    assert.equal(focused(container)?.getAttribute?.('data-testid'), 'imports-wizard-heading')
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+test('an ending is one live announcement: the state line, the outcome and the notes inside the card are not live regions', async () => {
+  withLocation()
+  const committed = flightRun({ id: 'b2b2b2b2-b2b2-42b2-82b2-b2b2b2b2b2b2', status: 'committed', committed_by: 'owner', written: { created: 3, updated: 0, skipped: 0 } })
+  const failed = flightRun({ id: 'c3c3c3c3-c3c3-43c3-83c3-c3c3c3c3c3c3', status: 'failed', committed_by: 'owner', error: 'record 2: the account does not exist' })
+  const validated = flightRun({ id: 'd4d4d4d4-d4d4-44d4-84d4-d4d4d4d4d4d4', status: 'validated' })
+  install({ analyseRun: async () => ({ status: 'ok', value: ANALYSIS }) })
+  const { container } = await mount({ initialRuns: [committed, failed, validated] })
+  for (const index of [0, 1, 2]) {
+    await press(container.byTestId('imports-open')[index])
+    await flush(5)
+    const card = container.byTestId('imports-wizard-heading')[0].parentNode
+    const live = all(card).filter((node) => ['status', 'alert'].includes(node.getAttribute?.('role')))
+    assert.deepEqual(live.map((node) => node.getAttribute('data-testid') ?? node.textContent), [], `run ${index}`)
+  }
+  const announcers = all(container).filter((node) => node.getAttribute?.('data-testid') === 'imports-opened')
+  assert.equal(announcers.length, 1)
+  assert.equal(announcers[0].getAttribute('role'), 'status')
+})
+
+// ---- GR-378 / multiple tabs: a wait restored by one tab ends when another tab ends it
+
+const WAITING_FILE = {
+  fileId: 'file-7',
+  name: 'accounts.xlsx',
+  size: 13670,
+  target: ACCOUNTS.key,
+  operation: 'skip_duplicate',
+}
+
+const storageEvent = (listeners, fileId) =>
+  act(async () => {
+    listeners.storage({
+      key: 'docoris.imports.pending-source',
+      newValue: null,
+      oldValue: fileId === null ? null : JSON.stringify({ ...WAITING_FILE, fileId, at: Date.now() }),
+    })
+  })
+
+test('a wait this tab restored ends when another tab started the run: no Continue, no second run, a sentence, and the list is read again', async () => {
+  const place = withLocation()
+  STORE.set('docoris.imports.pending-source', JSON.stringify({ ...WAITING_FILE, at: Date.now() - 20 * 60_000 }))
+  const log = install({
+    ...uploadScript(async () => ({ status: 'ok', value: 'ready' })),
+    listRuns: async () => ({ status: 'ok', value: [run({ id: 'from-the-other-tab' })] }),
+  })
+  const { container } = await mount({})
+  await flush()
+  assert.equal(container.byTestId('imports-source')[0].getAttribute('data-phase'), 'ready')
+  assert.ok(buttonNamed(container, 'imports.source.continue') !== undefined)
+
+  STORE.delete('docoris.imports.pending-source')
+  await storageEvent(place.listeners, 'file-7')
+  await flush(4)
+  assert.equal(container.byTestId('imports-source').length, 0, 'the wait is gone')
+  assert.equal(buttonNamed(container, 'imports.source.continue'), undefined, 'Continue would have made a second run from one file')
+  assert.equal(container.byTestId('imports-source-elsewhere').length, 1)
+  assert.equal(container.byTestId('imports-source-elsewhere')[0].textContent, 'imports.source.endedElsewhere')
+  assert.equal(names(log).includes('startRun'), false)
+  assert.equal(log.some((entry) => entry.name === 'listRuns'), true, 'the run the other tab started is in the list')
+  assert.equal(container.byTestId('imports-history').length, 1)
+})
+
+test('a removal for a different file, or a wait this tab began itself, is not this tab\'s to end', async () => {
+  const place = withLocation()
+  STORE.set('docoris.imports.pending-source', JSON.stringify({ ...WAITING_FILE, at: Date.now() - 20 * 60_000 }))
+  install(uploadScript(async () => ({ status: 'ok', value: 'ready' })))
+  const { container } = await mount({})
+  await flush()
+  await storageEvent(place.listeners, 'some-other-file')
+  await flush(3)
+  assert.equal(container.byTestId('imports-source').length, 1, 'another file\'s entry ended nothing here')
+  assert.equal(container.byTestId('imports-source-elsewhere').length, 0)
+  await mounted.pop()?.()
+
+  withStorage()
+  fakeBucket()
+  const own = withLocation()
+  install(uploadScript(async () => ({ status: 'ok', value: 'checking' })))
+  const second = await mount({})
+  await change(byId(second.container, 'import-file'), { files: [xlsxFile('mine.xlsx', 'Name\nAcme\n')] })
+  await flushUntil(() => second.container.byTestId('imports-source').length === 1, 'the wait shown')
+  await storageEvent(own.listeners, null)
+  await flush(3)
+  assert.equal(second.container.byTestId('imports-source').length, 1, 'a wait this tab began keeps its file')
+  assert.equal(second.container.byTestId('imports-source-elsewhere').length, 0)
+})

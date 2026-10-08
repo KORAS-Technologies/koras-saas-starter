@@ -75,6 +75,7 @@ export interface ImportLabels {
     checkAgain: string
     rechecking: string
     checkedStill: string
+    endedElsewhere: string
     continue: string
     stop: string
   }
@@ -156,6 +157,7 @@ export interface ImportLabels {
     awaitingConfirmation: string
     emptyFile: string
     detailsReady: string
+    reportDownloaded: string
   }
   problems: Record<string, string>
 }
@@ -249,6 +251,7 @@ export function importLabels(t: Translator): ImportLabels {
       checkAgain: t('imports.source.checkAgain'),
       rechecking: t('imports.source.rechecking'),
       checkedStill: t('imports.source.checkedStill'),
+      endedElsewhere: t('imports.source.endedElsewhere'),
       continue: t('imports.source.continue'),
       stop: t('imports.source.stop'),
     },
@@ -343,6 +346,7 @@ export function importLabels(t: Translator): ImportLabels {
       awaitingConfirmation: t('imports.state.awaitingConfirmation'),
       emptyFile: t('imports.emptyFile'),
       detailsReady: t('imports.detailsReady'),
+      reportDownloaded: t('imports.reportDownloaded'),
     },
     problems,
   }

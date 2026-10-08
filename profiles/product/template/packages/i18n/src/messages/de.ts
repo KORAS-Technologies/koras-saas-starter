@@ -816,6 +816,8 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'imports.state.awaitingConfirmation': 'Wartet auf Ihre Bestätigung',
   'imports.emptyFile': 'Diese Datei hat eine Kopfzeile, aber keine Datensätze. Füllen Sie die Vorlage aus und laden Sie sie erneut hoch.',
   'imports.detailsReady': 'Details geladen.',
+  'imports.reportDownloaded': 'Der Bericht mit allen Problemen wurde heruntergeladen.',
+  'imports.source.endedElsewhere': 'Diese Datei wurde in einem anderen Tab gestartet oder abgebrochen. Wurde ein Lauf gestartet, finden Sie ihn unter Letzte Importe.',
   'imports.starting': 'Import wird gestartet…',
   'imports.preparing': 'Wird vorbereitet…',
   'imports.source.checking':

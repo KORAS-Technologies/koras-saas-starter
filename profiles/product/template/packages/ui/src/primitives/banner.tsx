@@ -32,6 +32,7 @@ export function Banner({
   onDismiss,
   dismissLabel,
   className,
+  announce = true,
 }: {
   tone?: 'info' | 'success' | 'warning' | 'error'
   title?: string
@@ -40,13 +41,18 @@ export function Banner({
   onDismiss?: () => void
   dismissLabel?: string
   className?: string
+  /**
+   * Whether the banner is a live region. Default true. A banner that arrives inside a card whose
+   * ending the page already announces sets this false, so one ending is one announcement.
+   */
+  announce?: boolean
 }) {
   return (
     <div
       // `alert` is assertive and interrupts a screen reader mid-sentence. That
       // is right for something that went wrong and rude for an announcement,
       // so only the error tone claims it.
-      role={tone === 'error' ? 'alert' : 'status'}
+      role={announce ? (tone === 'error' ? 'alert' : 'status') : undefined}
       className={cn(
         'flex flex-wrap items-start gap-3 rounded-brand border p-4 text-sm sm:flex-nowrap',
         TONES[tone],

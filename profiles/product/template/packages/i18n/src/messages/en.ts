@@ -807,6 +807,8 @@ export const en = {
   'imports.state.awaitingConfirmation': 'Awaiting your confirmation',
   'imports.emptyFile': 'This file has a header row but no records. Fill in the template and upload it again.',
   'imports.detailsReady': 'Details loaded.',
+  'imports.reportDownloaded': 'The report of every problem was downloaded.',
+  'imports.source.endedElsewhere': 'This file was started or stopped in another tab. If a run was started, it is in Recent imports.',
   'imports.starting': 'Starting the import…',
   'imports.preparing': 'Preparing…',
   'imports.source.checking':
