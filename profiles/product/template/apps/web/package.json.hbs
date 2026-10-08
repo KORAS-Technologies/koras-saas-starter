@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint src",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit"{{#if capability.data_import}},
+    "test": "node --import ./src/test-support/register.mjs --test src/app/dashboard/imports/ImportPanel.test.mjs"{{/if}}
   },
   "dependencies": {
     "@{{projectSlug}}/api-client": "workspace:*",
