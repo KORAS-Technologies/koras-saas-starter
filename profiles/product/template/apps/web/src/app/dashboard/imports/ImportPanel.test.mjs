@@ -559,6 +559,57 @@ test('a wait that outlives the page stops asking, says the check is slow, and of
   }
 })
 
+test('Check again while the file is still being checked keeps the button mounted, stays stalled, and says it looked', async () => {
+  withStorage()
+  fakeBucket()
+  const log = install(uploadScript(async () => ({ status: 'ok', value: 'checking' })))
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+  try {
+    const { container } = await mount({})
+    await change(byId(container, 'import-file'), { files: [xlsxFile('accounts.xlsx', 'Name\nAcme\n')] })
+    await flushUntil(() => names(log).includes('checkSource'), 'the first ask')
+    await act(async () => mock.timers.tick(46 * 60_000))
+    await flush()
+    const button = buttonNamed(container, 'imports.source.checkAgain')
+    const asked = names(log).filter((name) => name === 'checkSource').length
+    await press(button)
+    await flush()
+    assert.equal(names(log).filter((name) => name === 'checkSource').length, asked + 1, 'it looked once')
+    assert.equal(container.byTestId('imports-source')[0].getAttribute('data-phase'), 'stalled')
+    assert.equal(container.byTestId('imports-source-rechecked').length, 1, 'and said so')
+    assert.equal(buttonNamed(container, 'imports.source.checkAgain'), button, 'the same button, still mounted')
+    await act(async () => mock.timers.tick(5 * 60_000))
+    await flush()
+    assert.equal(names(log).filter((name) => name === 'checkSource').length, asked + 1, 'one look is not polling')
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+test('the status region for the wait is always mounted, so a change in it is announced', async () => {
+  withStorage()
+  fakeBucket()
+  install(uploadScript(async () => ({ status: 'ok', value: 'checking' })))
+  const { container } = await mount({})
+  const live = () => container.byTestId('imports-source-live')[0]
+  assert.equal(live().getAttribute('role'), 'status')
+  assert.equal(container.byTestId('imports-source').length, 0)
+  await change(byId(container, 'import-file'), { files: [xlsxFile('accounts.xlsx', 'Name\nAcme\n')] })
+  await flushUntil(() => container.byTestId('imports-source').length === 1, 'the wait shown')
+  assert.equal(live().getAttribute('role'), 'status', 'the same element, not a new one')
+})
+
+test('a flaky look is a quiet note beside the wait, not a page-level alert', async () => {
+  withStorage()
+  fakeBucket()
+  install(uploadScript(async () => ({ status: 'error', message: 'imports.error.unavailable', final: false })))
+  const { container } = await mount({})
+  await change(byId(container, 'import-file'), { files: [xlsxFile('accounts.xlsx')] })
+  await flushUntil(() => container.byTestId('imports-source-retry').length === 1, 'the note')
+  assert.equal(container.byTestId('imports-source-retry')[0].textContent.includes('imports.source.unreachable'), true)
+  assert.equal(all(container).filter((el) => el.getAttribute('role') === 'alert').length, 0)
+})
+
 test('stopping the wait forgets the file and clears the page', async () => {
   withStorage()
   fakeBucket()

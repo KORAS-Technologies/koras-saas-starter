@@ -788,7 +788,7 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'imports.source.ready':
     '{name} hat die Prüfung bestanden und kann importiert werden.',
   'imports.source.stalled':
-    '{name} wird noch geprüft. Bisher ist nichts auffällig; die Prüfung dauert länger als üblich.',
+    '{name} wird noch geprüft. Bisher ist nichts auffällig; die Prüfung dauert länger als üblich, und diese Seite prüft nicht mehr von selbst. Wählen Sie Erneut prüfen, um jetzt nachzusehen.',
   'imports.source.held':
     '{name} konnte nicht verifiziert werden und kann daher nicht importiert werden. Laden Sie die Vorlage erneut herunter, kopieren Sie Ihre Zeilen hinein und laden Sie sie als neue Datei hoch. Tritt das erneut auf, wenden Sie sich an Ihre Administration.',
   'imports.source.rejected':
@@ -800,7 +800,10 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'imports.source.checkAgain':
     'Erneut prüfen',
   'imports.source.continue':
-    'Weiter',
+    'Weiter zur Spaltenzuordnung',
+  'imports.source.rechecking': 'Wird geprüft…',
+  'imports.source.checkedStill':
+    'Gerade geprüft. Die Datei wird noch geprüft.',
   'imports.source.stop':
     'Nicht mehr warten',
   'imports.discard':
