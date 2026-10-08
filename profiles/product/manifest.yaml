@@ -214,6 +214,9 @@ template_map:
       - tests/unit/test_import_worker_memory.py
       - tests/integration/test_import_commit_rls.py
       - tests/integration/test_import_commit_atomic.py
+      # GR-376: the source-state route against a real database, as two tenants. It reads the
+      # scan columns, so it is listed under `secure_files` as well and exists only when both are on.
+      - tests/integration/test_import_source_state_real.py
       # GR-352E: the worker's own image, built and run with nothing mounted.
       # A dry run and a commit taken from first line to last inside it, and
       # the probe that is fed to the container. IMPORT-DEF-020 was a module
@@ -386,6 +389,7 @@ template_map:
       - tests/unit/test_promotion_activation.py
       - tests/integration/test_provider_qualification_extra.py
       - tests/integration/test_f1_detector_real.py
+      - tests/integration/test_import_source_state_real.py
 
     # In-app notifications: the table, the emitter, the routes, the page and
     # the browser test.

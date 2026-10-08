@@ -610,6 +610,24 @@ jobs:
           fi
           grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/import-commit.txt"
 
+      # The import source-state route (GR-376), against a database as two tenants, and not
+      # allowed to skip. `GET /imports/sources/{file_id}` reads one `files` row by a caller's id;
+      # only row-level security keeps another organisation's file out of the answer, so a foreign
+      # file must be `missing` in every state, byte-identical to an unknown id. The suite reads
+      # the scan columns, so it exists only in a product generated with both capabilities.
+      - name: The import source-state isolation ran against a database, and did not skip
+        if: matrix.roundtrip && contains(matrix.components, 'data_import') && contains(matrix.components, 'secure_files')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}
+        env:
+          E2E_DATABASE_URL: postgresql+asyncpg://koras_e2e_app:koras_e2e_app@localhost:5432/koras_e2e
+        run: |
+          uv run pytest tests/integration/test_import_source_state_real.py --no-cov -q -rs | tee "$RUNNER_TEMP/import-source-state.txt"
+          if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/import-source-state.txt"; then
+            echo "::error::an import source-state isolation test was skipped; this row has a database and every one of them must run"
+            exit 1
+          fi
+          grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/import-source-state.txt"
+
       # The upload foundation, against a real database and a real object store, and
       # not allowed to skip.
       #
