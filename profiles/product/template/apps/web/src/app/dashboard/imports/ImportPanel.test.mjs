@@ -1419,7 +1419,7 @@ test('Recent imports shows the file and a date on the reader\'s clock, with the 
   const history = container.byTestId('imports-history')[0]
   assert.ok(all(history).some((node) => node.tagName === 'TD' && node.textContent === 'my-accounts.xlsx'))
   const time = all(history).find((node) => node.tagName === 'TIME')
-  assert.equal(time.getAttribute('datetime'), '2026-10-08T13:55:17.448663Z')
+  assert.equal(time.getAttribute('dateTime') ?? time.getAttribute('datetime'), '2026-10-08T13:55:17.448663Z')
   assert.equal(time.textContent.includes('T13:55:17'), false, 'not the raw ISO string')
 })
 
