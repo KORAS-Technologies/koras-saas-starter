@@ -1560,3 +1560,20 @@ test('Import another file is offered at every stage a run can be in, but not whi
   await flush(4)
   assert.equal(buttonNamed(container, 'imports.anotherFile'), undefined)
 })
+
+test('Continue pressed before the file analysis has arrived still hands focus to the heading at once', async () => {
+  withLocation()
+  const validated = run({ id: 'f0f0f0f0-f0f0-40f0-80f0-f0f0f0f0f0f0', status: 'validated', rows_total: 1, rows_valid: 1, predicted: { create: 1, update: 0, skip: 0 }, mapping: { Name: 'name' } })
+  let release
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
+  install({ analyseRun: async () => (await gate, { status: 'ok', value: ANALYSIS }) })
+  const { container } = await mount({ initialRuns: [validated] })
+  await press(container.byTestId('imports-open')[0])
+  await press(buttonNamed(container, 'imports.review.continue'))
+  assert.equal(stageOfPage(container), 'confirm')
+  assert.equal(focused(container)?.getAttribute?.('data-testid'), 'imports-wizard-heading', 'not waiting for a sample table it does not need')
+  release()
+  await flush(3)
+})
