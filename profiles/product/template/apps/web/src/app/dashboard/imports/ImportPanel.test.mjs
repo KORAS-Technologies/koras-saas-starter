@@ -1,4 +1,4 @@
-/* global File, setImmediate, setTimeout */
+/* global File, URL, setImmediate, setTimeout */
 import { strict as assert } from 'node:assert'
 import { afterEach, mock, test } from 'node:test'
 import { act, createElement } from 'react'
@@ -199,11 +199,9 @@ function fakeBucket(status = 200) {
   return puts
 }
 
-/** The sentence under the result card's title: the run's state, as the page words it. */
+/** The sentence under the result card's heading: the run's state, as the page words it. */
 function stateText(container) {
-  const title = all(container).find((node) => node.tagName === 'H2' && node.textContent === labels.resultTitle)
-  assert.ok(title !== undefined, 'no result card is drawn')
-  return title.nextSibling.textContent
+  return container.byTestId('imports-state')[0].textContent
 }
 
 test('the first paint calls nothing: the two reads are the page\'s, and no mutation waits on a render', async () => {
@@ -987,22 +985,26 @@ test('a checked run shows the predicted figures and an explicit confirm; confirm
   })
   const queued = { ...validated, status: 'commit_requested', committed_by: 'owner' }
   const log = install({
+    analyseRun: async () => ({ status: 'ok', value: ANALYSIS }),
     listRuns: async () => ({ status: 'ok', value: [queued] }),
     commitRun: async () => ({ status: 'ok', value: queued }),
   })
   const { container, unmount } = await mount({ initialRuns: [validated] })
   await press(container.byTestId('imports-open')[0])
-  assert.equal(log.length, 0, 'opening a run from the history reads nothing: the row is the run')
+  await flush(5)
+  assert.deepEqual(log.map((entry) => entry.name), ['analyseRun'], 'opening reads the file for the review and writes nothing')
   assert.equal(container.byTestId('imports-preview-total')[0].textContent, 'imports.preview.total3')
   assert.equal(container.byTestId('imports-preview-create')[0].textContent, 'imports.preview.create2')
   assert.equal(container.byTestId('imports-preview-update')[0].textContent, 'imports.preview.update0')
   assert.equal(container.byTestId('imports-preview-skip')[0].textContent, 'imports.preview.skip1')
   assert.equal(container.byTestId('imports-preview-unknown').length, 0)
+  assert.equal(container.byTestId('imports-confirm').length, 0, 'Review comes before Confirm')
+  await press(buttonNamed(container, 'imports.review.continue'))
   assert.equal(container.byTestId('imports-confirm').length, 1)
   assert.equal(container.byTestId('imports-committed').length, 0, 'nothing claims success before a commit')
 
   await press(buttonNamed(container, 'imports.confirm'))
-  assert.deepEqual(log.map((entry) => entry.name), ['commitRun', 'listRuns'])
+  assert.deepEqual(log.map((entry) => entry.name), ['analyseRun', 'commitRun', 'listRuns'])
   assert.equal(stateText(container), 'imports.state.commitRequested')
   assert.equal(container.byTestId('imports-confirm').length, 0, 'the confirm control leaves with the state')
   assert.equal(container.byTestId('imports-committed').length, 0, 'queued is not done')
@@ -1012,11 +1014,14 @@ test('a checked run shows the predicted figures and an explicit confirm; confirm
 test('a second confirm the API refuses is shown as the refusal, not as an outcome', async () => {
   const validated = run({ status: 'validated', rows_total: 1, rows_valid: 1, predicted: { create: 1, update: 0, skip: 0 } })
   install({
+    analyseRun: async () => ({ status: 'ok', value: ANALYSIS }),
     listRuns: async () => ({ status: 'ok', value: [validated] }),
     commitRun: async () => ({ status: 'error', message: 'errors.importNotTransitionable' }),
   })
   const { container, unmount } = await mount({ initialRuns: [validated] })
   await press(container.byTestId('imports-open')[0])
+  await flush(5)
+  await press(buttonNamed(container, 'imports.review.continue'))
   await press(buttonNamed(container, 'imports.confirm'))
   assert.ok(all(container).some((node) => node.textContent === 'errors.importNotTransitionable'))
   assert.equal(container.byTestId('imports-committed').length, 0)
@@ -1134,3 +1139,288 @@ test('with no targets the panel says so and offers nothing', async () => {
   assert.ok(all(container).some((node) => node.textContent === 'imports.noTargets'))
   assert.equal(calls.length, 0)
 })
+
+// ── The wizard: Open restores the run's real stage (GR-379) ─────────────────────────────────────
+
+/** Storage plus a location and history the panel can write to; returns what it wrote. */
+function withLocation(search = '') {
+  withStorage()
+  const listeners = {}
+  const pushed = []
+  const replaced = []
+  const location = { href: 'https://app.test/dashboard/imports' + search, search }
+  const move = (url) => {
+    location.href = String(url)
+    location.search = new URL(String(url)).search
+  }
+  Object.assign(globalThis.window, {
+    location,
+    history: {
+      pushState: (_s, _t, url) => {
+        pushed.push(String(url))
+        move(url)
+      },
+      replaceState: (_s, _t, url) => {
+        replaced.push(String(url))
+        move(url)
+      },
+    },
+    addEventListener: (name, listener) => {
+      listeners[name] = listener
+    },
+    removeEventListener: () => {},
+  })
+  return { location, pushed, replaced, listeners, move }
+}
+
+const NEVER_WRITES = ['commitRun', 'validateRun', 'saveMapping']
+const stageOfPage = (container) => container.byTestId('imports-stepper')[0].getAttribute('data-stage')
+const focusedHeading = (container) =>
+  focused(container)?.getAttribute?.('data-testid') === 'imports-wizard-heading'
+
+test('Open on a run still waiting for its mapping reads its file, draws the mapping, moves focus and puts the run in the address', async () => {
+  const place = withLocation()
+  const created = run({ id: '11111111-1111-4111-8111-111111111111', status: 'created', columns: [] })
+  const log = install({ analyseRun: async () => ({ status: 'ok', value: ANALYSIS }) })
+  const { container } = await mount({ initialRuns: [created] })
+  assert.equal(stageOfPage(container), 'upload', 'no run is open yet')
+  await press(container.byTestId('imports-open')[0])
+  await flush()
+  assert.deepEqual(names(log), ['analyseRun'], 'the file is read for the mapping, and nothing is written')
+  assert.equal(stageOfPage(container), 'map')
+  assert.equal(container.byTestId('imports-state')[0].textContent, 'imports.state.created')
+  assert.equal(all(container).filter((node) => String(node.getAttribute?.('id')).startsWith('import-map-')).length, 4)
+  assert.ok(focusedHeading(container), 'focus is on the heading of what opened')
+  assert.deepEqual(place.pushed, ['https://app.test/dashboard/imports?run=' + created.id])
+  assert.equal(container.byTestId('imports-opened')[0].textContent, 'imports.opened')
+  assert.equal(NEVER_WRITES.some((name) => names(log).includes(name)), false)
+})
+
+test('the page opened on ?run= restores that run from the server, whatever the list holds', async () => {
+  withLocation('?run=22222222-2222-4222-8222-222222222222')
+  const asked = run({ id: '22222222-2222-4222-8222-222222222222', status: 'created', source_name: 'from-link.xlsx' })
+  const log = install({
+    getRun: async () => ({ status: 'ok', value: asked }),
+    analyseRun: async () => ({ status: 'ok', value: ANALYSIS }),
+  })
+  const { container } = await mount({ initialRuns: [], initialRunId: asked.id })
+  await flush()
+  assert.deepEqual(names(log), ['getRun', 'analyseRun'])
+  assert.equal(stageOfPage(container), 'map')
+  assert.ok(container.byTestId('imports-run-file')[0].textContent.includes('from-link.xlsx'))
+})
+
+test('a run in the address that is not this organisation\'s says so and opens nothing', async () => {
+  withLocation('?run=33333333-3333-4333-8333-333333333333')
+  const log = install({ getRun: async () => ({ status: 'error', message: 'errors.importRunNotFound' }) })
+  const { container } = await mount({ initialRuns: [], initialRunId: '33333333-3333-4333-8333-333333333333' })
+  await flush()
+  assert.deepEqual(names(log), ['getRun'])
+  assert.equal(stageOfPage(container), 'upload')
+  assert.ok(all(container).some((node) => node.textContent === 'imports.runUnavailable'))
+})
+
+test('Open on a run whose file can no longer be read says so and offers Discard rather than a dead end', async () => {
+  withLocation()
+  const created = run({ id: '44444444-4444-4444-8444-444444444444', status: 'created' })
+  install({ analyseRun: async () => ({ status: 'error', message: 'errors.fileNotFound' }) })
+  const { container } = await mount({ initialRuns: [created] })
+  await press(container.byTestId('imports-open')[0])
+  await flush()
+  assert.equal(all(container).filter((node) => String(node.getAttribute?.('id')).startsWith('import-map-')).length, 0)
+  assert.ok(all(container).some((node) => String(node.textContent).includes('imports.fileGone')))
+  assert.ok(buttonNamed(container, 'imports.discard') !== undefined)
+})
+
+test('Open on a run with problems lists them without a second click and offers the report, with no confirm', async () => {
+  withLocation()
+  const failed = run({
+    id: '55555555-5555-4555-8555-555555555555',
+    status: 'validation_failed',
+    rows_total: 3,
+    rows_valid: 1,
+    errors_total: 2,
+  })
+  const log = install({
+    analyseRun: async () => ({ status: 'ok', value: ANALYSIS }),
+    listErrors: async () => ({
+      status: 'ok',
+      value: [
+        { cursor: 1, row: 3, column: 'Name', field: 'name', code: 'import.error.required', value: '' },
+        { cursor: 2, row: 4, column: 'Roles', field: 'roles', code: 'import.error.not_an_option', value: 'wizard' },
+      ],
+    }),
+  })
+  const { container } = await mount({ initialRuns: [failed] })
+  await press(container.byTestId('imports-open')[0])
+  await flush()
+  assert.equal(stageOfPage(container), 'validate')
+  assert.equal(container.byTestId('imports-problems').length, 1)
+  assert.equal(all(container.byTestId('imports-problems')[0]).filter((node) => node.tagName === 'TR').length, 3)
+  assert.equal(buttonNamed(container, 'imports.confirm'), undefined)
+  assert.equal(names(log).includes('commitRun'), false)
+})
+
+test('Open on a checked run is Review: the file, the records, the policy, sample rows and the figures, and no confirm until Continue', async () => {
+  withLocation()
+  const validated = run({
+    id: '66666666-6666-4666-8666-666666666666',
+    status: 'validated',
+    rows_total: 3,
+    rows_valid: 3,
+    mapping: { Name: 'name', Roles: 'roles' },
+    predicted: { create: 2, update: 0, skip: 1 },
+  })
+  const queued = { ...validated, status: 'commit_requested', committed_by: 'owner' }
+  const log = install({
+    analyseRun: async () => ({ status: 'ok', value: ANALYSIS }),
+    commitRun: async () => ({ status: 'ok', value: queued }),
+    listRuns: async () => ({ status: 'ok', value: [queued] }),
+  })
+  const { container } = await mount({ initialRuns: [validated] })
+  await press(container.byTestId('imports-open')[0])
+  await flush()
+  assert.equal(stageOfPage(container), 'review')
+  assert.equal(container.byTestId('imports-review-file')[0].textContent, 'accounts.csv')
+  assert.equal(container.byTestId('imports-review-policy')[0].textContent.length > 0, true)
+  const sample = container.byTestId('imports-review-sample')[0]
+  assert.ok(all(sample).some((node) => node.tagName === 'TD' && node.textContent === 'Acme Ltd'))
+  assert.equal(container.byTestId('imports-preview-create')[0].textContent, 'imports.preview.create2')
+  assert.equal(container.byTestId('imports-confirm').length, 0, 'Review is not Confirm')
+  assert.equal(buttonNamed(container, 'imports.confirm'), undefined)
+  assert.equal(container.byTestId('imports-state')[0].textContent, 'imports.state.validated')
+
+  await press(buttonNamed(container, 'imports.review.continue'))
+  assert.equal(stageOfPage(container), 'confirm')
+  assert.equal(container.byTestId('imports-state')[0].textContent, 'imports.state.awaitingConfirmation')
+  assert.equal(names(log).includes('commitRun'), false, 'reaching Confirm commits nothing')
+  await press(buttonNamed(container, 'imports.review.back'))
+  assert.equal(stageOfPage(container), 'review')
+  await press(buttonNamed(container, 'imports.review.continue'))
+
+  await press(buttonNamed(container, 'imports.confirm'))
+  assert.deepEqual(names(log).filter((n) => n === 'commitRun'), ['commitRun'], 'one click, one commit')
+  assert.equal(stageOfPage(container), 'processing')
+})
+
+test('Review can go back to the mapping and the person can change it', async () => {
+  withLocation()
+  const validated = run({ id: '77777777-7777-4777-8777-777777777777', status: 'validated', rows_total: 1, rows_valid: 1, predicted: { create: 1, update: 0, skip: 0 } })
+  install({ analyseRun: async () => ({ status: 'ok', value: ANALYSIS }) })
+  const { container } = await mount({ initialRuns: [validated] })
+  await press(container.byTestId('imports-open')[0])
+  await flush()
+  assert.equal(all(container).filter((node) => String(node.getAttribute?.('id')).startsWith('import-map-')).length, 0)
+  await press(buttonNamed(container, 'imports.review.changeMapping'))
+  assert.equal(stageOfPage(container), 'map')
+  assert.equal(all(container).filter((node) => String(node.getAttribute?.('id')).startsWith('import-map-')).length, 4)
+})
+
+test('Open on a run being written is Processing: persisted state, a way to come back, no confirm, nothing invented', async () => {
+  withLocation()
+  for (const status of ['commit_requested', 'committing']) {
+    const writing = run({ id: '88888888-8888-4888-8888-888888888888', status, committed_by: 'owner', rows_total: 3, rows_valid: 3 })
+    const log = install({ listRuns: async () => ({ status: 'ok', value: [writing] }) })
+    const { container } = await mount({ initialRuns: [writing] })
+    await press(container.byTestId('imports-open')[0])
+    await flush(5)
+    assert.equal(stageOfPage(container), 'processing', status)
+    assert.equal(container.byTestId('imports-processing').length, 1)
+    assert.equal(buttonNamed(container, 'imports.confirm'), undefined)
+    assert.equal(names(log).includes('analyseRun'), false, 'a run being written is not re-read for a mapping')
+    assert.equal(container.byTestId('imports-committed').length, 0, 'nothing claims success while it is running')
+    assert.equal(/\d\s?%/.test(container.textContent), false, 'no invented percentage')
+    await mounted.pop()?.()
+  }
+})
+
+test('Open on a completed run is Results: the counts, a link to the records, and Import another file', async () => {
+  const place = withLocation()
+  const done = run({
+    id: '99999999-9999-4999-8999-999999999999',
+    status: 'committed',
+    committed_by: 'owner',
+    rows_total: 3,
+    rows_valid: 3,
+    written: { created: 2, updated: 0, skipped: 1 },
+  })
+  const log = install({})
+  const { container } = await mount({
+    initialRuns: [done],
+    recordLinks: { 'shop.customers': { href: '/dashboard/accounts', label: 'View the accounts' } },
+  })
+  await press(container.byTestId('imports-open')[0])
+  await flush(5)
+  assert.equal(stageOfPage(container), 'results')
+  assert.equal(container.byTestId('imports-result-created')[0].textContent, '2')
+  assert.equal(container.byTestId('imports-result-skipped')[0].textContent, '1')
+  const link = all(container).find((node) => node.tagName === 'A' && node.getAttribute('href') === '/dashboard/accounts')
+  assert.ok(link !== undefined, 'a link to the imported records')
+  assert.deepEqual(names(log), [], 'a finished run needs no further reads')
+  await press(buttonNamed(container, 'imports.anotherFile'))
+  assert.equal(stageOfPage(container), 'upload')
+  assert.equal(container.byTestId('imports-state').length, 0)
+  assert.equal(place.pushed.at(-1), 'https://app.test/dashboard/imports', 'the run leaves the address')
+  assert.equal(focused(container), byId(container, 'import-file'))
+})
+
+test('Open on a cancelled run explains it, marks no step current and offers Import another file', async () => {
+  withLocation()
+  const stopped = run({ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', status: 'cancelled' })
+  install({})
+  const { container } = await mount({ initialRuns: [stopped] })
+  await press(container.byTestId('imports-open')[0])
+  await flush(5)
+  assert.equal(stageOfPage(container), 'ended')
+  assert.ok(all(container).some((node) => node.textContent === 'imports.cancelledNote'))
+  assert.ok(buttonNamed(container, 'imports.anotherFile') !== undefined)
+})
+
+test('Back and Forward move between runs and out of them, reading the run from the server', async () => {
+  const place = withLocation()
+  const one = run({ id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', status: 'created' })
+  const log = install({
+    getRun: async () => ({ status: 'ok', value: one }),
+    analyseRun: async () => ({ status: 'ok', value: ANALYSIS }),
+  })
+  const { container } = await mount({ initialRuns: [one] })
+  await press(container.byTestId('imports-open')[0])
+  await flush(5)
+  assert.equal(stageOfPage(container), 'map')
+  place.move('https://app.test/dashboard/imports')
+  await act(async () => place.listeners.popstate())
+  await flush(5)
+  assert.equal(stageOfPage(container), 'upload', 'Back to the bare page leaves the run')
+  place.move('https://app.test/dashboard/imports?run=' + one.id)
+  await act(async () => place.listeners.popstate())
+  await flush(10)
+  assert.equal(stageOfPage(container), 'map', 'Forward returns to it')
+  assert.ok(names(log).includes('getRun'))
+})
+
+test('nothing is written by opening, refreshing or polling: no mapping, check or commit without a click', async () => {
+  withLocation('?run=cccccccc-cccc-4ccc-8ccc-cccccccccccc')
+  const validated = run({ id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', status: 'validated', rows_total: 1, rows_valid: 1, predicted: { create: 1, update: 0, skip: 0 } })
+  const log = install({
+    getRun: async () => ({ status: 'ok', value: validated }),
+    analyseRun: async () => ({ status: 'ok', value: ANALYSIS }),
+    listRuns: async () => ({ status: 'ok', value: [validated] }),
+  })
+  await mount({ initialRuns: [validated], initialRunId: validated.id })
+  await flush(30)
+  for (const name of NEVER_WRITES) assert.equal(names(log).includes(name), false, name)
+})
+
+test('Recent imports shows the file and a date on the reader\'s clock, with the stored instant kept', async () => {
+  withLocation()
+  const row = run({ id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', created_at: '2026-10-08T13:55:17.448663Z', source_name: 'my-accounts.xlsx' })
+  install({})
+  const { container } = await mount({ initialRuns: [row] })
+  await flush(3)
+  const history = container.byTestId('imports-history')[0]
+  assert.ok(all(history).some((node) => node.tagName === 'TD' && node.textContent === 'my-accounts.xlsx'))
+  const time = all(history).find((node) => node.tagName === 'TIME')
+  assert.equal(time.getAttribute('datetime'), '2026-10-08T13:55:17.448663Z')
+  assert.equal(time.textContent.includes('T13:55:17'), false, 'not the raw ISO string')
+})
+

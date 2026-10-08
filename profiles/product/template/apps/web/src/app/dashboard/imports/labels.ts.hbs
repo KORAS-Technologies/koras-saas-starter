@@ -130,6 +130,31 @@ export interface ImportLabels {
   started: string
   operations: Record<string, string>
   states: Record<string, string>
+  /** The wizard: the stepper's words, each stage's heading, and the review and result actions. */
+  wizard: {
+    nav: string
+    steps: Record<'upload' | 'map' | 'validate' | 'review' | 'confirm' | 'processing' | 'results', string>
+    current: string
+    done: string
+    titles: Record<string, string>
+    review: {
+      file: string
+      records: string
+      policy: string
+      samples: string
+      continue: string
+      back: string
+      changeMapping: string
+    }
+    processingHint: string
+    anotherFile: string
+    opened: string
+    loadingRun: string
+    runUnavailable: string
+    fileGone: string
+    cancelledNote: string
+    awaitingConfirmation: string
+  }
   problems: Record<string, string>
 }
 
@@ -274,6 +299,47 @@ export function importLabels(t: Translator): ImportLabels {
     started: t('imports.started'),
     operations,
     states,
+    wizard: {
+      nav: t('imports.wizard.nav'),
+      steps: {
+        upload: t('imports.wizard.upload'),
+        map: t('imports.wizard.map'),
+        validate: t('imports.wizard.validate'),
+        review: t('imports.wizard.review'),
+        confirm: t('imports.wizard.confirm'),
+        processing: t('imports.wizard.processing'),
+        results: t('imports.wizard.results'),
+      },
+      current: t('imports.wizard.current'),
+      done: t('imports.wizard.done'),
+      titles: {
+        upload: t('imports.title.upload'),
+        map: t('imports.mapTitle'),
+        validate: t('imports.title.validate'),
+        review: t('imports.title.review'),
+        confirm: t('imports.title.confirm'),
+        processing: t('imports.title.processing'),
+        results: t('imports.title.results'),
+        cancelled: t('imports.title.cancelled'),
+      },
+      review: {
+        file: t('imports.review.file'),
+        records: t('imports.review.records'),
+        policy: t('imports.review.policy'),
+        samples: t('imports.review.samples'),
+        continue: t('imports.review.continue'),
+        back: t('imports.review.back'),
+        changeMapping: t('imports.review.changeMapping'),
+      },
+      processingHint: t('imports.processingHint'),
+      anotherFile: t('imports.anotherFile'),
+      opened: t('imports.opened'),
+      loadingRun: t('imports.loadingRun'),
+      runUnavailable: t('imports.runUnavailable'),
+      fileGone: t('imports.fileGone'),
+      cancelledNote: t('imports.cancelledNote'),
+      awaitingConfirmation: t('imports.state.awaitingConfirmation'),
+    },
     problems,
   }
 }

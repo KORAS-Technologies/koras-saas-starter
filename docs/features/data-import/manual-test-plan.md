@@ -23,7 +23,7 @@ configured, and an account holding `imports.manage`.
 | # | Case | Expected | Verdict |
 |---|------|----------|---------|
 | 1 | Upload a clean CSV of 20 rows whose headings match the target exactly | Every column is pre-mapped; the preview shows the first row's values | |
-| 2 | Press *Check the file* on that mapping | The run moves to *Checking the file…*, then to *Checked. Nothing was written.* without a page reload | |
+| 2 | Press *Check the file* on that mapping | The run moves to *Checking the file…*, then to *Ready for review* without a page reload | |
 | 3 | After case 2, count rows in the target table | Unchanged. This is the property the whole phase exists for | |
 | 4 | Upload a CSV with one heading the target does not know | That column defaults to *Do not import*; the rest are mapped | |
 | 5 | Map a column to a field, then map a second column to the same field | The save is refused with a 422 naming the field, in the reader's language | |

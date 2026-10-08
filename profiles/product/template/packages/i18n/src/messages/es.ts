@@ -771,6 +771,38 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'Comprobar el archivo',
   'imports.checking':
     'Comprobando…',
+  'imports.wizard.nav': 'Pasos de la importación',
+  'imports.wizard.upload': 'Cargar',
+  'imports.wizard.map': 'Asignar',
+  'imports.wizard.validate': 'Validar',
+  'imports.wizard.review': 'Revisar',
+  'imports.wizard.confirm': 'Confirmar',
+  'imports.wizard.processing': 'Procesando',
+  'imports.wizard.results': 'Resultados',
+  'imports.wizard.current': '(paso actual)',
+  'imports.wizard.done': '(completado)',
+  'imports.title.upload': 'Esta importación',
+  'imports.title.validate': 'Resultado de la comprobación',
+  'imports.title.review': 'Revisar antes de importar',
+  'imports.title.confirm': 'Confirmar la importación',
+  'imports.title.processing': 'Importando',
+  'imports.title.results': 'Resultados de la importación',
+  'imports.title.cancelled': 'Importación cancelada',
+  'imports.review.file': 'Archivo',
+  'imports.review.records': 'Registros',
+  'imports.review.policy': 'Registros existentes',
+  'imports.review.samples': 'Primeras filas del archivo, tal como se leerán',
+  'imports.review.continue': 'Continuar a la confirmación',
+  'imports.review.back': 'Volver a la revisión',
+  'imports.review.changeMapping': 'Cambiar la asignación',
+  'imports.processingHint': 'La importación se ejecuta en segundo plano y continúa si sales de esta página. Ábrela desde Importaciones recientes para ver cómo va.',
+  'imports.anotherFile': 'Importar otro archivo',
+  'imports.opened': 'Se abrió la importación de {file}.',
+  'imports.loadingRun': 'Preparando la hoja de cálculo…',
+  'imports.runUnavailable': 'No se encontró esta importación. Puede pertenecer a otra organización o haberse eliminado.',
+  'imports.fileGone': 'El archivo de esta importación ya no se puede leer, así que no puede continuar. Descártala y vuelve a empezar con el archivo.',
+  'imports.cancelledNote': 'Esta importación se canceló. No se escribió nada.',
+  'imports.state.awaitingConfirmation': 'Esperando tu confirmación',
   'imports.starting': 'Iniciando la importación…',
   'imports.preparing': 'Preparando…',
   'imports.source.checking':
@@ -802,8 +834,7 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'Este archivo tiene más filas de las que admite una ejecución. Divídalo e importe las partes por separado.',
   'imports.replaced':
     'Algunos caracteres de este archivo no se pudieron leer y se sustituyeron. Revise la vista previa antes de continuar.',
-  'imports.resultTitle':
-    'Qué pasaría',
+  'imports.resultTitle': 'Esta importación',
   'imports.summary':
     '{rows} filas leídas, {valid} listas para importar, {errors} problemas encontrados.',
   'imports.wroteNothing':
@@ -854,22 +885,14 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'Actualizar donde coincida y añadir donde no',
   'imports.op.skipDuplicate':
     'Añadir registros nuevos y dejar las coincidencias como están',
-  'imports.state.created':
-    'Pendiente de emparejar',
-  'imports.state.mapped':
-    'Columnas emparejadas, sin comprobar',
-  'imports.state.validating':
-    'Comprobando el archivo…',
-  'imports.state.validated':
-    'Comprobado. No se escribió nada.',
-  'imports.state.validationFailed':
-    'Se encontraron problemas. No se escribió nada.',
-  'imports.state.commitRequested':
-    'Pendiente de importar',
-  'imports.state.committing':
-    'Importando…',
-  'imports.state.committed':
-    'Importado',
+  'imports.state.created': 'Falta la asignación de columnas',
+  'imports.state.mapped': 'Columnas asignadas, listas para comprobar',
+  'imports.state.validating': 'Validando el archivo…',
+  'imports.state.validated': 'Listo para revisar',
+  'imports.state.validationFailed': 'Se encontraron problemas. No se escribió nada.',
+  'imports.state.commitRequested': 'En cola para importar',
+  'imports.state.committing': 'Importando…',
+  'imports.state.committed': 'Completada',
   'imports.state.failed':
     'Esta importación no se pudo terminar',
   'imports.state.cancelled':

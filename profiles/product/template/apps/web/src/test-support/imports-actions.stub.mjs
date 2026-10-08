@@ -24,6 +24,7 @@ export const handlers = {
   checkSource: unanswered('checkSource'),
   startRun: unanswered('startRun'),
   analyseRun: unanswered('analyseRun'),
+  getRun: unanswered('getRun'),
   saveMapping: unanswered('saveMapping'),
   validateRun: unanswered('validateRun'),
   commitRun: unanswered('commitRun'),
@@ -61,6 +62,9 @@ export function checkSource(fileId) {
 }
 export function startRun(input) {
   return handlers.startRun(input)
+}
+export function getRun(runId) {
+  return handlers.getRun(runId)
 }
 export function analyseRun(runId) {
   return handlers.analyseRun(runId)

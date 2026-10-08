@@ -7,6 +7,7 @@ import {
   completeUpload as completeUploadRequest,
   fetchImportAnalysis,
   fetchImportErrors,
+  fetchImportRun,
   fetchImportRuns,
   fetchImportSource,
   fetchImportTargets,
@@ -177,6 +178,22 @@ export async function startRun(input: {
     const run = await startImportRunRequest({ ...auth, ...input })
     revalidatePath('/dashboard/imports')
     return { status: 'ok', value: run }
+  } catch (error) {
+    return { status: 'error', message: await explain(error) }
+  }
+}
+
+/**
+ * One run, by id: what lets a page open on `?run=` after a refresh, from a
+ * link, or with Back, without relying on the list the page was rendered with.
+ * The API answers 404 for a run that is not this organisation's, the same as
+ * for one that does not exist.
+ */
+export async function getRun(runId: string): Promise<ActionResult<ImportRunView>> {
+  const auth = await session()
+  if (auth === null) return denied()
+  try {
+    return { status: 'ok', value: await fetchImportRun({ ...auth, runId }) }
   } catch (error) {
     return { status: 'error', message: await explain(error) }
   }
