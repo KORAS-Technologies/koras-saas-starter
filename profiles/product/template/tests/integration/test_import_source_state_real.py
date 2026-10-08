@@ -50,22 +50,12 @@ if not DATABASE_URL:
 os.environ["DATABASE_URL"] = DATABASE_URL
 os.environ.setdefault("ENVIRONMENT", "dev")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
-# A product generated with `secure_files` refuses to start without a scanner, a bucket and a
-# queue. This read-only route touches none of them, so the values only have to be well formed.
-os.environ.setdefault("FILE_SCAN_BACKEND", "clamd")
-os.environ.setdefault("FILE_SCAN_CLAMD_HOST", "127.0.0.1")
-os.environ.setdefault("FILE_SCAN_CLAMD_PORT", "3310")
-os.environ.setdefault("STORAGE_ENDPOINT", "http://127.0.0.1:9")
-os.environ.setdefault("STORAGE_BUCKET", "unused")
-os.environ.setdefault("STORAGE_ACCESS_KEY", "unused")
-os.environ.setdefault("STORAGE_SECRET_KEY", "unused")
 os.environ.setdefault("ZITADEL_DOMAIN", "https://example.invalid")
 os.environ.setdefault("ZITADEL_PROJECT_ID", "0")
 os.environ.setdefault("CORS_ORIGINS", "[]")
-# GR-369: every import route refuses unless the deployment activated imports.
-os.environ["IMPORTS_ENABLED"] = "true"
 
 from fastapi.testclient import TestClient  # noqa: E402
+from koras_api import main as main_module  # noqa: E402
 from koras_api.core.auth import require_auth  # noqa: E402
 from koras_api.core.settings import settings  # noqa: E402
 from koras_api.main import app  # noqa: E402
@@ -239,10 +229,26 @@ def seeded() -> dict[str, dict[str, str]]:
 
 @pytest.fixture(scope="module")
 def client(seeded) -> Iterator[TestClient]:
+    if settings.database_url != DATABASE_URL:
+        # Another module imported the API first and fixed its engine on its own URL. This module
+        # is asked for by name in its own process (see the CI step), where this never happens.
+        pytest.skip("the API's engine was fixed by an earlier module; run this module on its own")
     app.dependency_overrides[require_auth] = lambda: OWNER_A
-    with TestClient(app, raise_server_exceptions=False) as c:
-        yield c
-    app.dependency_overrides.clear()
+    # A product generated with `secure_files` refuses to start without a scanner, a bucket and a
+    # queue (`main.lifespan`). This read-only route touches none of them, and the settings are
+    # already fixed for the process by whichever module imported them first, so the startup
+    # check is stepped over here; the release rule itself is not touched.
+    patch = pytest.MonkeyPatch()
+    patch.setattr(
+        main_module, "validate_secure_files_settings", lambda _settings: None, raising=False
+    )
+    patch.setattr(settings, "imports_enabled", True)
+    try:
+        with TestClient(app, raise_server_exceptions=False) as c:
+            yield c
+    finally:
+        patch.undo()
+        app.dependency_overrides.clear()
 
 
 def as_(claims: JWTClaims) -> None:
