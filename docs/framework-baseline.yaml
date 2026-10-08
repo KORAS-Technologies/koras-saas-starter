@@ -19,4 +19,4 @@
 # ancestor of, or equal to, HEAD, so it cannot rot silently and creates no
 # chicken-and-egg. See docs/SYNC_BACKLOG.md, entry D7.
 schema_version: 1
-accepted_baseline: 61f832020e2e62f685c7aa130ed59aba8ffaa78d
+accepted_baseline: aad4d72060ee36c8e564c952c05526dd17892ad4
