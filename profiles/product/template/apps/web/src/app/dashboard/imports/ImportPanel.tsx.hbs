@@ -265,7 +265,9 @@ export function ImportPanel({
   // handler, carried out after the render that removes the control, and held
   // back while the chooser is disabled (`busy`): focusing a disabled input does
   // nothing, and focus then falls to the page.
-  const [focusTarget, setFocusTarget] = useState<'chooser' | 'mapping' | 'source' | 'wizard' | null>(null)
+  const [focusTarget, setFocusTarget] = useState<
+    'chooser' | 'chooserNow' | 'mapping' | 'mappingNow' | 'source' | 'wizard' | 'wizardIfFree' | null
+  >(null)
   // A run is being started from a source the server has cleared: said in words, because the
   // control that was pressed is gone and nothing else on the page changes.
   const [starting, setStarting] = useState(false)
@@ -309,6 +311,8 @@ export function ImportPanel({
 
   const clearRun = useCallback(() => {
     openToken.current += 1
+    analysedKey.current = null
+    problemsKey.current = null
     setError(null)
     setAnalysis(null)
     setProblems(null)
@@ -320,8 +324,14 @@ export function ImportPanel({
   }, [])
 
   const open = useCallback(
-    (picked: ImportRunView, mode: 'push' | 'replace' | 'none' = 'push') => {
+    (
+      picked: ImportRunView,
+      mode: 'push' | 'replace' | 'none' = 'push',
+      focus: 'now' | 'ifFree' | 'none' = 'now',
+    ) => {
       openToken.current += 1
+      analysedKey.current = null
+      problemsKey.current = null
       setError(null)
       setAnalysis(null)
       setProblems(null)
@@ -332,23 +342,24 @@ export function ImportPanel({
       setRun(picked)
       setAnnounce(fill(labels.wizard.opened, { file: picked.source_name ?? picked.target }))
       if (mode !== 'none') syncUrl(picked.id, mode)
-      // Opening is a person's act and it must be seen: the heading of what opened takes focus.
-      setFocusTarget('wizard')
+      // Opening by pressing Open is a person's act and must be seen: the heading takes focus. A
+      // link or Back and Forward resolves later, so it only moves focus if nothing else has it.
+      setFocusTarget(focus === 'now' ? 'wizard' : focus === 'ifFree' ? 'wizardIfFree' : null)
     },
     [labels, syncUrl],
   )
 
   /** Open the run an address names: from the server first, from the list as a fallback. */
   const openById = useCallback(
-    async (id: string, mode: 'push' | 'replace' | 'none') => {
+    async (id: string, mode: 'push' | 'replace' | 'none', focus: 'ifFree' | 'none') => {
       const answer = await getRun(id)
       if (answer.status === 'ok') {
-        open(answer.value, mode)
+        open(answer.value, mode, focus)
         return
       }
       const known = runsRef.current.find((row) => row.id === id)
       if (known) {
-        open(known, mode)
+        open(known, mode, focus)
         return
       }
       clearRun()
@@ -362,14 +373,15 @@ export function ImportPanel({
     syncUrl(null, 'push')
     setChosen(null)
     setAnnounce('')
-    setFocusTarget('chooser')
+    // The button that was pressed has gone; the chooser is where the next file starts.
+    setFocusTarget('chooserNow')
   }, [clearRun, syncUrl])
 
   // A page loaded on `?run=` opens that run; a run is never inferred from anything else.
   useEffect(() => {
     if (initialised.current) return
     initialised.current = true
-    if (initialRunId) void openById(initialRunId, 'none')
+    if (initialRunId) void openById(initialRunId, 'none', 'none')
   }, [initialRunId, openById])
 
   // Back and Forward between runs.
@@ -378,10 +390,11 @@ export function ImportPanel({
     const onPop = () => {
       const id = runIdFromSearch(window.location.search)
       if (id === null) clearRun()
-      else void openById(id, 'none')
+      else void openById(id, 'none', 'ifFree')
     }
-    window.addEventListener('popstate', onPop)
-    return () => window.removeEventListener('popstate', onPop)
+    const target = window
+    target.addEventListener('popstate', onPop)
+    return () => target.removeEventListener?.('popstate', onPop)
   }, [clearRun, openById])
 
   const refresh = useCallback(async () => {
@@ -417,8 +430,9 @@ export function ImportPanel({
       setAnalysisFailed(null)
       setAnalysis(found.value)
       setMapping(Object.keys(opened.mapping ?? {}).length > 0 ? opened.mapping : found.value.suggested)
+      setAnnounce((current) => `${current} ${labels.wizard.detailsReady}`.trim())
     })
-  }, [run, analysis])
+  }, [run, analysis, labels])
 
   // A run with problems shows them where they were found, without a second click.
   useEffect(() => {
@@ -477,6 +491,7 @@ export function ImportPanel({
           return
         }
         openToken.current += 1
+        const startedToken = openToken.current
         analysedKey.current = `${started.value.id}:${started.value.status}`
         setReviewed(false)
         setRemap(false)
@@ -485,6 +500,9 @@ export function ImportPanel({
         syncUrl(started.value.id, 'push')
         setAnnounce(fill(labels.wizard.opened, { file: started.value.source_name ?? started.value.target }))
         const found = await analyseRun(started.value.id)
+        // Opened another run, or went back, while this one was being read: its analysis
+        // is not the page's any more, and saving it onto the other run is the harm.
+        if (startedToken !== openToken.current) return
         if (found.status === 'error') {
           setError(found.message)
           return
@@ -650,18 +668,54 @@ export function ImportPanel({
     setFocusTarget('chooser')
   }, [forget])
 
+  const stage = stageOf({
+    status: run?.status ?? null,
+    committedBy: run?.committed_by ?? null,
+    reviewed,
+    remap,
+  })
+
   useEffect(() => {
-    if (focusTarget === 'wizard') {
-      // A person pressed Open: unlike the hand-offs below, this is not held back for
-      // `busy`, and it does not ask whether focus is free -- the Open button has it.
-      const heading = wizardHeading.current
-      if (heading === null) return
-      heading.focus()
+    if (focusTarget === 'wizard' || focusTarget === 'wizardIfFree' || focusTarget === 'mappingNow') {
+      // A person pressed a control that is leaving or has acted: unlike the hand-offs below this
+      // is not held back for `busy`, and 'wizard' does not ask whether focus is free -- the
+      // control that was pressed has it, and moving is the point.
+      // Wait for the file's analysis while it is on its way, so focus lands on the form it
+      // belongs to rather than on a heading the form then appears above.
+      if (
+        run !== null &&
+        MAPPABLE.has(run.status) &&
+        analysis === null &&
+        analysisFailed !== run.id &&
+        focusTarget !== 'mappingNow'
+      ) {
+        return
+      }
+      const page = input.current?.ownerDocument
+      const held = page?.activeElement ?? null
+      const free = held === null || held === page?.body
+      if (focusTarget === 'wizardIfFree' && !free) {
+        setFocusTarget(null)
+        return
+      }
+      const mapping = mapHeading.current
+      const onMap = stage === 'map' || focusTarget === 'mappingNow'
+      const heading = onMap && mapping !== null ? mapping : wizardHeading.current
+      if (heading === null) {
+        setFocusTarget(null)
+        return
+      }
+      heading.focus({ preventScroll: true })
       heading.scrollIntoView?.({ block: 'start' })
       setFocusTarget(null)
       return
     }
     if (focusTarget === null || busy) return
+    if (focusTarget === 'chooserNow') {
+      input.current?.focus()
+      setFocusTarget(null)
+      return
+    }
     // Focus moves only if it has nowhere better to be: the control that held it left, so it is
     // on the page. A person who has tabbed on to something else in the meantime keeps it.
     const page = input.current?.ownerDocument
@@ -674,7 +728,7 @@ export function ImportPanel({
       else input.current?.focus()
     }
     setFocusTarget(null)
-  }, [focusTarget, busy, analysis, error, run])
+  }, [focusTarget, busy, analysis, analysisFailed, error, run, stage])
 
   // The wait ending badly is news the person must not have to hunt for: move focus to it.
   useEffect(() => {
@@ -768,6 +822,8 @@ export function ImportPanel({
         setError(queued.message)
         return
       }
+      setRemap(false)
+      setReviewed(false)
       setRun(queued.value)
       await refresh()
     } finally {
@@ -787,6 +843,8 @@ export function ImportPanel({
         return
       }
       setRun(queued.value)
+      // The Confirm button leaves with the state; the heading now says Importing.
+      setFocusTarget('wizard')
       await refresh()
     } finally {
       setBusy(false)
@@ -869,6 +927,7 @@ export function ImportPanel({
       return
     }
     setRun(answer.value)
+    setFocusTarget('wizard')
     await refresh()
   }, [refresh, run])
 
@@ -903,12 +962,6 @@ export function ImportPanel({
     href: `/api/imports/${encodeURIComponent(target?.key ?? '')}/template?format=${format}`,
     label: labels.template.formats[format] ?? format.toUpperCase(),
   }))
-  const stage = stageOf({
-    status: run?.status ?? null,
-    committedBy: run?.committed_by ?? null,
-    reviewed,
-    remap,
-  })
   const nameOf = (key: string): string => key
   const stepperLabels = {
     nav: labels.wizard.nav,
@@ -1138,6 +1191,11 @@ export function ImportPanel({
             </div>
           )}
           {analysis.over_ceiling ? <Banner tone="warning">{labels.tooManyRows}</Banner> : null}
+          {analysis.rows_seen === 0 ? (
+            <Banner tone="warning">
+              {labels.wizard.emptyFile}
+            </Banner>
+          ) : null}
           {analysis.replaced ? <Banner tone="warning">{labels.replaced}</Banner> : null}
           <div className="relative mt-4 overflow-x-auto">
             <table className="w-full text-sm">
@@ -1187,7 +1245,7 @@ export function ImportPanel({
             <Button
               type="button"
               onClick={() => void check()}
-              disabled={busy || analysis.over_ceiling}
+              disabled={busy || analysis.over_ceiling || analysis.rows_seen === 0}
             >
               {busy ? labels.checking : labels.check}
             </Button>
@@ -1297,7 +1355,12 @@ export function ImportPanel({
                 </div>
               </dl>
               {analysis !== null && sampleColumns.length > 0 && analysis.preview.length > 0 ? (
-                <div className="relative overflow-x-auto">
+                <div
+                  className="relative overflow-x-auto"
+                  tabIndex={0}
+                  role="region"
+                  aria-label={labels.wizard.review.samples}
+                >
                   <table className="w-full text-sm" data-testid="imports-review-sample">
                     <caption className="pb-2 text-left text-xs uppercase text-ink-muted">
                       {labels.wizard.review.samples}
@@ -1329,10 +1392,25 @@ export function ImportPanel({
           ) : null}
           {run.status === 'validated' && stage === 'review' && runTarget?.committable === true ? (
             <div className="mt-4 flex flex-wrap gap-3" data-testid="imports-review-actions">
-              <Button type="button" onClick={() => setReviewed(true)} disabled={busy}>
+              <Button
+                type="button"
+                onClick={() => {
+                  setReviewed(true)
+                  setFocusTarget('wizard')
+                }}
+                disabled={busy}
+              >
                 {labels.wizard.review.continue}
               </Button>
-              <Button type="button" variant="secondary" onClick={() => setRemap(true)} disabled={busy}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setRemap(true)
+                  setFocusTarget('mappingNow')
+                }}
+                disabled={busy}
+              >
                 {labels.wizard.review.changeMapping}
               </Button>
             </div>
@@ -1344,7 +1422,15 @@ export function ImportPanel({
                 <Button type="button" onClick={() => void confirm()} disabled={busy}>
                   {busy ? labels.committing : labels.confirm}
                 </Button>
-                <Button type="button" variant="secondary" onClick={() => setReviewed(false)} disabled={busy}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setReviewed(false)
+                    setFocusTarget('wizard')
+                  }}
+                  disabled={busy}
+                >
                   {labels.wizard.review.back}
                 </Button>
               </div>
@@ -1522,6 +1608,7 @@ export function ImportPanel({
                         aria-label={fill(labels.openRun, { target: row.target })}
                         aria-current={run?.id === row.id ? 'true' : undefined}
                         data-testid="imports-open"
+                        disabled={analysing}
                         onClick={() => open(row)}
                       >
                         {labels.open}

@@ -192,6 +192,10 @@ export async function startRun(input: {
 export async function getRun(runId: string): Promise<ActionResult<ImportRunView>> {
   const auth = await session()
   if (auth === null) return denied()
+  // A server action is a public POST: the address was checked on the page, this is checked here.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId)) {
+    return { status: 'error', message: (await translator())('imports.runUnavailable') }
+  }
   try {
     return { status: 'ok', value: await fetchImportRun({ ...auth, runId }) }
   } catch (error) {

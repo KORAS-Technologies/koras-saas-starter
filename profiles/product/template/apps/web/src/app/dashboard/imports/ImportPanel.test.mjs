@@ -1175,8 +1175,6 @@ function withLocation(search = '') {
 
 const NEVER_WRITES = ['commitRun', 'validateRun', 'saveMapping']
 const stageOfPage = (container) => container.byTestId('imports-stepper')[0].getAttribute('data-stage')
-const focusedHeading = (container) =>
-  focused(container)?.getAttribute?.('data-testid') === 'imports-wizard-heading'
 
 test('Open on a run still waiting for its mapping reads its file, draws the mapping, moves focus and puts the run in the address', async () => {
   const place = withLocation()
@@ -1190,9 +1188,10 @@ test('Open on a run still waiting for its mapping reads its file, draws the mapp
   assert.equal(stageOfPage(container), 'map')
   assert.equal(container.byTestId('imports-state')[0].textContent, 'imports.state.created')
   assert.equal(all(container).filter((node) => String(node.getAttribute?.('id')).startsWith('import-map-')).length, 4)
-  assert.ok(focusedHeading(container), 'focus is on the heading of what opened')
+  assert.equal(focused(container)?.tagName, 'H2', 'focus is on a heading')
+  assert.equal(focused(container).textContent, 'imports.mapTitle', 'the form the run is waiting on, not a heading above it')
   assert.deepEqual(place.pushed, ['https://app.test/dashboard/imports?run=' + created.id])
-  assert.equal(container.byTestId('imports-opened')[0].textContent, 'imports.opened')
+  assert.equal(container.byTestId('imports-opened')[0].textContent, 'imports.opened imports.detailsReady', 'said again when the details have loaded')
   assert.equal(NEVER_WRITES.some((name) => names(log).includes(name)), false)
 })
 
@@ -1422,5 +1421,95 @@ test('Recent imports shows the file and a date on the reader\'s clock, with the 
   const time = all(history).find((node) => node.tagName === 'TIME')
   assert.equal(time.getAttribute('datetime'), '2026-10-08T13:55:17.448663Z')
   assert.equal(time.textContent.includes('T13:55:17'), false, 'not the raw ISO string')
+})
+
+// ── Review follow-ups: stale analysis, re-open, re-check, empty file ────────────────────────────
+
+const mapSelects = (container) =>
+  all(container).filter((node) => String(node.getAttribute?.('id')).startsWith('import-map-'))
+
+test('an analysis that arrives for a run the person has since left is dropped, not shown under the other run', async () => {
+  withLocation()
+  localStorage_pending()
+  const other = run({ id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', status: 'mapped', source_name: 'other.csv' })
+  let release
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
+  const stale = { ...ANALYSIS, columns: ['Stale Column'], suggested: { 'Stale Column': 'name' }, preview: [] }
+  install(
+    uploadScript(async () => ({ status: 'ok', value: 'ready' }), {
+      startRun: async () => ({ status: 'ok', value: run({ id: 'ffffffff-ffff-4fff-8fff-ffffffffffff', status: 'created' }) }),
+      analyseRun: async (id) => (id === 'ffffffff-ffff-4fff-8fff-ffffffffffff' ? (await gate, { status: 'ok', value: stale }) : { status: 'ok', value: ANALYSIS }),
+      listRuns: async () => ({ status: 'ok', value: [other] }),
+    }),
+  )
+  const { container } = await mount({ initialRuns: [other] })
+  await flush()
+  await press(buttonNamed(container, 'imports.source.continue'))
+  await press(container.byTestId('imports-open')[0])
+  await flush(5)
+  release()
+  await flush(10)
+  assert.equal(mapSelects(container).some((node) => node.getAttribute('id') === 'import-map-Stale Column'), false, 'the other run\'s columns are not on this run')
+  assert.equal(mapSelects(container).length, 4)
+})
+
+function localStorage_pending() {
+  STORE.set(
+    PENDING_KEY,
+    JSON.stringify({ fileId: 'file-7', name: 'accounts.xlsx', size: 1, target: 'shop.customers', operation: 'skip_duplicate', at: Date.now() }),
+  )
+}
+
+test('opening the same run again after another still reads its file and draws the mapping', async () => {
+  withLocation()
+  const one = run({ id: '12121212-1212-4121-8121-121212121212', status: 'created' })
+  const two = run({ id: '34343434-3434-4343-8343-343434343434', status: 'committed', committed_by: 'owner', written: { created: 1, updated: 0, skipped: 0 } })
+  const log = install({ analyseRun: async () => ({ status: 'ok', value: ANALYSIS }) })
+  const { container } = await mount({ initialRuns: [one, two] })
+  const opens = container.byTestId('imports-open')
+  await press(opens[0])
+  await flush(5)
+  await press(opens[1])
+  await flush(5)
+  assert.equal(mapSelects(container).length, 0, 'a completed run has no mapping')
+  await press(opens[0])
+  await flush(5)
+  assert.equal(mapSelects(container).length, 4)
+  assert.equal(names(log).filter((n) => n === 'analyseRun').length, 2)
+})
+
+test('Check after Change the mapping returns the run to Review, not to the mapping', async () => {
+  withLocation()
+  const validated = run({ id: '56565656-5656-4565-8565-565656565656', status: 'validated', rows_total: 1, rows_valid: 1, predicted: { create: 1, update: 0, skip: 0 }, mapping: { Name: 'name' } })
+  install({
+    analyseRun: async () => ({ status: 'ok', value: ANALYSIS }),
+    saveMapping: async () => ({ status: 'ok', value: validated }),
+    validateRun: async () => ({ status: 'ok', value: validated }),
+    listRuns: async () => ({ status: 'ok', value: [validated] }),
+  })
+  const { container } = await mount({ initialRuns: [validated] })
+  await press(container.byTestId('imports-open')[0])
+  await flush(5)
+  await press(buttonNamed(container, 'imports.review.changeMapping'))
+  assert.equal(stageOfPage(container), 'map')
+  await press(buttonNamed(container, 'imports.check'))
+  await flush(5)
+  assert.equal(stageOfPage(container), 'review')
+})
+
+test('a file with a header row and no records says so and offers no Check', async () => {
+  withLocation()
+  const created = run({ id: '78787878-7878-4787-8787-787878787878', status: 'created' })
+  const log = install({ analyseRun: async () => ({ status: 'ok', value: { ...ANALYSIS, rows_seen: 0, preview: [] } }) })
+  const { container } = await mount({ initialRuns: [created] })
+  await press(container.byTestId('imports-open')[0])
+  await flush(5)
+  assert.ok(all(container).some((node) => node.textContent === 'imports.emptyFile'))
+  const check = buttonNamed(container, 'imports.check')
+  assert.ok(check !== undefined)
+  assert.equal(check.getAttribute('disabled') !== null || check.disabled === true, true)
+  assert.equal(names(log).includes('validateRun'), false)
 })
 

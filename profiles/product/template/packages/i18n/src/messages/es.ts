@@ -803,6 +803,8 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'imports.fileGone': 'El archivo de esta importación ya no se puede leer, así que no puede continuar. Descártala y vuelve a empezar con el archivo.',
   'imports.cancelledNote': 'Esta importación se canceló. No se escribió nada.',
   'imports.state.awaitingConfirmation': 'Esperando tu confirmación',
+  'imports.emptyFile': 'Este archivo tiene una fila de encabezado pero ningún registro. Rellena la plantilla y vuelve a cargarla.',
+  'imports.detailsReady': 'Detalles cargados.',
   'imports.starting': 'Iniciando la importación…',
   'imports.preparing': 'Preparando…',
   'imports.source.checking':

@@ -814,6 +814,8 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'imports.fileGone': 'Die Datei dieses Imports kann nicht mehr gelesen werden, daher geht es nicht weiter. Verwerfen Sie ihn und beginnen Sie mit der Datei neu.',
   'imports.cancelledNote': 'Dieser Import wurde abgebrochen. Es wurde nichts geschrieben.',
   'imports.state.awaitingConfirmation': 'Wartet auf Ihre Bestätigung',
+  'imports.emptyFile': 'Diese Datei hat eine Kopfzeile, aber keine Datensätze. Füllen Sie die Vorlage aus und laden Sie sie erneut hoch.',
+  'imports.detailsReady': 'Details geladen.',
   'imports.starting': 'Import wird gestartet…',
   'imports.preparing': 'Wird vorbereitet…',
   'imports.source.checking':

@@ -805,6 +805,8 @@ export const en = {
   'imports.fileGone': 'The file for this import can no longer be read, so it cannot go any further. Discard it and start again with the file.',
   'imports.cancelledNote': 'This import was cancelled. Nothing was written.',
   'imports.state.awaitingConfirmation': 'Awaiting your confirmation',
+  'imports.emptyFile': 'This file has a header row but no records. Fill in the template and upload it again.',
+  'imports.detailsReady': 'Details loaded.',
   'imports.starting': 'Starting the import…',
   'imports.preparing': 'Preparing…',
   'imports.source.checking':

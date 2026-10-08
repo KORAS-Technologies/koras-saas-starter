@@ -18,8 +18,8 @@ export interface StepperLabels {
  */
 export function ImportStepper({ stage, labels }: { stage: Stage | null; labels: StepperLabels }) {
   return (
-    <nav aria-label={labels.nav} data-testid="imports-stepper" data-stage={stage ?? 'ended'}>
-      <ol className="flex flex-wrap gap-x-2 gap-y-2 text-sm">
+    <div data-testid="imports-stepper" data-stage={stage ?? 'ended'}>
+      <ol aria-label={labels.nav} className="flex flex-wrap gap-x-2 gap-y-2 text-sm">
         {STAGES.map((step, index) => {
           const state = stepState(step, stage)
           return (
@@ -47,6 +47,6 @@ export function ImportStepper({ stage, labels }: { stage: Stage | null; labels: 
           )
         })}
       </ol>
-    </nav>
+    </div>
   )
 }

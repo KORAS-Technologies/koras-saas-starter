@@ -17,7 +17,7 @@ export function LocalTime({ iso, locale }: { iso: string; locale: string }) {
     setText(formatWhen(iso, locale))
   }, [iso, locale])
   return (
-    <time dateTime={iso} title={iso} suppressHydrationWarning>
+    <time dateTime={iso} suppressHydrationWarning>
       {text}
     </time>
   )
