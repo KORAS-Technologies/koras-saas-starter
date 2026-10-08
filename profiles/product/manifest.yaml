@@ -242,6 +242,12 @@ template_map:
       # generated only when both are on, because the tooling itself is the capability's.
       - tests/unit/test_promotion_activation.py
       - apps/web/src/app/dashboard/imports
+      # The panel's component test and the harness it runs on: `node --test` with the
+      # workspace's own `typescript` and `react-dom`, a hand-written DOM and a stub for the
+      # panel's `'use server'` actions. No dependency is added for it. The harness is the
+      # capability's because its only consumer is the panel's test; `apps/web`'s `test`
+      # script (rendered only with `data_import`) names that test and nothing else.
+      - apps/web/src/test-support
       # The template download: a route handler, because a download is a body
       # and a server action returns a value. The menu it is reached from is a
       # `packages/ui` primitive and stays outside the gate with the rest of
