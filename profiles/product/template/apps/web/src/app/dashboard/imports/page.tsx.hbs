@@ -51,6 +51,10 @@ export default async function ImportsPage() {
         </p>
         {failure === null ? (
           <ImportPanel
+            // A different person or organisation is a different panel: the runs,
+            // the mapping and the remembered wait are theirs and no one else's, so
+            // nothing is carried across a switch -- the state is rebuilt, not edited.
+            key={`${context.member.organizationId ?? ''}:${context.member.userId}`}
             targets={targets.status === 'ok' ? targets.value : []}
             initialRuns={runs.status === 'ok' ? runs.value : []}
             storageScope={`${context.member.organizationId ?? ''}:${context.member.userId}`}

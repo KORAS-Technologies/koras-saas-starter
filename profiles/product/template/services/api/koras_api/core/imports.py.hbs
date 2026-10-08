@@ -1002,7 +1002,12 @@ async def check_source(session: AsyncSession, file_id: str | None) -> Any:  # no
         # customer's file immortal. A malformed id is the same answer.
         raise SourceRefused("import.source.missing")
     row = (await session.execute(_SOURCE, {"id": file_id})).first()
-    if row is None:
+    if row is None or row.category != "imports":
+        # **The shelf is part of the identity.** A same-organisation file in any other
+        # category (a document, an export, an attachment) is not an import source, and a
+        # direct API call naming its id must not make it one. It answers exactly as an
+        # absent file does, as `source_state` already does, so the refusal reveals nothing
+        # about what the id is.
         raise SourceRefused("import.source.missing")
 {{#if capability.secure_files}}
     if row.status == "pending":

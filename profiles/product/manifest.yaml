@@ -242,6 +242,10 @@ template_map:
       # generated only when both are on, because the tooling itself is the capability's.
       - tests/unit/test_promotion_activation.py
       - apps/web/src/app/dashboard/imports
+      # The sign-in page forgets any remembered import wait (a person who is signed out has none to
+      # keep). It lives beside the page it is rendered in and is generated only with the panel it
+      # clears for, which is why the page's use of it is conditional on the same capability.
+      - apps/web/src/app/login/ForgetPendingImports.tsx
       # The panel's component test and the harness it runs on: `node --test` with the
       # workspace's own `typescript` and `react-dom`, a hand-written DOM and a stub for the
       # panel's `'use server'` actions. No dependency is added for it. The harness is the

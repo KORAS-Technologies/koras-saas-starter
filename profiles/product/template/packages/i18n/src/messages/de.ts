@@ -782,6 +782,7 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Datei prüfen',
   'imports.checking':
     'Wird geprüft…',
+  'imports.starting': 'Import wird gestartet…',
   'imports.preparing': 'Wird vorbereitet…',
   'imports.source.checking':
     '{name} ist hochgeladen. Die Datei wird auf Schadsoftware geprüft, bevor sie importiert werden kann; das dauert in der Regel etwa 20 Minuten. Sie können diese Seite verlassen; öffnen Sie den Import in diesem Browser erneut, dann geht es hier weiter.',

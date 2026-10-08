@@ -4,6 +4,9 @@ import { productConfig } from '@{{projectSlug}}/branding'
 import { AuthCard, AuthLayout, ButtonLink } from '@{{projectSlug}}/ui'
 import { currentLocale, translator } from '../../lib/locale'
 import { signInProviders } from './platform'
+{{#if capability.data_import}}
+import { ForgetPendingImports } from './ForgetPendingImports'
+{{/if}}
 import { SignInForm } from './SignInForm'
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -91,6 +94,9 @@ export default async function LoginPage({
         : undefined
     return (
       <AuthLayout locale={locale}>
+{{#if capability.data_import}}
+        <ForgetPendingImports />
+{{/if}}
         <AuthCard
           title={t('login.heading', params)}
           description={t('signIn.description', params)}
@@ -115,6 +121,9 @@ export default async function LoginPage({
 
   return (
     <AuthLayout locale={locale}>
+{{#if capability.data_import}}
+      <ForgetPendingImports />
+{{/if}}
       <AuthCard
         title={signedOut ? t('login.signedOut.heading') : t('login.heading', params)}
         description={signedOut ? t('login.signedOut.description') : t('login.description')}

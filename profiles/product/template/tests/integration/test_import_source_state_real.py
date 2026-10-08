@@ -378,3 +378,40 @@ def test_09_the_tenant_comes_from_the_token_not_from_the_request(
         assert answer.json() == {"state": "missing"}, hint
     answer = client.get(f"/api/v1/imports/sources/{target}?tenant_id={TENANT_A}", headers=HEADERS)
     assert answer.json() == {"state": "missing"}
+
+
+# ── check_source: the source must be on the imports shelf ────────────────────────────────────────
+#
+# `source_state` answers `missing` for a file on another shelf, and `check_source` -- what
+# `POST /imports` and the worker's `source_bytes` stand on -- must too: a clean, ready file of the
+# caller's own organisation that was not uploaded as an import source cannot become one by naming
+# its id in a direct API call. Run here on the real database under the restricted role, as the
+# tenant, because the statement itself names no tenant.
+
+
+async def _check(tenant: str, file_id: str) -> str:
+    from koras_api.core import imports as imports_core
+
+    engine, session = await _session()
+    try:
+        async with session:
+            await session.execute(AS_TENANT, {"tenant_id": tenant})
+            try:
+                await imports_core.check_source(session, file_id)
+            except imports_core.SourceRefused as refused:
+                return str(refused)
+            return "ok"
+    finally:
+        await engine.dispose()
+
+
+def test_10_a_clean_ready_file_on_another_shelf_is_not_an_import_source(seeded) -> None:
+    assert run(_check(TENANT_A, seeded[TENANT_A]["ready_clean"])) == "ok", "the positive control"
+    assert run(_check(TENANT_A, seeded[TENANT_A]["other_shelf"])) == "import.source.missing"
+
+
+def test_11_the_refusal_for_another_shelf_is_the_absent_answer(seeded) -> None:
+    other = run(_check(TENANT_A, seeded[TENANT_A]["other_shelf"]))
+    assert other == run(_check(TENANT_A, str(uuid.uuid4()))) == run(_check(TENANT_A, "not-a-uuid"))
+    # Another tenant's imports file is the same answer, from row-level security.
+    assert run(_check(TENANT_B, seeded[TENANT_A]["ready_clean"])) == other
