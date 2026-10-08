@@ -586,6 +586,29 @@ jobs:
           fi
           grep -E -q '[0-9]+ passed' "$RUNNER_TEMP/import-activation.txt"
 
+      # The import panel's component test, asked for by name and not allowed to skip.
+      #
+      # `Test (Node)` above already runs it through turbo, and says only that the task exited
+      # zero. A `node --test` run that found nothing to run, or skipped what it found, exits zero
+      # too, and the pending-source wait (a fresh upload is a wait, never a refusal) would then be
+      # unmeasured while every step here stayed green. Run directly, from the product's own
+      # `apps/web` against the packages `Build` has already built, so the count is visible.
+      - name: The import panel test ran, and none of it skipped
+        if: contains(matrix.components, 'data_import')
+        working-directory: ${{ runner.temp }}/generated/${{ matrix.slug }}/apps/web
+        run: |
+          set -o pipefail
+          pnpm test | tee "$RUNNER_TEMP/import-panel.txt"
+          if grep -E -q '^[^ ]+ (skipped|todo|cancelled) [1-9]' "$RUNNER_TEMP/import-panel.txt"; then
+            echo "::error::an import panel test was skipped or never finished; every one of them must run"
+            exit 1
+          fi
+          if grep -E -q '^[^ ]+ fail [1-9]' "$RUNNER_TEMP/import-panel.txt"; then
+            echo "::error::an import panel test failed"
+            exit 1
+          fi
+          grep -E -q '^[^ ]+ pass [1-9]' "$RUNNER_TEMP/import-panel.txt"
+
       # The commit's all-or-nothing, counted in rows, and not allowed to skip.
       #
       # GR-352C changed how the worker reads a file -- rows as a stream, on a
