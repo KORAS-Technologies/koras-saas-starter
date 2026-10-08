@@ -218,6 +218,15 @@ export function ImportPanel({
   // answer that arrives after either is dropped.
   const asking = useRef(false)
   const generation = useRef(0)
+  // "Check again" is one explicit look, not a return to polling: the page stays
+  // `stalled` (so the button a keyboard user pressed stays mounted and focused)
+  // and says what the look found.
+  const manual = useRef(false)
+  const [rechecking, setRechecking] = useState(false)
+  const [checkedStill, setCheckedStill] = useState(false)
+  // A failed look is a note beside the wait, not an assertive page-level error.
+  const [retryNote, setRetryNote] = useState<string | null>(null)
+  const sourceBox = useRef<HTMLDivElement>(null)
 
   const target = targets.find((candidate) => candidate.key === targetKey) ?? null
   // **The run's own target, not the picker's.** They are the same until
@@ -327,6 +336,8 @@ export function ImportPanel({
       if (asking.current) return
       asking.current = true
       const mine = generation.current
+      const wasManual = manual.current
+      manual.current = false
       try {
         const answer = await checkSource(source.fileId)
         if (mine !== generation.current) return
@@ -336,22 +347,32 @@ export function ImportPanel({
             setWaiting(null)
             forget()
             setPhase('idle')
+            setRetryNote(null)
             setError(answer.message)
             return
           }
           // Could not ask. Not a verdict: keep the wait and try again later.
-          setError(fill(labels.source.unreachable, { name: source.name }))
-          setPhase('checking')
-          setTick((current) => current + 1)
+          setRetryNote(fill(labels.source.unreachable, { name: source.name }))
+          if (!wasManual) {
+            setPhase('checking')
+            setTick((current) => current + 1)
+          }
           return
         }
         const next = phaseOf(answer.value)
         if (next === 'checking') {
           setError(null)
+          setRetryNote(null)
+          if (wasManual) {
+            // Still checking, and the page said it looked.
+            setCheckedStill(true)
+            return
+          }
           setPhase('checking')
           setTick((current) => current + 1)
           return
         }
+        setRetryNote(null)
         if (next === 'ready' && resumed.current === source.fileId) {
           // Found ready on a later visit: say so and let a person start it.
           setError(null)
@@ -368,6 +389,7 @@ export function ImportPanel({
         }
         setPhase(next)
       } finally {
+        if (wasManual) setRechecking(false)
         // Only while this call still owns the slot: Stop or a new file moved the generation
         // on and released it already, and a newer ask may hold it now.
         if (mine === generation.current) asking.current = false
@@ -421,20 +443,34 @@ export function ImportPanel({
 
   const checkAgain = useCallback(() => {
     if (waiting === null) return
+    if (asking.current) return
     attempts.current = 0
-    setPhase('checking')
+    manual.current = true
+    setCheckedStill(false)
+    setRechecking(true)
     void resolve(waiting)
   }, [resolve, waiting])
 
   const stopWaiting = useCallback(() => {
     generation.current += 1
     asking.current = false
+    manual.current = false
     resumed.current = null
     setWaiting(null)
     setPhase('idle')
     setChosen(null)
+    setRechecking(false)
+    setCheckedStill(false)
+    setRetryNote(null)
     forget()
+    // The control that held focus is leaving; the file chooser is where a person goes next.
+    input.current?.focus()
   }, [forget])
+
+  // The wait ending badly is news the person must not have to hunt for: move focus to it.
+  useEffect(() => {
+    if (phase === 'held' || phase === 'rejected' || phase === 'missing') sourceBox.current?.focus()
+  }, [phase])
 
   const choose = useCallback(
     async (file: File) => {
@@ -754,38 +790,65 @@ export function ImportPanel({
             {preparing ? labels.preparing : ''}
           </p>
 {{/if}}
-          {chosen === null || !SOURCE_PHASES.has(phase) ? null : (
-            <div className="mt-3 space-y-3" data-testid="imports-source" data-phase={phase}>
-              <Banner
-                tone={
-                  phase === 'checking' || phase === 'stalled' || phase === 'ready'
-                    ? 'info'
-                    : phase === 'held'
-                      ? 'warning'
-                      : 'error'
-                }
+          {/* Always mounted: a live region that arrives with its text is announced
+              unreliably, one that is already there and then changes is not. */}
+          <div role="status" aria-live="polite" data-testid="imports-source-live">
+            {chosen === null || !SOURCE_PHASES.has(phase) ? null : (
+              <div
+                ref={sourceBox}
+                tabIndex={-1}
+                className="mt-3 space-y-3 outline-none focus-visible:outline-2 focus-visible:outline-offset-2"
+                data-testid="imports-source"
+                data-phase={phase}
               >
-                {fill(labels.source[phase as SourceMessage], { name: chosen.name })}
-              </Banner>
-              {phase === 'checking' || phase === 'stalled' || phase === 'ready' ? (
-                <div className="flex flex-wrap gap-3">
-                  {phase === 'ready' ? (
-                    <Button type="button" onClick={continueResumed} disabled={busy}>
-                      {labels.source.continue}
+                <Banner
+                  // A long file name has no break opportunity of its own.
+                  className="[overflow-wrap:anywhere]"
+                  tone={
+                    phase === 'checking' || phase === 'stalled' || phase === 'ready'
+                      ? 'info'
+                      : phase === 'held'
+                        ? 'warning'
+                        : 'error'
+                  }
+                >
+                  {fill(labels.source[phase as SourceMessage], { name: chosen.name })}
+                </Banner>
+                {retryNote === null ? null : (
+                  <p className="text-sm text-ink-muted" data-testid="imports-source-retry">
+                    {retryNote}
+                  </p>
+                )}
+                {checkedStill ? (
+                  <p className="text-sm text-ink-muted" data-testid="imports-source-rechecked">
+                    {labels.source.checkedStill}
+                  </p>
+                ) : null}
+                {phase === 'checking' || phase === 'stalled' || phase === 'ready' ? (
+                  <div className="flex flex-wrap gap-3">
+                    {phase === 'ready' ? (
+                      <Button type="button" onClick={continueResumed} disabled={busy}>
+                        {labels.source.continue}
+                      </Button>
+                    ) : null}
+                    {phase === 'stalled' ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={checkAgain}
+                        aria-disabled={rechecking}
+                      >
+                        {rechecking ? labels.source.rechecking : labels.source.checkAgain}
+                      </Button>
+                    ) : null}
+                    <Button type="button" variant="ghost" onClick={stopWaiting}>
+                      {labels.source.stop}
                     </Button>
-                  ) : null}
-                  {phase === 'stalled' ? (
-                    <Button type="button" variant="secondary" onClick={checkAgain}>
-                      {labels.source.checkAgain}
-                    </Button>
-                  ) : null}
-                  <Button type="button" variant="ghost" onClick={stopWaiting}>
-                    {labels.source.stop}
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-          )}
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
         </div>
       </Card>
 

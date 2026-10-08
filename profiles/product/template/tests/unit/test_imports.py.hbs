@@ -295,7 +295,7 @@ async def test_a_file_without_a_clean_verdict_is_never_parsed(scan: str | None) 
     session = _Session([_Result([_File(scan_status=scan)])])  # type: ignore[arg-type]
     objects = _Store()
     with pytest.raises(store.SourceRefused) as refused:
-        await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+        await store.source_bytes(session, objects, _SOURCE_ID)  # type: ignore[arg-type]
     assert str(refused.value) == "import.source.unscanned"
     assert objects.read == [], "the bytes were fetched before the scan was consulted"
 
@@ -331,7 +331,7 @@ async def test_a_clean_file_whose_identity_does_not_hold_is_never_parsed(
     session = _Session([_Result([_mutated(**changes)])])
     objects = _Store()
     with pytest.raises(store.SourceRefused) as refused:
-        await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+        await store.source_bytes(session, objects, _SOURCE_ID)  # type: ignore[arg-type]
     assert str(refused.value) == "import.source.unscanned"
     assert objects.read == []
 
@@ -345,7 +345,7 @@ async def test_a_file_no_scanner_has_cleared_is_never_parsed(scan: str) -> None:
     session = _Session([_Result([_File(scan_status=scan)])])
     objects = _Store()
     with pytest.raises(store.SourceRefused):
-        await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+        await store.source_bytes(session, objects, _SOURCE_ID)  # type: ignore[arg-type]
     assert objects.read == [], "the bytes were fetched before the scan was consulted"
 {{/if}}
 
@@ -355,7 +355,7 @@ async def test_an_unfinished_upload_is_refused() -> None:
     session = _Session([_Result([_File(status="pending")])])
     objects = _Store()
     with pytest.raises(store.SourceRefused) as refused:
-        await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+        await store.source_bytes(session, objects, _SOURCE_ID)  # type: ignore[arg-type]
 {{#if capability.secure_files}}
     # A wait: the upload window withholds a new file until it is finalized.
     assert str(refused.value) == "import.source.pending"
@@ -371,7 +371,7 @@ async def test_an_unfinished_upload_is_refused() -> None:
 async def test_a_file_that_waiting_will_not_change_is_not_called_pending(status: str) -> None:
     session = _Session([_Result([_File(status=status)])])
     with pytest.raises(store.SourceRefused) as refused:
-        await store.check_source(session, "file-1")  # type: ignore[arg-type]
+        await store.check_source(session, _SOURCE_ID)  # type: ignore[arg-type]
     assert str(refused.value) == "import.source.not_ready"
 
 
@@ -396,7 +396,7 @@ async def test_a_file_still_being_checked_is_not_named_as_a_refused_one(
     was reported with the quarantine answer. Both still withhold."""
     session = _Session([_Result([_File(scan_status=scan)])])
     with pytest.raises(store.SourceRefused) as refused:
-        await store.check_source(session, "file-1")  # type: ignore[arg-type]
+        await store.check_source(session, _SOURCE_ID)  # type: ignore[arg-type]
     assert str(refused.value) == code
 
 
@@ -514,6 +514,29 @@ async def test_an_unknown_or_malformed_source_is_missing() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        f"urn:uuid:{_SOURCE_ID}",
+        "{" + _SOURCE_ID + "}",
+        f" {_SOURCE_ID}",
+        _SOURCE_ID.replace("-", ""),
+        f"{_SOURCE_ID[:8]}_{_SOURCE_ID[9:]}",
+    ],
+)
+async def test_a_spelling_python_accepts_and_postgres_rejects_is_missing_not_a_500(
+    spelling: str,
+) -> None:
+    """`uuid.UUID` is more forgiving than `cast(... as uuid)`: that gap was a database error."""
+    session = _Session()
+    assert await store.source_state(session, spelling) == "missing"  # type: ignore[arg-type]
+    with pytest.raises(store.SourceRefused) as refused:
+        await store.check_source(session, spelling)  # type: ignore[arg-type]
+    assert str(refused.value) == "import.source.missing"
+    assert session.statements == [], "it must not reach the database"
+
+
+@pytest.mark.asyncio
 async def test_a_ready_source_above_the_ceiling_is_refused_not_ready() -> None:
     session = _Session([_Result([_StateRow(size_bytes=store.MAX_SOURCE_BYTES + 1)])])
     with pytest.raises(store.SourceRefused) as refused:
@@ -526,7 +549,7 @@ async def test_a_file_that_is_gone_is_refused_rather_than_read_as_empty() -> Non
     session = _Session([_Result([])])
     objects = _Store()
     with pytest.raises(store.SourceRefused) as refused:
-        await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+        await store.source_bytes(session, objects, _SOURCE_ID)  # type: ignore[arg-type]
     assert str(refused.value) == "import.source.missing"
     assert objects.read == []
 
@@ -535,7 +558,7 @@ async def test_a_file_that_is_gone_is_refused_rather_than_read_as_empty() -> Non
 async def test_a_clean_ready_file_is_read() -> None:
     session = _Session([_Result([_File()])])
     objects = _Store()
-    raw = await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+    raw = await store.source_bytes(session, objects, _SOURCE_ID)  # type: ignore[arg-type]
     assert raw.startswith(b"Name,Email")
 {{#if capability.secure_files}}
     assert objects.read == [_File().storage_key]
@@ -553,7 +576,7 @@ async def test_the_store_is_called_off_the_event_loop() -> None:
     every other request, and a worker's heartbeat, for as long as it takes."""
     session = _Session([_Result([_File()])])
     objects = _Store()
-    await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+    await store.source_bytes(session, objects, _SOURCE_ID)  # type: ignore[arg-type]
     assert objects.threads, "the store was never asked"
     assert threading.get_ident() not in objects.threads
 
@@ -585,7 +608,7 @@ async def test_the_real_store_class_is_what_source_bytes_can_call() -> None:
     real.destination = _Destination()  # type: ignore[assignment]
     real._client = _Client()  # noqa: SLF001
     session = _Session([_Result([_File()])])
-    assert await store.source_bytes(session, real, "file-1") == content  # type: ignore[arg-type]
+    assert await store.source_bytes(session, real, _SOURCE_ID) == content  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
@@ -595,7 +618,7 @@ async def test_an_object_that_is_not_in_the_bucket_answers_missing() -> None:
     session = _Session([_Result([_File()])])
     objects = _Store(content=None)
     with pytest.raises(store.SourceRefused) as refused:
-        await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+        await store.source_bytes(session, objects, _SOURCE_ID)  # type: ignore[arg-type]
     assert str(refused.value) == "import.source.missing"
     assert objects.read == []
 
@@ -607,7 +630,7 @@ async def test_an_object_that_grew_is_refused_before_it_is_transferred() -> None
     session = _Session([_Result([_File()])])
     objects = _Store(size=store.MAX_SOURCE_BYTES * 4)
     with pytest.raises(store.SourceRefused) as refused:
-        await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+        await store.source_bytes(session, objects, _SOURCE_ID)  # type: ignore[arg-type]
     assert str(refused.value) == "import.source.changed"
     assert objects.read == [], "the object was fetched before its size was compared"
 
@@ -617,7 +640,7 @@ async def test_bytes_of_another_length_than_the_bucket_said_are_refused() -> Non
     session = _Session([_Result([_File()])])
     objects = _Store(content=b"Name,Email\nreplaced,row\n", size=11)
     with pytest.raises(store.SourceRefused) as refused:
-        await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+        await store.source_bytes(session, objects, _SOURCE_ID)  # type: ignore[arg-type]
     assert str(refused.value) == "import.source.changed"
 
 
@@ -633,17 +656,17 @@ async def test_a_verified_digest_binds_the_bytes_and_a_claimed_one_does_not() ->
     verified.checksum_sha256 = other
     verified.checksum_verified_at = object()
     with pytest.raises(store.SourceRefused) as refused:
-        await store.source_bytes(_Session([_Result([verified])]), _Store(), "f")  # type: ignore[arg-type]
+        await store.source_bytes(_Session([_Result([verified])]), _Store(), _SOURCE_ID)  # type: ignore[arg-type]
     assert str(refused.value) == "import.source.changed"
 
     claimed = _File()
     claimed.checksum_sha256 = other
-    assert await store.source_bytes(_Session([_Result([claimed])]), _Store(), "f")  # type: ignore[arg-type]
+    assert await store.source_bytes(_Session([_Result([claimed])]), _Store(), _SOURCE_ID)  # type: ignore[arg-type]
 
     matching = _File()
     matching.checksum_sha256 = hashlib.sha256(b"Name,Email\n").hexdigest()
     matching.checksum_verified_at = object()
-    assert await store.source_bytes(_Session([_Result([matching])]), _Store(), "f")  # type: ignore[arg-type]
+    assert await store.source_bytes(_Session([_Result([matching])]), _Store(), _SOURCE_ID)  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
@@ -653,7 +676,7 @@ async def test_a_provider_error_is_unreadable_and_a_coroutine_store_is_not_bytes
             raise OSError("connection reset")
 
     with pytest.raises(store.SourceRefused) as refused:
-        await store.source_bytes(_Session([_Result([_File()])]), _Broken(), "f")  # type: ignore[arg-type]
+        await store.source_bytes(_Session([_Result([_File()])]), _Broken(), _SOURCE_ID)  # type: ignore[arg-type]
     assert str(refused.value) == "import.source.unreadable"
 
     class _Awaitable(_Store):
@@ -661,7 +684,7 @@ async def test_a_provider_error_is_unreadable_and_a_coroutine_store_is_not_bytes
             return b"Name,Email\n"
 
     with pytest.raises(store.SourceRefused) as refused:
-        await store.source_bytes(_Session([_Result([_File()])]), _Awaitable(), "f")  # type: ignore[arg-type]
+        await store.source_bytes(_Session([_Result([_File()])]), _Awaitable(), _SOURCE_ID)  # type: ignore[arg-type]
     assert str(refused.value) == "import.source.unreadable"
 
 
@@ -730,7 +753,7 @@ async def test_a_source_larger_than_the_ceiling_is_refused_before_it_is_fetched(
     session = _Session([_Result([big])])
     objects = _Store()
     with pytest.raises(store.SourceRefused) as refused:
-        await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+        await store.source_bytes(session, objects, _SOURCE_ID)  # type: ignore[arg-type]
     assert str(refused.value) == "import.source.too_large"
     assert objects.read == [], "the object was fetched before its size was checked"
 
@@ -742,7 +765,7 @@ async def test_a_source_at_the_ceiling_is_read() -> None:
     exact.size_bytes = store.MAX_SOURCE_BYTES
     session = _Session([_Result([exact])])
     objects = _Store(bytes(store.MAX_SOURCE_BYTES))
-    assert await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+    assert await store.source_bytes(session, objects, _SOURCE_ID)  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio

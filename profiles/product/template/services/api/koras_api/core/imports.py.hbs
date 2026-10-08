@@ -973,6 +973,21 @@ _SOURCE = text(
 {{/if}}
 
 
+def _is_uuid_text(value: object) -> bool:
+    """Whether `value` is a UUID in the one spelling Postgres also accepts.
+
+    `uuid.UUID` takes `urn:uuid:...`, `0x...`, padded and underscore-separated
+    forms that `cast(... as uuid)` rejects with a database error, which would be
+    a 500 for input that is merely wrong. Only the hyphenated form is a file id.
+    """
+    if not isinstance(value, str):
+        return False
+    try:
+        return str(uuid.UUID(value)) == value.lower()
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
 async def check_source(session: AsyncSession, file_id: str | None) -> Any:  # noqa: ANN401
     """Everything that can be known about a source without fetching it.
 
@@ -981,10 +996,10 @@ async def check_source(session: AsyncSession, file_id: str | None) -> Any:  # no
     that read it. Being told at the start beats being told after forty columns
     have been mapped.
     """
-    if not file_id:
+    if not file_id or not _is_uuid_text(file_id):
         # Purged by retention, which is a thing that now happens: the foreign
         # key is `on delete set null` precisely so an import cannot make a
-        # customer's file immortal.
+        # customer's file immortal. A malformed id is the same answer.
         raise SourceRefused("import.source.missing")
     row = (await session.execute(_SOURCE, {"id": file_id})).first()
     if row is None:
@@ -1092,9 +1107,7 @@ async def source_state(session: AsyncSession, file_id: str) -> SourceState:
     - `missing`: no such file on this organisation's `imports` shelf. Another organisation's
       file is exactly this, as is a malformed id.
     """
-    try:
-        uuid.UUID(file_id)
-    except (ValueError, AttributeError, TypeError):
+    if not _is_uuid_text(file_id):
         return "missing"
     row = (await session.execute(_STATE_ROW, {"id": file_id})).first()
     if row is None or row.category != "imports":

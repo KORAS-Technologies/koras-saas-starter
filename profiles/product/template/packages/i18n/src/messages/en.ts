@@ -779,7 +779,7 @@ export const en = {
   'imports.source.ready':
     '{name} has passed the check and is ready to import.',
   'imports.source.stalled':
-    '{name} is still being checked. Nothing is wrong with it so far; the check is taking longer than usual.',
+    '{name} is still being checked. Nothing is wrong with it so far; the check is taking longer than usual, and this page has stopped checking by itself. Select Check again to look now.',
   'imports.source.held':
     '{name} could not be verified, so it cannot be imported. Download the template again, copy your rows into it and upload that as a new file. If this happens again, contact your administrator.',
   'imports.source.rejected':
@@ -791,7 +791,10 @@ export const en = {
   'imports.source.checkAgain':
     'Check again',
   'imports.source.continue':
-    'Continue',
+    'Continue to column matching',
+  'imports.source.rechecking': 'Checking…',
+  'imports.source.checkedStill':
+    'Checked just now. The file is still being checked.',
   'imports.source.stop':
     'Stop waiting',
   'imports.discard':
