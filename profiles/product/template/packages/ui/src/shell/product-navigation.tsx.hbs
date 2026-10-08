@@ -180,12 +180,17 @@ function NavigationItem({
       aria-current={current ? 'page' : undefined}
       className={cn(
         shared,
+        // The current page is marked by the text colour `ink`, a tint, and a bar -- not by
+        // `text-brand`. The brand colour is a tenant's to choose, and 14px text in it on its
+        // own 10% tint was 4.48:1 for the default blue (GR-380) and worse in the dark theme, so the
+        // label's contrast cannot be left to a colour the product does not control. The bar and the
+        // icon carry the brand; they are graphics, which need 3:1, not text.
         current
-          ? 'bg-brand/10 text-brand'
+          ? 'relative bg-brand/10 text-ink before:absolute before:inset-y-2 before:start-0 before:w-1 before:rounded-full before:bg-brand forced-colors:underline'
           : 'text-ink-muted hover:bg-surface-muted hover:text-ink',
       )}
     >
-      <Icon name={item.icon} className="h-5 w-5 shrink-0" />
+      <Icon name={item.icon} className={cn('h-5 w-5 shrink-0', current && 'text-brand')} />
       {/* Visually hidden rather than absent when collapsed: an icon-only link
           with no accessible name is a link that announces its own URL. */}
       <span className={collapsed ? 'sr-only' : undefined}>{item.label}</span>

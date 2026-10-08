@@ -805,6 +805,8 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'imports.state.awaitingConfirmation': 'Esperando tu confirmación',
   'imports.emptyFile': 'Este archivo tiene una fila de encabezado pero ningún registro. Rellena la plantilla y vuelve a cargarla.',
   'imports.detailsReady': 'Detalles cargados.',
+  'imports.reportDownloaded': 'Se descargó el informe con todos los problemas.',
+  'imports.source.endedElsewhere': 'Este archivo se inició o se detuvo en otra pestaña. Si se inició una ejecución, está en Importaciones recientes.',
   'imports.starting': 'Iniciando la importación…',
   'imports.preparing': 'Preparando…',
   'imports.source.checking':

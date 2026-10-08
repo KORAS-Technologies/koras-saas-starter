@@ -19,7 +19,9 @@ export type ButtonSize = 'md' | 'lg'
 
 const BASE =
   'inline-flex items-center justify-center gap-2 rounded-brand font-semibold ' +
-  'transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60'
+  'transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60 ' +
+  // A busy control that must keep keyboard focus is `aria-disabled`, not `disabled`.
+  'aria-disabled:cursor-not-allowed aria-disabled:opacity-60'
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary: 'bg-brand text-white hover:bg-brand-ink',

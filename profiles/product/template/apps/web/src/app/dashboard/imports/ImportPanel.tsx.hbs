@@ -1,6 +1,6 @@
 'use client'
 
-import { Banner, Button, ButtonLink, Card, DownloadMenu, SaveOutcome, SelectField } from '@{{projectSlug}}/ui'
+import { Banner, Button, ButtonLink, Card, DownloadMenu, SelectField } from '@{{projectSlug}}/ui'
 import type {
   ImportAnalysisView,
   ImportRowErrorView,
@@ -241,6 +241,9 @@ export function ImportPanel({
   const manual = useRef(false)
   const [rechecking, setRechecking] = useState(false)
   const [checkedStill, setCheckedStill] = useState(false)
+  // Another tab of this browser ended the wait this one restored.
+  const [elsewhere, setElsewhere] = useState(false)
+  const confirming = useRef(false)
   // A failed look is a note beside the wait, not an assertive page-level error.
   const [retryNote, setRetryNote] = useState<string | null>(null)
   const sourceBox = useRef<HTMLDivElement>(null)
@@ -475,6 +478,28 @@ export function ImportPanel({
     return () => clearInterval(timer)
   }, [run, refresh])
 
+  // A run that leaves flight while this page is open -- the dry run finishes, the commit lands --
+  // is news, and it arrives from the poll rather than from anything the person pressed. It is told
+  // once, in the page's one announcer, and focus follows only when nothing else has it: somebody
+  // who has gone on to read Recent imports is told and is not pulled back. (GR-378)
+  const flight = useRef<{ id: string; status: string } | null>(null)
+  useEffect(() => {
+    const before = flight.current
+    flight.current = run === null ? null : { id: run.id, status: run.status }
+    if (run === null || before === null || before.id !== run.id) return
+    if (!IN_FLIGHT.has(before.status) || IN_FLIGHT.has(run.status)) return
+    const said = labels.states[run.status] ?? run.status
+    if (run.status === 'committed') {
+      const imported = !run.written ? run.rows_valid : run.written.created + run.written.updated
+      setAnnounce(`${said}. ${fill(labels.wrote, { created: String(imported), total: String(run.rows_total) })}`)
+    } else if (run.status === 'failed' && run.error !== null) {
+      setAnnounce(`${said} ${run.error}`)
+    } else {
+      setAnnounce(said)
+    }
+    setFocusTarget('wizardIfFree')
+  }, [run, labels])
+
   const remember = useCallback(
     (source: PendingSource) => {
       try {
@@ -650,6 +675,44 @@ export function ImportPanel({
     void resolve(found)
   }, [resolve, storageScope, targets])
 
+  // Another tab of this browser can end the wait this tab restored: it started the run from the
+  // file, or its person pressed Stop there. The entry it removed is the one this tab is waiting
+  // on, so this tab stops too. Without this, Continue here would start a second run from one file.
+  // Only a wait that was *restored* is ended: a wait this tab began owns its file and carries on.
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return
+    const mine = pendingKey(storageScope)
+    const onStorage = (event: StorageEvent) => {
+      if (event.storageArea && event.storageArea !== window.localStorage) return
+      if (event.newValue !== null || (event.key !== null && event.key !== mine)) return
+      const restored = resumed.current
+      if (restored === null) return
+      try {
+        const gone = event.oldValue === null ? null : (JSON.parse(event.oldValue) as { fileId?: unknown })
+        if (gone !== null && typeof gone.fileId === 'string' && gone.fileId !== restored) return
+      } catch {
+        // An entry nobody can read ended nothing that this tab can name; end the wait anyway.
+      }
+      generation.current += 1
+      asking.current = false
+      manual.current = false
+      resumed.current = null
+      setWaiting(null)
+      setPhase('idle')
+      setChosen(null)
+      setRechecking(false)
+      setCheckedStill(false)
+      setRetryNote(null)
+      setElsewhere(true)
+      // Said in the one announcer as well: the focus move below would cut off the polite note.
+      setAnnounce(labels.source.endedElsewhere)
+      setFocusTarget('chooser')
+      void refresh()
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener?.('storage', onStorage)
+  }, [labels, refresh, storageScope])
+
   const continueResumed = useCallback(() => {
     if (waiting === null) return
     const source = waiting
@@ -713,9 +776,12 @@ export function ImportPanel({
       ) {
         return
       }
-      const page = input.current?.ownerDocument
+      // The document is found through whichever of these is mounted: with a run open the file
+      // chooser is not, and asking it would find no document and call focus free when it is not.
+      const page = (wizardHeading.current ?? mapHeading.current ?? input.current)?.ownerDocument
       const held = page?.activeElement ?? null
-      const free = held === null || held === page?.body
+      // The heading already holding focus is where the hand-off was going; nothing to take from anyone.
+      const free = held === null || held === page?.body || held === wizardHeading.current
       if (focusTarget === 'wizardIfFree' && !free) {
         setFocusTarget(null)
         return
@@ -764,6 +830,7 @@ export function ImportPanel({
       setError(null)
       setProblems(null)
       setAnalysis(null)
+      setElsewhere(false)
       generation.current += 1
       asking.current = false
       resumed.current = null
@@ -829,7 +896,8 @@ export function ImportPanel({
   )
 
   const check = useCallback(async () => {
-    if (run === null) return
+    // `aria-disabled` while busy keeps the button focusable, so the guard lives here.
+    if (run === null || busy) return
     setBusy(true)
     setError(null)
     setProblems(null)
@@ -847,14 +915,20 @@ export function ImportPanel({
       setRemap(false)
       setReviewed(false)
       setRun(queued.value)
+      // Check leaves with the mapping card it was pressed in; the heading now says the file is
+      // being checked, and the status says so once.
+      setAnnounce(labels.states[queued.value.status] ?? '')
+      setFocusTarget('wizard')
       await refresh()
     } finally {
       setBusy(false)
     }
-  }, [mapping, refresh, run])
+  }, [busy, labels, mapping, refresh, run])
 
   const confirm = useCallback(async () => {
-    if (run === null) return
+    // A latch as well as busy: the irreversible action must not rely on a render having happened.
+    if (run === null || busy || confirming.current) return
+    confirming.current = true
     setBusy(true)
     setError(null)
     setProblems(null)
@@ -866,16 +940,20 @@ export function ImportPanel({
       }
       setRun(queued.value)
       // The Confirm button leaves with the state; the heading now says Importing.
+      setAnnounce(labels.states[queued.value.status] ?? '')
       setFocusTarget('wizard')
       await refresh()
     } finally {
+      confirming.current = false
       setBusy(false)
     }
-  }, [refresh, run])
+  }, [busy, labels, refresh, run])
 
   const download = useCallback(async () => {
-    if (run === null) return
+    if (run === null || busy) return
     setBusy(true)
+    // Emptied first, so a second download is announced as well as the first.
+    setAnnounce('')
     try {
       const answer = await allErrors(run.id, run.errors_total)
       if (answer.status === 'error') {
@@ -924,10 +1002,11 @@ export function ImportPanel({
       link.download = `import-${run.id}-errors.csv`
       link.click()
       URL.revokeObjectURL(url)
+      setAnnounce(labels.wizard.reportDownloaded)
     } finally {
       setBusy(false)
     }
-  }, [labels, run])
+  }, [busy, labels, run])
 
   const report = useCallback(async () => {
     if (run === null) return
@@ -940,7 +1019,7 @@ export function ImportPanel({
   }, [run])
 
   const stop = useCallback(async () => {
-    if (run === null) return
+    if (run === null || busy) return
     setBusy(true)
     const answer = await cancelRun(run.id)
     setBusy(false)
@@ -949,9 +1028,10 @@ export function ImportPanel({
       return
     }
     setRun(answer.value)
+    setAnnounce(labels.states[answer.value.status] ?? '')
     setFocusTarget('wizard')
     await refresh()
-  }, [refresh, run])
+  }, [busy, labels, refresh, run])
 
   if (targets.length === 0) {
     return <Banner tone="info">{labels.noTargets}</Banner>
@@ -1107,6 +1187,11 @@ export function ImportPanel({
             {starting ? (
               <p className="mt-3 text-sm text-ink-muted" data-testid="imports-starting">
                 {labels.starting}
+              </p>
+            ) : null}
+            {elsewhere ? (
+              <p className="mt-3 text-sm text-ink-muted" data-testid="imports-source-elsewhere">
+                {labels.source.endedElsewhere}
               </p>
             ) : null}
             {chosen === null || !SOURCE_PHASES.has(phase) ? null : (
@@ -1269,11 +1354,12 @@ export function ImportPanel({
             <Button
               type="button"
               onClick={() => void check()}
-              disabled={busy || analysis.over_ceiling || analysis.rows_seen === 0}
+              disabled={analysis.over_ceiling || analysis.rows_seen === 0}
+              aria-disabled={busy || undefined}
             >
               {busy ? labels.checking : labels.check}
             </Button>
-            <Button type="button" variant="ghost" onClick={() => void stop()} disabled={busy}>
+            <Button type="button" variant="ghost" onClick={() => void stop()} aria-disabled={busy || undefined}>
               {labels.discard}
             </Button>
           </div>
@@ -1290,14 +1376,18 @@ export function ImportPanel({
           >
             {stage === null
               ? (labels.wizard.titles.cancelled ?? labels.resultTitle)
-              : (labels.wizard.titles[stage] ?? labels.resultTitle)}
+              : stage === 'map' && analysis !== null && MAPPABLE.has(run.status)
+                ? // The mapping card above is titled "Match the columns"; a second heading with the
+                  // same words under it read as a repeated card.
+                  labels.wizard.titles.upload
+                : (labels.wizard.titles[stage] ?? labels.resultTitle)}
           </h2>
           {run.source_name ? (
             <p className="mt-1 break-words text-sm text-ink" data-testid="imports-run-file">
               {run.source_name} · {nameOf(run.target)}
             </p>
           ) : null}
-          <p className="mt-1 text-sm text-ink-muted" role="status" data-testid="imports-state">
+          <p className="mt-1 text-sm text-ink-muted" data-testid="imports-state">
             {stateText}
           </p>
           {analysing ? (
@@ -1309,7 +1399,7 @@ export function ImportPanel({
             <Banner tone="warning">
               {labels.wizard.fileGone}
               <span className="mt-2 block">
-                <Button type="button" variant="secondary" onClick={() => void stop()} disabled={busy}>
+                <Button type="button" variant="secondary" onClick={() => void stop()} aria-disabled={busy || undefined}>
                   {labels.discard}
                 </Button>
               </span>
@@ -1321,9 +1411,15 @@ export function ImportPanel({
             </p>
           ) : null}
           {run.status === 'cancelled' ? (
-            <Banner tone="info">{labels.wizard.cancelledNote}</Banner>
+            <Banner tone="info" announce={false}>
+              {labels.wizard.cancelledNote}
+            </Banner>
           ) : null}
-          {run.error === null ? null : <Banner tone="error">{run.error}</Banner>}
+          {run.error === null ? null : (
+            <Banner tone="error" announce={false}>
+              {run.error}
+            </Banner>
+          )}
           {run.status === 'validated' || run.status === 'validation_failed' ? (
             <dl className="mt-3 grid gap-2 sm:grid-cols-4" data-testid="imports-preview">
               <Figure label={labels.preview.total} value={String(run.rows_total)} testId="imports-preview-total" />
@@ -1357,7 +1453,11 @@ export function ImportPanel({
               })}
             </p>
           ) : null}
-          {run.status === 'validated' ? <Banner tone="info">{labels.wroteNothing}</Banner> : null}
+          {run.status === 'validated' ? (
+            <Banner tone="info" announce={false}>
+              {labels.wroteNothing}
+            </Banner>
+          ) : null}
           {run.status === 'validated' && (stage === 'review' || stage === 'confirm') ? (
             <div className="mt-4 space-y-3" data-testid="imports-review">
               <dl className="grid gap-3 text-sm sm:grid-cols-3">
@@ -1443,7 +1543,7 @@ export function ImportPanel({
             <div className="mt-4 space-y-2" data-testid="imports-confirm">
               <p className="text-sm text-ink-muted">{labels.confirmHint}</p>
               <div className="flex flex-wrap gap-3">
-                <Button type="button" onClick={() => void confirm()} disabled={busy}>
+                <Button type="button" onClick={() => void confirm()} aria-disabled={busy || undefined}>
                   {busy ? labels.committing : labels.confirm}
                 </Button>
                 <Button
@@ -1464,31 +1564,24 @@ export function ImportPanel({
             <Banner tone="info">{labels.notCommittable}</Banner>
           ) : null}
           {/*
-            * **The outcome takes focus, and it is the same fix as SET-24.**
-            * Confirming unmounts the button that was activated -- the block
-            * above is gated on `validated` -- so focus falls to `BODY`, and
-            * this sentence arrives inside a subtree that mounts with it, which
-            * a live region does not announce. A person working by screen
-            * reader confirmed an irreversible write of thousands of records and
-            * was told nothing, twice over. `SaveOutcome` moves focus on mount,
-            * so a reader reads what it lands on without depending on
-            * live-region semantics at all. IMP2-10 in
-            * `docs/features/data-import/phase-2-review.md`.
+            * **The outcome is text, and the page announces it once.** It used to be a
+            * `SaveOutcome`, which takes focus when it mounts. That is right after a redirect
+            * (SET-24) and wrong here: the run ends from a poll, at a moment of the poll's choosing, and
+            * a person who had gone to read Recent imports was pulled back to a sentence they
+            * did not ask for. It also stacked a third live region on the two this card already
+            * had. Now the ending is announced once, by the panel's own status line, and the
+            * heading takes focus only when nothing else holds it (the effect on `flight`
+            * above). GR-378.
             */}
           {run.status === 'committed' ? (
-            <SaveOutcome
-              className="mt-3 text-sm text-ink"
-              testId="imports-committed"
-              outcome="ok"
-              message={
-                written === null
-                  ? fill(labels.wrote, {
-                      created: String(run.rows_valid),
-                      total: String(run.rows_total),
-                    })
-                  : labels.result.title
-              }
-            />
+            <p className="mt-3 text-sm text-ink" data-testid="imports-committed" data-outcome="ok">
+              {written === null
+                ? fill(labels.wrote, {
+                    created: String(run.rows_valid),
+                    total: String(run.rows_total),
+                  })
+                : labels.result.title}
+            </p>
           ) : null}
           {run.status === 'committed' && written !== null ? (
             <table className="mt-3 w-auto text-sm" data-testid="imports-result">
@@ -1518,12 +1611,9 @@ export function ImportPanel({
             </table>
           ) : null}
           {run.status === 'failed' ? (
-            <SaveOutcome
-              className="mt-3 text-sm text-ink"
-              testId="imports-failed"
-              outcome="error"
-              message={labels.states[run.status] ?? run.status}
-            />
+            <p className="mt-3 text-sm text-ink" data-testid="imports-failed" data-outcome="error">
+              {labels.states[run.status] ?? run.status}
+            </p>
           ) : null}
           {run.status !== 'validating' ? (
             <div className="mt-4 flex flex-wrap gap-3" data-testid="imports-ended-actions">
@@ -1546,7 +1636,7 @@ export function ImportPanel({
                 type="button"
                 variant="secondary"
                 onClick={() => void download()}
-                disabled={busy}
+                aria-disabled={busy || undefined}
               >
                 {labels.downloadReport}
               </Button>
@@ -1632,8 +1722,10 @@ export function ImportPanel({
                         aria-label={fill(labels.openRun, { target: row.target })}
                         aria-current={run?.id === row.id ? 'true' : undefined}
                         data-testid="imports-open"
-                        disabled={analysing}
-                        onClick={() => open(row)}
+                        aria-disabled={analysing || undefined}
+                        onClick={() => {
+                          if (!analysing) open(row)
+                        }}
                       >
                         {labels.open}
                       </Button>
