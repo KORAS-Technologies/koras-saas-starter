@@ -212,7 +212,7 @@ def _url(path: str) -> str:
     return "/api/v1" + re.sub(r"\{(\w+)\}", "00000000-0000-0000-0000-0000000000aa", path)
 
 
-def test_the_router_exposes_the_eleven_routes_this_gate_was_written_against() -> None:
+def test_the_router_exposes_the_twelve_routes_this_gate_was_written_against() -> None:
     """If this fails a route was added or removed: read the gate again, then update the list."""
     assert sorted(_import_routes()) == sorted(
         [
@@ -220,6 +220,7 @@ def test_the_router_exposes_the_eleven_routes_this_gate_was_written_against() ->
             ("GET", "/imports/targets/{key}/template"),
             ("GET", "/imports"),
             ("POST", "/imports"),
+            ("GET", "/imports/sources/{file_id}"),
             ("GET", "/imports/{run_id}"),
             ("GET", "/imports/{run_id}/analysis"),
             ("PUT", "/imports/{run_id}/mapping"),

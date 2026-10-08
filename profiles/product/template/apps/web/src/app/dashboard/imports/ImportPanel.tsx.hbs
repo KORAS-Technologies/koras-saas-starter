@@ -12,6 +12,7 @@ import {
   allErrors,
   analyseRun,
   cancelRun,
+  checkSource,
   commitRun,
   completeSourceUpload,
   listErrors,
@@ -22,6 +23,14 @@ import {
   validateRun,
 } from './actions'
 import type { ImportLabels } from './labels'
+import {
+  CHECK_DEADLINE_MS,
+  checkDelay,
+  parsePending,
+  pendingKey,
+  phaseOf,
+} from './source-state'
+import type { PendingSource, SourcePhase } from './source-state'
 {{#if capability.secure_files}}
 import { digestOf } from '../../../lib/browser-upload'
 {{/if}}
@@ -122,6 +131,17 @@ function guardCell(cell: string): string {
  */
 const IN_FLIGHT = new Set(['validating', 'commit_requested', 'committing'])
 
+/** The phases the page draws a sentence for; the rest are drawn by other parts of it. */
+type SourceMessage = 'checking' | 'ready' | 'stalled' | 'held' | 'rejected' | 'missing'
+const SOURCE_PHASES: ReadonlySet<SourcePhase> = new Set<SourcePhase>([
+  'checking',
+  'ready',
+  'stalled',
+  'held',
+  'rejected',
+  'missing',
+])
+
 /**
  * The order the template menu lists formats in, whatever order the target
  * declared them: Excel first, because it is the one with the Instructions
@@ -158,10 +178,13 @@ function Figure({ label, value, testId }: { label: string; value: string; testId
 export function ImportPanel({
   targets,
   initialRuns,
+  storageScope = '',
   labels,
 }: {
   targets: ImportTargetView[]
   initialRuns: ImportRunView[]
+  /** Who the remembered wait belongs to: organisation and person. */
+  storageScope?: string
   labels: ImportLabels
 }) {
   const [runs, setRuns] = useState<ImportRunView[]>(initialRuns)
@@ -180,6 +203,21 @@ export function ImportPanel({
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [problems, setProblems] = useState<ImportRowErrorView[] | null>(null)
   const input = useRef<HTMLInputElement>(null)
+  // Where an uploaded file is between "the bytes arrived" and "a run can start".
+  // A new upload is withheld until it has been finalized and scanned, about
+  // twenty minutes, so this is a wait the page owns and not a refusal.
+  const [phase, setPhase] = useState<SourcePhase>('idle')
+  const [waiting, setWaiting] = useState<PendingSource | null>(null)
+  const [tick, setTick] = useState(0)
+  const attempts = useRef(0)
+  const restored = useRef(false)
+  // A restored wait was begun by a click in an earlier visit, possibly by
+  // someone else on this browser: it never starts a run by itself.
+  const resumed = useRef<string | null>(null)
+  // One ask at a time, and a generation that Stop or a new file moves on, so an
+  // answer that arrives after either is dropped.
+  const asking = useRef(false)
+  const generation = useRef(0)
 
   const target = targets.find((candidate) => candidate.key === targetKey) ?? null
   // **The run's own target, not the picker's.** They are the same until
@@ -229,6 +267,175 @@ export function ImportPanel({
     return () => clearInterval(timer)
   }, [run, refresh])
 
+  const remember = useCallback(
+    (source: PendingSource) => {
+      try {
+        window.localStorage.setItem(pendingKey(storageScope), JSON.stringify(source))
+      } catch {
+        // A convenience only; the page works without it.
+      }
+    },
+    [storageScope],
+  )
+
+  const forget = useCallback(() => {
+    try {
+      window.localStorage.removeItem(pendingKey(storageScope))
+    } catch {
+      // As above.
+    }
+  }, [storageScope])
+
+  /** The run for a source the server has said may be read. */
+  const startFrom = useCallback(
+    async (source: PendingSource) => {
+      setBusy(true)
+      setError(null)
+      try {
+        const started = await startRun({
+          target: source.target,
+          fileId: source.fileId,
+          operation: source.operation,
+        })
+        if (started.status === 'error') {
+          setError(started.message)
+          return
+        }
+        setRun(started.value)
+        const found = await analyseRun(started.value.id)
+        if (found.status === 'error') {
+          setError(found.message)
+          return
+        }
+        setAnalysis(found.value)
+        setMapping(found.value.suggested)
+        await refresh()
+      } finally {
+        setBusy(false)
+      }
+    },
+    [refresh],
+  )
+
+  /**
+   * Ask where the source is and act on the answer: start the run on `ready`,
+   * keep waiting on `checking`, say so plainly on anything else. The server
+   * decides what `ready` is; this only follows it.
+   */
+  const resolve = useCallback(
+    async (source: PendingSource) => {
+      if (asking.current) return
+      asking.current = true
+      const mine = generation.current
+      try {
+        const answer = await checkSource(source.fileId)
+        if (mine !== generation.current) return
+        if (answer.status === 'error') {
+          if (answer.final) {
+            // Waiting will not change this (permission, ceiling, closed gate).
+            setWaiting(null)
+            forget()
+            setPhase('idle')
+            setError(answer.message)
+            return
+          }
+          // Could not ask. Not a verdict: keep the wait and try again later.
+          setError(fill(labels.source.unreachable, { name: source.name }))
+          setPhase('checking')
+          setTick((current) => current + 1)
+          return
+        }
+        const next = phaseOf(answer.value)
+        if (next === 'checking') {
+          setError(null)
+          setPhase('checking')
+          setTick((current) => current + 1)
+          return
+        }
+        if (next === 'ready' && resumed.current === source.fileId) {
+          // Found ready on a later visit: say so and let a person start it.
+          setError(null)
+          setPhase('ready')
+          return
+        }
+        setWaiting(null)
+        forget()
+        if (next === 'ready') {
+          setPhase('idle')
+          asking.current = false
+          await startFrom(source)
+          return
+        }
+        setPhase(next)
+      } finally {
+        // Only while this call still owns the slot: Stop or a new file moved the generation
+        // on and released it already, and a newer ask may hold it now.
+        if (mine === generation.current) asking.current = false
+      }
+    },
+    [forget, labels, startFrom],
+  )
+
+  // The wait. Ten seconds doubling to a minute, to a deadline; past it the page
+  // stops asking and offers one explicit "Check again" (`stalled`).
+  useEffect(() => {
+    if (waiting === null || phase !== 'checking') return
+    if (Date.now() - waiting.at > CHECK_DEADLINE_MS) {
+      setPhase('stalled')
+      return
+    }
+    const timer = setTimeout(() => {
+      attempts.current += 1
+      void resolve(waiting)
+    }, checkDelay(attempts.current))
+    return () => clearTimeout(timer)
+  }, [waiting, phase, tick, resolve])
+
+  // A person who left while a file was being checked comes back to it.
+  useEffect(() => {
+    if (restored.current) return
+    restored.current = true
+    let found: PendingSource | null = null
+    try {
+      found = parsePending(window.localStorage.getItem(pendingKey(storageScope)), Date.now())
+    } catch {
+      found = null
+    }
+    if (found === null || !targets.some((candidate) => candidate.key === found?.target)) return
+    resumed.current = found.fileId
+    setChosen({ name: found.name, size: found.size })
+    setWaiting(found)
+    setPhase('checking')
+    void resolve(found)
+  }, [resolve, storageScope, targets])
+
+  const continueResumed = useCallback(() => {
+    if (waiting === null) return
+    const source = waiting
+    resumed.current = null
+    setWaiting(null)
+    forget()
+    setPhase('idle')
+    void startFrom(source)
+  }, [forget, startFrom, waiting])
+
+  const checkAgain = useCallback(() => {
+    if (waiting === null) return
+    attempts.current = 0
+    setPhase('checking')
+    void resolve(waiting)
+  }, [resolve, waiting])
+
+  const stopWaiting = useCallback(() => {
+    generation.current += 1
+    asking.current = false
+    resumed.current = null
+    setWaiting(null)
+    setPhase('idle')
+    setChosen(null)
+    forget()
+  }, [forget])
+
   const choose = useCallback(
     async (file: File) => {
       if (target === null) return
@@ -236,6 +443,12 @@ export function ImportPanel({
       setError(null)
       setProblems(null)
       setAnalysis(null)
+      generation.current += 1
+      asking.current = false
+      resumed.current = null
+      setWaiting(null)
+      setPhase('idle')
+      forget()
       setChosen({ name: file.name, size: file.size })
       try {
 {{#if capability.secure_files}}
@@ -268,24 +481,22 @@ export function ImportPanel({
           setError(done.message)
           return
         }
-        const started = await startRun({
-          target: target.key,
+        // Not started here: the file has only just arrived, and the server
+        // withholds it until it has been checked. `resolve` asks, starts the
+        // run the moment the answer is `ready`, and otherwise waits.
+        const source: PendingSource = {
           fileId: ticket.value.file_id,
+          name: file.name,
+          size: file.size,
+          target: target.key,
           operation,
-        })
-        if (started.status === 'error') {
-          setError(started.message)
-          return
+          at: Date.now(),
         }
-        setRun(started.value)
-        const found = await analyseRun(started.value.id)
-        if (found.status === 'error') {
-          setError(found.message)
-          return
-        }
-        setAnalysis(found.value)
-        setMapping(found.value.suggested)
-        await refresh()
+        attempts.current = 0
+        setWaiting(source)
+        setPhase('checking')
+        remember(source)
+        await resolve(source)
       } catch (failure) {
         setError(failure instanceof Error ? failure.message : String(failure))
       } finally {
@@ -293,7 +504,7 @@ export function ImportPanel({
         if (input.current) input.current.value = ''
       }
     },
-    [operation, refresh, target],
+    [forget, operation, remember, resolve, target],
   )
 
   const check = useCallback(async () => {
@@ -543,6 +754,38 @@ export function ImportPanel({
             {preparing ? labels.preparing : ''}
           </p>
 {{/if}}
+          {chosen === null || !SOURCE_PHASES.has(phase) ? null : (
+            <div className="mt-3 space-y-3" data-testid="imports-source" data-phase={phase}>
+              <Banner
+                tone={
+                  phase === 'checking' || phase === 'stalled' || phase === 'ready'
+                    ? 'info'
+                    : phase === 'held'
+                      ? 'warning'
+                      : 'error'
+                }
+              >
+                {fill(labels.source[phase as SourceMessage], { name: chosen.name })}
+              </Banner>
+              {phase === 'checking' || phase === 'stalled' || phase === 'ready' ? (
+                <div className="flex flex-wrap gap-3">
+                  {phase === 'ready' ? (
+                    <Button type="button" onClick={continueResumed} disabled={busy}>
+                      {labels.source.continue}
+                    </Button>
+                  ) : null}
+                  {phase === 'stalled' ? (
+                    <Button type="button" variant="secondary" onClick={checkAgain}>
+                      {labels.source.checkAgain}
+                    </Button>
+                  ) : null}
+                  <Button type="button" variant="ghost" onClick={stopWaiting}>
+                    {labels.source.stop}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
       </Card>
 

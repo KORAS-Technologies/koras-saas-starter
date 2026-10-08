@@ -17,11 +17,12 @@ import asyncio
 import hashlib
 import json
 import logging
+import uuid
 import weakref
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from koras_audit import AuditAction, Classification, actions
 from koras_import import (
@@ -988,7 +989,13 @@ async def check_source(session: AsyncSession, file_id: str | None) -> Any:  # no
     row = (await session.execute(_SOURCE, {"id": file_id})).first()
     if row is None:
         raise SourceRefused("import.source.missing")
+{{#if capability.secure_files}}
+    if row.status == "pending":
+        # The upload has not been confirmed finished: a wait, like a pending scan.
+        raise SourceRefused("import.source.pending")
+{{/if}}
     if row.status != "ready":
+        # quarantined, archived, deleted, purged: waiting will not change these.
         raise SourceRefused("import.source.not_ready")
 {{#if capability.secure_files}}
     # An allow-list, and the product's one release rule: the product reads the bytes itself
@@ -1003,14 +1010,121 @@ async def check_source(session: AsyncSession, file_id: str | None) -> Any:  # no
         storage_key=row.storage_key,
         scan_object_etag=row.scan_object_etag,
     ):
+        # **`pending` is not `unscanned`.** A new upload is withheld for the whole upload
+        # window before it can even be finalized, so "not checked yet" is the ordinary answer
+        # to a file chosen a moment ago and must not read as a refusal of the file. The release
+        # rule is unchanged -- both answers withhold -- only the name differs.
+        if row.scan_status == "pending":
+            raise SourceRefused("import.source.pending")
         raise SourceRefused("import.source.unscanned")
 {{else}}
+    # No upload window and no scanner guarantee here: a pending scan may never clear, so it
+    # is refused as it always was and not presented as a wait.
     if (row.scan_status or "pending") in UNPARSEABLE_SCANS:
         raise SourceRefused("import.source.unscanned")
 {{/if}}
     if int(row.size_bytes or 0) > MAX_SOURCE_BYTES:
         raise SourceRefused("import.source.too_large")
     return row
+
+
+{{#if capability.secure_files}}
+#: `files.scan_failure` values that are a hold the person must act on, not a retry the
+#: scanner will make on its own. The rest (`scanner_unavailable`, `scan_timeout`,
+#: `malformed_response`, `scanner_error`, `object_unreachable`, `object_changed`,
+#: `scan_interrupted`) are attempts that will be repeated.
+_HOLD_FAILURES = frozenset(
+    {
+        "integrity_mismatch",
+        "over_ceiling",
+        "misconfigured",
+        "scan_limit_exceeded",
+        "inspection_incomplete",
+        "identity_insufficient",
+    }
+)
+
+_STATE_ROW = text(
+    "select storage_key, size_bytes, status, scan_status, scan_failure, category, "
+    "tenant_id::text as tenant_id, scan_object_etag, "
+    "nullif(current_setting('app.tenant_id', true), '') as session_tenant_id "
+    "from public.files where id = cast(:id as uuid)"
+)
+{{else}}
+# Without `secure_files` there is no `scan_failure` column and no upload window.
+_STATE_ROW = text(
+    "select size_bytes, status, scan_status, null::text as scan_failure, category "
+    "from public.files where id = cast(:id as uuid)"
+)
+{{/if}}
+
+SourceState = Literal["checking", "ready", "held", "rejected", "missing"]
+
+
+def _row_clears(row: Any) -> bool:  # noqa: ANN401
+    """The product's one release rule, applied to a `_STATE_ROW`. Never relaxed here."""
+{{#if capability.secure_files}}
+    return releasable(
+        status=row.status,
+        scan_status=row.scan_status,
+        consumer="import",
+        tenant_id=row.session_tenant_id,
+        row_tenant_id=row.tenant_id,
+        storage_key=row.storage_key,
+        scan_object_etag=row.scan_object_etag,
+    )
+{{else}}
+    return (row.scan_status or "pending") not in UNPARSEABLE_SCANS
+{{/if}}
+
+
+async def source_state(session: AsyncSession, file_id: str) -> SourceState:
+    """Where an uploaded source is on its way to being importable. Reads only.
+
+    A closed vocabulary and no reason text: what the scanner or the integrity check said is
+    not the caller's to read. It applies the release rule and never relaxes it -- `ready`
+    means the rule releases the file and it is within `MAX_SOURCE_BYTES`, and nothing else does.
+
+    - `checking`: not finalized or not scanned yet, or being retried;
+    - `ready`: `check_source` would accept it;
+    - `held`: it will not clear by waiting (integrity, ceiling, no scanner);
+    - `rejected`: infected or quarantined;
+    - `missing`: no such file on this organisation's `imports` shelf. Another organisation's
+      file is exactly this, as is a malformed id.
+    """
+    try:
+        uuid.UUID(file_id)
+    except (ValueError, AttributeError, TypeError):
+        return "missing"
+    row = (await session.execute(_STATE_ROW, {"id": file_id})).first()
+    if row is None or row.category != "imports":
+        return "missing"
+    if row.scan_status == "infected" or row.status == "quarantined":
+        return "rejected"
+{{#if capability.secure_files}}
+    if row.status == "pending":
+        return "checking"
+{{else}}
+    if row.status == "pending":
+        # `check_source` refuses an unfinished upload here (`not_ready`) and does not treat it
+        # as a wait, so this does not either: waiting would never start a run.
+        return "held"
+{{/if}}
+    if row.status != "ready":
+        return "missing"
+    if _row_clears(row):
+        if int(row.size_bytes or 0) > MAX_SOURCE_BYTES:
+            raise SourceRefused("import.source.too_large")
+        return "ready"
+{{#if capability.secure_files}}
+    if row.scan_status == "pending":
+        return "held" if row.scan_failure in _HOLD_FAILURES else "checking"
+    return "held"
+{{else}}
+    # Without `secure_files` nothing guarantees a scanner, so a ready file that
+    # `check_source` refuses is one waiting will not change: `held`.
+    return "held"
+{{/if}}
 
 
 def _fetch(store: Any, row: Any) -> bytes:  # noqa: ANN401
@@ -1129,6 +1243,7 @@ __all__ = [
     "Reported",
     "Run",
     "SourceRefused",
+    "SourceState",
 {{#unless capability.secure_files}}
     "UNPARSEABLE_SCANS",
 {{/unless}}
@@ -1155,5 +1270,6 @@ __all__ = [
     "request_commit",
     "recent",
     "source_bytes",
+    "source_state",
     "set_mapping",
 ]

@@ -1,0 +1,232 @@
+"""A source that is still being checked is a wait, not a refusal.
+
+A new upload is withheld for the upload window before it can be finalized and scanned, so a
+run started right after the upload used to be answered with the quarantine answer ("This file
+is not available.") for a perfectly good file. `POST /imports` now answers
+`file_scan_pending`, and `GET /imports/sources/{file_id}` lets the page ask, read-only and
+with a closed word, whether it can start the run yet.
+
+The row carries the columns of both shapes of the product (with and without `secure_files`),
+and a file that is releasable is releasable under either release rule.
+"""
+
+from __future__ import annotations
+
+import os
+from collections.abc import AsyncIterator, Iterator
+from typing import Any
+
+import pytest
+
+os.environ.setdefault("ENVIRONMENT", "dev")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/db")
+os.environ.setdefault("ZITADEL_DOMAIN", "https://example.invalid")
+os.environ.setdefault("ZITADEL_PROJECT_ID", "0")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+
+from fastapi.testclient import TestClient  # noqa: E402
+from koras_api.core.auth import require_auth  # noqa: E402
+from koras_api.core.database import get_db  # noqa: E402
+from koras_api.core.settings import settings as api_settings  # noqa: E402
+from koras_api.core.tenant import require_tenant  # noqa: E402
+from koras_api.imports import registry  # noqa: E402
+from koras_api.main import app  # noqa: E402
+from koras_auth import JWTClaims  # noqa: E402
+from koras_import import FieldKind, FieldSpec, Format, ImportTarget, Operation  # noqa: E402
+from koras_platform import OrganizationRole  # noqa: E402
+from koras_tenant import TenantContext  # noqa: E402
+
+app.state.redis = None
+
+TENANT = "00000000-0000-0000-0000-000000000001"
+SUBJECT = "user-1"
+FILE_ID = "5b0e6f0e-7a54-4a43-9c4f-4a0f6b7c3d11"
+GENERATION = "22222222-2222-2222-2222-222222222222"
+
+ACCOUNTS = ImportTarget(
+    key="probe.accounts",
+    label_key="import.target.probe.accounts",
+    permission="imports.manage",
+    fields=(
+        FieldSpec("email", "import.field.email", kind=FieldKind.EMAIL, required=True),
+        FieldSpec("name", "import.field.name", required=True),
+    ),
+    match_keys=("email",),
+    operations=(Operation.SKIP_DUPLICATE,),
+    formats=(Format.CSV,),
+)
+
+OWNER = frozenset({OrganizationRole.OWNER})
+MEMBER = frozenset({OrganizationRole.MEMBER})
+
+
+class _Row:
+    def __init__(self, **values: Any) -> None:  # noqa: ANN401
+        self.__dict__.update(
+            {
+                "status": "ready",
+                "scan_status": "pending",
+                "scan_failure": None,
+                "category": "imports",
+                "size_bytes": 10,
+                "name": "accounts.csv",
+                "content_type": "text/csv",
+                "storage_key": f"tenants/{TENANT}/imports/{FILE_ID}/final/{GENERATION}/a.csv",
+                "tenant_id": TENANT,
+                "session_tenant_id": TENANT,
+                "scan_object_etag": "etag-1",
+                "checksum_sha256": None,
+                "checksum_verified_at": None,
+            }
+            | values
+        )
+
+
+class _Result:
+    def __init__(self, row: _Row | None) -> None:
+        self._row = row
+
+    def first(self) -> _Row | None:
+        return self._row
+
+    def one(self) -> _Row:
+        raise AssertionError("nothing here selects a run")
+
+    def __iter__(self) -> Iterator[Any]:
+        return iter(())
+
+
+class _Session:
+    def __init__(self, row: _Row | None) -> None:
+        self._row = row
+        self.statements: list[str] = []
+        self.commits = 0
+
+    async def execute(self, statement: object, parameters: dict[str, Any] | None = None) -> _Result:
+        self.statements.append(" ".join(str(statement).split()))
+        return _Result(self._row)
+
+    async def commit(self) -> None:
+        self.commits += 1
+
+    async def rollback(self) -> None:
+        return None
+
+
+def _client(session: _Session, roles: frozenset[OrganizationRole] = OWNER) -> TestClient:
+    async def _db() -> AsyncIterator[_Session]:
+        yield session
+
+    app.dependency_overrides[require_auth] = lambda: JWTClaims(
+        sub=SUBJECT, roles=roles, organization_id="org-1"
+    )
+    app.dependency_overrides[require_tenant] = lambda: TenantContext(
+        id=TENANT, slug="alpha", name="Alpha", organization_id="org-1", user_id=SUBJECT
+    )
+    app.dependency_overrides[get_db] = _db
+    return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _enabled(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setattr(api_settings, "imports_enabled", True)
+    registry.clear()
+    registry.extend([ACCOUNTS])
+    yield
+    registry.clear()
+    app.dependency_overrides.clear()
+
+
+#: What a file that is still being checked is answered with: a wait where the product has the
+#: upload window (`secure_files`), and the answer it always had where it does not.
+{{#if capability.secure_files}}
+PENDING = "file_scan_pending"
+UNFINISHED = "file_scan_pending"
+{{else}}
+PENDING = "file_quarantined"
+UNFINISHED = "import_file_unreadable"
+{{/if}}
+
+
+def _code(answer: Any) -> str:  # noqa: ANN401
+    return str(answer.json()["detail"]["code"])
+
+
+def _start(client: TestClient) -> Any:  # noqa: ANN401
+    return client.post("/api/v1/imports", json={"target": "probe.accounts", "file_id": FILE_ID})
+
+
+def test_starting_a_run_on_a_file_still_being_checked_says_so_and_is_not_quarantine() -> None:
+    answer = _start(_client(_Session(_Row(scan_status="pending"))))
+    assert answer.status_code == 409
+    assert _code(answer) == PENDING
+
+
+def test_starting_a_run_on_an_unfinished_upload_is_a_wait_too() -> None:
+    answer = _start(_client(_Session(_Row(status="pending"))))
+    assert answer.status_code == 409
+    assert _code(answer) == UNFINISHED
+
+
+@pytest.mark.parametrize("status", ["quarantined", "deleted", "purged"])
+def test_a_dead_file_is_never_reported_as_still_being_checked(status: str) -> None:
+    assert _code(_start(_client(_Session(_Row(status=status))))) != PENDING
+
+
+@pytest.mark.parametrize("scan", ["infected", "skipped"])
+def test_starting_a_run_on_a_file_that_will_not_clear_keeps_the_refusal(scan: str) -> None:
+    answer = _start(_client(_Session(_Row(scan_status=scan))))
+    assert _code(answer) == "file_quarantined"
+
+
+@pytest.mark.parametrize(
+    ("row", "state"),
+    [
+        (_Row(scan_status="clean"), "ready"),
+{{#if capability.secure_files}}
+        (_Row(scan_status="pending"), "checking"),
+{{else}}
+        (_Row(scan_status="pending"), "held"),
+{{/if}}
+{{#if capability.secure_files}}
+        (_Row(status="pending"), "checking"),
+{{else}}
+        (_Row(status="pending"), "held"),
+{{/if}}
+        (_Row(scan_status="pending", scan_failure="integrity_mismatch"), "held"),
+        (_Row(scan_status="infected"), "rejected"),
+        (_Row(category="documents"), "missing"),
+        (None, "missing"),
+    ],
+)
+def test_the_source_route_answers_one_closed_word(row: _Row | None, state: str) -> None:
+    answer = _client(_Session(row)).get(f"/api/v1/imports/sources/{FILE_ID}")
+    assert answer.status_code == 200
+    assert answer.json() == {"state": state}
+
+
+def test_a_malformed_id_is_missing_and_never_reaches_the_database() -> None:
+    session = _Session(_Row(scan_status="clean"))
+    answer = _client(session).get("/api/v1/imports/sources/not-a-uuid")
+    assert answer.json() == {"state": "missing"}
+    assert not any("public.files" in sql for sql in session.statements)
+
+
+def test_the_source_route_needs_the_import_permission() -> None:
+    answer = _client(_Session(_Row(scan_status="clean")), MEMBER).get(
+        f"/api/v1/imports/sources/{FILE_ID}"
+    )
+    assert answer.status_code == 403
+
+
+def test_the_source_route_is_closed_while_imports_are_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(api_settings, "imports_enabled", False)
+    answer = _client(_Session(_Row(scan_status="clean"))).get(f"/api/v1/imports/sources/{FILE_ID}")
+    assert answer.status_code == 403
+
+
+def test_the_source_route_does_not_start_a_run_or_write_anything() -> None:
+    session = _Session(_Row(scan_status="clean"))
+    _client(session).get(f"/api/v1/imports/sources/{FILE_ID}")
+    assert session.commits == 0
+    assert all(sql.lower().startswith("select") for sql in session.statements)

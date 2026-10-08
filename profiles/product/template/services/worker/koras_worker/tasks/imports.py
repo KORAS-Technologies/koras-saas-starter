@@ -460,6 +460,9 @@ def _sentence(code: str) -> str:
         "import.source.changed": (
             "the file is not the one this import was started against"
         ),
+        "import.source.pending": (
+            "the file is still being checked and is not available to read yet"
+        ),
         "import.source.unscanned": (
             "the file has not been checked for malware, and an import will not "
             "read a file nobody has looked at"

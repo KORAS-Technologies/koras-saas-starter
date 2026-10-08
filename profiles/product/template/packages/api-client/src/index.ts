@@ -1837,6 +1837,23 @@ export function fetchImportRun(
   return request<ImportRunView>(`/api/v1/imports/${encodeURIComponent(options.runId)}`, options)
 }
 
+/**
+ * Where an uploaded source is on its way to being importable. `ready` only where
+ * the one release rule would release the file; the rest are closed words with no
+ * reason attached.
+ */
+export type ImportSourceState = 'checking' | 'ready' | 'held' | 'rejected' | 'missing'
+
+export async function fetchImportSource(
+  options: RequestOptions & { fileId: string },
+): Promise<ImportSourceState> {
+  const answer = await request<{ state: ImportSourceState }>(
+    `/api/v1/imports/sources/${encodeURIComponent(options.fileId)}`,
+    options,
+  )
+  return answer.state
+}
+
 export function startImportRun(
   options: RequestOptions & { target: string; fileId: string; operation: string },
 ): Promise<ImportRunView> {

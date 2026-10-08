@@ -774,6 +774,26 @@ export const en = {
   'imports.checking':
     'Checking…',
   'imports.preparing': 'Preparing…',
+  'imports.source.checking':
+    '{name} is uploaded. It is being checked for malware before it can be imported, which usually takes about 20 minutes. You can leave this page; open Import again in this browser and it will carry on from here.',
+  'imports.source.ready':
+    '{name} has passed the check and is ready to import.',
+  'imports.source.stalled':
+    '{name} is still being checked. Nothing is wrong with it so far; the check is taking longer than usual.',
+  'imports.source.held':
+    '{name} could not be verified, so it cannot be imported. Download the template again, copy your rows into it and upload that as a new file. If this happens again, contact your administrator.',
+  'imports.source.rejected':
+    '{name} did not pass the security check and was not imported. Contact your administrator before using this file again.',
+  'imports.source.missing':
+    '{name} is no longer available. Choose the file again.',
+  'imports.source.unreachable':
+    '{name} could not be checked just now. This page will try again.',
+  'imports.source.checkAgain':
+    'Check again',
+  'imports.source.continue':
+    'Continue',
+  'imports.source.stop':
+    'Stop waiting',
   'imports.discard':
     'Discard this import',
   'imports.tooManyRows':
