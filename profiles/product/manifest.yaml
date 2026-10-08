@@ -214,6 +214,9 @@ template_map:
       - tests/unit/test_import_worker_memory.py
       - tests/integration/test_import_commit_rls.py
       - tests/integration/test_import_commit_atomic.py
+      # GR-376: the source-state route against a real database, as two tenants. It reads the
+      # scan columns, so it is listed under `secure_files` as well and exists only when both are on.
+      - tests/integration/test_import_source_state_real.py
       # GR-352E: the worker's own image, built and run with nothing mounted.
       # A dry run and a commit taken from first line to last inside it, and
       # the probe that is fed to the container. IMPORT-DEF-020 was a module
@@ -239,6 +242,12 @@ template_map:
       # generated only when both are on, because the tooling itself is the capability's.
       - tests/unit/test_promotion_activation.py
       - apps/web/src/app/dashboard/imports
+      # The panel's component test and the harness it runs on: `node --test` with the
+      # workspace's own `typescript` and `react-dom`, a hand-written DOM and a stub for the
+      # panel's `'use server'` actions. No dependency is added for it. The harness is the
+      # capability's because its only consumer is the panel's test; `apps/web`'s `test`
+      # script (rendered only with `data_import`) names that test and nothing else.
+      - apps/web/src/test-support
       # The template download: a route handler, because a download is a body
       # and a server action returns a value. The menu it is reached from is a
       # `packages/ui` primitive and stays outside the gate with the rest of
@@ -386,6 +395,7 @@ template_map:
       - tests/unit/test_promotion_activation.py
       - tests/integration/test_provider_qualification_extra.py
       - tests/integration/test_f1_detector_real.py
+      - tests/integration/test_import_source_state_real.py
 
     # In-app notifications: the table, the emitter, the routes, the page and
     # the browser test.

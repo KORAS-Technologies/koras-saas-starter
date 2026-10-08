@@ -72,6 +72,8 @@ export interface ImportLabels {
     missing: string
     unreachable: string
     checkAgain: string
+    rechecking: string
+    checkedStill: string
     continue: string
     stop: string
   }
@@ -216,6 +218,8 @@ export function importLabels(t: Translator): ImportLabels {
       missing: t('imports.source.missing'),
       unreachable: t('imports.source.unreachable'),
       checkAgain: t('imports.source.checkAgain'),
+      rechecking: t('imports.source.rechecking'),
+      checkedStill: t('imports.source.checkedStill'),
       continue: t('imports.source.continue'),
       stop: t('imports.source.stop'),
     },

@@ -777,7 +777,7 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'imports.source.ready':
     '{name} ha superado la comprobación y está listo para importarse.',
   'imports.source.stalled':
-    '{name} sigue en comprobación. Hasta ahora no hay ningún problema; la comprobación está tardando más de lo habitual.',
+    '{name} sigue en comprobación. Hasta ahora no hay ningún problema; la comprobación está tardando más de lo habitual y esta página ha dejado de comprobar por sí sola. Seleccione Comprobar de nuevo para mirar ahora.',
   'imports.source.held':
     'No se pudo verificar {name}, por lo que no puede importarse. Descargue la plantilla de nuevo, copie sus filas en ella y súbala como un archivo nuevo. Si vuelve a ocurrir, póngase en contacto con su administrador.',
   'imports.source.rejected':
@@ -789,7 +789,10 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'imports.source.checkAgain':
     'Comprobar de nuevo',
   'imports.source.continue':
-    'Continuar',
+    'Continuar con la asignación de columnas',
+  'imports.source.rechecking': 'Comprobando…',
+  'imports.source.checkedStill':
+    'Comprobado ahora mismo. El archivo sigue en comprobación.',
   'imports.source.stop':
     'Dejar de esperar',
   'imports.discard':
