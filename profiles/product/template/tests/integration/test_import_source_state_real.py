@@ -39,8 +39,15 @@ import pytest
 
 DATABASE_URL = os.environ.get("E2E_DATABASE_URL", "")
 
-if DATABASE_URL:
-    os.environ["DATABASE_URL"] = DATABASE_URL
+# Skip before anything below runs: the environment this module sets (imports on, a scanner
+# configured) is process-wide and would change what the unit suites in the same run see.
+if not DATABASE_URL:
+    pytest.skip(
+        "needs a real PostgreSQL; set E2E_DATABASE_URL (see playwright.config.ts)",
+        allow_module_level=True,
+    )
+
+os.environ["DATABASE_URL"] = DATABASE_URL
 os.environ.setdefault("ENVIRONMENT", "dev")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 # A product generated with `secure_files` refuses to start without a scanner, a bucket and a
@@ -57,11 +64,6 @@ os.environ.setdefault("ZITADEL_PROJECT_ID", "0")
 os.environ.setdefault("CORS_ORIGINS", "[]")
 # GR-369: every import route refuses unless the deployment activated imports.
 os.environ["IMPORTS_ENABLED"] = "true"
-
-pytestmark = pytest.mark.skipif(
-    not DATABASE_URL,
-    reason="needs a real PostgreSQL; set E2E_DATABASE_URL (see playwright.config.ts)",
-)
 
 from fastapi.testclient import TestClient  # noqa: E402
 from koras_api.core.auth import require_auth  # noqa: E402
