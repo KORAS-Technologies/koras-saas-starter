@@ -29,6 +29,7 @@ import {
   parsePending,
   pendingKey,
   phaseOf,
+  purgePending,
 } from './source-state'
 import type { PendingSource, SourcePhase } from './source-state'
 {{#if capability.secure_files}}
@@ -227,6 +228,12 @@ export function ImportPanel({
   // A failed look is a note beside the wait, not an assertive page-level error.
   const [retryNote, setRetryNote] = useState<string | null>(null)
   const sourceBox = useRef<HTMLDivElement>(null)
+  const mapHeading = useRef<HTMLHeadingElement>(null)
+  // Where focus goes once the control that held it has left. Decided by the
+  // handler, carried out after the render that removes the control, and held
+  // back while the chooser is disabled (`busy`): focusing a disabled input does
+  // nothing, and focus then falls to the page.
+  const [focusTarget, setFocusTarget] = useState<'chooser' | 'mapping' | null>(null)
 
   const target = targets.find((candidate) => candidate.key === targetKey) ?? null
   // **The run's own target, not the picker's.** They are the same until
@@ -419,6 +426,8 @@ export function ImportPanel({
     restored.current = true
     let found: PendingSource | null = null
     try {
+      // Only this principal's wait on this organisation survives a visit.
+      purgePending(storageScope, window.localStorage)
       found = parsePending(window.localStorage.getItem(pendingKey(storageScope)), Date.now())
     } catch {
       found = null
@@ -438,6 +447,8 @@ export function ImportPanel({
     setWaiting(null)
     forget()
     setPhase('idle')
+    // Continue is about to leave the page; the mapping is where the person goes next.
+    setFocusTarget('mapping')
     void startFrom(source)
   }, [forget, startFrom, waiting])
 
@@ -464,8 +475,16 @@ export function ImportPanel({
     setRetryNote(null)
     forget()
     // The control that held focus is leaving; the file chooser is where a person goes next.
-    input.current?.focus()
+    setFocusTarget('chooser')
   }, [forget])
+
+  useEffect(() => {
+    if (focusTarget === null || busy) return
+    const heading = mapHeading.current
+    if (focusTarget === 'mapping' && heading !== null) heading.focus()
+    else input.current?.focus()
+    setFocusTarget(null)
+  }, [focusTarget, busy, analysis, error])
 
   // The wait ending badly is news the person must not have to hunt for: move focus to it.
   useEffect(() => {
@@ -854,7 +873,13 @@ export function ImportPanel({
 
       {run === null || analysis === null ? null : (
         <Card>
-          <h2 className="font-display text-lg font-semibold text-ink">{labels.mapTitle}</h2>
+          <h2
+            ref={mapHeading}
+            tabIndex={-1}
+            className="font-display text-lg font-semibold text-ink outline-none focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            {labels.mapTitle}
+          </h2>
           <p className="mt-1 text-sm text-ink-muted">{labels.mapDescription}</p>
           {analysis.sheet ? (
             <p className="mt-1 text-xs text-ink-muted" data-testid="imports-sheet">

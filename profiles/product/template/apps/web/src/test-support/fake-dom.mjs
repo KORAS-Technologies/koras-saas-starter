@@ -282,9 +282,19 @@ class Element extends Node {
     return [...this.descendants()].filter((element) => element.getAttribute('data-testid') === id)
   }
 
-  focus() {}
+  /**
+   * Like a browser's: a disabled control cannot take focus, and the one that
+   * can becomes `document.activeElement`. A call that does nothing is exactly
+   * how focus was lost in the import panel, so the tests must be able to see it.
+   */
+  focus() {
+    if (this.disabled === true || this.getAttribute('disabled') !== null) return
+    this.ownerDocument.activeElement = this
+  }
 
-  blur() {}
+  blur() {
+    if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = null
+  }
 }
 
 class Document extends Node {

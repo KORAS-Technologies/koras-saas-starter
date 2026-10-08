@@ -12,6 +12,7 @@ import {
   parsePending,
   pendingKey,
   phaseOf,
+  purgePending,
 } from '../../../profiles/product/template/apps/web/src/app/dashboard/imports/source-state'
 import { templatePath } from './template-path'
 
@@ -98,6 +99,44 @@ describe('source-state — executed', () => {
   })
 })
 
+
+describe('purgePending — executed', () => {
+  const keys = [
+    PENDING_KEY,
+    `${PENDING_KEY}:org-1:user-1`,
+    `${PENDING_KEY}:org-1:user-2`,
+    `${PENDING_KEY}-lookalike`,
+    'theme',
+  ]
+  const make = () => {
+    const store = new Map(keys.map((key) => [key, 'x']))
+    return {
+      store,
+      get length() {
+        return store.size
+      },
+      key: (at: number) => [...store.keys()][at] ?? null,
+      removeItem: (key: string) => void store.delete(key),
+    }
+  }
+
+  it('with nobody to keep, forgets every remembered wait and nothing else', () => {
+    const storage = make()
+    purgePending(null, storage)
+    expect([...storage.store.keys()]).toEqual([`${PENDING_KEY}-lookalike`, 'theme'])
+  })
+
+  it('keeps only the wait of the principal and organisation asked for', () => {
+    const storage = make()
+    purgePending('org-1:user-1', storage)
+    expect([...storage.store.keys()]).toEqual([
+      `${PENDING_KEY}:org-1:user-1`,
+      `${PENDING_KEY}-lookalike`,
+      'theme',
+    ])
+  })
+})
+
 describe('the pending-source wait — read from the template', () => {
   const core = read('services/api/koras_api/core/imports.py')
   const router = read('services/api/koras_api/routers/imports.py')
@@ -113,6 +152,34 @@ describe('the pending-source wait — read from the template', () => {
     expect(core).toContain('_row_clears(row)')
     expect(router).toContain('FILE_SCAN_PENDING')
     expect(read('services/worker/koras_worker/tasks/imports.py')).toContain('"import.source.pending"')
+  })
+
+  it('treats only a file on the imports shelf as an import source, answering as an absent file', () => {
+    // The shelf is part of the identity: a same-organisation file of another category is not a
+    // source, whatever its scan says, and the refusal is the absent one.
+    expect(core).toContain('if row is None or row.category != "imports":')
+    const check = core.slice(core.indexOf('async def check_source('), core.indexOf('async def source_state('))
+    expect(check.indexOf('row.category != "imports"')).toBeLessThan(check.indexOf('row.status == "pending"'))
+    expect(check.indexOf('row.category != "imports"')).toBeLessThan(check.indexOf('releasable('))
+  })
+
+  it('keeps no wait across a person or an organisation, and clears it where the session ends', () => {
+    const page = read('apps/web/src/app/dashboard/imports/page.tsx')
+    expect(page).toContain("key={`${context.member.organizationId ?? ''}:${context.member.userId}`}")
+    expect(panel).toContain('purgePending(storageScope, window.localStorage)')
+    const login = read('apps/web/src/app/login/page.tsx')
+    // Rendered only for a product generated with the panel it clears for.
+    expect(login.split('<ForgetPendingImports />').length - 1).toBe(2)
+    expect(login).toContain('{{#if capability.data_import}}\nimport { ForgetPendingImports }')
+    expect(read('apps/web/src/app/login/ForgetPendingImports.tsx')).toContain('purgePending(null, window.localStorage)')
+  })
+
+  it('hands focus on explicitly when Stop or Continue removes the control that had it', () => {
+    expect(panel).toContain("setFocusTarget('chooser')")
+    expect(panel).toContain("setFocusTarget('mapping')")
+    // Focus is carried out only once the chooser is enabled again.
+    expect(panel).toContain('if (focusTarget === null || busy) return')
+    expect(panel).toContain('tabIndex={-1}')
   })
 
   it('declares the read-only source route before the run route, behind the router-wide gate', () => {

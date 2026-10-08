@@ -406,6 +406,10 @@ function withStorage() {
       getItem: (key) => (STORE.has(key) ? STORE.get(key) : null),
       setItem: (key, value) => void STORE.set(key, String(value)),
       removeItem: (key) => void STORE.delete(key),
+      get length() {
+        return STORE.size
+      },
+      key: (at) => [...STORE.keys()][at] ?? null,
     },
   }
   STORE.clear()
@@ -650,7 +654,7 @@ test('a person who left while the file was being checked comes back to it; found
   assert.equal(STORE.size, 0)
 })
 
-test('a wait remembered by one person is invisible to another, and is kept under its own key', async () => {
+test('a wait remembered by one person is invisible to another, and opening the page as someone else forgets it', async () => {
   withStorage()
   STORE.set(
     `${PENDING_KEY}:org-1:user-1`,
@@ -661,11 +665,106 @@ test('a wait remembered by one person is invisible to another, and is kept under
   await flush()
   assert.deepEqual(log, [])
   assert.equal(container.textContent.includes('secret.xlsx'), false)
+  assert.equal(STORE.size, 0, "the previous person's entry is not left behind on the browser")
   await mounted.pop()?.()
-  const again = await mount({ storageScope: 'org-1:user-1' })
+  await mount({ storageScope: 'org-1:user-1' })
   await flush()
-  assert.equal(log[0]?.name, 'checkSource')
-  assert.equal(again.container.byTestId('imports-source')[0].getAttribute('data-phase'), 'ready')
+  assert.deepEqual(log, [], 'and it is not offered back to the first person either')
+})
+
+test('switching organisation forgets the wait, the runs and the mapping of the one left', async () => {
+  withStorage()
+  STORE.set(
+    `${PENDING_KEY}:org-1:user-1`,
+    JSON.stringify({ fileId: 'file-7', name: 'org-one.xlsx', size: 1, target: 'shop.customers', operation: 'skip_duplicate', at: Date.now() }),
+  )
+  // A stray entry under the bare key (an older build) and under another scope.
+  STORE.set(PENDING_KEY, '{}')
+  STORE.set('unrelated.key', 'kept')
+  const log = install(uploadScript(async () => ({ status: 'ok', value: 'checking' })))
+  const first = await mount({ storageScope: 'org-1:user-1', initialRuns: [run({ id: 'run-of-org-1' })] })
+  await flush()
+  assert.equal(first.container.byTestId('imports-source')[0].getAttribute('data-phase'), 'checking')
+  await mounted.pop()?.()
+  // The page re-keys the panel on the scope, so a switch is an unmount and a fresh mount.
+  const second = await mount({ storageScope: 'org-2:user-1', initialRuns: [] })
+  await flush()
+  assert.equal(second.container.byTestId('imports-source').length, 0, 'the wait did not follow the person')
+  assert.equal(second.container.textContent.includes('org-one.xlsx'), false)
+  assert.equal(second.container.textContent.includes('run-of-org-1'), false)
+  assert.deepEqual([...STORE.keys()], ['unrelated.key'], 'only the pending-wait entries are touched')
+  assert.equal(log.filter((entry) => entry.name === 'checkSource').length, 1, 'nothing asked on behalf of org-2')
+})
+
+const focused = (container) => container.ownerDocument.activeElement
+
+test('Stop pressed while the chooser is still disabled hands focus to the chooser once it is enabled', async () => {
+  withStorage()
+  fakeBucket()
+  let release
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
+  install(uploadScript(async () => (await gate, { status: 'ok', value: 'checking' })))
+  const { container } = await mount({})
+  await change(byId(container, 'import-file'), { files: [xlsxFile('accounts.xlsx', 'Name\nAcme\n')] })
+  await flushUntil(() => buttonNamed(container, 'imports.source.stop') !== undefined, 'Stop shown')
+  const chooser = byId(container, 'import-file')
+  assert.equal(chooser.getAttribute('disabled') !== null, true, 'the chooser is disabled while the first look is made')
+  await press(buttonNamed(container, 'imports.source.stop'))
+  assert.notEqual(focused(container), chooser, 'a disabled control cannot take focus')
+  release()
+  await flushUntil(() => byId(container, 'import-file').getAttribute('disabled') === null, 'the chooser enabled')
+  await flush()
+  assert.equal(focused(container), byId(container, 'import-file'), 'focus is on the file chooser')
+})
+
+test('Stop pressed with the chooser enabled puts focus on it', async () => {
+  withStorage()
+  fakeBucket()
+  install(uploadScript(async () => ({ status: 'ok', value: 'checking' })))
+  const { container } = await mount({})
+  await change(byId(container, 'import-file'), { files: [xlsxFile('accounts.xlsx', 'Name\nAcme\n')] })
+  await flushUntil(() => byId(container, 'import-file').getAttribute('disabled') === null, 'settled')
+  await press(buttonNamed(container, 'imports.source.stop'))
+  await flush()
+  assert.equal(focused(container), byId(container, 'import-file'))
+})
+
+test('Continue hands focus to the mapping heading, which is focusable but not a tab stop', async () => {
+  withStorage()
+  STORE.set(
+    PENDING_KEY,
+    JSON.stringify({ fileId: 'file-7', name: 'accounts.xlsx', size: 1, target: 'shop.customers', operation: 'skip_duplicate', at: Date.now() }),
+  )
+  install(uploadScript(async () => ({ status: 'ok', value: 'ready' })))
+  const { container } = await mount({})
+  await flush()
+  const button = buttonNamed(container, 'imports.source.continue')
+  await press(button)
+  await flush()
+  const heading = all(container).find((node) => node.tagName === 'H2' && node.textContent === labels.mapTitle)
+  assert.ok(heading !== undefined, 'the mapping is drawn')
+  assert.equal(heading.getAttribute('tabindex'), '-1')
+  assert.equal(focused(container), heading, 'focus did not fall to the page when Continue left')
+})
+
+test('Continue that ends in a refusal puts focus on the chooser rather than on nothing', async () => {
+  withStorage()
+  STORE.set(
+    PENDING_KEY,
+    JSON.stringify({ fileId: 'file-7', name: 'accounts.xlsx', size: 1, target: 'shop.customers', operation: 'skip_duplicate', at: Date.now() }),
+  )
+  install(
+    uploadScript(async () => ({ status: 'ok', value: 'ready' }), {
+      startRun: async () => ({ status: 'error', message: 'refused', final: true }),
+    }),
+  )
+  const { container } = await mount({})
+  await flush()
+  await press(buttonNamed(container, 'imports.source.continue'))
+  await flush()
+  assert.equal(focused(container), byId(container, 'import-file'))
 })
 
 test('a final refusal while asking ends the wait with the API\'s words instead of polling for forty-five minutes', async () => {

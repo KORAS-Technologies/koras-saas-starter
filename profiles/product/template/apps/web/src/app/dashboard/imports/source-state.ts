@@ -92,6 +92,34 @@ export function pendingKey(scope: string): string {
   return scope === '' ? PENDING_KEY : `${PENDING_KEY}:${scope}`
 }
 
+/**
+ * Forget every remembered wait on this browser except the one for `keep`.
+ *
+ * A remembered wait names a file and a person; it belongs to the signed-in
+ * principal and organisation that made it and to nobody else. It is dropped
+ * when that principal leaves (the sign-in page calls this with no `keep`: whoever
+ * arrives there has no session) and when a different principal or organisation
+ * opens the page (the panel calls it with its own scope), so a switch of account
+ * or tenant on a shared browser cannot leave the previous one's file name behind
+ * or offer it to the next. Entries are collected before any is removed, because
+ * removing while indexing skips keys.
+ */
+export function purgePending(
+  keep: string | null,
+  storage: Pick<Storage, 'length' | 'key' | 'removeItem'>,
+): void {
+  const kept = keep === null ? null : pendingKey(keep)
+  const doomed: string[] = []
+  for (let at = 0; at < storage.length; at += 1) {
+    const name = storage.key(at)
+    if (name === null) continue
+    if (name !== PENDING_KEY && !name.startsWith(`${PENDING_KEY}:`)) continue
+    if (name === kept) continue
+    doomed.push(name)
+  }
+  for (const name of doomed) storage.removeItem(name)
+}
+
 /** Old enough that the file is certainly done or gone: not offered again. */
 export const PENDING_MAX_AGE_MS = 24 * 60 * 60_000
 
