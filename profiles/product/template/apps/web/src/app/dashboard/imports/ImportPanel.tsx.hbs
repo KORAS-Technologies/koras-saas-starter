@@ -302,8 +302,19 @@ export function ImportPanel({
       if (id === null) url.searchParams.delete('run')
       else url.searchParams.set('run', id)
       if (url.href === window.location.href) return
-      if (mode === 'push') window.history.pushState(null, '', url)
-      else window.history.replaceState(null, '', url)
+      // The browser's own History methods, not the app router's patched copies: the router
+      // answers a pushState by re-rendering for the new URL, and that router action is queued
+      // in front of the server action this page is waiting on (the file's analysis), which
+      // then never returns. The entry keeps the router's own history state, so Back and
+      // Forward are still understood by it. `?run=` is read here and nowhere else.
+      const history = window.history
+      const method = mode === 'push' ? 'pushState' : 'replaceState'
+      const native: unknown = Object.getPrototypeOf(history)?.[method]
+      const write =
+        typeof History !== 'undefined' && history instanceof History && typeof native === 'function'
+          ? (native as (state: unknown, title: string, url: URL) => void)
+          : history[method].bind(history)
+      write.call(history, history.state, '', url)
     } catch {
       // No history to write (a test): the page works, it just cannot be linked to.
     }
@@ -1504,7 +1515,7 @@ export function ImportPanel({
           {run.status === 'committed' || run.status === 'failed' || run.status === 'cancelled' ? (
             <div className="mt-4 flex flex-wrap gap-3" data-testid="imports-ended-actions">
               {run.status === 'committed' && resultLink !== undefined ? (
-                <ButtonLink href={resultLink.href} navigation="document" variant="secondary">
+                <ButtonLink href={resultLink.href} variant="secondary">
                   {resultLink.label}
                 </ButtonLink>
               ) : null}
