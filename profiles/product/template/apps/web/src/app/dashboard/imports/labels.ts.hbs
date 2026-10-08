@@ -61,6 +61,20 @@ export interface ImportLabels {
   /** Polite status while the browser reads the file to take its checksum. */
   preparing: string
 {{/if}}
+  /** What the page says about an uploaded file between upload and run. Each
+   *  but the three buttons takes `{name}`. */
+  source: {
+    checking: string
+    ready: string
+    stalled: string
+    held: string
+    rejected: string
+    missing: string
+    unreachable: string
+    checkAgain: string
+    continue: string
+    stop: string
+  }
   discard: string
   tooManyRows: string
   replaced: string
@@ -193,6 +207,18 @@ export function importLabels(t: Translator): ImportLabels {
 {{#if capability.secure_files}}
     preparing: t('imports.preparing'),
 {{/if}}
+    source: {
+      checking: t('imports.source.checking'),
+      ready: t('imports.source.ready'),
+      stalled: t('imports.source.stalled'),
+      held: t('imports.source.held'),
+      rejected: t('imports.source.rejected'),
+      missing: t('imports.source.missing'),
+      unreachable: t('imports.source.unreachable'),
+      checkAgain: t('imports.source.checkAgain'),
+      continue: t('imports.source.continue'),
+      stop: t('imports.source.stop'),
+    },
     discard: t('imports.discard'),
     tooManyRows: t('imports.tooManyRows'),
     replaced: t('imports.replaced'),

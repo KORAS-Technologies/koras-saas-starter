@@ -8,6 +8,7 @@ import {
   fetchImportAnalysis,
   fetchImportErrors,
   fetchImportRuns,
+  fetchImportSource,
   fetchImportTargets,
   requestUpload as requestUploadRequest,
   setImportMapping as setImportMappingRequest,
@@ -18,6 +19,7 @@ import type {
   ImportAnalysisView,
   ImportRowErrorView,
   ImportRunView,
+  ImportSourceState,
   ImportTargetView,
   UploadTicket,
 } from '@{{projectSlug}}/api-client'
@@ -137,6 +139,30 @@ export async function completeSourceUpload(
     return { status: 'ok', value: null }
   } catch (error) {
     return { status: 'error', message: await explain(error) }
+  }
+}
+
+/**
+ * Where an uploaded source is on its way to being importable: a closed word,
+ * read-only. The page asks this until it is `ready` and only then starts a run,
+ * so a file that is still being checked is a wait and not a refusal.
+ */
+export type SourceCheck =
+  | { status: 'ok'; value: ImportSourceState }
+  // `final` is true for an answer waiting will not change (a permission, a
+  // ceiling, a gate that is closed): the page ends the wait and says so instead
+  // of asking again for forty-five minutes.
+  | { status: 'error'; message: string; final: boolean }
+
+export async function checkSource(fileId: string): Promise<SourceCheck> {
+  const auth = await session()
+  if (auth === null) return { ...(await denied<never>()), final: true } as SourceCheck
+  try {
+    return { status: 'ok', value: await fetchImportSource({ ...auth, fileId }) }
+  } catch (error) {
+    const status = error instanceof ApiError ? error.status : 0
+    const final = status >= 400 && status < 500 && status !== 408 && status !== 429
+    return { status: 'error', message: await explain(error), final }
   }
 }
 

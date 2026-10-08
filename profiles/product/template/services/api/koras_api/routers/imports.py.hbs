@@ -22,6 +22,7 @@ nothing.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from koras_auth import JWTClaims
@@ -578,6 +579,30 @@ async def start(
     return _view(run)
 
 
+class SourceView(BaseModel):
+    """Whether an uploaded source file can be imported yet, and nothing else."""
+
+    state: Literal["checking", "ready", "held", "rejected", "missing"]
+
+
+@router.get("/imports/sources/{file_id}", response_model=SourceView)
+async def source(
+    file_id: str, claims: AuthDep, _tenant: TenantDep, session: DbSession
+) -> SourceView:
+    """Where a just-uploaded source is on its way to being importable.
+
+    A new upload is withheld until it is finalized and scanned, which takes most of twenty
+    minutes, so the page has to be able to ask without starting a run. Read-only, and it
+    answers a closed word: `ready` only where the one release rule would release the file,
+    never a reason the scanner gave.
+    """
+    _require(claims, "checking an import source")
+    try:
+        return SourceView(state=await store.source_state(session, file_id))
+    except store.SourceRefused as refused:
+        raise _source_refusal(str(refused)) from refused
+
+
 @router.get("/imports/{run_id}", response_model=RunView)
 async def one(
     run_id: str, claims: AuthDep, _tenant: TenantDep, session: DbSession
@@ -1003,6 +1028,26 @@ def _source_refusal(code: str) -> HTTPException:
     a file they uploaded is making their own judgement. Parsing is not that —
     the product reads the bytes itself and writes rows from them.
     """
+    if code == "import.source.pending":
+        # Not a refusal of the file: it has not finished being finalized and checked. 409, and
+        # the code the Files page already shows as "being checked", so nothing says "not
+        # available" about a file nobody has judged.
+{{#if capability.secure_files}}
+        return api_error(
+            status.HTTP_409_CONFLICT,
+            ApiErrorCode.FILE_SCAN_PENDING,
+            "this file is still being checked and is not available yet",
+        )
+{{else}}
+        # Without `secure_files` this product has no `file_scan_pending` code (and no upload
+        # window), so a pending scan keeps the answer it always had.
+        return api_error(
+            status.HTTP_409_CONFLICT,
+            ApiErrorCode.FILE_QUARANTINED,
+            "this file has not been checked for malware, and an import will "
+            "not read a file nobody has looked at",
+        )
+{{/if}}
     if code == "import.source.unscanned":
         return api_error(
             status.HTTP_409_CONFLICT,

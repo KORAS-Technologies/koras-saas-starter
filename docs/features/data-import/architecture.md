@@ -128,6 +128,31 @@ both resolved through `core/storage.py:upload_limits` and answered as
 `upload_refused_by_policy`. The hardcoded 5 GiB ceiling stays as the outer
 bound; the settings narrow it.
 
+### A new upload is a wait, not a refusal
+
+In a product with `secure_files` a new upload is withheld from every consumer for the
+upload window (`FINALIZE_DELAY_SECONDS`, about nineteen minutes) and then until the scanner
+has written a clean verdict. That window is unchanged and no import code touches it. What
+changed is what an import says about it: `check_source` used to fold a `pending` scan into
+`import.source.unscanned`, which the router answers as `file_quarantined`, so a perfectly
+good file chosen a moment earlier read as "This file is not available."
+
+Now `pending` (an unfinished upload, or a ready file whose scan is still pending) is
+`import.source.pending`, answered `409 file_scan_pending`. `skipped`, `infected` and any scan
+value the code does not know stay `import.source.unscanned`; a file that is quarantined,
+archived or deleted stays `import.source.not_ready`. Every one of them still withholds the
+file, because the release rule is untouched.
+
+The page does not start a run right after `/complete`. It asks the read-only
+`GET /imports/sources/{file_id}` (same `imports.manage` permission and activation gate as
+every other import route), which answers one closed word, `checking`, `ready`, `held`,
+`rejected` or `missing`, and `ready` only where `releasable()` would release the file and it is
+within the import ceiling. The page starts the run on `ready`, waits on `checking` (every 10
+seconds, doubling to 60, for up to 45 minutes, then a "Check again"), and ends the wait with
+a sentence of its own on the rest. A wait is remembered in the browser per organisation and
+person so that leaving the page does not lose it, and a remembered wait never starts a run
+by itself: it offers "Continue".
+
 ## The permission
 
 `imports.manage`, on **every** route including the reads. A run names a

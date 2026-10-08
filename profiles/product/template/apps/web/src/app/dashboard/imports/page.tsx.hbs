@@ -53,6 +53,7 @@ export default async function ImportsPage() {
           <ImportPanel
             targets={targets.status === 'ok' ? targets.value : []}
             initialRuns={runs.status === 'ok' ? runs.value : []}
+            storageScope={`${context.member.organizationId ?? ''}:${context.member.userId}`}
             labels={labels}
           />
         ) : (

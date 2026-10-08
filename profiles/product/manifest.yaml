@@ -202,6 +202,7 @@ template_map:
       - tests/unit/test_imports.py
       - tests/unit/test_import_commit.py
       - tests/unit/test_import_templates_api.py
+      - tests/unit/test_import_source_route.py
       - tests/unit/test_import_preflight.py
       - tests/unit/test_import_inspection.py
       - tests/unit/test_import_inspection_memory.py

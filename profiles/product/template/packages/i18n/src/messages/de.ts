@@ -783,6 +783,26 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
   'imports.checking':
     'Wird geprüft…',
   'imports.preparing': 'Wird vorbereitet…',
+  'imports.source.checking':
+    '{name} ist hochgeladen. Die Datei wird auf Schadsoftware geprüft, bevor sie importiert werden kann; das dauert in der Regel etwa 20 Minuten. Sie können diese Seite verlassen; öffnen Sie den Import in diesem Browser erneut, dann geht es hier weiter.',
+  'imports.source.ready':
+    '{name} hat die Prüfung bestanden und kann importiert werden.',
+  'imports.source.stalled':
+    '{name} wird noch geprüft. Bisher ist nichts auffällig; die Prüfung dauert länger als üblich.',
+  'imports.source.held':
+    '{name} konnte nicht verifiziert werden und kann daher nicht importiert werden. Laden Sie die Vorlage erneut herunter, kopieren Sie Ihre Zeilen hinein und laden Sie sie als neue Datei hoch. Tritt das erneut auf, wenden Sie sich an Ihre Administration.',
+  'imports.source.rejected':
+    '{name} hat die Sicherheitsprüfung nicht bestanden und wurde nicht importiert. Wenden Sie sich an Ihre Administration, bevor Sie diese Datei erneut verwenden.',
+  'imports.source.missing':
+    '{name} ist nicht mehr verfügbar. Wählen Sie die Datei erneut aus.',
+  'imports.source.unreachable':
+    '{name} konnte gerade nicht geprüft werden. Diese Seite versucht es erneut.',
+  'imports.source.checkAgain':
+    'Erneut prüfen',
+  'imports.source.continue':
+    'Weiter',
+  'imports.source.stop':
+    'Nicht mehr warten',
   'imports.discard':
     'Import verwerfen',
   'imports.tooManyRows':

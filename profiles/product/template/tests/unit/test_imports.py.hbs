@@ -289,7 +289,7 @@ class _Store:
 
 
 {{#if capability.secure_files}}
-@pytest.mark.parametrize("scan", ["pending", "skipped", "infected", "mystery", "", None, "CLEAN"])
+@pytest.mark.parametrize("scan", ["skipped", "infected", "mystery", "", None, "CLEAN"])
 @pytest.mark.asyncio
 async def test_a_file_without_a_clean_verdict_is_never_parsed(scan: str | None) -> None:
     session = _Session([_Result([_File(scan_status=scan)])])  # type: ignore[arg-type]
@@ -351,13 +351,117 @@ async def test_a_file_no_scanner_has_cleared_is_never_parsed(scan: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_an_unfinished_upload_is_refused() -> None:
+async def test_an_unfinished_upload_is_refused_as_a_wait() -> None:
     session = _Session([_Result([_File(status="pending")])])
     objects = _Store()
     with pytest.raises(store.SourceRefused) as refused:
         await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
-    assert str(refused.value) == "import.source.not_ready"
+    assert str(refused.value) == "import.source.pending"
     assert objects.read == []
+
+
+@pytest.mark.parametrize("status", ["quarantined", "archived", "deleted", "purged"])
+@pytest.mark.asyncio
+async def test_a_file_that_waiting_will_not_change_is_not_called_pending(status: str) -> None:
+    session = _Session([_Result([_File(status=status)])])
+    with pytest.raises(store.SourceRefused) as refused:
+        await store.check_source(session, "file-1")  # type: ignore[arg-type]
+    assert str(refused.value) == "import.source.not_ready"
+
+
+@pytest.mark.parametrize(
+    ("scan", "code"),
+    [
+        ("pending", "import.source.pending"),
+        ("skipped", "import.source.unscanned"),
+        ("infected", "import.source.unscanned"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_a_file_still_being_checked_is_not_named_as_a_refused_one(
+    scan: str, code: str
+) -> None:
+    """The defect behind "This file is not available." for a fresh upload: a pending file
+    was reported with the quarantine answer. Both still withhold."""
+    session = _Session([_Result([_File(scan_status=scan)])])
+    with pytest.raises(store.SourceRefused) as refused:
+        await store.check_source(session, "file-1")  # type: ignore[arg-type]
+    assert str(refused.value) == code
+
+
+class _StateRow(_File):
+    def __init__(
+        self,
+        status: str = "ready",
+        scan_status: str = "clean",
+        scan_failure: str | None = None,
+        category: str = "imports",
+        size_bytes: int = 11,
+    ) -> None:
+        super().__init__(status=status, scan_status=scan_status)
+        self.scan_failure = scan_failure
+        self.category = category
+        self.size_bytes = size_bytes
+
+
+_SOURCE_ID = "5b0e6f0e-7a54-4a43-9c4f-4a0f6b7c3d11"
+
+
+@pytest.mark.parametrize(
+    ("row", "state"),
+    [
+        (_StateRow(), "ready"),
+        (_StateRow(status="pending", scan_status="pending"), "checking"),
+        (_StateRow(scan_status="pending"), "checking"),
+        (_StateRow(scan_status="pending", scan_failure="scanner_unavailable"), "checking"),
+        (_StateRow(scan_status="pending", scan_failure="scan_interrupted"), "checking"),
+        (_StateRow(scan_status="pending", scan_failure="integrity_mismatch"), "held"),
+        (_StateRow(scan_status="pending", scan_failure="misconfigured"), "held"),
+        (_StateRow(scan_status="skipped"), "held"),
+        (_StateRow(scan_status="infected"), "rejected"),
+        (_StateRow(status="quarantined", scan_status="pending"), "rejected"),
+        (_StateRow(status="deleted"), "missing"),
+        (_StateRow(category="documents"), "missing"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_the_source_state_is_ready_only_where_the_release_rule_clears(
+    row: _StateRow, state: str
+) -> None:
+    session = _Session([_Result([row])])
+    assert await store.source_state(session, _SOURCE_ID) == state  # type: ignore[arg-type]
+
+
+{{#if capability.secure_files}}
+@pytest.mark.asyncio
+async def test_a_scan_state_nobody_defined_is_held_not_ready() -> None:
+    session = _Session([_Result([_StateRow(scan_status="mystery")])])
+    assert await store.source_state(session, _SOURCE_ID) == "held"  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_a_clean_row_whose_identity_does_not_hold_is_held_not_ready() -> None:
+    row = _StateRow()
+    row.scan_object_etag = None
+    session = _Session([_Result([row])])
+    assert await store.source_state(session, _SOURCE_ID) == "held"  # type: ignore[arg-type]
+
+
+{{/if}}
+@pytest.mark.asyncio
+async def test_an_unknown_or_malformed_source_is_missing() -> None:
+    assert await store.source_state(_Session([_Result([])]), _SOURCE_ID) == "missing"  # type: ignore[arg-type]
+    session = _Session()
+    assert await store.source_state(session, "not-a-uuid") == "missing"  # type: ignore[arg-type]
+    assert session.statements == [], "a malformed id must not reach the database"
+
+
+@pytest.mark.asyncio
+async def test_a_ready_source_above_the_ceiling_is_refused_not_ready() -> None:
+    session = _Session([_Result([_StateRow(size_bytes=store.MAX_SOURCE_BYTES + 1)])])
+    with pytest.raises(store.SourceRefused) as refused:
+        await store.source_state(session, _SOURCE_ID)  # type: ignore[arg-type]
+    assert str(refused.value) == "import.source.too_large"
 
 
 @pytest.mark.asyncio

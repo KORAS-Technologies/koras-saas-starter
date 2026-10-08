@@ -772,6 +772,26 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
   'imports.checking':
     'Comprobando…',
   'imports.preparing': 'Preparando…',
+  'imports.source.checking':
+    '{name} está subido. Se está comprobando si contiene malware antes de poder importarse; suele tardar unos 20 minutos. Puede salir de esta página: vuelva a abrir Importar en este navegador y continuará desde aquí.',
+  'imports.source.ready':
+    '{name} ha superado la comprobación y está listo para importarse.',
+  'imports.source.stalled':
+    '{name} sigue en comprobación. Hasta ahora no hay ningún problema; la comprobación está tardando más de lo habitual.',
+  'imports.source.held':
+    'No se pudo verificar {name}, por lo que no puede importarse. Descargue la plantilla de nuevo, copie sus filas en ella y súbala como un archivo nuevo. Si vuelve a ocurrir, póngase en contacto con su administrador.',
+  'imports.source.rejected':
+    '{name} no superó la comprobación de seguridad y no se importó. Póngase en contacto con su administrador antes de volver a usar este archivo.',
+  'imports.source.missing':
+    '{name} ya no está disponible. Elija el archivo de nuevo.',
+  'imports.source.unreachable':
+    'No se pudo comprobar {name} en este momento. Esta página lo intentará de nuevo.',
+  'imports.source.checkAgain':
+    'Comprobar de nuevo',
+  'imports.source.continue':
+    'Continuar',
+  'imports.source.stop':
+    'Dejar de esperar',
   'imports.discard':
     'Descartar esta importación',
   'imports.tooManyRows':
