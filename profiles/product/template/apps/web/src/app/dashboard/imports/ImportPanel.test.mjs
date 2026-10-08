@@ -1513,3 +1513,50 @@ test('a file with a header row and no records says so and offers no Check', asyn
   assert.equal(names(log).includes('validateRun'), false)
 })
 
+// ── The Start card belongs to the Upload step ───────────────────────────────────────────────────
+
+test('the Start an import card is the Upload step: shown with no run open, gone once a run is open, and Import another file brings it back', async () => {
+  withLocation()
+  const created = run({ id: '9a9a9a9a-9a9a-49a9-89a9-9a9a9a9a9a9a', status: 'created' })
+  install({ analyseRun: async () => ({ status: 'ok', value: ANALYSIS }) })
+  const { container } = await mount({ initialRuns: [created] })
+  assert.equal(container.byTestId('imports-start').length, 1, 'at Upload the card is there')
+  await press(container.byTestId('imports-open')[0])
+  await flush(5)
+  assert.equal(container.byTestId('imports-start').length, 0, 'with a run open it is not above the stage')
+  assert.equal(byId(container, 'import-file'), undefined)
+  assert.equal(stageOfPage(container), 'map')
+  await press(buttonNamed(container, 'imports.anotherFile'))
+  assert.equal(container.byTestId('imports-start').length, 1, 'and it comes back')
+  assert.equal(stageOfPage(container), 'upload')
+  assert.equal(focused(container), byId(container, 'import-file'))
+})
+
+test('a file waiting for its security check keeps the Upload card, where the wait is told', async () => {
+  withStorage()
+  fakeBucket()
+  install(uploadScript(async () => ({ status: 'ok', value: 'checking' })))
+  const { container } = await mount({})
+  await change(byId(container, 'import-file'), { files: [xlsxFile('accounts.xlsx', 'Name' + String.fromCharCode(10) + 'Acme' + String.fromCharCode(10))] })
+  await flushUntil(() => container.byTestId('imports-source').length === 1, 'the wait shown')
+  assert.equal(container.byTestId('imports-start').length, 1)
+})
+
+test('Import another file is offered at every stage a run can be in, but not while it is being checked', async () => {
+  withLocation()
+  for (const status of ['created', 'validation_failed', 'validated', 'commit_requested', 'committed', 'cancelled']) {
+    const row = run({ id: 'abababab-abab-4bab-8bab-abababababab', status, committed_by: status === 'committed' || status === 'commit_requested' ? 'owner' : null })
+    install({ analyseRun: async () => ({ status: 'ok', value: ANALYSIS }), listErrors: async () => ({ status: 'ok', value: [] }) })
+    const { container } = await mount({ initialRuns: [row] })
+    await press(container.byTestId('imports-open')[0])
+    await flush(4)
+    assert.ok(buttonNamed(container, 'imports.anotherFile') !== undefined, status)
+    await mounted.pop()?.()
+  }
+  const checking = run({ id: 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd', status: 'validating' })
+  install({})
+  const { container } = await mount({ initialRuns: [checking] })
+  await press(container.byTestId('imports-open')[0])
+  await flush(4)
+  assert.equal(buttonNamed(container, 'imports.anotherFile'), undefined)
+})

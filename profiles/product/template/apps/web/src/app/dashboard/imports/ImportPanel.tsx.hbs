@@ -345,6 +345,7 @@ export function ImportPanel({
       setRemap(false)
       setAnalysing(false)
       setAnalysisFailed(null)
+      setChosen(null)
       setRun(picked)
       setAnnounce(fill(labels.wizard.opened, { file: picked.source_name ?? picked.target }))
       if (mode !== 'none') wantUrl.current = { id: picked.id, mode }
@@ -1010,6 +1011,7 @@ export function ImportPanel({
       </p>
       {error === null ? null : <Banner tone="error">{error}</Banner>}
 
+      {run === null || phase !== 'idle' ? (
       <Card>
         <h2
           className="font-display text-lg font-semibold text-ink"
@@ -1163,6 +1165,7 @@ export function ImportPanel({
           </div>
         </div>
       </Card>
+      ) : null}
 
       {run === null ||
       analysis === null ||
@@ -1520,7 +1523,7 @@ export function ImportPanel({
               message={labels.states[run.status] ?? run.status}
             />
           ) : null}
-          {run.status === 'committed' || run.status === 'failed' || run.status === 'cancelled' ? (
+          {run.status !== 'validating' ? (
             <div className="mt-4 flex flex-wrap gap-3" data-testid="imports-ended-actions">
               {run.status === 'committed' && resultLink !== undefined ? (
                 <ButtonLink href={resultLink.href} variant="secondary">
