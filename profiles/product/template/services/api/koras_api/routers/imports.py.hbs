@@ -1028,24 +1028,15 @@ def _source_refusal(code: str) -> HTTPException:
     a file they uploaded is making their own judgement. Parsing is not that —
     the product reads the bytes itself and writes rows from them.
     """
+{{#if capability.secure_files}}
     if code == "import.source.pending":
         # Not a refusal of the file: it has not finished being finalized and checked. 409, and
         # the code the Files page already shows as "being checked", so nothing says "not
         # available" about a file nobody has judged.
-{{#if capability.secure_files}}
         return api_error(
             status.HTTP_409_CONFLICT,
             ApiErrorCode.FILE_SCAN_PENDING,
             "this file is still being checked and is not available yet",
-        )
-{{else}}
-        # Without `secure_files` this product has no `file_scan_pending` code (and no upload
-        # window), so a pending scan keeps the answer it always had.
-        return api_error(
-            status.HTTP_409_CONFLICT,
-            ApiErrorCode.FILE_QUARANTINED,
-            "this file has not been checked for malware, and an import will "
-            "not read a file nobody has looked at",
         )
 {{/if}}
     if code == "import.source.unscanned":

@@ -368,7 +368,9 @@ export function ImportPanel({
         }
         setPhase(next)
       } finally {
-        asking.current = false
+        // Only while this call still owns the slot: Stop or a new file moved the generation
+        // on and released it already, and a newer ask may hold it now.
+        if (mine === generation.current) asking.current = false
       }
     },
     [forget, labels, startFrom],
@@ -768,7 +770,7 @@ export function ImportPanel({
               {phase === 'checking' || phase === 'stalled' || phase === 'ready' ? (
                 <div className="flex flex-wrap gap-3">
                   {phase === 'ready' ? (
-                    <Button type="button" onClick={continueResumed}>
+                    <Button type="button" onClick={continueResumed} disabled={busy}>
                       {labels.source.continue}
                     </Button>
                   ) : null}

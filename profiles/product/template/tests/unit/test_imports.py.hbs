@@ -351,12 +351,18 @@ async def test_a_file_no_scanner_has_cleared_is_never_parsed(scan: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_an_unfinished_upload_is_refused_as_a_wait() -> None:
+async def test_an_unfinished_upload_is_refused() -> None:
     session = _Session([_Result([_File(status="pending")])])
     objects = _Store()
     with pytest.raises(store.SourceRefused) as refused:
         await store.source_bytes(session, objects, "file-1")  # type: ignore[arg-type]
+{{#if capability.secure_files}}
+    # A wait: the upload window withholds a new file until it is finalized.
     assert str(refused.value) == "import.source.pending"
+{{else}}
+    # No upload window here: the answer this product always gave.
+    assert str(refused.value) == "import.source.not_ready"
+{{/if}}
     assert objects.read == []
 
 
@@ -372,7 +378,12 @@ async def test_a_file_that_waiting_will_not_change_is_not_called_pending(status:
 @pytest.mark.parametrize(
     ("scan", "code"),
     [
+{{#if capability.secure_files}}
         ("pending", "import.source.pending"),
+{{else}}
+        # Without `secure_files` a pending scan may never clear: refused as it always was.
+        ("pending", "import.source.unscanned"),
+{{/if}}
         ("skipped", "import.source.unscanned"),
         ("infected", "import.source.unscanned"),
     ],
@@ -411,12 +422,18 @@ _SOURCE_ID = "5b0e6f0e-7a54-4a43-9c4f-4a0f6b7c3d11"
     ("row", "state"),
     [
         (_StateRow(), "ready"),
+{{#if capability.secure_files}}
         (_StateRow(status="pending", scan_status="pending"), "checking"),
         (_StateRow(scan_status="pending"), "checking"),
         (_StateRow(scan_status="pending", scan_failure="scanner_unavailable"), "checking"),
         (_StateRow(scan_status="pending", scan_failure="scan_interrupted"), "checking"),
         (_StateRow(scan_status="pending", scan_failure="integrity_mismatch"), "held"),
         (_StateRow(scan_status="pending", scan_failure="misconfigured"), "held"),
+{{else}}
+        # No upload window and no scanner guarantee: nothing here is a wait that would end.
+        (_StateRow(status="pending", scan_status="pending"), "held"),
+        (_StateRow(scan_status="pending"), "held"),
+{{/if}}
         (_StateRow(scan_status="skipped"), "held"),
         (_StateRow(scan_status="infected"), "rejected"),
         (_StateRow(status="quarantined", scan_status="pending"), "rejected"),
@@ -430,6 +447,46 @@ async def test_the_source_state_is_ready_only_where_the_release_rule_clears(
 ) -> None:
     session = _Session([_Result([row])])
     assert await store.source_state(session, _SOURCE_ID) == state  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        _StateRow(),
+        _StateRow(status="pending", scan_status="pending"),
+        _StateRow(scan_status="pending"),
+        _StateRow(scan_status="pending", scan_failure="scanner_unavailable"),
+        _StateRow(scan_status="pending", scan_failure="integrity_mismatch"),
+        _StateRow(scan_status="skipped"),
+        _StateRow(scan_status="infected"),
+        _StateRow(status="quarantined", scan_status="pending"),
+        _StateRow(status="deleted"),
+        _StateRow(status="archived"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_the_source_state_and_check_source_agree(row: _StateRow) -> None:
+    """`ready` is exactly what `check_source` accepts; `checking` is a refusal that is a wait
+    (only where the product has an upload window); every other word is a refusal."""
+    state = await store.source_state(_Session([_Result([row])]), _SOURCE_ID)  # type: ignore[arg-type]
+    try:
+        await store.check_source(_Session([_Result([row])]), _SOURCE_ID)  # type: ignore[arg-type]
+        refusal = None
+    except store.SourceRefused as refused:
+        refusal = str(refused)
+    if state == "ready":
+        assert refusal is None
+    else:
+        assert refusal is not None, f"{state} for a file check_source accepts"
+        if state == "checking":
+{{#if capability.secure_files}}
+            assert refusal == "import.source.pending"
+{{else}}
+            raise AssertionError("a product without an upload window never reports a wait")
+{{/if}}
+        # `held` and the rest are refusals; `check_source` may still name a held pending scan
+        # `pending` (it does not read `scan_failure`), which only matters to a caller who starts a
+        # run without asking first.
 
 
 {{#if capability.secure_files}}

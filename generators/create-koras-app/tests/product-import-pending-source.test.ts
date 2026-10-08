@@ -107,6 +107,8 @@ describe('the pending-source wait — read from the template', () => {
     expect(core).toContain('raise SourceRefused("import.source.pending")')
     expect(core).toContain('raise SourceRefused("import.source.unscanned")')
     expect(core).toContain('async def source_state(')
+    // Only the upload-window rendering treats a pending scan or upload as a wait.
+    expect(core).toContain('{{#if capability.secure_files}}\n    if row.status == "pending":')
     // Release rule untouched: the state function applies it, it does not restate it.
     expect(core).toContain('_row_clears(row)')
     expect(router).toContain('FILE_SCAN_PENDING')
@@ -123,6 +125,9 @@ describe('the pending-source wait — read from the template', () => {
     expect(panel).toContain('await checkSource(source.fileId)')
     expect(panel).toContain("next === 'ready' && resumed.current === source.fileId")
     expect(panel).toContain('generation.current')
+    // A stale ask must not release a slot a newer ask holds, and Continue waits for idle.
+    expect(panel).toContain('if (mine === generation.current) asking.current = false')
+    expect(panel).toContain('onClick={continueResumed} disabled={busy}')
     expect(panel).toContain('storageScope')
     // The upload handler no longer starts the run itself.
     const choose = panel.slice(panel.indexOf('const choose = useCallback('), panel.indexOf('const check = useCallback('))

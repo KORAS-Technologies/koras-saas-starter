@@ -141,8 +141,10 @@ def _enabled(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 #: upload window (`secure_files`), and the answer it always had where it does not.
 {{#if capability.secure_files}}
 PENDING = "file_scan_pending"
+UNFINISHED = "file_scan_pending"
 {{else}}
 PENDING = "file_quarantined"
+UNFINISHED = "import_file_unreadable"
 {{/if}}
 
 
@@ -163,7 +165,7 @@ def test_starting_a_run_on_a_file_still_being_checked_says_so_and_is_not_quarant
 def test_starting_a_run_on_an_unfinished_upload_is_a_wait_too() -> None:
     answer = _start(_client(_Session(_Row(status="pending"))))
     assert answer.status_code == 409
-    assert _code(answer) == PENDING
+    assert _code(answer) == UNFINISHED
 
 
 @pytest.mark.parametrize("status", ["quarantined", "deleted", "purged"])
@@ -181,8 +183,16 @@ def test_starting_a_run_on_a_file_that_will_not_clear_keeps_the_refusal(scan: st
     ("row", "state"),
     [
         (_Row(scan_status="clean"), "ready"),
+{{#if capability.secure_files}}
         (_Row(scan_status="pending"), "checking"),
+{{else}}
+        (_Row(scan_status="pending"), "held"),
+{{/if}}
+{{#if capability.secure_files}}
         (_Row(status="pending"), "checking"),
+{{else}}
+        (_Row(status="pending"), "held"),
+{{/if}}
         (_Row(scan_status="pending", scan_failure="integrity_mismatch"), "held"),
         (_Row(scan_status="infected"), "rejected"),
         (_Row(category="documents"), "missing"),

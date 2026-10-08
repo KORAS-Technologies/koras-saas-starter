@@ -153,6 +153,12 @@ a sentence of its own on the rest. A wait is remembered in the browser per organ
 person so that leaving the page does not lose it, and a remembered wait never starts a run
 by itself: it offers "Continue".
 
+**Without `secure_files` nothing changes in what an import refuses.** There is no upload window
+and no scanner guarantee, so a pending scan may never clear and is not presented as a wait:
+`check_source` keeps `import.source.unscanned` (`file_quarantined`) for it and
+`import.source.not_ready` for an unfinished upload, and `source_state` answers `held` for both.
+`source_state` and `check_source` agree in each rendering, and a test holds them to it.
+
 ## The permission
 
 `imports.manage`, on **every** route including the reads. A run names a
