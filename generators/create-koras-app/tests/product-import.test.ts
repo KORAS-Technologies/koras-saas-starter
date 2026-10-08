@@ -1015,17 +1015,19 @@ describe('data import', () => {
     expect(router).toContain('idempotency_key=f"commit:')
   })
 
-  it('announces the commit through the shared outcome rather than a bare paragraph', () => {
-    // IMP2-10, which is SET-24 in a second feature. The confirm button unmounts
-    // on success, so focus falls to BODY, and the sentence that replaces it
-    // mounts inside a new subtree -- which a live region does not announce.
+  it('announces the ending once, through the panel own status, and does not take focus from the person', () => {
+    // IMP2-10 (SET-24 in a second feature), revised by GR-378. The confirm button unmounts on
+    // success, so focus falls to BODY and a sentence that mounts in a new subtree is not
+    // announced. `SaveOutcome` fixed that by taking focus on mount -- and then took it from a
+    // person who had gone to read Recent imports when the run ended from the poll. The ending is
+    // now announced once, in the one always-mounted status region, and the stage heading takes
+    // focus only when nothing else holds it.
     const panel = read('apps/web/src/app/dashboard/imports/ImportPanel.tsx.hbs')
-    expect(panel).toContain('SaveOutcome')
-    expect(panel).toContain('testId="imports-committed"')
-    // Not reimplemented beside it: the component is the fix, and a second copy
-    // is how the first one stops being maintained.
-    expect(panel, 'the outcome is still a bare paragraph').not.toMatch(
-      /<p[^>]*data-testid="imports-committed"/,
+    expect(panel, 'the result card must not take focus on mount').not.toContain('<SaveOutcome')
+    expect(panel).toContain('data-testid="imports-committed"')
+    expect(panel).toContain("setFocusTarget('wizardIfFree')")
+    expect(panel, 'the state line is not a second live region').not.toMatch(
+      /role="status"[^>]*data-testid="imports-state"/,
     )
   })
 
@@ -1049,7 +1051,7 @@ describe('data import', () => {
     const history = panel.slice(panel.indexOf('{runs.map((row) => ('))
     expect(history).toContain('data-testid="imports-open"')
     expect(history, 'the history row has no control that selects its run').toMatch(
-      /onClick=\{\(\) => open\(row\)\}/,
+      /onClick=\{\(\) => (open\(row\)|\{\s*if \(!analysing\) open\(row\))/,
     )
     // Opening clears what belonged to whichever run was open before. A report
     // from one run shown under another is worse than no report at all.

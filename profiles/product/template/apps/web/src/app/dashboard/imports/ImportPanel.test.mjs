@@ -1780,7 +1780,7 @@ const WAITING_FILE = {
 const storageEvent = (listeners, fileId) =>
   act(async () => {
     listeners.storage({
-      key: 'docoris.imports.pending-source',
+      key: PENDING_KEY,
       newValue: null,
       oldValue: fileId === null ? null : JSON.stringify({ ...WAITING_FILE, fileId, at: Date.now() }),
     })
@@ -1788,7 +1788,7 @@ const storageEvent = (listeners, fileId) =>
 
 test('a wait this tab restored ends when another tab started the run: no Continue, no second run, a sentence, and the list is read again', async () => {
   const place = withLocation()
-  STORE.set('docoris.imports.pending-source', JSON.stringify({ ...WAITING_FILE, at: Date.now() - 20 * 60_000 }))
+  STORE.set(PENDING_KEY, JSON.stringify({ ...WAITING_FILE, at: Date.now() - 20 * 60_000 }))
   const log = install({
     ...uploadScript(async () => ({ status: 'ok', value: 'ready' })),
     listRuns: async () => ({ status: 'ok', value: [run({ id: 'from-the-other-tab' })] }),
@@ -1798,7 +1798,7 @@ test('a wait this tab restored ends when another tab started the run: no Continu
   assert.equal(container.byTestId('imports-source')[0].getAttribute('data-phase'), 'ready')
   assert.ok(buttonNamed(container, 'imports.source.continue') !== undefined)
 
-  STORE.delete('docoris.imports.pending-source')
+  STORE.delete(PENDING_KEY)
   await storageEvent(place.listeners, 'file-7')
   await flush(4)
   assert.equal(container.byTestId('imports-source').length, 0, 'the wait is gone')
@@ -1812,7 +1812,7 @@ test('a wait this tab restored ends when another tab started the run: no Continu
 
 test('a removal for a different file, or a wait this tab began itself, is not this tab\'s to end', async () => {
   const place = withLocation()
-  STORE.set('docoris.imports.pending-source', JSON.stringify({ ...WAITING_FILE, at: Date.now() - 20 * 60_000 }))
+  STORE.set(PENDING_KEY, JSON.stringify({ ...WAITING_FILE, at: Date.now() - 20 * 60_000 }))
   install(uploadScript(async () => ({ status: 'ok', value: 'ready' })))
   const { container } = await mount({})
   await flush()
