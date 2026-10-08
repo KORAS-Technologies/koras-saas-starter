@@ -700,10 +700,12 @@ export function ImportPanel({
       // A person pressed a control that is leaving or has acted: unlike the hand-offs below this
       // is not held back for `busy`, and 'wizard' does not ask whether focus is free -- the
       // control that was pressed has it, and moving is the point.
-      // Wait for the file's analysis while it is on its way, so focus lands on the form it
-      // belongs to rather than on a heading the form then appears above.
+      // At the Map step, wait for the file's analysis while it is on its way, so focus lands on the
+      // form it belongs to rather than on a heading the form then appears above. Every other stage
+      // has nothing arriving to wait for.
       if (
         run !== null &&
+        stage === 'map' &&
         MAPPABLE.has(run.status) &&
         analysis === null &&
         analysisFailed !== run.id &&
