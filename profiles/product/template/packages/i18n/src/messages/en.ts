@@ -773,6 +773,40 @@ export const en = {
     'Check the file',
   'imports.checking':
     'Checking…',
+  'imports.wizard.nav': 'Import steps',
+  'imports.wizard.upload': 'Upload',
+  'imports.wizard.map': 'Map',
+  'imports.wizard.validate': 'Validate',
+  'imports.wizard.review': 'Review',
+  'imports.wizard.confirm': 'Confirm',
+  'imports.wizard.processing': 'Processing',
+  'imports.wizard.results': 'Results',
+  'imports.wizard.current': '(current step)',
+  'imports.wizard.done': '(completed)',
+  'imports.title.upload': 'This import',
+  'imports.title.validate': 'Check results',
+  'imports.title.review': 'Review before importing',
+  'imports.title.confirm': 'Confirm the import',
+  'imports.title.processing': 'Importing',
+  'imports.title.results': 'Import results',
+  'imports.title.cancelled': 'Import cancelled',
+  'imports.review.file': 'File',
+  'imports.review.records': 'Records',
+  'imports.review.policy': 'Existing records',
+  'imports.review.samples': 'First rows of the file, as they will be read',
+  'imports.review.continue': 'Continue to confirmation',
+  'imports.review.back': 'Back to review',
+  'imports.review.changeMapping': 'Change the mapping',
+  'imports.processingHint': 'The import runs in the background and carries on if you leave this page. Open it from Recent imports to see where it is.',
+  'imports.anotherFile': 'Import another file',
+  'imports.opened': 'Opened the import for {file}.',
+  'imports.loadingRun': 'Preparing the spreadsheet…',
+  'imports.runUnavailable': 'This import could not be found. It may belong to another organisation, or it may have been removed.',
+  'imports.fileGone': 'The file for this import can no longer be read, so it cannot go any further. Discard it and start again with the file.',
+  'imports.cancelledNote': 'This import was cancelled. Nothing was written.',
+  'imports.state.awaitingConfirmation': 'Awaiting your confirmation',
+  'imports.emptyFile': 'This file has a header row but no records. Fill in the template and upload it again.',
+  'imports.detailsReady': 'Details loaded.',
   'imports.starting': 'Starting the import…',
   'imports.preparing': 'Preparing…',
   'imports.source.checking':
@@ -804,8 +838,7 @@ export const en = {
     'This file has more rows than one run takes. Split it and import the parts separately.',
   'imports.replaced':
     'Some characters in this file could not be read and were replaced. Check the preview before continuing.',
-  'imports.resultTitle':
-    'What would happen',
+  'imports.resultTitle': 'This import',
   'imports.summary':
     '{rows} rows read, {valid} of them ready to import, {errors} problems found.',
   'imports.wroteNothing':
@@ -856,22 +889,14 @@ export const en = {
     'Update where it matches, add where it does not',
   'imports.op.skipDuplicate':
     'Add new records and leave matches alone',
-  'imports.state.created':
-    'Waiting to be matched up',
-  'imports.state.mapped':
-    'Columns matched, not yet checked',
-  'imports.state.validating':
-    'Checking the file…',
-  'imports.state.validated':
-    'Checked. Nothing was written.',
-  'imports.state.validationFailed':
-    'Problems found. Nothing was written.',
-  'imports.state.commitRequested':
-    'Waiting to be imported',
-  'imports.state.committing':
-    'Importing…',
-  'imports.state.committed':
-    'Imported',
+  'imports.state.created': 'Mapping required',
+  'imports.state.mapped': 'Columns matched, ready to check',
+  'imports.state.validating': 'Validating the file…',
+  'imports.state.validated': 'Ready for review',
+  'imports.state.validationFailed': 'Problems found. Nothing was written.',
+  'imports.state.commitRequested': 'Queued for import',
+  'imports.state.committing': 'Importing…',
+  'imports.state.committed': 'Completed',
   'imports.state.failed':
     'This import could not be finished',
   'imports.state.cancelled':

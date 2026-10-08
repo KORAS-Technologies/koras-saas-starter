@@ -782,6 +782,40 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Datei prüfen',
   'imports.checking':
     'Wird geprüft…',
+  'imports.wizard.nav': 'Importschritte',
+  'imports.wizard.upload': 'Hochladen',
+  'imports.wizard.map': 'Zuordnen',
+  'imports.wizard.validate': 'Prüfen',
+  'imports.wizard.review': 'Kontrollieren',
+  'imports.wizard.confirm': 'Bestätigen',
+  'imports.wizard.processing': 'Verarbeitung',
+  'imports.wizard.results': 'Ergebnis',
+  'imports.wizard.current': '(aktueller Schritt)',
+  'imports.wizard.done': '(abgeschlossen)',
+  'imports.title.upload': 'Dieser Import',
+  'imports.title.validate': 'Prüfergebnis',
+  'imports.title.review': 'Vor dem Import kontrollieren',
+  'imports.title.confirm': 'Import bestätigen',
+  'imports.title.processing': 'Import läuft',
+  'imports.title.results': 'Importergebnis',
+  'imports.title.cancelled': 'Import abgebrochen',
+  'imports.review.file': 'Datei',
+  'imports.review.records': 'Datensätze',
+  'imports.review.policy': 'Vorhandene Datensätze',
+  'imports.review.samples': 'Erste Zeilen der Datei, so wie sie gelesen werden',
+  'imports.review.continue': 'Weiter zur Bestätigung',
+  'imports.review.back': 'Zurück zur Kontrolle',
+  'imports.review.changeMapping': 'Zuordnung ändern',
+  'imports.processingHint': 'Der Import läuft im Hintergrund weiter, auch wenn Sie diese Seite verlassen. Öffnen Sie ihn unter Letzte Importe, um den Stand zu sehen.',
+  'imports.anotherFile': 'Weitere Datei importieren',
+  'imports.opened': 'Import für {file} geöffnet.',
+  'imports.loadingRun': 'Tabelle wird vorbereitet…',
+  'imports.runUnavailable': 'Dieser Import wurde nicht gefunden. Er gehört möglicherweise zu einer anderen Organisation oder wurde entfernt.',
+  'imports.fileGone': 'Die Datei dieses Imports kann nicht mehr gelesen werden, daher geht es nicht weiter. Verwerfen Sie ihn und beginnen Sie mit der Datei neu.',
+  'imports.cancelledNote': 'Dieser Import wurde abgebrochen. Es wurde nichts geschrieben.',
+  'imports.state.awaitingConfirmation': 'Wartet auf Ihre Bestätigung',
+  'imports.emptyFile': 'Diese Datei hat eine Kopfzeile, aber keine Datensätze. Füllen Sie die Vorlage aus und laden Sie sie erneut hoch.',
+  'imports.detailsReady': 'Details geladen.',
   'imports.starting': 'Import wird gestartet…',
   'imports.preparing': 'Wird vorbereitet…',
   'imports.source.checking':
@@ -813,8 +847,7 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Diese Datei hat mehr Zeilen, als ein Durchlauf aufnimmt. Teilen Sie sie und importieren Sie die Teile einzeln.',
   'imports.replaced':
     'Einige Zeichen in dieser Datei konnten nicht gelesen werden und wurden ersetzt. Prüfen Sie die Vorschau, bevor Sie fortfahren.',
-  'imports.resultTitle':
-    'Was passieren würde',
+  'imports.resultTitle': 'Dieser Import',
   'imports.summary':
     '{rows} Zeilen gelesen, davon {valid} importierbar, {errors} Probleme gefunden.',
   'imports.wroteNothing':
@@ -865,22 +898,14 @@ export const de: Readonly<Record<keyof typeof en, string>> = {
     'Aktualisieren, wo es passt, sonst neu anlegen',
   'imports.op.skipDuplicate':
     'Neue Datensätze anlegen, vorhandene unberührt lassen',
-  'imports.state.created':
-    'Wartet auf die Zuordnung',
-  'imports.state.mapped':
-    'Spalten zugeordnet, noch nicht geprüft',
-  'imports.state.validating':
-    'Datei wird geprüft…',
-  'imports.state.validated':
-    'Geprüft. Es wurde nichts geschrieben.',
-  'imports.state.validationFailed':
-    'Probleme gefunden. Es wurde nichts geschrieben.',
-  'imports.state.commitRequested':
-    'Wartet auf den Import',
-  'imports.state.committing':
-    'Wird importiert…',
-  'imports.state.committed':
-    'Importiert',
+  'imports.state.created': 'Zuordnung erforderlich',
+  'imports.state.mapped': 'Spalten zugeordnet, bereit zur Prüfung',
+  'imports.state.validating': 'Datei wird geprüft…',
+  'imports.state.validated': 'Bereit zur Kontrolle',
+  'imports.state.validationFailed': 'Probleme gefunden. Es wurde nichts geschrieben.',
+  'imports.state.commitRequested': 'Für den Import eingeplant',
+  'imports.state.committing': 'Wird importiert…',
+  'imports.state.committed': 'Abgeschlossen',
   'imports.state.failed':
     'Dieser Import konnte nicht abgeschlossen werden',
   'imports.state.cancelled':

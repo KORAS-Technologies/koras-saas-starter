@@ -1,6 +1,6 @@
 'use client'
 
-import { Banner, Button, Card, DownloadMenu, SaveOutcome, SelectField } from '@{{projectSlug}}/ui'
+import { Banner, Button, ButtonLink, Card, DownloadMenu, SaveOutcome, SelectField } from '@{{projectSlug}}/ui'
 import type {
   ImportAnalysisView,
   ImportRowErrorView,
@@ -15,6 +15,7 @@ import {
   checkSource,
   commitRun,
   completeSourceUpload,
+  getRun,
   listErrors,
   listRuns,
   requestSourceUpload,
@@ -22,7 +23,10 @@ import {
   startRun,
   validateRun,
 } from './actions'
+import { ImportStepper } from './ImportStepper'
 import type { ImportLabels } from './labels'
+import { LocalTime } from './LocalTime'
+import { runIdFromSearch, stageOf } from './run-stage'
 import {
   CHECK_DEADLINE_MS,
   checkDelay,
@@ -132,6 +136,9 @@ function guardCell(cell: string): string {
  */
 const IN_FLIGHT = new Set(['validating', 'commit_requested', 'committing'])
 
+/** The states in which the API accepts a mapping and a dry run, and refuses both in every other. */
+const MAPPABLE = new Set(['created', 'mapped', 'validated', 'validation_failed'])
+
 /** The phases the page draws a sentence for; the rest are drawn by other parts of it. */
 type SourceMessage = 'checking' | 'ready' | 'stalled' | 'held' | 'rejected' | 'missing'
 const SOURCE_PHASES: ReadonlySet<SourcePhase> = new Set<SourcePhase>([
@@ -180,12 +187,21 @@ export function ImportPanel({
   targets,
   initialRuns,
   storageScope = '',
+  initialRunId,
+  locale = 'en',
+  recordLinks,
   labels,
 }: {
   targets: ImportTargetView[]
   initialRuns: ImportRunView[]
   /** Who the remembered wait belongs to: organisation and person. */
   storageScope?: string
+  /** The run `?run=` named when the page was loaded; opened once, read from the server. */
+  initialRunId?: string
+  /** For dates in Recent imports. Storage and the API stay UTC. */
+  locale?: string
+  /** Where to see what a completed run wrote, by target key. */
+  recordLinks?: Record<string, { href: string; label: string }>
   labels: ImportLabels
 }) {
   const [runs, setRuns] = useState<ImportRunView[]>(initialRuns)
@@ -229,11 +245,29 @@ export function ImportPanel({
   const [retryNote, setRetryNote] = useState<string | null>(null)
   const sourceBox = useRef<HTMLDivElement>(null)
   const mapHeading = useRef<HTMLHeadingElement>(null)
+  const wizardHeading = useRef<HTMLHeadingElement>(null)
+  // Things a person did on this page about the open run. Neither is stored: a
+  // refresh puts a checked run back at Review, and nothing is ever committed by
+  // arriving anywhere.
+  const [reviewed, setReviewed] = useState(false)
+  const [remap, setRemap] = useState(false)
+  // The analysis of the open run is being read from its file.
+  const [analysing, setAnalysing] = useState(false)
+  // The file of the open run could not be read, so it cannot be mapped.
+  const [analysisFailed, setAnalysisFailed] = useState<string | null>(null)
+  const [announce, setAnnounce] = useState('')
+  const openToken = useRef(0)
+  const analysedKey = useRef<string | null>(null)
+  const problemsKey = useRef<string | null>(null)
+  const initialised = useRef(false)
+  const runsRef = useRef<ImportRunView[]>(initialRuns)
   // Where focus goes once the control that held it has left. Decided by the
   // handler, carried out after the render that removes the control, and held
   // back while the chooser is disabled (`busy`): focusing a disabled input does
   // nothing, and focus then falls to the page.
-  const [focusTarget, setFocusTarget] = useState<'chooser' | 'mapping' | 'source' | null>(null)
+  const [focusTarget, setFocusTarget] = useState<
+    'chooser' | 'chooserNow' | 'mapping' | 'mappingNow' | 'source' | 'wizard' | 'wizardIfFree' | null
+  >(null)
   // A run is being started from a source the server has cleared: said in words, because the
   // control that was pressed is gone and nothing else on the page changes.
   const [starting, setStarting] = useState(false)
@@ -260,22 +294,168 @@ export function ImportPanel({
    * whichever run was open before, and a report from one run shown under
    * another is worse than no report at all.
    */
-  const open = useCallback((picked: ImportRunView) => {
+  // The URL names the open run (`?run=<id>`), so a refresh, a copied link and
+  // Back and Forward land on it. History only: nothing here reads the server.
+  const syncUrl = useCallback((id: string | null, mode: 'push' | 'replace') => {
+    try {
+      const url = new URL(window.location.href)
+      if (id === null) url.searchParams.delete('run')
+      else url.searchParams.set('run', id)
+      if (url.href === window.location.href) return
+      // The browser's own History methods, not the app router's patched copies: the router
+      // answers a pushState by re-rendering for the new URL, and that router action is queued
+      // in front of the server action this page is waiting on (the file's analysis), which
+      // then never returns. The entry keeps the router's own history state, so Back and
+      // Forward are still understood by it. `?run=` is read here and nowhere else.
+      const history = window.history
+      const method = mode === 'push' ? 'pushState' : 'replaceState'
+      const native: unknown = Object.getPrototypeOf(history)?.[method]
+      const write =
+        typeof History !== 'undefined' && history instanceof History && typeof native === 'function'
+          ? (native as (state: unknown, title: string, url: URL) => void)
+          : history[method].bind(history)
+      write.call(history, history.state, '', url)
+    } catch {
+      // No history to write (a test): the page works, it just cannot be linked to.
+    }
+  }, [])
+
+  const clearRun = useCallback(() => {
+    openToken.current += 1
+    analysedKey.current = null
+    problemsKey.current = null
     setError(null)
     setAnalysis(null)
     setProblems(null)
-    setRun(picked)
+    setReviewed(false)
+    setRemap(false)
+    setAnalysing(false)
+    setAnalysisFailed(null)
+    setRun(null)
   }, [])
+
+  const open = useCallback(
+    (
+      picked: ImportRunView,
+      mode: 'push' | 'replace' | 'none' = 'push',
+      focus: 'now' | 'ifFree' | 'none' = 'now',
+    ) => {
+      openToken.current += 1
+      analysedKey.current = null
+      problemsKey.current = null
+      setError(null)
+      setAnalysis(null)
+      setProblems(null)
+      setReviewed(false)
+      setRemap(false)
+      setAnalysing(false)
+      setAnalysisFailed(null)
+      setRun(picked)
+      setAnnounce(fill(labels.wizard.opened, { file: picked.source_name ?? picked.target }))
+      if (mode !== 'none') syncUrl(picked.id, mode)
+      // Opening by pressing Open is a person's act and must be seen: the heading takes focus. A
+      // link or Back and Forward resolves later, so it only moves focus if nothing else has it.
+      setFocusTarget(focus === 'now' ? 'wizard' : focus === 'ifFree' ? 'wizardIfFree' : null)
+    },
+    [labels, syncUrl],
+  )
+
+  /** Open the run an address names: from the server first, from the list as a fallback. */
+  const openById = useCallback(
+    async (id: string, mode: 'push' | 'replace' | 'none', focus: 'ifFree' | 'none') => {
+      const answer = await getRun(id)
+      if (answer.status === 'ok') {
+        open(answer.value, mode, focus)
+        return
+      }
+      const known = runsRef.current.find((row) => row.id === id)
+      if (known) {
+        open(known, mode, focus)
+        return
+      }
+      clearRun()
+      setError(labels.wizard.runUnavailable)
+    },
+    [clearRun, labels, open],
+  )
+
+  const another = useCallback(() => {
+    clearRun()
+    syncUrl(null, 'push')
+    setChosen(null)
+    setAnnounce('')
+    // The button that was pressed has gone; the chooser is where the next file starts.
+    setFocusTarget('chooserNow')
+  }, [clearRun, syncUrl])
+
+  // A page loaded on `?run=` opens that run; a run is never inferred from anything else.
+  useEffect(() => {
+    if (initialised.current) return
+    initialised.current = true
+    if (initialRunId) void openById(initialRunId, 'none', 'none')
+  }, [initialRunId, openById])
+
+  // Back and Forward between runs.
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return
+    const onPop = () => {
+      const id = runIdFromSearch(window.location.search)
+      if (id === null) clearRun()
+      else void openById(id, 'none', 'ifFree')
+    }
+    const target = window
+    target.addEventListener('popstate', onPop)
+    return () => target.removeEventListener?.('popstate', onPop)
+  }, [clearRun, openById])
 
   const refresh = useCallback(async () => {
     const answer = await listRuns()
     if (answer.status === 'ok') {
+      runsRef.current = answer.value
       setRuns(answer.value)
       setRun((current) =>
         current === null ? null : (answer.value.find((row) => row.id === current.id) ?? current),
       )
     }
   }, [])
+
+  // The mapping, the sample rows and the review all need the file's analysis,
+  // and a run that was opened (rather than just started) does not have it yet.
+  // One effect reads it, once for each run and state, so a refresh, Back, Open
+  // and a dry run that finishes while the page is open all end the same way.
+  useEffect(() => {
+    if (run === null || analysis !== null || !MAPPABLE.has(run.status)) return
+    const key = `${run.id}:${run.status}`
+    if (analysedKey.current === key) return
+    analysedKey.current = key
+    const token = openToken.current
+    const opened = run
+    setAnalysing(true)
+    void analyseRun(opened.id).then((found) => {
+      if (token !== openToken.current) return
+      setAnalysing(false)
+      if (found.status === 'error') {
+        setAnalysisFailed(opened.id)
+        return
+      }
+      setAnalysisFailed(null)
+      setAnalysis(found.value)
+      setMapping(Object.keys(opened.mapping ?? {}).length > 0 ? opened.mapping : found.value.suggested)
+      setAnnounce((current) => `${current} ${labels.wizard.detailsReady}`.trim())
+    })
+  }, [run, analysis, labels])
+
+  // A run with problems shows them where they were found, without a second click.
+  useEffect(() => {
+    if (run === null || problems !== null || run.status !== 'validation_failed' || run.errors_total === 0) return
+    const key = `${run.id}:${run.status}`
+    if (problemsKey.current === key) return
+    problemsKey.current = key
+    const token = openToken.current
+    void listErrors(run.id).then((answer) => {
+      if (token === openToken.current && answer.status === 'ok') setProblems(answer.value)
+    })
+  }, [run, problems])
 
   // A dry run happens in the worker, so the page has to ask. The polling stops
   // the moment nothing is moving: a page left open on a finished run should
@@ -321,8 +501,19 @@ export function ImportPanel({
           setError(started.message)
           return
         }
+        openToken.current += 1
+        const startedToken = openToken.current
+        analysedKey.current = `${started.value.id}:${started.value.status}`
+        setReviewed(false)
+        setRemap(false)
+        setAnalysisFailed(null)
         setRun(started.value)
+        syncUrl(started.value.id, 'push')
+        setAnnounce(fill(labels.wizard.opened, { file: started.value.source_name ?? started.value.target }))
         const found = await analyseRun(started.value.id)
+        // Opened another run, or went back, while this one was being read: its analysis
+        // is not the page's any more, and saving it onto the other run is the harm.
+        if (startedToken !== openToken.current) return
         if (found.status === 'error') {
           setError(found.message)
           return
@@ -335,7 +526,7 @@ export function ImportPanel({
         setStarting(false)
       }
     },
-    [refresh],
+    [labels, refresh, syncUrl],
   )
 
   /**
@@ -488,8 +679,54 @@ export function ImportPanel({
     setFocusTarget('chooser')
   }, [forget])
 
+  const stage = stageOf({
+    status: run?.status ?? null,
+    committedBy: run?.committed_by ?? null,
+    reviewed,
+    remap,
+  })
+
   useEffect(() => {
+    if (focusTarget === 'wizard' || focusTarget === 'wizardIfFree' || focusTarget === 'mappingNow') {
+      // A person pressed a control that is leaving or has acted: unlike the hand-offs below this
+      // is not held back for `busy`, and 'wizard' does not ask whether focus is free -- the
+      // control that was pressed has it, and moving is the point.
+      // Wait for the file's analysis while it is on its way, so focus lands on the form it
+      // belongs to rather than on a heading the form then appears above.
+      if (
+        run !== null &&
+        MAPPABLE.has(run.status) &&
+        analysis === null &&
+        analysisFailed !== run.id &&
+        focusTarget !== 'mappingNow'
+      ) {
+        return
+      }
+      const page = input.current?.ownerDocument
+      const held = page?.activeElement ?? null
+      const free = held === null || held === page?.body
+      if (focusTarget === 'wizardIfFree' && !free) {
+        setFocusTarget(null)
+        return
+      }
+      const mapping = mapHeading.current
+      const onMap = stage === 'map' || focusTarget === 'mappingNow'
+      const heading = onMap && mapping !== null ? mapping : wizardHeading.current
+      if (heading === null) {
+        setFocusTarget(null)
+        return
+      }
+      heading.focus({ preventScroll: true })
+      heading.scrollIntoView?.({ block: 'start' })
+      setFocusTarget(null)
+      return
+    }
     if (focusTarget === null || busy) return
+    if (focusTarget === 'chooserNow') {
+      input.current?.focus()
+      setFocusTarget(null)
+      return
+    }
     // Focus moves only if it has nowhere better to be: the control that held it left, so it is
     // on the page. A person who has tabbed on to something else in the meantime keeps it.
     const page = input.current?.ownerDocument
@@ -502,7 +739,7 @@ export function ImportPanel({
       else input.current?.focus()
     }
     setFocusTarget(null)
-  }, [focusTarget, busy, analysis, error])
+  }, [focusTarget, busy, analysis, analysisFailed, error, run, stage])
 
   // The wait ending badly is news the person must not have to hunt for: move focus to it.
   useEffect(() => {
@@ -596,6 +833,8 @@ export function ImportPanel({
         setError(queued.message)
         return
       }
+      setRemap(false)
+      setReviewed(false)
       setRun(queued.value)
       await refresh()
     } finally {
@@ -615,6 +854,8 @@ export function ImportPanel({
         return
       }
       setRun(queued.value)
+      // The Confirm button leaves with the state; the heading now says Importing.
+      setFocusTarget('wizard')
       await refresh()
     } finally {
       setBusy(false)
@@ -697,6 +938,7 @@ export function ImportPanel({
       return
     }
     setRun(answer.value)
+    setFocusTarget('wizard')
     await refresh()
   }, [refresh, run])
 
@@ -731,6 +973,22 @@ export function ImportPanel({
     href: `/api/imports/${encodeURIComponent(target?.key ?? '')}/template?format=${format}`,
     label: labels.template.formats[format] ?? format.toUpperCase(),
   }))
+  const nameOf = (key: string): string => key
+  const stepperLabels = {
+    nav: labels.wizard.nav,
+    steps: labels.wizard.steps,
+    current: labels.wizard.current,
+    done: labels.wizard.done,
+  }
+  const stateText =
+    run === null
+      ? ''
+      : run.status === 'validated' && stage === 'confirm'
+        ? labels.wizard.awaitingConfirmation
+        : (labels.states[run.status] ?? run.status)
+  const resultLink = run === null ? undefined : recordLinks?.[run.target]
+  const sampleMapping = run === null ? {} : Object.keys(run.mapping ?? {}).length > 0 ? run.mapping : mapping
+  const sampleColumns = Object.entries(sampleMapping)
   const verdict = analysis?.template ?? null
   const predicted = run?.predicted ?? null
   const written = run?.written ?? null
@@ -738,6 +996,10 @@ export function ImportPanel({
 
   return (
     <div className="mt-8 space-y-8" data-testid="imports-panel">
+      <ImportStepper stage={stage} labels={stepperLabels} />
+      <p role="status" className="sr-only" data-testid="imports-opened">
+        {announce}
+      </p>
       {error === null ? null : <Banner tone="error">{error}</Banner>}
 
       <Card>
@@ -894,7 +1156,10 @@ export function ImportPanel({
         </div>
       </Card>
 
-      {run === null || analysis === null ? null : (
+      {run === null ||
+      analysis === null ||
+      !MAPPABLE.has(run.status) ||
+      (run.status === 'validated' && !remap) ? null : (
         <Card>
           <h2
             ref={mapHeading}
@@ -937,6 +1202,11 @@ export function ImportPanel({
             </div>
           )}
           {analysis.over_ceiling ? <Banner tone="warning">{labels.tooManyRows}</Banner> : null}
+          {analysis.rows_seen === 0 ? (
+            <Banner tone="warning">
+              {labels.wizard.emptyFile}
+            </Banner>
+          ) : null}
           {analysis.replaced ? <Banner tone="warning">{labels.replaced}</Banner> : null}
           <div className="relative mt-4 overflow-x-auto">
             <table className="w-full text-sm">
@@ -986,7 +1256,7 @@ export function ImportPanel({
             <Button
               type="button"
               onClick={() => void check()}
-              disabled={busy || analysis.over_ceiling}
+              disabled={busy || analysis.over_ceiling || analysis.rows_seen === 0}
             >
               {busy ? labels.checking : labels.check}
             </Button>
@@ -999,8 +1269,47 @@ export function ImportPanel({
 
       {run === null ? null : (
         <Card>
-          <h2 className="font-display text-lg font-semibold text-ink">{labels.resultTitle}</h2>
-          <p className="mt-1 text-sm text-ink-muted">{labels.states[run.status] ?? run.status}</p>
+          <h2
+            ref={wizardHeading}
+            tabIndex={-1}
+            className="scroll-mt-24 font-display text-lg font-semibold text-ink outline-none focus-visible:outline-2 focus-visible:outline-offset-2"
+            data-testid="imports-wizard-heading"
+          >
+            {stage === null
+              ? (labels.wizard.titles.cancelled ?? labels.resultTitle)
+              : (labels.wizard.titles[stage] ?? labels.resultTitle)}
+          </h2>
+          {run.source_name ? (
+            <p className="mt-1 break-words text-sm text-ink" data-testid="imports-run-file">
+              {run.source_name} · {nameOf(run.target)}
+            </p>
+          ) : null}
+          <p className="mt-1 text-sm text-ink-muted" role="status" data-testid="imports-state">
+            {stateText}
+          </p>
+          {analysing ? (
+            <p className="mt-2 text-sm text-ink-muted" data-testid="imports-analysing">
+              {labels.wizard.loadingRun}
+            </p>
+          ) : null}
+          {analysisFailed === run.id && MAPPABLE.has(run.status) ? (
+            <Banner tone="warning">
+              {labels.wizard.fileGone}
+              <span className="mt-2 block">
+                <Button type="button" variant="secondary" onClick={() => void stop()} disabled={busy}>
+                  {labels.discard}
+                </Button>
+              </span>
+            </Banner>
+          ) : null}
+          {stage === 'processing' && run.status !== 'failed' ? (
+            <p className="mt-2 text-sm text-ink-muted" data-testid="imports-processing">
+              {labels.wizard.processingHint}
+            </p>
+          ) : null}
+          {run.status === 'cancelled' ? (
+            <Banner tone="info">{labels.wizard.cancelledNote}</Banner>
+          ) : null}
           {run.error === null ? null : <Banner tone="error">{run.error}</Banner>}
           {run.status === 'validated' || run.status === 'validation_failed' ? (
             <dl className="mt-3 grid gap-2 sm:grid-cols-4" data-testid="imports-preview">
@@ -1036,12 +1345,106 @@ export function ImportPanel({
             </p>
           ) : null}
           {run.status === 'validated' ? <Banner tone="info">{labels.wroteNothing}</Banner> : null}
-          {run.status === 'validated' && runTarget?.committable === true ? (
+          {run.status === 'validated' && (stage === 'review' || stage === 'confirm') ? (
+            <div className="mt-4 space-y-3" data-testid="imports-review">
+              <dl className="grid gap-3 text-sm sm:grid-cols-3">
+                <div>
+                  <dt className="text-xs uppercase text-ink-muted">{labels.wizard.review.file}</dt>
+                  <dd className="break-words text-ink" data-testid="imports-review-file">
+                    {run.source_name ?? '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase text-ink-muted">{labels.wizard.review.records}</dt>
+                  <dd className="text-ink">{nameOf(run.target)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase text-ink-muted">{labels.wizard.review.policy}</dt>
+                  <dd className="text-ink" data-testid="imports-review-policy">
+                    {labels.operations[run.operation] ?? run.operation}
+                  </dd>
+                </div>
+              </dl>
+              {analysis !== null && sampleColumns.length > 0 && analysis.preview.length > 0 ? (
+                <div
+                  className="relative overflow-x-auto"
+                  tabIndex={0}
+                  role="region"
+                  aria-label={labels.wizard.review.samples}
+                >
+                  <table className="w-full text-sm" data-testid="imports-review-sample">
+                    <caption className="pb-2 text-left text-xs uppercase text-ink-muted">
+                      {labels.wizard.review.samples}
+                    </caption>
+                    <thead>
+                      <tr className="text-left text-xs text-ink-muted">
+                        {sampleColumns.map(([column, field]) => (
+                          <th key={column} scope="col" className="py-1 pr-4 font-medium">
+                            {field}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {analysis.preview.slice(0, 5).map((row, index) => (
+                        <tr key={index} className="border-t border-border">
+                          {sampleColumns.map(([column]) => (
+                            <td key={column} className="py-1 pr-4 text-ink">
+                              {row[column] ?? ''}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {run.status === 'validated' && stage === 'review' && runTarget?.committable === true ? (
+            <div className="mt-4 flex flex-wrap gap-3" data-testid="imports-review-actions">
+              <Button
+                type="button"
+                onClick={() => {
+                  setReviewed(true)
+                  setFocusTarget('wizard')
+                }}
+                disabled={busy}
+              >
+                {labels.wizard.review.continue}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setRemap(true)
+                  setFocusTarget('mappingNow')
+                }}
+                disabled={busy}
+              >
+                {labels.wizard.review.changeMapping}
+              </Button>
+            </div>
+          ) : null}
+          {run.status === 'validated' && stage === 'confirm' && runTarget?.committable === true ? (
             <div className="mt-4 space-y-2" data-testid="imports-confirm">
               <p className="text-sm text-ink-muted">{labels.confirmHint}</p>
-              <Button type="button" onClick={() => void confirm()} disabled={busy}>
-                {busy ? labels.committing : labels.confirm}
-              </Button>
+              <div className="flex flex-wrap gap-3">
+                <Button type="button" onClick={() => void confirm()} disabled={busy}>
+                  {busy ? labels.committing : labels.confirm}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setReviewed(false)
+                    setFocusTarget('wizard')
+                  }}
+                  disabled={busy}
+                >
+                  {labels.wizard.review.back}
+                </Button>
+              </div>
             </div>
           ) : null}
           {run.status === 'validated' && runTarget?.committable !== true ? (
@@ -1109,6 +1512,18 @@ export function ImportPanel({
               message={labels.states[run.status] ?? run.status}
             />
           ) : null}
+          {run.status === 'committed' || run.status === 'failed' || run.status === 'cancelled' ? (
+            <div className="mt-4 flex flex-wrap gap-3" data-testid="imports-ended-actions">
+              {run.status === 'committed' && resultLink !== undefined ? (
+                <ButtonLink href={resultLink.href} variant="secondary">
+                  {resultLink.label}
+                </ButtonLink>
+              ) : null}
+              <Button type="button" variant="secondary" onClick={another}>
+                {labels.wizard.anotherFile}
+              </Button>
+            </div>
+          ) : null}
           {run.errors_total > 0 ? (
             <div className="mt-4 flex flex-wrap gap-2">
               <Button type="button" variant="secondary" onClick={() => void report()}>
@@ -1129,7 +1544,7 @@ export function ImportPanel({
           ) : null}
           {problems === null ? null : (
             <div className="relative mt-4 overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm" data-testid="imports-problems">
                 <thead>
                   <tr className="text-left text-xs uppercase text-ink-muted">
                     <th className="py-2 pr-4">{labels.row}</th>
@@ -1163,10 +1578,11 @@ export function ImportPanel({
           <p className="mt-2 text-sm text-ink-muted">{labels.noRuns}</p>
         ) : (
           <div className="relative mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" data-testid="imports-history">
               <thead>
                 <tr className="text-left text-xs uppercase text-ink-muted">
                   <th className="py-2 pr-4">{labels.target}</th>
+                  <th className="py-2 pr-4">{labels.file}</th>
                   <th className="py-2 pr-4">{labels.format}</th>
                   <th className="py-2 pr-4">{labels.state}</th>
                   <th className="py-2 pr-4">{labels.rows}</th>
@@ -1189,10 +1605,13 @@ export function ImportPanel({
                 {runs.map((row) => (
                   <tr key={row.id} className="border-t border-border" data-run-id={row.id}>
                     <td className="py-2 pr-4">{row.target}</td>
+                    <td className="max-w-[16rem] break-words py-2 pr-4">{row.source_name ?? '—'}</td>
                     <td className="py-2 pr-4 uppercase">{row.format ?? 'csv'}</td>
                     <td className="py-2 pr-4">{labels.states[row.status] ?? row.status}</td>
                     <td className="py-2 pr-4 tabular-nums">{row.rows_total}</td>
-                    <td className="py-2 text-ink-muted">{row.created_at}</td>
+                    <td className="py-2 text-ink-muted">
+                      <LocalTime iso={row.created_at} locale={locale} />
+                    </td>
                     <td className="py-2 text-right">
                       <Button
                         type="button"
@@ -1200,6 +1619,7 @@ export function ImportPanel({
                         aria-label={fill(labels.openRun, { target: row.target })}
                         aria-current={run?.id === row.id ? 'true' : undefined}
                         data-testid="imports-open"
+                        disabled={analysing}
                         onClick={() => open(row)}
                       >
                         {labels.open}

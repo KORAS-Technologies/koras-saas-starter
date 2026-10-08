@@ -27,8 +27,25 @@ import { listRuns, listTargets } from './actions'
  */
 export const dynamic = 'force-dynamic'
 
-export default async function ImportsPage() {
-  const [context, locale, t] = await Promise.all([signedInContext(), currentLocale(), translator()])
+/** `?run=` names the run to open; anything that is not a run id is ignored. */
+function runFrom(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value
+  return raw !== undefined && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)
+    ? raw.toLowerCase()
+    : undefined
+}
+
+export default async function ImportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const [context, locale, t, params] = await Promise.all([
+    signedInContext(),
+    currentLocale(),
+    translator(),
+    searchParams,
+  ])
   if (context === null || !can(context.access, 'imports.manage')) {
     return <AccessDenied locale={locale} />
   }
@@ -58,6 +75,8 @@ export default async function ImportsPage() {
             targets={targets.status === 'ok' ? targets.value : []}
             initialRuns={runs.status === 'ok' ? runs.value : []}
             storageScope={`${context.member.organizationId ?? ''}:${context.member.userId}`}
+            initialRunId={runFrom(params.run)}
+            locale={locale}
             labels={labels}
           />
         ) : (
