@@ -771,6 +771,7 @@ export const es: Readonly<Record<keyof typeof en, string>> = {
     'Comprobar el archivo',
   'imports.checking':
     'Comprobando…',
+  'imports.starting': 'Iniciando la importación…',
   'imports.preparing': 'Preparando…',
   'imports.source.checking':
     '{name} está subido. Se está comprobando si contiene malware antes de poder importarse; suele tardar unos 20 minutos. Puede salir de esta página: vuelva a abrir Importar en este navegador y continuará desde aquí.',

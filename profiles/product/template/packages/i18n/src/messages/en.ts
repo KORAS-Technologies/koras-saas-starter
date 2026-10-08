@@ -773,6 +773,7 @@ export const en = {
     'Check the file',
   'imports.checking':
     'Checking…',
+  'imports.starting': 'Starting the import…',
   'imports.preparing': 'Preparing…',
   'imports.source.checking':
     '{name} is uploaded. It is being checked for malware before it can be imported, which usually takes about 20 minutes. You can leave this page; open Import again in this browser and it will carry on from here.',

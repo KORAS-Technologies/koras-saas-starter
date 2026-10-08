@@ -60,6 +60,7 @@ export interface ImportLabels {
 {{#if capability.secure_files}}
   /** Polite status while the browser reads the file to take its checksum. */
   preparing: string
+  starting: string
 {{/if}}
   /** What the page says about an uploaded file between upload and run. Each
    *  but the three buttons takes `{name}`. */
@@ -208,6 +209,7 @@ export function importLabels(t: Translator): ImportLabels {
     checking: t('imports.checking'),
 {{#if capability.secure_files}}
     preparing: t('imports.preparing'),
+    starting: t('imports.starting'),
 {{/if}}
     source: {
       checking: t('imports.source.checking'),

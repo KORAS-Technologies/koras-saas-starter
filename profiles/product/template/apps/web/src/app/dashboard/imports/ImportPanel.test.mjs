@@ -767,6 +767,112 @@ test('Continue that ends in a refusal puts focus on the chooser rather than on n
   assert.equal(focused(container), byId(container, 'import-file'))
 })
 
+async function stalledPanel(script) {
+  withStorage()
+  fakeBucket()
+  let state = 'checking'
+  const log = install(uploadScript(async () => (state === 'error' ? script.error : { status: 'ok', value: state })))
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+  const { container } = await mount({})
+  await change(byId(container, 'import-file'), { files: [xlsxFile('accounts.xlsx', 'Name\nAcme\n')] })
+  await flushUntil(() => names(log).includes('checkSource'), 'the first ask')
+  await act(async () => mock.timers.tick(46 * 60_000))
+  await flush()
+  return { container, log, set: (next) => void (state = next) }
+}
+
+test('Check again that ends the wait hands focus on: the mapping when the file is ready, the chooser on a final refusal', async () => {
+  try {
+    const ready = await stalledPanel({})
+    ready.set('ready')
+    await press(buttonNamed(ready.container, 'imports.source.checkAgain'))
+    await flush()
+    const heading = all(ready.container).find((node) => node.tagName === 'H2' && node.textContent === labels.mapTitle)
+    assert.ok(heading !== undefined)
+    assert.equal(focused(ready.container), heading)
+    await mounted.pop()?.()
+    mock.timers.reset()
+
+    const refused = await stalledPanel({ error: { status: 'error', message: 'errors.importFileTooLarge', final: true } })
+    refused.set('error')
+    await press(buttonNamed(refused.container, 'imports.source.checkAgain'))
+    await flush()
+    assert.equal(focused(refused.container), byId(refused.container, 'import-file'))
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+test('Check again that finds a restored file ready hands focus to the sentence that offers Continue', async () => {
+  withStorage()
+  let state = 'checking'
+  install(uploadScript(async () => ({ status: 'ok', value: state })))
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+  try {
+  STORE.set(
+      PENDING_KEY,
+      JSON.stringify({ fileId: 'file-7', name: 'accounts.xlsx', size: 1, target: 'shop.customers', operation: 'skip_duplicate', at: Date.now() }),
+    )
+    const { container } = await mount({})
+    await flush()
+    await act(async () => mock.timers.tick(46 * 60_000))
+    await flush()
+    state = 'ready'
+    await press(buttonNamed(container, 'imports.source.checkAgain'))
+    await flush()
+    assert.equal(focused(container), container.byTestId('imports-source')[0])
+    assert.ok(buttonNamed(container, 'imports.source.continue') !== undefined)
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+test('focus is not pulled from a control the person has moved to while the page was busy', async () => {
+  withStorage()
+  fakeBucket()
+  let release
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
+  install(uploadScript(async () => (await gate, { status: 'ok', value: 'checking' })))
+  const { container } = await mount({})
+  await change(byId(container, 'import-file'), { files: [xlsxFile('accounts.xlsx', 'Name\nAcme\n')] })
+  await flushUntil(() => buttonNamed(container, 'imports.source.stop') !== undefined, 'Stop shown')
+  await press(buttonNamed(container, 'imports.source.stop'))
+  const elsewhere = byId(container, 'import-target')
+  elsewhere.focus()
+  assert.equal(focused(container), elsewhere)
+  release()
+  await flushUntil(() => byId(container, 'import-file').getAttribute('disabled') === null, 'the chooser enabled')
+  await flush()
+  assert.equal(focused(container), elsewhere, 'the person keeps the control they chose')
+})
+
+test('starting a run says so in the status region while the control that asked is gone', async () => {
+  withStorage()
+  STORE.set(
+    PENDING_KEY,
+    JSON.stringify({ fileId: 'file-7', name: 'accounts.xlsx', size: 1, target: 'shop.customers', operation: 'skip_duplicate', at: Date.now() }),
+  )
+  let release
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
+  install(
+    uploadScript(async () => ({ status: 'ok', value: 'ready' }), {
+      startRun: async () => (await gate, { status: 'ok', value: run({ status: 'created' }) }),
+    }),
+  )
+  const { container } = await mount({})
+  await flush()
+  await press(buttonNamed(container, 'imports.source.continue'))
+  assert.equal(container.byTestId('imports-starting').length, 1)
+  assert.equal(container.byTestId('imports-starting')[0].textContent, labels.starting)
+  release()
+  await flush()
+  assert.equal(container.byTestId('imports-starting').length, 0)
+})
+
 test('a final refusal while asking ends the wait with the API\'s words instead of polling for forty-five minutes', async () => {
   withStorage()
   fakeBucket()

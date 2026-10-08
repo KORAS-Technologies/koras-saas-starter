@@ -233,7 +233,10 @@ export function ImportPanel({
   // handler, carried out after the render that removes the control, and held
   // back while the chooser is disabled (`busy`): focusing a disabled input does
   // nothing, and focus then falls to the page.
-  const [focusTarget, setFocusTarget] = useState<'chooser' | 'mapping' | null>(null)
+  const [focusTarget, setFocusTarget] = useState<'chooser' | 'mapping' | 'source' | null>(null)
+  // A run is being started from a source the server has cleared: said in words, because the
+  // control that was pressed is gone and nothing else on the page changes.
+  const [starting, setStarting] = useState(false)
 
   const target = targets.find((candidate) => candidate.key === targetKey) ?? null
   // **The run's own target, not the picker's.** They are the same until
@@ -306,6 +309,7 @@ export function ImportPanel({
   const startFrom = useCallback(
     async (source: PendingSource) => {
       setBusy(true)
+      setStarting(true)
       setError(null)
       try {
         const started = await startRun({
@@ -328,6 +332,7 @@ export function ImportPanel({
         await refresh()
       } finally {
         setBusy(false)
+        setStarting(false)
       }
     },
     [refresh],
@@ -356,6 +361,8 @@ export function ImportPanel({
             setPhase('idle')
             setRetryNote(null)
             setError(answer.message)
+            // "Check again" held focus and is leaving.
+            if (wasManual) setFocusTarget('chooser')
             return
           }
           // Could not ask. Not a verdict: keep the wait and try again later.
@@ -384,6 +391,8 @@ export function ImportPanel({
           // Found ready on a later visit: say so and let a person start it.
           setError(null)
           setPhase('ready')
+          // "Check again" is replaced by Continue; the sentence that says so takes focus.
+          if (wasManual) setFocusTarget('source')
           return
         }
         setWaiting(null)
@@ -391,6 +400,7 @@ export function ImportPanel({
         if (next === 'ready') {
           setPhase('idle')
           asking.current = false
+          if (wasManual) setFocusTarget('mapping')
           await startFrom(source)
           return
         }
@@ -480,9 +490,17 @@ export function ImportPanel({
 
   useEffect(() => {
     if (focusTarget === null || busy) return
-    const heading = mapHeading.current
-    if (focusTarget === 'mapping' && heading !== null) heading.focus()
-    else input.current?.focus()
+    // Focus moves only if it has nowhere better to be: the control that held it left, so it is
+    // on the page. A person who has tabbed on to something else in the meantime keeps it.
+    const page = input.current?.ownerDocument
+    const held = page?.activeElement ?? null
+    const free = held === null || held === page?.body || sourceBox.current?.contains(held)
+    if (free) {
+      const heading = mapHeading.current
+      if (focusTarget === 'mapping' && heading !== null) heading.focus()
+      else if (focusTarget === 'source' && sourceBox.current !== null) sourceBox.current.focus()
+      else input.current?.focus()
+    }
     setFocusTarget(null)
   }, [focusTarget, busy, analysis, error])
 
@@ -812,11 +830,16 @@ export function ImportPanel({
           {/* Always mounted: a live region that arrives with its text is announced
               unreliably, one that is already there and then changes is not. */}
           <div role="status" aria-live="polite" data-testid="imports-source-live">
+            {starting ? (
+              <p className="mt-3 text-sm text-ink-muted" data-testid="imports-starting">
+                {labels.starting}
+              </p>
+            ) : null}
             {chosen === null || !SOURCE_PHASES.has(phase) ? null : (
               <div
                 ref={sourceBox}
                 tabIndex={-1}
-                className="mt-3 space-y-3 outline-none focus-visible:outline-2 focus-visible:outline-offset-2"
+                className="mt-3 scroll-mt-24 space-y-3 outline-none focus-visible:outline-2 focus-visible:outline-offset-2"
                 data-testid="imports-source"
                 data-phase={phase}
               >
@@ -876,7 +899,7 @@ export function ImportPanel({
           <h2
             ref={mapHeading}
             tabIndex={-1}
-            className="font-display text-lg font-semibold text-ink outline-none focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="scroll-mt-24 font-display text-lg font-semibold text-ink outline-none focus-visible:outline-2 focus-visible:outline-offset-2"
           >
             {labels.mapTitle}
           </h2>
