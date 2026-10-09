@@ -748,3 +748,46 @@ async def test_a_commit_that_cannot_be_witnessed_or_announced_is_still_a_commit(
     assert store.abandoned == {} and store.failed == {}
     assert "could not be witnessed" in caplog.text
     assert gate.occupancy() == {}
+
+
+# ── GR-383: a refused move is a rival's only if the run is no longer ours ────
+
+
+def _refuse_after(store: _Store, run_id: str, becomes: str) -> None:
+    """The verdict is refused, and the run is by then in `becomes`."""
+    from koras_import import TransitionRefused
+
+    async def refused(_session: object, run: _Run, **_: object) -> Any:  # noqa: ANN401
+        store.runs[run_id].status = becomes
+        raise TransitionRefused(f"the run is no longer {run.status}")
+
+    store.record_validation = refused  # type: ignore[method-assign]
+
+
+async def test_a_verdict_refused_on_a_stale_mapped_snapshot_still_fails_the_run(
+    worker: Callable[..., _Store],
+) -> None:
+    """The route enqueues before it commits `mapped -> validating`: not a rival."""
+    from koras_import import TransitionRefused
+
+    store = worker(lambda _watch: None, v1="mapped")
+    _refuse_after(store, "v1", "validating")
+
+    with pytest.raises(TransitionRefused):
+        await task.validate_run({}, _job("v1"))
+
+    assert "v1" in store.abandoned, "the run was left in validating with no job"
+    assert store.runs["v1"].status == "failed"
+
+
+@pytest.mark.parametrize("rival", ["cancelled", "failed", "validated", "committed"])
+async def test_a_verdict_refused_because_another_actor_moved_the_run_is_skipped(
+    worker: Callable[..., _Store], rival: str
+) -> None:
+    store = worker(lambda _watch: None, v1="validating")
+    _refuse_after(store, "v1", rival)
+
+    answer = await task.validate_run({}, _job("v1"))
+
+    assert answer == {"status": "skipped", "reason": "superseded"}
+    assert store.abandoned == {} and store.runs["v1"].status == rival

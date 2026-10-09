@@ -728,14 +728,20 @@ async def set_mapping(
             "in one run",
         )
 
-    await store.set_mapping(
-        session,
-        run,
-        delimiter=found.delimiter,
-        encoding=found.encoding,
-        columns=found.columns,
-        mapping=body.mapping,
-    )
+    try:
+        await store.set_mapping(
+            session,
+            run,
+            delimiter=found.delimiter,
+            encoding=found.encoding,
+            columns=found.columns,
+            mapping=body.mapping,
+        )
+    except store.StaleRun as stale:
+        await session.rollback()
+        raise api_error(
+            status.HTTP_409_CONFLICT, ApiErrorCode.IMPORT_NOT_TRANSITIONABLE, str(stale)
+        ) from stale
     await session.commit()
     return _view(_run_or_404(await store.get(session, run_id)))
 
@@ -814,7 +820,13 @@ async def validate(
             "this import is already being checked",
         )
 
-    await store.begin_validation(session, run)
+    try:
+        await store.begin_validation(session, run)
+    except store.StaleRun as stale:
+        await session.rollback()
+        raise api_error(
+            status.HTTP_409_CONFLICT, ApiErrorCode.IMPORT_NOT_TRANSITIONABLE, str(stale)
+        ) from stale
     await store.set_job(session, run, queued.job_id)
     await session.commit()
     return _view(_run_or_404(await store.get(session, run_id)))
@@ -877,7 +889,20 @@ async def commit(
     # `commit_requested` by the time any worker can pick the job up. The other
     # order has a window in which a worker reads a run still `validated` and
     # refuses its own job.
-    await store.request_commit(session, run, by=require_subject(tenant))
+    # **The audit row follows the move and only a move that happened.** The
+    # update compares against the status read above, so the loser of two
+    # simultaneous confirmations raises here, before it can audit or enqueue
+    # anything, and its transaction is rolled back with the session. GR-383.
+    try:
+        await store.request_commit(session, run, by=require_subject(tenant))
+    except store.StaleRun as stale:
+        await session.rollback()
+        await _refused(session, tenant, run, "the run changed while it was being confirmed")
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            ApiErrorCode.IMPORT_NOT_TRANSITIONABLE,
+            str(stale),
+        ) from stale
     # In the same transaction as the move, so the audit row and the run's own
     # record of who confirmed it cannot disagree.
     await record(
