@@ -239,7 +239,7 @@ class TestLocalEndpointGuard:
 
         assert result.returncode != 0, result.stdout + result.stderr
         assert "DATABASE_URL" in result.stderr, result.stderr
-        assert "prod-db.example.com" in result.stderr, result.stderr
+        assert "host 'prod-db.example.com'" in result.stderr, result.stderr
         assert not calls.exists(), "docker must never run once a non-local endpoint is found"
         assert not (root / "bootstrap-ran").exists()
 
@@ -415,7 +415,7 @@ class TestLocalEndpointGuard:
 
         assert result.returncode != 0, result.stdout + result.stderr
         assert "CORS_ORIGINS" in result.stderr, result.stderr
-        assert "admin.example.com" in result.stderr, result.stderr
+        assert "host 'admin.example.com'" in result.stderr, result.stderr
         assert not calls.exists()
 
     def test_all_local_cors_origins_do_not_block(self, tmp_path: Path) -> None:
@@ -472,7 +472,7 @@ class TestDockerContextGuard:
         assert result.returncode != 0, result.stdout + result.stderr
         assert "docker context" in result.stderr, result.stderr
         assert "build-farm" in result.stderr, result.stderr
-        assert "build-farm.example.com" in result.stderr, result.stderr
+        assert "host 'build-farm.example.com'" in result.stderr, result.stderr
         # docker context show/inspect are read-only probes the guard itself
         # makes, so calls.log legitimately contains them; only the destructive
         # teardown must never run.
