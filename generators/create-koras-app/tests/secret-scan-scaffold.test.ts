@@ -190,6 +190,18 @@ describe.each(['product', 'control-plane'] as const)('%s: what the secret scan s
     expect(scoped).toEqual(['generic-api-key', 'jwt'])
   })
 
+  it('declares each rule once', () => {
+    // Measured on gitleaks 8.28.0: a second `[[rules]]` block with an id that
+    // is already declared replaces the first, allowlists and all, without a
+    // warning. A product appending its own `jwt` allowlist as a new block
+    // silently deleted the test-fixture allowlist above it. Extra allowlists
+    // for a rule go inside that rule's one block.
+    const ids = all
+      .filter((s) => s.header === '[[rules]]')
+      .map((s) => /id\s*=\s*"([^"]+)"/.exec(s.body)?.[1])
+    expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([])
+  })
+
   it('does not rely on targetRules in a global allowlist', () => {
     // Measured on gitleaks 8.28.0: `targetRules` naming a rule from the
     // extended default set makes the allowlist suppress nothing. Relying on it
