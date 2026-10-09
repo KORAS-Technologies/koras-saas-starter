@@ -63,6 +63,7 @@ from koras_import import (
     Operation,
     ReadRefused,
     TargetRegistry,
+    TransitionRefused,
     WorkBudget,
     WriteRefused,
     WriteRequest,
@@ -431,6 +432,23 @@ async def _validate_run(envelope: JobEnvelope, budget: WorkBudget) -> dict[str, 
                 },
             )
             await session.commit()
+    except TransitionRefused:
+        # The run was cancelled (or otherwise moved) while the file was being
+        # read. Every statement of this verdict -- the report, the counts, the
+        # audit row -- was in the transaction that has just been rolled back,
+        # so none of it is kept and the run says what the other actor made it
+        # say. GR-383.
+        #
+        # **Only if somebody else really moved it.** The validate route
+        # enqueues before it commits `mapped -> validating`, so a worker can
+        # hold a `mapped` snapshot of a run that is about to be ours. That
+        # refusal is not a rival's doing: it is re-raised, and `validate_run`
+        # marks the run failed as it did before this change rather than
+        # leaving it in `validating` with no job.
+        if await _still_ours(envelope.tenant_id, run_id):
+            raise
+        logger.warning("import validation: run %s was changed while it was checked", run_id)
+        return {"status": "skipped", "reason": "superseded"}
     finally:
         await engine.dispose()
 
@@ -570,10 +588,21 @@ async def _commit_run(envelope: JobEnvelope, budget: WorkBudget) -> dict[str, An
                 try:
                     await store.begin_commit(session, run)
                     await session.commit()
-                except Exception:
+                except TransitionRefused:
                     # A concurrent cancellation is the ordinary way here: the
                     # run left `commit_requested` between the enqueue and this
-                    # statement. Nothing has been written and nothing is owed.
+                    # statement, and the claim names the status it read, so it
+                    # matches nothing instead of overwriting `cancelled`
+                    # (`StaleRun`, a `TransitionRefused`). A snapshot that
+                    # already says the run cannot be claimed is refused the same
+                    # way. GR-383. Nothing has been written and nothing is owed.
+                    await session.rollback()
+                    logger.warning(
+                        "import commit: run %s was changed before it was claimed", run_id
+                    )
+                    return {"status": "skipped", "reason": "not claimable"}
+                except Exception:
+                    # The database refused. As above, nothing has been written.
                     await session.rollback()
                     logger.exception("import commit: run %s could not be claimed", run_id)
                     return {"status": "skipped", "reason": "not claimable"}
@@ -612,6 +641,20 @@ async def _commit_run(envelope: JobEnvelope, budget: WorkBudget) -> dict[str, An
                     # The one commit: the product's rows and the run's own
                     # state, together or not at all.
                     await session.commit()
+                except TransitionRefused:
+                    # The run was moved out of `committing` while the writer
+                    # worked (abandoned by the queue's timeout, say). The rows
+                    # and the status change share this transaction, so the
+                    # rollback leaves none of them, and the run keeps the state
+                    # whoever moved it gave it: nothing is failed over it and
+                    # nothing is announced. GR-383.
+                    await session.rollback()
+                    logger.warning(
+                        "import commit: run %s was changed while it was being written; "
+                        "nothing was kept",
+                        run_id,
+                    )
+                    return {"status": "skipped", "reason": "superseded"}
                 except WriteRefused as refused:
                     await session.rollback()
                     failure = str(refused)[:400]
@@ -734,6 +777,36 @@ async def _write(
     # of fewer records than the file held.
     check_total(request, written)
     return written
+
+
+async def _still_ours(tenant_id: str, run_id: str) -> bool:
+    """Whether a run is still in a state only this validation could be moving.
+
+    Read in a fresh session. `mapped` and `validating` are the two states a
+    validation job legitimately finds its run in; anything else (`cancelled`,
+    `failed`, `validated`, `committed`...) was put there by another actor.
+    When the read itself fails the answer is True: the previous behaviour,
+    which marks the run failed visibly, is the safe one.
+    """
+    store = _run_store()
+    if store is None:
+        return True
+    try:
+        engine = _engine()
+        try:
+            async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+                await session.execute(_AS_TENANT, {"tenant_id": tenant_id})
+                run = await store.get(session, run_id)
+        finally:
+            await engine.dispose()
+    except Exception:
+        logger.exception("import validation: run %s could not be re-read", run_id)
+        return True
+    return run is None or run.status in _VALIDATION_STATES
+
+
+#: Where a validation job may legitimately find its run.
+_VALIDATION_STATES = frozenset({"mapped", "validating"})
 
 
 async def _abandon(envelope: JobEnvelope, reason: str = _INTERRUPTED) -> None:

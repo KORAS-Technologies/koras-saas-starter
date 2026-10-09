@@ -25,6 +25,7 @@ import threading
 from collections.abc import Iterator
 from dataclasses import replace
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -109,15 +110,23 @@ class _Result:
 class _Session:
     """Records every statement, so a test can assert what was *not* touched."""
 
-    def __init__(self, answers: list[_Result] | None = None) -> None:
+    def __init__(self, answers: list[_Result] | None = None, *, moved_on: bool = False) -> None:
         self.statements: list[str] = []
         self.parameters: list[dict[str, Any]] = []
         self._answers = answers or []
+        #: GR-383: the run has left the state the caller saw, so a
+        #: compare-and-set update matches no row.
+        self._moved_on = moved_on
 
     async def execute(self, statement: Any, parameters: Any = None) -> _Result:  # noqa: ANN401
-        self.statements.append(str(statement))
+        sql = str(statement)
+        self.statements.append(sql)
         self.parameters.append(dict(parameters or {}))
-        return self._answers.pop(0) if self._answers else _Result()
+        if self._answers:
+            return self._answers.pop(0)
+        if "update public.import_runs" in sql and "returning id" in sql:
+            return _Result([] if self._moved_on else [SimpleNamespace(id="x")])
+        return _Result()
 
 
 def _sql(session: _Session) -> str:
@@ -229,6 +238,83 @@ async def test_a_failure_reason_is_cut_to_something_a_column_holds() -> None:
     await store.fail(session, A_RUNNING, "x" * 900)  # type: ignore[arg-type]
     written = next(row for row in session.parameters if "error" in row)
     assert len(written["error"]) == 400
+
+
+# ── a move is a compare-and-set (GR-383) ─────────────────────────────────────
+
+
+def _moves() -> list[tuple[str, Any]]:
+    """Every public mover, with the snapshot it is valid from."""
+    return [
+        ("set_mapping", lambda s: store.set_mapping(
+            s, A_RUN, delimiter=",", encoding="utf-8", columns=["Name"], mapping={"Name": "name"}
+        )),
+        ("begin_validation", lambda s: store.begin_validation(s, A_RUN)),
+        ("cancel", lambda s: store.cancel(s, A_RUN)),
+        ("fail", lambda s: store.fail(s, A_RUNNING, "no")),
+        ("request_commit", lambda s: store.request_commit(
+            s, replace(A_RUN, status=RunState.VALIDATED.value), by="u"
+        )),
+        ("begin_commit", lambda s: store.begin_commit(
+            s, replace(A_RUN, status=RunState.COMMIT_REQUESTED.value)
+        )),
+        ("record_commit", lambda s: store.record_commit(
+            s, replace(A_RUN, status=RunState.COMMITTING.value), created=1, updated=0, skipped=0
+        )),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", [name for name, _ in _moves()])
+async def test_every_move_names_the_status_it_expects_in_its_update(name: str) -> None:
+    session = _Session()
+    move = dict(_moves())[name]
+    await move(session)
+    update = next(s for s in session.statements if "update public.import_runs" in s)
+    assert "and status = :expected" in update
+    assert "returning id" in update
+    assert session.parameters[-1]["expected"] in {s.value for s in RunState}
+
+
+@pytest.mark.asyncio
+async def test_the_expected_status_is_the_one_the_caller_saw() -> None:
+    session = _Session()
+    await store.begin_validation(session, A_RUN)
+    assert session.parameters[-1]["expected"] == RunState.MAPPED.value
+    assert session.parameters[-1]["status"] == RunState.VALIDATING.value
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", [name for name, _ in _moves()])
+async def test_a_move_that_matches_no_row_is_refused_as_not_transitionable(name: str) -> None:
+    session = _Session(moved_on=True)
+    move = dict(_moves())[name]
+    with pytest.raises(store.StaleRun) as refused:
+        await move(session)
+    # The existing refusal type, so every handler that maps it to 409
+    # IMPORT_NOT_TRANSITIONABLE keeps doing so.
+    assert isinstance(refused.value, TransitionRefused)
+
+
+@pytest.mark.asyncio
+async def test_a_verdict_that_matches_no_row_is_refused_after_it_wrote_its_report() -> None:
+    """The caller rolls back; the store's job is to refuse, not to commit."""
+    session = _Session(moved_on=True)
+    with pytest.raises(TransitionRefused):
+        await store.record_validation(
+            session,  # type: ignore[arg-type]
+            A_RUNNING,
+            tenant_id="tenant-1",
+            result=Validation(rows=1, valid=1, errors=(), truncated=False),
+        )
+
+
+@pytest.mark.asyncio
+async def test_remembering_the_job_id_stays_keyed_on_the_id_alone() -> None:
+    """No state changes, so there is nothing to compare."""
+    session = _Session()
+    await store.set_job(session, A_RUNNING, "job-1")  # type: ignore[arg-type]
+    assert "status" not in session.statements[-1]
 
 
 # ── the source file ──────────────────────────────────────────────────────────

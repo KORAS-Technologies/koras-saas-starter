@@ -40,6 +40,7 @@ from koras_import import (
     RowStream,
     RunState,
     SafetyLimits,
+    TransitionRefused,
     Validation,
     compare,
     inspect_source,
@@ -318,23 +319,54 @@ async def recent(session: AsyncSession, *, limit: int = 50) -> list[Run]:
     return [_run(row) for row in result]
 
 
+class StaleRun(TransitionRefused):
+    """The run is no longer in the state the caller read it in. GR-383.
+
+    A `TransitionRefused`, so every handler that already maps the machine's
+    refusal to 409 `IMPORT_NOT_TRANSITIONABLE` answers this the same way. What
+    differs is *where* it was found: `require_move` refuses against the
+    caller's snapshot, this against the row, after another transaction moved it.
+    """
+
+
 async def _advance(
     session: AsyncSession, run: Run, target: RunState, **columns: Any  # noqa: ANN401
 ) -> None:
-    """Move a run, refusing an edge the machine does not have."""
+    """Move a run, refusing an edge the machine does not have.
+
+    **A compare-and-set, not a write.** `require_move` checks the edge against
+    `run`, a frozen snapshot read some time ago; the update names the status
+    that snapshot had and matches nothing if the row has moved since. Without
+    that the database never agreed to the edge the caller had checked, and a
+    cancellation could be overwritten by the worker's verdict, a second
+    confirmation by a first, and a committed run sent back to
+    `commit_requested` (GR-383).
+
+    A miss raises `StaleRun` and has written nothing, so the caller rolls back
+    whatever else it did in the same transaction -- the audit row, the report,
+    the target's rows. Under READ COMMITTED an update that waits on another
+    transaction's row lock re-evaluates its predicate when that transaction
+    commits, which is what makes the loser of a race a miss rather than an
+    overwrite.
+    """
     require_move(run.state, target)
     # The column *names* come from this module's own keyword arguments, never
     # from a caller, and every value is bound. A caller-supplied name could not
     # reach here without a function signature to arrive through.
     assignments = ", ".join(f"{name} = :{name}" for name in columns)
     clause = f", {assignments}" if assignments else ""
-    await session.execute(
+    result = await session.execute(
         text(
             f"update public.import_runs set status = :status{clause} "  # noqa: S608
-            "where id = cast(:id as uuid)"
+            "where id = cast(:id as uuid) and status = :expected returning id"
         ),
-        {"status": target.value, "id": run.id, **columns},
+        {"status": target.value, "id": run.id, "expected": run.status, **columns},
     )
+    if result.first() is None:
+        raise StaleRun(
+            f"this import run is no longer {run.status}, so it cannot become "
+            f"{target.value}; it was changed while this was in progress"
+        )
 
 
 async def set_job(session: AsyncSession, run: Run, job_id: str) -> None:

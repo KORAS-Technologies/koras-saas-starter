@@ -626,6 +626,7 @@ jobs:
           uv run pytest \
             tests/integration/test_import_commit_rls.py \
             tests/integration/test_import_commit_atomic.py \
+            tests/integration/test_import_advance_cas_real.py \
             --no-cov -q -rs | tee "$RUNNER_TEMP/import-commit.txt"
           if grep -E -q '[0-9]+ skipped' "$RUNNER_TEMP/import-commit.txt"; then
             echo "::error::an import commit test was skipped; this row has a database and every one of them must run"

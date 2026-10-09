@@ -214,6 +214,9 @@ template_map:
       - tests/unit/test_import_worker_memory.py
       - tests/integration/test_import_commit_rls.py
       - tests/integration/test_import_commit_atomic.py
+      # GR-383: `_advance` is a compare-and-set, against a real database. Four races, each made
+      # to happen on purpose, and the late writer must be refused with nothing of it kept.
+      - tests/integration/test_import_advance_cas_real.py
       # GR-376: the source-state route against a real database, as two tenants. It reads the
       # scan columns, so it is listed under `secure_files` as well and exists only when both are on.
       - tests/integration/test_import_source_state_real.py

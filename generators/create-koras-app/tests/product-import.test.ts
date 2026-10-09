@@ -725,6 +725,7 @@ describe('data import', () => {
       'tests/unit/test_import_worker_envelope.py',
       'tests/unit/test_import_worker_memory.py',
       'tests/integration/test_import_commit_atomic.py',
+      'tests/integration/test_import_advance_cas_real.py',
     ]) {
       expect(gatedPaths('data_import')).toContain(path)
     }
