@@ -69,6 +69,25 @@ from test_import_commit_atomic import (  # noqa: E402
 OTHER_SUBJECT = "e2e-second-confirmer"
 
 
+@pytest.fixture(autouse=True)
+async def _fresh_application_pool() -> AsyncIterator[None]:
+    """The API's own engine pools connections bound to the event loop that opened them.
+
+    Each test has a loop of its own, and one test here goes through the route's
+    `tenant_session`. A connection left pooled on that loop makes the next module that
+    uses the API's engine from another loop (the source-state suite, whose `TestClient`
+    runs its own) fail with "attached to a different loop", so the pool is emptied on
+    both sides of every test.
+    """
+    from koras_api.core.engine import engine as application_engine
+
+    await application_engine.dispose()
+    try:
+        yield
+    finally:
+        await application_engine.dispose()
+
+
 @pytest.fixture
 async def engine() -> AsyncIterator[AsyncEngine]:
     made = create_async_engine(DATABASE_URL)
