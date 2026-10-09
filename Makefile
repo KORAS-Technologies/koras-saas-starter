@@ -33,7 +33,7 @@ dev: ## Start the full local development stack
 down: ## Stop and clean local containers
 	docker compose $(COMPOSE_FILES) down
 
-reset: ## Wipe volumes and re-bootstrap
+reset: ## Disabled for the legacy root stack (refuses; see local/scripts/reset.sh)
 	KORAS_PROFILE=$(PROFILE) bash local/scripts/reset.sh
 
 seed: ## Populate development fixtures

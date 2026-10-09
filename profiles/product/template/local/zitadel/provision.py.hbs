@@ -34,7 +34,15 @@ PAT_FILE = ROOT / "local" / "zitadel" / "machinekey" / "pat"
 OUTPUT = ROOT / "local" / "zitadel" / "provisioned.env"
 
 PROJECT_NAME = os.environ.get("PROJECT_NAME", "{{projectSlug}}")
-BASE = os.environ.get("ZITADEL_URL", "http://localhost:8083").rstrip("/")
+# No default: the old one, http://localhost:8083, is the Control Plane's
+# preferred port, so a product run without ZITADEL_URL provisioned itself into
+# the Control Plane's instance. init.sh passes the URL this project resolved.
+BASE = os.environ.get("ZITADEL_URL", "").rstrip("/")
+if not BASE:
+    raise SystemExit(
+        "ZITADEL_URL is not set. Run local/zitadel/init.sh (bootstrap does), or set "
+        "ZITADEL_URL=http://localhost:<KORAS_PORT_ZITADEL from local/.env>."
+    )
 if not BASE.startswith(("http://", "https://")):
     # ZITADEL_URL comes from the environment, and urllib will happily open a
     # file: or custom scheme. Checked here so the noqa below is a statement

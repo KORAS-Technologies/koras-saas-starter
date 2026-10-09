@@ -19,7 +19,22 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-ZITADEL_URL="${ZITADEL_URL:-http://localhost:8083}"
+# No default. The one this used to have, http://localhost:8083, is the Control
+# Plane's preferred ZITADEL port, so running this script by hand in a product
+# provisioned the product's project, roles and OIDC app into the Control
+# Plane's instance. The right URL is whatever port this project resolved;
+# bootstrap passes it.
+if [ -z "${ZITADEL_URL:-}" ]; then
+  resolved="$( { grep -E '^KORAS_PORT_ZITADEL=' "$ROOT/local/.env" 2>/dev/null || true; } | tail -n1 | cut -d= -f2 | tr -d '\r')"
+  echo "ZITADEL_URL is not set, and this script will not guess which ZITADEL to provision." >&2
+  if [ -n "$resolved" ]; then
+    echo "This project's ZITADEL port (local/.env) is ${resolved}:" >&2
+    echo "  ZITADEL_URL=http://localhost:${resolved} bash local/zitadel/init.sh" >&2
+  else
+    echo "Resolve this project's ports first ('make ports' or 'make bootstrap'), then set ZITADEL_URL." >&2
+  fi
+  exit 1
+fi
 
 echo "Waiting for ZITADEL at ${ZITADEL_URL}..."
 for _ in $(seq 1 60); do

@@ -73,9 +73,13 @@ the same steps are pnpm scripts:
 pnpm bootstrap      # = make bootstrap
 pnpm stack:up       # = make dev   (containers only; `pnpm dev` runs the apps)
 pnpm stack:health   # = make health
-pnpm stack:down     # = make down
+pnpm stack:preflight # = make preflight (read-only: ports, placeholder secrets, missing config)
+pnpm stack:stop     # = make stop  (stops containers; keeps volumes)
+pnpm stack:down     # = make down  (removes containers; keeps volumes)
 pnpm stack:ports    # = make ports
-pnpm stack:reset    # wipe volumes
+pnpm stack:reset    # = make reset -- DESTRUCTIVE: deletes this stack's volumes,
+                    #   including the local ZITADEL instance. Guarded: refuses in a
+                    #   worktree or against non-local endpoints, and asks first.
 ```
 
 ## Environments
