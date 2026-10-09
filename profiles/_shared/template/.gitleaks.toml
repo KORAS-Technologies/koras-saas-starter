@@ -1,22 +1,48 @@
 # Secret scanning configuration.
 #
 # Doppler is the secret authority: nothing real belongs in this repository, so
-# the default rule set is used unmodified rather than narrowed. The allowlist
-# below covers the values that look like credentials and are not -- test
-# fixtures and the local stack, whose whole point is being non-secret.
+# the default rule set is used, plus one rule it lacks. The allowlists below
+# cover the values that look like credentials and are not -- test fixtures and
+# the local stack, whose whole point is being non-secret.
+#
+# Every allowlist is scoped two ways: to an anchored path, and to the rules the
+# fixtures there actually trip. An unanchored `tests/.*` also matches
+# `docs/.../tests/...`, and an allowlist that applies to every rule makes a real
+# private key or provider token committed under tests/ invisible to this job.
+# If a fixture trips a provider-format rule, allowlist that one fixture --
+# narrowly, with the reason -- or record its fingerprint in .gitleaksignore.
+#
+# Why the test allowlists are attached to the rules (`[[rules.allowlists]]`)
+# rather than written as global `[[allowlists]]` with `targetRules`: measured on
+# gitleaks 8.28.0, a global allowlist whose `targetRules` names a rule from the
+# extended default set has no effect at all. Declaring a default rule's id again
+# with only an allowlist merges into that rule.
 
 [extend]
 useDefault = true
 
-[[allowlists]]
-description = "Local development stack. These values are published on purpose."
-paths = [
-  '''local/config/\.env\.local\.example''',
-  '''local/docker-compose\.yml''',
-  '''local/scripts/.*''',
-]
+[[rules]]
+id = "private-jwk"
+description = """
+A private member of a JSON Web Key.
 
-[[allowlists]]
+The default rule set recognises PEM keys but not JWKs: it reads a JWK as
+structure rather than as one of the patterns it knows. That blind spot is how
+the round-trip harness's signing key (`.e2e/identity.json`) was staged on
+2026-09-22 with nothing to catch it. A public JWK carries only `n` and `e`, so
+matching the private members cannot fire on keys that are meant to be
+published.
+
+Not allowlisted for tests: test keys are generated at run time, never committed.
+"""
+regex = '''"(?:d|p|q|dp|dq|qi)"\s*:\s*"([A-Za-z0-9_-]{40,})"'''
+secretGroup = 1
+entropy = 3.5
+keywords = ['"kty"']
+
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
 description = """
 Test fixtures. The redaction and audit suites must contain credential-shaped
 strings -- that is what they assert gets scrubbed, and a scanner that forbade
@@ -24,10 +50,53 @@ them would forbid testing the defence.
 
 Stated explicitly even though the default rule set already excludes paths that
 look like tests. Relying on that would leave the exclusion invisible, and it is
-a real blind spot: a genuine credential committed under tests/ is not caught by
-this job. A blind spot nobody wrote down is one nobody remembers.
+a real blind spot: a credential-shaped string committed under tests/ is not
+caught by this rule. A blind spot nobody wrote down is one nobody remembers.
+The provider-format rules (AWS, Stripe, GitHub, private keys...) still apply
+under these paths.
 """
 paths = [
-  '''tests/.*''',
-  '''e2e/.*''',
+  '''^tests/''',
+  '''^e2e/''',
+]
+[[rules.allowlists]]
+description = """
+A keyword argument forwarding a bearer token, not a token.
+
+`generic-api-key` matches the line `token=token, permission=audience.permission`
+in services/api/koras_api/core/recipients.py, where `token` is the parameter the
+caller's own request supplied and the right-hand side is an identifier. There is
+no literal here and there never can be: a hardcoded credential would have to
+appear as a quoted value, which this pattern does not admit.
+
+Matched against the line rather than the path, so the exemption dies with the
+call it describes instead of blinding the scanner to the rest of a file that
+does handle real tokens. Every generated product tripped this on its first
+commit until 2026-10-09; koras-e2e-shop carried this fix locally first.
+"""
+regexTarget = "line"
+regexes = [
+  '''token=token, permission=audience\.permission''',
+]
+
+[[rules]]
+id = "jwt"
+[[rules.allowlists]]
+description = """
+Test fixtures: the session and redaction suites hold JWT-shaped strings for the
+same reason as above.
+"""
+paths = [
+  '''^tests/''',
+  '''^e2e/''',
+]
+
+[[allowlists]]
+description = """
+Local development stack. These values are published on purpose. Named exactly:
+anything else under local/ -- scripts included -- is scanned like any other file.
+"""
+paths = [
+  '''^local/config/\.env\.local\.example$''',
+  '''^local/docker-compose\.yml$''',
 ]
