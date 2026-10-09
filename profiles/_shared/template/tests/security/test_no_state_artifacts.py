@@ -101,6 +101,19 @@ def test_the_ignore_rules_would_stop_it_coming_back() -> None:
         # The ignore rule has been there since the harness was written; this
         # asserts it, which is a different thing.
         "e2e/support/key.json",
+        # Key material by shape, wherever it is written. The two rules above
+        # name places; a key written anywhere else was covered by nothing, and
+        # the secret scan reads a JWK as structure and does not open an
+        # extension-less file at all. Added 2026-10-09.
+        "tests/fixtures/signing.pem",
+        "services/api/server.key",
+        "tests/fixtures/rsa.jwk",
+        "zitadel-sa-key.json",
+        "client.p12",
+        # Claude Code's per-user settings: one machine's auto-approved
+        # permissions and environment. Personal by definition, at any depth.
+        ".claude/settings.local.json",
+        "apps/web/.claude/settings.local.json",
     )
     for candidate in candidates:
         result = subprocess.run(  # noqa: S603 -- fixed argv, absolute binary
