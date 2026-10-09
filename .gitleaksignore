@@ -36,3 +36,16 @@
 # Reviewed 2026-09-20, after it failed the Security workflow on every push
 # since 8d7ed3b. False positive.
 8d7ed3b8ae39e9044ac463335341f4853696c3e0:profiles/product/template/services/api/koras_api/core/recipients.py:generic-api-key:211
+
+# private-key, in the koras-cli test helpers (`TEST_PRIVATE_KEY`):
+#
+# A throwaway RSA key generated for these tests, documented as such in the
+# file. It signs JWT-profile assertions against a stubbed token endpoint that
+# never verifies them, and no ZITADEL instance has ever held its public half.
+# Two fingerprints because the helper was introduced in one commit and an
+# edit above the constant moved its line in a later one.
+#
+# Reviewed 2026-10-09, when the test-path allowlists were narrowed to the
+# generic rules and stopped hiding private keys under tests/. False positive.
+8ab1e02637d156cf24957ee581be8aea4b1b3d76:tooling/koras-cli/tests/helpers.ts:private-key:108
+a7f9b1139719591981698c4c57148362463dce2d:tooling/koras-cli/tests/helpers.ts:private-key:117
