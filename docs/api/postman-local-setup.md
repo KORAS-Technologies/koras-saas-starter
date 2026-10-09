@@ -200,8 +200,10 @@ instance — verified from `local/zitadel/provision.py`'s `grant_admin()`:
 **Password:** printed by `local/zitadel/init.sh`'s own console output the
 first time you run `make bootstrap` — not repeated here, and not the same
 value across every machine's install if that script has been changed
-locally. Look at your own terminal output, or re-run `bash local/zitadel/init.sh`
-in a throwaway check.
+locally. Look at your own terminal output, or re-run
+`ZITADEL_URL=http://localhost:<KORAS_PORT_ZITADEL> bash local/zitadel/init.sh`
+(the port from `local/.env`) in a throwaway check. `init.sh` has no default URL
+and refuses to run without one.
 
 **There is no separate `member`-only, `billing_admin`, `security_admin`, or
 `platform_readonly` local identity by default.** To test a lesser role,

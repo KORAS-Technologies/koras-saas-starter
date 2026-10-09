@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
-# Tears down the local stack, wipes all volumes, and re-bootstraps.
-# DESTRUCTIVE — all local data is lost.
+# Disabled: this legacy root stack's reset is refused, unconditionally.
+#
+# It ran `docker compose down --volumes --remove-orphans` with no confirmation
+# and no check of where docker pointed. Worse, local/docker/shared.compose.yml
+# has no top-level `name:`, so the compose project is named after the folder of
+# the first -f file -- "docker" -- and `down --volumes` would act on whatever
+# other stack on the machine is also called "docker".
+#
+# The maintained local stack is the one generated projects get
+# (profiles/_shared/template/local/scripts/reset.sh), which is guarded. This
+# root stack is slated for deprecation (Phase 4, decision A13); until that is
+# decided, deleting its data is a deliberate manual act, not a make target:
+#
+#   docker compose -p docker -f local/docker/shared.compose.yml \
+#     -f local/docker/product.compose.yml down --volumes
+#
+# -- after checking `docker volume ls --filter label=com.docker.compose.project=docker`
+# lists only what you mean to delete.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-PROFILE="${KORAS_PROFILE:-product}"
-
-COMPOSE_FILES="-f $ROOT/local/docker/shared.compose.yml"
-if [ "$PROFILE" = "product" ]; then
-  COMPOSE_FILES="$COMPOSE_FILES -f $ROOT/local/docker/product.compose.yml"
-else
-  COMPOSE_FILES="$COMPOSE_FILES -f $ROOT/local/docker/control-plane.compose.yml"
-fi
-
-echo "==> Resetting local environment (all data will be lost)..."
-docker compose $COMPOSE_FILES down --volumes --remove-orphans
-rm -f "$ROOT/.env.local"
-
-echo "--> Re-bootstrapping..."
-KORAS_PROFILE="$PROFILE" bash "$ROOT/local/scripts/bootstrap.sh"
+echo "Refusing to reset: the legacy root stack's reset is disabled." >&2
+echo "See the comment at the top of local/scripts/reset.sh for why, and for the manual command." >&2
+exit 1

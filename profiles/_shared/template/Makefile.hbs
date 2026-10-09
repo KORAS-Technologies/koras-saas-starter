@@ -27,7 +27,7 @@ endif
 
 .DEFAULT_GOAL := help
 
-.PHONY: help profile install bootstrap ports dev down reset seed test health lint typecheck build clean doppler-check doppler-bootstrap doppler-bootstrap-prod
+.PHONY: help profile install bootstrap ports preflight dev stop down reset seed test health lint typecheck build clean doppler-check doppler-bootstrap doppler-bootstrap-prod
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -53,16 +53,25 @@ bootstrap: install ## Full local environment setup
 ports: ## Re-resolve host ports (use after freeing a preferred port)
 	bash ./local/scripts/ports.sh --reset
 
+preflight: ## Read-only checks: occupied ports, placeholder secrets, missing config
+	bash ./local/scripts/preflight.sh
+
 dev: ## Start local development stack
+	bash ./local/scripts/preflight.sh
 	docker compose -f local/docker-compose.yml up -d
 	pnpm turbo run dev
 
-down: ## Stop local stack
+stop: ## Stop the stack's containers; keeps containers, networks and volumes
+	docker compose -f local/docker-compose.yml stop
+
+down: ## Remove the stack's containers and network; keeps volumes
 	docker compose -f local/docker-compose.yml down
 
-reset: down ## Wipe volumes and re-bootstrap
-	docker compose -f local/docker-compose.yml down -v
-	$(MAKE) bootstrap
+# The only target that deletes data, and it does so through the guarded script:
+# it refuses in a linked worktree, on any non-local endpoint or docker context,
+# and without confirmation. Never add `down -v` to any other target.
+reset: ## DESTRUCTIVE: delete this stack's volumes and re-bootstrap (guarded, asks first)
+	bash ./local/scripts/reset.sh
 
 seed: ## Populate development fixtures
 	bash ./local/scripts/seed.sh
