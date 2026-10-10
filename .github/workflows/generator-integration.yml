@@ -19,7 +19,8 @@ name: Generator Integration
 # is to build the output, so that is what this does.
 #
 # It is slow — install and build for two projects — which is why it runs on
-# changes to the generator or the profiles rather than on every commit.
+# changes to what it reads (the generator, the profiles, the shared assets, the
+# workspace manifests) rather than on every commit.
 #
 # It always starts, and the expensive jobs decide whether to run. Until
 # 2026-10-10 the path filter sat on the trigger, so a pull request touching none

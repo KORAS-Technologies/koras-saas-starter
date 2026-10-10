@@ -23,26 +23,71 @@ import { pathToFileURL } from 'node:url'
 
 /**
  * What Generator Integration reads. A directory ends in `/` and matches
- * everything under it; anything else is one exact path. The first five are the
- * trigger filter this replaced; the last three are paths the workflow reads
- * and that filter never named -- a change to the MinIO action or to the import
- * fixture ran nothing that used it.
+ * everything under it; a `*` segment matches exactly one path segment; anything
+ * else is one exact path.
+ *
+ * The trigger filter this replaced named only the first five, and missing a
+ * path here is not harmless: a change to it skips every expensive job and the
+ * gate passes. The rest were found by asking what each starter-side step
+ * reads, and the tests derive as much of that as they can from the workflow,
+ * the manifests and the workspace rather than from this list.
  */
 export const RELEVANT_PATHS = [
+  // The trigger filter this replaced.
   'generators/',
   'profiles/',
   'infrastructure/terraform/modules/',
   '.github/workflows/generator-integration.yml',
   '.github/scripts/local-zitadel-secure/',
+
+  // Read by the workflow from the starter checkout.
   '.github/scripts/generator-integration-gate/',
   '.github/actions/start-minio/',
   '.github/fixtures/',
+
+  // The `shared_assets` both manifests copy verbatim into every generated
+  // project, beside infrastructure/terraform/modules/ above.
+  '.claude/',
+  'tooling/postman/',
+
+  // `pnpm install --frozen-lockfile` and `turbo run build` at the starter
+  // root. The root package.json is also where the generator reads the version
+  // it stamps into .koras/project.yaml, and pnpm/action-setup reads its
+  // `packageManager`.
+  'package.json',
+  'pnpm-lock.yaml',
+  'pnpm-workspace.yaml',
+  'turbo.json',
+  // The generator's tsconfig.json extends it, so `turbo run build` reads it.
+  'tsconfig.base.json',
+  // Every workspace package's manifest is resolved by the install, and its
+  // lifecycle scripts run there. One rule per glob in pnpm-workspace.yaml;
+  // generators/* is covered above.
+  'apps/*/package.json',
+  'services/*/package.json',
+  'packages/*/package.json',
+  'tooling/*/package.json',
+  'tests/e2e/package.json',
+  'tests/docs/package.json',
+  // astral-sh/setup-uv, given no version, takes `required-version` from
+  // uv.toml or else pyproject.toml at the root.
+  'pyproject.toml',
+  'uv.toml',
+  // Line endings of everything checked out, which is what the Windows job
+  // tests and what the generator copies.
+  '.gitattributes',
 ]
 
+function matches(rule, path) {
+  if (rule.endsWith('/')) return path.startsWith(rule)
+  if (!rule.includes('*')) return path === rule
+  const want = rule.split('/')
+  const have = path.split('/')
+  return want.length === have.length && want.every((part, i) => (part === '*' ? have[i] !== '' : part === have[i]))
+}
+
 export function isRelevant(paths) {
-  return paths.some((path) =>
-    RELEVANT_PATHS.some((rule) => (rule.endsWith('/') ? path.startsWith(rule) : path === rule)),
-  )
+  return paths.some((path) => RELEVANT_PATHS.some((rule) => matches(rule, path)))
 }
 
 const SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
