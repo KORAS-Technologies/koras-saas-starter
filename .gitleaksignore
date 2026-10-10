@@ -49,3 +49,10 @@
 # generic rules and stopped hiding private keys under tests/. False positive.
 8ab1e02637d156cf24957ee581be8aea4b1b3d76:tooling/koras-cli/tests/helpers.ts:private-key:108
 a7f9b1139719591981698c4c57148362463dce2d:tooling/koras-cli/tests/helpers.ts:private-key:117
+
+# Reviewed 2026-10-09 (Phase 4.3A). DEFAULT_PASSWORD_FINGERPRINT in preflight.sh
+# is the sha256 of ZITADEL's *public* default admin password, held so that
+# preflight can refuse it without the value appearing in any rendered file
+# (ADR 0017). Not a credential: generic-api-key reads a 64-hex value beside
+# the word "password" as one. False positive.
+9c58d17ac6f97f2ad3f83a7ddfd345285ea31c37:profiles/_shared/template/local/scripts/preflight.sh:generic-api-key:65

@@ -141,8 +141,22 @@ export function writeSecretFile(path, value, { platform = process.platform, env 
     closeSync(descriptor)
   }
   if (platform === 'win32') {
-    const granted = exec('icacls', [path, '/inheritance:r', '/grant:r', `${windowsAccount(env)}:F`])
+    const account = windowsAccount(env)
+    const granted = exec('icacls', [path, '/inheritance:r', '/grant:r', `${account}:F`])
     if (granted.status !== 0) throw new StackError('SECRET_ACL', `Could not restrict the ACL of ${path}.`)
+    // /inheritance:r removes inherited entries only. Where the parent passes
+    // nothing down -- a CI runner's temp directory -- a new file takes the
+    // creating token's default DACL as *explicit* entries (SYSTEM,
+    // Administrators), which survive it. Remove every principal but the owner
+    // by name; verifySecretFile below is what decides the result is right.
+    const listing = exec('icacls', [path])
+    for (const entry of parseIcacls(listing.stdout ?? '', path) ?? []) {
+      const principal = entry.split(':(')[0]
+      const bare = principal.toLowerCase()
+      if (bare === account.toLowerCase() || bare.endsWith('\\' + account.toLowerCase())) continue
+      const removed = exec('icacls', [path, '/remove:g', principal])
+      if (removed.status !== 0) throw new StackError('SECRET_ACL', `Could not remove ${principal} from the ACL of ${path}.`)
+    }
   } else {
     chmodSync(path, 0o600)
   }
