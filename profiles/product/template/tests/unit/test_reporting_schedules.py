@@ -353,3 +353,84 @@ def test_a_schedule_needs_the_export_permission_and_the_scheduled_entitlement() 
         assert TestClient(app).get("/api/v1/reports/usage.quotas").json()["can_schedule"] is False
     finally:
         app.dependency_overrides.clear()
+
+
+# ── recipient addresses (CodeQL py/polynomial-redos, alert #5) ────────────────
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["ada@example.com", " Ada@Example.COM ", "a.b+tag@mail.example.co.uk", "x@y.z"],
+)
+def test_an_ordinary_address_is_accepted_and_normalised(raw: str) -> None:
+    from koras_api.routers.reporting_schedules import _validate_recipients
+
+    assert _validate_recipients([raw]) == [raw.strip().lower()]
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "not-an-address",
+        "@example.com",
+        "ada@",
+        "ada@example",
+        "ada@@example.com",
+        "ada@exa@mple.com",
+        "ada smith@example.com",
+        "ada@.example.com",
+        "ada@example..com",
+        "ada@example.com.",
+    ],
+)
+def test_a_malformed_address_is_refused_with_the_recipient_code(raw: str) -> None:
+    from fastapi import HTTPException
+    from koras_api.routers.reporting_schedules import _validate_recipients
+
+    with pytest.raises(HTTPException) as refused:
+        _validate_recipients([raw])
+    assert refused.value.status_code == 422
+    assert refused.value.detail["code"] == "recipient_invalid"
+    assert refused.value.detail["message"] == f"{raw!r} is not an email address"
+
+
+def test_the_address_length_limit_is_254() -> None:
+    from fastapi import HTTPException
+    from koras_api.routers.reporting_schedules import MAX_ADDRESS_LENGTH, _validate_recipients
+
+    assert MAX_ADDRESS_LENGTH == 254
+    at_limit = "a" * (254 - len("@example.com")) + "@example.com"
+    assert len(at_limit) == 254
+    assert _validate_recipients([at_limit]) == [at_limit]
+    with pytest.raises(HTTPException) as refused:
+        _validate_recipients(["a" + at_limit])
+    assert refused.value.detail["code"] == "recipient_invalid"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        # Each ends in a character the domain may not hold, so a backtracking
+        # pattern has to try every split of the run before it gives up. The old
+        # pattern took about 0.2 s on 5,000 dots and grows with the square.
+        "a@" + "." * 50_000 + "@",
+        "a@" + "." * 50_000 + " ",
+        "a@" + "a." * 25_000 + "@",
+        "a@" + "." * 240 + "@",  # under the length limit, so the pattern runs
+    ],
+    ids=["dots-then-at", "dots-then-space", "labels-then-at", "under-the-limit"],
+)
+def test_a_pathological_address_is_refused_quickly(raw: str) -> None:
+    """The old pattern let both sides of `\.` claim the same dots and backtracked
+    polynomially; the length check now runs first and the pattern is linear."""
+    import time
+
+    from fastapi import HTTPException
+    from koras_api.routers.reporting_schedules import _EMAIL, _validate_recipients
+
+    started = time.perf_counter()
+    with pytest.raises(HTTPException):
+        _validate_recipients([raw])
+    # Past the length check the pattern itself must be linear too.
+    assert _EMAIL.match(raw) is None
+    assert time.perf_counter() - started < 0.5
