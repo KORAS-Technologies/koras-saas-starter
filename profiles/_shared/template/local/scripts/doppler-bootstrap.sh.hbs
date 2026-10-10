@@ -152,7 +152,8 @@ for environment in "${ENVIRONMENTS[@]}"; do
   # Typed validation is config-typecheck.sh; this tool writes values and never
   # inspects them.
   while read -r name class source type; do
-    case "$class" in local|"") continue ;; esac
+    # `escrow` is written by stack.mjs to a per-machine config, never here.
+    case "$class" in local|escrow|"") continue ;; esac
 
     if grep -q "\"${name}\"" <<<"$present" && [ "$OVERWRITE" -eq 0 ]; then
       echo "      ${name}: already set"

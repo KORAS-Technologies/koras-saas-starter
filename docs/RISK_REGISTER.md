@@ -2398,3 +2398,68 @@ claim nothing checks, which is the same shape as R-042 in a different file.
 `Response`, which would make the floor honest at either version; that is the
 narrower fix and the one worth taking if raising the floor turns out to drag
 other packages with it.
+
+## R-045 — the product template's object store image can no longer be pulled
+
+**Found:** 2026-10-10, by the `local-zitadel-secure` job of PR #66 (Phase
+4.3A), the first CI job to start a generated product's whole local stack.
+Pre-existing: the PR did not introduce it and does not fix it.
+
+**Severity:** 15 (likelihood 5 × impact 3) · **Status:** Open
+
+`profiles/product/template/local/docker-compose.yml.hbs` runs the `storage`
+service on `minio/minio:latest`. MinIO stopped publishing images in late 2025,
+and `.github/actions/start-minio` has built MinIO from source for the
+secure-files suites since then. Nothing changed the template. So on a machine
+without that tag cached, `make dev`, which is `stack.mjs up`, has its pull
+denied and compose starts nothing. Every new developer of every generated
+product hits this on day one.
+
+**The CI stand-in, and its limit.** So that PR #66 could test ZITADEL, the
+job tags a local Alpine image as `minio/minio:latest` that ignores its
+arguments and sleeps. That proves the identity stack starts. It proves
+nothing about storage. No object is ever written, the stand-in is never
+healthy, and a sign-in, upload or download that needs the bucket is not
+exercised. Read the job's green as "ZITADEL works when everything else
+starts", not as "the product's local stack starts".
+
+**Mitigation:** pin the template's `storage` service to an image that can be
+pulled and can be reproduced, such as the one `.github/actions/start-minio`
+builds, a published fork, or another S3-compatible server the secure-files
+suites accept. Then remove the stand-in step from
+`.github/workflows/generator-integration.yml`, so the job starts the real
+service again. A health check on `storage` in that job would have caught it.
+
+## R-046 — the factory's own local stack still runs ZITADEL on the public placeholder key and default password
+
+**Found:** 2026-10-09, while implementing Phase 4.3A, and left alone because
+§3.10 of the specification scopes the stage to generated projects. Recorded
+here on 2026-10-10 so that "left alone" does not decay into "fixed".
+
+**Severity:** 8 (likelihood 2 × impact 4) · **Status:** Open
+
+Generated projects no longer run ZITADEL on the placeholder masterkey or the
+default admin password (ADRs 0015 and 0017). The starter's own root stack
+still does:
+
+- `local/docker/shared.compose.yml` runs `start-from-init` with
+  `ZITADEL_MASTERKEY: ${ZITADEL_MASTERKEY:-MasterkeyNeedsToHave32Characters}`,
+  so a missing key falls back to the public placeholder rather than
+  refusing. It publishes `${ZITADEL_PORT:-8080}:8080` on every interface, not
+  loopback.
+- `local/zitadel/config.yaml` and `local/zitadel/init.sh` set the admin to
+  ZITADEL's default password.
+- `local/config/.env.local.example` names the placeholder as the value.
+
+`Makefile`, `local/scripts/bootstrap.sh` and `local/scripts/health.sh` all
+start it. Its database is synthetic and local, which is why the likelihood is
+2. The impact is 4 because the instance is reachable from the network, with
+publicly known credentials, from any machine that runs the factory's
+`make dev`.
+
+**Mitigation:** either retire the root stack, if nothing still needs the
+factory to run ZITADEL itself, or move it onto `stack.mjs` the way the
+templates did. In both cases, bind it to loopback and remove the `:-` default
+so that a missing key is a refusal. Which one is an owner decision. Until
+then, the factory's root stack is not an example of the secure lifecycle, and
+nothing should be copied from it.

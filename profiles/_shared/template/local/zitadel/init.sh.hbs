@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# Provisions the local ZITADEL instance for development.
+# Re-provisions the project, roles and OIDC application on the local ZITADEL
+# instance. It does not create the instance.
 #
-# The instance bootstraps itself from the ZITADEL_FIRSTINSTANCE_* variables in
-# local/docker-compose.yml, which create the KORAS organization, an admin human,
-# and a machine user whose personal access token is written to
-# local/zitadel/machinekey/pat. Those variables apply only when the instance is
-# created, so changing them means dropping the zitadel database:
+# The instance itself is created by `node local/scripts/stack.mjs provision
+# --fresh` (bootstrap runs it), which generates the masterkey and the admin
+# password, escrows the key, and initialises through
+# local/docker-compose.init.yml -- the only place ZITADEL_FIRSTINSTANCE_*
+# settings live, because they apply only when an instance is created. That
+# command runs provision.py itself; this script is for running it again by
+# hand, which is safe: every step looks before it creates.
 #
-#   docker compose -f local/docker-compose.yml stop zitadel
-#   docker compose -f local/docker-compose.yml exec -T supabase-db \
-#     psql -U postgres -c "drop database if exists zitadel with (force);"
-#   docker compose -f local/docker-compose.yml up -d zitadel
+# provision.py refuses an instance whose masterkey is not escrowed, or one
+# recorded with the public placeholder key or the default admin password
+# (ADRs 0015 and 0017).
 #
 # The rest -- project, roles, OIDC application, and a grant for the admin -- is
 # in provision.py. It used to be here, in shell, parsing JSON with grep, and it
@@ -19,7 +21,22 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-ZITADEL_URL="${ZITADEL_URL:-http://localhost:8083}"
+# No default. The one this used to have, http://localhost:8083, is the Control
+# Plane's preferred ZITADEL port, so running this script by hand in a product
+# provisioned the product's project, roles and OIDC app into the Control
+# Plane's instance. The right URL is whatever port this project resolved;
+# bootstrap passes it.
+if [ -z "${ZITADEL_URL:-}" ]; then
+  resolved="$( { grep -E '^KORAS_PORT_ZITADEL=' "$ROOT/local/.env" 2>/dev/null || true; } | tail -n1 | cut -d= -f2 | tr -d '\r')"
+  echo "ZITADEL_URL is not set, and this script will not guess which ZITADEL to provision." >&2
+  if [ -n "$resolved" ]; then
+    echo "This project's ZITADEL port (local/.env) is ${resolved}:" >&2
+    echo "  ZITADEL_URL=http://localhost:${resolved} bash local/zitadel/init.sh" >&2
+  else
+    echo "Resolve this project's ports first ('make ports' or 'make bootstrap'), then set ZITADEL_URL." >&2
+  fi
+  exit 1
+fi
 
 echo "Waiting for ZITADEL at ${ZITADEL_URL}..."
 for _ in $(seq 1 60); do
@@ -37,4 +54,5 @@ ZITADEL_URL="$ZITADEL_URL" "$PYTHON" "$ROOT/local/zitadel/provision.py"
 
 echo ""
 echo "  Console:    ${ZITADEL_URL}/ui/console   (KORAS staff only)"
-echo "  Admin user: admin    Password: Password1!"
+# The admin password is generated per instance and printed only on request.
+echo "  Admin user: admin    Password: node local/scripts/stack.mjs status --show-admin"

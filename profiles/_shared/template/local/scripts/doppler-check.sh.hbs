@@ -80,7 +80,11 @@ mapfile -t REQUIRED < <(
   # reaches it when somebody has a value and is legitimately absent otherwise,
   # so demanding it would refuse a deployment over a setting the code is built
   # to do without.
-  grep -vE '^\s*#|^\s*$' "$MANIFEST" | awk '$2 != "local" && $2 != "optional" { print $1 }' | sort -u
+  #
+  # Nor `escrow`: a per-machine copy of a local secret, which no deployed
+  # environment needs and the loop below refuses in every config but a
+  # dev_local_* one.
+  grep -vE '^\s*#|^\s*$' "$MANIFEST" | awk '$2 != "local" && $2 != "optional" && $2 != "escrow" { print $1 }' | sort -u
 )
 
 mapfile -t FORBIDDEN < <(
@@ -98,6 +102,23 @@ mapfile -t FORBIDDEN < <(
   # should not exist was never a question anyone asked.
   grep -vE '^\s*#|^\s*$' "$MANIFEST" | awk '$2 == "local" { print $1 }' | sort -u
 )
+
+mapfile -t ESCROWED < <(
+  # `escrow` (ADR 0015): the local ZITADEL masterkey and admin password, kept
+  # write-once in a per-machine branch config, dev_local_<machine>. Allowed
+  # there and nowhere else -- not the dev root, not dev_feature, not stg or
+  # prd -- so a deployment can never be handed a developer's local key, and
+  # the DEV deploy contract is unchanged.
+  grep -vE '^\s*#|^\s*$' "$MANIFEST" | awk '$2 == "escrow" { print $1 }' | sort -u
+)
+
+# Whether a config may hold escrowed names: a per-machine branch of dev only.
+escrow_allowed() {
+  case "$1" in
+    dev_local_?*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 # The contract and the manifest must describe the same set. A setting added to
 # one and not the other is a setting nobody classified, and the failure mode is
@@ -148,6 +169,13 @@ for environment in "${ENVIRONMENTS[@]}"; do
       present_forbidden+=("$name")
     fi
   done
+  if ! escrow_allowed "$environment"; then
+    for name in "${ESCROWED[@]}"; do
+      if grep -q "\"${name}\"" <<<"$present"; then
+        present_forbidden+=("$name")
+      fi
+    done
+  fi
 
   if [ ${#missing[@]} -eq 0 ] && [ ${#present_forbidden[@]} -eq 0 ]; then
     echo "  ${environment}: complete"
@@ -165,7 +193,7 @@ for environment in "${ENVIRONMENTS[@]}"; do
   if [ ${#present_forbidden[@]} -ne 0 ]; then
     # Names only, like everything else here. `$present` holds no values to
     # leak -- `--only-names` is why -- and nothing below reads one.
-    echo "  ${environment}: holds ${#present_forbidden[@]} setting(s) classed local, which must never be in Doppler —"
+    echo "  ${environment}: holds ${#present_forbidden[@]} setting(s) classed local or escrow, which must never be in this config —"
     for name in "${present_forbidden[@]}"; do
       echo "      ${name}"
     done
@@ -181,8 +209,10 @@ echo ""
 # to separately.
 if [ "$any_forbidden" -ne 0 ]; then
   cat >&2 <<'FORBIDDEN_GUIDANCE'
-A setting classed `local` in local/config/secrets.manifest is in Doppler, and
-it must not be. `local` means the local Docker stack, or a value the runtime
+A setting classed `local` in local/config/secrets.manifest is in Doppler, or one
+classed `escrow` is in a config other than a per-machine dev_local_* branch, and
+it must not be. An `escrow` setting is a developer's local ZITADEL key: move it
+to that developer's dev_local_<machine> config before deleting it here. `local` means the local Docker stack, or a value the runtime
 sets for itself; a deployed environment holding one either does nothing with it
 or is changed by it in a way nobody chose. NODE_ENV is the second kind: a build
 inherits it, so `development` in Doppler is a production bundle built in

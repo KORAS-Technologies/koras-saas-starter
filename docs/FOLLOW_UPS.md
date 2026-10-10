@@ -46,7 +46,7 @@ recommendation rather than a record — revise it, do not preserve it.
 | 9 | **F25 — reporting** | Three items, none of which blocks a product registering reports today: `reporting.api` enforcement becomes real with the first machine caller, pre-aggregation when a table outgrows a range scan, and report names in the customer's language when somebody asks for one. | ~1 day per item |
 | 10 | **F30 — Docoris data import alignment with the starter** | Docoris carries its own import (E24-F01-S01) with no analysis step and a mapping form a person types headings into, so matching CSV or XLSX headings prefill nothing there, however well they match. Opened 2026-09-29; the starter's framework is complete and documented, and the next move is a comparison and a migration path in the docoris repository, not a third implementation. | ~1 day to compare, the migration unknown |
 | 11 | **F31 — GR-352, the import memory envelope** — *opened 2026-10-01; slices A and B built the same day, slices C and E on 2026-10-02; **GR-352 closed 2026-10-02, verified, its NFRs ratified by the owner*** | **The resource envelope is closed and what is left is an activation constraint.** The import framework accepted files that took a worker to 1.4 GiB against 512 MB. A safety pass refuses the measured worst cases before they are loaded, the two API routes read a head, the worker reads rows as a stream, and one gate holds an import, a backup, a restore and a scheduled delivery to one at a time in a process -- at limits the owner ratified on 2026-10-02. **IMPORT-DEF-014 is closed and verified as of 2026-10-02** -- fix `2db0dc4`, merged as `eba279c` in PR #29, CI, Security and Generator Integration green on both commits, the 512 MiB capped measurement repeated against real object storage -- so the Starter-level activation constraint is lifted. Neither closure enables imports in `docoris`: its alignment is next, and OD-12 stays blocked | `docoris`'s alignment and its own verification; then OD-12, on explicit approval |
-| 12 | **F32 — `develop` is not protected against an early merge** — *opened 2026-10-02* | Two pull requests in one day, #24 and #27, were merged before their owner's authorisation and before their checks had finished. Both passed afterwards. Nothing in the repository's settings would have stopped either, and nothing was changed here: the entry records the recommendation and the one thing to do first, which is that Generator Integration is path-filtered and cannot be made a required check as it stands | ~1h in repository settings, after one workflow change |
+| 12 | **F32 — `develop` is not protected against an early merge** — *opened 2026-10-02; a ruleset closed four of its five settings the same day, recorded 2026-10-10; the fifth closed 2026-10-10* | Two pull requests in one day, #24 and #27, were merged before their owner's authorisation and before their checks had finished. Both passed afterwards, and nothing in the repository's settings would have stopped either at the time. **The ruleset `develop: PR and CI/Security checks` has applied since 2026-10-02 at 19:14 UTC.** It requires a pull request and, since 2026-10-10 at 17:29 UTC, eight checks with the branch up to date -- the seven CI and Security checks and Generator Integration, made requirable by PR #69, merged as `8de610c` -- blocks force pushes and deletion, and allows no bypass. **One gap is still open, as of 2026-10-10:** nothing enforces the owner's authorisation. The ruleset requires zero approving reviews, so once the checks are green any account with write access can merge | The owner-authorisation decision |
 
 **F21 and F23 do not contend with the top row.** They are a person at a dashboard and two ZITADEL writes per instance; nothing in either is code, so an order that reads as a queue is misleading for those two. Run them whenever the dashboard is open.
 
@@ -2948,11 +2948,28 @@ open pull request and `develop`, and it did not hold either time.
 **What is recommended, and not done.** Nothing in the repository's settings
 or workflows was changed on 2026-10-02.
 
-- [ ] Require a pull request for `develop`.
-- [ ] Require CI, Security and Generator Integration to pass.
-- [ ] Require the branch to be up to date before merging.
-- [ ] Block force pushes and deletion.
-- [ ] Allow no administrator bypass.
+That sentence describes the session that wrote this entry. It does not
+describe the repository's settings that day: a ruleset was created on
+`develop` at 19:14 UTC on 2026-10-02, after both merges, and this entry was
+not updated. The boxes below were ticked on 2026-10-10 against the ruleset
+as its own API reports it. Check the ruleset itself rather than this list:
+`gh api repos/KORAS-Technologies/koras-saas-starter/rulesets/24385352`.
+
+- [x] Require a pull request for `develop`. *Done by the ruleset, with zero
+      approving reviews required — see the gap below.*
+- [x] Require CI, Security and Generator Integration to pass. **Closed
+      2026-10-10, in two halves:**
+  - [x] CI and Security. Seven checks: Lint & Typecheck, Test (Python),
+        Test (Node), Build, Secret scan (gitleaks), CodeQL (python) and
+        CodeQL (javascript-typescript). Required since 2026-10-02.
+  - [x] Generator Integration. Required since 2026-10-10 at 17:29 UTC, the
+        eighth check, once the path filter below was gone.
+- [x] Require the branch to be up to date before merging. *Strict status
+      checks are on.*
+- [x] Block force pushes and deletion. *The ruleset's force-push and
+      deletion rules.*
+- [x] Allow no administrator bypass. *No bypass actors are configured;
+      the API reports `current_user_can_bypass: never`.*
 
 **One thing has to come first.** Generator Integration is path-filtered:
 `generator-integration.yml` runs only when a pull request touches the paths
@@ -2960,8 +2977,116 @@ it names. A required check that never reports leaves a pull request
 unmergeable for good, so making its four jobs required as they stand would
 block every change that touches none of those paths.
 
-- [ ] Before requiring it: either an aggregate check that always runs and
-      reports for the four jobs, or the path filter removed.
+- [x] Before requiring it: either an aggregate check that always runs and
+      reports for the four jobs, or the path filter removed. **Done by PR
+      #69, merged on 2026-10-10 as `8de610c`.** The workflow always starts.
+      A `detect changes` job decides whether the expensive jobs run, and one
+      job named `Generator Integration` runs `if: always()` and fails closed:
+      for a relevant change, anything but `success` in any job is a refusal,
+      including `cancelled` and `skipped`. Detection that did not succeed is
+      also a refusal. Two reviews of it found three ways it could pass
+      wrongly -- a path git quotes, a pull request retargeted to a new base,
+      and the script started through a link -- and all three were fixed
+      before it merged. The gate reported success on `develop` at `8de610c`
+      (run 38070362972).
+- [x] Then require it. **Applied on 2026-10-10 at 17:29 UTC, on the owner's
+      approval.** The change was one entry added to the ruleset's
+      `required_status_checks`, with everything else left as it was:
+      `{ "context": "Generator Integration", "integration_id": 15368 }`.
+      `15368` is the GitHub Actions app, the same as the seven existing
+      entries. The live ruleset was read and compared field by field with
+      the request below before it was sent, and read back after: eight
+      checks, every other rule and parameter unchanged, no bypass actors.
+
+**What the ruleset does not close: the owner's authorisation.** The two
+merges happened ahead of two things, the checks and the owner. The ruleset
+answers the first: either merge would have been refused until the seven
+required checks reported success. It does not answer the second. It
+requires zero approving reviews, so once the checks are green the merge
+button works for any account with write access, including the owner's own
+account when an agent session uses it. A pull request's author cannot
+approve their own pull request on GitHub. Requiring one review would
+therefore need a second reviewer identity, not just a settings change.
+
+- [ ] Decide how the owner's authorisation is enforced, as of 2026-10-10.
+      The options are a required review from a second identity, a
+      CODEOWNERS review, or a check that waits for an explicit authorisation
+      signal. Until one is chosen, the instruction to wait is still the only
+      control for that half, which is the arrangement this entry was opened
+      over.
+
+#### The ruleset change, as applied
+
+Applied on 2026-10-10 at 17:29 UTC, on the owner's explicit approval, after
+PR #69 was merged and its gate had reported on `develop`. It sent the
+ruleset's four rules unchanged, plus the one new required check. This
+section said "five rules" until then; there are four -- deletion, force
+push, pull request and required checks. The request, kept as the record:
+
+```sh
+gh api --method PUT repos/KORAS-Technologies/koras-saas-starter/rulesets/24385352 --input - <<'JSON'
+{
+  "name": "develop: PR and CI/Security checks",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["refs/heads/develop"], "exclude": [] } },
+  "bypass_actors": [],
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    { "type": "pull_request", "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": false,
+        "required_reviewers": [],
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false,
+        "require_extra_approval_for_unattributed_changes": true,
+        "dismissal_restriction": { "enabled": false, "allowed_actors": [] },
+        "allowed_merge_methods": ["merge", "squash", "rebase"] } },
+    { "type": "required_status_checks", "parameters": {
+        "strict_required_status_checks_policy": true,
+        "do_not_enforce_on_create": false,
+        "required_status_checks": [
+          { "context": "Lint & Typecheck", "integration_id": 15368 },
+          { "context": "Test (Python)", "integration_id": 15368 },
+          { "context": "Test (Node)", "integration_id": 15368 },
+          { "context": "Build", "integration_id": 15368 },
+          { "context": "Secret scan (gitleaks)", "integration_id": 15368 },
+          { "context": "CodeQL (python)", "integration_id": 15368 },
+          { "context": "CodeQL (javascript-typescript)", "integration_id": 15368 },
+          { "context": "Generator Integration", "integration_id": 15368 }
+        ] } }
+  ]
+}
+JSON
+```
+
+Do not send it again as a way of restoring the ruleset. A `PUT` replaces
+the rules, so a field this body leaves out is reset to its default, and the
+ruleset may have changed since 2026-10-10. Read the live ruleset and edit
+what is there.
+
+### F33 — Phase 4.3A: what secure local ZITADEL leaves out — opened 2026-10-10
+
+PR #66 made a new product's local identity provider secure: a generated
+masterkey, escrowed twice, a generated admin password, and expiring tokens.
+Its review found five pieces of work that were deliberately kept out of it,
+so that its validated head stayed unchanged. Each has a plan in
+`docs/features/local-zitadel-follow-ups/`, and the plans are not entries
+here.
+
+- [ ] Instance retirement and versioned escrow, as ADR 0018 proposes. This
+      needs the owner's approval, and should land before Stage 4.3B
+      provisions anything.
+- [ ] R-045: replace the unpullable MinIO image, and delete the CI stand-in.
+- [ ] R-046: retire or harden the factory's own ZITADEL stack.
+- [ ] Bind PostgreSQL and every other local service to loopback.
+- [ ] The CRLF test-import failure, and the remaining review notes.
+
+**Not on this list, and not optional.** Before any real instance is
+provisioned, manual cases T-E4, T-E5 and T-E6 must run: the real Doppler
+CLI, Doppler access scope, and an independent restore.
 
 ## 2026-10-07 - a database invariant for `clean` (secure_files)
 

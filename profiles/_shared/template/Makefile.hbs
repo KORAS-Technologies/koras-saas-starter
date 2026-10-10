@@ -27,7 +27,7 @@ endif
 
 .DEFAULT_GOAL := help
 
-.PHONY: help profile install bootstrap ports dev down reset seed test health lint typecheck build clean doppler-check doppler-bootstrap doppler-bootstrap-prod
+.PHONY: help profile install bootstrap ports preflight dev stop down zitadel-status zitadel-escrow zitadel-rotate-pat reset seed test health lint typecheck build clean doppler-check doppler-bootstrap doppler-bootstrap-prod
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -53,16 +53,37 @@ bootstrap: install ## Full local environment setup
 ports: ## Re-resolve host ports (use after freeing a preferred port)
 	bash ./local/scripts/ports.sh --reset
 
+preflight: ## Read-only checks: occupied ports, placeholder secrets, missing config
+	bash ./local/scripts/preflight.sh
+
+# The stack starts through stack.mjs and nothing else: it verifies the
+# instance's masterkey, ports and identity before ZITADEL starts, and a bare
+# `docker compose up` fails on the compose file's own guard. ADR 0015.
 dev: ## Start local development stack
-	docker compose -f local/docker-compose.yml up -d
+	bash ./local/scripts/preflight.sh
+	node ./local/scripts/stack.mjs up
 	pnpm turbo run dev
 
-down: ## Stop local stack
-	docker compose -f local/docker-compose.yml down
+stop: ## Stop the stack's containers; keeps containers, networks and volumes
+	node ./local/scripts/stack.mjs compose stop
 
-reset: down ## Wipe volumes and re-bootstrap
-	docker compose -f local/docker-compose.yml down -v
-	$(MAKE) bootstrap
+down: ## Remove the stack's containers and network; keeps volumes
+	node ./local/scripts/stack.mjs compose down
+
+zitadel-status: ## The local ZITADEL instance: mode, escrow, token expiry (no secrets)
+	node ./local/scripts/stack.mjs status
+
+zitadel-escrow: ## Complete the masterkey's escrow (Doppler and the encrypted backup)
+	node ./local/scripts/stack.mjs escrow
+
+zitadel-rotate-pat: ## Replace both ZITADEL access tokens before they expire
+	node ./local/scripts/stack.mjs rotate-pat all
+
+# The only target that deletes data, and it does so through the guarded script:
+# it refuses in a linked worktree, on any non-local endpoint or docker context,
+# and without confirmation. Never add `down -v` to any other target.
+reset: ## DESTRUCTIVE: delete this stack's volumes and re-bootstrap (guarded, asks first)
+	bash ./local/scripts/reset.sh
 
 seed: ## Populate development fixtures
 	bash ./local/scripts/seed.sh

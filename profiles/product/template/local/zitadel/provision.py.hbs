@@ -1,9 +1,10 @@
 """Provision the local ZITADEL instance so a sign-in actually completes.
 
-The container bootstraps itself from the ZITADEL_FIRSTINSTANCE_* variables in
-local/docker-compose.yml: the KORAS organization, an admin human, and a machine
-user whose personal access token lands in local/zitadel/machinekey/pat. Those
-apply only when the instance is created.
+The instance is created by `node local/scripts/stack.mjs provision --fresh`,
+through local/docker-compose.init.yml: the KORAS organization, an admin human
+with a generated password, a machine user whose personal access token lands in
+local/zitadel/machinekey/pat, and the login client. Those apply only when the
+instance is created, and stack.mjs runs this script once it exists.
 
 Everything past that point is here, and until now none of it existed. The old
 script created a project and stopped, so there was no OIDC application at all
@@ -34,12 +35,77 @@ PAT_FILE = ROOT / "local" / "zitadel" / "machinekey" / "pat"
 OUTPUT = ROOT / "local" / "zitadel" / "provisioned.env"
 
 PROJECT_NAME = os.environ.get("PROJECT_NAME", "{{projectSlug}}")
-BASE = os.environ.get("ZITADEL_URL", "http://localhost:8083").rstrip("/")
+# No default: the old one, http://localhost:8083, is the Control Plane's
+# preferred port, so a product run without ZITADEL_URL provisioned itself into
+# the Control Plane's instance. init.sh passes the URL this project resolved.
+BASE = os.environ.get("ZITADEL_URL", "").rstrip("/")
+if not BASE:
+    raise SystemExit(
+        "ZITADEL_URL is not set. Run local/zitadel/init.sh (bootstrap does), or set "
+        "ZITADEL_URL=http://localhost:<KORAS_PORT_ZITADEL from local/.env>."
+    )
 if not BASE.startswith(("http://", "https://")):
     # ZITADEL_URL comes from the environment, and urllib will happily open a
     # file: or custom scheme. Checked here so the noqa below is a statement
     # about a validated value rather than a way of not thinking about it.
     raise SystemExit("ZITADEL_URL must be an http or https URL, not " + BASE)
+
+# Phase 4.3 (ADRs 0015-0017). The instance provisioned is the one the state
+# file records, and only if it is safe to put an application on: a secure
+# instance must be escrowed on both legs (A3), and must not have been recorded
+# with ZITADEL's public placeholder masterkey or its default admin password.
+# Both are held as fingerprints, so neither value appears in this file. A
+# legacy-recovery instance is provisioned as it already is: nothing here
+# switches it to login v2 (A7).
+KORAS_HOME = (
+    Path(os.environ["KORAS_HOME"]) if os.environ.get("KORAS_HOME") else Path.home() / ".koras"
+)
+STATE_FILE = Path(
+    os.environ.get("KORAS_ZITADEL_STATE_FILE")
+    or KORAS_HOME / "state" / "{{projectSlug}}" / "zitadel.json"
+)
+PLACEHOLDER_FINGERPRINT = (
+    "sha256:d67cc271c12ad6f95c1b10db7acaf1e69fa8453ef84c898df920faf5d4364f3e"
+)
+# Not a password: the fingerprint of ZITADEL's public default, which is refused.
+DEFAULT_PASSWORD_FINGERPRINT = (
+    "sha256:1d707811988069ca760826861d6d63a10e8c3b7f171c4441a6472ea58c11711b"  # noqa: S105
+)
+
+
+def recorded_instance() -> dict:
+    """The state file, or a refusal naming why this instance is not provisioned."""
+    if not STATE_FILE.is_file():
+        raise SystemExit(
+            "No local ZITADEL instance is recorded at " + str(STATE_FILE) + ".\n"
+            "Create one with: node local/scripts/stack.mjs provision --fresh"
+        )
+    state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    mode = state.get("mode")
+    if mode == "legacy-recovery":
+        return state
+    if mode != "secure":
+        raise SystemExit("The recorded instance has an unknown mode: " + str(mode))
+    if state.get("masterkeyFingerprint") in (None, PLACEHOLDER_FINGERPRINT):
+        raise SystemExit(
+            "Refusing: the recorded secure instance uses the public placeholder masterkey."
+        )
+    password = (state.get("admin") or {}).get("passwordFingerprint")
+    if password in (None, DEFAULT_PASSWORD_FINGERPRINT):
+        raise SystemExit(
+            "Refusing: the recorded secure instance uses the default admin password."
+        )
+    if (state.get("escrow") or {}).get("status") != "escrowed":
+        raise SystemExit(
+            "Refusing: this instance's masterkey is not escrowed on both legs.\n"
+            "Run: node local/scripts/stack.mjs escrow"
+        )
+    return state
+
+
+INSTANCE = recorded_instance()
+SECURE = INSTANCE.get("mode") == "secure"
+LOGIN_URL = os.environ.get("ZITADEL_LOGIN_URL") or INSTANCE.get("loginBaseUri") or ""
 WEB_PORT = os.environ.get("KORAS_PORT_APP_WEB", "3000")
 ADMIN_PORT = os.environ.get("KORAS_PORT_APP_ADMIN", "3001")
 
@@ -61,10 +127,17 @@ ORGANIZATION_ROLES = [
 REDIRECT_URIS = [
     "http://localhost:" + WEB_PORT + "/api/auth/callback",
     "http://localhost:" + ADMIN_PORT + "/api/auth/callback",
+    # What local/config/.env.local.example names, through the proxy. Without
+    # them a sign-in from https://app.localhost ends at ZITADEL refusing the
+    # redirect.
+    "https://app.localhost/api/auth/callback",
+    "https://admin.localhost/api/auth/callback",
 ]
 POST_LOGOUT_URIS = [
     "http://localhost:" + WEB_PORT + "/login",
     "http://localhost:" + ADMIN_PORT + "/login",
+    "https://app.localhost/login",
+    "https://admin.localhost/login",
 ]
 
 
@@ -158,6 +231,10 @@ def application(pid: str) -> tuple[str, str | None]:
         # Relaxed OIDC checks, so http://localhost redirect URIs are accepted.
         "devMode": True,
     }
+    if SECURE:
+        # Login v2 on the application as well as the instance (ADR 0016),
+        # with the absolute base URI: the login has its own port.
+        payload["loginVersion"] = {"loginV2": {"baseUri": LOGIN_URL}}
 
     if found:
         app_id = found[0]["id"]

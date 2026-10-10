@@ -1,24 +1,51 @@
 # Secret scanning configuration.
 #
 # Doppler is the secret authority: nothing real belongs in this repository, so
-# the default rule set is used unmodified rather than narrowed. The allowlist
-# below covers the values that look like credentials and are not -- test
-# fixtures and the local stack, whose whole point is being non-secret.
+# the default rule set is used, plus one rule it lacks. The allowlists below
+# cover the values that look like credentials and are not -- test fixtures and
+# the local stack, whose whole point is being non-secret.
+#
+# Every allowlist is scoped two ways: to an anchored path, and to the rules the
+# fixtures there actually trip. Until 2026-10-09 they were neither. The path
+# patterns were unanchored, so `tests/.*` also matched `docs/.../tests/...`, and
+# they applied to every rule, so a real private key or provider token committed
+# under tests/ was invisible to this job. Measured before narrowing: removing
+# the path allowlists surfaced 24 findings across history, every one a fixture
+# -- generic-api-key and jwt in test sources, plus the two provider-format
+# fixtures handled individually below.
+#
+# Why the test allowlists are attached to the rules (`[[rules.allowlists]]`)
+# rather than written as global `[[allowlists]]` with `targetRules`: measured on
+# gitleaks 8.28.0, a global allowlist whose `targetRules` names a rule from the
+# extended default set has no effect at all. It suppressed nothing, so it would
+# fail open in the other direction the moment someone relied on it. Declaring a
+# default rule's id again with only an allowlist merges into that rule.
 
 [extend]
 useDefault = true
 
-[[allowlists]]
+[[rules]]
+id = "private-jwk"
 description = """
-Profile templates. These are the files the generator renders into a project,
-including its example environment and local stack -- non-secret by construction,
-and by the same reasoning as the generated copies they become.
-"""
-paths = [
-  '''profiles/.*/template/local/.*''',
-]
+A private member of a JSON Web Key.
 
-[[allowlists]]
+The default rule set recognises PEM keys but not JWKs: it reads a JWK as
+structure rather than as one of the patterns it knows. That blind spot is how
+the round-trip harness's signing key was staged in `koras-e2e-shop` on
+2026-09-22 with nothing to catch it. A public JWK carries only `n` and `e`, so
+matching the private members cannot fire on the keys that are meant to be
+published.
+
+Not allowlisted for tests: test keys are generated at run time, never committed.
+"""
+regex = '''"(?:d|p|q|dp|dq|qi)"\s*:\s*"([A-Za-z0-9_-]{40,})"'''
+secretGroup = 1
+entropy = 3.5
+keywords = ['"kty"']
+
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
 description = """
 Test fixtures. The redaction and audit suites must contain credential-shaped
 strings -- that is what they assert gets scrubbed, and a scanner that forbade
@@ -26,13 +53,56 @@ them would forbid testing the defence.
 
 Stated explicitly even though the default rule set already excludes paths that
 look like tests. Relying on that would leave the exclusion invisible, and it is
-a real blind spot: a genuine credential committed under tests/ is not caught by
-this job. A blind spot nobody wrote down is one nobody remembers.
+a real blind spot: a credential-shaped string committed under tests/ is not
+caught by this rule. A blind spot nobody wrote down is one nobody remembers.
+The provider-format rules (AWS, Stripe, GitHub, private keys...) still apply
+under these paths.
 """
 paths = [
-  '''tests/.*''',
-  '''generators/.*/tests/.*''',
-  '''tooling/.*/tests/.*''',
+  '''^tests/''',
+  '''^(?:generators|tooling)/[^/]+/tests/''',
+]
+
+[[rules]]
+id = "jwt"
+[[rules.allowlists]]
+description = """
+Test fixtures: the redaction suites and the billing-catalogue tests hold
+JWT-shaped strings for the same reason as above.
+"""
+paths = [
+  '''^tests/''',
+  '''^(?:generators|tooling)/[^/]+/tests/''',
+]
+
+[[rules]]
+id = "stripe-access-token"
+[[rules.allowlists]]
+description = """
+Stripe-shaped placeholders in the billing-catalogue tests, which assert that a
+key of the wrong mode or kind is refused. They are kept short on purpose: a
+real Stripe secret key has at least 24 characters after its `sk_live_` /
+`sk_test_` prefix, and these have at most 16, so the allowlist cannot match a
+real key even under the test path.
+"""
+condition = "AND"
+paths = [
+  '''^generators/create-koras-app/tests/''',
+]
+regexes = [
+  '''^[rs]k_(?:test|live)_[A-Za-z0-9]{0,16}$''',
+]
+
+[[allowlists]]
+description = """
+Profile templates' local stack. These are the files the generator renders into
+a project's example environment and compose file -- non-secret by construction,
+and by the same reasoning as the generated copies they become. Named exactly:
+a new file in the template tree is scanned like any other.
+"""
+paths = [
+  '''^profiles/[^/]+/template/local/docker-compose\.yml\.hbs$''',
+  '''^profiles/[^/]+/template/local/config/\.env\.local\.example\.hbs$''',
 ]
 
 [[allowlists]]

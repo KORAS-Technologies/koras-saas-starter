@@ -132,8 +132,11 @@ const ABSENT_ON_PURPOSE: Record<string, string> = {
   // provisioning created, named in PRODUCT_SIGN_IN.md because a Google sign-in
   // finds the account through it. Same rule as the registry tables above.
   identity_users: 'a Control Plane identity table; no product repository has one',
-  IAM_OWNER: 'a ZITADEL instance role, granted in the Console rather than by any file here',
-  IAM_LOGIN_CLIENT: 'a ZITADEL instance role, granted in the Console rather than by any file here',
+  // IAM_OWNER and IAM_LOGIN_CLIENT left this list on 2026-10-09. Phase 4.3
+  // names both in code, because a *local* instance's machine user and login
+  // client receive them from the first-instance settings in
+  // docker-compose.init.yml rather than from the Console. A deployed
+  // instance's grants are still made in the Console.
   // Read out of Stripe and the Control Plane on 2026-09-15, while closing
   // F21 and F24, and named in FOLLOW_UPS because what was verified is only
   // checkable if the thing verified is named. All three belong elsewhere by

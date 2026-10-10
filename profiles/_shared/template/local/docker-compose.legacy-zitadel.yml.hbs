@@ -1,0 +1,44 @@
+# LEGACY-RECOVERY ONLY (A4, ADR 0015). Read this before using it.
+#
+# An instance created before Phase 4.3 was initialised with ZITADEL's public
+# placeholder masterkey, and a masterkey cannot be changed once an instance
+# exists. This override starts such an instance so its data can be reached --
+# and does nothing else:
+#
+#   - applied by local/scripts/stack.mjs only when the state file says
+#     `legacy-recovery` AND the shell sets KORAS_ZITADEL_MODE=legacy-recovery;
+#   - `start`, never `start-from-init`: against an empty database it fails
+#     rather than creating an instance on a public key;
+#   - pinned: stack.mjs stops ZITADEL if the running instance id is not the
+#     recorded one;
+#   - no login container, and no login-v2 setting, so the instance behaves as
+#     it already did. Nothing here writes a feature flag (A7);
+#   - loopback only, like the base file;
+#   - no rotation. Moving off a legacy instance means a new secure instance
+#     and provisioning anew.
+#
+# This is the only file in the repository that may contain the placeholder.
+# A test fails if it appears anywhere else.
+services:
+  zitadel:
+    command: start --masterkeyFromEnv --tlsMode disabled
+    secrets: !reset []
+    environment: !override
+      ZITADEL_MASTERKEY: MasterkeyNeedsToHave32Characters
+      ZITADEL_DATABASE_POSTGRES_HOST: supabase-db
+      ZITADEL_DATABASE_POSTGRES_PORT: 5432
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: postgres
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: postgres
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: postgres
+      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: postgres
+      ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+      ZITADEL_EXTERNALSECURE: "false"
+      ZITADEL_EXTERNALPORT: ${KORAS_PORT_ZITADEL:-{{ports.zitadel}}{{!}}}
+      ZITADEL_EXTERNALDOMAIN: localhost
+      ZITADEL_TLS_ENABLED: "false"
+
+  # Excluded: a profile nothing activates.
+  zitadel-login:
+    profiles: ["legacy-recovery-excluded"]

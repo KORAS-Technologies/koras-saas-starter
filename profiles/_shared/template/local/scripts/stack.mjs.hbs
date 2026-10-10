@@ -1,0 +1,904 @@
+#!/usr/bin/env node
+// The local stack's only door to ZITADEL (Phase 4.3, ADRs 0015-0017).
+//
+//   node local/scripts/stack.mjs up                     start; never initialises
+//   node local/scripts/stack.mjs provision --fresh      create a secure instance
+//   node local/scripts/stack.mjs provision --fresh --offline
+//   node local/scripts/stack.mjs provision --resume     finish an interrupted one
+//   node local/scripts/stack.mjs escrow [--record-copy <label>]
+//   node local/scripts/stack.mjs rotate-pat [machine|login-client|all]
+//   node local/scripts/stack.mjs legacy adopt --instance-id <id> --issuer <url>
+//   node local/scripts/stack.mjs status [--show-admin]
+//   node local/scripts/stack.mjs recover [--from-backup <artifact>]
+//   node local/scripts/stack.mjs bootstrap [--offline]  what `make bootstrap` runs
+//   node local/scripts/stack.mjs env --inert            for scripts that only exec/stop
+//   node local/scripts/stack.mjs compose <stop|down|ps|logs|exec|restart|pull> ...
+//
+// `make dev`, `pnpm stack:up` and bootstrap all come through here, and a bare
+// `docker compose up` fails on the compose file's own guard: the masterkey is
+// a file this script names, never an environment value.
+//
+// Every effect is injected through `deps`, every decision is a pure function,
+// and exit codes and messages are produced in main() alone -- so the planned
+// `koras local` CLI (A10) imports these exports and replaces main(), and the
+// planned port registry (A8) replaces resolvePorts() and nothing else.
+
+import { spawnSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir, hostname } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { StackError, fingerprint, newLegacyState, newSecureState, paths, readState, settleEscrow, writeState } from '../zitadel/state.mjs'
+import { generateKey, readKey, readSecretFile, writeSecretFile } from '../zitadel/masterkey.mjs'
+import { generatePassword, patExpiry, patHealth, renderInitSteps, rotatePat, secureDelete, writeTokenFile } from '../zitadel/credentials.mjs'
+import { checkDoppler, dopplerConfigName, escrowSecret, recoverSecret } from '../zitadel/escrow-doppler.mjs'
+import { annotateInstance, checkBackupDestination, decryptArtifact, escrowBackup, loadRecipient, recordCopy } from '../zitadel/escrow-backup.mjs'
+
+export const PRODUCT = '{{projectSlug}}'
+export const ZITADEL_VERSION = 'v4.17.1'
+export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+export const COMPOSE_FILES = {
+  base: 'local/docker-compose.yml',
+  init: 'local/docker-compose.init.yml',
+  legacy: 'local/docker-compose.legacy-zitadel.yml',
+}
+export const LEGACY_ENV = 'legacy-recovery'
+// `!reset` and `!override` in the legacy override need this compose or later.
+export const MIN_COMPOSE = [2, 24, 4]
+
+// ── Effects ──────────────────────────────────────────────────────────────────
+
+function run(command, args, options = {}) {
+  return spawnSync(command, args, { encoding: 'utf8', windowsHide: true, ...options })
+}
+
+async function http(method, url, { body, token, timeoutMs = 10_000 } = {}) {
+  const headers = { Accept: 'application/json' }
+  if (body !== undefined && body !== null) headers['Content-Type'] = 'application/json'
+  if (token) headers.Authorization = `Bearer ${token}`
+  try {
+    const response = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(timeoutMs) })
+    const text = await response.text()
+    let json = null
+    try {
+      json = text ? JSON.parse(text) : null
+    } catch {
+      json = null
+    }
+    return { status: response.status, json }
+  } catch {
+    return { status: 0, json: null }
+  }
+}
+
+export function defaultDeps() {
+  return {
+    env: process.env,
+    platform: process.platform,
+    now: () => new Date(),
+    exec: run,
+    // gpg separately, so a test can drive real gpg while Doppler and docker
+    // are stubs.
+    gpgExec: run,
+    http,
+    sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
+    log: (line) => process.stdout.write(line + '\n'),
+    root: ROOT,
+    home: homedir(),
+    // crypto.randomInt when undefined; injectable to prove the assertions bite.
+    randomInt: undefined,
+    uid: typeof process.getuid === 'function' ? process.getuid() : null,
+    gid: typeof process.getgid === 'function' ? process.getgid() : null,
+  }
+}
+
+// ── Ports (A8 seam) ──────────────────────────────────────────────────────────
+
+/**
+ * The two ports ZITADEL's identity depends on, read from local/.env.
+ *
+ * Read, never resolved: walking to a free port here would silently move the
+ * issuer every client was registered against. local/scripts/ports.sh resolves
+ * (bootstrap runs it); the port registry (A8) will replace this function, and
+ * the state-file comparison in decideUp stays.
+ */
+export function resolvePorts({ root }) {
+  const file = join(root, 'local', '.env')
+  if (!existsSync(file)) {
+    throw new StackError('PORTS_UNRESOLVED', 'local/.env does not exist: host ports have not been resolved.', 'Run `bash local/scripts/ports.sh` (bootstrap does).')
+  }
+  const values = {}
+  for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const match = /^(KORAS_PORT_[A-Z0-9_]+)=(\d+)\s*$/.exec(line)
+    if (match) values[match[1]] = Number(match[2])
+  }
+  const zitadel = values.KORAS_PORT_ZITADEL
+  const zitadelLogin = values.KORAS_PORT_ZITADEL_LOGIN
+  if (!zitadel || !zitadelLogin) {
+    throw new StackError('PORTS_UNRESOLVED', 'local/.env has no KORAS_PORT_ZITADEL or KORAS_PORT_ZITADEL_LOGIN.', 'Run `bash local/scripts/ports.sh`; it keeps every port already assigned and adds the missing one.')
+  }
+  return { zitadel, zitadelLogin }
+}
+
+export function urlsFor(ports) {
+  return {
+    issuer: `http://localhost:${ports.zitadel}`,
+    loginBaseUri: `http://localhost:${ports.zitadelLogin}/ui/v2/login/`,
+  }
+}
+
+function portOf(url) {
+  return Number(new URL(url).port)
+}
+
+// ── Decisions (pure) ─────────────────────────────────────────────────────────
+
+/**
+ * Whether `up` may start ZITADEL: §3.5 steps 1-5 as one function over its
+ * inputs. Returns `{ ok: true, mode, warnings }` or `{ ok: false, code,
+ * message, hint }`. Nothing it refuses is ever repaired.
+ *
+ *   state      the parsed state file, or null
+ *   dbExists   whether the `zitadel` database exists in supabase-db
+ *   modeEnv    KORAS_ZITADEL_MODE from the shell
+ *   key        { ok: true } or { ok: false, error } from reading the key cache
+ *   ports      { zitadel, zitadelLogin } as resolved
+ *   now        a Date
+ */
+export function decideUp({ state, dbExists, modeEnv, key, ports, now }) {
+  const refuse = (code, message, hint) => ({ ok: false, code, message, hint })
+
+  // 1. A recorded instance, or nothing to start.
+  if (!state) {
+    if (dbExists) {
+      return refuse('UNRECORDED_INSTANCE', 'There is a zitadel database here but no state file recording it.', 'Adopt it: `node local/scripts/stack.mjs legacy adopt --instance-id <id> --issuer <url>`, or remove it with the guarded `make reset` and provision a new one.')
+    }
+    return refuse('NO_STATE', 'There is no local ZITADEL instance yet.', 'Run `node local/scripts/stack.mjs provision --fresh` (`make bootstrap` does). `up` never initialises.')
+  }
+
+  // 2. Ready, and for a secure instance escrowed on both legs (A3).
+  if (state.phase !== 'ready') {
+    return refuse('PROVISIONING_INCOMPLETE', 'Provisioning of this instance did not finish.', 'Run `node local/scripts/stack.mjs provision --resume`.')
+  }
+  if (state.mode === 'secure' && state.escrow.status !== 'escrowed') {
+    const missing = ['doppler', 'backup'].filter((leg) => state.escrow[leg].status !== 'done')
+    return refuse('UNESCROWED', `The masterkey is not escrowed: ${missing.join(' and ')} pending.`, 'Run `node local/scripts/stack.mjs escrow`. Nothing starts on a key that exists in only one place.')
+  }
+  if (!dbExists) {
+    return refuse('INSTANCE_DB_MISSING', `The recorded instance ${state.instanceId} has no database here (was the stack reset?).`, 'Nothing was initialised over it. ADR 0015, "After a reset", says how to retire the old record before provisioning anew.')
+  }
+
+  // 3. The ports the instance was created on.
+  if (portOf(state.issuer) !== ports.zitadel) {
+    return refuse('PORT_MISMATCH', `KORAS_PORT_ZITADEL is ${ports.zitadel}, but this instance's issuer is ${state.issuer}.`, 'Restore the port in local/.env. Moving it changes the issuer every client was registered against.')
+  }
+  if (state.mode === 'secure' && portOf(state.loginBaseUri) !== ports.zitadelLogin) {
+    return refuse('PORT_MISMATCH', `KORAS_PORT_ZITADEL_LOGIN is ${ports.zitadelLogin}, but this instance's login is ${state.loginBaseUri}.`, 'Restore the port in local/.env.')
+  }
+
+  // 4. The key, or the two-key rule for legacy.
+  if (state.mode === 'secure') {
+    if (modeEnv === LEGACY_ENV) {
+      return refuse('MODE_MISMATCH', `KORAS_ZITADEL_MODE=${LEGACY_ENV} is set, but this instance is secure.`, 'Unset it.')
+    }
+    if (!key.ok) return refuse(key.error.code ?? 'KEY_REFUSED', key.error.message, key.error.hint)
+  } else if (modeEnv !== LEGACY_ENV) {
+    return refuse('LEGACY_TWO_KEY', 'This instance is in legacy-recovery mode.', `Starting it on the placeholder key needs KORAS_ZITADEL_MODE=${LEGACY_ENV} in the shell as well (A4).`)
+  }
+
+  // 5. Access tokens (A14).
+  const { warnings, expired } = patHealth(state.pats, now)
+  if (expired) {
+    return refuse('PAT_EXPIRED', `The machine access token expired on ${state.pats.machine.expiresAt}.`, 'Sign in as admin (`stack.mjs status --show-admin`), create a new token for the machine user in the console, write it to local/zitadel/machinekey/pat, then run `stack.mjs rotate-pat machine`. ADR 0017.')
+  }
+  return { ok: true, mode: state.mode, warnings }
+}
+
+/** Every reason a fresh, online provision cannot escrow, before anything is generated. */
+export function escrowPrerequisites({ dopplerCheck, recipientCheck, backupCheck }) {
+  const reasons = []
+  if (!dopplerCheck.ok) reasons.push(`leg 1: ${dopplerCheck.reason}`)
+  if (!recipientCheck.ok) reasons.push(`leg 2: ${recipientCheck.reason}`)
+  if (!backupCheck.ok) reasons.push(`leg 2: ${backupCheck.reason}`)
+  return reasons
+}
+
+// ── Compose ──────────────────────────────────────────────────────────────────
+
+/**
+ * Who the ZITADEL and login containers run as. Never root (ADR 0015).
+ *
+ * On Linux, the host user: a bind-mounted file keeps its host owner, so an
+ * owner-only key file is readable inside the container only by that owner,
+ * and the PAT directories the containers write are the host user's own.
+ * Docker Desktop (Windows, macOS) presents bind mounts to any container user,
+ * so there each image keeps its own non-root user.
+ */
+export function containerUsers({ platform, uid, gid }) {
+  if (platform === 'linux') {
+    if (uid === 0) {
+      throw new StackError('ROOT_USER', 'Refusing to run the local ZITADEL containers as root.', 'Run the stack as an ordinary user.')
+    }
+    return { zitadel: `${uid}:${gid}`, login: `${uid}:${gid}` }
+  }
+  return { zitadel: '1000:1000', login: '1001:65533' }
+}
+
+/** The environment compose needs. `keyFile` is a path; the key is never in it. */
+export function composeEnvironment({ deps, keyFile, mode, extra = {} }) {
+  const users = containerUsers(deps)
+  return {
+    ...deps.env,
+    KORAS_ZITADEL_MASTERKEY_FILE: keyFile,
+    KORAS_ZITADEL_USER: users.zitadel,
+    KORAS_ZITADEL_LOGIN_USER: users.login,
+    KORAS_ZITADEL_MODE: mode,
+    ...extra,
+  }
+}
+
+function ensureAbsentKey(p) {
+  mkdirSync(dirname(p.absentKey), { recursive: true, mode: 0o700 })
+  if (!existsSync(p.absentKey)) closeSync(openSync(p.absentKey, 'a', 0o600))
+  return p.absentKey
+}
+
+function composeArgs(deps, files) {
+  return ['compose', ...files.flatMap((file) => ['-f', join(deps.root, file)])]
+}
+
+function compose(deps, { files = [COMPOSE_FILES.base], env, args, quiet = false }) {
+  const result = deps.exec('docker', [...composeArgs(deps, files), ...args], { cwd: deps.root, env, stdio: quiet ? 'pipe' : 'inherit' })
+  return result
+}
+
+function composeOrFail(deps, options, what) {
+  const result = compose(deps, options)
+  if (result.error || result.status !== 0) throw new StackError('COMPOSE_FAILED', `docker compose could not ${what}.`)
+  return result
+}
+
+export function checkComposeVersion(deps) {
+  const result = deps.exec('docker', ['compose', 'version', '--short'])
+  const match = /(\d+)\.(\d+)\.(\d+)/.exec(result.stdout ?? '')
+  if (!match) throw new StackError('COMPOSE_MISSING', 'Could not determine the docker compose version.')
+  const version = match.slice(1).map(Number)
+  for (let i = 0; i < 3; i += 1) {
+    if (version[i] > MIN_COMPOSE[i]) return
+    if (version[i] < MIN_COMPOSE[i]) {
+      throw new StackError('COMPOSE_OLD', `docker compose ${match[0]} is older than ${MIN_COMPOSE.join('.')}, which the legacy override needs.`)
+    }
+  }
+}
+
+function inertEnvironment(deps, mode = 'secure') {
+  const p = paths(PRODUCT, 'dev', deps.env)
+  return composeEnvironment({ deps, keyFile: ensureAbsentKey(p), mode })
+}
+
+/** Start supabase-db alone and ask whether the zitadel database exists. Read-only. */
+export function databaseExists(deps) {
+  const env = inertEnvironment(deps)
+  composeOrFail(deps, { env, args: ['up', '-d', '--wait', 'supabase-db'], quiet: true }, 'start supabase-db')
+  const query = deps.exec('docker', [...composeArgs(deps, [COMPOSE_FILES.base]), 'exec', '-T', 'supabase-db', 'psql', '-U', 'postgres', '-tAc', "select 1 from pg_database where datname = 'zitadel'"], { cwd: deps.root, env })
+  if (query.error || query.status !== 0) throw new StackError('DB_QUERY', 'Could not ask supabase-db whether a zitadel database exists.')
+  return (query.stdout ?? '').trim() === '1'
+}
+
+// ── Machine identity ─────────────────────────────────────────────────────────
+
+/** `<hostname-slug>-<6 hex>`, created once in ~/.koras/machine.json and shared by every repository. */
+export function machineId(deps, { create = false } = {}) {
+  const p = paths(PRODUCT, 'dev', deps.env)
+  if (existsSync(p.machine)) {
+    const id = JSON.parse(readFileSync(p.machine, 'utf8')).machineId
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(id ?? '')) throw new StackError('MACHINE_ID', `${p.machine} holds no valid machineId.`)
+    return id
+  }
+  if (!create) throw new StackError('MACHINE_ID', `${p.machine} does not exist.`)
+  const slug = hostname().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'machine'
+  const id = `${slug}-${randomBytes(3).toString('hex')}`
+  mkdirSync(p.home, { recursive: true, mode: 0o700 })
+  try {
+    writeFileSync(p.machine, JSON.stringify({ machineId: id, createdAt: deps.now().toISOString() }, null, 2) + '\n', { flag: 'wx', mode: 0o644 })
+  } catch (error) {
+    if (error.code === 'EEXIST') return machineId(deps)
+    throw error
+  }
+  return id
+}
+
+// ── ZITADEL over HTTP ────────────────────────────────────────────────────────
+
+function apiFor(deps, base) {
+  return async (method, path, body, token) => deps.http(method, base + path, { body, token })
+}
+
+function readToken(file) {
+  if (!existsSync(file)) return null
+  const token = readFileSync(file, 'utf8').trim()
+  return token === '' ? null : token
+}
+
+function tokenFiles(deps) {
+  return {
+    machine: join(deps.root, 'local', 'zitadel', 'machinekey', 'pat'),
+    loginClient: join(deps.root, 'local', 'zitadel', 'bootstrap', 'login-client.pat'),
+  }
+}
+
+async function waitFor(deps, what, probe, { attempts = 90, intervalMs = 2000 } = {}) {
+  for (let i = 0; i < attempts; i += 1) {
+    if (await probe()) return
+    await deps.sleep(intervalMs)
+  }
+  throw new StackError('NOT_READY', `${what} did not become ready.`)
+}
+
+/**
+ * §3.5 step 7: the running instance is the recorded one. The issuer, the
+ * instance id, and (secure) the login container. Any mismatch stops ZITADEL
+ * and its login, and fails.
+ */
+export async function verifyRunning(deps, state, { env, files }) {
+  const stop = () => compose(deps, { files, env, args: ['stop', 'zitadel', 'zitadel-login'], quiet: true })
+  try {
+    let discovered = null
+    await waitFor(deps, `ZITADEL at ${state.issuer}`, async () => {
+      const answer = await deps.http('GET', `${state.issuer}/.well-known/openid-configuration`)
+      discovered = answer.status === 200 ? answer.json?.issuer : null
+      return discovered !== null
+    })
+    if (discovered !== state.issuer) {
+      throw new StackError('ISSUER_MISMATCH', `The running ZITADEL's issuer is ${discovered}, not the recorded ${state.issuer}.`)
+    }
+    const token = readToken(tokenFiles(deps).machine)
+    if (!token) throw new StackError('PAT_MISSING', 'local/zitadel/machinekey/pat is missing, so the running instance cannot be identified.')
+    const instance = await deps.http('GET', `${state.issuer}/admin/v1/instances/me`, { token })
+    const runningId = instance.json?.instance?.id ?? null
+    if (instance.status !== 200 || runningId !== state.instanceId) {
+      throw new StackError('INSTANCE_MISMATCH', `The running instance is ${runningId ?? `unknown (HTTP ${instance.status})`}, not the recorded ${state.instanceId}.`, 'ZITADEL was stopped. Nothing was changed in it.')
+    }
+    if (state.mode === 'secure') {
+      await waitFor(deps, 'the ZITADEL login', async () => (await deps.http('GET', `${state.loginBaseUri}healthy`)).status === 200)
+    }
+  } catch (error) {
+    stop()
+    throw error
+  }
+}
+
+async function userIdOf(deps, base, token) {
+  const me = await deps.http('GET', `${base}/auth/v1/users/me`, { token })
+  if (me.status !== 200 || !me.json?.user?.id) throw new StackError('PAT_VERIFY', `The machine access token does not authenticate (HTTP ${me.status}).`)
+  return me.json.user.id
+}
+
+async function loginClientId(deps, base, token) {
+  const found = await deps.http('POST', `${base}/management/v1/users/_search`, {
+    token,
+    body: { queries: [{ userNameQuery: { userName: 'login-client', method: 'TEXT_QUERY_METHOD_EQUALS' } }] },
+  })
+  const id = found.json?.result?.[0]?.id
+  if (found.status !== 200 || !id) throw new StackError('LOGIN_CLIENT', 'Could not find the login-client machine user.')
+  return id
+}
+
+/** The one token a freshly created user has: its id and expiry. */
+async function onlyToken(deps, base, token, userId, which) {
+  const listed = await deps.http('POST', `${base}/management/v1/users/${userId}/pats/_search`, { token, body: {} })
+  const result = listed.json?.result ?? []
+  if (listed.status !== 200 || result.length !== 1) {
+    throw new StackError('PAT_UNKNOWN', `Expected exactly one ${which} access token, found ${result.length} (HTTP ${listed.status}).`)
+  }
+  return { tokenId: result[0].id, expiresAt: result[0].expirationDate.replace(/\.\d+Z$/, 'Z') }
+}
+
+// ── Commands ─────────────────────────────────────────────────────────────────
+
+export async function up(deps) {
+  const p = paths(PRODUCT, 'dev', deps.env)
+  const state = readState(p.state)
+  const dbExists = databaseExists(deps)
+  const ports = state ? resolvePorts(deps) : null
+  let key = { ok: true }
+  if (state?.mode === 'secure') {
+    try {
+      readKey(p.masterkey, { expectedFingerprint: state.masterkeyFingerprint, platform: deps.platform, env: deps.env })
+    } catch (error) {
+      key = { ok: false, error }
+    }
+  }
+  const decision = decideUp({ state, dbExists, modeEnv: deps.env.KORAS_ZITADEL_MODE, key, ports, now: deps.now() })
+  if (!decision.ok) throw new StackError(decision.code, decision.message, decision.hint)
+  for (const warning of decision.warnings) deps.log(`  warning: ${warning}`)
+
+  let files = [COMPOSE_FILES.base]
+  let env
+  if (decision.mode === 'secure') {
+    env = composeEnvironment({ deps, keyFile: p.masterkey, mode: 'secure' })
+  } else {
+    checkComposeVersion(deps)
+    files = [COMPOSE_FILES.base, COMPOSE_FILES.legacy]
+    env = composeEnvironment({ deps, keyFile: ensureAbsentKey(p), mode: LEGACY_ENV })
+    deps.log(`  LEGACY-RECOVERY: starting instance ${state.instanceId} on the placeholder key (A4). Loopback only, never initialised.`)
+  }
+  composeOrFail(deps, { files, env, args: ['up', '-d', '--remove-orphans'] }, 'start the stack')
+  await verifyRunning(deps, state, { env, files })
+  deps.log(`ZITADEL ${state.instanceId} is up at ${state.issuer}${state.loginBaseUri ? `, sign-in at ${state.loginBaseUri}` : ''}.`)
+}
+
+function prerequisites(deps, { project, config, p }) {
+  const dopplerCheck = checkDoppler({ project, config, exec: deps.exec })
+  let recipientCheck
+  try {
+    recipientCheck = loadRecipient(p.recipient, { platform: deps.platform, exec: deps.gpgExec })
+      ? { ok: true }
+      : { ok: false, reason: `no recovery recipient at ${p.recipient} (the owner installs it)` }
+  } catch (error) {
+    recipientCheck = { ok: false, reason: error.message }
+  }
+  const backupCheck = checkBackupDestination(deps.env.KORAS_ESCROW_BACKUP_DIR, { home: deps.home, platform: deps.platform })
+  return escrowPrerequisites({ dopplerCheck, recipientCheck, backupCheck })
+}
+
+/**
+ * Complete whichever escrow legs are pending, writing the state after each so
+ * an interruption keeps what was done. Returns the settled state.
+ */
+export function completeEscrow(deps, state, { key, password }) {
+  const p = paths(PRODUCT, 'dev', deps.env)
+  let next = state
+  if (next.escrow.doppler.status !== 'done') {
+    const check = checkDoppler({ project: PRODUCT, config: next.escrow.doppler.config, exec: deps.exec })
+    if (check.ok) {
+      escrowSecret({ project: PRODUCT, config: next.escrow.doppler.config, name: 'ZITADEL_MASTERKEY', value: key, exec: deps.exec })
+      escrowSecret({ project: PRODUCT, config: next.escrow.doppler.config, name: 'ZITADEL_ADMIN_PASSWORD', value: password, exec: deps.exec })
+      next = settleEscrow({ ...next, escrow: { ...next.escrow, doppler: { ...next.escrow.doppler, status: 'done', at: deps.now().toISOString() } } })
+      writeState(p.state, next)
+      deps.log(`  escrow leg 1: ${PRODUCT}/${next.escrow.doppler.config} done`)
+    } else {
+      deps.log(`  escrow leg 1: pending -- ${check.reason}`)
+    }
+  }
+  if (next.escrow.backup.status !== 'done') {
+    const leg = escrowBackup({
+      key,
+      keyFingerprint: next.masterkeyFingerprint,
+      product: PRODUCT,
+      machineId: machineId(deps),
+      instanceId: next.instanceId,
+      recipientPath: p.recipient,
+      backupDir: deps.env.KORAS_ESCROW_BACKUP_DIR,
+      localDir: p.escrowBackupDir,
+      now: deps.now(),
+      home: deps.home,
+      platform: deps.platform,
+      exec: deps.gpgExec,
+    })
+    if (leg.status === 'done') {
+      const { status, recipient, sha256, paths: written, copies, at } = leg
+      next = settleEscrow({ ...next, escrow: { ...next.escrow, backup: { status, recipient, sha256, paths: written, copies, at } } })
+      writeState(p.state, next)
+      deps.log(`  escrow leg 2: ${written.join(' and ')} done`)
+    } else {
+      deps.log(`  escrow leg 2: pending -- ${leg.reason}`)
+    }
+  }
+  return next
+}
+
+/**
+ * §3.6, with one change recorded in ADR 0015: the state file is written
+ * immediately after the secrets are generated rather than after escrow, so
+ * that an interruption at any later point leaves a record `--resume` can
+ * finish rather than a key nothing mentions.
+ */
+export async function provisionFresh(deps, { offline = false } = {}) {
+  const p = paths(PRODUCT, 'dev', deps.env)
+  const existing = readState(p.state)
+  if (existing) {
+    throw new StackError('STATE_EXISTS', `A state file already records a ${existing.mode} instance (${existing.phase}).`, existing.phase === 'provisioning' ? 'Finish it: `node local/scripts/stack.mjs provision --resume`.' : 'Removing an instance is the guarded `make reset`, never provisioning over it.')
+  }
+  const ports = resolvePorts(deps)
+  const { issuer, loginBaseUri } = urlsFor(ports)
+  if (databaseExists(deps)) {
+    throw new StackError('DB_EXISTS', 'A zitadel database already exists in supabase-db.', 'It was not touched. Adopt it (`legacy adopt`) or remove it with the guarded `make reset`.')
+  }
+  for (const secret of [p.masterkey, p.adminPassword]) {
+    if (existsSync(secret)) {
+      throw new StackError('ORPHAN_SECRET', `${secret} exists, but no state file records it.`, 'It was not used or changed. If it was never escrowed, move it aside by hand; if it was, it belongs to an instance and is not to be reused.')
+    }
+  }
+  const id = machineId(deps, { create: true })
+  const config = dopplerConfigName(id)
+  if (!offline) {
+    // Fail before anything is generated: an online provision that cannot
+    // escrow is refused rather than left with a key in one place.
+    const reasons = prerequisites(deps, { project: PRODUCT, config, p })
+    if (reasons.length > 0) {
+      throw new StackError('ESCROW_UNAVAILABLE', `Escrow is not possible, so nothing was generated:\n  - ${reasons.join('\n  - ')}`, 'Fix the above, or run `provision --fresh --offline` to create an unescrowed instance that `up` refuses until `escrow` completes.')
+    }
+  }
+
+  const key = generateKey(deps.randomInt)
+  const password = generatePassword(deps.randomInt)
+  const secretOptions = { platform: deps.platform, env: deps.env }
+  writeSecretFile(p.masterkey, key, secretOptions)
+  writeSecretFile(p.adminPassword, password, secretOptions)
+  let state = newSecureState({
+    product: PRODUCT,
+    composeProject: PRODUCT,
+    issuer,
+    loginBaseUri,
+    masterkeyFingerprint: fingerprint(key),
+    passwordFingerprint: fingerprint(password),
+    dopplerConfig: config,
+    zitadelVersion: ZITADEL_VERSION,
+    now: deps.now(),
+  })
+  writeState(p.state, state)
+  deps.log(`Generated a masterkey (${state.masterkeyFingerprint}) and an admin password; state at ${p.state}.`)
+
+  if (!offline) {
+    state = completeEscrow(deps, state, { key, password })
+    if (state.escrow.status !== 'escrowed') {
+      throw new StackError('UNESCROWED', 'Escrow did not complete, so no instance was created.', 'The key and state are kept. Run `node local/scripts/stack.mjs escrow`, then `provision --resume`.')
+    }
+  } else {
+    deps.log('  --offline: the key is not escrowed. `up` and provision.py refuse until `stack.mjs escrow` completes both legs.')
+  }
+  return provisionResume(deps, { offlineOk: offline })
+}
+
+/** Finish a provision from wherever it stopped. Re-running it is safe. */
+export async function provisionResume(deps, { offlineOk = false } = {}) {
+  const p = paths(PRODUCT, 'dev', deps.env)
+  let state = readState(p.state)
+  if (!state || state.mode !== 'secure' || state.phase !== 'provisioning') {
+    throw new StackError('NOTHING_TO_RESUME', 'There is no secure instance being provisioned.')
+  }
+  const ports = resolvePorts(deps)
+  if (portOf(state.issuer) !== ports.zitadel || portOf(state.loginBaseUri) !== ports.zitadelLogin) {
+    throw new StackError('PORT_MISMATCH', 'local/.env no longer has the ports this instance was started with.', 'Restore them.')
+  }
+  const secretOptions = { platform: deps.platform, env: deps.env }
+  const key = readKey(p.masterkey, { expectedFingerprint: state.masterkeyFingerprint, ...secretOptions })
+  const password = readSecretFile(p.adminPassword, secretOptions)
+  if (fingerprint(password) !== state.admin.passwordFingerprint) {
+    throw new StackError('PASSWORD_FINGERPRINT', 'The cached admin password is not the one this instance was provisioned with.')
+  }
+  const tokens = tokenFiles(deps)
+  for (const file of Object.values(tokens)) mkdirSync(dirname(file), { recursive: true, mode: 0o700 })
+
+  if (!state.initCompletedAt) {
+    if (!offlineOk && state.escrow.status !== 'escrowed') {
+      throw new StackError('UNESCROWED', 'This instance is not escrowed, and was not provisioned with --offline.', 'Run `node local/scripts/stack.mjs escrow` first.')
+    }
+    // Initialise once. `start-from-init` exists only in the init override,
+    // and re-running it on a half-initialised database with the same key is
+    // ZITADEL's own way of finishing setup.
+    if (existsSync(p.initSteps)) secureDelete(p.initSteps)
+    writeSecretFile(p.initSteps, renderInitSteps({ adminPassword: password }), secretOptions)
+    const expires = patExpiry(deps.now())
+    const files = [COMPOSE_FILES.base, COMPOSE_FILES.init]
+    const env = composeEnvironment({ deps, keyFile: p.masterkey, mode: 'secure', extra: { KORAS_ZITADEL_INIT_STEPS_FILE: p.initSteps, KORAS_ZITADEL_PAT_EXPIRES_AT: expires } })
+    try {
+      composeOrFail(deps, { files, env, args: ['up', '-d', 'supabase-db', 'zitadel', 'zitadel-login'] }, 'initialise ZITADEL')
+      await waitFor(deps, `ZITADEL at ${state.issuer}`, async () => {
+        const answer = await deps.http('GET', `${state.issuer}/.well-known/openid-configuration`)
+        return answer.status === 200 && answer.json?.issuer === state.issuer
+      })
+      await waitFor(deps, 'the machine access token', async () => readToken(tokens.machine) !== null)
+      const token = readToken(tokens.machine)
+      const instance = await deps.http('GET', `${state.issuer}/admin/v1/instances/me`, { token })
+      if (instance.status !== 200 || !instance.json?.instance?.id) {
+        throw new StackError('INSTANCE_UNKNOWN', `Could not read the new instance's id (HTTP ${instance.status}).`)
+      }
+      state = { ...state, instanceId: instance.json.instance.id, initCompletedAt: deps.now().toISOString() }
+      writeState(p.state, state)
+    } finally {
+      // The steps file held the admin password. It goes whether init worked
+      // or not; the cached copy in ~/.koras/secrets is the one that remains.
+      secureDelete(p.initSteps)
+    }
+    if (state.escrow.backup.status === 'done') {
+      annotateInstance({ sidecarPaths: state.escrow.backup.paths.map((artifact) => `${artifact}.json`), instanceId: state.instanceId })
+    }
+    deps.log(`Initialised instance ${state.instanceId}.`)
+  }
+
+  if (state.escrow.status !== 'escrowed') {
+    compose(deps, { env: inertEnvironment(deps), args: ['stop', 'zitadel', 'zitadel-login'], quiet: true })
+    const message = `Instance ${state.instanceId} exists but its masterkey is not escrowed, so provisioning stops here and ZITADEL is stopped.`
+    if (offlineOk) {
+      deps.log(message)
+      deps.log('  Next: `node local/scripts/stack.mjs escrow`, then `node local/scripts/stack.mjs provision --resume`.')
+      return state
+    }
+    throw new StackError('UNESCROWED', message, 'Run `node local/scripts/stack.mjs escrow`, then `provision --resume`.')
+  }
+
+  // Back to the base file: `start`, never `start-from-init`.
+  const env = composeEnvironment({ deps, keyFile: p.masterkey, mode: 'secure' })
+  composeOrFail(deps, { env, args: ['up', '-d', 'supabase-db', 'zitadel', 'zitadel-login'] }, 'restart ZITADEL under the base file')
+  await waitFor(deps, `ZITADEL at ${state.issuer}`, async () => (await deps.http('GET', `${state.issuer}/.well-known/openid-configuration`)).status === 200)
+
+  runProvisionScript(deps, state, p)
+
+  const token = readToken(tokens.machine)
+  const machineUser = await userIdOf(deps, state.issuer, token)
+  const loginUser = await loginClientId(deps, state.issuer, token)
+  state = {
+    ...state,
+    pats: {
+      machine: await onlyToken(deps, state.issuer, token, machineUser, 'machine'),
+      loginClient: await onlyToken(deps, state.issuer, token, loginUser, 'login-client'),
+    },
+    phase: 'ready',
+  }
+  writeState(p.state, state)
+  await verifyRunning(deps, state, { env, files: [COMPOSE_FILES.base] })
+  deps.log(`ZITADEL ${state.instanceId} is ready at ${state.issuer}; sign-in at ${state.loginBaseUri}.`)
+  deps.log('  Admin: `node local/scripts/stack.mjs status --show-admin`.')
+  return state
+}
+
+function runProvisionScript(deps, state, p) {
+  const python = deps.env.KORAS_PYTHON ?? (deps.exec('python3', ['--version']).status === 0 ? 'python3' : 'python')
+  const result = deps.exec(python, [join(deps.root, 'local', 'zitadel', 'provision.py')], {
+    cwd: deps.root,
+    stdio: 'inherit',
+    env: { ...deps.env, ZITADEL_URL: state.issuer, ZITADEL_LOGIN_URL: state.loginBaseUri, KORAS_ZITADEL_STATE_FILE: p.state },
+  })
+  if (result.error || result.status !== 0) throw new StackError('PROVISION_PY', 'local/zitadel/provision.py failed.', 'Fix the cause and run `provision --resume`; it is idempotent.')
+}
+
+export async function escrow(deps, { recordCopyLabel } = {}) {
+  const p = paths(PRODUCT, 'dev', deps.env)
+  let state = readState(p.state)
+  if (!state || state.mode !== 'secure') throw new StackError('NOT_SECURE', 'Escrow applies to a secure instance, and there is none.')
+  if (recordCopyLabel) {
+    if (state.escrow.backup.status !== 'done') throw new StackError('NO_BACKUP', 'Leg 2 is not done, so there is no artifact to have copied.')
+    const copies = recordCopy({ sidecarPaths: state.escrow.backup.paths.map((artifact) => `${artifact}.json`), label: recordCopyLabel, now: deps.now() })
+    state = { ...state, escrow: { ...state.escrow, backup: { ...state.escrow.backup, copies } } }
+    writeState(p.state, state)
+    deps.log(`Recorded copy '${recordCopyLabel}'.`)
+    return state
+  }
+  const secretOptions = { platform: deps.platform, env: deps.env }
+  const key = readKey(p.masterkey, { expectedFingerprint: state.masterkeyFingerprint, ...secretOptions })
+  const password = readSecretFile(p.adminPassword, secretOptions)
+  state = completeEscrow(deps, state, { key, password })
+  if (state.escrow.status !== 'escrowed') throw new StackError('UNESCROWED', 'Escrow is still incomplete; see the pending leg above.')
+  deps.log(state.phase === 'provisioning' ? 'Escrowed. Next: `node local/scripts/stack.mjs provision --resume`.' : 'Escrowed.')
+  return state
+}
+
+export async function rotate(deps, which = 'all') {
+  const p = paths(PRODUCT, 'dev', deps.env)
+  let state = readState(p.state)
+  if (!state || state.mode !== 'secure' || state.phase !== 'ready') {
+    throw new StackError('NOT_SECURE', 'Access tokens are rotated on a ready secure instance only. A legacy instance keeps the credentials it has (A14).')
+  }
+  if (!['machine', 'login-client', 'all'].includes(which)) throw new StackError('USAGE', 'rotate-pat takes machine, login-client or all.')
+  const tokens = tokenFiles(deps)
+  const api = apiFor(deps, state.issuer)
+  const env = composeEnvironment({ deps, keyFile: p.masterkey, mode: 'secure' })
+  const options = { api, now: deps.now(), readTokenFile: (file) => readFileSync(file, 'utf8'), writeToken: writeTokenFile }
+
+  if (which === 'machine' || which === 'all') {
+    const adminToken = readToken(tokens.machine)
+    const userId = await userIdOf(deps, state.issuer, adminToken)
+    const result = await rotatePat({ ...options, which: 'machine', userId, oldTokenId: state.pats.machine.tokenId, adminToken, deleteWithNewToken: true, tokenFile: tokens.machine })
+    state = { ...state, pats: { ...state.pats, machine: { tokenId: result.tokenId, expiresAt: result.expiresAt } } }
+    writeState(p.state, state)
+    deps.log(`Rotated the machine access token; it expires ${result.expiresAt}.${result.leftover ? ` The old token ${result.leftover} could not be deleted; remove it in the console.` : ''}`)
+  }
+  if (which === 'login-client' || which === 'all') {
+    const adminToken = readToken(tokens.machine)
+    const userId = await loginClientId(deps, state.issuer, adminToken)
+    const result = await rotatePat({
+      ...options,
+      which: 'login-client',
+      userId,
+      oldTokenId: state.pats.loginClient.tokenId,
+      adminToken,
+      tokenFile: tokens.loginClient,
+      // The login container reads its token once, at start.
+      restartConsumer: async () => composeOrFail(deps, { env, args: ['restart', 'zitadel-login'], quiet: true }, 'restart the login'),
+      verifyConsumer: async () => waitFor(deps, 'the ZITADEL login', async () => (await deps.http('GET', `${state.loginBaseUri}healthy`)).status === 200, { attempts: 30 }),
+    })
+    state = { ...state, pats: { ...state.pats, loginClient: { tokenId: result.tokenId, expiresAt: result.expiresAt } } }
+    writeState(p.state, state)
+    deps.log(`Rotated the login-client access token; it expires ${result.expiresAt}.${result.leftover ? ` The old token ${result.leftover} could not be deleted; remove it in the console.` : ''}`)
+  }
+  return state
+}
+
+/** A4: record an existing instance so it can be started on the placeholder, and nothing more. */
+export async function legacyAdopt(deps, { instanceId, issuer, checkDefaultPassword = false }) {
+  const p = paths(PRODUCT, 'dev', deps.env)
+  if (readState(p.state)) throw new StackError('STATE_EXISTS', 'A state file already exists; adopting would replace it.', 'It was not changed.')
+  if (!/^\d{6,30}$/.test(instanceId ?? '')) throw new StackError('USAGE', '--instance-id must be the numeric ZITADEL instance id.')
+  if (!/^http:\/\/localhost:\d+$/.test(issuer ?? '')) throw new StackError('USAGE', '--issuer must be http://localhost:<port>.')
+  const ports = resolvePorts(deps)
+  if (portOf(issuer) !== ports.zitadel) {
+    throw new StackError('PORT_MISMATCH', `--issuer ${issuer} is not on KORAS_PORT_ZITADEL (${ports.zitadel}).`)
+  }
+  const state = newLegacyState({ product: PRODUCT, composeProject: PRODUCT, issuer, instanceId, zitadelVersion: ZITADEL_VERSION, now: deps.now() })
+  writeState(p.state, state)
+  deps.log(`Recorded legacy instance ${instanceId} at ${issuer}. It starts only with KORAS_ZITADEL_MODE=${LEGACY_ENV}, on loopback, with \`start\`; its key is never rotated.`)
+  deps.log('  WARNING: a legacy instance may still accept admin / the default password. A14 leaves its credentials as they are.')
+  if (checkDefaultPassword) {
+    // Not probed. Any probe creates a session or records a failed attempt on
+    // the instance, and adopting promises never to change it. Check by hand.
+    deps.log('  --check-default-password: not probed, because every probe writes to the instance. Try signing in as admin by hand.')
+  }
+  return state
+}
+
+export function status(deps, { showAdmin = false } = {}) {
+  const p = paths(PRODUCT, 'dev', deps.env)
+  const state = readState(p.state)
+  if (!state) {
+    deps.log('No local ZITADEL instance is recorded. Run `node local/scripts/stack.mjs provision --fresh`.')
+    return null
+  }
+  deps.log(`mode:        ${state.mode}`)
+  deps.log(`phase:       ${state.phase}`)
+  deps.log(`instance:    ${state.instanceId ?? '(not yet created)'}`)
+  deps.log(`issuer:      ${state.issuer}`)
+  if (state.loginBaseUri) deps.log(`sign-in:     ${state.loginBaseUri}`)
+  if (state.mode === 'secure') {
+    deps.log(`masterkey:   ${state.masterkeyFingerprint}`)
+    deps.log(`escrow:      ${state.escrow.status} (Doppler ${state.escrow.doppler.status}, backup ${state.escrow.backup.status})`)
+    deps.log(`tokens:      machine until ${state.pats.machine.expiresAt ?? '?'}, login client until ${state.pats.loginClient.expiresAt ?? '?'}`)
+  }
+  for (const warning of patHealth(state.pats, deps.now()).warnings) deps.log(`  warning: ${warning}`)
+  if (showAdmin) {
+    if (state.mode !== 'secure') {
+      deps.log('admin:       a legacy instance keeps whatever credentials it has.')
+    } else {
+      // The one place the password is printed, and only on request.
+      deps.log(`admin:       ${state.admin.username} / ${readSecretFile(p.adminPassword, { platform: deps.platform, env: deps.env })}`)
+    }
+  }
+  return state
+}
+
+/** Restore a missing key cache from escrow. Explicit only; `up` never calls it. */
+export async function recover(deps, { fromBackup } = {}) {
+  const p = paths(PRODUCT, 'dev', deps.env)
+  const state = readState(p.state)
+  if (!state || state.mode !== 'secure') throw new StackError('NOT_SECURE', 'There is no secure instance to recover a key for.')
+  const secretOptions = { platform: deps.platform, env: deps.env }
+  if (existsSync(p.masterkey)) {
+    readKey(p.masterkey, { expectedFingerprint: state.masterkeyFingerprint, ...secretOptions })
+    deps.log('The masterkey cache is present and correct; nothing to recover.')
+  } else {
+    const key = fromBackup
+      ? decryptArtifact(resolve(fromBackup), { exec: deps.gpgExec, platform: deps.platform })
+      : recoverSecret({ project: PRODUCT, config: state.escrow.doppler.config, name: 'ZITADEL_MASTERKEY', exec: deps.exec })
+    if (fingerprint(key) !== state.masterkeyFingerprint) {
+      throw new StackError('KEY_FINGERPRINT', 'The escrowed key is not the one this instance was created with. Nothing was written.')
+    }
+    writeSecretFile(p.masterkey, key, secretOptions)
+    deps.log(`Restored the masterkey cache from ${fromBackup ? 'the backup' : 'Doppler'}.`)
+  }
+  if (!existsSync(p.adminPassword)) {
+    if (fromBackup) {
+      deps.log('The admin password is not in leg 2; recover it from Doppler, or reset it with the machine token (ADR 0017).')
+    } else {
+      const password = recoverSecret({ project: PRODUCT, config: state.escrow.doppler.config, name: 'ZITADEL_ADMIN_PASSWORD', exec: deps.exec })
+      if (fingerprint(password) !== state.admin.passwordFingerprint) throw new StackError('PASSWORD_FINGERPRINT', 'The escrowed admin password is not the recorded one. Nothing was written.')
+      writeSecretFile(p.adminPassword, password, secretOptions)
+      deps.log('Restored the admin password cache from Doppler.')
+    }
+  }
+}
+
+/** What `make bootstrap` runs: provision, resume, or start, by what the state says. */
+export async function bootstrap(deps, { offline = false } = {}) {
+  const p = paths(PRODUCT, 'dev', deps.env)
+  const state = readState(p.state)
+  if (!state) {
+    const created = await provisionFresh(deps, { offline })
+    if (created.phase !== 'ready') {
+      throw new StackError('UNESCROWED', 'Bootstrap stops here until the masterkey is escrowed (A3).', 'Run `node local/scripts/stack.mjs escrow`, then `make bootstrap` again.')
+    }
+  } else if (state.phase === 'provisioning') {
+    const resumed = await provisionResume(deps, { offlineOk: offline })
+    if (resumed.phase !== 'ready') {
+      throw new StackError('UNESCROWED', 'Bootstrap stops here until the masterkey is escrowed (A3).', 'Run `node local/scripts/stack.mjs escrow`, then `make bootstrap` again.')
+    }
+  }
+  // Provisioning starts ZITADEL alone; `up` brings up the whole stack through
+  // the same checks every later start goes through.
+  await up(deps)
+  return readState(p.state)
+}
+
+/** `export NAME='value'` lines for scripts that exec, stop or tear down: no key, no secret. */
+export function inertExports(deps) {
+  const env = inertEnvironment(deps)
+  const quote = (value) => `'${String(value).split("'").join("'\\''")}'`
+  return ['KORAS_ZITADEL_MASTERKEY_FILE', 'KORAS_ZITADEL_USER', 'KORAS_ZITADEL_LOGIN_USER'].map((name) => `export ${name}=${quote(env[name])}`).join('\n')
+}
+
+const PASSTHROUGH = ['stop', 'down', 'ps', 'logs', 'exec', 'restart', 'pull']
+
+/** compose for everything but starting ZITADEL, with an environment that holds no key. */
+export function composePassthrough(deps, args) {
+  if (!PASSTHROUGH.includes(args[0])) {
+    throw new StackError('USAGE', `stack.mjs compose runs ${PASSTHROUGH.join(', ')} only. Start the stack with \`stack.mjs up\`.`)
+  }
+  if (args[0] === 'down' && args.some((arg) => arg === '-v' || arg === '--volumes')) {
+    throw new StackError('USAGE', 'Volumes are deleted by the guarded `make reset` only.')
+  }
+  const result = compose(deps, { env: inertEnvironment(deps), args })
+  return result.status ?? 1
+}
+
+// ── main ─────────────────────────────────────────────────────────────────────
+
+function option(args, name) {
+  const index = args.indexOf(name)
+  return index === -1 ? undefined : args[index + 1]
+}
+
+export async function main(argv = process.argv.slice(2), deps = defaultDeps()) {
+  const [command, ...args] = argv
+  try {
+    switch (command) {
+      case 'up':
+        await up(deps)
+        return 0
+      case 'provision':
+        if (args.includes('--resume')) await provisionResume(deps, { offlineOk: args.includes('--offline') })
+        else if (args.includes('--fresh')) await provisionFresh(deps, { offline: args.includes('--offline') })
+        else throw new StackError('USAGE', 'provision takes --fresh [--offline] or --resume.')
+        return 0
+      case 'escrow':
+        await escrow(deps, { recordCopyLabel: option(args, '--record-copy') })
+        return 0
+      case 'rotate-pat':
+        await rotate(deps, args[0] ?? 'all')
+        return 0
+      case 'legacy':
+        if (args[0] !== 'adopt') throw new StackError('USAGE', 'legacy takes adopt --instance-id <id> --issuer <url>.')
+        await legacyAdopt(deps, { instanceId: option(args, '--instance-id'), issuer: option(args, '--issuer'), checkDefaultPassword: args.includes('--check-default-password') })
+        return 0
+      case 'status':
+        status(deps, { showAdmin: args.includes('--show-admin') })
+        return 0
+      case 'recover':
+        await recover(deps, { fromBackup: option(args, '--from-backup') })
+        return 0
+      case 'bootstrap':
+        await bootstrap(deps, { offline: args.includes('--offline') || deps.env.KORAS_ZITADEL_OFFLINE === '1' })
+        return 0
+      case 'env':
+        if (!args.includes('--inert')) throw new StackError('USAGE', 'env takes --inert.')
+        deps.log(inertExports(deps))
+        return 0
+      case 'compose':
+        return composePassthrough(deps, args)
+      default:
+        throw new StackError('USAGE', `Unknown command '${command ?? ''}'. See the header of local/scripts/stack.mjs.`)
+    }
+  } catch (error) {
+    if (error instanceof StackError) {
+      process.stderr.write(`refused: ${error.message}\n`)
+      if (error.hint) process.stderr.write(`  ${error.hint}\n`)
+      return error.code === 'USAGE' ? 2 : 1
+    }
+    process.stderr.write(`stack.mjs failed unexpectedly: ${error.stack ?? error}\n`)
+    return 3
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  main().then((code) => process.exit(code))
+}

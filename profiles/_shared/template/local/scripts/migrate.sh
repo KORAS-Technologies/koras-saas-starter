@@ -14,6 +14,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# Compose needs stack.mjs's values even to exec or stop; none is a secret.
+[ -f "$ROOT/local/scripts/compose-env.sh" ] && . "$ROOT/local/scripts/compose-env.sh"
 COMPOSE="docker compose -f ${ROOT}/local/docker-compose.yml"
 DB="${POSTGRES_DB:-postgres}"
 USER="${POSTGRES_USER:-postgres}"

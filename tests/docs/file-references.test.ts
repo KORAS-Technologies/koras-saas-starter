@@ -229,6 +229,10 @@ function referencedPaths(doc: string): string[] {
     // C:/WINDOWS/system32/bash.exe. Named because the reader has to type them,
     // and not this repository's to have.
     if (/^[A-Za-z]:\//.test(token)) continue
+    // The same for the reader's home directory: ~/.koras/recovery-recipient.json
+    // is a file the owner installs on each machine (ADR 0015), deliberately
+    // outside every repository.
+    if (/^~\//.test(token)) continue
     found.add(token)
   }
   return [...found].sort()

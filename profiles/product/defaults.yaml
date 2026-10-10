@@ -88,6 +88,9 @@ local:
   ports:
     supabase_db: 54322
     zitadel: 8080
+    # The login-v2 container (ADR 0016). Its own port until the port
+    # registry (A8) exists; recorded in the instance state like the issuer.
+    zitadel_login: 8081
     redis: 6379
     mail_smtp: 1025
     mail_ui: 8025

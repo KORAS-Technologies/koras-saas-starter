@@ -95,3 +95,28 @@ junit.xml
 # destroyed on 2026-08-30 rather than rotated.
 /.e2e/
 /e2e/support/key.json
+
+# Private key material, anywhere in the tree.
+#
+# The rules above name the places keys are known to be written. A key written
+# anywhere else was covered by nothing, and the secret scan is not a reliable
+# backstop: gitleaks reads a JWK as structure rather than as a pattern it
+# knows, and an archive or an extension-less file it does not open at all.
+# These rules name the file shapes instead of the places.
+#
+# No legitimate fixture in this repository is a key file -- test keys are
+# generated at run time or held inline in source. If one ever has to be
+# committed, negate that one exact path with a comment saying why it is not a
+# credential. Never negate a directory.
+*.pem
+*.key
+*.p12
+*.pfx
+*.jwk
+*-key.json
+
+# Claude Code's per-user settings. `.claude/settings.json` is shared and
+# reviewed; `settings.local.json` is one machine's auto-approved permissions
+# and environment. It can carry tokens, and it widens what an agent may run
+# without asking, so it is personal by definition and never belongs in git.
+**/.claude/settings.local.json
