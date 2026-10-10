@@ -902,9 +902,22 @@ whole tree is on the path.
 
 **PR #24 and PR #27 were both merged early on 2026-10-02** -- before the
 owner's authorisation and before their checks had finished. Both passed
-afterwards. `develop` has no branch protection, and F32 in `FOLLOW_UPS.md` is
-the recommendation, with the one thing to do first: Generator Integration is
-path-filtered and cannot be a required check as it stands.
+afterwards. `develop` had no branch protection when they merged, and F32 in
+`FOLLOW_UPS.md` is the recommendation, with the one thing to do first:
+Generator Integration is path-filtered and cannot be a required check as it
+stands.
+
+**Corrected 2026-10-10.** This said "`develop` has no branch protection" for
+eight days after it stopped being true. A repository ruleset, "develop: PR and
+CI/Security checks", has applied to `develop` since 2026-10-02 at 19:14 UTC,
+after both merges. It is active and has no bypass actors. It requires a pull
+request with zero approving reviews, blocks deletion and force pushes, and
+requires seven checks with the branch up to date with `develop`: Lint &
+Typecheck, Test (Node), Test (Python), Build, Secret scan (gitleaks), CodeQL
+(python) and CodeQL (javascript-typescript). It does not require Generator
+Integration, for the path-filter reason above, or a review. Check the ruleset
+itself (`gh api repos/KORAS-Technologies/koras-saas-starter/rules/branches/develop`)
+rather than this paragraph.
 
 **Generating that product found IMPORT-DEF-010**: SQLAlchemy 2.1 resolved and
 no longer installs `greenlet`, so a fresh product's unit suite could not be
@@ -1417,13 +1430,20 @@ Twice is a pattern, and the pattern is that a sentence about a live system
 decays the moment it is written. That is R-042 on the file every session reads
 first.
 
-**Last validated baseline: 2026-10-02, commit
-`eba279cc5b9a08daa7897ae84142b33787fe3195`** — the IMPORT-DEF-014 merge; CI,
-Security and Generator Integration all green at attempt 1 on the pushed
-commit itself (runs 37075313266, 37075313325 and 37075313282). That is a
-status, not a capability: check the branch you are on rather than inheriting
-this line, for the reason the paragraph above gives twice. The previous
-baselines were earlier on 2026-10-02, commit `3e73190` (runs 37044176366,
+**Last validated baseline: 2026-10-10, commit
+`ef9dcc1624ee9ebdd4d2eb97beaa35daa7b78080`**, the merge of PR #66 (Phase
+4.3A, secure local ZITADEL). CI, Security and Generator Integration were all
+green on the pushed commit itself (runs 38048836816, 38048836811 and
+38048836800), and all seven Generator Integration jobs ran, including
+`local-zitadel-secure`. That is a status, not a capability: check the branch
+you are on rather than inheriting this line, for the reason the paragraph
+above gives twice.
+
+`63a6b6c5`, the merge of PR #67 on the same day, changed documentation only.
+Generator Integration is path-filtered and has nothing to run on it, so it is
+not a baseline of all three. The previous baselines were 2026-10-02, commit
+`eba279c`, the IMPORT-DEF-014 merge (runs 37075313266, 37075313325 and
+37075313282); earlier on 2026-10-02, commit `3e73190` (runs 37044176366,
 37044176279 and 37044176367), 2026-09-29, commit `090dfa9` (runs
 36640086463, 36640086378 and 36640086477), and 2026-09-21, commit `62780bc`,
 the same three green each time.
