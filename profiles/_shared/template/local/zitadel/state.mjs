@@ -29,7 +29,13 @@ export class StackError extends Error {
   }
 }
 
-/** sha256 of a value, as `sha256:<hex>`. Safe to store and print for a 190-bit key. */
+/**
+ * sha256 of a value, as `sha256:<hex>`. An identity for comparison, never a
+ * password hash: only for generated high-entropy values (the 190-bit key, the
+ * 141-bit-plus admin password) and for refusing public constants. Never use it
+ * on a password a person chose. ADR 0017 has the CodeQL disposition this
+ * depends on.
+ */
 export function fingerprint(value) {
   return 'sha256:' + createHash('sha256').update(value, 'utf8').digest('hex')
 }

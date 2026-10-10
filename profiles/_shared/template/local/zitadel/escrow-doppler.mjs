@@ -63,7 +63,19 @@ function names({ project, config, exec }) {
   if (listed.error || listed.status !== 0) {
     throw new StackError('DOPPLER_READ', `Could not list the names in ${project}/${config}.`)
   }
-  return Object.keys(JSON.parse(listed.stdout))
+  // Write-once depends on this list: a name missing from it is written over.
+  // So the two shapes a name listing can take are read explicitly, and any
+  // other answer is a refusal rather than an empty list. The real CLI's shape
+  // is confirmed by manual case T-E4, not by the fakes.
+  let parsed
+  try {
+    parsed = JSON.parse(listed.stdout)
+  } catch {
+    throw new StackError('DOPPLER_READ', `Doppler listed the names in ${project}/${config} as something that is not JSON.`)
+  }
+  if (Array.isArray(parsed) && parsed.every((name) => typeof name === 'string')) return parsed
+  if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) return Object.keys(parsed)
+  throw new StackError('DOPPLER_READ', `Doppler listed the names in ${project}/${config} in a shape this script does not know, so nothing was written.`)
 }
 
 function getValue({ project, config, name, exec }) {

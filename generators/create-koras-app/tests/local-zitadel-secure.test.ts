@@ -671,6 +671,21 @@ describe('credentials.mjs', () => {
     expect(() => cr.assertPassword(DEFAULT_PASSWORD)).toThrow(/default/)
   })
 
+  // ADR 0017's CodeQL disposition: a fast, unsalted sha256 fingerprint is
+  // acceptable only for a CSPRNG password whose search space no hashing
+  // speed brings within reach. A shorter length or a smaller alphabet that
+  // takes it below 128 bits fails here before it ships.
+  it('the generated password carries at least 128 bits (ADR 0017, CodeQL disposition)', () => {
+    const all = cr.UPPER + cr.LOWER + cr.DIGITS + cr.SYMBOLS
+    expect(new Set(all).size).toBe(all.length)
+    // Lower bound: four positions drawn from one class each, the rest from
+    // the whole alphabet; the shuffle only adds to it.
+    const bits =
+      Math.log2(cr.UPPER.length) + Math.log2(cr.LOWER.length) + Math.log2(cr.DIGITS.length) + Math.log2(cr.SYMBOLS.length) +
+      (cr.PASSWORD_LENGTH - 4) * Math.log2(all.length)
+    expect(bits).toBeGreaterThanOrEqual(128)
+  })
+
   it('T-U16: the steps file carries the generated password, single-quoted, and refuses the default', () => {
     const password = cr.generatePassword()
     const steps = cr.renderInitSteps({ adminPassword: password })
@@ -792,6 +807,33 @@ describe('escrow leg 1: Doppler, write-once (T-E1)', () => {
     ed.escrowSecret({ ...args, value: 'synthetic-key-one' })
     expect(() => ed.escrowSecret({ ...args, value: 'synthetic-key-two' })).toThrow(/already holds a different ZITADEL_MASTERKEY/)
     expect(estate.doppler.get('dev_local_box-a1b2c3')!.get('ZITADEL_MASTERKEY')).toBe('synthetic-key-one')
+  })
+
+  // Write-once rests on the name listing. Whatever shape the real CLI answers
+  // in (T-E4 confirms which), an escrowed key is never written over: a
+  // listing in either known shape still finds it, and any other shape refuses
+  // before `secrets set`.
+  it('never writes over an escrowed key, whatever shape the name listing takes', () => {
+    const stored = new Map([['ZITADEL_MASTERKEY', 'synthetic-key-one']])
+    const shapes: Array<[string, string, RegExp | null]> = [
+      ['object', JSON.stringify({ ZITADEL_MASTERKEY: {} }), /already holds a different/],
+      ['array', JSON.stringify(['ZITADEL_MASTERKEY']), /already holds a different/],
+      ['null', 'null', /shape this script does not know/],
+      ['numbers', '[1]', /shape this script does not know/],
+      ['text', 'ZITADEL_MASTERKEY', /not JSON/],
+    ]
+    for (const [label, listing, refusal] of shapes) {
+      const sets: string[] = []
+      const exec = (_command: string, args: string[]) => {
+        if (args.includes('--only-names')) return { status: 0, stdout: listing, stderr: '' }
+        if (args[1] === 'get') return { status: 0, stdout: `${stored.get(args[2])}\n`, stderr: '' }
+        if (args[1] === 'set') sets.push(args[2])
+        return { status: 0, stdout: '', stderr: '' }
+      }
+      const args = { project: 'zs-doppler', config: 'dev_local_box-a1b2c3', name: 'ZITADEL_MASTERKEY', exec }
+      expect(() => ed.escrowSecret({ ...args, value: 'synthetic-key-two' }), label).toThrow(refusal!)
+      expect(sets, label).toEqual([])
+    }
   })
 
   it('refuses every config but a per-machine dev_local_* branch', () => {
@@ -1207,6 +1249,23 @@ describe('stack.mjs: provisioning against a fake estate', () => {
     expect(estate.logs.join('\n')).not.toContain(password)
     stack.status(estate.deps, { showAdmin: true })
     expect(estate.logs.join('\n')).toContain(`admin / ${password}`)
+  })
+
+  // ADR 0017's CodeQL disposition keeps the unsalted sha256 password
+  // fingerprint only while it stays in the owner-only state file. This is the
+  // half of that condition a run can observe: nothing the stack logs, through
+  // a whole provision and both forms of status, carries it.
+  it('the admin password fingerprint is never printed (ADR 0017, CodeQL disposition)', async () => {
+    const estate = online()
+    estate.doppler.clear()
+    estate.logs.length = 0
+    await stack.provisionFresh(estate.deps, { offline: true })
+    stack.status(estate.deps)
+    stack.status(estate.deps, { showAdmin: true })
+    const state = JSON.parse(readFileSync(join(estate.koras, 'state', 'zs-flow', 'zitadel.json'), 'utf8'))
+    const digest = String(state.admin.passwordFingerprint).replace(/^sha256:/, '')
+    expect(digest).toMatch(/^[0-9a-f]{64}$/)
+    expect(estate.logs.join('\n')).not.toContain(digest)
   })
 })
 

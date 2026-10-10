@@ -44,6 +44,49 @@ which restores it from Doppler), create a token for the machine user, write it
 to `local/zitadel/machinekey/pat`, then run `stack.mjs rotate-pat machine` to
 record it. This is never automated, and never with the default password.
 
+**The password fingerprint, and CodeQL `js/insufficient-password-hash`.**
+Decided 2026-10-10. CodeQL raises two high alerts on PR #66. Alert 12 is on
+`fingerprint()` in `local/zitadel/state.mjs`. Alert 11 is on the test helper
+that hashes ZITADEL's public default in `local-zitadel-secure.test.ts`. The
+unsalted `sha256` is kept. The disposition covers these two alerts and these
+two call paths only. No rule is excluded and no query is suppressed.
+
+Why it is not a password hash:
+
+- **It authenticates nothing.** ZITADEL verifies the admin password with its
+  own hash, and the plaintext reaches ZITADEL only through the steps file
+  (point 2). The fingerprint is compared in exactly four places. `stack.mjs`
+  compares it on `provision --resume` and `recover`, to check that the cached
+  or escrowed copy is the one this instance was created with.
+  `credentials.mjs` and `preflight.sh` compare it with the fingerprint of
+  ZITADEL's public default, to refuse that default. `provision.py` refuses a
+  state that records the default's fingerprint.
+- **The input is not guessable.** `crypto.randomInt` is a CSPRNG and samples
+  without modulo bias. It draws 24 characters from a 75-symbol alphabet with
+  one of each class guaranteed, which is at least 141 bits; 149.5 bits is the
+  ceiling. A slow hash protects low-entropy input by making each guess
+  expensive. At 2^141, even the fastest hash leaves the search out of reach,
+  so scrypt would add cost and dependencies and no protection.
+- **It sits where the plaintext already sits.** The fingerprint is in the
+  0600 state file beside the 0600 plaintext cache, and leg 1 holds the
+  plaintext itself. `status` prints the masterkey's fingerprint and never the
+  password's.
+- **Alert 11 hashes a public constant**, to check the denylist value. It is
+  test code, and the value is ZITADEL's documented default.
+
+**What keeps this true.** Two tests in `local-zitadel-secure.test.ts` fail if
+the generator's length or alphabet takes the bound below 128 bits, or if
+anything the stack logs carries the password fingerprint. Both were
+mutation-checked on 2026-10-10. A comment on `fingerprint()` limits it to
+generated values and public constants. If any of these conditions stops
+holding, the alerts are real and this disposition is withdrawn. That would
+happen if `fingerprint()` is used on a password a person chose, if the
+fingerprint leaves the owner-only state file, or if the generator is
+weakened. The remedy then is a slow, salted KDF.
+
+**Dismissal.** Each alert is dismissed individually, by a person, citing this
+section: alert 12 as "false positive" and alert 11 as "used in tests".
+
 **Legacy instances keep their credentials.** `legacy adopt` warns that an
 adopted instance may still accept the default. Its
 `--check-default-password` flag does **not** probe: any probe either creates a
