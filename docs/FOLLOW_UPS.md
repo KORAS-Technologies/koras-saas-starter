@@ -2963,6 +2963,27 @@ block every change that touches none of those paths.
 - [ ] Before requiring it: either an aggregate check that always runs and
       reports for the four jobs, or the path filter removed.
 
+### F33 — Phase 4.3A: what secure local ZITADEL leaves out — opened 2026-10-10
+
+PR #66 made a new product's local identity provider secure: a generated
+masterkey, escrowed twice, a generated admin password, and expiring tokens.
+Its review found five pieces of work that were deliberately kept out of it,
+so that its validated head stayed unchanged. Each has a plan in
+`docs/features/local-zitadel-follow-ups/`, and the plans are not entries
+here.
+
+- [ ] Instance retirement and versioned escrow, as ADR 0018 proposes. This
+      needs the owner's approval, and should land before Stage 4.3B
+      provisions anything.
+- [ ] R-045: replace the unpullable MinIO image, and delete the CI stand-in.
+- [ ] R-046: retire or harden the factory's own ZITADEL stack.
+- [ ] Bind PostgreSQL and every other local service to loopback.
+- [ ] The CRLF test-import failure, and the remaining review notes.
+
+**Not on this list, and not optional.** Before any real instance is
+provisioned, manual cases T-E4, T-E5 and T-E6 must run: the real Doppler
+CLI, Doppler access scope, and an independent restore.
+
 ## 2026-10-07 - a database invariant for `clean` (secure_files)
 
 Recorded from the review of pull request 39; deliberately not built there, because it is a new invariant

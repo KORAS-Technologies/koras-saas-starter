@@ -115,6 +115,15 @@ than left to be rediscovered.
 The plan is `docs/platform/execution/CAT-02-data-import.md` and the decision
 record is `docs/adr/0009-import-runs-are-not-a-third-export.md`.
 
+### Local ZITADEL follow-ups (Phase 4.3A)
+
+Five plans identified while reviewing PR #66 and deliberately kept out of it.
+These are plans only. ADR 0018 is the decision record still awaiting approval.
+
+| Feature | Directory | Status as of 2026-10-10 |
+|---------|-----------|-------------------------|
+| Local ZITADEL follow-ups to Phase 4.3A | `docs/features/local-zitadel-follow-ups/` | Planned |
+
 ## Status vocabulary
 
 The starter has no prior status convention for features, so this one is
