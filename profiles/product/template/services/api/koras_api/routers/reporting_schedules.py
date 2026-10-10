@@ -50,7 +50,16 @@ DELIVERY_HOUR = 6
 MAX_RECIPIENTS = 10
 DOWNLOAD_URL_SECONDS = 5 * 60
 
-_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+#: The longest address SMTP will carry (RFC 5321 path limit less the brackets).
+MAX_ADDRESS_LENGTH = 254
+
+#: One `@`, a local part, and a domain of dot-separated labels, none of them
+#: empty. Each label excludes the dot that separates it from the next, so there
+#: is exactly one way to split a domain and matching is linear -- the previous
+#: `[^@\s]+\.[^@\s]+` let both sides claim the same dots, which backtracks
+#: polynomially on a long run of them (CodeQL py/polynomial-redos). The same
+#: shape as `koras_import.mapping._EMAIL`.
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s.]+(?:\.[^@\s.]+)+$")
 
 
 class ScheduleCreate(BaseModel):
@@ -128,7 +137,10 @@ def _validate_recipients(recipients: list[str]) -> list[str]:
     cleaned = []
     for raw in recipients:
         address = raw.strip().lower()
-        if not _EMAIL.match(address) or len(address) > 254:
+        # Length first: the pattern is linear, but nothing over the limit is an
+        # address, and refusing it before matching keeps the cost bounded by
+        # the limit rather than by whatever the request body carried.
+        if len(address) > MAX_ADDRESS_LENGTH or not _EMAIL.match(address):
             raise api_error(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 ApiErrorCode.RECIPIENT_INVALID,

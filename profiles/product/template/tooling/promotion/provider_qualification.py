@@ -315,13 +315,40 @@ def storage_fingerprint(endpoint: str, bucket: str, region: str | None) -> str:
     return hashlib.sha256(material.encode()).hexdigest()
 
 
+def _endpoint_host(endpoint: str) -> str:
+    """The host an endpoint names: lowercased, without scheme, port, path or trailing dot.
+
+    An endpoint given without a scheme (`s3.amazonaws.com`) is read as a host rather than
+    as a path, which is what `urlsplit` would otherwise make of it.
+    """
+    value = endpoint.strip()
+    if "//" not in value:
+        value = f"//{value}"
+    try:
+        host = urlsplit(value).hostname or ""
+    except ValueError:
+        return ""
+    return host.rstrip(".").lower()
+
+
+def _host_within(host: str, domain: str) -> bool:
+    """True when `host` is `domain` or a subdomain of it; never a substring match."""
+    return host == domain or host.endswith(f".{domain}")
+
+
 def provider_name(endpoint: str) -> str:
-    host = endpoint.lower()
-    if "supabase" in host:
+    """The evidence label for a storage endpoint, decided by its parsed host alone.
+
+    Compared by exact name or dot-suffix, so `amazonaws.com.attacker.net` and
+    `xamazonaws.com` are `s3-compatible`, not `aws-s3`. The label names what was
+    measured in a record; it grants nothing.
+    """
+    host = _endpoint_host(endpoint)
+    if _host_within(host, "supabase.co") or _host_within(host, "supabase.in"):
         return "supabase"
-    if "r2.cloudflarestorage.com" in host:
+    if _host_within(host, "r2.cloudflarestorage.com"):
         return "cloudflare-r2"
-    if "amazonaws.com" in host:
+    if _host_within(host, "amazonaws.com"):
         return "aws-s3"
     return "s3-compatible"
 

@@ -662,3 +662,37 @@ def test_the_forged_provenance_case_weakens_no_production_guard_and_adds_no_prod
     ):
         text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         assert "guarded=False" not in text, rel
+
+
+# --- the provider label is decided by the parsed host (CodeQL alerts #6, #7) ---------------------
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "label"),
+    [
+        ("https://s3.eu-west-1.amazonaws.com", "aws-s3"),
+        ("https://s3.amazonaws.com/bucket", "aws-s3"),
+        ("https://bucket.s3.us-east-1.amazonaws.com:443/", "aws-s3"),
+        ("s3.eu-west-1.amazonaws.com", "aws-s3"),
+        ("HTTPS://S3.EU-WEST-1.AMAZONAWS.COM.", "aws-s3"),
+        ("https://0123456789abcdef.r2.cloudflarestorage.com", "cloudflare-r2"),
+        ("https://0123456789abcdef.eu.r2.cloudflarestorage.com/bucket", "cloudflare-r2"),
+        ("https://abcdefghijklmnop.supabase.co/storage/v1/s3", "supabase"),
+        ("https://abcdefghijklmnop.storage.supabase.co/storage/v1/s3", "supabase"),
+        # Substring matches that are not the provider's host:
+        ("https://evil-amazonaws.com.attacker.net", "s3-compatible"),
+        ("https://amazonaws.com.attacker.net", "s3-compatible"),
+        ("https://xamazonaws.com", "s3-compatible"),
+        ("https://attacker.net/amazonaws.com", "s3-compatible"),
+        ("https://amazonaws.com@attacker.net", "s3-compatible"),
+        ("https://r2.cloudflarestorage.com.attacker.net", "s3-compatible"),
+        ("https://evilr2.cloudflarestorage.com", "s3-compatible"),
+        ("https://supabase.attacker.net", "s3-compatible"),
+        ("https://s3.example.invalid/storage/v1/s3", "s3-compatible"),
+        ("http://127.0.0.1:9000", "s3-compatible"),
+        ("http://[::1", "s3-compatible"),
+        ("", "s3-compatible"),
+    ],
+)
+def test_the_provider_label_is_decided_by_exact_host_or_dot_suffix(endpoint, label) -> None:
+    assert pq.provider_name(endpoint) == label
