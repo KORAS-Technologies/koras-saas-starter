@@ -146,7 +146,10 @@ ok "T-I6"
 set -a
 . local/zitadel/provisioned.env
 set +a
-LOGIN_NAME="$(api "$P" POST /management/v1/users/_search '{"queries":[{"userNameQuery":{"userName":"admin","method":"TEXT_QUERY_METHOD_EQUALS"}}]}' | json "d['result'][0]['preferredLoginName']")"
+# CONTAINS and the human, as provision.py's grant does: an exact match on
+# "admin" found nothing on v4.17.1, where the stored user name is qualified.
+LOGIN_NAME="$(api "$P" POST /management/v1/users/_search '{"queries":[{"userNameQuery":{"userName":"admin","method":"TEXT_QUERY_METHOD_CONTAINS"}}]}' | json "[u for u in d['result'] if u.get('human')][0]['preferredLoginName']")"
+echo "admin signs in as $LOGIN_NAME"
 signin() {
   (cd "$PW" && ISSUER="$ISSUER" LOGIN_BASE="$LOGIN_BASE" CLIENT_ID="$ZITADEL_CLIENT_ID" CLIENT_SECRET="$ZITADEL_CLIENT_SECRET" \
     REDIRECT_URI="https://app.localhost/api/auth/callback" LOGIN_NAME="$LOGIN_NAME" PASSWORD="$2" node signin.mjs "$1")
