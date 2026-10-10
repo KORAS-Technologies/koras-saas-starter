@@ -16,6 +16,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# Compose needs stack.mjs's values even to exec or stop; none is a secret.
+[ -f "$ROOT/local/scripts/compose-env.sh" ] && . "$ROOT/local/scripts/compose-env.sh"
 PROFILE="${KORAS_PROFILE:-product}"
 ENV_LOCAL="$ROOT/.env.local"
 COMPOSE_FILE="$ROOT/local/docker-compose.yml"

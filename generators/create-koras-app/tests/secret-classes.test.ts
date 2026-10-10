@@ -82,8 +82,11 @@ function manifest(profile: Profile): Entry[] {
   return entries
 }
 
-/** The four classes the manifests use. A fifth would be a schema change. */
-const CLASSES = ['local', 'derived', 'supplied', 'optional']
+/**
+ * The five classes the manifests use. A sixth would be a schema change.
+ * `escrow` was the fifth, in Phase 4.3 (ADR 0015).
+ */
+const CLASSES = ['local', 'derived', 'supplied', 'optional', 'escrow']
 
 describe('the settings manifest classifies every setting deliberately', () => {
   for (const profile of PROFILES) {
@@ -120,13 +123,18 @@ describe('the settings manifest classifies every setting deliberately', () => {
       .filter((entry) => entry.klass === 'local')
       .map((entry) => entry.name)
       .sort()
-    expect(local).toEqual([
-      'GRAFANA_PASSWORD',
-      'MINIO_ROOT_PASSWORD',
-      'MINIO_ROOT_USER',
-      'NODE_ENV',
-      'ZITADEL_MASTERKEY',
-    ])
+    // ZITADEL_MASTERKEY left this list in Phase 4.3: it is `escrow` now.
+    expect(local).toEqual(['GRAFANA_PASSWORD', 'MINIO_ROOT_PASSWORD', 'MINIO_ROOT_USER', 'NODE_ENV'])
+  })
+
+  it('classes the local ZITADEL key and admin password as escrow, in both profiles (T-U7)', () => {
+    for (const profile of PROFILES) {
+      const escrowed = manifest(profile)
+        .filter((entry) => entry.klass === 'escrow')
+        .map((entry) => entry.name)
+        .sort()
+      expect(escrowed, profile).toEqual(['ZITADEL_ADMIN_PASSWORD', 'ZITADEL_MASTERKEY'])
+    }
   })
 
   it('does not forbid the Control Plane the mail settings it reads', () => {
@@ -172,6 +180,8 @@ function runCheck(options: {
   profile: Profile
   present: string[]
   manifestText?: string
+  /** The Doppler config checked. `dev` unless a test says otherwise. */
+  config?: string
 }): { status: number; stdout: string; stderr: string } {
   const root = mkdtempSync(join(tmpdir(), 'koras-doppler-'))
   try {
@@ -242,7 +252,7 @@ exit 0
     chmodSync(stubPath, 0o755)
 
     try {
-      const stdout = execFileSync('bash', [join(root, 'local', 'scripts', 'doppler-check.sh'), 'dev'], {
+      const stdout = execFileSync('bash', [join(root, 'local', 'scripts', 'doppler-check.sh'), options.config ?? 'dev'], {
         encoding: 'utf8',
         env: { ...process.env, PATH: `${join(root, 'stub')}:${process.env.PATH ?? ''}` },
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -261,10 +271,10 @@ exit 0
   }
 }
 
-/** Every name a profile's manifest requires: neither local nor optional. */
+/** Every name a profile's manifest requires: neither local, optional nor escrow. */
 function required(profile: Profile): string[] {
   return manifest(profile)
-    .filter((entry) => entry.klass !== 'local' && entry.klass !== 'optional')
+    .filter((entry) => !['local', 'optional', 'escrow'].includes(entry.klass))
     .map((entry) => entry.name)
 }
 
@@ -293,7 +303,7 @@ describe('doppler-check refuses a config holding a local-only setting', () => {
   })
 
   it('fails for any local-only setting, not only the one that was found', () => {
-    for (const name of ['MINIO_ROOT_PASSWORD', 'ZITADEL_MASTERKEY', 'GRAFANA_PASSWORD']) {
+    for (const name of ['MINIO_ROOT_PASSWORD', 'GRAFANA_PASSWORD']) {
       const result = runCheck({ profile: 'product', present: [...required('product'), name] })
       expect(result.status, `${name} was tolerated`).not.toBe(0)
       expect(result.stdout + result.stderr).toContain(name)
@@ -436,4 +446,30 @@ describe('the settings check runs before anything reaches a provider', () => {
     expect(mutating('services'), 'services mutates no provider').toBe(true)
     expect(mutating('applications'), 'applications mutates no provider').toBe(true)
   })
+})
+
+describe('doppler-check keeps escrowed local secrets out of every deployed config (T-U14)', () => {
+  const escrowed = ['ZITADEL_MASTERKEY', 'ZITADEL_ADMIN_PASSWORD']
+
+  for (const profile of PROFILES) {
+    it(`${profile}: passes a per-machine dev_local_* config holding them`, () => {
+      const result = runCheck({ profile, present: [...required(profile), ...escrowed], config: 'dev_local_box-a1b2c3' })
+      expect(result.status, result.stdout + result.stderr).toBe(0)
+    })
+
+    for (const config of ['dev', 'stg', 'prd', 'prod', 'test', 'dev_feature', 'dev_local', 'stg_local_box']) {
+      it(`${profile}: fails ${config} holding them, by name`, () => {
+        for (const name of escrowed) {
+          const result = runCheck({ profile, present: [...required(profile), name], config })
+          expect(result.status, `${name} tolerated in ${config}`).not.toBe(0)
+          expect(result.stdout + result.stderr).toContain(name)
+        }
+      })
+    }
+
+    it(`${profile}: never requires them, so a deployed config without them is complete`, () => {
+      const result = runCheck({ profile, present: required(profile), config: 'dev' })
+      expect(result.status, result.stdout + result.stderr).toBe(0)
+    })
+  }
 })

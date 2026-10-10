@@ -11,5 +11,6 @@ FirstInstance:
       Email:
         Address: admin@koras.local
         Verified: true
-      Password: Password1!
+      # No password here. Every instance gets a generated one, through the
+      # init steps file stack.mjs renders and deletes (ADR 0017).
       PasswordChangeRequired: false

@@ -1,0 +1,37 @@
+# First start of a new secure ZITADEL instance -- and nothing else.
+#
+# Applied only by `node local/scripts/stack.mjs provision --fresh` (or
+# `--resume`, which finishes an interrupted one), on top of
+# local/docker-compose.yml. It is the only file that says `start-from-init`,
+# and the only one carrying ZITADEL_FIRSTINSTANCE_*: those apply when an
+# instance is created and never again. ADR 0015.
+#
+# The admin password is not here. It arrives in the steps file, mounted as a
+# compose secret and deleted once the instance exists, so `docker inspect`
+# never shows it (ADR 0017). The token expiry is not a secret, and is one
+# value computed by stack.mjs: provision time plus 365 days.
+services:
+  zitadel:
+    command: start-from-init --masterkeyFile /run/secrets/zitadel_masterkey --steps /run/secrets/zitadel_init_steps --tlsMode disabled
+    secrets:
+      - zitadel_masterkey
+      - zitadel_init_steps
+    environment:
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: koras
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+      # The IAM_OWNER machine user the local tooling acts as.
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: {{projectSlug}}
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: {{projectName}}
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: ${KORAS_ZITADEL_PAT_EXPIRES_AT:?provision through local/scripts/stack.mjs}
+      ZITADEL_FIRSTINSTANCE_PATPATH: /machinekey/pat
+      # The login container's own identity, granted IAM_LOGIN_CLIENT. Names as
+      # in ZITADEL v4.17.1's deploy/compose/docker-compose.yml.
+      ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH: /zitadel/bootstrap/login-client.pat
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_USERNAME: login-client
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_NAME: Automatically Initialized IAM_LOGIN_CLIENT
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE: ${KORAS_ZITADEL_PAT_EXPIRES_AT:?provision through local/scripts/stack.mjs}
+
+secrets:
+  zitadel_init_steps:
+    file: ${KORAS_ZITADEL_INIT_STEPS_FILE:?provision through local/scripts/stack.mjs}

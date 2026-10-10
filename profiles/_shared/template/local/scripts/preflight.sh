@@ -6,16 +6,20 @@
 #
 #   1. Missing configuration -- local/.env (resolved ports), .env.local,
 #      certificates, the ZITADEL machine PAT and provisioned.env.
-#   2. Placeholder secrets -- the public ZITADEL masterkey, and .env.local
-#      values still holding a `<...>` template placeholder or a too-short
-#      SESSION_SECRET.
+#   2. Secrets -- the local ZITADEL instance (ADRs 0015-0017): a base compose
+#      file that would start ZITADEL on an environment key or hand it a
+#      password, a cached masterkey or admin password that is ZITADEL's public
+#      default, and .env.local values still holding a `<...>` template
+#      placeholder, a key, or a too-short SESSION_SECRET.
 #   3. Occupied ports -- every KORAS_PORT_* in local/.env that something other
 #      than this project's own running containers is listening on.
 #
 # It never starts, stops or removes anything, never writes a file, and never
 # prints a secret value -- only the names of settings and the ports. Exit 0
 # with warnings, so it can run in front of `make dev`; `--strict` exits 1 when
-# there is any warning, for CI or a deliberate check.
+# there is any warning, for CI or a deliberate check. An ERROR exits 1 always:
+# those are the findings that would start a secure instance unsafely, and
+# `make dev` stops on them.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -36,6 +40,13 @@ for arg in "$@"; do
 done
 
 WARNINGS=0
+ERRORS=0
+error() {
+  ERRORS=$((ERRORS + 1))
+  echo "  ERROR $1"
+  [ -n "${2:-}" ] && echo "        $2"
+  return 0
+}
 warn() {
   WARNINGS=$((WARNINGS + 1))
   echo "  WARN  $1"
@@ -44,11 +55,22 @@ warn() {
 }
 ok() { echo "  ok    $1"; }
 
-# The masterkey ZITADEL's own documentation uses. It encrypts the instance's
-# signing keys and secrets at rest, so an instance created with it is readable
-# by anyone who has the database. It cannot be rotated on an existing instance:
-# changing it makes that instance's encrypted data unreadable.
-PLACEHOLDER_MASTERKEY='MasterkeyNeedsToHave32Characters'
+# Fingerprints, not values, of ZITADEL's public placeholder masterkey and its
+# default admin password: neither value appears in any file a generated project
+# carries except the legacy-recovery override, which is the one place the
+# placeholder may be used. A masterkey encrypts an instance's signing keys and
+# secrets at rest and cannot be changed afterwards, so an instance created on
+# the placeholder is readable by anyone who has its database.
+PLACEHOLDER_FINGERPRINT='d67cc271c12ad6f95c1b10db7acaf1e69fa8453ef84c898df920faf5d4364f3e'
+DEFAULT_PASSWORD_FINGERPRINT='1d707811988069ca760826861d6d63a10e8c3b7f171c4441a6472ea58c11711b'
+
+# From stdin: given a path with a backslash in it, GNU sha256sum escapes the
+# name and prefixes its output line with one, which no fingerprint matches.
+sha256_of_file() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum < "$1" | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 < "$1" | cut -d' ' -f1
+  fi
+}
 
 echo "Preflight (read-only): $ROOT"
 
@@ -99,16 +121,60 @@ else
   warn "local/zitadel/provisioned.env is missing" "ZITADEL has not been provisioned on this machine ('make bootstrap')."
 fi
 
-# ── 2. Placeholder secrets ───────────────────────────────────────────────────
+# ── 2. Secrets ───────────────────────────────────────────────────────────────
 echo "Secrets (names only, values are never printed):"
-if [ -f "$COMPOSE_FILE" ] && grep -q "$PLACEHOLDER_MASTERKEY" "$COMPOSE_FILE"; then
-  warn "local/docker-compose.yml starts ZITADEL with the public placeholder masterkey" \
-    "Any instance it creates is decryptable by anyone with the database. Do NOT change the key on an existing instance -- it cannot be rotated, and the instance's encrypted data would become unreadable. Moving to a per-machine key means a new instance."
+KORAS_DIR="${KORAS_HOME:-$HOME/.koras}"
+STATE_FILE="$KORAS_DIR/state/${PROJECT:-unknown}/zitadel.json"
+MODE=""
+if [ -n "$PROJECT" ] && [ -f "$STATE_FILE" ]; then
+  MODE="$(sed -nE 's/^[[:space:]]*"mode":[[:space:]]*"([a-z-]+)".*/\1/p' "$STATE_FILE" | head -n1)"
+  case "$MODE" in
+    secure) ok "local ZITADEL instance recorded (secure)" ;;
+    legacy-recovery) warn "the local ZITADEL instance is in legacy-recovery mode" \
+      "It runs on the public placeholder key until it is replaced by a new secure instance (ADR 0015)." ;;
+    *) error "the ZITADEL state file has an unknown mode: ${MODE:-none}" "Nothing will start against it." ;;
+  esac
+  if [ "$MODE" = "secure" ] && grep -qE '"status":[[:space:]]*"unescrowed"' "$STATE_FILE"; then
+    warn "the local ZITADEL masterkey is not escrowed on both legs" "Run 'node local/scripts/stack.mjs escrow'; 'make dev' refuses until it is."
+  fi
+else
+  warn "no local ZITADEL instance is recorded" "'make bootstrap' provisions one: node local/scripts/stack.mjs provision --fresh."
+fi
+# Comment lines are not configuration: the base file's own comments name what
+# it must never do.
+uncommented() { grep -vE '^[[:space:]]*#' "$1" || true; }
+if [ -f "$COMPOSE_FILE" ]; then
+  # The base file starts ZITADEL from a key *file* and never initialises it.
+  # An environment key is how the placeholder used to reach it.
+  if uncommented "$COMPOSE_FILE" | grep -qE 'masterkeyFromEnv|ZITADEL_MASTERKEY:'; then
+    error "local/docker-compose.yml starts ZITADEL on an environment masterkey" \
+      "The base file must pass --masterkeyFile only. Do NOT change the key of an existing instance; legacy instances use local/docker-compose.legacy-zitadel.yml."
+  fi
+  if uncommented "$COMPOSE_FILE" | grep -q 'start-from-init'; then
+    error "local/docker-compose.yml can initialise ZITADEL" "Only local/docker-compose.init.yml, applied by stack.mjs provision, may say start-from-init."
+  fi
+fi
+# A password reaches ZITADEL only through the init steps file stack.mjs
+# renders and deletes. One in a compose file or config.yaml is in the clear.
+for file in "$COMPOSE_FILE" "$ROOT/local/docker-compose.init.yml" "$ROOT/local/zitadel/config.yaml"; do
+  [ -f "$file" ] || continue
+  if uncommented "$file" | grep -qE 'ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD:|^[[:space:]]+Password:'; then
+    error "${file#"$ROOT/"} sets a ZITADEL admin password" "Remove it; every instance gets a generated password (ADR 0017)."
+  fi
+done
+if [ "$MODE" = "secure" ]; then
+  SECRETS_DIR="$KORAS_DIR/secrets/${PROJECT}/dev"
+  if [ -f "$SECRETS_DIR/zitadel-masterkey" ] && [ "$(sha256_of_file "$SECRETS_DIR/zitadel-masterkey")" = "$PLACEHOLDER_FINGERPRINT" ]; then
+    error "the cached ZITADEL masterkey is the public placeholder" "A secure instance never runs on it. It was not changed."
+  fi
+  if [ -f "$SECRETS_DIR/zitadel-admin-password" ] && [ "$(sha256_of_file "$SECRETS_DIR/zitadel-admin-password")" = "$DEFAULT_PASSWORD_FINGERPRINT" ]; then
+    error "the cached ZITADEL admin password is ZITADEL's default" "Every instance gets a generated one (ADR 0017)."
+  fi
 fi
 if [ -f "$ENV_LOCAL" ]; then
-  if grep -qE "^ZITADEL_MASTERKEY=${PLACEHOLDER_MASTERKEY}[[:space:]]*$" "$ENV_LOCAL"; then
-    warn ".env.local sets ZITADEL_MASTERKEY to the public placeholder" \
-      "Compose does not read .env.local, so this value has no effect -- but it is a copy of a key, and keys do not belong in an app env file."
+  if grep -qE '^ZITADEL_MASTERKEY=' "$ENV_LOCAL"; then
+    warn ".env.local sets ZITADEL_MASTERKEY" \
+      "Nothing reads it there -- the key is a file under ~/.koras/secrets -- and a copy of a key does not belong in an app env file. Remove the line."
   fi
   placeholders="$(grep -E '^[A-Z0-9_]+=.*<[^>]+>' "$ENV_LOCAL" | cut -d= -f1 | tr '\n' ' ' || true)"
   if [ -n "$placeholders" ]; then
@@ -162,6 +228,10 @@ else
 fi
 
 echo ""
+if [ "$ERRORS" -gt 0 ]; then
+  echo "Preflight: ${ERRORS} error(s), ${WARNINGS} warning(s). Nothing was changed."
+  exit 1
+fi
 if [ "$WARNINGS" -eq 0 ]; then
   echo "Preflight: no warnings."
 else

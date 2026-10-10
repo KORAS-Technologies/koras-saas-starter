@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# Provisions the local ZITADEL instance for development.
+# Re-provisions the project, roles and OIDC application on the local ZITADEL
+# instance. It does not create the instance.
 #
-# The instance bootstraps itself from the ZITADEL_FIRSTINSTANCE_* variables in
-# local/docker-compose.yml, which create the KORAS organization, an admin human,
-# and a machine user whose personal access token is written to
-# local/zitadel/machinekey/pat. Those variables apply only when the instance is
-# created, so changing them means dropping the zitadel database:
+# The instance itself is created by `node local/scripts/stack.mjs provision
+# --fresh` (bootstrap runs it), which generates the masterkey and the admin
+# password, escrows the key, and initialises through
+# local/docker-compose.init.yml -- the only place ZITADEL_FIRSTINSTANCE_*
+# settings live, because they apply only when an instance is created. That
+# command runs provision.py itself; this script is for running it again by
+# hand, which is safe: every step looks before it creates.
 #
-#   docker compose -f local/docker-compose.yml stop zitadel
-#   docker compose -f local/docker-compose.yml exec -T supabase-db \
-#     psql -U postgres -c "drop database if exists zitadel with (force);"
-#   docker compose -f local/docker-compose.yml up -d zitadel
+# provision.py refuses an instance whose masterkey is not escrowed, or one
+# recorded with the public placeholder key or the default admin password
+# (ADRs 0015 and 0017).
 #
 # The rest -- project, roles, OIDC application, and a grant for the admin -- is
 # in provision.py. It used to be here, in shell, parsing JSON with grep, and it
@@ -52,4 +54,5 @@ ZITADEL_URL="$ZITADEL_URL" "$PYTHON" "$ROOT/local/zitadel/provision.py"
 
 echo ""
 echo "  Console:    ${ZITADEL_URL}/ui/console   (KORAS staff only)"
-echo "  Admin user: admin    Password: Password1!"
+# The admin password is generated per instance and printed only on request.
+echo "  Admin user: admin    Password: node local/scripts/stack.mjs status --show-admin"
