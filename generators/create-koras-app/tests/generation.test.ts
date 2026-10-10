@@ -12,7 +12,13 @@ import {
 } from '../src/profiles/validator.js'
 import { buildContext } from '../src/generation/context.js'
 import { renderTemplate } from '../src/generation/engine.js'
-import { writeFiles, printDryRunManifest, toUnixLineEndings } from '../src/generation/writer.js'
+import {
+  writeFiles,
+  printDryRunManifest,
+  toUnixLineEndings,
+  requiresUnixLineEndings,
+} from '../src/generation/writer.js'
+import type { GenerationContext } from '../src/generation/context.js'
 import {
   PROJECT_MANIFEST_PATH,
   parseProjectManifest,
@@ -697,6 +703,33 @@ describe('line endings', () => {
     expect(toUnixLineEndings(Buffer.from('a\r\nb')).toString()).toBe('a\nb')
     // A lone CR is data, not a line ending.
     expect(toUnixLineEndings('a\rb')).toBe('a\rb')
+  })
+
+  it('writes any file that starts with a hashbang with LF, whatever it is called', async () => {
+    // A CRLF hashbang in local/scripts/stack.mjs made vitest fail to load it:
+    // Vite's SSR transform recognises a hashbang only when it ends in LF.
+    const ctx = { outputDir: OUT, projectSlug: 'eol-hashbang', dryRun: false } as GenerationContext
+    await writeFiles(ctx, [
+      { outputPath: 'local/scripts/stack.mjs', content: '#!/usr/bin/env node\r\nexport const a = 1\r\n' },
+      { outputPath: 'bin/entrypoint', content: Buffer.from('#!/bin/sh\r\nexec "$@"\r\n') },
+      // Not a script: the writer does not rewrite every file, only these.
+      { outputPath: 'notes.txt', content: 'a\r\nb\r\n' },
+    ] as Parameters<typeof writeFiles>[1])
+    const root = join(OUT, 'eol-hashbang')
+    expect(readFileSync(join(root, 'local/scripts/stack.mjs'), 'utf8')).toBe('#!/usr/bin/env node\nexport const a = 1\n')
+    expect(readFileSync(join(root, 'bin/entrypoint'), 'utf8')).toBe('#!/bin/sh\nexec "$@"\n')
+    expect(readFileSync(join(root, 'notes.txt'), 'utf8')).toBe('a\r\nb\r\n')
+    expect(requiresUnixLineEndings('x.mjs', 'export {}\r\n')).toBe(false)
+    expect(requiresUnixLineEndings('x.mjs', Buffer.from('#!'))).toBe(true)
+  })
+
+  it('writes every generated hashbang file with LF', async () => {
+    const gen = await generate('product', 'eol-hashbang-product')
+    const scripts = gen.fileList.filter((f) => readFileSync(join(OUT, 'eol-hashbang-product', f)).subarray(0, 2).toString() === '#!')
+    expect(scripts).toContain('local/scripts/stack.mjs')
+    for (const file of scripts) {
+      expect(readFileSync(join(OUT, 'eol-hashbang-product', file), 'utf8'), file).not.toContain('\r\n')
+    }
   })
 
   it('generates a .gitattributes that pins them for later checkouts', async () => {

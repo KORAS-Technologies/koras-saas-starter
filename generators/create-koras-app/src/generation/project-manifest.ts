@@ -140,8 +140,10 @@ const NUL = Buffer.from([0])
  * Collapses CRLF to LF so the digest describes the profile's content rather
  * than the checkout it was computed in.
  *
- * `.gitattributes` sets `* text=auto`, so a template file is LF in the object
- * store and CRLF in a Windows working tree. Hashing the raw bytes therefore
+ * `.gitattributes` set `* text=auto` until 2026-10-10, so a template file was
+ * LF in the object store and CRLF in a Windows working tree. It pins LF now,
+ * but a working tree written before that, or under a user's own attributes,
+ * can still be CRLF, so this stays. Hashing the raw bytes therefore
  * produced one digest on Windows and a different one in CI for the same
  * profile -- and worse, a digest written before a merge stopped matching after
  * it, because the checkout rewrote the very files being hashed. That is the

@@ -600,8 +600,9 @@ describe('the agent registry agrees with the files on disk', () => {
 /**
  * Reading an agent document, once, for every assertion that needs to.
  *
- * FW-DEF-002. `.gitattributes` declares `* text=auto`, so a Windows checkout
- * converts every Markdown file to CRLF, and the assertions that parsed these
+ * FW-DEF-002. `.gitattributes` declared `* text=auto` until 2026-10-10, so a
+ * Windows checkout converted every Markdown file to CRLF (it pins LF now; this
+ * stays for a working tree written before), and the assertions that parsed these
  * documents were written for LF. On a fresh clone with the default Windows
  * configuration, 41 of 499 assertions in this file failed -- the whole
  * `has frontmatter naming itself` family plus the near-identical-files check.

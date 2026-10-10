@@ -22,15 +22,31 @@ export interface WriteResult {
  * The generated `.gitattributes` pins these too, but that only takes effect
  * once the project is committed and checked out again. This covers the first
  * run, before there is any git history at all.
+ *
+ * A file that starts with a hashbang is one too, whatever it is called. The
+ * name list missed `local/scripts/stack.mjs`, and a CRLF hashbang is not
+ * harmless there: Vite's SSR transform recognises a hashbang only when it ends
+ * in LF, so under vitest a CRLF `stack.mjs` failed to load with "SyntaxError:
+ * Invalid or unexpected token" (2026-10-10). Asking the content rather than
+ * extending the list covers the next `.mjs`, `.py` or extensionless entrypoint
+ * as well. The starter's own `.gitattributes` pins LF for every text file since
+ * the same day, so this is for a checkout that does not honour it.
  */
-function requiresUnixLineEndings(outputPath: string): boolean {
+export function requiresUnixLineEndings(outputPath: string, content?: Buffer | string): boolean {
   const name = outputPath.split('/').pop() ?? ''
   return (
     /\.(sh|bash|mk)$/.test(name) ||
     name === 'Makefile' ||
     name === 'Dockerfile' ||
-    name.endsWith('.Dockerfile')
+    name.endsWith('.Dockerfile') ||
+    (content !== undefined && startsWithHashbang(content))
   )
+}
+
+function startsWithHashbang(content: Buffer | string): boolean {
+  return typeof content === 'string'
+    ? content.startsWith('#!')
+    : content.length >= 2 && content[0] === 0x23 && content[1] === 0x21
 }
 
 /** Collapses CRLF to LF. Leaves a lone CR alone — that is data, not a line ending. */
@@ -64,7 +80,7 @@ export async function writeFiles(
     const dir = dirname(outputAbsPath)
     await mkdir(dir, { recursive: true })
 
-    const content = requiresUnixLineEndings(file.outputPath)
+    const content = requiresUnixLineEndings(file.outputPath, file.content)
       ? toUnixLineEndings(file.content)
       : file.content
 
