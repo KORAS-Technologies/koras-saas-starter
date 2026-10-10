@@ -6,7 +6,9 @@
     "infrastructure/**",
     ".claude/**",
     "tsconfig.base.json",
-    "eslint.config.mjs"
+    "eslint.config.mjs",
+    ".github/**",
+    "pnpm-workspace.yaml"
   ],
   "tasks": {
     "build": {
