@@ -1178,16 +1178,15 @@ jobs:
         run: pnpm exec vitest run tests/generation.test.ts -t "line endings"
       - name: Build the generator
         run: pnpm turbo run build --filter=create-koras-app
-      - name: A generated stack.mjs runs under plain node
+      - name: Generate a product
         run: |
-          out="$RUNNER_TEMP/generated"
-          mkdir -p "$out"
-          pnpm create-koras-app zitadel-windows --profile product --no-interactive --output-dir "$out"
-          cd "$out/zitadel-windows"
-          if head -n 1 local/scripts/stack.mjs | od -c | grep -q '\\r'; then
-            echo "::error::local/scripts/stack.mjs was generated with a CRLF hashbang"
-            exit 1
-          fi
+          mkdir -p "$RUNNER_TEMP/generated"
+          pnpm create-koras-app zitadel-windows --profile product --no-interactive --output-dir "$RUNNER_TEMP/generated"
+      - name: A generated stack.mjs runs under plain node
+        working-directory: ${{ runner.temp }}/generated/zitadel-windows
+        run: |
+          # Asked of node rather than grep: Git for Windows' grep drops the CR.
+          node -e "if (require('fs').readFileSync('local/scripts/stack.mjs', 'latin1').includes('\r\n')) { console.log('::error::local/scripts/stack.mjs was generated with CRLF'); process.exit(1) }"
           node --check local/scripts/stack.mjs
           node local/scripts/stack.mjs status | tee "$RUNNER_TEMP/status.txt"
           grep -q 'No local ZITADEL instance is recorded' "$RUNNER_TEMP/status.txt"
