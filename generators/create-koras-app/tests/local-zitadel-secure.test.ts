@@ -475,8 +475,9 @@ describe.each(COMBINATIONS)('%s (%s): rendered local ZITADEL', (profile, slug, o
   it('provision.py sets login v2 on the application and refuses an unsafe instance', () => {
     const provision = gen.read('local/zitadel/provision.py')
     expect(provision).toContain('payload["loginVersion"] = {"loginV2": {"baseUri": LOGIN_URL}}')
-    expect(provision).toContain('PLACEHOLDER_FINGERPRINT = "sha256:' + sha256(PLACEHOLDER) + '"')
-    expect(provision).toContain('DEFAULT_PASSWORD_FINGERPRINT = "sha256:' + sha256(DEFAULT_PASSWORD) + '"')
+    // Across whitespace: the constants are wrapped to fit ruff's line length.
+    expect(provision).toMatch(new RegExp(`PLACEHOLDER_FINGERPRINT = \\(?\\s*"sha256:${sha256(PLACEHOLDER)}"`))
+    expect(provision).toMatch(new RegExp(`DEFAULT_PASSWORD_FINGERPRINT = \\(?\\s*"sha256:${sha256(DEFAULT_PASSWORD)}"`))
     expect(provision).toMatch(/\.localhost\/api\/auth\/callback/)
   })
 })

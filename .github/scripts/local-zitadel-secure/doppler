@@ -3,7 +3,9 @@
 #
 # It answers the four calls local/zitadel/escrow-doppler.mjs makes -- a config
 # read, a name listing, a value read and a write from stdin -- from files
-# under $KORAS_FAKE_DOPPLER_DIR/<config>/<NAME>. Only dev_local_* configs
+# under $KORAS_FAKE_DOPPLER_DIR/<project>/<config>/<NAME>. Keyed by project as
+# well as config, as Doppler is: the job runs two products on one machine, and
+# they share a machine id and so a config name. Only dev_local_* configs
 # exist, as on a machine whose owner created its per-machine config and
 # nothing else. Every invocation is appended to $KORAS_FAKE_DOPPLER_DIR/calls,
 # so the job can prove a command did not contact Doppler at all.
@@ -16,20 +18,23 @@ root="${KORAS_FAKE_DOPPLER_DIR:?}"
 echo "$*" >> "$root/calls"
 
 config=""
+project=""
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do
   if [ "${args[$i]}" = "--config" ]; then config="${args[$((i + 1))]}"; fi
+  if [ "${args[$i]}" = "--project" ]; then project="${args[$((i + 1))]}"; fi
 done
+[ -n "$project" ] || { echo "fake doppler: no --project" >&2; exit 2; }
 
 if [ "${1:-}" = "configs" ] && [ "${2:-}" = "get" ]; then
   case "${3:-}" in
-    dev_local_?*) mkdir -p "$root/$3"; printf '{"name":"%s","environment":"dev"}' "$3" ;;
+    dev_local_?*) mkdir -p "$root/$project/$3"; printf '{"name":"%s","environment":"dev"}' "$3" ;;
     *) echo "Doppler Error: Could not find requested config" >&2; exit 1 ;;
   esac
   exit 0
 fi
 
-dir="$root/$config"
+dir="$root/$project/$config"
 [ -d "$dir" ] || { echo "Doppler Error: Could not find requested config" >&2; exit 1; }
 
 if [ "${1:-}" = "secrets" ] && [ "${2:-}" = "--only-names" ]; then
