@@ -8,8 +8,19 @@
 #
 # Anything executed by an interpreter that reads the shebang, or by a Linux
 # container, is therefore pinned to LF regardless of platform.
+#
+# Since 2026-10-10 that is every text file rather than a list of extensions.
+# The list missed `.mjs`, `.sh.hbs`, `Dockerfile.hbs` and every YAML file,
+# and the misses were not harmless: Vite's SSR transform looks for a hashbang
+# line ending in LF only, so a CRLF one is not found, its hoisted imports land
+# above it, and vitest fails to load `stack.mjs` with "SyntaxError: Invalid or
+# unexpected token" while plain `node` accepts the same file.
+# A list is a guess about which tool cares; LF everywhere is not. The object
+# store is LF either way, so this changes no content -- only what a
+# Windows checkout writes. The explicit rules below stay, as documentation and
+# because the CRLF ones must override this line.
 
-* text=auto
+* text=auto eol=lf
 
 *.sh        text eol=lf
 *.bash      text eol=lf

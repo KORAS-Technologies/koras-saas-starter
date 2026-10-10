@@ -1130,14 +1130,39 @@ jobs:
   # T-U9 on Windows: the key cache's ACL lists exactly one principal. icacls
   # behaves only on a real NTFS ACL, so this is the one case a Linux runner
   # cannot stand in for.
+  #
+  # And, since 2026-10-10, a checkout made the way a developer's Windows
+  # machine makes one. Until then this job ran `-t "masterkey.mjs"` alone, so
+  # it never saw that a CRLF checkout broke the rest of the same file: twelve
+  # assertions anchored on a line feed over compose templates, and four
+  # describe blocks that could not import a CRLF `stack.mjs` under vitest. The
+  # whole file runs here now, on a checkout with `core.autocrlf=true` set
+  # explicitly rather than inherited from the runner image, followed by the
+  # line-ending tests and a generated `stack.mjs` run under plain node.
   local-zitadel-secure-windows:
     name: local-zitadel-secure (Windows ACL)
     needs: changes
     if: needs.changes.outputs.relevant == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
     steps:
+      - name: Check out as a Windows developer would (core.autocrlf=true)
+        run: git config --global core.autocrlf true
       - uses: actions/checkout@v5
+      # .gitattributes pins LF for every text file; only the Windows-native
+      # scripts are CRLF on purpose.
+      - name: No text file is checked out CRLF
+        run: |
+          echo "core.autocrlf=$(git config --get core.autocrlf)"
+          git ls-files --eol | awk '$2 == "w/crlf" { print $NF }' | grep -Ev '[.](bat|cmd|ps1)$' > "$RUNNER_TEMP/crlf.txt" || true
+          if [ -s "$RUNNER_TEMP/crlf.txt" ]; then
+            echo "::error::$(wc -l < "$RUNNER_TEMP/crlf.txt") files were checked out with CRLF"
+            head -n 50 "$RUNNER_TEMP/crlf.txt"
+            exit 1
+          fi
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
@@ -1145,9 +1170,26 @@ jobs:
           cache: pnpm
       - name: Install starter dependencies
         run: pnpm install --frozen-lockfile
-      - name: Key cache ACL (T-U9, T-U10)
+      - name: Key cache ACL (T-U9, T-U10) and the rest of local-zitadel-secure.test.ts
         working-directory: generators/create-koras-app
-        run: pnpm exec vitest run tests/local-zitadel-secure.test.ts -t "masterkey.mjs"
+        run: pnpm exec vitest run tests/local-zitadel-secure.test.ts
+      - name: Line endings of generated files
+        working-directory: generators/create-koras-app
+        run: pnpm exec vitest run tests/generation.test.ts -t "line endings"
+      - name: Build the generator
+        run: pnpm turbo run build --filter=create-koras-app
+      - name: Generate a product
+        run: |
+          mkdir -p "$RUNNER_TEMP/generated"
+          pnpm create-koras-app zitadel-windows --profile product --no-interactive --output-dir "$RUNNER_TEMP/generated"
+      - name: A generated stack.mjs runs under plain node
+        working-directory: ${{ runner.temp }}/generated/zitadel-windows
+        run: |
+          # Asked of node rather than grep: Git for Windows' grep drops the CR.
+          node -e "if (require('fs').readFileSync('local/scripts/stack.mjs', 'latin1').includes('\r\n')) { console.log('::error::local/scripts/stack.mjs was generated with CRLF'); process.exit(1) }"
+          node --check local/scripts/stack.mjs
+          node local/scripts/stack.mjs status | tee "$RUNNER_TEMP/status.txt"
+          grep -q 'No local ZITADEL instance is recorded' "$RUNNER_TEMP/status.txt"
 
   # The one check to require. It always runs, including after a cancellation,
   # and passes only when detection succeeded and -- for a relevant change --
