@@ -3006,3 +3006,5 @@ Needs: a migration, a change to `scanning/transition.py` to set the proof, an RL
 the matrix's upgrade scenario to show legacy `clean` rows are not rewritten, and a decision on whether
 the proof may be forged by the application role (it can, so this is defence in depth against mistakes and
 not against a compromised worker).
+
+<!-- gate scenario: docs-only change, never to be merged -->
