@@ -1175,7 +1175,9 @@ describe('local stack host ports', () => {
     (await generate(profile, slug)).read('local/docker-compose.yml')
 
   const publishedPorts = (compose: string) =>
-    [...compose.matchAll(/- "\$\{(KORAS_PORT_[A-Z_]+):-(\d+)\}:(\d+)"/g)].map((m) => ({
+    // Every published port is on loopback (local-loopback-ports.test.ts), so
+    // the address prefix is part of the shape rather than optional.
+    [...compose.matchAll(/- "127\.0\.0\.1:\$\{(KORAS_PORT_[A-Z_]+):-(\d+)\}:(\d+)"/g)].map((m) => ({
       variable: m[1],
       preferred: Number(m[2]),
       container: Number(m[3]),
@@ -1188,8 +1190,10 @@ describe('local stack host ports', () => {
     ] as Array<[ProfileName, string]>) {
       const compose = await composeOf(profile, slug)
       // A bare "1234:5432" would be a host port no machine can override.
-      expect(compose).not.toMatch(/- "\d+:\d+"/)
-      expect(publishedPorts(compose).length).toBeGreaterThan(0)
+      expect(compose).not.toMatch(/- "(?:[\d.]+:)?\d+:\d+"/)
+      // Before loopback the ZITADEL pair alone carried an address, and this
+      // pattern silently skipped them; now it must see every service.
+      expect(publishedPorts(compose).length).toBeGreaterThanOrEqual(10)
     }
   })
 
