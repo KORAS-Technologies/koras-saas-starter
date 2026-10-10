@@ -174,35 +174,79 @@ done
 ! grep -rqF "$PASSWORD" "$P" || die "T-I10: the admin password is in the project tree"
 ok "T-I10"
 
-# T-I13. Without CUSTOM_REQUEST_HEADERS the login answers /healthy and cannot
-# resolve the instance; with it, sign-in works (T-I1 again).
-cat > "$RUNNER_TEMP/no-host-header.yml" <<'YAML'
-services:
-  zitadel-login:
-    environment:
-      CUSTOM_REQUEST_HEADERS: ""
-YAML
-(
-  ROOT="$P"
-  . local/scripts/compose-env.sh
-  docker compose -f local/docker-compose.yml -f "$RUNNER_TEMP/no-host-header.yml" up -d --no-deps --force-recreate zitadel-login
-)
-for _ in $(seq 1 60); do curl -sf "${LOGIN_BASE}healthy" >/dev/null && break; sleep 2; done
-curl -sf "${LOGIN_BASE}healthy" >/dev/null || die "T-I13: /healthy did not answer without the header"
-# The spec expects sign-in to fail here. On v4.17.1 in this no-proxy layout it
-# did not (first observed 2026-10-10): the login appears to forward the
-# browser's own localhost host, which ZITADEL resolves. That refutes the
-# spec's premise rather than the configuration, so it is reported, not failed,
-# and the header stays as ZITADEL's own compose sets it (T-U5 pins it). The
-# owner decides whether T-I13 is reworded or the assertion reinstated.
-T_I13="without the header sign-in fails, as the spec expects"
-if signin success "$PASSWORD" >/dev/null 2>&1; then
-  T_I13="without the header sign-in still WORKS -- the spec's premise does not hold in this layout"
-  echo "::warning title=T-I13 finding::Sign-in through login v2 succeeded without CUSTOM_REQUEST_HEADERS on ZITADEL v4.17.1 (no-proxy, cross-origin login). The spec expects it to fail."
-fi
-stack "$P" up
-signin success "$PASSWORD"
-echo "T-I13: recorded -- $T_I13; with the header, sign-in works"
+# T-I13. What CUSTOM_REQUEST_HEADERS does on v4.17.1, asserted on the running
+# containers.
+#
+# The spec's case -- remove the header and watch a browser sign-in fail -- was
+# disproven on 2026-10-10 (run 38020999862): in this no-proxy layout the
+# v4.17.1 login carries the browser's own host to the API, so a browser
+# sign-in works with or without it. The header does something narrower. The
+# login reaches the API as http://zitadel:8080, a host no instance answers to,
+# and the header names the instance for a request that has no browser host
+# behind it. ADR 0016, point 3, has the reasoning; owner decision 2026-10-10 to
+# keep the header and assert that instead.
+#
+#   a. The login is the pinned image, at the version this was established on
+#      (the state's zitadelVersion), and carries exactly the header ZITADEL's
+#      own compose sets. A version bump fails here and has to re-establish it.
+#   b. From the login's own container, the API at zitadel:8080 does not
+#      resolve this instance without the header.
+#   c. With the header, parsed from the container's own environment the way
+#      the login applies it, it resolves this instance: the recorded id, not
+#      merely a 200.
+INSTANCE="$(python3 -c "import json; print(json.load(open('$KORAS_HOME/state/zitadel-secure/zitadel.json'))['instanceId'])")"
+VERSION="$(python3 -c "import json; print(json.load(open('$KORAS_HOME/state/zitadel-secure/zitadel.json'))['zitadelVersion'])")"
+LOGIN_ID="$(node local/scripts/stack.mjs compose ps -q zitadel-login)"
+[ "$(docker inspect -f '{{.Config.Image}}' "$LOGIN_ID")" = "ghcr.io/zitadel/zitadel-login:$VERSION" ] || die "T-I13: the login image is not zitadel-login:$VERSION"
+[ "$VERSION" = "v4.17.1" ] || die "T-I13: established on v4.17.1, running $VERSION -- re-establish the header's behaviour (ADR 0016) before changing this"
+docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$LOGIN_ID" | grep -qx 'CUSTOM_REQUEST_HEADERS=Host:localhost,X-Forwarded-Proto:http' \
+  || die "T-I13: the login does not carry CUSTOM_REQUEST_HEADERS=Host:localhost,X-Forwarded-Proto:http"
+# The machine token arrives on stdin, so it is in no argument and no container
+# environment. `with` applies the container's own CUSTOM_REQUEST_HEADERS.
+PROBE='
+const http = require("node:http")
+let token = ""
+process.stdin.on("data", (c) => (token += c)).on("end", () => {
+  const headers = { Authorization: "Bearer " + token.trim() }
+  if (process.argv[1] === "with") {
+    for (const pair of (process.env.CUSTOM_REQUEST_HEADERS || "").split(",")) {
+      const at = pair.indexOf(":")
+      if (at > 0) headers[pair.slice(0, at).trim()] = pair.slice(at + 1).trim()
+    }
+  }
+  http.get({ host: "zitadel", port: 8080, path: "/admin/v1/instances/me", headers }, (res) => {
+    let body = ""
+    res.on("data", (c) => (body += c)).on("end", () => {
+      let id = null
+      try { id = JSON.parse(body).instance.id } catch {}
+      console.log(JSON.stringify({ status: res.statusCode, id, body: id ? undefined : body.slice(0, 200) }))
+    })
+  }).on("error", (e) => console.log(JSON.stringify({ status: 0, id: null, error: e.code })))
+})'
+probe() {
+  (
+    ROOT="$P"
+    . local/scripts/compose-env.sh
+    docker compose -f local/docker-compose.yml exec -T zitadel-login node -e "$PROBE" "$1" < local/zitadel/machinekey/pat
+  )
+}
+WITHOUT="$(probe without)"
+WITH="$(probe with)"
+echo "T-I13: zitadel:8080 without the header -> $WITHOUT"
+echo "T-I13: zitadel:8080 with the header    -> $WITH"
+# Parsed strictly: a probe that printed nothing must not read as "not resolved".
+W_STATUS="$(json "d['status']" <<<"$WITHOUT")" || die "T-I13: the probe without the header printed no result"
+W_ID="$(json "d['id']" <<<"$WITHOUT")" || die "T-I13: the probe without the header printed no result"
+H_STATUS="$(json "d['status']" <<<"$WITH")" || die "T-I13: the probe with the header printed no result"
+H_ID="$(json "d['id']" <<<"$WITH")" || die "T-I13: the probe with the header printed no result"
+[ "$H_STATUS" = "200" ] && [ "$H_ID" = "$INSTANCE" ] \
+  || die "T-I13: with CUSTOM_REQUEST_HEADERS the API did not resolve instance $INSTANCE"
+# The same token, the same container, the same address; only the header
+# differs. 0 would be a connection failure, which proves nothing, so the API
+# has to have answered.
+[ "$W_STATUS" -ge 400 ] && [ "$W_ID" != "$INSTANCE" ] \
+  || die "T-I13: zitadel:8080 without the header answered $W_STATUS for ${W_ID} -- the header is no longer what names the instance (ADR 0016)"
+ok "T-I13"
 
 # T-I7. A normal start needs nothing but the cache: `up` never calls Doppler.
 : > "$KORAS_FAKE_DOPPLER_DIR/calls"
@@ -211,7 +255,6 @@ stack "$P" up
 ok "T-I7"
 
 # T-I11. A restart keeps the instance: down (not -v), up, same id, same token.
-INSTANCE="$(python3 -c "import json; print(json.load(open('$KORAS_HOME/state/zitadel-secure/zitadel.json'))['instanceId'])")"
 stack "$P" compose down
 stack "$P" up
 [ "$(api "$P" GET /admin/v1/instances/me | json "d['instance']['id']")" = "$INSTANCE" ] || die "T-I11: the instance changed across a restart"

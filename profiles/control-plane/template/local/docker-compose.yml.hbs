@@ -88,8 +88,10 @@ services:
 
   # The hosted login (v2). ZITADEL resolves an instance from the Host header,
   # and this container reaches the API as http://zitadel:8080 -- a host that
-  # matches no instance -- so CUSTOM_REQUEST_HEADERS restores the public one.
-  # Without it /healthy still answers while every sign-in page fails.
+  # matches no instance -- so CUSTOM_REQUEST_HEADERS names the public one. On
+  # v4.17.1 a browser sign-in forwards its own host and works without it. CI
+  # case T-I13 asserts that this header, and only it, makes zitadel:8080
+  # resolve the instance (ADR 0016).
   zitadel-login:
     image: ghcr.io/zitadel/zitadel-login:v4.17.1
     restart: unless-stopped

@@ -22,8 +22,46 @@ ZITADEL, and adding one was not approved for this stage.
    v4.17.1's defaults are relative and work only on one origin.
 3. `CUSTOM_REQUEST_HEADERS: Host:localhost,X-Forwarded-Proto:http`. ZITADEL
    resolves an instance from the Host header, and the login reaches the API as
-   `http://zitadel:8080`, a host that matches no instance. Without it `/healthy`
-   answers and every sign-in page fails; that is integration case T-I13.
+   `http://zitadel:8080`, a host that matches no instance. The header names
+   the public one.
+
+   **Amended 2026-10-10.** This point said that without the header `/healthy`
+   answers and every sign-in page fails, and the specification's T-I13 asserted
+   exactly that. CI disproved it on its first run (run 38020999862): on v4.17.1,
+   in this layout with no proxy, a browser sign-in through the login works
+   either way. The upstream source at `v4.17.1` explains why. The login's
+   `getInstanceHost`, in
+   `zitadel/zitadel/apps/login/src/lib/server/host.ts`, reads the incoming
+   request's `Host`, which is `localhost:<login port>` for a browser here.
+   The transport interceptor in
+   `zitadel/zitadel/apps/login/src/lib/zitadel.ts` sends it to the API as
+   `x-zitadel-instance-host`, and ZITADEL resolves the instance from that
+   header. The same interceptor applies `CUSTOM_REQUEST_HEADERS`
+   (`zitadel/zitadel/apps/login/src/lib/custom-headers.ts`).
+
+   The header is kept, by owner decision on 2026-10-10, for three reasons. It
+   is what ZITADEL's own compose file,
+   `zitadel/zitadel/deploy/compose/docker-compose.yml`, sets at `v4.17.1`:
+   `Host:${ZITADEL_DOMAIN},X-Forwarded-Proto:${ZITADEL_PUBLIC_SCHEME}`. A call
+   the login makes without a browser request behind it has no instance host
+   to forward. And without the header, sign-in would depend on the
+   instance-host forwarding, which is internal behaviour, rather than on
+   configuration.
+
+   T-I13 now asserts what the header does, not what was assumed about it.
+   On the running containers it checks three things: the login is
+   `zitadel-login:v4.17.1`, matching the state's `zitadelVersion`, and carries
+   exactly this header; from inside the login container, `zitadel:8080`
+   answers an error and not this instance without the header; and with the
+   header, parsed from the container's own environment, the same token
+   resolves the recorded instance ID. The case fails on any other version, so
+   a version bump has to establish the behaviour again before it can pass.
+   It does not claim that a browser sign-in needs the header. Nor does it
+   watch the login apply the header. The probe parses the variable itself,
+   with the rule `custom-headers.ts` uses at `v4.17.1` (split on commas, then
+   on the first colon), so it proves that the configured value names this
+   instance, and not that every call the login makes carries it. No case
+   exercises a login call made without a browser behind it.
 4. `provision.py` sets `loginVersion.loginV2.baseUri` on the application, and
    registers the `https://*.localhost` redirect URIs `.env.local.example`
    names as well as the `http://localhost:<port>` ones.
