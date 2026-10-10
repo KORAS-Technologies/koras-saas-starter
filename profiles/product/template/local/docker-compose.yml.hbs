@@ -14,7 +14,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: postgres
     ports:
-      - "${KORAS_PORT_SUPABASE_DB:-{{ports.supabaseDb}}{{!}}}:5432"
+      - "127.0.0.1:${KORAS_PORT_SUPABASE_DB:-{{ports.supabaseDb}}{{!}}}:5432"
     volumes:
       - supabase-db:/var/lib/postgresql/data
     healthcheck:
@@ -120,7 +120,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "${KORAS_PORT_REDIS:-{{ports.redis}}{{!}}}:6379"
+      - "127.0.0.1:${KORAS_PORT_REDIS:-{{ports.redis}}{{!}}}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -134,8 +134,8 @@ services:
     image: axllent/mailpit:latest
     restart: unless-stopped
     ports:
-      - "${KORAS_PORT_MAIL_SMTP:-{{ports.mailSmtp}}{{!}}}:1025"   # SMTP
-      - "${KORAS_PORT_MAIL_UI:-{{ports.mailUi}}{{!}}}:8025"   # Web UI
+      - "127.0.0.1:${KORAS_PORT_MAIL_SMTP:-{{ports.mailSmtp}}{{!}}}:1025"   # SMTP
+      - "127.0.0.1:${KORAS_PORT_MAIL_UI:-{{ports.mailUi}}{{!}}}:8025"   # Web UI
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8025/"]
       interval: 10s
@@ -151,8 +151,8 @@ services:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: miniominio
     ports:
-      - "${KORAS_PORT_MINIO_API:-{{ports.minioApi}}{{!}}}:9000"
-      - "${KORAS_PORT_MINIO_CONSOLE:-{{ports.minioConsole}}{{!}}}:9001"
+      - "127.0.0.1:${KORAS_PORT_MINIO_API:-{{ports.minioApi}}{{!}}}:9000"
+      - "127.0.0.1:${KORAS_PORT_MINIO_CONSOLE:-{{ports.minioConsole}}{{!}}}:9001"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -171,8 +171,8 @@ services:
     restart: unless-stopped
     command: ["--config=/etc/otel-collector.yml"]
     ports:
-      - "${KORAS_PORT_OTLP_GRPC:-{{ports.otlpGrpc}}{{!}}}:4317"
-      - "${KORAS_PORT_OTLP_HTTP:-{{ports.otlpHttp}}{{!}}}:4318"
+      - "127.0.0.1:${KORAS_PORT_OTLP_GRPC:-{{ports.otlpGrpc}}{{!}}}:4317"
+      - "127.0.0.1:${KORAS_PORT_OTLP_HTTP:-{{ports.otlpHttp}}{{!}}}:4318"
     volumes:
       - ./observability/otel-collector.yml:/etc/otel-collector.yml:ro
     depends_on:
@@ -200,8 +200,8 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "${KORAS_PORT_PROXY_HTTP:-{{ports.proxyHttp}}{{!}}}:80"
-      - "${KORAS_PORT_PROXY_HTTPS:-{{ports.proxyHttps}}{{!}}}:443"
+      - "127.0.0.1:${KORAS_PORT_PROXY_HTTP:-{{ports.proxyHttp}}{{!}}}:80"
+      - "127.0.0.1:${KORAS_PORT_PROXY_HTTPS:-{{ports.proxyHttps}}{{!}}}:443"
     environment:
 {{#if apps.web}}      KORAS_PORT_APP_WEB: ${KORAS_PORT_APP_WEB:-{{ports.appWeb}}{{!}}}
 {{/if}}{{#if apps.admin}}      KORAS_PORT_APP_ADMIN: ${KORAS_PORT_APP_ADMIN:-{{ports.appAdmin}}{{!}}}

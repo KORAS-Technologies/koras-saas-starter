@@ -86,11 +86,11 @@ set_env_var() {
 }
 
 set_env_var ENVIRONMENT "dev"
-set_env_var DATABASE_URL "postgresql://postgres:postgres@localhost:${KORAS_PORT_SUPABASE_DB}/postgres"
+set_env_var DATABASE_URL "postgresql://postgres:postgres@127.0.0.1:${KORAS_PORT_SUPABASE_DB}/postgres"
 set_env_var ZITADEL_DOMAIN "http://localhost:${KORAS_PORT_ZITADEL}"
-set_env_var REDIS_URL "redis://localhost:${KORAS_PORT_REDIS}"
+set_env_var REDIS_URL "redis://127.0.0.1:${KORAS_PORT_REDIS}"
 set_env_var SMTP_PORT "${KORAS_PORT_MAIL_SMTP}"
-set_env_var OTEL_EXPORTER_OTLP_ENDPOINT "http://localhost:${KORAS_PORT_OTLP_GRPC}"
+set_env_var OTEL_EXPORTER_OTLP_ENDPOINT "http://127.0.0.1:${KORAS_PORT_OTLP_GRPC}"
 
 # 11. Apply the schema. Without this the local database has no tables at all, so
 # nothing that touches persistence can be developed or tested.
