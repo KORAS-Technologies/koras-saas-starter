@@ -55,12 +55,21 @@ Why it is not a password hash:
 
 - **It authenticates nothing.** ZITADEL verifies the admin password with its
   own hash, and the plaintext reaches ZITADEL only through the steps file
-  (point 2). The fingerprint is compared in exactly four places. `stack.mjs`
-  compares it on `provision --resume` and `recover`, to check that the cached
-  or escrowed copy is the one this instance was created with.
-  `credentials.mjs` and `preflight.sh` compare it with the fingerprint of
-  ZITADEL's public default, to refuse that default. `provision.py` refuses a
-  state that records the default's fingerprint.
+  (point 2). The password is fingerprinted in exactly five places, each an
+  equality check:
+  - `stack.mjs` records the fingerprint at `provision --fresh`. It compares it
+    on `provision --resume` and `recover`, to check that the cached or
+    escrowed copy is the one this instance was created with.
+  - `escrow-doppler.mjs` compares an existing leg-1 value with the one being
+    escrowed, so a different value is refused rather than written over. It
+    then compares the value read back after writing with the value written.
+  - `credentials.mjs` and `preflight.sh` compare it with the fingerprint of
+    ZITADEL's public default, to refuse that default.
+  - `provision.py` refuses a state that records the default's fingerprint.
+
+  The list was corrected on 2026-10-10. It first said four places and left out
+  `escrow-doppler.mjs`, which is one of the sources CodeQL traces into alert
+  12.
 - **The input is not guessable.** `crypto.randomInt` is a CSPRNG and samples
   without modulo bias. It draws 24 characters from a 75-symbol alphabet with
   one of each class guaranteed, which is at least 141 bits; 149.5 bits is the
