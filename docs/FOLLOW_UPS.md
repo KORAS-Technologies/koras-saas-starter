@@ -46,7 +46,7 @@ recommendation rather than a record — revise it, do not preserve it.
 | 9 | **F25 — reporting** | Three items, none of which blocks a product registering reports today: `reporting.api` enforcement becomes real with the first machine caller, pre-aggregation when a table outgrows a range scan, and report names in the customer's language when somebody asks for one. | ~1 day per item |
 | 10 | **F30 — Docoris data import alignment with the starter** | Docoris carries its own import (E24-F01-S01) with no analysis step and a mapping form a person types headings into, so matching CSV or XLSX headings prefill nothing there, however well they match. Opened 2026-09-29; the starter's framework is complete and documented, and the next move is a comparison and a migration path in the docoris repository, not a third implementation. | ~1 day to compare, the migration unknown |
 | 11 | **F31 — GR-352, the import memory envelope** — *opened 2026-10-01; slices A and B built the same day, slices C and E on 2026-10-02; **GR-352 closed 2026-10-02, verified, its NFRs ratified by the owner*** | **The resource envelope is closed and what is left is an activation constraint.** The import framework accepted files that took a worker to 1.4 GiB against 512 MB. A safety pass refuses the measured worst cases before they are loaded, the two API routes read a head, the worker reads rows as a stream, and one gate holds an import, a backup, a restore and a scheduled delivery to one at a time in a process -- at limits the owner ratified on 2026-10-02. **IMPORT-DEF-014 is closed and verified as of 2026-10-02** -- fix `2db0dc4`, merged as `eba279c` in PR #29, CI, Security and Generator Integration green on both commits, the 512 MiB capped measurement repeated against real object storage -- so the Starter-level activation constraint is lifted. Neither closure enables imports in `docoris`: its alignment is next, and OD-12 stays blocked | `docoris`'s alignment and its own verification; then OD-12, on explicit approval |
-| 12 | **F32 — `develop` is not protected against an early merge** — *opened 2026-10-02; a ruleset closed four of its five settings the same day, recorded 2026-10-10* | Two pull requests in one day, #24 and #27, were merged before their owner's authorisation and before their checks had finished. Both passed afterwards, and nothing in the repository's settings would have stopped either at the time. **The ruleset `develop: PR and CI/Security checks` has applied since 2026-10-02 at 19:14 UTC.** It requires a pull request and seven CI and Security checks with the branch up to date, blocks force pushes and deletion, and allows no bypass. **Two gaps are still open, both as of 2026-10-10.** Generator Integration is not required, because it is path-filtered; an always-running aggregate gate is proposed in PR #69 and not merged. And nothing enforces the owner's authorisation: the ruleset requires zero approving reviews, so once the checks are green any account with write access can merge | Review and merge PR #69, then one ruleset edit (below); the owner-authorisation decision is separate |
+| 12 | **F32 — `develop` is not protected against an early merge** — *opened 2026-10-02; a ruleset closed four of its five settings the same day, recorded 2026-10-10; the fifth closed 2026-10-10* | Two pull requests in one day, #24 and #27, were merged before their owner's authorisation and before their checks had finished. Both passed afterwards, and nothing in the repository's settings would have stopped either at the time. **The ruleset `develop: PR and CI/Security checks` has applied since 2026-10-02 at 19:14 UTC.** It requires a pull request and, since 2026-10-10 at 17:29 UTC, eight checks with the branch up to date -- the seven CI and Security checks and Generator Integration, made requirable by PR #69, merged as `8de610c` -- blocks force pushes and deletion, and allows no bypass. **One gap is still open, as of 2026-10-10:** nothing enforces the owner's authorisation. The ruleset requires zero approving reviews, so once the checks are green any account with write access can merge | The owner-authorisation decision |
 
 **F21 and F23 do not contend with the top row.** They are a person at a dashboard and two ZITADEL writes per instance; nothing in either is code, so an order that reads as a queue is misleading for those two. Run them whenever the dashboard is open.
 
@@ -2957,12 +2957,13 @@ as its own API reports it. Check the ruleset itself rather than this list:
 
 - [x] Require a pull request for `develop`. *Done by the ruleset, with zero
       approving reviews required — see the gap below.*
-- [ ] Require CI, Security and Generator Integration to pass. **Split, as of
-      2026-10-10:**
+- [x] Require CI, Security and Generator Integration to pass. **Closed
+      2026-10-10, in two halves:**
   - [x] CI and Security. Seven checks: Lint & Typecheck, Test (Python),
         Test (Node), Build, Secret scan (gitleaks), CodeQL (python) and
-        CodeQL (javascript-typescript).
-  - [ ] Generator Integration. Not required, for the reason below.
+        CodeQL (javascript-typescript). Required since 2026-10-02.
+  - [x] Generator Integration. Required since 2026-10-10 at 17:29 UTC, the
+        eighth check, once the path filter below was gone.
 - [x] Require the branch to be up to date before merging. *Strict status
       checks are on.*
 - [x] Block force pushes and deletion. *The ruleset's force-push and
@@ -2976,23 +2977,26 @@ it names. A required check that never reports leaves a pull request
 unmergeable for good, so making its four jobs required as they stand would
 block every change that touches none of those paths.
 
-- [ ] Before requiring it: either an aggregate check that always runs and
-      reports for the four jobs, or the path filter removed. **Proposed in
-      PR #69, opened 2026-10-10 and not merged.** The workflow always starts.
+- [x] Before requiring it: either an aggregate check that always runs and
+      reports for the four jobs, or the path filter removed. **Done by PR
+      #69, merged on 2026-10-10 as `8de610c`.** The workflow always starts.
       A `detect changes` job decides whether the expensive jobs run, and one
       job named `Generator Integration` runs `if: always()` and fails closed:
       for a relevant change, anything but `success` in any job is a refusal,
       including `cancelled` and `skipped`. Detection that did not succeed is
-      also a refusal.
-- [ ] Then require it. **Not applied: a settings change needs the owner's
-      approval.** The change is one entry added to the ruleset's
-      `required_status_checks`, with everything else left as it is:
+      also a refusal. Two reviews of it found three ways it could pass
+      wrongly -- a path git quotes, a pull request retargeted to a new base,
+      and the script started through a link -- and all three were fixed
+      before it merged. The gate reported success on `develop` at `8de610c`
+      (run 38070362972).
+- [x] Then require it. **Applied on 2026-10-10 at 17:29 UTC, on the owner's
+      approval.** The change was one entry added to the ruleset's
+      `required_status_checks`, with everything else left as it was:
       `{ "context": "Generator Integration", "integration_id": 15368 }`.
       `15368` is the GitHub Actions app, the same as the seven existing
-      entries. Apply it only after PR #69 is merged. Before that, no pull
-      request reports a check of that name, so requiring it would block
-      every merge. The exact request is under "Proposed ruleset change"
-      below.
+      entries. The live ruleset was read and compared field by field with
+      the request below before it was sent, and read back after: eight
+      checks, every other rule and parameter unchanged, no bypass actors.
 
 **What the ruleset does not close: the owner's authorisation.** The two
 merges happened ahead of two things, the checks and the owner. The ruleset
@@ -3011,11 +3015,13 @@ therefore need a second reviewer identity, not just a settings change.
       control for that half, which is the arrangement this entry was opened
       over.
 
-#### Proposed ruleset change
+#### The ruleset change, as applied
 
-Not applied. To be run by the owner, or on the owner's explicit approval,
-after PR #69 is merged and its gate has reported on `develop`. It sends the
-ruleset's five rules unchanged, plus the one new required check:
+Applied on 2026-10-10 at 17:29 UTC, on the owner's explicit approval, after
+PR #69 was merged and its gate had reported on `develop`. It sent the
+ruleset's four rules unchanged, plus the one new required check. This
+section said "five rules" until then; there are four -- deletion, force
+push, pull request and required checks. The request, kept as the record:
 
 ```sh
 gh api --method PUT repos/KORAS-Technologies/koras-saas-starter/rulesets/24385352 --input - <<'JSON'
@@ -3056,10 +3062,10 @@ gh api --method PUT repos/KORAS-Technologies/koras-saas-starter/rulesets/2438535
 JSON
 ```
 
-Read the ruleset again before running this. If it has changed since
-2026-10-10, add the one entry to what is there rather than sending this
-body. A `PUT` replaces the rules, so a field this body leaves out is reset
-to its default.
+Do not send it again as a way of restoring the ruleset. A `PUT` replaces
+the rules, so a field this body leaves out is reset to its default, and the
+ruleset may have changed since 2026-10-10. Read the live ruleset and edit
+what is there.
 
 ### F33 — Phase 4.3A: what secure local ZITADEL leaves out — opened 2026-10-10
 
