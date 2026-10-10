@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import yaml from 'js-yaml'
@@ -37,6 +37,8 @@ describe('which paths are relevant', () => {
     ['pnpm-lock.yaml'],
     ['pnpm-workspace.yaml'],
     ['turbo.json'],
+    ['.npmrc'],
+    ['.pnpmfile.cjs'],
     ['.claude/skills/koras-auth/SKILL.md'],
     ['.claude/CLAUDE.md'],
     ['tooling/postman/extract.py'],
@@ -137,6 +139,9 @@ describe('every input the workflow is known to read is relevant', () => {
     const globs = (yaml.load(read('pnpm-workspace.yaml')) as { packages: string[] }).packages
     expect(globs.length).toBeGreaterThan(0)
     for (const glob of globs) {
+      // A `*` rule is one segment; `**` or a negation would need rules this
+      // file does not have, so either is refused rather than half-checked.
+      expect(glob, glob).not.toMatch(/\*\*|^!/)
       const manifest = `${glob.split('*').join('some-package')}/package.json`
       expect(isRelevant([manifest]), manifest).toBe(true)
     }
@@ -149,19 +154,59 @@ describe('every input the workflow is known to read is relevant', () => {
     expect(isRelevant([resolved]), resolved).toBe(true)
   })
 
-  it('every local action, and every starter file a step runs or copies', () => {
+  /**
+   * Structural rather than by spelling: every step that does not run inside
+   * the generated project under runner.temp is split into tokens, and any
+   * token, `uses: ./`, `with:` value or `working-directory` that names a path
+   * existing in the starter must be relevant. A regex over `node .github/...`
+   * missed `bash ./.github/...`, `"${GITHUB_WORKSPACE}/..."`, a quoted local
+   * action and any starter path outside .github/.
+   */
+  it('every starter path a step runs, copies, enters or uses', () => {
+    type Step = { uses?: string; run?: string; with?: Record<string, unknown>; 'working-directory'?: string }
+    const doc = yaml.load(workflow) as { jobs: Record<string, { steps?: Step[] }> }
+    const WORKSPACE = /^(?:\$\{\{\s*github\.workspace\s*\}\}|\$\{GITHUB_WORKSPACE\}|\$GITHUB_WORKSPACE)\//
+    const normalise = (token: string) =>
+      token.replace(/^["']+|["']+$/g, '').replace(WORKSPACE, '').replace(/^(?:\.\/)+/, '').replace(/\/+$/, '')
     const named = new Set<string>()
-    for (const [, path] of workflow.matchAll(/uses:\s*\.\/(\S+)/g)) named.add(sample(path!))
-    for (const [, path] of workflow.matchAll(/\$GITHUB_WORKSPACE\/([^"\s]+)/g)) named.add(path!)
-    for (const [, path] of workflow.matchAll(/(?:node|bash)\s+(\.github\/\S+)/g)) named.add(path!)
-    // The three this was written against, so the extraction cannot quietly
-    // find nothing and pass.
+    /** `anchored`: only a path spelled from the workspace counts. */
+    const consider = (raw: string, anchored = false) => {
+      if (anchored && !WORKSPACE.test(raw.replace(/^["']+/, ''))) return
+      const path = normalise(raw)
+      // A `\` is a shell line continuation, and resolves to a drive root on Windows.
+      if (!path || path === '.' || path.startsWith('..') || /[$*{}\\]/.test(path)) return
+      if (!existsSync(join(REPO, path))) return
+      named.add(statSync(join(REPO, path)).isDirectory() ? `${path}/x.txt` : path)
+    }
+    for (const job of Object.values(doc.jobs)) {
+      for (const step of job.steps ?? []) {
+        const wd = step['working-directory']
+        // Inside the generated project a bare relative path is the project's,
+        // not the starter's; only a workspace-anchored one reaches back.
+        const inProject = wd?.includes('runner.temp') ?? false
+        if (wd && !inProject) consider(wd)
+        if (step.uses?.startsWith('./')) consider(step.uses)
+        // `${{ github.workspace }}` has spaces inside it, so it is made one
+        // token before the text is split on whitespace.
+        const tokens = (text: string) => text.replace(/\$\{\{\s*github\.workspace\s*\}\}/g, '$GITHUB_WORKSPACE').split(/[\s;|&()<>]+/)
+        for (const value of Object.values(step.with ?? {})) {
+          for (const token of tokens(String(value))) consider(token, inProject)
+        }
+        for (const token of tokens(step.run ?? '')) consider(token, inProject)
+      }
+    }
+    // What this was written against, so an extraction that quietly finds
+    // nothing cannot pass.
     expect([...named]).toEqual(
       expect.arrayContaining([
         '.github/actions/start-minio/x.txt',
         '.github/fixtures/import-target.py',
+        '.github/fixtures/import-run.sql',
         '.github/scripts/local-zitadel-secure/signin.mjs',
+        '.github/scripts/local-zitadel-secure/run.sh',
         '.github/scripts/generator-integration-gate/gate.mjs',
+        '.github/scripts/generator-integration-gate/x.txt',
+        'generators/create-koras-app/x.txt',
       ]),
     )
     for (const path of named) expect(isRelevant([path]), path).toBe(true)
@@ -243,89 +288,107 @@ describe('the verdict', () => {
   })
 })
 
-/** A real repository with a base commit, so detection runs real `git diff`. */
+/**
+ * A real repository with a base commit, so detection runs real `git diff`.
+ *
+ * Commits are built through a private index (read-tree, update-index,
+ * write-tree, commit-tree) rather than by checking out branches: nothing
+ * touches a working tree, so a name Windows cannot hold on disk -- a `"`, a
+ * tab -- is committed exactly like any other, and the per-rule cases stay cheap.
+ */
 describe('detection against a real repository', () => {
   let repo: string
   let base: string
+  let output: string
+  const scratch: string[] = []
 
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim()
-  const write = (path: string, content: string) => {
-    mkdirSync(dirname(join(repo, path)), { recursive: true })
-    writeFileSync(join(repo, path), content)
+  const git = (args: string[], options: { env?: NodeJS.ProcessEnv; input?: string } = {}) =>
+    execFileSync('git', args, { cwd: repo, encoding: 'utf8', env: options.env ?? process.env, input: options.input }).trim()
+
+  /** A commit on `parent` with `files` written and `remove` deleted. */
+  const commit = (parent: string, files: Record<string, string>, remove: string[] = []): string => {
+    const env = { ...process.env, GIT_INDEX_FILE: join(repo, '.git', `index-${Math.random().toString(36).slice(2)}`) }
+    git(['read-tree', parent], { env })
+    for (const path of remove) git(['update-index', '--force-remove', '--', path], { env })
+    for (const [path, content] of Object.entries(files)) {
+      const blob = git(['hash-object', '-w', '--stdin'], { input: content })
+      // Git for Windows refuses some of these names under core.protectNTFS,
+      // which guards a working tree; nothing here reaches one.
+      git(['-c', 'core.protectNTFS=false', 'update-index', '--add', '--cacheinfo', `100644,${blob},${path}`], { env })
+    }
+    const tree = git(['write-tree'], { env })
+    return git(['commit-tree', tree, '-p', parent, '-m', 'change'])
   }
-  /** Branch from base, make `edit`, commit, return the head and go back. */
-  const branch = (name: string, edit: () => void): string => {
-    git('checkout', '-q', '-b', name, base)
-    edit()
-    git('add', '-A')
-    git('commit', '-q', '-m', name)
-    const head = git('rev-parse', 'HEAD')
-    git('checkout', '-q', base)
-    return head
-  }
-  const pr = (head: string) => detect({ EVENT_NAME: 'pull_request', BASE_SHA: base, HEAD_SHA: head }, repo)
+  const pr = (head: string, from = base) => detect({ EVENT_NAME: 'pull_request', BASE_SHA: from, HEAD_SHA: head }, repo)
+  const push = (head: string, before = base) => detect({ EVENT_NAME: 'push', BEFORE_SHA: before, HEAD_SHA: head }, repo)
+  const cli = (mode: 'detect' | 'verdict', env: Record<string, string | undefined>, options: { cwd?: string; script?: string } = {}) =>
+    spawnSync(process.execPath, [options.script ?? SCRIPT, mode], {
+      cwd: options.cwd ?? repo,
+      env: { ...process.env, GITHUB_OUTPUT: output, ...env },
+      encoding: 'utf8',
+    })
 
   beforeAll(() => {
     repo = mkdtempSync(join(tmpdir(), 'gi-gate-'))
-    git('init', '-q')
-    git('config', 'user.email', 'gate@example.invalid')
-    git('config', 'user.name', 'gate')
-    git('config', 'commit.gpgsign', 'false')
-    git('config', 'core.autocrlf', 'false')
-    write('docs/README.md', 'docs\n')
-    write('profiles/product/template/a.txt', 'a\n')
-    git('add', '-A')
-    git('commit', '-q', '-m', 'base')
-    base = git('rev-parse', 'HEAD')
+    scratch.push(repo)
+    // No template and no hooks: the global config of whoever runs this must
+    // not run code inside the test.
+    execFileSync('git', ['init', '-q', '--template=', repo])
+    const hooks = mkdtempSync(join(tmpdir(), 'gi-gate-hooks-'))
+    scratch.push(hooks)
+    for (const [key, value] of [
+      ['user.email', 'gate@example.invalid'],
+      ['user.name', 'gate'],
+      ['commit.gpgsign', 'false'],
+      ['core.autocrlf', 'false'],
+      ['core.hooksPath', hooks],
+    ]) {
+      git(['config', key!, value!])
+    }
+    const empty = git(['hash-object', '-t', 'tree', '-w', '--stdin'], { input: '' })
+    const root = git(['commit-tree', empty, '-m', 'root'])
+    base = commit(root, { 'docs/README.md': 'docs\n', 'profiles/product/template/a.txt': 'a\n' })
+    output = join(repo, '.git', 'github-output')
+  })
+
+  afterAll(() => {
+    for (const dir of scratch) rmSync(dir, { recursive: true, force: true })
   })
 
   it('a docs-only pull request is not relevant', () => {
-    const head = branch('docs-only', () => write('docs/README.md', 'changed\n'))
-    const result = pr(head)
+    const result = pr(commit(base, { 'docs/README.md': 'changed\n' }))
     expect(result.relevant).toBe(false)
     expect(result.paths).toEqual(['docs/README.md'])
   })
 
   it('a pull request touching a profile is relevant', () => {
-    const head = branch('profile', () => {
-      write('docs/README.md', 'also docs\n')
-      write('profiles/product/template/a.txt', 'b\n')
-    })
-    expect(pr(head).relevant).toBe(true)
+    expect(pr(commit(base, { 'docs/README.md': 'also\n', 'profiles/product/template/a.txt': 'b\n' })).relevant).toBe(true)
   })
 
   it('moving a file out of a profile is relevant', () => {
-    const head = branch('rename-out', () => git('mv', 'profiles/product/template/a.txt', 'docs/a.txt'))
+    const head = commit(base, { 'docs/a.txt': 'a\n' }, ['profiles/product/template/a.txt'])
     const result = pr(head)
     expect(result.relevant).toBe(true)
     expect(result.paths).toContain('profiles/product/template/a.txt')
   })
 
   it('compares from the merge base, so later commits on the base do not count', () => {
-    const head = branch('docs-late', () => write('docs/late.md', 'x\n'))
+    const head = commit(base, { 'docs/late.md': 'x\n' })
     // The base moves on with a profile change the pull request does not carry.
-    git('checkout', '-q', '-b', 'base-moved', base)
-    write('profiles/product/template/a.txt', 'moved\n')
-    git('commit', '-qam', 'base moves')
-    const moved = git('rev-parse', 'HEAD')
-    git('checkout', '-q', base)
-    expect(detect({ EVENT_NAME: 'pull_request', BASE_SHA: moved, HEAD_SHA: head }, repo).relevant).toBe(false)
+    const moved = commit(base, { 'profiles/product/template/a.txt': 'moved\n' })
+    expect(pr(head, moved).relevant).toBe(false)
   })
 
   it('a push is compared with the commit before it', () => {
-    const docs = branch('push-docs', () => write('docs/p.md', 'p\n'))
-    const profile = branch('push-profile', () => write('profiles/x.txt', 'x\n'))
-    expect(detect({ EVENT_NAME: 'push', BEFORE_SHA: base, HEAD_SHA: docs }, repo).relevant).toBe(false)
-    expect(detect({ EVENT_NAME: 'push', BEFORE_SHA: base, HEAD_SHA: profile }, repo).relevant).toBe(true)
+    expect(push(commit(base, { 'docs/p.md': 'p\n' })).relevant).toBe(false)
+    expect(push(commit(base, { 'profiles/x.txt': 'x\n' })).relevant).toBe(true)
   })
 
   it('fails closed: a push it cannot compare runs everything', () => {
-    const head = branch('push-new', () => write('docs/n.md', 'n\n'))
-    const zero = '0'.repeat(40)
-    const missing = 'f'.repeat(40)
-    expect(detect({ EVENT_NAME: 'push', BEFORE_SHA: zero, HEAD_SHA: head }, repo).relevant).toBe(true)
-    expect(detect({ EVENT_NAME: 'push', BEFORE_SHA: missing, HEAD_SHA: head }, repo).relevant).toBe(true)
-    expect(detect({ EVENT_NAME: 'push', BEFORE_SHA: '', HEAD_SHA: head }, repo).relevant).toBe(true)
+    const head = commit(base, { 'docs/n.md': 'n\n' })
+    expect(push(head, '0'.repeat(40)).relevant).toBe(true)
+    expect(push(head, 'f'.repeat(40)).relevant).toBe(true)
+    expect(push(head, '').relevant).toBe(true)
   })
 
   it('fails closed: a manual run, or an event it does not know, runs everything', () => {
@@ -338,111 +401,137 @@ describe('detection against a real repository', () => {
     expect(() => detect({ EVENT_NAME: 'pull_request', BASE_SHA: '', HEAD_SHA: base }, repo)).toThrow(/BASE_SHA/)
     expect(() => detect({ EVENT_NAME: 'pull_request', BASE_SHA: base, HEAD_SHA: 'HEAD' }, repo)).toThrow(/HEAD_SHA/)
     // Well-formed but absent from history: git refuses, and so does detection.
-    expect(() => detect({ EVENT_NAME: 'pull_request', BASE_SHA: 'e'.repeat(40), HEAD_SHA: base }, repo)).toThrow()
+    expect(() => pr(base, 'e'.repeat(40))).toThrow()
   })
 
   /**
-   * One sample path per rule, each committed on its own branch and put through
-   * a real `git diff`, so every rule is proven to trigger the expensive jobs
-   * end to end rather than only through isRelevant().
+   * One sample path per rule, committed alone and put through a real `git
+   * diff` for both events, so every rule is proven to trigger the expensive
+   * jobs rather than only through isRelevant(). The explicit lists above are
+   * what fail when a rule is deleted; this is what fails when a rule exists
+   * and git's output does not reach it.
    */
-  it('every rule triggers Generator Integration through a real diff', () => {
-    const sampleOf = (rule: string) =>
-      rule.endsWith('/') ? `${rule}sample.txt` : rule.split('/').map((p) => (p === '*' ? 'sample-pkg' : p)).join('/')
-    const missed: string[] = []
-    for (const [i, rule] of RELEVANT_PATHS.entries()) {
-      const path = sampleOf(rule)
-      const head = branch(`rule-${i}`, () => write(path, `${rule}\n`))
-      const result = pr(head)
-      expect(result.paths, rule).toEqual([path])
-      if (!result.relevant) missed.push(rule)
-      expect(detect({ EVENT_NAME: 'push', BEFORE_SHA: base, HEAD_SHA: head }, repo).relevant, rule).toBe(true)
-    }
-    expect(missed).toEqual([])
+  it.each(RELEVANT_PATHS)('the rule %j triggers Generator Integration through a real diff', (rule) => {
+    const path = rule.endsWith('/') ? `${rule}sample.txt` : rule.split('/').map((p) => (p === '*' ? 'sample-pkg' : p)).join('/')
+    const head = commit(base, { [path]: `${rule}\n` })
+    const result = pr(head)
+    expect(result.paths).toEqual([path])
+    expect(result.relevant).toBe(true)
+    expect(push(head).relevant).toBe(true)
+  })
+
+  /**
+   * By default git C-quotes a path with a byte above 0x7F, a `"`, a `\` or a
+   * control character, and a quoted path starts with `"` and matches no rule.
+   * That was a fail-open: a change to an accented template skipped every job.
+   */
+  it.each([
+    'profiles/product/template/messages/français.json',
+    'generators/create-koras-app/src/日本.ts',
+    'profiles/with space.txt',
+    'profiles/a"quote.txt',
+    'profiles/back\\slash.txt',
+    'generators/tab\there.ts',
+    'profiles/new\nline.txt',
+  ])('a path git would quote is still read as itself: %j', (path) => {
+    const result = pr(commit(base, { [path]: 'q\n' }))
+    expect(result.paths).toEqual([path])
+    expect(result.relevant).toBe(true)
+  })
+
+  it('logs a path with a newline as one JSON string, so it cannot forge a workflow command', () => {
+    const head = commit(base, { 'docs/x\n::error::forged.md': 'x\n' })
+    writeFileSync(output, '')
+    const run = cli('detect', { EVENT_NAME: 'pull_request', BASE_SHA: base, HEAD_SHA: head })
+    expect(run.status).toBe(0)
+    expect(run.stdout.split('\n').some((line) => line.startsWith('::'))).toBe(false)
+    expect(run.stdout).toContain(JSON.stringify('docs/x\n::error::forged.md'))
   })
 
   it('a pull request of docs, root prose and other workflows safely skips the expensive jobs', () => {
-    const head = branch('docs-wide', () => {
-      write('docs/FOLLOW_UPS.md', 'f\n')
-      write('docs/adr/0099-x.md', 'x\n')
-      write('CLAUDE.md', 'c\n')
-      write('README.md', 'r\n')
-      write('.github/workflows/ci.yml', 'name: CI\n')
-      write('apps/web/src/app/page.tsx', 'export {}\n')
-    })
-    const result = pr(head)
+    const result = pr(
+      commit(base, {
+        'docs/FOLLOW_UPS.md': 'f\n',
+        'docs/adr/0099-x.md': 'x\n',
+        'CLAUDE.md': 'c\n',
+        'README.md': 'r\n',
+        '.github/workflows/ci.yml': 'name: CI\n',
+        'apps/web/src/app/page.tsx': 'export {}\n',
+      }),
+    )
     expect(result.paths).toHaveLength(6)
     expect(result.relevant).toBe(false)
   })
 
   it('the whole pipeline: detection feeds the verdict exactly as the workflow wires it', () => {
-    const docs = branch('pipe-docs', () => write('docs/pipe.md', 'p\n'))
-    const lock = branch('pipe-lock', () => write('pnpm-lock.yaml', 'lockfileVersion: 9\n'))
-    const output = join(repo, '..', `gi-gate-pipe-${Date.now()}-${Math.random()}`)
+    const docs = commit(base, { 'docs/pipe.md': 'p\n' })
+    const lock = commit(base, { 'pnpm-lock.yaml': 'lockfileVersion: 9\n' })
     const pipeline = (head: string, jobResult: (relevant: string) => string) => {
       writeFileSync(output, '')
-      const detected = spawnSync(process.execPath, [SCRIPT, 'detect'], {
-        cwd: repo,
-        env: { ...process.env, GITHUB_OUTPUT: output, EVENT_NAME: 'pull_request', BASE_SHA: base, HEAD_SHA: head },
-        encoding: 'utf8',
-      })
-      expect(detected.status).toBe(0)
+      expect(cli('detect', { EVENT_NAME: 'pull_request', BASE_SHA: base, HEAD_SHA: head }).status).toBe(0)
       const relevant = /^relevant=(true|false)$/m.exec(readFileSync(output, 'utf8'))![1]!
       const needs = { changes: changes(relevant), ...jobs(jobResult(relevant)) }
-      const judged = spawnSync(process.execPath, [SCRIPT, 'verdict'], {
-        env: { ...process.env, NEEDS: JSON.stringify(needs) },
-        encoding: 'utf8',
-      })
-      return { relevant, status: judged.status }
+      return { relevant, status: cli('verdict', { NEEDS: JSON.stringify(needs) }).status }
     }
     // The `if:` on every expensive job: run when relevant, skip otherwise.
     const asWired = (relevant: string) => (relevant === 'true' ? 'success' : 'skipped')
     expect(pipeline(docs, asWired)).toEqual({ relevant: 'false', status: 0 })
     expect(pipeline(lock, asWired)).toEqual({ relevant: 'true', status: 0 })
-    // A lockfile change whose jobs were skipped -- the defect this PR fixes,
-    // seen from the gate -- or failed or cancelled, is refused.
+    // A lockfile change whose jobs were skipped -- the defect PR #69's review
+    // fixed, seen from the gate -- or failed or cancelled, is refused.
     for (const result of ['skipped', 'failure', 'cancelled']) {
       expect(pipeline(lock, () => result), result).toEqual({ relevant: 'true', status: 1 })
     }
   })
 
   it('a detection error fails the step and writes no answer', () => {
-    const output = join(repo, '..', `gi-gate-err-${Date.now()}-${Math.random()}`)
-    writeFileSync(output, '')
-    const run = (env: Record<string, string | undefined>, cwd = repo) =>
-      spawnSync(process.execPath, [SCRIPT, 'detect'], { cwd, env: { ...process.env, GITHUB_OUTPUT: output, ...env }, encoding: 'utf8' })
-    const head = branch('err', () => write('docs/e.md', 'e\n'))
+    const head = commit(base, { 'docs/e.md': 'e\n' })
     const notARepo = mkdtempSync(join(tmpdir(), 'gi-gate-norepo-'))
+    scratch.push(notARepo)
+    writeFileSync(output, '')
     // Not a repository, as with a checkout that never happened.
-    expect(run({ EVENT_NAME: 'pull_request', BASE_SHA: base, HEAD_SHA: head }, notARepo).status).not.toBe(0)
+    expect(cli('detect', { EVENT_NAME: 'pull_request', BASE_SHA: base, HEAD_SHA: head }, { cwd: notARepo }).status).not.toBe(0)
     // A malformed SHA, an absent one, and a missing one.
-    expect(run({ EVENT_NAME: 'pull_request', BASE_SHA: base, HEAD_SHA: 'main' }).status).not.toBe(0)
-    expect(run({ EVENT_NAME: 'pull_request', BASE_SHA: base, HEAD_SHA: 'a'.repeat(40) }).status).not.toBe(0)
-    expect(run({ EVENT_NAME: 'pull_request', BASE_SHA: undefined, HEAD_SHA: head }).status).not.toBe(0)
+    expect(cli('detect', { EVENT_NAME: 'pull_request', BASE_SHA: base, HEAD_SHA: 'main' }).status).not.toBe(0)
+    expect(cli('detect', { EVENT_NAME: 'pull_request', BASE_SHA: base, HEAD_SHA: 'a'.repeat(40) }).status).not.toBe(0)
+    expect(cli('detect', { EVENT_NAME: 'pull_request', BASE_SHA: undefined, HEAD_SHA: head }).status).not.toBe(0)
     expect(readFileSync(output, 'utf8')).toBe('')
     // Nowhere to write the answer: the job fails rather than leaving the output empty.
-    const noOutput = spawnSync(process.execPath, [SCRIPT, 'detect'], {
-      cwd: repo,
-      env: { ...process.env, GITHUB_OUTPUT: '', EVENT_NAME: 'pull_request', BASE_SHA: base, HEAD_SHA: head },
-      encoding: 'utf8',
-    })
-    expect(noOutput.status).not.toBe(0)
+    expect(cli('detect', { GITHUB_OUTPUT: '', EVENT_NAME: 'pull_request', BASE_SHA: base, HEAD_SHA: head }).status).not.toBe(0)
   })
 
   it('writes its answer for the workflow, and exits non-zero when it cannot', () => {
-    const head = branch('cli', () => write('docs/c.md', 'c\n'))
-    const output = join(repo, '..', `gi-gate-output-${Date.now()}`)
+    const docs = commit(base, { 'docs/c.md': 'c\n' })
+    const profile = commit(base, { 'profiles/c.md': 'c\n' })
     writeFileSync(output, '')
-    const run = (env: Record<string, string>) =>
-      spawnSync(process.execPath, [SCRIPT, 'detect'], {
-        cwd: repo,
-        env: { ...process.env, GITHUB_OUTPUT: output, ...env },
-        encoding: 'utf8',
-      })
-    expect(run({ EVENT_NAME: 'pull_request', BASE_SHA: base, HEAD_SHA: head }).status).toBe(0)
+    expect(cli('detect', { EVENT_NAME: 'pull_request', BASE_SHA: base, HEAD_SHA: docs }).status).toBe(0)
     expect(readFileSync(output, 'utf8')).toBe('relevant=false\n')
-    expect(run({ EVENT_NAME: 'pull_request', BASE_SHA: 'e'.repeat(40), HEAD_SHA: head }).status).not.toBe(0)
+    expect(cli('detect', { EVENT_NAME: 'pull_request', BASE_SHA: 'e'.repeat(40), HEAD_SHA: docs }).status).not.toBe(0)
     expect(readFileSync(output, 'utf8')).toBe('relevant=false\n')
+    writeFileSync(output, '')
+    expect(cli('detect', { EVENT_NAME: 'pull_request', BASE_SHA: base, HEAD_SHA: profile }).status).toBe(0)
+    expect(readFileSync(output, 'utf8')).toBe('relevant=true\n')
+  })
+
+  /**
+   * Node resolves a module's own URL to its real path and leaves argv[1] as
+   * typed, so an entry guard comparing the two never ran main() when the
+   * script was reached through a link -- and the verdict exited 0 having
+   * judged nothing. A junction needs no privilege on Windows; elsewhere it is
+   * an ordinary directory symlink.
+   */
+  it('runs, and refuses, when started through a link to its directory', () => {
+    const linkParent = mkdtempSync(join(tmpdir(), 'gi-gate-link-'))
+    scratch.push(linkParent)
+    const link = join(linkParent, 'gate')
+    symlinkSync(dirname(SCRIPT), link, 'junction')
+    const linked = join(link, 'gate.mjs')
+    const refused = cli('verdict', { NEEDS: JSON.stringify({ changes: changes('true'), ...jobs('failure') }) }, { script: linked })
+    expect(refused.stdout).toContain('Generator Integration: refused')
+    expect(refused.status).toBe(1)
+    const passed = cli('verdict', { NEEDS: JSON.stringify({ changes: changes('false'), ...jobs('skipped') }) }, { script: linked })
+    expect(passed.stdout).toContain('Generator Integration: pass')
+    expect(passed.status).toBe(0)
   })
 })
 
@@ -464,6 +553,20 @@ describe('the workflow is wired to the gate', () => {
     expect(doc.on.pull_request ?? {}).not.toHaveProperty('branches')
   })
 
+  it('reruns when a pull request is retargeted, as well as on every push to it', () => {
+    // A base change fires only `edited`. Without it the check computed
+    // against the old base stays green on the head.
+    const types = (doc.on.pull_request as { types?: string[] } | null)?.types
+    expect([...(types ?? [])].sort()).toEqual(['edited', 'opened', 'reopened', 'synchronize'])
+  })
+
+  it('no job the gate judges can turn its own failure into a success', () => {
+    // `continue-on-error` on a job reports `success` in `needs` when it fails.
+    for (const [id, job] of Object.entries(doc.jobs)) {
+      expect(job, id).not.toHaveProperty('continue-on-error')
+    }
+  })
+
   it('the gate is named for the ruleset, always runs, and judges every other job', () => {
     const gate = doc.jobs['generator-integration']
     expect(gate?.name).toBe('Generator Integration')
@@ -479,6 +582,20 @@ describe('the workflow is wired to the gate', () => {
     // either one satisfy the requirement.
     const named = Object.entries(doc.jobs).filter(([, job]) => job.name === 'Generator Integration')
     expect(named.map(([id]) => id)).toEqual(['generator-integration'])
+  })
+
+  it('no job in any other workflow is named Generator Integration either', () => {
+    // A required check matches by name, so a job of that name anywhere would
+    // satisfy it.
+    const dir = join(REPO, '.github', 'workflows')
+    const others = readdirSync(dir).filter((f) => /\.ya?ml$/.test(f) && f !== 'generator-integration.yml')
+    expect(others.length).toBeGreaterThan(0)
+    for (const file of others) {
+      const other = yaml.load(readFileSync(join(dir, file), 'utf8')) as { jobs?: Record<string, Job> }
+      for (const [id, job] of Object.entries(other.jobs ?? {})) {
+        expect(job.name ?? id, `${file}:${id}`).not.toBe('Generator Integration')
+      }
+    }
   })
 
   it('every expensive job waits for detection and runs only on a relevant change', () => {

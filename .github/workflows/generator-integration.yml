@@ -34,7 +34,15 @@ name: Generator Integration
 on:
   push:
     branches: [develop, test, staging, main]
+  # `edited` because retargeting a pull request fires only that: without it, a
+  # stacked PR whose diff against a feature branch was irrelevant keeps its
+  # green check after moving to `develop`, where the diff may not be. It is
+  # not skipped for a title edit, deliberately -- a newer skipped or
+  # irrelevant run would replace an earlier failure as the check's result.
+  # Detection depends only on base and head, so an edit runs what the last
+  # push ran.
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   workflow_dispatch:
 
 # Read-only by default. No job here writes to the repository, a package registry or a check;

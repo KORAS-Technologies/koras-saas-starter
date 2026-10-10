@@ -18,8 +18,8 @@
 //   node gate.mjs verdict   reads NEEDS (`toJSON(needs)`), exits 1 on refusal
 
 import { execFileSync } from 'node:child_process'
-import { appendFileSync } from 'node:fs'
-import { pathToFileURL } from 'node:url'
+import { appendFileSync, realpathSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 /**
  * What Generator Integration reads. A directory ends in `/` and matches
@@ -58,6 +58,10 @@ export const RELEVANT_PATHS = [
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
   'turbo.json',
+  // pnpm config the lockfile does not record (linker, hoisting, registry,
+  // scripts), and the install hook. Neither exists today.
+  '.npmrc',
+  '.pnpmfile.cjs',
   // The generator's tsconfig.json extends it, so `turbo run build` reads it.
   'tsconfig.base.json',
   // Every workspace package's manifest is resolved by the install, and its
@@ -107,9 +111,14 @@ function git(cwd, ...args) {
 function changedPaths(cwd, ...range) {
   // --no-renames lists a move as a deletion and an addition, so moving a file
   // out of profiles/ still counts as touching profiles/.
-  return git(cwd, 'diff', '--name-only', '--no-renames', ...range)
-    .split('\n')
-    .map((line) => line.trim())
+  //
+  // -z and quotePath=false, because by default git C-quotes any path with a
+  // byte above 0x7F, a `"`, a `\` or a control character: `profiles/café.md`
+  // arrives as `"profiles/caf\303\251.md"`, which starts with `"` and matches
+  // no rule -- so a change to an accented template skipped every job and the
+  // gate passed. NUL-separated output is the one form git never quotes.
+  return git(cwd, '-c', 'core.quotePath=false', 'diff', '--name-only', '-z', '--no-renames', ...range)
+    .split('\0')
     .filter(Boolean)
 }
 
@@ -175,7 +184,9 @@ function main(argv, env) {
   if (mode === 'detect') {
     const result = detect(env)
     console.log(`relevant=${result.relevant} (${result.reason})`)
-    for (const path of result.paths) console.log(`  ${isRelevant([path]) ? '*' : ' '} ${path}`)
+    // JSON, because a path is now raw: one containing a newline could
+    // otherwise start a line with `::` and be read as a workflow command.
+    for (const path of result.paths) console.log(`  ${isRelevant([path]) ? '*' : ' '} ${JSON.stringify(path)}`)
     if (!env.GITHUB_OUTPUT) throw new Error('GITHUB_OUTPUT is not set')
     appendFileSync(env.GITHUB_OUTPUT, `relevant=${result.relevant}\n`)
     return 0
@@ -197,6 +208,23 @@ function main(argv, env) {
   return 2
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+/**
+ * Whether this file is the program rather than an import. Compared after
+ * resolving links on both sides: Node resolves the module's own URL to the
+ * real path and leaves argv[1] as typed, so a run through a symlink or a
+ * junction compared unequal, main() never ran, and the verdict exited 0 having
+ * judged nothing -- the one way this gate could pass by default.
+ */
+function invokedDirectly() {
+  const entry = process.argv[1]
+  if (!entry) return false
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(entry)
+  } catch {
+    return false
+  }
+}
+
+if (invokedDirectly()) {
   process.exitCode = main(process.argv, process.env)
 }
