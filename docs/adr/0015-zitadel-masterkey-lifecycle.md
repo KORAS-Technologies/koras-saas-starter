@@ -94,7 +94,8 @@ instance on the same machine collides with leg 1's write-once rule, because
 the Doppler secret name is fixed. Recorded on 2026-10-09 as open: the
 specification defines no retirement procedure for an escrowed key, and
 choosing one -- per-instance secret names, or archiving the old record -- is
-the owner's decision, not this stage's.
+the owner's decision, not this stage's. ADR 0018 proposes a retirement and
+replacement workflow (2026-10-10, design only, awaiting approval).
 
 **Consequences.** A new product's local identity provider is no longer
 readable by whoever holds its database, cannot be re-initialised by accident,

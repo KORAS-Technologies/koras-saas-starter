@@ -81,6 +81,7 @@ All planning and reference documents live in `docs/`, matching
 | `docs/adr/0015-zitadel-masterkey-lifecycle.md` | The local ZITADEL masterkey: generated per machine, escrowed to Doppler and an encrypted backup, never rotated; legacy recovery |
 | `docs/adr/0016-local-login-v2.md` | Local sign-in through ZITADEL's login v2 on its own port, new instances only |
 | `docs/adr/0017-local-zitadel-credentials.md` | A generated admin password per instance, and access tokens that expire and rotate |
+| `docs/adr/0018-local-zitadel-instance-retirement.md` | Proposed, design only: retiring and replacing a local instance with versioned escrow, a restore rehearsal and human authorization |
 
 ## Repository layout (target state)
 
