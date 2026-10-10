@@ -1057,13 +1057,19 @@ jobs:
       # product template's storage service is `minio/minio:latest` -- which
       # MinIO no longer publishes (see .github/actions/start-minio), so the
       # pull is denied and compose starts nothing. Storage is not under test
-      # here, so a local image under that tag lets the stack start; its
-      # container exits at once and nothing in this job reads it. The
-      # template's unpullable image is a separate, pre-existing defect.
+      # here, so a local image under that tag lets the stack start: it ignores
+      # the `server ...` arguments compose passes and sleeps, and nothing in
+      # this job reads it. The template's unpullable image is a separate,
+      # pre-existing defect.
       - name: Stand in for the unpublished MinIO image
         run: |
-          docker pull -q alpine:3.20
-          docker tag alpine:3.20 minio/minio:latest
+          mkdir -p "$RUNNER_TEMP/minio-stand-in"
+          cat > "$RUNNER_TEMP/minio-stand-in/Dockerfile" <<'DOCKERFILE'
+          FROM alpine:3.20
+          ENTRYPOINT ["/bin/sh", "-c", "exec sleep infinity", "--"]
+          DOCKERFILE
+          sed -i 's/^ *//' "$RUNNER_TEMP/minio-stand-in/Dockerfile"
+          docker build -q -t minio/minio:latest "$RUNNER_TEMP/minio-stand-in"
 
       - name: Integration cases (T-I1 to T-I14, leg-2 recovery)
         run: bash .github/scripts/local-zitadel-secure/run.sh "$RUNNER_TEMP/generated" "$RUNNER_TEMP/pw"
