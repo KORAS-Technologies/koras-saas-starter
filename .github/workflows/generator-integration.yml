@@ -20,23 +20,20 @@ name: Generator Integration
 #
 # It is slow — install and build for two projects — which is why it runs on
 # changes to the generator or the profiles rather than on every commit.
+#
+# It always starts, and the expensive jobs decide whether to run. Until
+# 2026-10-10 the path filter sat on the trigger, so a pull request touching none
+# of these paths produced no run and no check -- and a required check that never
+# reports blocks a pull request for good, which is why this could not be
+# required on `develop` (F32). The paths now live in
+# `.github/scripts/generator-integration-gate/gate.mjs`; the `changes` job reads
+# them, and the `generator-integration` job at the end is the one check a
+# ruleset should require.
 
 on:
   push:
     branches: [develop, test, staging, main]
-    paths:
-      - "generators/**"
-      - "profiles/**"
-      - "infrastructure/terraform/modules/**"
-      - ".github/workflows/generator-integration.yml"
-      - ".github/scripts/local-zitadel-secure/**"
   pull_request:
-    paths:
-      - "generators/**"
-      - "profiles/**"
-      - "infrastructure/terraform/modules/**"
-      - ".github/workflows/generator-integration.yml"
-      - ".github/scripts/local-zitadel-secure/**"
   workflow_dispatch:
 
 # Read-only by default. No job here writes to the repository, a package registry or a check;
@@ -49,8 +46,35 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Which paths this change touches. Cheap, and it fails closed: an event it
+  # does not know, or a push it cannot compare, answers "relevant" so that
+  # everything runs, and an error reading the diff fails this job -- which the
+  # gate refuses.
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      relevant: ${{ steps.detect.outputs.relevant }}
+    steps:
+      # Full history so a pull request can be compared from its merge base;
+      # no blobs, because a list of names needs trees only.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: node .github/scripts/generator-integration-gate/gate.mjs detect
+
   generate-and-build:
     name: ${{ matrix.slug }}
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -1018,6 +1042,8 @@ jobs:
   # machine) are manual by design and not here.
   local-zitadel-secure:
     name: local-zitadel-secure
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -1097,6 +1123,8 @@ jobs:
   # cannot stand in for.
   local-zitadel-secure-windows:
     name: local-zitadel-secure (Windows ACL)
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -1111,3 +1139,27 @@ jobs:
       - name: Key cache ACL (T-U9, T-U10)
         working-directory: generators/create-koras-app
         run: pnpm exec vitest run tests/local-zitadel-secure.test.ts -t "masterkey.mjs"
+
+  # The one check to require. It always runs, including after a cancellation,
+  # and passes only when detection succeeded and -- for a relevant change --
+  # every job above succeeded. `failure`, `cancelled` and `skipped` are all
+  # refusals, so a relevant change cannot pass by not being checked. For an
+  # irrelevant change it passes with the jobs above skipped.
+  #
+  # `needs` must name every other job in this file; the generator test
+  # `generator-integration-gate.test.ts` holds that, so a job added later is
+  # judged here or the suite goes red.
+  generator-integration:
+    name: Generator Integration
+    if: always()
+    needs: [changes, generate-and-build, local-zitadel-secure, local-zitadel-secure-windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/scripts/generator-integration-gate
+          sparse-checkout-cone-mode: false
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: node .github/scripts/generator-integration-gate/gate.mjs verdict
