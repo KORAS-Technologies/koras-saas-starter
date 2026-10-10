@@ -919,6 +919,20 @@ Integration, for the path-filter reason above, or a review. Check the ruleset
 itself (`gh api repos/KORAS-Technologies/koras-saas-starter/rules/branches/develop`)
 rather than this paragraph.
 
+**Generator Integration became the eighth required check on 2026-10-10**, at
+17:29 UTC, on the owner's approval. PR #69 removed the path filter first: the
+workflow always starts, a `detect changes` job decides whether the expensive
+jobs have anything to check, and one job named `Generator Integration` judges
+them and fails closed -- for a relevant change, a job that failed, was
+cancelled or was skipped is a refusal, and so is a detection that did not
+succeed. The ruleset entry is pinned to GitHub Actions, integration 15368, as
+the seven before it are. The paths that count as relevant are in
+`.github/scripts/generator-integration-gate/gate.mjs`, and a missing one fails
+open, which is why its tests derive them from the workflow, the manifests and
+the workspace rather than from that list. What the ruleset still does not
+require is a review, so nothing but the instruction to wait enforces the
+owner's authorisation: F32 has the options.
+
 **Generating that product found IMPORT-DEF-010**: SQLAlchemy 2.1 resolved and
 no longer installs `greenlet`, so a fresh product's unit suite could not be
 collected. Six declarations read `sqlalchemy[asyncio]` now. R-044's class,
@@ -1431,17 +1445,23 @@ decays the moment it is written. That is R-042 on the file every session reads
 first.
 
 **Last validated baseline: 2026-10-10, commit
-`ef9dcc1624ee9ebdd4d2eb97beaa35daa7b78080`**, the merge of PR #66 (Phase
-4.3A, secure local ZITADEL). CI, Security and Generator Integration were all
-green on the pushed commit itself (runs 38048836816, 38048836811 and
-38048836800), and all seven Generator Integration jobs ran, including
-`local-zitadel-secure`. That is a status, not a capability: check the branch
-you are on rather than inheriting this line, for the reason the paragraph
-above gives twice.
+`8de610c03f3e7c5cc27933d8345b462d5ad08d9f`**, the merge of PR #69 (F32, the
+always-running Generator Integration gate). CI, Security and Generator
+Integration were all green on the pushed commit itself (runs 38070362987,
+38070362960 and 38070362972), and all nine Generator Integration jobs ran,
+including both `local-zitadel-secure` jobs and the aggregate `Generator
+Integration` check. That is a status, not a capability: check the branch you
+are on rather than inheriting this line, for the reason the paragraph above
+gives twice.
 
-`63a6b6c5`, the merge of PR #67 on the same day, changed documentation only.
-Generator Integration is path-filtered and has nothing to run on it, so it is
-not a baseline of all three. The previous baselines were 2026-10-02, commit
+Earlier the same day the baseline was commit `ef9dcc1`, the merge of PR #66
+(Phase 4.3A, secure local ZITADEL; runs 38048836816, 38048836811 and
+38048836800). `63a6b6c5`, the merge of PR #67, changed documentation only.
+Generator Integration was path-filtered then and had nothing to run on it, so
+it was not a baseline of all three. Since PR #69 the workflow runs on every
+pull request and push, and a change that touches none of its inputs reports a
+passing gate over skipped jobs, so a documentation-only merge has all three
+green as well. The previous baselines were 2026-10-02, commit
 `eba279c`, the IMPORT-DEF-014 merge (runs 37075313266, 37075313325 and
 37075313282); earlier on 2026-10-02, commit `3e73190` (runs 37044176366,
 37044176279 and 37044176367), 2026-09-29, commit `090dfa9` (runs
