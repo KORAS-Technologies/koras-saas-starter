@@ -4,6 +4,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# Compose needs stack.mjs's values even to exec or stop; none is a secret.
+[ -f "$ROOT/local/scripts/compose-env.sh" ] && . "$ROOT/local/scripts/compose-env.sh"
 
 # Host ports are resolved per machine by local/scripts/ports.sh.
 set -a
@@ -38,6 +40,7 @@ wait_for() {
 wait_for "Supabase DB" "${COMPOSE} exec -T supabase-db pg_isready -U postgres"
 wait_for "Redis"       "${COMPOSE} exec -T redis redis-cli ping | grep -q PONG"
 wait_for "ZITADEL"     "curl -sf --max-time 2 http://localhost:${KORAS_PORT_ZITADEL}/debug/ready"
+wait_for "ZITADEL login" "curl -sf --max-time 2 http://localhost:${KORAS_PORT_ZITADEL_LOGIN}/ui/v2/login/healthy"
 wait_for "Mailpit"     "curl -sf --max-time 2 http://localhost:${KORAS_PORT_MAIL_UI}/"
 wait_for "Proxy"       "${COMPOSE} ps --status running --services | grep -q '^proxy$'"
 
@@ -75,4 +78,5 @@ echo ""
 {{/if}}{{#if apps.portal}}echo "  Portal:     https://portal.localhost:${KORAS_PORT_PROXY_HTTPS}"
 {{/if}}{{#if service.api}}echo "  API:        https://api.localhost:${KORAS_PORT_PROXY_HTTPS}"
 {{/if}}echo "  ZITADEL:    http://localhost:${KORAS_PORT_ZITADEL}/ui/console"
+echo "  Sign-in:    http://localhost:${KORAS_PORT_ZITADEL_LOGIN}/ui/v2/login/   (admin: node local/scripts/stack.mjs status --show-admin)"
 echo "  Mailpit:    http://localhost:${KORAS_PORT_MAIL_UI}"

@@ -1,0 +1,5 @@
+# The login client's personal access token (IAM_LOGIN_CLIENT), written by
+# ZITADEL at first start and read by the zitadel-login container. A real
+# credential for the local instance. Never committed.
+*
+!.gitignore

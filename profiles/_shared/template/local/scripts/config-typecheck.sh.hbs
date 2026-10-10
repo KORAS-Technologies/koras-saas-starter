@@ -111,7 +111,8 @@ for environment in "${ENVIRONMENTS[@]}"; do
   problems=0
 
   while read -r name class source type; do
-    case "$class" in local|"") continue ;; esac
+    # `escrow` is written by stack.mjs to a per-machine config, never here.
+    case "$class" in local|escrow|"") continue ;; esac
     [ -n "${type:-}" ] || continue
 
     if looks_like_a_credential "$name"; then

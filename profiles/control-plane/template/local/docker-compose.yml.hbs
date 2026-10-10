@@ -23,13 +23,26 @@ services:
       timeout: 5s
       retries: 10
 
-  # ── ZITADEL ─────────────────────────────────────────────────────────────────
+  # ── ZITADEL (identity provider) ────────────────────────────────────────────
+  # Started by local/scripts/stack.mjs (`make dev`, `pnpm stack:up`), never by a
+  # bare `docker compose up`: the masterkey is a file stack.mjs names after
+  # verifying it, and the guards below fail closed without it. ADR 0015.
+  #
+  # `start`, never `start-from-init`: this file can start an instance and can
+  # never create one. Creating one is `stack.mjs provision --fresh`, through
+  # local/docker-compose.init.yml. Every ZITADEL_FIRSTINSTANCE_* setting lives
+  # there, because it applies only when an instance is created.
   zitadel:
     image: ghcr.io/zitadel/zitadel:v4.17.1
     restart: unless-stopped
-    command: start-from-init --masterkeyFromEnv --tlsMode disabled
+    # Never root. On Linux stack.mjs supplies the host user, so the owner-only
+    # key file and the token directories are readable and writable without
+    # widening either; elsewhere the image's own non-root user. ADR 0015.
+    user: "${KORAS_ZITADEL_USER:?start the stack through local/scripts/stack.mjs}"
+    command: start --masterkeyFile /run/secrets/zitadel_masterkey --tlsMode disabled
+    secrets:
+      - zitadel_masterkey
     environment:
-      ZITADEL_MASTERKEY: MasterkeyNeedsToHave32Characters
       ZITADEL_DATABASE_POSTGRES_HOST: supabase-db
       ZITADEL_DATABASE_POSTGRES_PORT: 5432
       ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
@@ -42,33 +55,63 @@ services:
       ZITADEL_EXTERNALSECURE: "false"
       ZITADEL_EXTERNALPORT: ${KORAS_PORT_ZITADEL:-{{ports.zitadel}}{{!}}}
       ZITADEL_EXTERNALDOMAIN: localhost
-      # First-instance bootstrap, applied only when the instance is created.
-      # Changing any of it requires dropping the zitadel database; see
-      # local/zitadel/init.sh.
-      #
-      # The machine user is how the application talks to ZITADEL. Its personal
-      # access token is written where the host can read it, which is the only
-      # way to get a usable credential without clicking through the console.
-      ZITADEL_FIRSTINSTANCE_ORG_NAME: koras
-      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: admin
-      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: Password1!
-      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
-      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: {{projectSlug}}
-      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: {{projectName}}
-      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2100-01-01T00:00:00Z"
-      ZITADEL_FIRSTINSTANCE_PATPATH: /machinekey/pat
+      ZITADEL_TLS_ENABLED: "false"
+      # Login v2 (ADR 0016), verified against v4.17.1's defaults.yaml. The
+      # login runs on its own port, so every login URL is absolute: the
+      # defaults are relative and work only when both share one origin.
+      # LOGINV2_* applies to instances created from now on; an existing
+      # instance's feature flags are never written.
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: "true"
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI: http://localhost:${KORAS_PORT_ZITADEL_LOGIN:-{{ports.zitadelLogin}}{{!}}}/ui/v2/login/
+      ZITADEL_OIDC_DEFAULTLOGINURLV2: http://localhost:${KORAS_PORT_ZITADEL_LOGIN:-{{ports.zitadelLogin}}{{!}}}/ui/v2/login/login?authRequest=
+      ZITADEL_OIDC_DEFAULTLOGOUTURLV2: http://localhost:${KORAS_PORT_ZITADEL_LOGIN:-{{ports.zitadelLogin}}{{!}}}/ui/v2/login/logout?post_logout_redirect=
+      ZITADEL_SAML_DEFAULTLOGINURLV2: http://localhost:${KORAS_PORT_ZITADEL_LOGIN:-{{ports.zitadelLogin}}{{!}}}/ui/v2/login/login?samlRequest=
     ports:
-      - "${KORAS_PORT_ZITADEL:-{{ports.zitadel}}{{!}}}:8080"
+      # Loopback only: an identity provider for one developer's machine.
+      - "127.0.0.1:${KORAS_PORT_ZITADEL:-{{ports.zitadel}}{{!}}}:8080"
     volumes:
-      # The PAT lands here so the host can read it. Local development only, and
-      # gitignored: it is a real credential for the local instance.
+      # Where ZITADEL writes the machine user's and the login client's access
+      # tokens at first start. Gitignored; real credentials for this instance.
+      # stack.mjs creates both directories first, so they belong to the host
+      # user rather than to whichever user Docker would create them as.
       - ./zitadel/machinekey:/machinekey
+      - ./zitadel/bootstrap:/zitadel/bootstrap
+    healthcheck:
+      test: ["CMD", "/app/zitadel", "ready"]
+      interval: 10s
+      timeout: 30s
+      retries: 12
+      start_period: 20s
     depends_on:
       supabase-db:
         condition: service_healthy
-    # No container healthcheck: the image is distroless (no curl/wget) and
-    # `zitadel ready` reports not-ready against a server that is serving
-    # traffic. `make health` probes http://localhost:8080/debug/ready instead.
+
+  # The hosted login (v2). ZITADEL resolves an instance from the Host header,
+  # and this container reaches the API as http://zitadel:8080 -- a host that
+  # matches no instance -- so CUSTOM_REQUEST_HEADERS restores the public one.
+  # Without it /healthy still answers while every sign-in page fails.
+  zitadel-login:
+    image: ghcr.io/zitadel/zitadel-login:v4.17.1
+    restart: unless-stopped
+    user: "${KORAS_ZITADEL_LOGIN_USER:?start the stack through local/scripts/stack.mjs}"
+    environment:
+      ZITADEL_API_URL: http://zitadel:8080
+      NEXT_PUBLIC_BASE_PATH: /ui/v2/login
+      ZITADEL_SERVICE_USER_TOKEN_FILE: /zitadel/bootstrap/login-client.pat
+      CUSTOM_REQUEST_HEADERS: Host:localhost,X-Forwarded-Proto:http
+    ports:
+      - "127.0.0.1:${KORAS_PORT_ZITADEL_LOGIN:-{{ports.zitadelLogin}}{{!}}}:3000"
+    volumes:
+      - ./zitadel/bootstrap:/zitadel/bootstrap:ro
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "node /app/healthcheck.mjs http://localhost:3000/ui/v2/login/healthy"]
+      interval: 10s
+      timeout: 30s
+      retries: 12
+      start_period: 20s
+    depends_on:
+      zitadel:
+        condition: service_healthy
 
   # ── Redis ────────────────────────────────────────────────────────────────────
   redis:
@@ -155,3 +198,10 @@ volumes:
   caddy-data:
   loki-data:
   tempo-data:
+
+# The masterkey reaches ZITADEL as a file, so it is never in the container's
+# environment and `docker inspect` cannot show it. stack.mjs names the file
+# after verifying it; without stack.mjs this fails before anything starts.
+secrets:
+  zitadel_masterkey:
+    file: ${KORAS_ZITADEL_MASTERKEY_FILE:?start the stack through local/scripts/stack.mjs, not docker compose directly}

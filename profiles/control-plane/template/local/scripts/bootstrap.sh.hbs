@@ -35,34 +35,25 @@ set +a
 # 4. Pull Docker images
 echo "--> Pulling Docker images..."
 # One rendered compose file per project — the profile decided what went into it
-# at generation time, so there is nothing to layer here.
-COMPOSE_FILES="-f $ROOT/local/docker-compose.yml"
-docker compose $COMPOSE_FILES pull --quiet
+# at generation time. The ZITADEL overrides beside it are applied by stack.mjs
+# alone. compose-env.sh carries the values compose needs to read the file at
+# all, and no key.
+. "$ROOT/local/scripts/compose-env.sh"
+docker compose -f "$ROOT/local/docker-compose.yml" pull --quiet
 
-# 5. Start every container in the stack. All of them are infrastructure: the
-# applications and services run on the host under `make dev`, not in Compose.
-# Naming a subset here left the proxy and the observability pipeline down after
-# `make reset`, which `make health` then correctly reported as a failure.
-echo "--> Starting infrastructure services..."
-docker compose $COMPOSE_FILES up -d
-
-# 6. Wait for Supabase DB
-echo "--> Waiting for Supabase DB..."
-until docker compose $COMPOSE_FILES exec -T supabase-db pg_isready -U postgres >/dev/null 2>&1; do
-  sleep 2
-done
-echo "    Supabase DB ready."
-
-# 7. Wait for ZITADEL
-echo "--> Waiting for ZITADEL..."
-until curl -sf "http://localhost:${KORAS_PORT_ZITADEL}/debug/ready" >/dev/null 2>&1; do
-  sleep 3
-done
-echo "    ZITADEL ready."
-
-# 8. Initialize ZITADEL
-echo "--> Initializing ZITADEL..."
-ZITADEL_URL=http://localhost:${KORAS_PORT_ZITADEL} bash "$ROOT/local/zitadel/init.sh"
+# 5-8. ZITADEL, then every other container. stack.mjs decides: no instance
+# recorded means a new secure one (provision --fresh: a generated masterkey,
+# escrowed to Doppler and to the encrypted backup *before* the instance
+# exists, and a generated admin password); one left half-provisioned is
+# finished; a ready one is started through the same checks as `make dev`.
+# It refuses rather than guesses -- an unrecorded database, a moved port, a
+# key whose fingerprint differs -- and bootstrap stops with it.
+#
+# KORAS_ZITADEL_OFFLINE=1 creates an unescrowed instance when Doppler is out of
+# reach; bootstrap then stops until `node local/scripts/stack.mjs escrow`
+# completes both legs (A3). ADRs 0015-0017.
+echo "--> Starting the stack through local/scripts/stack.mjs..."
+node "$ROOT/local/scripts/stack.mjs" bootstrap
 
 # 9. Create .env.local from the template if it is missing.
 if [ ! -f "$ROOT/.env.local" ]; then

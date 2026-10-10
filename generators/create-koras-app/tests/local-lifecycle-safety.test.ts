@@ -160,11 +160,14 @@ describe.each(['product', 'control-plane'] as const)('%s: destructive entry poin
   })
 
   it('offers stop and down, both of which keep volumes', () => {
+    // Through stack.mjs since Phase 4.3: compose cannot load the file without
+    // its values, and its passthrough refuses `down -v` (asserted in
+    // local-zitadel-secure.test.ts).
     const makefile = gen.read('Makefile')
-    expect(makefile).toMatch(/^stop:.*\n\tdocker compose -f local\/docker-compose\.yml stop$/m)
-    expect(makefile).toMatch(/^down:.*\n\tdocker compose -f local\/docker-compose\.yml down$/m)
+    expect(makefile).toMatch(/^stop:.*\n\tnode \.\/local\/scripts\/stack\.mjs compose stop$/m)
+    expect(makefile).toMatch(/^down:.*\n\tnode \.\/local\/scripts\/stack\.mjs compose down$/m)
     const scripts = JSON.parse(gen.read('package.json')).scripts as Record<string, string>
-    expect(scripts['stack:stop']).toBe('docker compose -f local/docker-compose.yml stop')
+    expect(scripts['stack:stop']).toBe('node local/scripts/stack.mjs compose stop')
   })
 
   it('runs the read-only preflight before make dev', () => {
@@ -382,16 +385,20 @@ describe.skipIf(!bash)('preflight.sh warns and changes nothing', () => {
     return out.sort()
   }
 
-  it('reports missing configuration and the placeholder masterkey, exits 0, writes nothing', () => {
+  it('reports missing configuration and an unrecorded instance, exits 0, writes nothing', () => {
     const { bin, calls } = stubBin(gen.root)
     const before = snapshot(gen.root)
-    const r = run(join(gen.root, 'local/scripts/preflight.sh'), [], gen.root, bin)
+    const home = join(OUT, 'preflight-koras-home')
+    const r = run(join(gen.root, 'local/scripts/preflight.sh'), [], gen.root, bin, {
+      KORAS_HOME: home,
+    })
     expect(r.status, r.stderr).toBe(0)
     expect(r.stdout).toMatch(/WARN\s+local\/\.env is missing/)
     expect(r.stdout).toMatch(/WARN\s+\.env\.local is missing/)
-    expect(r.stdout).toMatch(
-      /WARN\s+local\/docker-compose\.yml starts ZITADEL with the public placeholder masterkey/,
-    )
+    expect(r.stdout).toMatch(/WARN\s+no local ZITADEL instance is recorded/)
+    // The generated base file is clean, so nothing here is an error.
+    expect(r.stdout).not.toMatch(/ERROR/)
+    expect(existsSync(home)).toBe(false)
     expect(snapshot(gen.root)).toEqual(before)
     // Read-only against docker too: at most `docker ps`.
     expect(callsOf(calls)).not.toMatch(/docker (?:compose|volume|rm|stop|start|run)/)
@@ -487,9 +494,15 @@ describe.each(['product', 'control-plane'] as const)('%s: ZITADEL URL is explici
     rmSync(join(gen.root, 'local', '.env'))
   })
 
-  it('bootstrap still passes the resolved port', () => {
-    expect(gen.read('local/scripts/bootstrap.sh')).toMatch(
-      /ZITADEL_URL=http:\/\/localhost:\$\{KORAS_PORT_ZITADEL\} bash "\$ROOT\/local\/zitadel\/init\.sh"/,
-    )
+  it('bootstrap resolves ports first, and stack.mjs passes the recorded issuer', () => {
+    // Since Phase 4.3 bootstrap hands ZITADEL to stack.mjs, which runs
+    // provision.py with the issuer the instance was created on -- read from
+    // its state, never from a default.
+    const bootstrap = gen.read('local/scripts/bootstrap.sh')
+    const ports = bootstrap.indexOf('bash "$ROOT/local/scripts/ports.sh"')
+    const stack = bootstrap.indexOf('node "$ROOT/local/scripts/stack.mjs" bootstrap')
+    expect(ports).toBeGreaterThan(-1)
+    expect(stack).toBeGreaterThan(ports)
+    expect(gen.read('local/scripts/stack.mjs')).toMatch(/ZITADEL_URL: state\.issuer/)
   })
 })

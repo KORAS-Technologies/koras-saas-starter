@@ -78,6 +78,9 @@ All planning and reference documents live in `docs/`, matching
 | `docs/adr/0008-koras-platform-job-and-notification-contracts.md` | Why the job contract is built first, and why notification gets a dispatch point rather than a bus |
 | `docs/SERVICE_DESCRIPTORS.md` | `services/<service>/service.yaml`: environments, secret policy and network, read by the deploy workflow and by Terraform from one file |
 | `docs/CLAMD_SERVICE.md` | The optional private ClamAV scanner: pinned image, limits derived from a 100 MiB ceiling, what was measured, and the gap no configuration closes |
+| `docs/adr/0015-zitadel-masterkey-lifecycle.md` | The local ZITADEL masterkey: generated per machine, escrowed to Doppler and an encrypted backup, never rotated; legacy recovery |
+| `docs/adr/0016-local-login-v2.md` | Local sign-in through ZITADEL's login v2 on its own port, new instances only |
+| `docs/adr/0017-local-zitadel-credentials.md` | A generated admin password per instance, and access tokens that expire and rotate |
 
 ## Repository layout (target state)
 

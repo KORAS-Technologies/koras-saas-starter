@@ -110,6 +110,14 @@ def test_the_ignore_rules_would_stop_it_coming_back() -> None:
         "tests/fixtures/rsa.jwk",
         "zitadel-sa-key.json",
         "client.p12",
+        # The local ZITADEL instance's two personal access tokens, written by
+        # ZITADEL at first start (Phase 4.3, ADR 0017). The machine user's
+        # has been ignored since local provisioning existed; the login
+        # client's directory is new, and asserted from the day it was added.
+        # The masterkey and admin password are never in the repository at
+        # all: they live under ~/.koras/secrets.
+        "local/zitadel/machinekey/pat",
+        "local/zitadel/bootstrap/login-client.pat",
         # Claude Code's per-user settings: one machine's auto-approved
         # permissions and environment. Personal by definition, at any depth.
         ".claude/settings.local.json",

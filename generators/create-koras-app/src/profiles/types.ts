@@ -144,6 +144,9 @@ export const ProfileDefaultsSchema = z.object({
         .object({
           supabase_db: z.number().int().optional(),
           zitadel: z.number().int().optional(),
+          // The login-v2 container's own port, until the port registry (A8)
+          // assigns ports. ADR 0016.
+          zitadel_login: z.number().int().optional(),
           redis: z.number().int().optional(),
           mail_smtp: z.number().int().optional(),
           mail_ui: z.number().int().optional(),

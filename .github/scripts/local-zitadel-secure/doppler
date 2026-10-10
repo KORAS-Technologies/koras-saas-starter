@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# A stand-in for the Doppler CLI, for the local-zitadel-secure job only.
+#
+# It answers the four calls local/zitadel/escrow-doppler.mjs makes -- a config
+# read, a name listing, a value read and a write from stdin -- from files
+# under $KORAS_FAKE_DOPPLER_DIR/<config>/<NAME>. Only dev_local_* configs
+# exist, as on a machine whose owner created its per-machine config and
+# nothing else. Every invocation is appended to $KORAS_FAKE_DOPPLER_DIR/calls,
+# so the job can prove a command did not contact Doppler at all.
+#
+# T-E4 and T-E5 -- a real branch config, and a deployment token that cannot
+# read it -- are manual, against a throwaway Doppler project, because no CI
+# token here may be able to create configs.
+set -euo pipefail
+root="${KORAS_FAKE_DOPPLER_DIR:?}"
+echo "$*" >> "$root/calls"
+
+config=""
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+  if [ "${args[$i]}" = "--config" ]; then config="${args[$((i + 1))]}"; fi
+done
+
+if [ "${1:-}" = "configs" ] && [ "${2:-}" = "get" ]; then
+  case "${3:-}" in
+    dev_local_?*) mkdir -p "$root/$3"; printf '{"name":"%s","environment":"dev"}' "$3" ;;
+    *) echo "Doppler Error: Could not find requested config" >&2; exit 1 ;;
+  esac
+  exit 0
+fi
+
+dir="$root/$config"
+[ -d "$dir" ] || { echo "Doppler Error: Could not find requested config" >&2; exit 1; }
+
+if [ "${1:-}" = "secrets" ] && [ "${2:-}" = "--only-names" ]; then
+  printf '{'
+  first=1
+  for file in "$dir"/*; do
+    [ -f "$file" ] || continue
+    [ "$first" = 1 ] || printf ','
+    first=0
+    printf '"%s":{}' "$(basename "$file")"
+  done
+  printf '}'
+  exit 0
+fi
+if [ "${1:-}" = "secrets" ] && [ "${2:-}" = "get" ]; then
+  [ -f "$dir/$3" ] || exit 1
+  cat "$dir/$3"
+  echo
+  exit 0
+fi
+if [ "${1:-}" = "secrets" ] && [ "${2:-}" = "set" ]; then
+  cat > "$dir/$3"
+  exit 0
+fi
+echo "fake doppler: unexpected call: $*" >&2
+exit 2

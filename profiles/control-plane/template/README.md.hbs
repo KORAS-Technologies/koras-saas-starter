@@ -78,11 +78,42 @@ pnpm stack:health   # = make health
 pnpm stack:preflight # = make preflight (read-only: ports, placeholder secrets, missing config)
 pnpm stack:stop     # = make stop  (stops containers; keeps volumes)
 pnpm stack:down     # = make down  (removes containers; keeps volumes)
+pnpm stack:status   # = make zitadel-status
 pnpm stack:ports    # = make ports
 pnpm stack:reset    # = make reset -- DESTRUCTIVE: deletes this stack's volumes,
                     #   including the local ZITADEL instance. Guarded: refuses in a
                     #   worktree or against non-local endpoints, and asks first.
 ```
+
+### Local identity (ZITADEL)
+
+The local ZITADEL instance is created by `make bootstrap` and started by
+`make dev`, both through `local/scripts/stack.mjs`; a bare
+`docker compose up` refuses on purpose. Each instance gets a masterkey and an
+admin password generated on this machine, kept owner-only under
+`~/.koras/secrets/`, and its record is `~/.koras/state/{{projectSlug}}/zitadel.json`.
+
+Before the first bootstrap the key must be escrowable twice -- ADR 0015 in the
+starter explains why -- so three things must exist, all set up by the owner:
+
+- a Doppler branch config `dev_local_<machine>` under `dev` in project
+  `{{projectSlug}}` (the machine id is in `~/.koras/machine.json`);
+- `~/.koras/recovery-recipient.json`, the pinned public recovery key;
+- `KORAS_ESCROW_BACKUP_DIR`, a directory on a different drive from your home.
+
+Without them bootstrap stops before generating anything. `KORAS_ZITADEL_OFFLINE=1
+make bootstrap` creates an unescrowed instance instead, which nothing starts
+until `make zitadel-escrow` completes both legs.
+
+```bash
+make zitadel-status                               # mode, escrow, token expiry
+node local/scripts/stack.mjs status --show-admin  # the admin password, on request
+make zitadel-rotate-pat                           # before the tokens expire (365 days)
+node local/scripts/stack.mjs recover              # a lost key cache, from escrow
+```
+
+Sign-in runs on ZITADEL's login v2 at
+`http://localhost:${KORAS_PORT_ZITADEL_LOGIN}/ui/v2/login/`, a port of its own.
 
 ## Environments
 

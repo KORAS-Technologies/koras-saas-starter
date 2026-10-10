@@ -1451,10 +1451,15 @@ describe.each(['product', 'control-plane'] as const)('%s secret scaffold', (prof
     // failed every Control Plane deployment on settings it needs.
     expect(classOf('SMTP_HOST')).toBe('optional')
     if (profile === 'product') {
-      for (const key of ['MINIO_ROOT_PASSWORD', 'GRAFANA_PASSWORD', 'ZITADEL_MASTERKEY']) {
+      for (const key of ['MINIO_ROOT_PASSWORD', 'GRAFANA_PASSWORD']) {
         expect(classOf(key)).toBe('local')
       }
     }
+    // Phase 4.3 (ADR 0015): the local ZITADEL key and admin password are
+    // generated per machine and escrowed to a dev_local_* config, which
+    // doppler-check allows there and refuses everywhere else.
+    expect(classOf('ZITADEL_MASTERKEY')).toBe('escrow')
+    expect(classOf('ZITADEL_ADMIN_PASSWORD')).toBe('escrow')
   })
 
   it('gives every derived setting a source', () => {

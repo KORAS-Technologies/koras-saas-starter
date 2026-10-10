@@ -29,12 +29,14 @@ on:
       - "profiles/**"
       - "infrastructure/terraform/modules/**"
       - ".github/workflows/generator-integration.yml"
+      - ".github/scripts/local-zitadel-secure/**"
   pull_request:
     paths:
       - "generators/**"
       - "profiles/**"
       - "infrastructure/terraform/modules/**"
       - ".github/workflows/generator-integration.yml"
+      - ".github/scripts/local-zitadel-secure/**"
   workflow_dispatch:
 
 # Read-only by default. No job here writes to the repository, a package registry or a check;
@@ -996,3 +998,98 @@ jobs:
             --no-interactive \
             --check-drift --all \
             --output-dir "$RUNNER_TEMP/generated"
+
+  # Phase 4.3A: a secure local ZITADEL, provisioned for real (PHASE4.3-SPEC v2
+  # §4.2, §4.5; ADRs 0015-0017).
+  #
+  # The unit suite drives stack.mjs against a fake estate; this is the half
+  # nothing but containers can answer. Two products are generated and taken
+  # through the integration cases: a fresh instance on a generated masterkey,
+  # escrowed to a file-backed Doppler and to an encrypted backup for a
+  # throwaway recovery key made in this job; a sign-in from a clean browser
+  # through login v2 on its own port; the default password refused; no secret
+  # in any container's environment; restart, port, placeholder and instance
+  # pins; token rotation; and recovery of the key from the backup with the
+  # private key only this job holds. Every identity and secret is synthetic
+  # and dies with the runner.
+  #
+  # T-E4 and T-E5 (a real Doppler branch config, and a deployment token that
+  # cannot read it) and T-E6 (the recovery drill on the owner's offline
+  # machine) are manual by design and not here.
+  local-zitadel-secure:
+    name: local-zitadel-secure
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install starter dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the generator
+        run: pnpm turbo run build --filter=create-koras-app
+
+      - name: Generate two products
+        run: |
+          mkdir -p "$RUNNER_TEMP/generated"
+          for slug in zitadel-secure zitadel-offline; do
+            pnpm create-koras-app "$slug" --profile product --no-interactive --output-dir "$RUNNER_TEMP/generated"
+          done
+
+      # Outside both projects, pinned to the version the product template
+      # declares, so the browser the sign-in drives is the one its own suite
+      # would.
+      - name: Install a browser for the sign-in
+        run: |
+          mkdir -p "$RUNNER_TEMP/pw"
+          cd "$RUNNER_TEMP/pw"
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund playwright@1.62.1
+          npx playwright install --with-deps chromium
+          cp "$GITHUB_WORKSPACE/.github/scripts/local-zitadel-secure/signin.mjs" .
+
+      - name: Integration cases (T-I1 to T-I14, leg-2 recovery)
+        run: bash .github/scripts/local-zitadel-secure/run.sh "$RUNNER_TEMP/generated" "$RUNNER_TEMP/pw"
+
+      - name: ZITADEL logs
+        if: failure()
+        run: |
+          for slug in zitadel-secure zitadel-offline; do
+            echo "::group::$slug"
+            (cd "$RUNNER_TEMP/generated/$slug" && node local/scripts/stack.mjs compose logs --no-color --tail 200 zitadel zitadel-login) || true
+            echo "::endgroup::"
+          done
+
+      - name: Sign-in screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-zitadel-secure-signin
+          path: ${{ runner.temp }}/pw/signin-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # T-U9 on Windows: the key cache's ACL lists exactly one principal. icacls
+  # behaves only on a real NTFS ACL, so this is the one case a Linux runner
+  # cannot stand in for.
+  local-zitadel-secure-windows:
+    name: local-zitadel-secure (Windows ACL)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install starter dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Key cache ACL (T-U9, T-U10)
+        working-directory: generators/create-koras-app
+        run: pnpm exec vitest run tests/local-zitadel-secure.test.ts -t "masterkey.mjs"
